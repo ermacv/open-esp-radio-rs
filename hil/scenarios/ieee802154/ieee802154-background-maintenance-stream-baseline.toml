@@ -1,0 +1,13 @@
+schema = 5
+id = "ieee802154-background-maintenance-stream-baseline"
+description = "Frame loss of a receiving IEEE 802.15.4 session without background PHY maintenance; the reference peer sends a numbered stream every 5 ms: the baseline arm of the PHY maintenance experiment"
+tags = ["ieee802154", "arbiter-client", "on-air", "air-exclusive", "phy-maintenance", "receive", "peer"]
+
+[ieee802154]
+kind = "background-maintenance-stream"
+boots = 3
+channel = 15
+periods = 10
+interval_ms = 5
+policy = "vendor"
+maintenance = false

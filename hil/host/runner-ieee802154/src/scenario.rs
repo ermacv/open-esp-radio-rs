@@ -20,7 +20,29 @@ pub enum Ieee802154Scenario {
     AirCheck(AirCheck),
     PeerExchange(PeerExchange),
     BackgroundMaintenance(BackgroundMaintenance),
+    BackgroundMaintenanceStream(BackgroundMaintenanceStream),
     RfSleep(RfSleep),
+}
+
+/// Frame loss of a receiving client under background PHY maintenance, with
+/// the reference peer sending a numbered stream.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundMaintenanceStream {
+    pub boots: u8,
+    pub channel: u8,
+    /// Tracking periods the stream lasts.
+    pub periods: u8,
+    /// Milliseconds between two stream frames.
+    pub interval_ms: u16,
+    pub policy: MaintenancePolicy,
+    /// Whether background maintenance runs; the baseline arm leaves it off.
+    #[serde(default = "enabled", skip_serializing_if = "Clone::clone")]
+    pub maintenance: bool,
+}
+
+const fn enabled() -> bool {
+    true
 }
 
 /// RF closed while the radio sleeps, with the reference peer.
@@ -122,6 +144,17 @@ impl Ieee802154Scenario {
                 bounded(maintenance.channel, 11, 26, "channel")?;
                 bounded(maintenance.periods, 2, 30, "periods")
             }
+            Self::BackgroundMaintenanceStream(stream) => {
+                bounded(stream.boots, 1, 20, "boots")?;
+                bounded(stream.channel, 11, 26, "channel")?;
+                bounded(stream.periods, 2, 30, "periods")?;
+                bounded(stream.interval_ms, 2, 1_000, "interval_ms")?;
+                let frames = 1_000 * u32::from(stream.periods) / u32::from(stream.interval_ms);
+                if frames > u32::from(oer_hil_protocol::IEEE802154_STREAM_CAPACITY) {
+                    return Err("the stream exceeds the device's stream capacity".into());
+                }
+                Ok(())
+            }
             Self::RfSleep(sleep) => {
                 bounded(sleep.boots, 1, 20, "boots")?;
                 bounded(sleep.channel, 11, 26, "channel")?;
@@ -155,10 +188,13 @@ impl Ieee802154Scenario {
             Self::AirCheck(_)
             | Self::PeerExchange(_)
             | Self::BackgroundMaintenance(_)
+            | Self::BackgroundMaintenanceStream(_)
             | Self::RfSleep(_) => ImageClass::DiagnosticIeee802154Radio,
         });
-        plan.requirements.ieee802154_peer =
-            matches!(self, Self::PeerExchange(_) | Self::RfSleep(_));
+        plan.requirements.ieee802154_peer = matches!(
+            self,
+            Self::PeerExchange(_) | Self::RfSleep(_) | Self::BackgroundMaintenanceStream(_)
+        );
         plan
     }
 
@@ -200,6 +236,20 @@ impl Ieee802154Scenario {
                 output,
                 context,
             ),
+            Self::BackgroundMaintenanceStream(stream) => {
+                ieee802154::background_maintenance_stream::run(
+                    ieee802154::background_maintenance_stream::Config {
+                        boots: stream.boots,
+                        channel: stream.channel,
+                        policy: stream.policy.session(),
+                        periods: stream.periods,
+                        interval_ms: stream.interval_ms,
+                        maintenance: stream.maintenance,
+                    },
+                    output,
+                    context,
+                )
+            }
             Self::PeerExchange(exchange) => ieee802154::peer_exchange::run(
                 ieee802154::peer_exchange::Config {
                     boots: exchange.boots,

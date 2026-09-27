@@ -1655,6 +1655,14 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
                 enabled: true,
                 disable_failed: true,
             },
+            stream: crate::Ieee802154SessionStreamReceipt {
+                received: u16::MAX,
+                duplicates: u16::MAX,
+                out_of_range: u16::MAX,
+                span: u16::MAX,
+                missing_runs: u16::MAX,
+                longest_missing_run: u16::MAX,
+            },
         }),
         Event::Ieee802154SessionPhyMaintained(crate::Ieee802154SessionPhyMaintenance::Tracked),
     ] {

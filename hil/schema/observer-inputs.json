@@ -64,6 +64,7 @@
     "ieee802154/air-check": true,
     "ieee802154/peer-exchange": false,
     "ieee802154/background-maintenance": true,
+    "ieee802154/background-maintenance-stream": true,
     "ieee802154/rf-sleep": false
   },
   "build": {

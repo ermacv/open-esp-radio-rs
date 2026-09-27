@@ -16,6 +16,7 @@
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_ieee802154.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -29,7 +30,7 @@
 #include "driver/uart_vfs.h"
 #endif
 
-#define PROTOCOL_VERSION 1
+#define PROTOCOL_VERSION 2
 /* PHR length field: MAC bytes plus the two-byte FCS. */
 #define MAX_PSDU 127
 #define FCS_LEN 2
@@ -59,6 +60,18 @@ typedef struct {
 
 static QueueHandle_t s_events;
 static uint8_t s_tx_frame[1 + MAX_PSDU];
+
+/* A numbered stream: the template carries the stream magic, and each frame
+ * gets the next MAC sequence number and the next little-endian counter right
+ * after the magic. Per-frame reports are counted instead of printed. */
+static const uint8_t STREAM_MAGIC[4] = { 'O', 'E', 'R', 'S' };
+static TaskHandle_t s_stream_task;
+static esp_timer_handle_t s_stream_timer;
+static volatile bool s_streaming;
+static volatile uint32_t s_stream_done;
+static volatile uint32_t s_stream_failed;
+static uint32_t s_stream_count;
+static size_t s_stream_counter_at;
 
 static void copy_frame(peer_event_t *event, const uint8_t *frame)
 {
@@ -97,6 +110,13 @@ void IRAM_ATTR esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_
 void IRAM_ATTR esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
                                             esp_ieee802154_frame_info_t *ack_frame_info)
 {
+    if (s_streaming) {
+        if (ack != NULL) {
+            esp_ieee802154_receive_handle_done(ack);
+        }
+        s_stream_done++;
+        return;
+    }
     peer_event_t event = { .kind = EVENT_TX_DONE };
     if (ack != NULL) {
         event.has_ack = true;
@@ -111,6 +131,10 @@ void IRAM_ATTR esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t 
 
 void IRAM_ATTR esp_ieee802154_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_error_t error)
 {
+    if (s_streaming) {
+        s_stream_failed++;
+        return;
+    }
     peer_event_t event = { .kind = EVENT_TX_FAILED, .code = error };
     post(&event);
 }
@@ -307,6 +331,73 @@ static void command_ed(char **argv, int argc)
     reply(esp_ieee802154_energy_detect(duration), "ED");
 }
 
+static void stream_tick(void *arg)
+{
+    xTaskNotifyGive(s_stream_task);
+}
+
+/* Send the stream frame by frame, one per timer tick, then report. */
+static void stream_task(void *arg)
+{
+    uint8_t sequence = s_tx_frame[1 + 2];
+    for (uint32_t counter = 0; counter < s_stream_count; counter++) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        s_tx_frame[1 + 2] = sequence++;
+        s_tx_frame[1 + s_stream_counter_at] = (uint8_t)counter;
+        s_tx_frame[1 + s_stream_counter_at + 1] = (uint8_t)(counter >> 8);
+        if (esp_ieee802154_transmit(s_tx_frame, false) != ESP_OK) {
+            s_stream_failed++;
+        }
+    }
+    esp_timer_stop(s_stream_timer);
+    /* Let the last transmission report before the counts are read. */
+    vTaskDelay(pdMS_TO_TICKS(20));
+    s_streaming = false;
+    printf("@STREAMDONE sent=%lu done=%lu failed=%lu\n", (unsigned long)s_stream_count,
+           (unsigned long)s_stream_done, (unsigned long)s_stream_failed);
+    fflush(stdout);
+    s_stream_task = NULL;
+    vTaskDelete(NULL);
+}
+
+/* STREAM <count 1..4096> <interval_ms 1..1000> <template MAC bytes as hex>
+ *
+ * The template must contain the stream magic followed by two counter bytes. */
+static void command_stream(char **argv, int argc)
+{
+    uint32_t count, interval;
+    size_t digits = argc == 4 ? strlen(argv[3]) : 0;
+    size_t length = digits / 2;
+    if (argc != 4 || s_stream_task != NULL || !parse_u32(argv[1], &count, 4096) || count == 0
+        || !parse_u32(argv[2], &interval, 1000) || interval == 0 || digits % 2 != 0
+        || length < 3 || length + FCS_LEN > MAX_PSDU
+        || !decode_hex(argv[3], &s_tx_frame[1], length)) {
+        reply(ESP_ERR_INVALID_ARG, "STREAM");
+        return;
+    }
+    size_t at = 0;
+    while (at + sizeof(STREAM_MAGIC) + 2 <= length
+           && memcmp(&s_tx_frame[1 + at], STREAM_MAGIC, sizeof(STREAM_MAGIC)) != 0) {
+        at++;
+    }
+    if (at + sizeof(STREAM_MAGIC) + 2 > length) {
+        reply(ESP_ERR_INVALID_ARG, "STREAM");
+        return;
+    }
+    s_tx_frame[0] = (uint8_t)(length + FCS_LEN);
+    s_stream_counter_at = at + sizeof(STREAM_MAGIC);
+    s_stream_count = count;
+    s_stream_done = 0;
+    s_stream_failed = 0;
+    s_streaming = true;
+    if (s_stream_timer == NULL) {
+        const esp_timer_create_args_t args = { .callback = stream_tick, .name = "stream" };
+        ESP_ERROR_CHECK(esp_timer_create(&args, &s_stream_timer));
+    }
+    xTaskCreate(stream_task, "peer_stream", 3072, NULL, 6, &s_stream_task);
+    reply(esp_timer_start_periodic(s_stream_timer, (uint64_t)interval * 1000), "STREAM");
+}
+
 static void dispatch(char *line)
 {
     char *argv[8];
@@ -329,6 +420,8 @@ static void dispatch(char *line)
         command_pending(argv, argc);
     } else if (strcmp(argv[0], "ED") == 0) {
         command_ed(argv, argc);
+    } else if (strcmp(argv[0], "STREAM") == 0) {
+        command_stream(argv, argc);
     } else {
         printf("@ERR %s unknown\n", argv[0]);
         fflush(stdout);

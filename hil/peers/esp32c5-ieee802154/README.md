@@ -45,7 +45,7 @@ lowercase on output and accepted in either case on input.
 At start the peer prints:
 
 ```text
-@READY protocol=1 target=esp32c5
+@READY protocol=2 target=esp32c5
 ```
 
 Each command is answered by `@OK <command>` or `@ERR <command> <reason>`.
@@ -60,6 +60,7 @@ Each command is answered by `@OK <command>` or `@ERR <command> <reason>`.
 | `PENDING ADD <short>` | Add a short address (big-endian hex) to the pending table. |
 | `PENDING CLEAR` | Clear the short-address pending table. |
 | `ED <symbols>` | Run one energy detection of the given number of 16 µs symbols. |
+| `STREAM <count> <interval_ms> <mac>` | Transmit `count` (1–4096) frames without CCA, one every `interval_ms` (1–1000), from the template MAC bytes, which must hold the stream magic `OERS` followed by two counter bytes. Each frame gets the next MAC sequence number and the next little-endian counter; per-frame reports are counted, not printed. |
 
 Events, printed when the driver reports them:
 
@@ -70,6 +71,7 @@ Events, printed when the driver reports them:
 | `@TXDONE ack=<mac> pending=<0/1> rssi=<dBm> lqi=<n>` | A frame was acknowledged; `<mac>` is the ACK without FCS. |
 | `@TXFAIL <code>` | The driver reported `esp_ieee802154_tx_error_t` `<code>`. |
 | `@ED <dBm>` | The energy detection result. |
+| `@STREAMDONE sent=<n> done=<n> failed=<n>` | A stream ended: frames started, reported sent and reported failed. |
 
 Driver callbacks run in interrupt context; the application copies each
 report into a bounded queue and prints it from a task.

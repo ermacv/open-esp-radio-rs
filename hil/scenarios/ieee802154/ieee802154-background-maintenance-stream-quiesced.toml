@@ -1,0 +1,12 @@
+schema = 5
+id = "ieee802154-background-maintenance-stream-quiesced"
+description = "Frame loss of a receiving IEEE 802.15.4 session with shared PHY tracking once per period under the quiesced admission: the device pauses its MAC and proves quiescence before each tracking; the reference peer sends a numbered stream every 5 ms: one arm of the PHY maintenance experiment"
+tags = ["ieee802154", "arbiter-client", "on-air", "air-exclusive", "phy-maintenance", "receive", "peer"]
+
+[ieee802154]
+kind = "background-maintenance-stream"
+boots = 3
+channel = 15
+periods = 10
+interval_ms = 5
+policy = "quiesced"

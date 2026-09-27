@@ -669,4 +669,34 @@ pub struct Ieee802154SessionStopEvidence {
     pub rf: Ieee802154SessionRfCounts,
     /// Coexistence with Wi-Fi; all false without it.
     pub coexistence: Ieee802154SessionCoexistence,
+    /// Frames of a peer stream the session received; all zero without one.
+    pub stream: Ieee802154SessionStreamReceipt,
+}
+
+/// The magic that opens the payload of a peer stream frame; the frame's
+/// 16-bit little-endian stream counter follows it.
+pub const IEEE802154_STREAM_MAGIC: [u8; 4] = *b"OERS";
+
+/// Highest stream counter a session tracks individually.
+pub const IEEE802154_STREAM_CAPACITY: u16 = 4096;
+
+/// What a session received of a numbered peer stream.
+///
+/// A stream frame carries [`IEEE802154_STREAM_MAGIC`] and its counter at the
+/// start of its payload; counters from zero up to
+/// [`IEEE802154_STREAM_CAPACITY`] are tracked one by one.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionStreamReceipt {
+    /// Distinct counters received.
+    pub received: u16,
+    /// Frames whose counter was already received.
+    pub duplicates: u16,
+    /// Frames with a counter at or above the capacity.
+    pub out_of_range: u16,
+    /// One past the highest counter received; zero without a frame.
+    pub span: u16,
+    /// Runs of missing counters below the span.
+    pub missing_runs: u16,
+    /// Length of the longest run of missing counters below the span.
+    pub longest_missing_run: u16,
 }

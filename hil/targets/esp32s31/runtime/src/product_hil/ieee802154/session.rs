@@ -34,11 +34,11 @@ use oer_hil_protocol::{
     Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
     Ieee802154SessionRfCounts, Ieee802154SessionRfPolicy, Ieee802154SessionStopEvidence,
     Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
-    RejectReason, ieee802154_frame_crc32c,
+    Ieee802154StreamTracker, RejectReason, ieee802154_frame_crc32c,
 };
-use oer_ieee802154::{Interface, 
-    AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, RadioCommand, RequestId,
-    TxMode, TxRequest, TxSecurity,
+use oer_ieee802154::{
+    AutoPendingMode, Channel, Configuration, FrameAddress, FrameView, Interface, RadioCommand,
+    RequestId, TxMode, TxRequest, TxSecurity,
 };
 
 use super::client::{Client, tx_outcome};
@@ -85,6 +85,8 @@ struct Session {
     channel: Channel,
     next_id: u32,
     received: Received,
+    /// Every frame of a peer stream received during the whole session.
+    stream: Ieee802154StreamTracker,
     lost: bool,
     rf: Ieee802154SessionRfCounts,
 }
@@ -135,6 +137,7 @@ impl Session {
     ) -> Option<Ieee802154RadioEvent> {
         match event {
             Ok(Ieee802154RadioEvent::Received(frame)) => {
+                self.stream.record(frame.frame.as_bytes());
                 self.received.record(&frame);
                 None
             }
@@ -441,6 +444,7 @@ pub(in crate::product_hil) async fn run_session(
         channel,
         next_id: 0,
         received: Received::default(),
+        stream: Ieee802154StreamTracker::default(),
         lost: false,
         rf: Ieee802154SessionRfCounts::default(),
     };
@@ -524,6 +528,7 @@ pub(in crate::product_hil) async fn run_session(
             maintenance: counts.get(),
             rf: session.rf,
             coexistence,
+            stream: session.stream.receipt(),
         }),
     )
     .await;

@@ -103,7 +103,7 @@ fn the_configuration_renders_the_documented_command() {
 fn commands_wait_for_their_answer_and_keep_interleaved_events() {
     let link = ScriptedLink::new(&[
         "boot noise",
-        "@READY protocol=1 target=esp32c5",
+        "@READY protocol=2 target=esp32c5",
         "@RX 4188 rssi=-50 lqi=100 pending=0 ch=15",
         "@OK TX",
         "@TXDONE ack=-",
@@ -126,7 +126,7 @@ fn commands_wait_for_their_answer_and_keep_interleaved_events() {
 
 #[test]
 fn a_rejected_or_silent_command_fails() {
-    let link = ScriptedLink::new(&["@READY protocol=1", "@ERR RX ESP_FAIL"]);
+    let link = ScriptedLink::new(&["@READY protocol=2", "@ERR RX ESP_FAIL"]);
     let mut peer = Peer::start(link).unwrap();
     assert!(peer.receive().is_err());
     assert!(peer.sleep().is_err());
@@ -134,6 +134,26 @@ fn a_rejected_or_silent_command_fails() {
 
 #[test]
 fn a_peer_of_another_protocol_is_refused() {
-    assert!(Peer::start(ScriptedLink::new(&["@READY protocol=2"])).is_err());
+    assert!(Peer::start(ScriptedLink::new(&["@READY protocol=1"])).is_err());
     assert!(Peer::start(ScriptedLink::new(&["no ready line"])).is_err());
+}
+
+#[test]
+fn a_stream_is_started_and_reports_its_end() {
+    let link = ScriptedLink::new(&[
+        "@READY protocol=2",
+        "@OK STREAM",
+        "@STREAMDONE sent=4 done=3 failed=1",
+    ]);
+    let mut peer = Peer::start(link).unwrap();
+    peer.stream(4, 5, b"xxOERS\0\0").unwrap();
+    assert_eq!(
+        peer.next_event(std::time::Duration::from_millis(10))
+            .unwrap(),
+        Some(PeerEvent::StreamDone {
+            sent: 4,
+            done: 3,
+            failed: 1
+        })
+    );
 }

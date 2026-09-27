@@ -16,7 +16,7 @@ use std::{
 use crate::Result;
 
 /// Protocol version the driver speaks.
-pub const PEER_PROTOCOL: u32 = 1;
+pub const PEER_PROTOCOL: u32 = 2;
 /// Board-journal image name of `hil/peers/esp32c5-ieee802154`.
 pub const PEER_IMAGE: &str = "ieee802154-peer";
 /// How to restore the peer firmware when another consumer replaced it.
@@ -67,6 +67,12 @@ pub enum PeerEvent {
     /// The vendor `esp_ieee802154_tx_error_t` code.
     TransmitFailed(i32),
     EnergyDetected(i8),
+    /// A stream ended: frames started, completed and failed.
+    StreamDone {
+        sent: u32,
+        done: u32,
+        failed: u32,
+    },
 }
 
 /// One parsed protocol line.
@@ -140,6 +146,11 @@ pub(crate) fn parse_line(line: &str) -> Option<Line> {
         "ED" => Some(Line::Event(PeerEvent::EnergyDetected(
             fields.get(1)?.parse().ok()?,
         ))),
+        "STREAMDONE" => Some(Line::Event(PeerEvent::StreamDone {
+            sent: field(&fields, "sent")?.parse().ok()?,
+            done: field(&fields, "done")?.parse().ok()?,
+            failed: field(&fields, "failed")?.parse().ok()?,
+        })),
         _ => None,
     }
 }
@@ -287,6 +298,16 @@ impl<L: PeerLink> Peer<L> {
     /// arrives as a [`PeerEvent`].
     pub fn transmit(&mut self, cca: bool, frame: &[u8]) -> Result<()> {
         self.command("TX", &format!("TX {} {}", u8::from(cca), to_hex(frame)))
+    }
+
+    /// Start a numbered stream of `count` frames, one every `interval_ms`,
+    /// from `template` (MAC bytes without FCS holding the stream magic and
+    /// two counter bytes). Its end arrives as [`PeerEvent::StreamDone`].
+    pub fn stream(&mut self, count: u16, interval_ms: u16, template: &[u8]) -> Result<()> {
+        self.command(
+            "STREAM",
+            &format!("STREAM {count} {interval_ms} {}", to_hex(template)),
+        )
     }
 
     pub fn set_pending_mode(&mut self, mode: u8) -> Result<()> {

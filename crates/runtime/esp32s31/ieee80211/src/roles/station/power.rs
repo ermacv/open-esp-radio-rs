@@ -198,7 +198,7 @@ mod agent {
 
     use embassy_futures::select::{Either, Either3, select, select3};
 
-    use oer_esp32s31_coex::{CoexClientRequest, CoexEventId, CoexStatusType, timer_index};
+    use oer_esp32s31_coex::{CoexClientRequest, CoexEventId, timer_index};
     use oer_esp32s31_hal::{shared_radio::PlatformClockProvider, types::MacPti};
     use oer_esp32s31_ieee80211_sta::{
         connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},

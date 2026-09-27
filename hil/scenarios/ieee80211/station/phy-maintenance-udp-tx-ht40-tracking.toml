@@ -14,4 +14,3 @@ link = { phy = "ht40" }
 duration_seconds = 16
 payload_bytes = 1472
 offer = { tx_bps = 130000000 }
-suspend_phy_tracking = false

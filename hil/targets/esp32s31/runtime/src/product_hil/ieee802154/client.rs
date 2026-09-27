@@ -4,7 +4,7 @@ use core::pin::pin;
 
 use esp_hal::{efuse, time::Instant};
 use oer_esp32s31_hal::root::RadioHardware;
-use oer_esp32s31_ieee802154::{engine::Ieee802154EngineBuffers, pib::Ieee802154PibDefaults};
+use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
 use oer_esp32s31_phy::{
     PhyCalibrationIdentity, concurrent::MaintenancePolicy, phy_get_rf_cal_version,
@@ -14,10 +14,6 @@ use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy};
 use oer_ieee802154::TxStatus;
-use static_cell::ConstStaticCell;
-
-static BUFFERS: ConstStaticCell<Ieee802154EngineBuffers> =
-    ConstStaticCell::new(Ieee802154EngineBuffers::new());
 
 pub(super) fn now_micros() -> u64 {
     Instant::now().duration_since_epoch().as_micros()
@@ -44,7 +40,6 @@ impl Client {
     /// Claim the radio once for this image.
     pub(super) fn claim(platform: EspHalRadioPlatform) -> Option<(Self, Ieee802154Parked)> {
         let hardware = RadioHardware::take()?;
-        let buffers = BUFFERS.try_take()?;
         let (radio, partitions) = RadioSystem::new(
             hardware,
             platform,
@@ -52,7 +47,7 @@ impl Client {
             calibration_identity(),
         );
         let defaults = Ieee802154PibDefaults::default();
-        let parked = Ieee802154Parked::new(partitions.ieee802154, buffers, defaults);
+        let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)?;
         Some((Self { radio, defaults }, parked))
     }
 

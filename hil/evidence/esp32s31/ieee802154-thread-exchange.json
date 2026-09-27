@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "target": "esp32s31",
-  "scenario": "ieee802154-background-maintenance-vendor",
+  "scenario": "ieee802154-thread-exchange",
   "run-id": "1790533334526-001ec54b",
   "started-unix-millis": 1790533334526,
   "outcome": "passed",
@@ -15,162 +15,85 @@
           "name": "target.boot-001.capture.events",
           "threshold": null,
           "unit": "count",
-          "value": 8,
+          "value": 14,
           "verdict": null
         },
         {
           "name": "target.boot-001.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 1450,
+          "value": 1908,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.rx.checksum-errors",
+          "name": "target.boot-001.request-12.link.lifetime.rx.checksum-errors",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.rx.cobs-errors",
+          "name": "target.boot-001.request-12.link.lifetime.rx.cobs-errors",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.rx.decode-errors",
+          "name": "target.boot-001.request-12.link.lifetime.rx.decode-errors",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.rx.frames",
+          "name": "target.boot-001.request-12.link.lifetime.rx.frames",
           "threshold": null,
           "unit": "count",
-          "value": 6,
+          "value": 12,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-001.request-6.link.lifetime.text.dropped",
+          "name": "target.boot-001.request-12.link.lifetime.rx.overflows",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.text.truncated",
+          "name": "target.boot-001.request-12.link.lifetime.text.dropped",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.tx.dropped",
+          "name": "target.boot-001.request-12.link.lifetime.text.truncated",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.boot-001.request-6.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 7,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.capture.events",
-          "threshold": null,
-          "unit": "count",
-          "value": 8,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.capture.received-bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 1450,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.rx.checksum-errors",
+          "name": "target.boot-001.request-12.link.lifetime.tx.dropped",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.boot-002.request-6.link.lifetime.rx.cobs-errors",
+          "name": "target.boot-001.request-12.link.lifetime.tx.frames",
           "threshold": null,
           "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 6,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.boot-002.request-6.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 7,
+          "value": 13,
           "verdict": null
         }
       ]
     }
   ],
   "completion-seal": {
-    "path": "attempts/ieee802154-background-maintenance-vendor.json",
-    "sha256": "8a236cb62b5176758fdc81ce832fe678caa4d41e0a6468a2fade99dbbb75f2a2"
+    "path": "attempts/ieee802154-thread-exchange.json",
+    "sha256": "fb831d1544888488b38264f49e1c74a5835686dd4c70ba29512bead323d133bd"
   },
   "subject": {
     "observer": {
@@ -370341,25 +370264,25 @@
     },
     "firmware": [
       {
-        "image": "diagnostic-ieee802154-radio",
-        "build_id": "5355e565f9a380fa8615b93e85f0c36625a608c8636436e671814d3b3ebebc70",
+        "image": "diagnostic-ieee802154-thread",
+        "build_id": "3ee60b073cb93e5321b9e77fc8fcb5dec4f127ccdeedb0518f02c81114a49f62",
         "application": {
-          "path": "firmware/diagnostic-ieee802154-radio/application.bin",
-          "size_bytes": 3555088,
-          "sha256": "c46be49e1eb13533095f3c40f168776361d38c8bee234f826882753063d9b821"
+          "path": "firmware/diagnostic-ieee802154-thread/application.bin",
+          "size_bytes": 3686160,
+          "sha256": "4888e69e1f9013d4534fec4b0b58fe8882fc19a7d53d38745c326fb85cbb541a"
         },
         "build_provenance": {
-          "path": "firmware/diagnostic-ieee802154-radio/build-provenance.json",
-          "size_bytes": 5724,
-          "sha256": "8e61505e220aa107348311256d824c9a201a76e48d8b2e114250a3e5ec6aefa9"
+          "path": "firmware/diagnostic-ieee802154-thread/build-provenance.json",
+          "size_bytes": 5732,
+          "sha256": "d40d04788662f8870aa5d45050112074aa657d9e63cd5386b0487c16e2f6bbf9"
         },
         "replayed": false
       }
     ],
     "procedure": {
-      "path": "scenarios/ieee802154-background-maintenance-vendor/scenario.json",
-      "size_bytes": 633,
-      "sha256": "f1c3bd524842a64fb1a7c74001aba066024e46b7925fa77d06f05b6579019361"
+      "path": "scenarios/ieee802154-thread-exchange/scenario.json",
+      "size_bytes": 581,
+      "sha256": "fd332a98df18c89d0c6618d9242bc3831737236a63402a30d96ad79cb8d21a0c"
     },
     "fixture": {
       "path": "lab-provenance.json",
@@ -370373,14 +370296,14 @@
     }
   },
   "procedure": {
-    "description": "Shared PHY tracking once per tracking period while an IEEE 802.15.4 session receives, under the vendor admission: the PHY periodic tracking loop runs beside the receiving MAC; the device still transmits afterwards",
-    "id": "ieee802154-background-maintenance-vendor",
+    "description": "OpenThread over the device's IEEE 802.15.4 client attaches as a child to a network ESP-IDF's OpenThread leads, and exchanges UDP datagrams with it in both directions",
+    "id": "ieee802154-thread-exchange",
     "ieee802154": {
-      "boots": 2,
+      "boots": 1,
       "channel": 15,
-      "kind": "background-maintenance",
-      "periods": 10,
-      "policy": "vendor"
+      "datagrams": 3,
+      "kind": "thread-exchange",
+      "pan_id": 20293
     },
     "repetitions": 1,
     "schema": 5,
@@ -370388,9 +370311,11 @@
       "ieee802154",
       "arbiter-client",
       "on-air",
-      "phy-maintenance",
-      "receive",
-      "transmit"
+      "peer",
+      "thread",
+      "openthread",
+      "mle-attach",
+      "udp"
     ],
     "transfer": "unchanged-functional-contract"
   },
@@ -370538,6 +370463,22 @@
     {
       "path": "crates/adapters/esp-hal/esp32s31/soc/src/watchdog.rs",
       "sha256": "5756a16299a737d13ae2304dd5cf25a0888f6569302187175b66cb19bbbd458d"
+    },
+    {
+      "path": "crates/adapters/openthread/esp32s31/ieee802154/Cargo.toml",
+      "sha256": "2c44bd498ffc7cc39bd70d29165169082097f3479e13196e6f027b4f0d7a6181"
+    },
+    {
+      "path": "crates/adapters/openthread/esp32s31/ieee802154/src/frames.rs",
+      "sha256": "17b08e75a116130d163c9a8384bbac3f35570fccdf12cc41c2e697a27fe0a958"
+    },
+    {
+      "path": "crates/adapters/openthread/esp32s31/ieee802154/src/lib.rs",
+      "sha256": "babe69b7af38e6709e9bb9cd31e0a8b79e3968aefb515e1c457c9cbe246e49ce"
+    },
+    {
+      "path": "crates/adapters/openthread/esp32s31/ieee802154/src/radio.rs",
+      "sha256": "03d5e21a4818c0d5322f1679914d1e8aa5b774c26c0cb420fdc5d930c565eb84"
     },
     {
       "path": "crates/adapters/xarxa/esp32s31/ieee80211-upstream/Cargo.toml",
@@ -374102,6 +374043,10 @@
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/session.rs",
       "sha256": "1048b3fe566c3c867c926a99a482f02c3b61a1a06289c8296e2a002d3851260d"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/thread.rs",
+      "sha256": "889429209b174dc4dbaf72fe92159bd8e41fde4c64b745a5f40f5eee9cd9af07"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154.rs",

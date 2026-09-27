@@ -2,8 +2,8 @@
   "schema": 1,
   "target": "esp32s31",
   "scenario": "ieee802154-background-maintenance-quiesced",
-  "run-id": "1790513905063-00070847",
-  "started-unix-millis": 1790513905063,
+  "run-id": "1790533334526-001ec54b",
+  "started-unix-millis": 1790533334526,
   "outcome": "passed",
   "failure": null,
   "repetitions": [
@@ -22,7 +22,7 @@
           "name": "target.boot-001.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 1449,
+          "value": 1450,
           "verdict": null
         },
         {
@@ -99,7 +99,7 @@
           "name": "target.boot-002.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 1449,
+          "value": 1450,
           "verdict": null
         },
         {
@@ -170,7 +170,7 @@
   ],
   "completion-seal": {
     "path": "attempts/ieee802154-background-maintenance-quiesced.json",
-    "sha256": "9b3602a56263d9eacc6bcacba00b17b14f1e4148b72c93f3c70c84eac340d3d7"
+    "sha256": "cc1a57c1291d4b65260da80a5b6d596fee1241ca9111b8c69d9575d18364cc2c"
   },
   "subject": {
     "observer": {
@@ -185,8 +185,8 @@
         },
         "inputs": {
           ".cargo/config.toml": "5df4bde4735925017628aa3c7d769fbc20bca4d16fffa0fe09cc4ce88db7ae29",
-          "Cargo.lock": "fa8901d440e175cbfdbda6318a174c0e359ce54d38c37fe9e80f57fbf92c40c3",
-          "Cargo.toml": "80602600e6b59058f4596711ac546731219335a6f0b9843d71c276b0dece179b",
+          "Cargo.lock": "1cac6d10c40cce2e3aa2b7610e0cad3ecaca946ac09290fd747aa5e6c0744732",
+          "Cargo.toml": "5a7b680a16650f4f10abb8b0905a6fb902cf5ed7133036175ffaf476a04c6dd2",
           "crates/protocols/ieee80211/mac/Cargo.toml": "e1787c2f9cad02090c5681c96a6f0c314bbf8d9239a09b3d7d9ccb107d36eb7d",
           "crates/protocols/ieee80211/mac/src/ap.rs": "3b237a69f9e46bf8cf16ef390ab3d4970687420af43e805236d326c5251cdd63",
           "crates/protocols/ieee80211/mac/src/ap/probe.rs": "b52888ad3a42de955a7119c2c7b9acffd5abdeda4d35cbfb580cb7f6ff0c2ba3",
@@ -247,15 +247,15 @@
           "crates/protocols/ieee80211/mac/src/sequence/tests.rs": "37d4b35e193a72b8b60b00f2fdf05dd9e8f8bbc078492d0479f118ccccc37817",
           "crates/protocols/ieee80211/mac/src/ssid.rs": "0e7ddd1f3d7e9c77dd7f7b8f3515f468486637e1ad78f3d03594d0460826d295",
           "crates/protocols/ieee80211/mac/src/ssid/tests.rs": "b3dfbdf9944f195243a8306859213bbcd9e9d4eb83fc332192ab19884da76063",
-          "crates/protocols/ieee80211/mac/src/station.rs": "6a6bbba771c33ff72a79d686c88ca6da2d0f3518d6f913e42b6fa91842cfd06c",
-          "crates/protocols/ieee80211/mac/src/station/association.rs": "8c572b6b1ee7f1a42a9a807cfac095e61d21a7616ff0207b13e873f535b7fd06",
+          "crates/protocols/ieee80211/mac/src/station.rs": "4815c369c6904daee1d77e4833cef735b51bf4e754ecdb353b0e49168eb3af85",
+          "crates/protocols/ieee80211/mac/src/station/association.rs": "2dd0ee9892fc637aad36fcaa935dd186b65cfd44b81646ddcadbe68c22b3929e",
           "crates/protocols/ieee80211/mac/src/station/data.rs": "016a73bd9319021096425f76235c38947fcba6f66ca94a5bf4fc37421a60741b",
           "crates/protocols/ieee80211/mac/src/station/data/amsdu.rs": "8d13ff4e54a23772a90c4a8bf28a393019de4b91d3de08a49583c9b5a0f81e7c",
-          "crates/protocols/ieee80211/mac/src/station/management.rs": "e5e7a175aeb8b9985ff26583f014caf9588c37b96622e5a094a435b0a0a8ec64",
-          "crates/protocols/ieee80211/mac/src/station/security.rs": "8d4f56be3a3c6987049ebad7ddc2d735be3b265e49c04593b481672440379d85",
+          "crates/protocols/ieee80211/mac/src/station/management.rs": "c2bd2d3731c8a4b1ded79747bb849878cff982ef8878f7bb9c8c8031e6a82a2d",
+          "crates/protocols/ieee80211/mac/src/station/security.rs": "562d59a855eab6c0b2bb5f88d4ab70470826e0619eca62bd9ddf7abcb2220933",
           "crates/protocols/ieee80211/mac/src/station/sequence.rs": "18b2638202e2e116c3b29a17efa26c5fe098967cae3d098439b9f6244a4a56e8",
           "crates/protocols/ieee80211/mac/src/station/sequence/tests.rs": "534ee8ea37cb1e245a65f7e8fb1bc8d5054248f9ef80bff4c95a0b21935c21ab",
-          "crates/protocols/ieee80211/mac/src/station/tests.rs": "76fa91d9f83e8a75728088a07aadb5ad23e36d8f933c71ae91cc981c9424c22f",
+          "crates/protocols/ieee80211/mac/src/station/tests.rs": "08cdf2d3f663341cf8c0a3807fca159769d16818d815b0485de4df48abc32d46",
           "crates/protocols/ieee80211/mac/src/station_beacon.rs": "8f12dbf8db2368f37a5fa58f3cb64ead5bdd1f3a62840e9f317706a8acef2aad",
           "crates/protocols/ieee80211/mac/src/station_beacon/tests.rs": "06db96b846a1dd87d19bab3c01e9b8052263de73d6cce2f74a2f3bb7c3305d3e",
           "crates/protocols/ieee80211/mac/src/station_power_save.rs": "4e558c6efdcd5ea5efee49aa23c4c47d2c0fdea15b7a1a7ed422befed4496bec",
@@ -267,18 +267,19 @@
           "crates/protocols/ieee80211/mac/src/twt.rs": "1a5a6713acf2444a19403e530eb2f759518028d47c08940fc236b7d75191dc26",
           "crates/protocols/ieee80211/mac/src/vif.rs": "716bc65070cb093611f31ed6cda302f46687eaac6e155de2da8bae2bc2d37226",
           "crates/protocols/ieee80211/mac/src/vif/tests.rs": "96b08fc25297490e2a0a1b8e6a640ae1bee8375004930c3b0386f75fb4df1fab",
-          "hil/host/arbiter/Cargo.toml": "f3cbefbaa06e5866c660e26dde54c8efac49dd6eed6d1dd9e74fbed61df708ed",
+          "hil/host/arbiter/Cargo.toml": "270f64bc5b85553fd0e1e5a233bc8469229104ecaa2e55ce02a913a49bdc6c49",
           "hil/host/arbiter/src/board.rs": "f5648a35e0901798178ebfa7e28749ab492752ae7b240fe62756179d2f4145e3",
-          "hil/host/arbiter/src/budget.rs": "61c02d2eb23f181514f19a15e826498dfb78b6b81cef2b79234e32d3397c2a7c",
-          "hil/host/arbiter/src/devices.rs": "5d3f244e112ee02dc386c25215bebe3f6bc5103d7f845499fab71c1d930f14a1",
-          "hil/host/arbiter/src/grant.rs": "98e3f8ac8dc8f81b2ed286f6570020f7201b70ce5d92b7e9a88bd8cdfb60fa82",
-          "hil/host/arbiter/src/grant/tests.rs": "9fe446c90c029605dee575a5e6b3610aff642c88a9ab824b3aea400c245d996c",
+          "hil/host/arbiter/src/budget.rs": "7cb5be0cf8f4446b877e43ff4e04c8c888d1dba9bcec335d5767f8b05feff118",
+          "hil/host/arbiter/src/devices.rs": "4a08f7656d4333d2e29c80c3e514c113615fed903ede5b976602e3d39229763d",
+          "hil/host/arbiter/src/grant.rs": "d50dba389a2e9215e0b28663103a3f4cb3577c3a8ed4a2de1d00963c78534bd0",
+          "hil/host/arbiter/src/grant/tests.rs": "51b259b49c93125ca992db30fc016ddff90647b14c454ba57e7f52c0e1bbb83e",
           "hil/host/arbiter/src/history.rs": "bcbe1ba1ae8f973cbdaa6c77b3d8db901d04b59c5640df094c631000c24ccbf9",
-          "hil/host/arbiter/src/lib.rs": "115af1358e5189941ed9113d319d8c5489c55f918bc1e77f3e26fe8639fb0750",
+          "hil/host/arbiter/src/lib.rs": "ec7126aae97ed201a6d84c7987fb5ab7e21bc9ea34296df96bd002f36874e4a0",
           "hil/host/arbiter/src/notify.rs": "5d1b3a62f4ee1b2fddfefec11787a938f975f16367013d4e55234c9da45e2bdb",
-          "hil/host/arbiter/src/process.rs": "cf8beec820649dde6ab7c78a5bbd6117d432ec5a96e5089fb76022c87805e97f",
-          "hil/host/arbiter/src/queue.rs": "4e07585e99225fe416c38f4d788c63c843a26d76d2814ff5d119ec95c942e01b",
-          "hil/host/arbiter/src/state.rs": "490287000590f800176f7089b642a964820c3eb4cd14bc21b7e7fe292fcf520c",
+          "hil/host/arbiter/src/process.rs": "865b342d430bf4c60c8c4f37e469e4eb7d5f47ce505c5db13ae512288e61a721",
+          "hil/host/arbiter/src/queue.rs": "99c0b38761ba1ac50f511f684098ca9fe933845908a1ff2114754f952f1c9a09",
+          "hil/host/arbiter/src/spectrum.rs": "77738efae3a72b1f8ad84f83d3f7f4174321d7869bf82bff225072c95a27e7f5",
+          "hil/host/arbiter/src/state.rs": "a0f19a3659e90817a87935b0b023f22521ed0e3ca2f3007db84854136ad59173",
           "hil/host/arbiter/src/status.rs": "6698ab3553174e5d62e0ff3f4ab9720bbcc51a6f303c0b236c76bf2b1025a264",
           "hil/host/arbiter/src/store.rs": "4263ef0d3b6d9618528ac6ca8a55a666ce5568a04ef975f002dbb05bf89cc033",
           "hil/host/fixture-install/Cargo.toml": "055bc531743648caef002d36ac2b1ca94e69e58adc060666b6464d7c5431d434",
@@ -362,8 +363,8 @@
           "hil/host/runner-core/src/evidence/measurements/protocol.rs": "e9e33d61e636111968a36df1746194138bae41e4a5d5a951a3f02c266d4e378c",
           "hil/host/runner-core/src/evidence/measurements/tests.rs": "813ebbf654c2103222ecc9718116a6d5759ef7ad85114074211cdd8b48c5ecd6",
           "hil/host/runner-core/src/evidence/mod.rs": "d1ca1eb6d9f1559ee8c56fb4188e501f7ac0208a02b88befdfd9ec5af74579c4",
-          "hil/host/runner-core/src/evidence/reporting/history.rs": "be96158b816ea57da46a34e94a4f893a4fc2cb73b48402acf09770cbd2244c7e",
-          "hil/host/runner-core/src/evidence/reporting/history/tests.rs": "e0fe0a47fd63cbd82463f332499efe28e39bb185980a3d8da555ec184e6968f3",
+          "hil/host/runner-core/src/evidence/reporting/history.rs": "10da40ea6886a118c28ae8acc6163f2e644b7f1405a2a9dc0b998b4369e14c07",
+          "hil/host/runner-core/src/evidence/reporting/history/tests.rs": "fbe395c9571b8523baddeadbf41083950a464da7ba2ffb1f063337437e845133",
           "hil/host/runner-core/src/evidence/reporting/mod.rs": "1093d5dada135b7fc4e75a052ee2d2ec1b9d2c07ca50caa91f99128356602858",
           "hil/host/runner-core/src/evidence/reporting/render.rs": "bf0bc4872026d94b29bc5ca41b59e25927c35429ebebc34e407d5726b1b1e6e1",
           "hil/host/runner-core/src/evidence/run.rs": "e2c11a73c41054df1b85799e9802b0f706af20fa85f4d5cfa69a2352057d1e5b",
@@ -373,7 +374,7 @@
           "hil/host/runner-core/src/evidence/run/lock.rs": "6eb8ea8daadf8cf1d2fabf750c48b4fa99e2f1d1db32f087e974831638545408",
           "hil/host/runner-core/src/evidence/run/model.rs": "cdada6ac71645fe3d82d3a4f095914f41f969b1b3ef6dea2d9fe7443587bbbd7",
           "hil/host/runner-core/src/evidence/run/snapshot.rs": "c93a8bd7d0e65cd11e3de20591c0b0ed4253b49fa0e36985424a59a9f09f9582",
-          "hil/host/runner-core/src/evidence/run/tests.rs": "cc02b61073a08b8953de4a4f4bcb90413b74eba3065b093cc2afe320bdc8fdf1",
+          "hil/host/runner-core/src/evidence/run/tests.rs": "a3ed0185a54f35e393534da00a1ff3026007c42f3f6a55026abacc1784446df5",
           "hil/host/runner-core/src/evidence/run/tests/workflow.rs": "87697184652266c78515bb506a915537d5ce5dd2297af1cb34aafc2114244aa2",
           "hil/host/runner-core/src/evidence/run/validation.rs": "6d7f433c36caadb57866b866d363fe9cf1ffc4de2b2c84500578bdff286ae993",
           "hil/host/runner-core/src/evidence/verify.rs": "9adba02d5efd27735896b818f89ec2f6d6be827438a0ce11a8392e5188afeda1",
@@ -383,8 +384,8 @@
           "hil/host/runner-core/src/fixture/cleanup.rs": "ac1d873ec755752bfac768aa4ef0fff73b8e398a098afc08d4d524f6c7f9c1a0",
           "hil/host/runner-core/src/fixture/cleanup/tests.rs": "edc50ec837e3efb9757b6217a2ecd252930eed886ad5f998aaa460273a3100b9",
           "hil/host/runner-core/src/fixture/software.rs": "18f16e7837686aea80c48e0a81dfe0e732ec8bce56188b9611b29cf90b982f33",
-          "hil/host/runner-core/src/image/class.rs": "5875234468035583e5a00f74b728f9fdb5b9c7cbb145e70e4fe3780d59104a2d",
-          "hil/host/runner-core/src/image/mod.rs": "9bde7d7c307e7d1775a917682b9096e4bfb696d89ba67c27a910ff483fed724f",
+          "hil/host/runner-core/src/image/class.rs": "a39e4e361d836f29f4d1ff57886486c9c3eff2e978723c23ed505c5325c734f6",
+          "hil/host/runner-core/src/image/mod.rs": "27655e963905d0f9cc0e0d20dfa808cdecb19fb073394682174b9e3d82286fa0",
           "hil/host/runner-core/src/image/mono.rs": "67c3789a36c3c430cb10a15537a4510b314d3d84c01a003826f6162293be3635",
           "hil/host/runner-core/src/image/reproducibility.rs": "2cc3cf716350f93769a1a46a3167199e277803ed6fc0fd8dc0e66084b7856e97",
           "hil/host/runner-core/src/image/reproducibility/tests.rs": "1d30e6cc647364a6f0f3149833e558dd22cd1ba9b0c6d95586422fa9f91a5a99",
@@ -394,13 +395,13 @@
           "hil/host/runner-core/src/image/snapshot/tests.rs": "f66fa9dda790378f17d8c66852715b778891895d17cc3fd07691d48e5c6e2aa8",
           "hil/host/runner-core/src/image/source_inputs.rs": "afe0dd4ef84eca5c3513a035492f32e6036fba51cb11b9ad15180c9da62e56a3",
           "hil/host/runner-core/src/image/stack.rs": "06f8df4858f94bafc78099c576c48099c294cf20448ee13d29d6982877200a12",
-          "hil/host/runner-core/src/image/tests.rs": "527b6f0aefeedf16694cffdb668dc49f7bf4c0abbaa9668df376024ede77b9bf",
-          "hil/host/runner-core/src/lab/config.rs": "4f040852d8983153321251b9bdfeabf5d8cd2ce7cdcfe922927a0a86226e8fd0",
-          "hil/host/runner-core/src/lab/config/tests.rs": "e271d1925ca3b97c008f1a21f7aad6fa5b7ae780bd655f0c6d368193b5cbfd3d",
+          "hil/host/runner-core/src/image/tests.rs": "4488113959f9558399b09cfccb08c91cb4153f2dda78fa86a27be443bc03651a",
+          "hil/host/runner-core/src/lab/config.rs": "5ddcacd48ab8bf1d526e39c73715b0ef278fed5970182c5d6d5c4274f71c2aed",
+          "hil/host/runner-core/src/lab/config/tests.rs": "d669a81250bd0629f7b84342304dcd45947321fdba20bd90c547ec08bc2cf5e3",
           "hil/host/runner-core/src/lab/error.rs": "84106e874d7d0d27756d8335832fee9d0850c4a2462ea30a621409d7a342c74d",
           "hil/host/runner-core/src/lab/link.rs": "2add67bb7c544be092e7736bf94c102aeb50cde5427718b3c1d2bbb7cc689913",
-          "hil/host/runner-core/src/lab/lock.rs": "b84520480eeeb0109626cbd764c8eabda1fc5ac72a6528f98a440b0b08d9ccf2",
-          "hil/host/runner-core/src/lab/lock/tests.rs": "b64738bbd3c74ee24fa92c481e8122e7ea4dbd15aca7c8491a936b10306739cb",
+          "hil/host/runner-core/src/lab/lock.rs": "a6f3fa8a755afb73cb2435befa33763352764a400114ccf39575b9a46b296dc3",
+          "hil/host/runner-core/src/lab/lock/tests.rs": "46788f0759b15f82eae493a6902cec80251549a7357e154c852e9f5f06b48f06",
           "hil/host/runner-core/src/lab/mod.rs": "7718a484083714ba2d3287347d65f74f29f0715622f4b4c34d6e74a416d76d4e",
           "hil/host/runner-core/src/lab/provenance.rs": "8ef7993bff966dfa40fcc50d63f09565363a074faa5b18dd36bec02460211297",
           "hil/host/runner-core/src/lab/provenance/tests.rs": "19cca27ddb9a37b6d27861db8ce2ea56ea5b84b02a8fddce2e284b203fbfcece",
@@ -414,14 +415,14 @@
           "hil/host/runner-core/src/scenario/catalog/tests.rs": "423cc27d4b2a51111fae965f694d45ced1eecb2dad2d1811c9513e5830e61962",
           "hil/host/runner-core/src/scenario/identity.rs": "550504820fe314a00865a638cb780e91988d221626f98578bf5b5c3283d9a9c9",
           "hil/host/runner-core/src/scenario/test_family.rs": "10b8feecb4e94c03cd3fe53fd5796f4a2d86f4a3713ce8747148651c1b385472",
-          "hil/host/runner-core/src/session.rs": "5c587be253ea6ac50967aed49fc32699b174cfabf69c72f23f102e5ef4b46750",
+          "hil/host/runner-core/src/session.rs": "5b690da6631374d7efc96a40a063b33111f8428e8da45db5eb030f53ab6153cf",
           "hil/host/runner-core/src/session/airtime.rs": "6f0770a7f948a57ea274377f7e2722c5f094fb2be7c9c373accd7be165c2e463",
           "hil/host/runner-core/src/session/airtime/tests.rs": "478bb4882ccec458b76505318ed8bdbe9064cf81ac8ea0b71bc7427c5c4f94c5",
           "hil/host/runner-core/src/session/capture.rs": "c58116adfdeacedcea53606763eda5158720eec40e92011421dd4807d696e953",
-          "hil/host/runner-core/src/session/capture/test_support.rs": "ffb362143165a343852c60577e99deb0bb815df66984e57e302485a5aa8984c8",
+          "hil/host/runner-core/src/session/capture/test_support.rs": "6fb15b9cf51a029427bed3cea870b3ea2cef71dde5b8f2da57a465a2ba68cfc8",
           "hil/host/runner-core/src/session/capture/tests.rs": "ee10d1f439155975221ba2fc0620cd7e4eb83883f43fc68c76c7968bda3e6a40",
           "hil/host/runner-core/src/session/error.rs": "a28a76489e5002cfd3b61fcfdf9781a76768799f22c3003a48ce7eda29b4c5d6",
-          "hil/host/runner-core/src/session/protocol.rs": "57f45be47ae4c36400ea631d63d73e53aaa0e5f85d43531832e616940a23a512",
+          "hil/host/runner-core/src/session/protocol.rs": "8eabcd6e5d0f84feb8ba25f8ca79080f229a46d204770d0a0baa94353f63d169",
           "hil/host/runner-core/src/session/readiness.rs": "f4f3184678aa3cc08fa53dd6b464f88cb7bbd537f446cfc322ba9d7fa53394b1",
           "hil/host/runner-core/src/session/reboot.rs": "391e81eb657e42b67b09aa24ecd36361839c808d7de02751cb293c5f603628fa",
           "hil/host/runner-core/src/session/reset.rs": "b0298cf9fbbd46d9bcc7fc039fb9e4ecb61c43a5798fae604555d1ea5597ecae",
@@ -441,7 +442,7 @@
           "hil/host/runner-core/src/workload/phy/mod.rs": "c857707b09b7a299a54fbc26225b65506035d1f3f75bb7b57bec803f0bbd52e4",
           "hil/host/runner-ieee80211/Cargo.toml": "b4cb1440b899f2463ff4ec6973c1c830d332c8a06e98ba16df4f4754c836c63c",
           "hil/host/runner-ieee80211/src/evidence.rs": "c2b5c9c76929870a8a258c5bad977456b7770bd68c75ed0667d2a1b7f89adadd",
-          "hil/host/runner-ieee80211/src/evidence/air.rs": "4b2cfdc4a9333913472e19f4fd1cc88e4e9bee70ca602426b01f2ea749009b25",
+          "hil/host/runner-ieee80211/src/evidence/air.rs": "291f9e103b2d1fb275d57d4f553ef13fffe43d2516b7f43c1fb65d6ee42664fb",
           "hil/host/runner-ieee80211/src/evidence/air/tests.rs": "b3373018712586ee873a73f5f4cd0c579df7422fa6e40d96a94176062100f0e9",
           "hil/host/runner-ieee80211/src/evidence/protection.rs": "a5122d9539cad2253ea97ca182a93a79813f86a515180f2a10606ed4d62c6bf2",
           "hil/host/runner-ieee80211/src/evidence/protection/tests.rs": "42735b89b7905b3b2f222baa9c7f530e5d9fac4a844da84cbcaaac488c1ff6c7",
@@ -470,9 +471,9 @@
           "hil/host/runner-ieee80211/src/fixture/local/wpa_control/tests.rs": "b0dfbe146537a3738b67a29be4cc8ab7d483ac11edc276da66b68581100285b1",
           "hil/host/runner-ieee80211/src/fixture/openwrt.rs": "47135cff597b4fe77f4620ce8c64cea6a1cbd189686a9bbdf5f7d918eeb33c26",
           "hil/host/runner-ieee80211/src/fixture/openwrt/air_monitor.rs": "e6bc255b7e4ca92fbed88b340501e7c1b0d4bf525d7e141df42aa0d408a379ec",
-          "hil/host/runner-ieee80211/src/fixture/openwrt/ap.rs": "5de3a42c4fa19a5475900ab33e875b4ff5a1712634ccd048ac2ba03758a24059",
-          "hil/host/runner-ieee80211/src/fixture/openwrt/ap/remote.uc": "06e3d119dfcd5fe48ccde1d29ee38123f7c81b666940df00f6624505a19585f2",
-          "hil/host/runner-ieee80211/src/fixture/openwrt/ap/tests.rs": "1ee8eb444e4d419844200c99e32997c3e1558d91cae5a332e74eaadf1e28208b",
+          "hil/host/runner-ieee80211/src/fixture/openwrt/ap.rs": "7d1a388046ddb858fba6765cf768c85bb441f7bcb2d123ef9018fee68444896d",
+          "hil/host/runner-ieee80211/src/fixture/openwrt/ap/remote.uc": "b38249bf7145abd95a8e10782c26ae77b0ecbf340c630f2ded92359279ed63bd",
+          "hil/host/runner-ieee80211/src/fixture/openwrt/ap/tests.rs": "252d376d0b902dfdd3f80e657c25b45d47d46489515418b31efbb044881fd253",
           "hil/host/runner-ieee80211/src/fixture/openwrt/capture.rs": "056eba25eefeed7a16d70e8dd37f983117a1d9fcb629bb62c3fc6d3dfe95e195",
           "hil/host/runner-ieee80211/src/fixture/openwrt/capture/tests.rs": "d4665c41c1fc9cf9454c7c789df65bc491dc5c9efc588de94460536cbedcb7d9",
           "hil/host/runner-ieee80211/src/fixture/openwrt/client.rs": "10a838bc4806e8d8e7180293d65f96033a14f883f7bd7e9d2df3b2892af4f494",
@@ -559,22 +560,29 @@
           "hil/host/runner-ieee80211/src/workload/traffic/tx_traffic/terminal.rs": "de25b83dab9060f16119244f8e8fa8ee957f6c683516da695f8960b0ca2d8490",
           "hil/host/runner-ieee80211/src/workload/traffic/tx_traffic/tests.rs": "dd91ca4775b0f854c661c0ac063e2d266f33b1f2143aaa29602659d1bf72d4a0",
           "hil/host/runner-ieee802154/Cargo.toml": "c879ed68ced51f0aeacd8f9a52d33fb1e43b7df5fe708fb10c7b6cf086be968c",
-          "hil/host/runner-ieee802154/src/lib.rs": "08d595060c9bfae216692de77aa87647827b4ef3b987c505dce357308d612c3c",
-          "hil/host/runner-ieee802154/src/peer.rs": "cd354e456d8a750a325aa65071e830c02231039aeee6de3eb2ef6d75ce5f7df5",
-          "hil/host/runner-ieee802154/src/peer/tests.rs": "ff63f6c39e9d883523ed26deaa06cb3fe23087c8b7402b0bab3cb1056a1da36f",
-          "hil/host/runner-ieee802154/src/scenario.rs": "057b8b699bff57275e2aa5efa06c710e7fdf52794121e4a4b3661bfc94e70f06",
+          "hil/host/runner-ieee802154/src/lib.rs": "5cbdad838a7548f54412e2a55c4bf753b27419fdbb3c9968ee184af3d337cb86",
+          "hil/host/runner-ieee802154/src/peer.rs": "91e1c829b164d948679f10c3bd305dcc06237a567cd5b3e248a1c1a4c25ff71a",
+          "hil/host/runner-ieee802154/src/peer/tests.rs": "2a55f4250478203744afcc35355f70d2467dad07b25183f7a3a5f1f4cabe9460",
+          "hil/host/runner-ieee802154/src/scenario.rs": "c851293fb7554cba723aeed3b91f3ce98a3201436fd5b8cea9972ce3153aa5a2",
+          "hil/host/runner-ieee802154/src/thread_peer.rs": "87e856086f3bbcd8d52de2bf3d5e212b594f5737de9e120729125e87de8abbe1",
+          "hil/host/runner-ieee802154/src/thread_peer/tests.rs": "86243363990343ea1e00be4d3907312f06aaecacfe0b159b5ef9bed00e1627da",
           "hil/host/runner-ieee802154/src/workload.rs": "e6d60b667623a6da6789b23a13e0097bf90b5f0e8f823a5ad0470c3193ca05d8",
           "hil/host/runner-ieee802154/src/workload/ieee802154/air_check.rs": "47b4efbc097f72870a00901cf0f6040d029cffb55778ccfb38eb4fac55d965c8",
           "hil/host/runner-ieee802154/src/workload/ieee802154/air_check/tests.rs": "390b661776b953a30dfad5aec1380a434f02ed1cfea8f0f5ba92549af61e5b42",
-          "hil/host/runner-ieee802154/src/workload/ieee802154/background_maintenance.rs": "b3785a80deefae1994e35098c5d1b257fd10a2abfbc647a5507e24a860b70aa3",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/background_maintenance.rs": "ec3162fee713c53448de049aefca6782da816bb235f259dc405df5121523c11d",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/channel_energy.rs": "9435aa04539d03b647847b5e61bb81158eb08250e3971418cca08343e0114a3d",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/channel_energy/tests.rs": "55c9e354a65276c80b707fbd74494200aa147c393ead2a430798686c267b20e6",
           "hil/host/runner-ieee802154/src/workload/ieee802154/ed_event.rs": "f8489cd73ef44aad1be9b297cf598f415e53d1be7aaaf7c1c10c1367f637603b",
           "hil/host/runner-ieee802154/src/workload/ieee802154/ed_event/tests.rs": "2ff9ce726c55f4b1cdd058e5f9b7653b0f889d5c7370f8fc43bc683ba572a91d",
           "hil/host/runner-ieee802154/src/workload/ieee802154/event_status.rs": "e20ef6fb5409cf04fdbee51dcc1b97c56e0bbbe01318a930c132af2307cea3b0",
           "hil/host/runner-ieee802154/src/workload/ieee802154/event_status/tests.rs": "c070119edc006667843032ca202fac93db8173a54557ba3f19d70fc32723c71a",
-          "hil/host/runner-ieee802154/src/workload/ieee802154/mod.rs": "1b38231c60eb5e1706c5537532f057f09e67fb185a13d1f5a9a4b2f424d553e3",
-          "hil/host/runner-ieee802154/src/workload/ieee802154/peer_exchange.rs": "ffea1ed7b44258b510874bdcfcdca47fe3e38dba6d8e7403ae5c57dd61330108",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/mod.rs": "6e2f7309b4e606eaa8cd7b12f09335b439b9381876f952aa331c56e62825c3cf",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/peer_exchange.rs": "68ea9930bf111c749dd2cad37af1d6f9e003a97e02ea3eab782282ff138bf224",
           "hil/host/runner-ieee802154/src/workload/ieee802154/peer_exchange/tests.rs": "132fccd3d26c9176d574f819f43d60ba2b89dde79fcb9475cfa49193fa5d5766",
-          "hil/host/runner-ieee802154/src/workload/ieee802154/rf_sleep.rs": "2adeeb44fe28219a2226ec1582826ca46e0c3a1c705147a02dd74d1292f84c49",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/route_probe.rs": "c1512b221a1c375f48edc6ed30760dc38e1ac404d97464af6c00ab34f371becc",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/route_probe/tests.rs": "d05ecb8bbfedfac57bccbf3afc258fba1c2130d5eab1108ab868956fee3d16af",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/thread_exchange.rs": "c92441ca809e4006357b502d6b9266917fc42fcefe74fce96c3269d7e9e77b88",
+          "hil/host/runner-ieee802154/src/workload/ieee802154/thread_exchange/tests.rs": "6a0022eb59ddaccca7a56d45791b9f4744c6e18757b5c00fb524bd7ee56838e9",
           "hil/host/runner-system/Cargo.toml": "0472485b51078d01a3a6015b7a0baeb67df9b4bdbbbc4111903798fba91e164d",
           "hil/host/runner-system/src/lib.rs": "0aa3f0801e57b29ceb4dfa27e6efe61f8f600fa32091e019c7d7562f68e89d3d",
           "hil/host/runner-system/src/scenario.rs": "c480f9ac53c4b29a263dbde1bfa5ba7e5a2030aa1f62f568d08993712373fa10",
@@ -587,28 +595,28 @@
           "hil/host/runner-system/src/workload/system/watchdog.rs": "07b55e1766285408b495766786da51d5e607825b8ec44b4ea1050bbe13573013",
           "hil/host/runner/Cargo.toml": "6898fac12044c4f804f33916667547fb4b6e1c7d6453e9409fb12b8705c46989",
           "hil/host/runner/build.rs": "7a4ec88c0a2035503781e4a99e481d28721f92564c9dc6bf16716539994a52a6",
-          "hil/host/runner/src/cli.rs": "c3cf0848e7b461c8b9b2c689410dc1917cb91e45cd74328965109d7dca65dab4",
+          "hil/host/runner/src/cli.rs": "0bed0c3b1f0455dcbd3b76995a281d09be6921e8949cd0f8fdb743f42b9fa26a",
           "hil/host/runner/src/cli/tests.rs": "a1b1847329ed1fb5107fe9bc5f05dcdb118e2e7d6509de60ee3fc70cdbbea789",
           "hil/host/runner/src/coexistence.rs": "232e03aab39494f440b02d00d75bbcc63dc6c9a560edb89bcfa5a67e5bcbbb7e",
           "hil/host/runner/src/coexistence/tests.rs": "9bdaff7490486c8e0181fa07725f62009be2152d4af76f3862af83a35b892f05",
-          "hil/host/runner/src/command.rs": "85a94397abbd5d327a475eefbcb61b1d7a6d55478fef1ec9b2d2518297c56147",
+          "hil/host/runner/src/command.rs": "5f7deff66aca4473d29015bf1373a9435d6b88a46d4e9e1e8f3d4ad43b4fd06d",
           "hil/host/runner/src/execution.rs": "edc4b3a7411831491bfbd57104218db12eeb9df8115732879f6f3db5bc7f280b",
           "hil/host/runner/src/execution/doctor.rs": "0b2eb10cc3bc943fc89639e7bddb7bc812cc558d8ad614737f4d2e5b06511d6b",
           "hil/host/runner/src/execution/doctor/tests.rs": "b2d0adc0986bd78043fdc47bb91fac4a04b7f038e25ae02040df354d705ab4ae",
           "hil/host/runner/src/execution/firmware.rs": "8232f60821bebc4c6da6e3ef70780bd4426c1775391501be4d7b929db1f51746",
           "hil/host/runner/src/execution/firmware/tests.rs": "fdfcba7d54487d1c2ae888eec155cb3193403810652b6eeb3de252e2342ee4a9",
           "hil/host/runner/src/execution/fixture_check.rs": "fc0aba4ebd0af83cbe72784eb1fc2d4a38523f62a8bd216969dabed371d73f16",
-          "hil/host/runner/src/execution/orchestration.rs": "2d70f5090545b4d5724c754157759b9b3ae80a4bed0c4323bddee703552cca0c",
-          "hil/host/runner/src/execution/orchestration/tests.rs": "9a14172b85ad30ca3adf3ec123d0ec9778d75db1403cd48cbaf4254a338e8b2d",
+          "hil/host/runner/src/execution/orchestration.rs": "49f0b8a80d5711725af274cdf2b04356bf290dcb038bb198871a0858b8cd5c06",
+          "hil/host/runner/src/execution/orchestration/tests.rs": "ee351c6edc0bf6afb5e2feb2a25616da7eb920624d448faa748a8c0e1417cffd",
           "hil/host/runner/src/execution/preflight.rs": "7998d1aa14dc0c688bd8777640f697022932c7d19f99a272e488e2b00ad57f47",
           "hil/host/runner/src/execution/preflight/tests.rs": "d8ec4e3795e074cc32ddfb85cec6b0ccd36d6727bb03b398400cbf4c177fa2ee",
           "hil/host/runner/src/execution/tests.rs": "60f93f98c545b7cae9d5087a91844059a064d231c5e36777c39553b672f5d47f",
           "hil/host/runner/src/fixture/hostapd.rs": "36b3dff8b46ed36315083b9a9eb7f24f11d993202810c37770664248cefaf2b7",
           "hil/host/runner/src/fixture/install.rs": "5d3a224f923a240eed6d53a1081ba9bd4e92a84bc094bcbc8bdb31a75c2faf9d",
           "hil/host/runner/src/fixture/mod.rs": "3034f946767b8830cca2407f658b678b9dc760aced7e708776263a86a9f52f96",
-          "hil/host/runner/src/fixture/preflight.rs": "b422268aed261df8633a37a1e42ac0bdcaad750a14662ff24ffe201c42477158",
+          "hil/host/runner/src/fixture/preflight.rs": "6ad4c62a36aa03a9d7f819687ba5a5abe272a76f0f9a71d0b7103bd4e519d7db",
           "hil/host/runner/src/main.rs": "fe87a0c5c2e84cf1725b096ce1e80c32d3c929603e08c3a0acfe111ed07cfd7c",
-          "hil/host/runner/src/scenario.rs": "5a73848a06298fec4c2ddf93ccb709cf64b683801204a7f36bfe9a8b20412d4f",
+          "hil/host/runner/src/scenario.rs": "6edae2a1a519f48cff64b598a892700952aa97142ca2bc6d1516dee6cf9028aa",
           "hil/host/runner/src/scenario/tests.rs": "2e0e02297d640e1869fe096b64889a50f09eb959ca03271a56bf3119b524a7c4",
           "hil/host/runner/src/tests.rs": "2e1ae45239d9e1545a53aff3d3f83a6708d986f186c6bd2f2c945bc88abd91da",
           "hil/protocol/Cargo.toml": "324804d62e39b6870f0d090806e35506d6f62f7edba4407b49e036f22a8c9acb",
@@ -616,20 +624,20 @@
           "hil/protocol/src/bluetooth_gatt.rs": "116c8e4ee90774aac1acdb6ac65aa7bf4687680a91761c31850f88ca7423f699",
           "hil/protocol/src/bluetooth_secure_gatt.rs": "34ae3ca1b69f2acd987018b234dcbb4feec50e6114b21593fc9f62ffe3a9c6e9",
           "hil/protocol/src/framing.rs": "44857af3f873e9912f4b2eeacd17046cc6a8c065e406772141ae2f46c78a4bd0",
-          "hil/protocol/src/framing/tests.rs": "b89e0820ecb4f50bb45658071e048db9db98168c7d5bd53ac9c85fe447f9362b",
+          "hil/protocol/src/framing/tests.rs": "f89d22341a72b4a1623034ea576a2c2cf12346dee56941b87ac37bad47752e3e",
           "hil/protocol/src/framing/tests/airtime.rs": "6f002d57378304b9e3ebe8b3f182f30c571082647bfdad60a678b340bfea0518",
           "hil/protocol/src/framing/tests/secure_gatt.rs": "1a5055b32563b0475be21be0b76c4ecd0083af9fbec129811c3e0faeeb07e92a",
           "hil/protocol/src/io.rs": "8f9cccbb716d183b3641e44d867d0f059b7db89de8279b67acdec2b70f18e3db",
-          "hil/protocol/src/lib.rs": "518ee8fa0e43af617833e8ea4c6947ecd16607e1e6eafabb2736b55b8ff694eb",
+          "hil/protocol/src/lib.rs": "d3dcef4c8108dc405902084835361ba11a140c512f59032af86c685d262e7c87",
           "hil/protocol/src/memory_benchmark.rs": "ea461950020085ad94f8949773e12a5764ceb7b9fe052d7eaba00fcfe14a18b8",
-          "hil/protocol/src/message.rs": "2f5e2501a7ebd6b6ef85ef602abf8db7ad7682045c7aa4430984f8e6f23551f5",
+          "hil/protocol/src/message.rs": "e4521ec832b354f2e02b935cce0343407ee4399a045ba5674973f6ee7846469e",
           "hil/protocol/src/message/artifact.rs": "8ed8b30f2774ff7788fa2faba6bc0ae72f205bc51faa3307d2e55f478c352703",
-          "hil/protocol/src/message/ieee802154.rs": "42a4ce7b787b081aefa8ac13e349b0d7d5320a99f0d295725caf704653604b99",
+          "hil/protocol/src/message/ieee802154.rs": "7142454d7015adc78c18539b21827e098a234c6c73a9ba806e50a69becc5c083",
           "hil/protocol/src/message/session.rs": "fabdfa24501e716d82c5ad636843261ba196e85848fa1bf61d7c3735d22e6a68",
           "hil/protocol/src/message/tests.rs": "6c19d363d28ddc8365f1c8213e34c75c250d2ee1330fac6b65bcb0a092ba9c2d",
           "hil/protocol/src/message/wifi.rs": "e629bb0c98f28f6f342c185ef56b7d68cdb1db2c438d6a86c63e1df2ecac987f",
           "hil/protocol/src/phy_fault.rs": "85a142b1b9857d95937f9dac1dd929002de6a497e2a1b027a213e2ccf2f46848",
-          "hil/protocol/src/phy_register_image.rs": "3494eaf681ed55816df1b5da08183369d14f9aa2351810d4b2cd3e5547a10ac8",
+          "hil/protocol/src/phy_register_image.rs": "10128bd6d56496f70933c959f1487fbec98cc8b936e1afc2486b1e3d765a5203",
           "hil/protocol/src/stream_pattern.rs": "c57dfd9acc818a8edc98cf2db76cc0aa42aff3f2b17fc7b1612efdb961ee0eba",
           "hil/protocol/src/stream_pattern/tests.rs": "492aac5af03e79e4f8b85f2ae0825343e25bacc66cccd55f3afae828193950e9",
           "hil/protocol/src/system.rs": "d47d46dbd3215d3b78503bfb6fc674588095a1548447845af0806c27b86318e5",
@@ -639,7 +647,7 @@
           "hil/protocol/src/wifi_rx.rs": "5851420da8e7bd2d248e3132ae92a88457964765f675eb222b343f2fc401fcf7",
           "hil/protocol/src/wifi_tx.rs": "33b47d97a6b3562c4c9557dab1a987b1940ede2823a57c0787031ab1ec6b9380",
           "hil/schema/Cargo.toml": "abb04efd68a3edde422356cbcd5627c0884f221375b788cfa43aac14f231225c",
-          "hil/schema/observer-inputs.json": "6032f45fb90948e441ad08f96fc77ac59d5ca55ae42aa8a65eb26e5c960d46d0",
+          "hil/schema/observer-inputs.json": "ca796647d180610b5462ee503bbe22f5319a562294d20f347afa3c788c84d978",
           "hil/schema/scenario-v5-defaults.json": "da530b25dd705279a753e122c4fab22b6c53c3785b8e018753c981fb11503963",
           "hil/schema/src/artifacts.rs": "2421228830e7c32f7ab7a7c4877800f6d9174b1ab785d3835849e8247d97b4b0",
           "hil/schema/src/cargo_inputs.rs": "6caada34e5e95f6367a9bfc6a0b4637fcc5d7679ffb06d2601f8323447424f67",
@@ -653,7 +661,7 @@
           "platform/esp32s31/layout/src/lib.rs": "2e151bcd21984d258cdca2db4d817e811391f4c9965b6f617f681b7afec5c519",
           "platform/esp32s31/layout/src/memory.rs": "5c8966533b10bcbe22d59eace8782831b034befa6414bb0ef8e71b9fce97c02c",
           "platform/esp32s31/layout/src/stage_two.rs": "454c222ff3f0e37c5933512cfbeeb44d939f41bc7c8100218353856ccc6c48dd",
-          "rust-toolchain.toml": "642dc3900d1ffe2d14a8cac53c3e07c938b1917e72f8c15572bc38276e2bccf3",
+          "rust-toolchain.toml": "4f2a18bc72b318bd18159aad0df21687e552d04c2cf352173b282ff810a34bd4",
           "tools/firmware/Cargo.toml": "27ce72ee99ad230eaf65642ebee585f4e387612e9b8be8d721cf4b9733fd9e19",
           "tools/firmware/src/device.rs": "8961a63ea870caefe4fb32fc5d9adb21a3252a32dc3996b6d9fa61ff5ade76c0",
           "tools/firmware/src/device/tests.rs": "22a7557eba88cfbac7ecc5e08a84d41f55fe47259d2ad125617f934a7d419be7",
@@ -772,6 +780,7 @@
                   "verification/harness/codegen",
                   "verification/harness/macros",
                   "tools/process",
+                  "tools/chip-profile",
                   "tools/firmware",
                   "tools/symbol-lineage",
                   "verification/esp32s31/hardware/calibration",
@@ -821,7 +830,7 @@
                   "crates/hardware/esp32s31/driver/coex",
                   "crates/hardware/esp32s31/driver/ieee80211",
                   "crates/hardware/esp32s31/driver/ieee80211/dma",
-                  "crates/hardware/esp32s31/driver/ieee802154",
+                  "crates/hardware/ieee802154/engine",
                   "crates/hardware/esp32s31/driver/ieee80211/mac",
                   "crates/roles/esp32s31/ieee80211/ap",
                   "crates/roles/esp32s31/ieee80211/sta",
@@ -830,6 +839,9 @@
                   "crates/hardware/esp32s31/phy",
                   "crates/hardware/esp32s31/pac/raw",
                   "crates/hardware/esp32s31/pac",
+                  "crates/hardware/esp32c5/pac/raw",
+                  "crates/hardware/esp32c5/pac",
+                  "crates/hardware/esp32c5/hal",
                   "crates/adapters/esp-hal/esp32s31/soc",
                   "hil/host/arbiter",
                   "hil/host/fixture",
@@ -897,6 +909,7 @@
                 },
                 "rustix": {
                   "features": [
+                    "param",
                     "process"
                   ],
                   "version": "1.1.4"
@@ -5657,6 +5670,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -5674,6 +5688,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -5722,6 +5737,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -5746,6 +5762,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -8000,6 +8017,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -8017,6 +8035,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -8065,6 +8084,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -8089,6 +8109,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13305,6 +13326,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13322,6 +13344,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13370,6 +13393,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13394,6 +13418,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13517,6 +13542,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13534,6 +13560,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13582,6 +13609,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -13606,6 +13634,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -19337,6 +19366,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -19354,6 +19384,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -19402,6 +19433,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -19426,6 +19458,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -21680,6 +21713,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -21697,6 +21731,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -21745,6 +21780,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -21769,6 +21805,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -26672,6 +26709,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -26689,6 +26727,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -26737,6 +26776,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -26761,6 +26801,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -43650,6 +43691,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -43667,6 +43709,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -43715,6 +43758,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -43739,6 +43783,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -51652,6 +51697,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -51669,6 +51715,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -51717,6 +51764,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -51741,6 +51789,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -53995,6 +54044,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -54012,6 +54062,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -54060,6 +54111,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -54084,6 +54136,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -58987,6 +59040,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -59004,6 +59058,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -59052,6 +59107,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -59076,6 +59132,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -62742,6 +62799,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -62759,6 +62817,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -62807,6 +62866,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -62831,6 +62891,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -65085,6 +65146,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -65102,6 +65164,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -65150,6 +65213,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -65174,6 +65238,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -75384,6 +75449,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -75401,6 +75467,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -75449,6 +75516,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -75473,6 +75541,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -79361,6 +79430,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -79378,6 +79448,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -79426,6 +79497,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -79450,6 +79522,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -80895,6 +80968,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -80912,6 +80986,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -80960,6 +81035,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -80984,6 +81060,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -82685,6 +82762,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -82702,6 +82780,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -82750,6 +82829,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -82774,6 +82854,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84521,6 +84602,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84538,6 +84620,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84586,6 +84669,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84610,6 +84694,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84733,6 +84818,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84750,6 +84836,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84798,6 +84885,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -84822,6 +84910,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86438,6 +86527,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86455,6 +86545,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86503,6 +86594,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86527,6 +86619,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86650,6 +86743,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86667,6 +86761,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86715,6 +86810,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -86739,6 +86835,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -87948,6 +88045,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -87965,6 +88063,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88013,6 +88112,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88037,6 +88137,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88160,6 +88261,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88177,6 +88279,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88225,6 +88328,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88249,6 +88353,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88557,6 +88662,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88574,6 +88680,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88622,6 +88729,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -88646,6 +88754,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -89529,6 +89638,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -89546,6 +89656,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -89594,6 +89705,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -89618,6 +89730,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -94558,6 +94671,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -94575,6 +94689,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -94623,6 +94738,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -94647,6 +94763,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -149169,6 +149286,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -149186,6 +149304,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -149234,6 +149353,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -149258,6 +149378,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -157171,6 +157292,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -157188,6 +157310,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -157236,6 +157359,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -157260,6 +157384,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -159514,6 +159639,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -159531,6 +159657,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -159579,6 +159706,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -159603,6 +159731,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -164506,6 +164635,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -164523,6 +164653,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -164571,6 +164702,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -164595,6 +164727,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -168261,6 +168394,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -168278,6 +168412,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -168326,6 +168461,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -168350,6 +168486,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -170604,6 +170741,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -170621,6 +170759,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -170669,6 +170808,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -170693,6 +170833,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -180903,6 +181044,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -180920,6 +181062,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -180968,6 +181111,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -180992,6 +181136,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -184880,6 +185025,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -184897,6 +185043,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -184945,6 +185092,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -184969,6 +185117,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -191257,6 +191406,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -191274,6 +191424,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -191322,6 +191473,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -191346,6 +191498,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -193600,6 +193753,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -193617,6 +193771,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -193665,6 +193820,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -193689,6 +193845,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -198592,6 +198749,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -198609,6 +198767,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -198657,6 +198816,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -198681,6 +198841,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -215570,6 +215731,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -215587,6 +215749,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -215635,6 +215798,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -215659,6 +215823,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -223572,6 +223737,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -223589,6 +223755,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -223637,6 +223804,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -223661,6 +223829,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -225915,6 +226084,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -225932,6 +226102,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -225980,6 +226151,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -226004,6 +226176,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -230907,6 +231080,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -230924,6 +231098,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -230972,6 +231147,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -230996,6 +231172,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -234662,6 +234839,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -234679,6 +234857,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -234727,6 +234906,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -234751,6 +234931,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -237005,6 +237186,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -237022,6 +237204,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -237070,6 +237253,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -237094,6 +237278,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -247304,6 +247489,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -247321,6 +247507,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -247369,6 +247556,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -247393,6 +247581,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -251281,6 +251470,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -251298,6 +251488,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -251346,6 +251537,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -251370,6 +251562,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -252815,6 +253008,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -252832,6 +253026,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -252880,6 +253075,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -252904,6 +253100,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -254605,6 +254802,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -254622,6 +254820,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -254670,6 +254869,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -254694,6 +254894,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -270440,6 +270641,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -270457,6 +270659,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -270505,6 +270708,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -270529,6 +270733,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -278442,6 +278647,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -278459,6 +278665,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -278507,6 +278714,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -278531,6 +278739,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -280785,6 +280994,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -280802,6 +281012,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -280850,6 +281061,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -280874,6 +281086,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -285777,6 +285990,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -285794,6 +286008,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -285842,6 +286057,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -285866,6 +286082,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -289532,6 +289749,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -289549,6 +289767,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -289597,6 +289816,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -289621,6 +289841,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -291875,6 +292096,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -291892,6 +292114,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -291940,6 +292163,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -291964,6 +292188,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -302174,6 +302399,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -302191,6 +302417,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -302239,6 +302466,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -302263,6 +302491,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -306151,6 +306380,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -306168,6 +306398,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -306216,6 +306447,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -306240,6 +306472,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -325060,6 +325293,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -325077,6 +325311,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -325125,6 +325360,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -325149,6 +325385,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -333062,6 +333299,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -333079,6 +333317,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -333127,6 +333366,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -333151,6 +333391,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -335405,6 +335646,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -335422,6 +335664,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -335470,6 +335713,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -335494,6 +335738,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -340397,6 +340642,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -340414,6 +340660,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -340462,6 +340709,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -340486,6 +340734,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -344152,6 +344401,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -344169,6 +344419,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -344217,6 +344468,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -344241,6 +344493,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -346495,6 +346748,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -346512,6 +346766,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -346560,6 +346815,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -346584,6 +346840,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -356794,6 +357051,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -356811,6 +357069,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -356859,6 +357118,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -356883,6 +357143,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -360771,6 +361032,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -360788,6 +361050,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -360836,6 +361099,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -360860,6 +361124,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -364232,6 +364497,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -364249,6 +364515,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -364297,6 +364564,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -364321,6 +364589,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -366575,6 +366844,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -366592,6 +366862,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -366640,6 +366911,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -366664,6 +366936,7 @@
                     "event",
                     "fs",
                     "net",
+                    "param",
                     "pipe",
                     "process",
                     "std",
@@ -370057,28 +370330,28 @@
         },
         "schema": 2
       },
-      "build_sha256": "0343acc8bae5da587795d880505ab6acd5e69e4ddd3eb24adc9f7b4879fbb41e",
-      "executable_sha256": "2041d9e64f5d876852406bf8033eece4303045fdd36e2ac58a472cf9bc5d9145",
+      "build_sha256": "0bed5c5d12c92ad40a141edb6b57c198b4173cedb22f70bda9ae5aedc479a3dd",
+      "executable_sha256": "b28ea04a2fad3f7af8adcf86f50d1980a7be44672b99c251401fb843e0bde6b2",
       "schema": 1
     },
     "repository": {
-      "commit": "7daf52f49ec3893015fd5626ebb41e82a21c4954",
+      "commit": "9a44bf01016e52c0860c17fe4f7926941e431d0f",
       "dirty": false,
-      "workspace_sha256": "2c2077976ace1134f1c6118a6df69e1bfc038aab8afa68cde3909bf3dd774ba1"
+      "workspace_sha256": "a048c232cc9efc836529dbc72381ab7a9787c53c6f782373c4539795a4403669"
     },
     "firmware": [
       {
         "image": "diagnostic-ieee802154-radio",
-        "build_id": "233a599295041d5a120f64a445cee19b19f8f971ded772c250d3e3e866dc3f08",
+        "build_id": "5355e565f9a380fa8615b93e85f0c36625a608c8636436e671814d3b3ebebc70",
         "application": {
           "path": "firmware/diagnostic-ieee802154-radio/application.bin",
-          "size_bytes": 3489552,
-          "sha256": "0aab576818bd70e4c15d3f723750932167cf75eb3e6d21317e0d8d2f843ae00b"
+          "size_bytes": 3555088,
+          "sha256": "c46be49e1eb13533095f3c40f168776361d38c8bee234f826882753063d9b821"
         },
         "build_provenance": {
           "path": "firmware/diagnostic-ieee802154-radio/build-provenance.json",
-          "size_bytes": 5723,
-          "sha256": "4977b486de603db3c0ab4954d5588b2601a299754c24fc7b38e227504e181f52"
+          "size_bytes": 5724,
+          "sha256": "8e61505e220aa107348311256d824c9a201a76e48d8b2e114250a3e5ec6aefa9"
         },
         "replayed": false
       }
@@ -370091,12 +370364,12 @@
     "fixture": {
       "path": "lab-provenance.json",
       "size_bytes": 2018,
-      "sha256": "0b67db8774f8e8f0f26aa8f0563d34b08f69ebe79f8211a5dd75ca66cefa3b1c"
+      "sha256": "b645f5a3d4c3f8bf4ce3720c18f961d71648b1a926b44ab55c745aadf4ac1fd1"
     },
     "source_snapshot_manifest": {
       "path": "source/snapshot/manifest.json",
-      "size_bytes": 761026,
-      "sha256": "dd352d700ff4f5b392f57f765d3e2cffc14e930b26be2ff1b2d6afe2b48bdee6"
+      "size_bytes": 789201,
+      "sha256": "c065ba216012e689580984c5b89bccf88da6fa55fc138aa3a9e4938d27a3d425"
     }
   },
   "procedure": {
@@ -370128,7 +370401,7 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "fa8901d440e175cbfdbda6318a174c0e359ce54d38c37fe9e80f57fbf92c40c3"
+      "sha256": "1cac6d10c40cce2e3aa2b7610e0cad3ecaca946ac09290fd747aa5e6c0744732"
     },
     {
       "path": "crates/adapters/embassy/esp32s31/executor/Cargo.toml",
@@ -370396,11 +370669,11 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station.rs",
-      "sha256": "ccf53543432d1fcb558809a62d9f257cc9d2ec0ee6515a6e1c08cb02fd75afcb"
+      "sha256": "f7cd401ee56329205f238a7d108fdb589e7fd1a41784e16b896425bc148f720b"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs",
-      "sha256": "4beba11d5fbeca4fe75f8f51b8aabf9d3e1f7fdb2f384672f436a8f2fb14c0d3"
+      "sha256": "5d203dd7545c5da0a71c805590bae39f9affb9f310f1f095203ed4128f83aac3"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/watchdog.rs",
@@ -370408,11 +370681,11 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee802154/Cargo.toml",
-      "sha256": "d401694570ff502d17b10a70620c780cb62b3a93ed3bb2f7bdc71ac4cd049e04"
+      "sha256": "56fa76b8d455ce50e2f108deb96d3dda5807c0b787bae7aa6d883d4f980ec769"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee802154/src/lib.rs",
-      "sha256": "294447318194ec5dd9fde374a94587083af04cc60fdb79f69a9d46016c21108d"
+      "sha256": "1ad6974cdd6fcd23a3d95ff6be14f73e0cd4eb86dea8652fb6bcd19f018d25ae"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee802154/src/maintenance.rs",
@@ -370420,7 +370693,7 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee802154/src/system.rs",
-      "sha256": "d8f708e4fad38db08022baed6ba84702d68c9d3040f699676125c08b132bb981"
+      "sha256": "325e04f97a1c6507d67e9506fc312ee3fd49cc8fbe8700273f1c9410a8e4845a"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/Cargo.toml",
@@ -370440,7 +370713,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/connectable_advertising.rs",
-      "sha256": "adb7182a5ca0449f01e7c46ce9df22dc2827ebce1bb73e29ef9d829e38983805"
+      "sha256": "d410ba5aa6822d0946281201b0b959a9951578d305e13089279d8041f58e5e3c"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/direction_finding_workspace.rs",
@@ -370448,7 +370721,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/dtm/codec.rs",
-      "sha256": "7c518715bd93e2e85b1fa068110fab142ffb1f49ac8274a750e6e7b8dfe3806c"
+      "sha256": "01c542987e36be5705877609b773de06470ab82807089320a0690a1e7a174c3b"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/dtm.rs",
@@ -370456,7 +370729,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/dtm_event_image.rs",
-      "sha256": "0a7fc3800db9b53d7b7cdbf174d31d844eb38151a7f9fd9a03f7148742f4b445"
+      "sha256": "478458594066f882b08cdb0d5ae32426ed0867f32217700698e9abc0019df3c9"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/dtm_rx_result.rs",
@@ -370480,15 +370753,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/le_tx_power.rs",
-      "sha256": "493a52c12fe284a1715e4fb433a4cdef6681fda9fc5cd16c305df7a59634f3ed"
+      "sha256": "a304d78effb589102bbc7a2c20178e2dc3647c3a5af17567f50cf7f80db2bfe0"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/legacy_advertising.rs",
-      "sha256": "eb06344e77aaf2b1feed8c859b5c32ca5845a2a13f434588d0fa9645c921b833"
+      "sha256": "811e6e54adc7e1c983a18867ed8b4beb9bf496e1f6a5fdb48b8ab4a93f59f5a5"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/legacy_advertising_event_image.rs",
-      "sha256": "987be55823af37ba56d4a5ec2e89ebc4fdc1f9141b9708e4d769ec5f73e10d59"
+      "sha256": "2b8609c982814b7acbb22b324fdc15cd2873d74f8a29426edcbfb6f4f11d5a7a"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/legacy_advertising_tx_packet.rs",
@@ -370496,7 +370769,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/lib.rs",
-      "sha256": "27a2e74d27989006afac4d1a53ab6885c41c35e590522917dec413a4409f4ca6"
+      "sha256": "c88f7d96c3818d9e3b50d9c684197e0695462224522cb14b4199b7613ad787df"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/passive_scanning.rs",
@@ -370504,15 +370777,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/passive_scanning_event_image.rs",
-      "sha256": "10fe42b002c3e57d2a712496aead6db3889c63c2a746f84b5cac5f16bdb79be3"
+      "sha256": "2ac6b10f831a0470e95e78d78badd3556e12102737d73e948821cde403dba72f"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/peripheral_connection/values.rs",
-      "sha256": "6a128013e198f68ce189c10ce8f134d40290239485726c2dbd52287f4be6f9dc"
+      "sha256": "21b39c7029113c36b0f662ac08c4c0e624286798c87ec3ad77cf3a2ed4826e8f"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/peripheral_connection.rs",
-      "sha256": "453ae08e39bd3fb39031bd174237d3038bd88f7ffef22ef93c125347572b6fe8"
+      "sha256": "2f1fed53d8eb1510a2087acbbcee22c83dc81e5f5e868499cf7862125a56bfcd"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/rx_memory_list.rs",
@@ -370540,7 +370813,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/controller_hal.rs",
-      "sha256": "8261dbd9e7bc12bd7afacab80b30f5452b38b60eac55e361c8cf2d99fdcca2b9"
+      "sha256": "c778edddef934ca4b490aaacdbcaded7af117a0f545d57d119ff3d1c1c3fef59"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/controller_time.rs",
@@ -370556,7 +370829,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/interrupt/nrt.rs",
-      "sha256": "1cc69dd55b15d9c686fce9796d464968bb4b8a120bf44592c0e432e32820dc24"
+      "sha256": "944d72bf72034daee37ac8fb28c274925e7541b98a1e560e43c95df7c7ffc46a"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/interrupt/ports.rs",
@@ -370644,11 +370917,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware/live.rs",
-      "sha256": "5e6cad76af178c85fd7310ad700925a685025b438554a163c015b3a77a9aed71"
+      "sha256": "8364de2e497b086be79396c424ea1bafe46df618683334ad2da9b592fc4739f9"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware.rs",
-      "sha256": "a4531ff80c0e8221aea45c324b851dc745a538ac1d20aeeeee90cb35a88dd78d"
+      "sha256": "456dda3563f76c14cbd8bd708094a115eafe40fbd53e540e2406637ddb68eab0"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/list.rs",
@@ -370684,7 +370957,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "sha256": "6dc5dc9a6d4ee577303bed0fedc2fa1ea6f4dc07ab6a8f102f725bbe092fedce"
+      "sha256": "c7ad3c5394b83c6292d6812aa7a0aeee14beb1e490115bf9667a7203d549d3f4"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/clock.rs",
@@ -371095,36 +371368,16 @@
       "sha256": "e430801a2f136369e35c1b34a7059c80f0996545164f9d18d9a6dbdee3ccd3d6"
     },
     {
-      "path": "crates/hardware/esp32s31/driver/ieee802154/Cargo.toml",
-      "sha256": "84331bd8b64ec56bd04c82676effb67c1df9130fb519c2c82c1b0f7e044446bd"
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee802154/src/engine/buffers.rs",
-      "sha256": "8f45af6cf2ae009e5afcb5e8dc6f624c0da1be1e5baa315340bb03687151aa41"
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee802154/src/engine/statistics.rs",
-      "sha256": "d69ecc83a551d164be2b05d194da63adb4abaf7bf74b03ab777ac09758efdaeb"
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee802154/src/engine.rs",
-      "sha256": "3b4ad7f9421ee677bb234fdb2952b9fc9f95e3415f9cd6409a610eb10c24023c"
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee802154/src/lib.rs",
-      "sha256": "7b430aca71b7770e2121d220b5079cfdf4b4f99961b22f8d305a235e1db11a6d"
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee802154/src/pib.rs",
-      "sha256": "88cb6b622b24a5e9ccb99a5a893e5c3b2baf61cf1dad72b54774e88f2121b8be"
-    },
-    {
       "path": "crates/hardware/esp32s31/hal/Cargo.toml",
-      "sha256": "9e3c16411617534d9cead39bdab48e0c55c541cfc64f40c04809a44e8c764718"
+      "sha256": "d7959529962e0658939ea8155ecf9c47f87453b0775b731d19828f0642085e87"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/controller_time.rs",
       "sha256": "453b966e373003a7a1b9a219f26fb6d5f2a6e0174a6cd836951291f8a71953ca"
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_modify.rs",
+      "sha256": "89e4c784297db3166b36db1115a7742f9ef0abed790f5317b7b5e50f80daef4a"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_stop.rs",
@@ -371136,7 +371389,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth.rs",
-      "sha256": "8922d6eedd861a447384b9ecb8736b88685e26eb086c5ed9f989b8d8e9c038e1"
+      "sha256": "5680321650ec4c5fbe0c25736909e81278ecefcd1439975b35bc07cb5dd496f5"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/clock.rs",
@@ -371144,7 +371397,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/coex.rs",
-      "sha256": "de39d246b90323a019a7b9d7507b0436df79000bfeba7e0d304f8750f0d10a59"
+      "sha256": "375ed072da3d07ac564dc7e12a736719117f35dba2101e2b6b8ef5cc1d01b3d5"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee80211/arena.rs",
@@ -371176,23 +371429,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/backend.rs",
-      "sha256": "ccebc8084de0074c28d7bdbd514ff9e04cffe1d4695e9dacbdab93d48638f511"
+      "sha256": "20548df675fa15da475f6578e18e37c6bf5c330c949379c365548123bfaa7166"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/coex.rs",
-      "sha256": "5030f1ca2b71896d6b91bee30e0f085befee1389f0a413dcbaae2e74598909ce"
+      "sha256": "d69e3a22306bdd8422158cdb550a8ab654636ffe6939569a9d66af6cfcefb78d"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/lifecycle.rs",
-      "sha256": "6fb6e99d91c1d84b58da51f1b5f2fcb6274eb4f0c6ad44e715ae0f31fd75ec12"
+      "sha256": "2bb264e5d5043d460b7a89dc6ab1974bc634d678ab46234b00a73ca5e2707fc0"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/ll.rs",
-      "sha256": "b6916ec4a1e9b531c35f09a675d6bdc790c150833cddd7f3a82163d214e2043a"
+      "sha256": "7f3f97bc5e472c8a02e40d8b0f6c7fdb0b27e2199be4b3382e54059551033c03"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/mac.rs",
-      "sha256": "371cc3a9977e9e04db7c2799244460bef414a61d9ad06438a1f434999eb9cd6e"
+      "sha256": "4a3b00f1e7a0b7fe70a7ac6d42a9685d7ddae48c948e54159f489b240fa82eab"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/operation.rs",
@@ -371200,23 +371453,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/policy.rs",
-      "sha256": "7fb2abcf0a7d11ad8b4603bc92c51f021a04cef8d8bd9d2cc5afad7f16d1574d"
+      "sha256": "fedce00e7b9857756a15df599211fdcabbbcefb4e6a9acf3b078abf4bbd26d18"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/role.rs",
-      "sha256": "6bde4d1f8b7025aa118f021e885b74d3e0a4e08f0b3e017e40a9fae5129fa497"
+      "sha256": "f4f69a4e2762df814e86c57f560a61749ca0aedb851741585b01769e0a9cf084"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/tx_power.rs",
-      "sha256": "e95c21d7bf8cf18917ffe054c68bed5f3ce4f9dcdb4126a692f339d8259dd83b"
+      "sha256": "a7372ad75d6af68977ab07759f3cb24242319d61b957dd57a4580ed22fa14e12"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/validation.rs",
-      "sha256": "85a259079527c7d35c45a1a7203b3648b908e8aa581d98e07c30325486143b92"
+      "sha256": "1a4dd4f264d669fdf1bddf91740708fc2e2e811e6146e8856030fbd368781c99"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154.rs",
-      "sha256": "3e71399c79ddb80517e2a6b0708cd0aa3e942357631399c22762b34fa8857c67"
+      "sha256": "321404c47039dbacde6be5ecfa263b1d0d30bb7aa32f04dccea4e9c7752c5934"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/lib.rs",
@@ -371320,11 +371573,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "sha256": "7cf3103a1f9381b59b4465ac97b244d3618141f60bdd521bd42c7bdaa6348b66"
+      "sha256": "3e3deba126de21e016d97412870d94ae70cc07b04da341dbb35aaa9b76cb4761"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/types.rs",
-      "sha256": "663802938e4ead091480543b869e5f1efe3d0644855f91893e9da8769bc73bd3"
+      "sha256": "0e8516bf4165a78becb202554e5c4fa13af99c8b7f91796d3260f184199dc193"
     },
     {
       "path": "crates/hardware/esp32s31/pac/Cargo.toml",
@@ -371336,7 +371589,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "daeb62eabc6fc1596628e91c12146a7c8c2410ecf767f8bd32273d0f7d3f8b82"
+      "sha256": "e824d7ab96e3762ce8417dfdb7d585feb1fa5b02629f405e247627812de0026b"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
@@ -371352,7 +371605,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/controller/init.rs",
-      "sha256": "a062e0d36a9f01e4a3eb2e016ce1687369c46a4100f1f17b2e6e295f38894514"
+      "sha256": "4682ce885fa8be115c499300907199df06fe674427b31a5620f4abd1a2e52968"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/controller/time.rs",
@@ -371396,7 +371649,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/insertion.rs",
-      "sha256": "bd10b4fc4640db2cea6a1cb6f108f96203f9fac997e01948e203917fb460df2c"
+      "sha256": "e1c61848fb868dd2a54d36cff9e5af99fb3ccd1f1aa2f40517454928a58e57bd"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/lock_modify.rs",
@@ -371404,7 +371657,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/runtime.rs",
-      "sha256": "0911b4ebba4713a808e5b036d62615fcc03fe3069f1e24d3226b0473d14765e3"
+      "sha256": "16816c67f69d77728700d147e87b153aaf50864498723108397dddfca71fb148"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/stop.rs",
@@ -371420,7 +371673,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "sha256": "715e8669279ac197518f42473ae7637a89534979719a15e45fab9599ca2832a1"
+      "sha256": "2139cd85e37e91e84267a9fb6a387a8fa2e9e966d19e92a5822170dea267e5e4"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154/mac/etm.rs",
@@ -371448,7 +371701,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/lib.rs",
-      "sha256": "eda0ec9cee928b55a27b4cb35f6d47ec02d37532c619ba63a5bacf6503338b1c"
+      "sha256": "888e510e0f85cc38feece2ad6ed53ac196c314d6c5d34fd822a0ad6c316ac282"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/clock_device.rs",
@@ -371476,7 +371729,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/shared_clock.rs",
-      "sha256": "b70f6b46c7cbf75aff1a05204d8f7885a54a006db50088212fe09e5c3c36d1da"
+      "sha256": "56be185828ac9db156fbdd4529a8bcf9592ddb609b92db1f47677662c6391951"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/syscon.rs",
@@ -371488,7 +371741,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ownership.rs",
-      "sha256": "7aab79402a738442855f102be4ee44ff288534bb544cd5f16a6af75a2d66f034"
+      "sha256": "e5bcfa911edeea25ce0641d6e2d04d8c92432891adf05de3d5c601714840cdb6"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/phy/agc/runtime.rs",
@@ -371516,7 +371769,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/phy/i2c.rs",
-      "sha256": "efe9d30ec6d8b05c81fe2ed65645462c813b86e7b6bd2b652f46beb3b08728c1"
+      "sha256": "107580f3c3cd1a0a721bf8fb289d0da02fa61af7b0f58dd3d529da390df12010"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/phy/iq_estimator.rs",
@@ -371788,7 +372041,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/ieee802154_client.rs",
-      "sha256": "ecbcd2088321e9abe8850ae8bc7c13609c1b636b047a3eda1991c5a43c70ea44"
+      "sha256": "80b62ba19911c979fc0207c1f013652706b87d83a4a25177e8180887a9a152f1"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/lib.rs",
@@ -371840,7 +372093,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/state.rs",
-      "sha256": "70dd081dc1cb5efa12456e8838a2674ff31d94e924d458b3242a220df0c014ca"
+      "sha256": "9320c77206c590fb3b050f5a088f979715b7b1fbc5c534d6ed6d5da1c4ae2bac"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_executor.rs",
@@ -371852,7 +372105,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port/concurrent.rs",
-      "sha256": "7dd7fb4860b055bf86f54915abc2ebf0709197486ebac5203a4348f5a46fd92d"
+      "sha256": "59c4484092f1e3749239a8fd095a9391cec529b1e0adc71da93b35d895b91dcb"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port/domain.rs",
@@ -371963,6 +372216,50 @@
       "sha256": "6d49c02a19df7c9b1027bdbccc3955de33d3af5c0daa024fee837f9bdb66751f"
     },
     {
+      "path": "crates/hardware/ieee802154/engine/Cargo.toml",
+      "sha256": "76d36650ecfb5104af4ef5f1fd8b1ba97ac29392b1ae39ee5699802fb1523087"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/channel.rs",
+      "sha256": "22a1615bea117b43463340d8ec2e79fd0469c1baf8ad58767971ff7b28a75e80"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/coex.rs",
+      "sha256": "70093f326f75d91eb36daf036ee296262ba7948c6ae3ff141b10c033a5e1a0ce"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/engine/buffers.rs",
+      "sha256": "85b4bff933a85943b43d714654e0168ff78a50f7224917f9e59e95930b64ef6b"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/engine/statistics.rs",
+      "sha256": "55407a841bdd02887918bbb1f7dbb06bbbaa779b6049f8092bd53f59fa6b7d6e"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/engine.rs",
+      "sha256": "dcbf447bdcaf2fa84bb1d83903dc55b01b34279a91fc438adab63c65738217db"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/lib.rs",
+      "sha256": "106ef301e6e9239107f8eb3c4984a092868d3dc1171eba46a3a13781da979d85"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/ll.rs",
+      "sha256": "7c4777058c166187b2097c8b296cd32ef0c81d742d85fe21daa073f527eeb704"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/pib.rs",
+      "sha256": "4e3a01c08d403f100d681987c1d52be7a80fbe67e12f7ae07d35e7b98200a39f"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/tx_power.rs",
+      "sha256": "153074ef8fda8f4a953b3226389d4449c5ca0a35ff613c80e542aee152901028"
+    },
+    {
+      "path": "crates/hardware/ieee802154/engine/src/types.rs",
+      "sha256": "53d2e32d02ca3cade9b0c35cd99214451fe9fcdf59a61ec27932af5e2fabae74"
+    },
+    {
       "path": "crates/memory/Cargo.toml",
       "sha256": "50c7fd0c23fe2b6e2d0b3a97ac63e958d0e3a092bc1a2084eef6280aae97154b"
     },
@@ -372000,11 +372297,11 @@
     },
     {
       "path": "crates/oer/Cargo.toml",
-      "sha256": "6caca679323bd35340dbca41de52a341a73b473ccd86aa83c1b6dc213255c49f"
+      "sha256": "82d1f991732b4fc2994921f6b0599b1b51393e276794508d6b5cfa6374ad7369"
     },
     {
       "path": "crates/oer/src/lib.rs",
-      "sha256": "2aeb26d26ed21cbf820302ed95e99409b17a9150b50722a96ff4e84ee25fa294"
+      "sha256": "571c3b41f27175a7daf9594b1ea950c7c107dfcd1e8c12b5572fa001c80f1125"
     },
     {
       "path": "crates/protocols/bluetooth/hci/Cargo.toml",
@@ -372132,7 +372429,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/service/security.rs",
-      "sha256": "0661d1fdc5590d2275b9b203972277a21c0130d8d233a6d6dbe0df6ba2c360c4"
+      "sha256": "219c0f4cd25468e955331a84c9fdf277cbbda9818b350feaea714f0780ae5ca4"
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/service.rs",
@@ -372160,7 +372457,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac",
-      "sha256": "432f5ba07ebb69645194adec5ffd6f9b763a0f8190452bbfc3174c242e96ce09"
+      "sha256": "c75c122cd340705e3391310267fc75b8b86d01960088e480abe66497d71b0802"
     },
     {
       "path": "crates/protocols/ieee80211/mac/Cargo.toml",
@@ -372308,7 +372605,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/association.rs",
-      "sha256": "8c572b6b1ee7f1a42a9a807cfac095e61d21a7616ff0207b13e873f535b7fd06"
+      "sha256": "2dd0ee9892fc637aad36fcaa935dd186b65cfd44b81646ddcadbe68c22b3929e"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/data/amsdu.rs",
@@ -372320,11 +372617,11 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/management.rs",
-      "sha256": "e5e7a175aeb8b9985ff26583f014caf9588c37b96622e5a094a435b0a0a8ec64"
+      "sha256": "c2bd2d3731c8a4b1ded79747bb849878cff982ef8878f7bb9c8c8031e6a82a2d"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/security.rs",
-      "sha256": "8d4f56be3a3c6987049ebad7ddc2d735be3b265e49c04593b481672440379d85"
+      "sha256": "562d59a855eab6c0b2bb5f88d4ab70470826e0619eca62bd9ddf7abcb2220933"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/sequence.rs",
@@ -372332,7 +372629,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station.rs",
-      "sha256": "6a6bbba771c33ff72a79d686c88ca6da2d0f3518d6f913e42b6fa91842cfd06c"
+      "sha256": "4815c369c6904daee1d77e4833cef735b51bf4e754ecdb353b0e49168eb3af85"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station_beacon.rs",
@@ -372376,7 +372673,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/crypto.rs",
-      "sha256": "7cb551ef01bee902e71f54a02074c676dd53ecbfc9986541a46b8c1c7b2cdf2e"
+      "sha256": "20b76002112f5eff8d2da369e0c2f3c111b30d47e9f964fbaaa81239457486d8"
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/eapol.rs",
@@ -372384,7 +372681,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/element.rs",
-      "sha256": "42bc281452ea078f71eae93e38ebd804332d70864c0181a5ad835b2ffa92542e"
+      "sha256": "b7fc430fb483afc9b0cacd41d888d00eaf30a79790a05f2a646847a1f65be10c"
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/frames/key_data.rs",
@@ -372532,11 +372829,15 @@
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/lib.rs",
-      "sha256": "d54728e6a6592c7b6f774da6c2b37e8122fcb2f5f652beadb44ad19bc6393ede"
+      "sha256": "3051e803c5e11c9f8edc44c1d5a98fccbbebd953aee51f686e44651030527b57"
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/link_monitor.rs",
       "sha256": "97ca8e2a3cd2474873456bc53570a1d010cc28bd53a978a2e79b2543af6b491d"
+    },
+    {
+      "path": "crates/protocols/ieee80211/sta/src/pmksa.rs",
+      "sha256": "ac723ae5e4e6b5e0fdc879c4d67f02df8070b4f00ec99a8b8af83b778d1b3e1b"
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/request.rs",
@@ -372728,7 +373029,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/attempt.rs",
-      "sha256": "a0c998797a3e1515b5702e62584eb7a7c86cb090193f8fc4caba490cc25f1b55"
+      "sha256": "2ea2fdf179bdc8fe875adcc5a46e08c06e38bf5148bd0903c077ee2ac9411d50"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected/management_protection.rs",
@@ -372752,7 +373053,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_control.rs",
-      "sha256": "3b519491ce3770f2b3aeaf5f9b8515bde3e4fbcab745fd0ec3c90246bc145e92"
+      "sha256": "0dfc13f9db657fc78081bf9b2e66e2bc971b7dda1a5b650f3ea51e9e60098fa5"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_rx.rs",
@@ -372820,7 +373121,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/single_mpdu_tx.rs",
-      "sha256": "9ceadff67f53775a107f4c2378ae9a468387443220565d76ab3aa75eea4b51e9"
+      "sha256": "3034eb8e92e24fa1b184d60ed5f125f55d55183090f0019ed683ae7abb644443"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/standalone_esp_now_rx.rs",
@@ -372836,11 +373137,11 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee802154/radio/Cargo.toml",
-      "sha256": "cc7429b8faaccef282f755f60a1f6f3bb6aac21b29a02e295fb2fcf29ef526d1"
+      "sha256": "accba48caae2b8762aa5a21250402245e758e4dba54fb9a7afcb479811caa7b4"
     },
     {
       "path": "crates/roles/esp32s31/ieee802154/radio/src/lib.rs",
-      "sha256": "fe0f53e7be92b14014889502c09e7f3508498b3afd84d0bc320ed73678f69f01"
+      "sha256": "0d5da997dbeea3db9a849224f3dea6e30573dbbb5e27cdb1be113dd35de65ef9"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/Cargo.toml",
@@ -372884,7 +373185,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/paired.rs",
-      "sha256": "f810863507a347be4e646c810f10f24ae692bb1bce14fc62826133a72a55e80b"
+      "sha256": "fb3b9b217db1876dec56fe139a6e85bd9ebb94696bcf2017661fd22aba1b0d16"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/rx/dma/epoch.rs",
@@ -373136,7 +373437,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/concurrent/control.rs",
-      "sha256": "4379a2dcda0f815cb6e73e0ad83d75cef03024b5b5d84836386c5feb6827799a"
+      "sha256": "2c7c74314c84934f436404ca7cc62fb8557dd8a95208cf5acd0504907a81f4af"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/concurrent/rx_service.rs",
@@ -373240,7 +373541,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/attempt/owner.rs",
-      "sha256": "f3259142e7d95e040a6956266d50f63133f98eccac4f76e6b7eabbbf7657f1b7"
+      "sha256": "fb108104e52d6d092a50155c4d69d0a412f6d69ae06dd8553fd818e13845075d"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/attempt/port.rs",
@@ -373252,11 +373553,11 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/attempt/service.rs",
-      "sha256": "0e796ceaaae9cb5a1fd3013f3566e629a238ed67a189fab0665eacc6356f9697"
+      "sha256": "f62cddd608de588120d48510981e2327b6741b780074859ada5a83ee143fb863"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/attempt.rs",
-      "sha256": "8c19e9ed410647ac7778412b35a8950a3993c15efc34013f6243cd5b0d70d438"
+      "sha256": "ee7fb3e9f3c5a243f531444b0e4e7339545dc1147ee94a3d77872ce931b4679e"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/backend.rs",
@@ -373320,7 +373621,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/control.rs",
-      "sha256": "244766afc57be1146b8b53b13352315eb5ca385959b1e32df43595e06f33be73"
+      "sha256": "289c31035536dec55cb8bb894beaa8aa48632736cd16de2d0c7b5f68907d8efd"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/control_mailbox.rs",
@@ -373348,7 +373649,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/join_port/resources.rs",
-      "sha256": "10c8c71270df939e50921bbe0502e9942eb3db14cce43571a662d8385a4b2ac5"
+      "sha256": "84e12cf28589fed89beeeb3ea481ef982834a688b92dcbb98e8fe9f2b8f2ffaa"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/join_port/rx.rs",
@@ -373356,7 +373657,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/join_port/service.rs",
-      "sha256": "7e6d2bcb3b4ea06a37b9dd5280afcdb230b72011b89d279a3e3264a5a42f9c39"
+      "sha256": "7ed553243954a02512c1c9fe4fdd887f696e9ef5c79eda8270bbc65ef2df8056"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/join_port.rs",
@@ -373388,7 +373689,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/runtime.rs",
-      "sha256": "0b4328a4e89474de9abb8a968b71a448bc679d355a387b7ab5f12858fbdef980"
+      "sha256": "0cfa083f2ddf488ec8d5611a6611f4760a842fcd42381e11e115c913f418a738"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/rx_protocol/dispatch.rs",
@@ -373420,7 +373721,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx/adapters.rs",
-      "sha256": "ab3c5ed9c0a29f3e8a5dfec32e709fe230143172d68cf64fceaf37cad8143f92"
+      "sha256": "73998ea40bc6cf3998d5cb762c919a3de3a9245d80dda54044a34ce9bbabab68"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx/completion.rs",
@@ -373468,11 +373769,11 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee802154/Cargo.toml",
-      "sha256": "00751223ff3c4f83a86c25c48cedd624b5feefdaee38d143c9eb6a2e652581d0"
+      "sha256": "85af3ec7f37215155f34390d2985aade48145999eae0c508c643209d7b35b4dc"
     },
     {
       "path": "crates/runtime/esp32s31/ieee802154/src/lib.rs",
-      "sha256": "539722b4a0df27d5d90b1f1a53ad82b04db3acc0661a10ee7719588fda50eebf"
+      "sha256": "670f2637614903524ca653ca50613930c34ee0efa181a0718f910606c18c0248"
     },
     {
       "path": "crates/runtime/esp32s31/phy/Cargo.toml",
@@ -373496,11 +373797,11 @@
     },
     {
       "path": "crates/runtime/esp32s31/radio/src/lib.rs",
-      "sha256": "3f38c1302c740f88ce69de1fb5194ced7a83d5b8149d6f06f0bd1881ac681c53"
+      "sha256": "11521c65a8b0f8f1e7c4f5ce341b3b25090f8983301dba2d291aed53dd123ff9"
     },
     {
       "path": "crates/runtime/esp32s31/radio/src/system.rs",
-      "sha256": "d5c990392a50c2324645047bc38595ae976e014bff4e3d505bf9cd33ddee3947"
+      "sha256": "57419537814e9fa0c9168471e183408dcd2e0046060f7f91f78cf82b9fbba52e"
     },
     {
       "path": "crates/runtime/ieee80211/Cargo.toml",
@@ -373536,7 +373837,7 @@
     },
     {
       "path": "hil/host/arbiter",
-      "sha256": "f7e5f1e40091816a12dd8d596b62e9083ad162f4b3f30b45638b9fef91906201"
+      "sha256": "10e08c2a4bf73f8ab07d8b1a9d4f9da4196152ec8a5f89cb09afa07cb9b3499d"
     },
     {
       "path": "hil/host/fixture",
@@ -373548,7 +373849,7 @@
     },
     {
       "path": "hil/host/runner",
-      "sha256": "9570d3af4831d13219427faecad3fc1f6a563d5992def6798ddc2196b94448be"
+      "sha256": "1e5bfbab690d4ed150b99f9c94d6739c23ffd182f277dd0448d68ec7f39ef9c0"
     },
     {
       "path": "hil/host/runner-bluetooth",
@@ -373556,15 +373857,15 @@
     },
     {
       "path": "hil/host/runner-core",
-      "sha256": "a8142629688b446d6124854d202737e3a462c8fe1df95cb64004ab298bae74d5"
+      "sha256": "51d9ad9fd7673f7f8a1f70e3cf69a2a3e74df0ea19af52c63fd10ee60bcd5d58"
     },
     {
       "path": "hil/host/runner-ieee80211",
-      "sha256": "8119cb968b165a22a7b4ac1c1ceea31730ccc6a3a3bddbfefafb1c4404a96045"
+      "sha256": "a403686b8bd493cc585893991a8ce9facd21b3153574f557bdd37eab337a9a5d"
     },
     {
       "path": "hil/host/runner-ieee802154",
-      "sha256": "1daa91373df6e800c6517df4cc6554d375223e7b3086656bc1e620b432d848fb"
+      "sha256": "dfb227154acdf13ba65a82e222ca879350f4820bab021adc1d8ba4fffe7aaf60"
     },
     {
       "path": "hil/host/runner-system",
@@ -373572,7 +373873,7 @@
     },
     {
       "path": "hil/protocol",
-      "sha256": "27bc0ad3ee6536e7e81fb2695f30b99cef640785ac6beeb52252e4a49c46b67e"
+      "sha256": "9681c2a354f93174c81044c51e155386e4f4a5d8379d8e04ac0087fd8c982768"
     },
     {
       "path": "hil/protocol/Cargo.toml",
@@ -373600,7 +373901,7 @@
     },
     {
       "path": "hil/protocol/src/lib.rs",
-      "sha256": "518ee8fa0e43af617833e8ea4c6947ecd16607e1e6eafabb2736b55b8ff694eb"
+      "sha256": "d3dcef4c8108dc405902084835361ba11a140c512f59032af86c685d262e7c87"
     },
     {
       "path": "hil/protocol/src/memory_benchmark.rs",
@@ -373612,7 +373913,7 @@
     },
     {
       "path": "hil/protocol/src/message/ieee802154.rs",
-      "sha256": "42a4ce7b787b081aefa8ac13e349b0d7d5320a99f0d295725caf704653604b99"
+      "sha256": "7142454d7015adc78c18539b21827e098a234c6c73a9ba806e50a69becc5c083"
     },
     {
       "path": "hil/protocol/src/message/session.rs",
@@ -373624,7 +373925,7 @@
     },
     {
       "path": "hil/protocol/src/message.rs",
-      "sha256": "2f5e2501a7ebd6b6ef85ef602abf8db7ad7682045c7aa4430984f8e6f23551f5"
+      "sha256": "e4521ec832b354f2e02b935cce0343407ee4399a045ba5674973f6ee7846469e"
     },
     {
       "path": "hil/protocol/src/phy_fault.rs",
@@ -373632,7 +373933,7 @@
     },
     {
       "path": "hil/protocol/src/phy_register_image.rs",
-      "sha256": "3494eaf681ed55816df1b5da08183369d14f9aa2351810d4b2cd3e5547a10ac8"
+      "sha256": "10128bd6d56496f70933c959f1487fbec98cc8b936e1afc2486b1e3d765a5203"
     },
     {
       "path": "hil/protocol/src/stream_pattern.rs",
@@ -373660,11 +373961,11 @@
     },
     {
       "path": "hil/schema",
-      "sha256": "ff14f098df522ee2dcf414d6d149402017fc7c6a7badfd3f939ce9d06d493c3a"
+      "sha256": "0c37495bed42027b0d154d06af5d6a1c046d2b3386a3e1b5b9cf313d949da254"
     },
     {
       "path": "hil/schema/observer-inputs.json",
-      "sha256": "6032f45fb90948e441ad08f96fc77ac59d5ca55ae42aa8a65eb26e5c960d46d0"
+      "sha256": "ca796647d180610b5462ee503bbe22f5319a562294d20f347afa3c788c84d978"
     },
     {
       "path": "hil/target-core/Cargo.toml",
@@ -373732,11 +374033,11 @@
     },
     {
       "path": "hil/targets/esp32s31/Cargo.lock",
-      "sha256": "8738c1c3177d6b7fa25cc8243584bcf53148837220f157b76706d3c193d0ee40"
+      "sha256": "f3dc1d1aedd387e9f147fdb210a179a94cf199da66d785f861a340bdae639869"
     },
     {
       "path": "hil/targets/esp32s31/Cargo.toml",
-      "sha256": "52fadaf33d4cb6592bd0c5aef22b6c2a1c38398978149139f98258ca297207ce"
+      "sha256": "ac837d5573b4e1831a1e1d1fe6f271a2fefdd33a4ee9f2722c3a135debaa83a2"
     },
     {
       "path": "hil/targets/esp32s31/calibration-artifact/Cargo.toml",
@@ -373744,11 +374045,11 @@
     },
     {
       "path": "hil/targets/esp32s31/calibration-artifact/src/lib.rs",
-      "sha256": "304413644fae34b22114cc2e438d0a09d07a3afac3597d80c357b160c9bcce64"
+      "sha256": "c842bb61cdd438483eae7033089a27ac8a44b8aacb19025b8723894193fd824a"
     },
     {
       "path": "hil/targets/esp32s31/runtime/Cargo.toml",
-      "sha256": "52eb5b153035e6ec0f3a8a5555c4effdb9ba0ced119d813d7cc4e4f314814623"
+      "sha256": "b88c955eaf2445c6ec17aa624e7636965d7e4b1504e8ccf3861c55c50755e747"
     },
     {
       "path": "hil/targets/esp32s31/runtime/build.rs",
@@ -373756,15 +374057,15 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/capabilities.rs",
-      "sha256": "45f9e2b3226284a898cab6adb0747cb9f13b0ce926b458adc05bc181095f23e8"
+      "sha256": "6ff3add1e27603649a1f804b153e70aa74732f29d2f2a94d9712fb74cd29b45b"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/console/radio.rs",
-      "sha256": "859624c23b09774fb39ca38e8f5de03b8701a5c764bc10e536c7dc891701068f"
+      "sha256": "6b96869e8ef94f13d0aae87ec3b5c8fa06d08507aa09e4ef27d74cef3ea9b3c3"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/console.rs",
-      "sha256": "3a5b20e008ae7eca5902462979b70af585ca5e57e1c1c8f6cb144dfb8d980306"
+      "sha256": "d75d63c347848e81318ce070cb48321890e6645bef9cc80916ab3a468f6d69ac"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/exception.rs",
@@ -373772,7 +374073,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/main.rs",
-      "sha256": "e1db5a3b57000af3a38f8be964d8895aa64f3eef0403b33eb976cc00e6976e6a"
+      "sha256": "37b21ff68e794330202c9afb42ecdcde058473ddfd1fedc6758c8207e97d5e25"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/phy_calibration_artifact.rs",
@@ -373796,15 +374097,15 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/client.rs",
-      "sha256": "a9314ebfc13847882951913e9f0c506639b19770ca9c9aa97ec3d15da5301d51"
+      "sha256": "bee79f4dfa1d5a57fe7ba5e495c2d3e1b9169ea0840e3a7b2c1f6d70d25addc7"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/session.rs",
-      "sha256": "4c9d8ff10fd2223de7da509b0f5914efa1acf201dc044986b28d552785fdb99a"
+      "sha256": "1048b3fe566c3c867c926a99a482f02c3b61a1a06289c8296e2a002d3851260d"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154.rs",
-      "sha256": "a9a53af2d915c6cc7f4d1b03e4946c596e4d06664152c3890b06aac8487944a4"
+      "sha256": "2077ee76fe9d063b5c707236f1b08da7af725149e97d682a121044dd3214156f"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/network/upstream.rs",
@@ -373816,7 +374117,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/phy_register_image.rs",
-      "sha256": "fc06e97add9953e9d285b54d4609080a747d61688dfcdeb7194bdb0032d1440e"
+      "sha256": "63934616a2a7d728f47bb9e19597f9d8779fc8cf7af259925a7901374656f99c"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/rx_qualification.rs",
@@ -373872,7 +374173,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil.rs",
-      "sha256": "bd444b84156f798802b1e24187488de267e3198e32801ffd419bcad9c99f752b"
+      "sha256": "2bb3e5fbc86890d90f8e3fda6345752a8c0c157481b94f019f0f73276e954949"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/stack_evidence.rs",
@@ -373888,7 +374189,7 @@
     },
     {
       "path": "hil/targets/esp32s31/stack.toml",
-      "sha256": "9ffad6d00eadf59b7d8cce0b8401db22b8f76e5353b62340e9f7a2667501e979"
+      "sha256": "fd22954332fd090ab1f2156ddd76b4251080b3b6142e6dd4668a6cc79e636231"
     },
     {
       "path": "hil/targets/esp32s31/telemetry/Cargo.toml",
@@ -374080,7 +374381,7 @@
     },
     {
       "path": "rust-toolchain.toml",
-      "sha256": "642dc3900d1ffe2d14a8cac53c3e07c938b1917e72f8c15572bc38276e2bccf3"
+      "sha256": "4f2a18bc72b318bd18159aad0df21687e552d04c2cf352173b282ff810a34bd4"
     },
     {
       "path": "tools/firmware",

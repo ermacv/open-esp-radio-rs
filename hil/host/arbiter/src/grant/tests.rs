@@ -12,6 +12,7 @@ fn request(owner: &str, work: &str) -> Request {
         work: work.into(),
         budget: Some(Duration::from_secs(60)),
         short: false,
+        scenarios: Vec::new(),
     }
 }
 
@@ -211,7 +212,7 @@ fn status_and_board_report_the_latest_state() {
     hold(&arbiter, ticket(4, "802154", identity, false));
     let status = arbiter.status().unwrap();
     assert_eq!(status.holder.as_ref().unwrap().owner, "802154");
-    assert!(status.startup_artifact.is_some());
+    assert_eq!(status.startup_artifacts.len(), 1);
     assert!(
         status
             .devices

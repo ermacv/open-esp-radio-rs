@@ -63,6 +63,8 @@ pub struct Request {
     pub work: String,
     pub budget: Option<Duration>,
     pub short: bool,
+    /// HIL scenarios the lease executes, recorded for per-scenario estimates.
+    pub scenarios: Vec<String>,
 }
 
 impl Request {
@@ -77,6 +79,7 @@ impl Request {
                 .map(|budget| budget::parse_duration(&budget))
                 .transpose()?,
             short: std::env::var(SHORT_ENV).is_ok_and(|short| short == "1"),
+            scenarios: Vec::new(),
         })
     }
 }
@@ -93,6 +96,7 @@ struct Held {
     token: String,
     owner: String,
     work: String,
+    scenarios: Vec<String>,
     budget: Duration,
     exceeded: Arc<AtomicBool>,
     watchdog: Option<(mpsc::Sender<()>, std::thread::JoinHandle<()>)>,
@@ -134,7 +138,12 @@ impl Arbiter {
         if let Some(nested) = self.join_enclosing(me, enclosing)? {
             return Ok(nested);
         }
-        let (budget, source) = budget::resolve(request.budget, &request.work, &self.history()?);
+        let (budget, source) = budget::resolve(
+            request.budget,
+            &request.work,
+            &request.scenarios,
+            &self.history()?,
+        );
         if request.short && budget > MAX_SHORT_BUDGET {
             return Err(format!(
                 "a short lease must fit {}; `{}` has budget {} ({source})",
@@ -209,6 +218,7 @@ impl Arbiter {
                 token,
                 owner: request.owner.clone(),
                 work: request.work.clone(),
+                scenarios: request.scenarios.clone(),
                 budget,
                 exceeded: Arc::new(AtomicBool::new(false)),
                 watchdog: None,
@@ -281,8 +291,8 @@ impl Arbiter {
         })
     }
 
-    /// Show the board's current firmware and startup artifact, and the changes
-    /// other owners made since this owner's previous lease.
+    /// Show every board's newest firmware and the flashes other owners made
+    /// since this owner's previous lease.
     fn report_board(&self, owner: &str) {
         let (Ok(history), Ok(events)) = (self.history(), self.board_events()) else {
             eprintln!("hil-arbiter: board journal unavailable");
@@ -298,26 +308,26 @@ impl Arbiter {
         if let Some(previous) = previous {
             let changes = events
                 .iter()
-                .filter(|event| event.owner != owner && event.unix >= previous)
+                .filter(|event| {
+                    event.owner != owner
+                        && event.unix >= previous
+                        && matches!(event.kind, crate::BoardEventKind::Flashed { .. })
+                })
                 .collect::<Vec<_>>();
             if !changes.is_empty() {
-                eprintln!("hil-arbiter: board changes by others since your previous lease:");
+                eprintln!("hil-arbiter: flashes by others since your previous lease:");
                 for event in changes.iter().rev().take(10).rev() {
                     eprintln!("hil-arbiter:   {}: {event}", label(event));
                 }
             }
         }
-        let (flashes, artifact) = latest(&events);
+        let (flashes, _) = latest(&events);
         if flashes.is_empty() {
             eprintln!("hil-arbiter: board firmware: unknown");
         }
         for flash in flashes {
             eprintln!("hil-arbiter: firmware on {}: {flash}", label(flash));
         }
-        eprintln!(
-            "hil-arbiter: startup artifact: {}",
-            artifact.map_or_else(|| String::from("unknown"), ToString::to_string)
-        );
     }
 }
 
@@ -482,6 +492,7 @@ impl Drop for Grant {
                     released_unix: crate::unix_now(),
                     budget_secs: holder.ticket.budget_secs,
                     outcome,
+                    scenarios: held.scenarios.clone(),
                 },
             )?;
             Ok(Some(state.queue.is_empty()))

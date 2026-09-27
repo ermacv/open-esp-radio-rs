@@ -19,7 +19,8 @@ const ESTIMATE_GRANULARITY: u64 = 30;
 #[serde(rename_all = "kebab-case", tag = "kind")]
 pub enum BudgetSource {
     Explicit,
-    /// The longest of the most recent completed leases of the same work.
+    /// The longest of the most recent completed leases of the same work, or
+    /// the sum of that for each scenario.
     History {
         samples: usize,
     },
@@ -36,31 +37,50 @@ impl std::fmt::Display for BudgetSource {
     }
 }
 
-/// Resolve the budget of `work`: an explicit value wins, then history, then
-/// the default.
+/// Resolve the budget of `work`: an explicit value wins, then earlier leases
+/// of the same work, then the sum over `scenarios` of earlier single-scenario
+/// leases of each, then the default.
 pub(crate) fn resolve(
     explicit: Option<Duration>,
     work: &str,
+    scenarios: &[String],
     history: &[LeaseRecord],
 ) -> (Duration, BudgetSource) {
     if let Some(budget) = explicit {
         return (budget, BudgetSource::Explicit);
     }
-    let durations = history
-        .iter()
-        .rev()
-        .filter(|record| record.work == work && record.outcome == LeaseOutcome::Released)
-        .map(LeaseRecord::duration_secs)
-        .take(HISTORY_SAMPLES)
-        .collect::<Vec<_>>();
-    match durations.iter().max() {
-        Some(&longest) => {
-            let rounded = longest.div_ceil(ESTIMATE_GRANULARITY) * ESTIMATE_GRANULARITY;
+    let longest = |matches: &dyn Fn(&LeaseRecord) -> bool| {
+        let durations = history
+            .iter()
+            .rev()
+            .filter(|record| record.outcome == LeaseOutcome::Released && matches(record))
+            .map(LeaseRecord::duration_secs)
+            .take(HISTORY_SAMPLES)
+            .collect::<Vec<_>>();
+        durations
+            .iter()
+            .max()
+            .map(|longest| (*longest, durations.len()))
+    };
+    let estimate = longest(&|record| record.work == work).or_else(|| {
+        if scenarios.is_empty() {
+            return None;
+        }
+        scenarios
+            .iter()
+            .try_fold((0, 0), |(total, samples), scenario| {
+                let (duration, count) = longest(&|record| {
+                    record.scenarios.as_slice() == std::slice::from_ref(scenario)
+                })?;
+                Some((total + duration, samples + count))
+            })
+    });
+    match estimate {
+        Some((seconds, samples)) => {
+            let rounded = seconds.div_ceil(ESTIMATE_GRANULARITY) * ESTIMATE_GRANULARITY;
             (
                 Duration::from_secs(rounded.max(MIN_ESTIMATE)),
-                BudgetSource::History {
-                    samples: durations.len(),
-                },
+                BudgetSource::History { samples },
             )
         }
         None => (DEFAULT_BUDGET, BudgetSource::Default),
@@ -126,6 +146,7 @@ mod tests {
             released_unix: 1000 + seconds,
             budget_secs: 600,
             outcome,
+            scenarios: Vec::new(),
         }
     }
 
@@ -152,21 +173,47 @@ mod tests {
             record("run a", 131, LeaseOutcome::Released),
         ];
         assert_eq!(
-            resolve(None, "run a", &history),
+            resolve(None, "run a", &[], &history),
             (
                 Duration::from_secs(420),
                 BudgetSource::History { samples: 3 }
             )
         );
         assert_eq!(
-            resolve(None, "run c", &history),
+            resolve(None, "run c", &[], &history),
             (DEFAULT_BUDGET, BudgetSource::Default)
         );
         assert_eq!(
-            resolve(Some(Duration::from_secs(5)), "run a", &history).1,
+            resolve(Some(Duration::from_secs(5)), "run a", &[], &history).1,
             BudgetSource::Explicit
         );
         let short = [record("smoke", 3, LeaseOutcome::Released)];
-        assert_eq!(resolve(None, "smoke", &short).0, Duration::from_secs(60));
+        assert_eq!(
+            resolve(None, "smoke", &[], &short).0,
+            Duration::from_secs(60)
+        );
+    }
+
+    #[test]
+    fn a_new_series_is_estimated_from_its_scenarios_single_leases() {
+        let single = |scenario: &str, seconds| LeaseRecord {
+            scenarios: vec![scenario.to_owned()],
+            work: format!("run {scenario} --lab-config /x"),
+            ..record("", seconds, LeaseOutcome::Released)
+        };
+        let history = [single("a", 100), single("a", 200), single("b", 50)];
+        let series = [String::from("a"), String::from("b")];
+        assert_eq!(
+            resolve(None, "run a b", &series, &history),
+            (
+                Duration::from_secs(270),
+                BudgetSource::History { samples: 3 }
+            )
+        );
+        let unknown = [String::from("a"), String::from("c")];
+        assert_eq!(
+            resolve(None, "run a c", &unknown, &history).1,
+            BudgetSource::Default
+        );
     }
 }

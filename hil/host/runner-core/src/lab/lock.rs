@@ -32,7 +32,17 @@ impl FixtureLock {
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
-        let grant = acquire_stand()?;
+        Self::acquire_for_scenarios(lab, required, &[])
+    }
+
+    /// [`Self::acquire_for`] for a run of `scenarios`, whose durations then
+    /// estimate later budgets.
+    pub fn acquire_for_scenarios(
+        lab: &super::config::LabConfig,
+        required: super::requirements::Requirements,
+        scenarios: &[String],
+    ) -> Result<Self> {
+        let grant = acquire_stand(scenarios)?;
         let mut owner = wait_for_fixture(|| Self::lock_now(lab, required, true))?;
         owner._grant = Some(grant);
         Ok(owner)
@@ -42,7 +52,7 @@ impl FixtureLock {
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
-        let grant = acquire_stand()?;
+        let grant = acquire_stand(&[])?;
         let mut owner = wait_for_fixture(|| Self::lock_now(lab, required, false))?;
         owner._grant = Some(grant);
         Ok(owner)
@@ -107,9 +117,10 @@ impl FixtureLock {
 /// Wait in the stand's queue. The lease is described by this runner's
 /// arguments; the environment supplies owner, budget and short-lease choice.
 /// A lease of its own terminates this process at twice its budget.
-pub fn acquire_stand() -> Result<oer_hil_arbiter::Grant> {
+pub fn acquire_stand(scenarios: &[String]) -> Result<oer_hil_arbiter::Grant> {
     let work = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
-    let request = oer_hil_arbiter::Request::from_environment(work)?;
+    let mut request = oer_hil_arbiter::Request::from_environment(work)?;
+    request.scenarios = scenarios.to_vec();
     let mut grant = oer_hil_arbiter::Arbiter::open()?.acquire(&request)?;
     grant.terminate_self_on_overrun();
     Ok(grant)
@@ -431,7 +442,7 @@ pub fn acquire_bluetooth(
     adapter: oer_hil_fixture::bluetooth::model::Adapter,
 ) -> Result<BluetoothLease> {
     use sha2::{Digest, Sha256};
-    let grant = acquire_stand()?;
+    let grant = acquire_stand(&[])?;
     let directory = oer_esp32s31_firmware::device::lease_directory()?.join(format!(
         "resource-{:x}",
         Sha256::digest(bluetooth_key(adapter)?.as_bytes())

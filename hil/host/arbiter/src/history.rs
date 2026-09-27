@@ -19,7 +19,6 @@ pub enum LeaseOutcome {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct LeaseRecord {
     pub id: u64,
     pub owner: String,
@@ -28,6 +27,9 @@ pub struct LeaseRecord {
     pub released_unix: u64,
     pub budget_secs: u64,
     pub outcome: LeaseOutcome,
+    /// HIL scenarios the lease executed, when its holder named them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenarios: Vec<String>,
 }
 
 impl LeaseRecord {
@@ -106,6 +108,7 @@ mod tests {
             released_unix: 70,
             budget_secs: 60,
             outcome: LeaseOutcome::Released,
+            scenarios: Vec::new(),
         };
         append(&path, &record).unwrap();
         fs::OpenOptions::new()

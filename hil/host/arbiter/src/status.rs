@@ -20,7 +20,8 @@ pub struct Status {
     pub queue: Vec<QueuedStatus>,
     /// Registered, attached or journaled boards.
     pub devices: Vec<DeviceStatus>,
-    pub startup_artifact: Option<BoardEvent>,
+    /// The newest event of every startup-artifact host file.
+    pub startup_artifacts: Vec<BoardEvent>,
     pub recent: Vec<LeaseRecord>,
 }
 
@@ -82,7 +83,7 @@ impl Arbiter {
             })
             .collect();
         let events = self.board_events()?;
-        let (flashes, startup_artifact) = latest(&events);
+        let (flashes, startup_artifacts) = latest(&events);
         let registered = self.devices()?;
         let attached = crate::attached_ports();
         let mut macs: Vec<Option<String>> = registered
@@ -130,7 +131,7 @@ impl Arbiter {
             }),
             queue,
             devices,
-            startup_artifact: startup_artifact.cloned(),
+            startup_artifacts: startup_artifacts.into_iter().cloned().collect(),
             recent: history.iter().rev().take(RECENT_LEASES).cloned().collect(),
         })
     }
@@ -197,11 +198,9 @@ impl std::fmt::Display for Status {
                 describe(&device.firmware)
             )?;
         }
-        writeln!(
-            text,
-            "startup artifact: {}",
-            describe(&self.startup_artifact)
-        )?;
+        for artifact in &self.startup_artifacts {
+            writeln!(text, "startup artifact (host file): {artifact}")?;
+        }
         if !self.recent.is_empty() {
             writeln!(text, "recent leases:")?;
         }

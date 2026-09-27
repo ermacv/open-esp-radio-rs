@@ -114,7 +114,7 @@ lease options precede the HIL command, or follow `lease`:
 | Option | Meaning |
 | --- | --- |
 | `--owner NAME` | Who holds the lease; defaults to an enclosing lease's owner, then the checkout directory name |
-| `--budget DURATION` | `90s`, `15m`, `1h30m`; defaults to the longest of the last five completed leases of the same command, otherwise 15 minutes |
+| `--budget DURATION` | `90s`, `15m`, `1h30m`; defaults to the longest of the last five completed leases of the same command, else the sum of that over the run's scenarios from earlier single-scenario runs, otherwise 15 minutes |
 | `--short` | A budget of at most two minutes; granted ahead of the queue head, at most once in a row |
 
 The environment variables `OER_HIL_OWNER`, `OER_HIL_BUDGET` and `OER_HIL_SHORT=1`
@@ -156,10 +156,12 @@ with `board flashed`. Name the board with `--port` or `--device`, and the
 application with `--application FILE` or `--sha256`.
 
 On every grant the arbiter prints the last flashed firmware of every board
-(image, commit, application hash, owner) and the last startup-artifact upload
-or write, which carries the PHY calibration cache, and lists the changes other
-owners made since this owner's previous lease. It only reports this state; it
-never erases or restores it. The queue, history, journal and device registry live in the
+(image, commit, application hash, owner) and lists the flashes other owners
+made since this owner's previous lease. It only reports this state; it never
+erases or restores it. The startup artifact, which carries the PHY calibration
+cache, is a host file uploaded at every boot; a relative path belongs to each
+checkout, so another owner's cache never reaches a run. `cargo hil queue` lists
+the newest upload or write of every such file. The queue, history, journal and device registry live in the
 user's host cache, so every checkout of the repository shares them; the
 default owner is the checkout directory name. A checkout without the arbiter
 still fails fast on the fixture locks and bypasses the queue; a granted holder

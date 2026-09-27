@@ -224,7 +224,15 @@ fn lease_stand(
     selected: &[&Scenario],
 ) -> Result<hil_core::lab::lock::FixtureLock> {
     session.record_event("stand-lease-requested", None, None, None)?;
-    let fixture = hil_core::lab::lock::FixtureLock::acquire_for(lab, requirements(selected))?;
+    let scenarios = selected
+        .iter()
+        .map(|scenario| scenario.id().to_owned())
+        .collect::<Vec<_>>();
+    let fixture = hil_core::lab::lock::FixtureLock::acquire_for_scenarios(
+        lab,
+        requirements(selected),
+        &scenarios,
+    )?;
     session.record_event("stand-lease-granted", None, None, None)?;
     let lab_provenance =
         hil_core::lab::provenance::LabProvenance::capture(lab, requirements(selected))?;

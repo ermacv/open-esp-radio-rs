@@ -88,28 +88,36 @@ fn short_hash(hash: &str) -> &str {
 }
 
 /// The newest flash of every board, in order of first appearance, and the
-/// newest startup-artifact event.
-pub(crate) fn latest(events: &[BoardEvent]) -> (Vec<&BoardEvent>, Option<&BoardEvent>) {
+/// newest event of every startup-artifact host file. The artifact is a host
+/// file uploaded at each boot, so it belongs to a checkout, not to a board.
+pub(crate) fn latest(events: &[BoardEvent]) -> (Vec<&BoardEvent>, Vec<&BoardEvent>) {
     let mut flashes: Vec<&BoardEvent> = Vec::new();
+    let mut artifacts: Vec<&BoardEvent> = Vec::new();
     for event in events {
-        if matches!(event.kind, BoardEventKind::Flashed { .. }) {
-            match flashes
-                .iter_mut()
-                .find(|flash| flash.device == event.device)
-            {
-                Some(flash) => *flash = event,
-                None => flashes.push(event),
-            }
+        let (list, same): (&mut Vec<&BoardEvent>, fn(&BoardEvent, &BoardEvent) -> bool) =
+            match &event.kind {
+                BoardEventKind::Flashed { .. } => (&mut flashes, |a, b| a.device == b.device),
+                BoardEventKind::StartupArtifactUploaded { .. }
+                | BoardEventKind::StartupArtifactWritten { .. } => (&mut artifacts, |a, b| {
+                    a.artifact_path() == b.artifact_path()
+                }),
+            };
+        match list.iter_mut().find(|known| same(known, event)) {
+            Some(known) => *known = event,
+            None => list.push(event),
         }
     }
-    let artifact = events.iter().rev().find(|event| {
-        matches!(
-            event.kind,
-            BoardEventKind::StartupArtifactUploaded { .. }
-                | BoardEventKind::StartupArtifactWritten { .. }
-        )
-    });
-    (flashes, artifact)
+    (flashes, artifacts)
+}
+
+impl BoardEvent {
+    fn artifact_path(&self) -> Option<&str> {
+        match &self.kind {
+            BoardEventKind::StartupArtifactUploaded { path, .. }
+            | BoardEventKind::StartupArtifactWritten { path, .. } => Some(path),
+            BoardEventKind::Flashed { .. } => None,
+        }
+    }
 }
 
 /// The registered label of a board, its MAC, or `unidentified board`.
@@ -166,10 +174,23 @@ mod tests {
             unix: 7,
             ..event.clone()
         };
-        let events = [event.clone(), artifact.clone(), peer.clone(), newer.clone()];
-        let (flashes, startup) = latest(&events);
+        let other_checkout = BoardEvent {
+            kind: BoardEventKind::StartupArtifactUploaded {
+                path: "/b".into(),
+                sha256: "bb".into(),
+            },
+            ..event.clone()
+        };
+        let events = [
+            event.clone(),
+            artifact.clone(),
+            peer.clone(),
+            other_checkout.clone(),
+            newer.clone(),
+        ];
+        let (flashes, artifacts) = latest(&events);
         assert_eq!(flashes, [&newer, &peer]);
-        assert_eq!(startup, Some(&artifact));
+        assert_eq!(artifacts, [&artifact, &other_checkout]);
         let devices = [crate::Device {
             mac: "38:44:BE:AA:25:64".into(),
             chip: Some("esp32c5".into()),

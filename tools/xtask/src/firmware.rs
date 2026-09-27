@@ -178,7 +178,11 @@ pub fn flash(
         "build firmware {example} --flash{}",
         if monitor { " --monitor" } else { "" }
     ))?)?;
-    let lease = oer_esp32s31_firmware::device::DeviceLease::select(port)?;
+    let registered = match port {
+        Some(_) => None,
+        None => only_attached_board("esp32s31", &arbiter.devices()?),
+    };
+    let lease = oer_esp32s31_firmware::device::DeviceLease::select(port.or(registered.as_deref()))?;
     let port = Some(lease.port());
     for (address, filename, reset) in [
         (BOOTLOADER_OFFSET, "bootloader.bin", "no-reset"),
@@ -218,6 +222,32 @@ pub fn flash(
     Ok(())
 }
 
+/// The port of the only attached board registered as `chip`. Several USB
+/// boards are attached to the stand, so automatic selection uses the board
+/// registry rather than the number of serial ports.
+fn only_attached_board(
+    chip: &str,
+    devices: &[oer_hil_arbiter::Device],
+) -> Option<std::path::PathBuf> {
+    select_board(chip, devices, &oer_hil_arbiter::attached_ports())
+}
+
+fn select_board(
+    chip: &str,
+    devices: &[oer_hil_arbiter::Device],
+    attached: &[oer_hil_arbiter::AttachedPort],
+) -> Option<std::path::PathBuf> {
+    let mut matches = attached.iter().filter(|port| {
+        devices.iter().any(|device| {
+            Some(&device.mac) == port.mac.as_ref() && device.chip.as_deref() == Some(chip)
+        })
+    });
+    match (matches.next(), matches.next()) {
+        (Some(port), None) => Some(std::path::PathBuf::from(&port.port)),
+        _ => None,
+    }
+}
+
 /// Exercise the same blocked-send workload with an explicit quiescence requirement.
 pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
     use oer_esp32s31_firmware::network::{BuildLock, Integration};
@@ -246,4 +276,34 @@ pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
     lock.validate(&ctx.root, network)?;
     fs::copy(lock.path(), output.join("effective-Cargo.lock"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn automatic_flashing_picks_the_only_attached_board_of_the_chip() {
+        let device = |mac: &str, chip: &str| oer_hil_arbiter::Device {
+            mac: mac.into(),
+            chip: Some(chip.into()),
+            name: None,
+        };
+        let port = |port: &str, mac: &str| oer_hil_arbiter::AttachedPort {
+            port: port.into(),
+            mac: Some(mac.into()),
+            vid: 0x303a,
+            pid: 0x1001,
+            product: None,
+        };
+        let devices = [device("AA", "esp32s31"), device("BB", "esp32c5")];
+        let attached = [port("/dev/ttyACM1", "BB"), port("/dev/ttyACM0", "AA")];
+        assert_eq!(
+            select_board("esp32s31", &devices, &attached),
+            Some("/dev/ttyACM0".into())
+        );
+        assert_eq!(select_board("esp32s3", &devices, &attached), None);
+        let two = [device("AA", "esp32s31"), device("BB", "esp32s31")];
+        assert_eq!(select_board("esp32s31", &two, &attached), None);
+    }
 }

@@ -52,6 +52,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let (options, args) = LeaseOptions::split(args)?;
     let args = args.as_slice();
     match args.first().and_then(|argument| argument.to_str()) {
+        None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
         Some("queue") => return queue(&args[1..]),
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
@@ -91,6 +92,24 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     }
     Ok(exit_code(status))
 }
+
+/// Stand commands handled here, printed before the runner's own help.
+const STAND_HELP: &str = "\
+Stand commands (shared by every checkout of this user):
+  cargo hil queue [--json]            holder, queue with expected starts, boards, recent leases
+  cargo hil lease [OPTIONS] -- CMD    run CMD under one stand lease; nested cargo hil joins it
+      --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
+      [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
+  cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
+  cargo hil devices [--json]          boards: name, chip, port, last firmware
+  cargo hil devices set MAC [--chip CHIP] [--name NAME]
+
+Lease options, before any HIL command or after `lease`:
+  --owner NAME     default: enclosing lease owner, else the checkout directory name
+  --budget DUR     90s, 15m, 1h30m; default: history of the same work or scenarios, else 15m
+  --short          budget of at most 2m, granted ahead of the queue head
+
+Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";
 
 /// Stand lease options accepted before the HIL command, or after `lease`.
 #[derive(Debug, Default, PartialEq)]
@@ -321,6 +340,7 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         work,
         budget: options.budget,
         short: options.short,
+        scenarios: Vec::new(),
     };
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let grant = arbiter.acquire(&request)?;
@@ -564,6 +584,7 @@ mod tests {
                 work: "sleep".into(),
                 budget: Some(std::time::Duration::from_secs(1)),
                 short: false,
+                scenarios: Vec::new(),
             })
             .unwrap();
         let started = std::time::Instant::now();

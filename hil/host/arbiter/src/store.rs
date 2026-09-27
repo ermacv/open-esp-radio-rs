@@ -122,6 +122,7 @@ impl Arbiter {
                     released_unix: crate::unix_now(),
                     budget_secs: holder.ticket.budget_secs,
                     outcome: LeaseOutcome::Abandoned,
+                    scenarios: Vec::new(),
                 },
             )?;
             crate::notify::send(

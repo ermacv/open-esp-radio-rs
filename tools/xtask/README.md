@@ -32,7 +32,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask vendor-diff --old A --new B` | Classify every function of two archive revisions by relocation-normalized code: unchanged, references renamed, renamed, changed (with similarity), removed (with the closest candidate) or added; `--baseline DIR` compares every pinned artifact with its namesake in `DIR` |
 | `cargo xtask evidence [SCENARIO...]` | Rewrite the vendor evidence shards whose recorded sources changed, or the named scenarios' shards; builds the probes and runs the scenarios with the pinned artifacts. Use it after a merge that conflicted in `verification/<chip>/evidence/scenarios` |
 | `cargo xtask vendor-provenance --accept NAME[,NAME]` | Record the pinned fingerprint of cited functions after reviewing their facts; `--rebuild --baseline DIR` recomputes the registry from the current citations with fingerprints of the revision in `DIR` |
-| `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
+| `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it under a HIL stand lease and `--monitor` opens the console. Without `--port` it flashes the only attached board registered as `esp32s31` |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the three Rust probe images of the ESP32-S31 vendor comparison |
 | `cargo xtask build vendor-probes --chip esp32s31 --list-roles` | List declared artifact roles without building or authenticating an artifact |
 

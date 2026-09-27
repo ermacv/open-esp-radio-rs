@@ -122,7 +122,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil queue [--json]            holders, queue with expected starts, boards, recent leases
   cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1
   cargo hil lease [OPTIONS] -- CMD    run CMD under one lease; nested cargo hil joins it
-      --board NAME|MAC                boards CMD uses (repeatable); none: the whole stand
+      --board NAME|MAC                boards CMD uses (repeatable)
+      --stand                         claim the whole stand instead; blocks every other owner
       --air shared|exclusive          radio environment; exclusive for RF measurements
       --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
       [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
@@ -267,10 +268,22 @@ fn parse_air(text: &str) -> std::result::Result<oer_hil_arbiter::Mode, String> {
 fn lease_claims(
     boards: &[String],
     air: Option<oer_hil_arbiter::Mode>,
+    stand: bool,
     devices: &[oer_hil_arbiter::Device],
 ) -> Result<Vec<oer_hil_arbiter::Claim>> {
-    if boards.is_empty() && air.is_none() {
-        return Ok(vec![oer_hil_arbiter::Claim::stand()]);
+    match (stand, boards.is_empty() && air.is_none()) {
+        (true, true) => return Ok(vec![oer_hil_arbiter::Claim::stand()]),
+        (true, false) => return Err("--stand claims everything; drop --board and --air".into()),
+        // A whole-stand lease blocks every other owner, so it is never the
+        // accidental result of naming nothing.
+        (false, true) => {
+            return Err(
+                "name what the command uses with --board NAME|MAC (repeatable) and \
+                        --air, or claim the whole stand with --stand"
+                    .into(),
+            );
+        }
+        (false, false) => {}
     }
     let mut claims = boards
         .iter()
@@ -308,10 +321,13 @@ struct LeaseCli {
     /// A budget of at most two minutes, granted ahead of the queue head.
     #[arg(long)]
     short: bool,
-    /// A board the command uses, by registered name or MAC; repeatable.
-    /// Without boards or --air the lease claims the whole stand.
+    /// A board the command uses, by registered name, chip or MAC;
+    /// repeatable.
     #[arg(long = "board", value_name = "NAME|MAC")]
     boards: Vec<String>,
+    /// Claim the whole stand: every board, fixture and the air.
+    #[arg(long)]
+    stand: bool,
     /// How the command uses the radio environment: `shared` (default with
     /// boards) or `exclusive` for RF measurements.
     #[arg(long, value_parser = parse_air)]
@@ -432,7 +448,7 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         budget: options.budget,
         short: options.short,
         scenarios: Vec::new(),
-        claims: lease_claims(&cli.boards, cli.air, &arbiter.devices()?)?,
+        claims: lease_claims(&cli.boards, cli.air, cli.stand, &arbiter.devices()?)?,
     };
     let grant = arbiter.acquire(&request)?;
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
@@ -1013,23 +1029,29 @@ mod tests {
     }
 
     #[test]
-    fn a_lease_claims_its_boards_and_the_air_or_else_the_whole_stand() {
+    fn a_lease_claims_its_boards_and_the_air_or_explicitly_the_whole_stand() {
         use oer_hil_arbiter::{AIR, Claim, Mode};
         let devices = [oer_hil_arbiter::Device {
             mac: "38:44:BE:AA:25:64".into(),
             chip: None,
             name: Some("esp32c5".into()),
         }];
-        assert_eq!(lease_claims(&[], None, &devices).unwrap(), [Claim::stand()]);
         assert_eq!(
-            lease_claims(&["esp32c5".into()], None, &devices).unwrap(),
+            lease_claims(&[], None, true, &devices).unwrap(),
+            [Claim::stand()]
+        );
+        // Naming nothing never claims the whole stand by accident.
+        assert!(lease_claims(&[], None, false, &devices).is_err());
+        assert!(lease_claims(&["esp32c5".into()], None, true, &devices).is_err());
+        assert_eq!(
+            lease_claims(&["esp32c5".into()], None, false, &devices).unwrap(),
             [Claim::board("38:44:BE:AA:25:64"), Claim::shared(AIR)]
         );
         assert_eq!(
-            lease_claims(&[], Some(Mode::Exclusive), &devices).unwrap(),
+            lease_claims(&[], Some(Mode::Exclusive), false, &devices).unwrap(),
             [Claim::exclusive(AIR)]
         );
-        assert!(lease_claims(&["s3".into()], None, &devices).is_err());
+        assert!(lease_claims(&["s3".into()], None, false, &devices).is_err());
     }
 
     #[test]

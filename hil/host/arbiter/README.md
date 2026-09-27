@@ -59,4 +59,4 @@ not a distributed reservation. Budget estimates count only released leases of
 the identical command line or of single scenarios. Claims are cooperative: a
 command that claims one board and uses another is not detected. Commands that bypass `cargo hil` and `cargo xtask
 build firmware --flash`, such as a manual `espflash`, are not ordered unless run
-as `cargo hil lease -- COMMAND`.
+as `cargo hil lease --board NAME -- COMMAND`.

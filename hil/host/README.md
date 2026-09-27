@@ -106,7 +106,7 @@ cargo hil dashboard                   # the same, live, with recent runs: http:/
 cargo hil --budget 10m run <scenario> # one run, one lease
 cargo hil --budget 15m run a b c      # one run of three scenarios, one lease
 cargo hil lease --board esp32c5 --budget 5m -- idf.py -p <port> flash
-cargo hil --owner phy lease --budget 20m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
+cargo hil --owner phy lease --board esp32s31 --budget 20m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
 `flash --board NAME|MAC ELF` is the manual cycle for images outside the
@@ -140,8 +140,9 @@ scenario must use the replayed image class. Prefer it to a shell loop under
 `lease` runs one command under one lease; every `cargo hil` command inside it
 joins that lease when the lease already holds what it needs, so no other owner
 can flash between the runs of a series. `--board NAME|MAC` (repeatable) and
-`--air shared|exclusive` name what the command uses; without them the lease
-claims the whole stand. The lease options precede the HIL command, or follow
+`--air shared|exclusive` name what the command uses. A lease naming neither is
+refused: a whole-stand lease blocks every other owner, so it must be asked for
+with `--stand`. The lease options precede the HIL command, or follow
 `lease`:
 
 | Option | Meaning |
@@ -194,7 +195,7 @@ their names.
 ```console
 cargo hil devices                     # boards: label, port, last firmware
 cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --name esp32c5
-cargo hil lease --flashed ieee802154-peer --application build/peer.bin \
+cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
     --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
     --chip esp32c5 -- idf.py -p /dev/ttyACM1 flash
 cargo hil board flashed --image NAME --sha256 HASH --device MAC   # inside a lease

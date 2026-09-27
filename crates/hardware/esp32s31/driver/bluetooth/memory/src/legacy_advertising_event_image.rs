@@ -9,6 +9,7 @@
 use crate::{
     le_phy_packet::{LeAccessAddress, LeCrcInit},
     le_tx_power::LeTxPower,
+    link_state_event::{LinkStateEventWord, item_with_le_1m_power},
     sram_link::ControllerSramLinkAddress,
 };
 
@@ -18,10 +19,9 @@ const RESERVED_HEADER_BITS: u8 = (1 << 4) | (1 << 5) | (1 << 7);
 const DEVICE_ADDRESS_BYTES: usize = 6;
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
-const POWER_BYTE_MASK: u32 = 0x0000_ff00;
 /// Scheduling priority `r_sym_ble_Ok6PLzc6qsIOuEzma5oM` returns for the
 /// first event at the default low advertising level.
-const DEFAULT_ADVERTISING_PRIORITY: u32 = 1;
+const DEFAULT_ADVERTISING_PRIORITY: u8 = 1;
 const RATE_LANES_MASK: u32 = 0xf000_0000;
 const OPTIONS_IMAGE_MASK: u32 = 0x3f00_0000;
 const REVIEWED_STANDALONE_OPTIONS: u32 = 3 << 24;
@@ -31,7 +31,6 @@ const SCHEDULER_ITEM_HARDWARE_NEXT_MASK: u32 = 0x000f_ffff;
 /// selects: the item may start as soon as its predecessor ends.
 const SCHEDULER_ITEM_CHAINED_START: u32 = 1 << 22;
 const SCHEDULER_ITEM_FREQUENCY_MASK: u32 = 0x0000_7f00;
-const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 
 /// Semantic primary channel selected by one legacy advertising event.
 ///
@@ -209,15 +208,16 @@ impl LegacyAdvertisingLinkStateWords {
         self.word_34 = 0;
         self.access_address_word_38 = LeAccessAddress::PRIMARY_ADVERTISING.controller_image();
         self.word_50 = (self.word_50 & !OPTIONS_IMAGE_MASK) | REVIEWED_STANDALONE_OPTIONS;
-        self.word_60 = (self.word_60 & 0xffff_0000)
-            | ((default_tx_power.index() as u32) << 8)
-            | DEFAULT_ADVERTISING_PRIORITY;
+        self.word_60 = LinkStateEventWord::from_word(self.word_60 & 0xffff_0000)
+            .with_power(default_tx_power)
+            .with_priority(DEFAULT_ADVERTISING_PRIORITY)
+            .word();
         self
     }
 
     /// The power index the common insertion copies into the item.
-    const fn power_index(self) -> u32 {
-        (self.word_60 & POWER_BYTE_MASK) >> 8
+    const fn power_index(self) -> u8 {
+        LinkStateEventWord::from_word(self.word_60).power_index()
     }
 }
 
@@ -274,8 +274,7 @@ impl LegacyAdvertisingSchedulerItemWords {
             self.word_00 |= SCHEDULER_ITEM_CHAINED_START;
         }
         self.word_04 |= 0x8000_0000;
-        self.word_14 =
-            (self.word_14 & !SCHEDULER_ITEM_RATE_AND_POWER_MASK) | (link_state.power_index() << 20);
+        self.word_14 = item_with_le_1m_power(self.word_14, link_state.power_index());
         self.word_18 = (self.word_18 & !(SCHEDULER_ITEM_FREQUENCY_MASK | 0xff))
             | ((channel.frequency_image() as u32) << 8)
             | 0x11;

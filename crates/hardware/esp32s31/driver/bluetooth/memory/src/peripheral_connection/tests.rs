@@ -447,7 +447,7 @@ fn the_first_event_installs_the_coexistence_protection_only_when_given() {
 fn a_recurring_event_keeps_the_power_the_first_event_stored() {
     fn power(pool: &Pool, instance: &SchedulerRoleInstance) -> u32 {
         let (graph, _, _) = pool.shared(instance).unwrap();
-        graph.link_state.power_index()
+        u32::from(graph.link_state.power_index())
     }
     let mut pool = pool();
     let instance = active(&mut pool);

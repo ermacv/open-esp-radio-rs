@@ -5,12 +5,12 @@
 use crate::{
     le_phy_packet::{LeAccessAddress, LeCrcInit},
     le_tx_power::LeTxPower,
+    link_state_event::{LinkStateEventWord, item_with_le_1m_power},
     sram_link::ControllerSramLinkAddress,
 };
 
 pub(super) const BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS: usize = 0x84 / 4;
 const RX_HEAD_MASK: u32 = 0x000f_ffff;
-const POWER_BYTE_MASK: u32 = 0x0000_ff00;
 const LINK_STATE_18_BIT_20: u32 = 1 << 20;
 const WORD_00: usize = 0;
 const WORD_08: usize = 2;
@@ -30,7 +30,6 @@ const SCHEDULER_HARDWARE_CHAIN_EVENT_READY: u32 = 1 << 23;
 const SCHEDULER_HARDWARE_CHAIN_TIMING_MASK: u32 =
     SCHEDULER_HARDWARE_CHAIN_ADJUSTED_START | SCHEDULER_HARDWARE_CHAIN_EVENT_READY;
 const SCHEDULER_CONTEXT_EVENT_READY: u32 = 1 << 31;
-const SCHEDULER_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 const SCHEDULER_FREQUENCY_AND_KIND_MASK: u32 = 0x0000_7fff;
 const SCHEDULER_SCANNER_EVENT_KIND: u32 = 1;
 
@@ -169,7 +168,9 @@ impl PassiveScanLinkStateImage {
         // SOURCE: pinned `r_sym_ble_KkAldzIlkQuEkNQp1g6q`
         // (`r_ble_lll_scan_reset_link_state`) stores the zero tick difference
         // at `+0x34` and the power index in byte `+0x61`, not in `+0x04`.
-        words[WORD_60] = (config.default_tx_power().index() as u32) << 8;
+        words[WORD_60] = LinkStateEventWord::from_word(0)
+            .with_power(config.default_tx_power())
+            .word();
         words[WORD_38] = LeAccessAddress::PRIMARY_ADVERTISING.controller_image();
         words[WORD_48] = 0x0000_0200;
         words[WORD_50] = 0x0300_0000;
@@ -194,8 +195,8 @@ impl PassiveScanLinkStateImage {
     }
 
     /// The power index the event copies into the item.
-    const fn power_index(self) -> u32 {
-        (self.words[WORD_60] & POWER_BYTE_MASK) >> 8
+    const fn power_index(self) -> u8 {
+        LinkStateEventWord::from_word(self.words[WORD_60]).power_index()
     }
 
     #[cfg(test)]
@@ -248,8 +249,7 @@ impl PassiveScanSchedulerItemWords {
         }
         self.word_00 |= SCHEDULER_HARDWARE_CHAIN_EVENT_READY;
         self.word_04 |= SCHEDULER_CONTEXT_EVENT_READY;
-        self.word_14 =
-            (self.word_14 & !SCHEDULER_RATE_AND_POWER_MASK) | (link_state.power_index() << 20);
+        self.word_14 = item_with_le_1m_power(self.word_14, link_state.power_index());
         self.word_18 = (self.word_18 & !SCHEDULER_FREQUENCY_AND_KIND_MASK)
             | ((channel.frequency_image() as u32) << 8)
             | SCHEDULER_SCANNER_EVENT_KIND;

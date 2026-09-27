@@ -12,14 +12,13 @@ use crate::{
     ControllerSramLinkAddress,
     le_phy_packet::{LeAccessAddress, LeCrcInit},
     le_tx_power::LeTxPower,
+    link_state_event::{LinkStateEventWord, item_with_power},
 };
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
-const LINK_STATE_POWER_BYTE_MASK: u32 = 0x0000_ff00;
 const LINK_STATE_CONFIG_MASK: u32 = 0x3f00_0000;
 const SCHEDULER_FREQUENCY_MASK: u32 = 0x0000_7f00;
 const SCHEDULER_RATE_LANES_MASK: u32 = 0xf000_0000;
-const SCHEDULER_ROUNDED_POWER_REGION_MASK: u32 = 0x0ff0_0000;
 const INITIAL_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x000f_0001;
 const RECURRING_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x0000_0001;
 
@@ -285,8 +284,9 @@ impl DtmLinkStateReviewedWords {
         self.profile_word_14 = self.profile_word_14.select_direct_test_mode();
         let halfword_30 = ((self.word_30 as u16) & 0xc100) | 0x1e00;
         self.word_30 = (self.word_30 & 0xffff_0000) | halfword_30 as u32;
-        self.word_60 =
-            (self.word_60 & !LINK_STATE_POWER_BYTE_MASK) | ((default_tx_power.index() as u32) << 8);
+        self.word_60 = LinkStateEventWord::from_word(self.word_60)
+            .with_power(default_tx_power)
+            .word();
         if matches!(role, DtmRole::Receiver) {
             self.word_34 = 0;
         }
@@ -297,7 +297,7 @@ impl DtmLinkStateReviewedWords {
 
     /// Return the transmit-power index a recurring event copies.
     const fn power_index(self) -> u8 {
-        ((self.word_60 & LINK_STATE_POWER_BYTE_MASK) >> 8) as u8
+        LinkStateEventWord::from_word(self.word_60).power_index()
     }
 
     pub(super) const fn access_address(self) -> LeAccessAddress {
@@ -351,7 +351,7 @@ impl DtmSchedulerItemReviewedWords {
     /// The power index the item carries.
     #[cfg(test)]
     const fn power_index(self) -> u8 {
-        ((self.word_14 & SCHEDULER_ROUNDED_POWER_REGION_MASK) >> 20) as u8
+        crate::link_state_event::item_power_index(self.word_14)
     }
 
     /// Apply every complete reviewed DTM event transform before insertion.
@@ -424,8 +424,7 @@ impl DtmSchedulerItemReviewedWords {
     /// byte `+0x61` in bits 27:20 of `+0x14`; the initial event body
     /// `sym_dtm_2zeOUjc7g55zkDNQuZkg` writes no power into the item.
     pub const fn apply_recurring_power(mut self, link_state: DtmLinkStateReviewedWords) -> Self {
-        let power = link_state.power_index() as u32;
-        self.word_14 = (self.word_14 & !SCHEDULER_ROUNDED_POWER_REGION_MASK) | (power << 20);
+        self.word_14 = item_with_power(self.word_14, link_state.power_index());
         self
     }
 }

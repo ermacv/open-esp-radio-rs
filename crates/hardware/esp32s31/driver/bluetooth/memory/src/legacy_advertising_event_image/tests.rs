@@ -51,7 +51,7 @@ fn an_item_carries_the_power_its_link_state_was_reset_with() {
         let link_state = reset(dbm);
         assert_eq!(
             link_state.power_index(),
-            u32::from(LeTxPower::from_dbm(dbm).unwrap().index())
+            LeTxPower::from_dbm(dbm).unwrap().index()
         );
         let item = zero_item().prepare_event_item(
             link_state,
@@ -60,7 +60,10 @@ fn an_item_carries_the_power_its_link_state_was_reset_with() {
             10,
             20,
         );
-        assert_eq!(item.word_14 >> 20 & 0xff, link_state.power_index());
+        assert_eq!(
+            item.word_14 >> 20 & 0xff,
+            u32::from(link_state.power_index())
+        );
     }
 }
 

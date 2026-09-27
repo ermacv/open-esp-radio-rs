@@ -36,6 +36,7 @@ use crate::{
         LeTxBufferHeaderStorage, LeTxPacketAddress, LeTxPacketPrepareError, LeTxPacketStorage,
     },
     le_tx_power::LeTxPower,
+    link_state_event::{LinkStateEventWord, item_with_le_1m_power},
     scheduler_context::SchedulerContextStorage,
     scheduler_item::{SchedulerItemCompletionStatus, SchedulerItemHeader},
     scheduler_pool::{
@@ -86,8 +87,6 @@ const LINK_STATE_EVENT_SPAN: usize = 0x34 / 4;
 const LINK_STATE_COMMON_RADIO_AND_DIRECTION_FINDING_CONFIGURATION: usize = 0x50 / 4;
 const LINK_STATE_DIRECTION_FINDING_POLICY: usize = 0x54 / 4;
 const LINK_STATE_EVENT_PRIORITY: usize = 0x60 / 4;
-const LINK_STATE_PRIORITY_BYTE_MASK: u32 = 0x0000_00ff;
-const LINK_STATE_POWER_BYTE_MASK: u32 = 0x0000_ff00;
 const LINK_STATE_TX_PATH_VALID: u32 = 1 << 31;
 const LINK_STATE_TX_QUEUE_READY: u32 = 1 << 28;
 const LINK_STATE_SUPPORTED_MAX_TX_OCTETS: u32 = 251;
@@ -126,7 +125,6 @@ const SCHEDULER_ITEM_PERIPHERAL_ALLOCATION_FLAGS: u32 = 0xe7df_7fff;
 const SCHEDULER_ITEM_PERIPHERAL_PREFIX: u32 = 0x0020_0000;
 const SCHEDULER_ITEM_CONNECTION_CLASS: u32 = 3 << 8;
 const SCHEDULER_ITEM_CONTEXT_READY: u32 = 1 << 31;
-const SCHEDULER_ITEM_RATE_AND_POWER_MASK: u32 = 0xfff0_0000;
 const SCHEDULER_ITEM_FREQUENCY_AND_PRIORITY_MASK: u32 = 0x0000_7fff;
 /// SOURCE: pinned `libble_app.a` first-event `r_sym_ble_tPr7egUaNHmqfcieCA5O`
 /// (`r_ble_lll_conn_slave_new`) and recurring `r_sym_ble_rsCCyH2B22gdYkN4LOOJ`
@@ -220,13 +218,10 @@ impl LinkStateStorage {
         // (`r_ble_lll_conn_reset_link_state`) stores the transmit-power index
         // in byte `+0x61`, next to the priority byte `+0x60`, and not
         // in `+0x04`.
-        let power = u32::from(event.default_tx_power.index());
-        let current = self.words[LINK_STATE_EVENT_PRIORITY].get();
-        self.words[LINK_STATE_EVENT_PRIORITY].set(
-            (current & !(LINK_STATE_PRIORITY_BYTE_MASK | LINK_STATE_POWER_BYTE_MASK))
-                | (power << 8)
-                | u32::from(event.priority.value()),
-        );
+        let event_word = LinkStateEventWord::from_word(self.words[LINK_STATE_EVENT_PRIORITY].get())
+            .with_power(event.default_tx_power)
+            .with_priority(event.priority.value());
+        self.words[LINK_STATE_EVENT_PRIORITY].set(event_word.word());
         self.words[LINK_STATE_RECEIVE_TIME].set(event.receive_time.wrapping_controller_ticks());
         self.words[LINK_STATE_EVENT_SPAN].set(event.event_span.ticks());
     }
@@ -236,9 +231,9 @@ impl LinkStateStorage {
         event_span: PeripheralConnectionEventSpan,
         priority: PeripheralConnectionSchedulerPriority,
     ) {
-        let current = self.words[LINK_STATE_EVENT_PRIORITY].get();
-        self.words[LINK_STATE_EVENT_PRIORITY]
-            .set((current & !LINK_STATE_PRIORITY_BYTE_MASK) | u32::from(priority.value()));
+        let event_word = LinkStateEventWord::from_word(self.words[LINK_STATE_EVENT_PRIORITY].get())
+            .with_priority(priority.value());
+        self.words[LINK_STATE_EVENT_PRIORITY].set(event_word.word());
         self.words[LINK_STATE_EVENT_SPAN].set(event_span.ticks());
     }
 
@@ -257,8 +252,8 @@ impl LinkStateStorage {
         );
     }
 
-    fn power_index(&self) -> u32 {
-        (self.words[LINK_STATE_EVENT_PRIORITY].get() & LINK_STATE_POWER_BYTE_MASK) >> 8
+    fn power_index(&self) -> u8 {
+        LinkStateEventWord::from_word(self.words[LINK_STATE_EVENT_PRIORITY].get()).power_index()
     }
 
     fn receive_time(&self) -> PeripheralConnectionReceiveTime {
@@ -352,12 +347,12 @@ impl ItemStorage {
         header.set_sequence(window.start(), window.end(), raw_sequence_lead);
     }
 
-    fn prepare_first_event(&self, power_index: u32, event: &PeripheralConnectionFirstEvent) {
+    fn prepare_first_event(&self, power_index: u8, event: &PeripheralConnectionFirstEvent) {
         self.prepare_priority_and_channel(event.channel, event.priority, event.coexistence);
-        self.words[SCHEDULER_ITEM_RATE_AND_POWER].set(
-            (self.words[SCHEDULER_ITEM_RATE_AND_POWER].get() & !SCHEDULER_ITEM_RATE_AND_POWER_MASK)
-                | (power_index << 20),
-        );
+        self.words[SCHEDULER_ITEM_RATE_AND_POWER].set(item_with_le_1m_power(
+            self.words[SCHEDULER_ITEM_RATE_AND_POWER].get(),
+            power_index,
+        ));
         self.words[SCHEDULER_ITEM_RECEIVE_WAIT_CONFIGURATION]
             .set(SCHEDULER_ITEM_RECEIVE_WAIT_SHORT_MODE | event.receive_wait.total_micros());
         self.prepare_window(event.window, event.raw_sequence_lead);

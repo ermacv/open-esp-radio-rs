@@ -51,11 +51,20 @@ fn git(directory: &Path, args: &[&str]) -> Result<String> {
 }
 
 /// Make `directory` a checkout of `repository` at `revision`, fetching only
-/// that commit.
+/// that commit. The checkout's `origin` is `repository`, so git resolves
+/// relative submodule URLs against the upstream rather than the directory.
 fn checkout(directory: &Path, repository: &str, revision: &str) -> Result<()> {
     if git(directory, &["rev-parse", "HEAD"]).is_ok_and(|head| head == revision)
         && directory.join(".git").exists()
     {
+        if git(directory, &["remote", "get-url", "origin"]).is_err() {
+            git(directory, &["remote", "add", "origin", repository])?;
+            // Submodules initialized without an origin resolved against the
+            // directory; take their URLs from `.gitmodules` again.
+            if directory.join(".gitmodules").is_file() {
+                git(directory, &["submodule", "sync", "--quiet"])?;
+            }
+        }
         return Ok(());
     }
     if directory.exists() {
@@ -63,9 +72,10 @@ fn checkout(directory: &Path, repository: &str, revision: &str) -> Result<()> {
     }
     std::fs::create_dir_all(directory)?;
     git(directory, &["init", "--quiet"])?;
+    git(directory, &["remote", "add", "origin", repository])?;
     git(
         directory,
-        &["fetch", "--quiet", "--depth", "1", repository, revision],
+        &["fetch", "--quiet", "--depth", "1", "origin", revision],
     )?;
     git(directory, &["checkout", "--quiet", "FETCH_HEAD"])?;
     Ok(())
@@ -130,7 +140,7 @@ fn submodules(tree: &Path, repository: &str) -> Result<BTreeMap<String, String>>
         .collect())
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, serde::Deserialize)]
 struct Override {
     source: String,
     submodule: String,
@@ -213,14 +223,29 @@ fn install_tools(root: &Path, tree: &Path, chip: &str, revision: &str) -> Result
     Ok(tools)
 }
 
+/// The name that identifies an archive against the pins: its file name with
+/// its directory, such as `esp32s31/libphy.a`, since vendor libraries keep
+/// one directory per chip under the same file names.
+fn archive_key(path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_str()?;
+    match path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|n| n.to_str())
+    {
+        Some(directory) => Some(format!("{directory}/{name}")),
+        None => Some(name.to_owned()),
+    }
+}
+
 /// Archives the linker map `map` names below `tree` that share a file name
-/// with a pinned artifact but differ from it.
+/// and chip directory with a pinned artifact but differ from it.
 fn unpinned_archives(map: &str, tree: &Path, pins: &[GitPin]) -> Result<Vec<String>> {
     let mut pinned: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for pin in pins {
         for (path, sha256) in &pin.artifacts {
-            if let Some(name) = Path::new(path).file_name().and_then(|n| n.to_str()) {
-                pinned.entry(name.to_owned()).or_default().push(sha256);
+            if let Some(key) = archive_key(Path::new(path)) {
+                pinned.entry(key).or_default().push(sha256);
             }
         }
     }
@@ -234,11 +259,7 @@ fn unpinned_archives(map: &str, tree: &Path, pins: &[GitPin]) -> Result<Vec<Stri
     let mut unpinned = vec![];
     for archive in linked {
         let path = Path::new(&archive);
-        let Some(digests) = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| pinned.get(n))
-        else {
+        let Some(digests) = archive_key(path).and_then(|key| pinned.get(&key)) else {
             continue;
         };
         if !digests.contains(&vendor_fetch::sha256(path)?.as_str()) {
@@ -248,15 +269,29 @@ fn unpinned_archives(map: &str, tree: &Path, pins: &[GitPin]) -> Result<Vec<Stri
     Ok(unpinned)
 }
 
-#[derive(Serialize)]
-struct Build {
-    chip: String,
-    project: String,
-    idf_revision: String,
+/// `build.json` of one built project.
+#[derive(Serialize, serde::Deserialize)]
+pub struct Build {
+    pub chip: String,
+    pub project: String,
+    pub idf_revision: String,
     overrides: Vec<Override>,
-    application: String,
-    application_sha256: String,
-    elf: String,
+    pub application: String,
+    pub application_sha256: String,
+    pub elf: String,
+}
+
+/// One ESP-IDF project to build: its directory and its target chip.
+pub struct Project {
+    pub name: String,
+    pub source: PathBuf,
+    pub chip: String,
+}
+
+/// Output directory of `project`, holding `build/`, `sdkconfig` and
+/// `build.json`.
+pub fn output(root: &Path, project: &Project) -> PathBuf {
+    root.join(OUTPUT).join(&project.chip).join(&project.name)
 }
 
 /// The vendor firmware projects of `chip`, by name.
@@ -288,18 +323,39 @@ pub fn run(ctx: &Context, chip: &str, project: Option<&str>) -> Result<()> {
         }
         None => available.iter().map(String::as_str).collect(),
     };
-    let pins = vendor_fetch::git_pins(ctx, chip)?;
+    let projects = selected
+        .into_iter()
+        .map(|name| Project {
+            name: name.to_owned(),
+            source: ctx
+                .root
+                .join("verification")
+                .join(chip)
+                .join(PROJECTS)
+                .join(name),
+            chip: chip.to_owned(),
+        })
+        .collect::<Vec<_>>();
+    for (project, build) in projects.iter().zip(build(ctx, chip, &projects)?) {
+        println!("{:<16} {}", project.name, build.application);
+    }
+    Ok(())
+}
+
+/// Build `projects` against the ESP-IDF and vendor archives pinned by the
+/// `artifacts.toml` of `pins`, each for its own target chip, and write their
+/// `build.json`. An image linking an archive named like a pinned artifact but
+/// differing from it is refused.
+pub fn build(ctx: &Context, pins: &str, projects: &[Project]) -> Result<Vec<Build>> {
+    let pins = vendor_fetch::git_pins(ctx, pins)?;
     let (tree, overrides) = prepare_tree(&ctx.root, &pins)?;
     let revision = git(&tree, &["rev-parse", "HEAD"])?;
-    let tools = install_tools(&ctx.root, &tree, chip, &revision)?;
-    for name in selected {
-        let source = ctx
-            .root
-            .join("verification")
-            .join(chip)
-            .join(PROJECTS)
-            .join(name);
-        let output = ctx.root.join(OUTPUT).join(chip).join(name);
+    let mut builds = Vec::with_capacity(projects.len());
+    for project in projects {
+        let name = &project.name;
+        let chip = &project.chip;
+        let tools = install_tools(&ctx.root, &tree, chip, &revision)?;
+        let output = output(&ctx.root, project);
         let build = output.join("build");
         std::fs::create_dir_all(&output)?;
         // `--preview`: the pinned IDF lists the chip as a preview target.
@@ -309,7 +365,7 @@ idf.py --preview -C "$OER_PROJECT" -B "$OER_BUILD" -DIDF_TARGET="$OER_CHIP" -DSD
             &[
                 ("IDF_PATH", &tree),
                 ("IDF_TOOLS_PATH", &tools),
-                ("OER_PROJECT", &source),
+                ("OER_PROJECT", &project.source),
                 ("OER_BUILD", &build),
                 ("OER_CHIP", Path::new(chip)),
                 ("OER_SDKCONFIG", &output.join("sdkconfig")),
@@ -343,14 +399,43 @@ idf.py --preview -C "$OER_PROJECT" -B "$OER_BUILD" -DIDF_TARGET="$OER_CHIP" -DSD
         let mut bytes = serde_json::to_vec_pretty(&record)?;
         bytes.push(b'\n');
         std::fs::write(output.join("build.json"), bytes)?;
-        println!("{name:<16} {}", application.display());
+        builds.push(record);
     }
-    Ok(())
+    Ok(builds)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_checkout_resolves_relative_submodules_against_its_upstream() {
+        let upstream = tempfile::tempdir().unwrap();
+        let run = |directory: &Path, args: &[&str]| git(directory, args).unwrap();
+        run(upstream.path(), &["init", "--quiet"]);
+        run(
+            upstream.path(),
+            &["config", "user.email", "test@example.invalid"],
+        );
+        run(upstream.path(), &["config", "user.name", "test"]);
+        run(
+            upstream.path(),
+            &["config", "uploadpack.allowReachableSHA1InWant", "true"],
+        );
+        std::fs::write(upstream.path().join("file"), "x").unwrap();
+        run(upstream.path(), &["add", "file"]);
+        run(upstream.path(), &["commit", "--quiet", "-m", "one"]);
+        let revision = run(upstream.path(), &["rev-parse", "HEAD"]);
+        let repository = upstream.path().to_string_lossy().into_owned();
+        let target = tempfile::tempdir().unwrap();
+        let tree = target.path().join("tree");
+        checkout(&tree, &repository, &revision).unwrap();
+        assert_eq!(run(&tree, &["remote", "get-url", "origin"]), repository);
+        // An earlier checkout without an origin gains one.
+        run(&tree, &["remote", "remove", "origin"]);
+        checkout(&tree, &repository, &revision).unwrap();
+        assert_eq!(run(&tree, &["remote", "get-url", "origin"]), repository);
+    }
 
     #[test]
     fn relative_submodule_urls_resolve_against_the_superproject() {
@@ -373,8 +458,12 @@ mod tests {
     fn only_differing_archives_named_like_pins_are_unpinned() {
         let directory = tempfile::tempdir().unwrap();
         let tree = directory.path();
-        std::fs::write(tree.join("libphy.a"), b"pinned").unwrap();
-        std::fs::write(tree.join("libbtbb.a"), b"other").unwrap();
+        for chip in ["esp32s31", "esp32c5"] {
+            std::fs::create_dir_all(tree.join(chip)).unwrap();
+        }
+        std::fs::write(tree.join("esp32s31/libphy.a"), b"pinned").unwrap();
+        std::fs::write(tree.join("esp32s31/libbtbb.a"), b"other").unwrap();
+        std::fs::write(tree.join("esp32c5/libphy.a"), b"another chip").unwrap();
         std::fs::write(tree.join("libmain.a"), b"local").unwrap();
         let digest = |bytes: &[u8]| {
             let path = tree.join("digest");
@@ -391,10 +480,10 @@ mod tests {
             ],
         }];
         let map = format!(
-            "LOAD {0}/libphy.a\n {0}/libbtbb.a(x.o)\n{0}/libmain.a\n",
+            "LOAD {0}/esp32s31/libphy.a\n {0}/esp32s31/libbtbb.a(x.o)\n{0}/esp32c5/libphy.a\n{0}/libmain.a\n",
             tree.display()
         );
         let unpinned = unpinned_archives(&map, tree, &pins).unwrap();
-        assert_eq!(unpinned, [format!("{}/libbtbb.a", tree.display())]);
+        assert_eq!(unpinned, [format!("{}/esp32s31/libbtbb.a", tree.display())]);
     }
 }

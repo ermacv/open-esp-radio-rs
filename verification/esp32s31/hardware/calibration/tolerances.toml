@@ -154,3 +154,11 @@ reason = "clock policy: active-state clock power follows the active radio client
 [registers."LP_TSENS.CLK_CONF"]
 excluded = true
 reason = "clock policy: the temperature sensor clock follows the tracking client"
+
+[registers."PHY_PBUS.COMMAND"]
+excluded = true
+reason = "live state: the last PBus command word"
+
+[registers."HP_SYS_CLKRST_RADIO.MODEM_CONF"]
+excluded = true
+reason = "clock policy: the modem XTAL clock enable follows the active radio modules"

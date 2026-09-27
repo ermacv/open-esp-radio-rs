@@ -1047,20 +1047,9 @@
   ],
   "registers": {
     "verdict": "diff",
-    "compared": 158,
+    "compared": 156,
     "matched": 155,
     "differing": [
-      {
-        "name": "PHY_PBUS.COMMAND",
-        "vendor": [
-          1610301452,
-          1610301452
-        ],
-        "production": [
-          1610285060,
-          1610285060
-        ]
-      },
       {
         "name": "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL",
         "vendor": [
@@ -1071,20 +1060,13 @@
           111986624,
           111986624
         ]
-      },
-      {
-        "name": "HP_SYS_CLKRST_RADIO.MODEM_CONF",
-        "vendor": [
-          29,
-          29
-        ],
-        "production": [
-          61,
-          61
-        ]
       }
     ],
     "excluded": [
+      {
+        "name": "PHY_PBUS.COMMAND",
+        "reason": "live state: the last PBus command word"
+      },
       {
         "name": "PHY_PBUS.READ_RESULT_0",
         "reason": "live state: the last PBus read result, set by whichever transaction ran last"
@@ -1144,6 +1126,10 @@
       {
         "name": "I2C_ANA_MST.ANA_CONF1",
         "reason": "live state: the read mask of the analog I2C block last addressed"
+      },
+      {
+        "name": "HP_SYS_CLKRST_RADIO.MODEM_CONF",
+        "reason": "clock policy: the modem XTAL clock enable follows the active radio modules"
       },
       {
         "name": "PMU_RADIO.HP_ACTIVE_HP_CK_POWER",

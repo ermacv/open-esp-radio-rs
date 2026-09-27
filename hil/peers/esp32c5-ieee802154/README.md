@@ -70,3 +70,21 @@ Events, printed when the driver reports them:
 
 Driver callbacks run in interrupt context; the application copies each
 report into a bounded queue and prints it from a task.
+
+## Enable bisection
+
+The `ieee802154-peer-enable-bisect` catalog image
+([project](../esp32c5-ieee802154-enable-bisect)) builds the same
+application with the radio enable deferred: after the console is up it prints
+`@BOOT enable-deferred` and `@READY` without calling `esp_ieee802154_enable`.
+Three more commands then run the steps of that enable in its order, so a fault
+can be placed at one step; `ON` runs the whole enable afterwards.
+
+| Command | Step |
+| --- | --- |
+| `MCLK` | `modem_clock_module_enable(PERIPH_IEEE802154_MODULE)`, the MAC's modem clock. |
+| `PHY` | `esp_phy_enable(PHY_MODEM_IEEE802154)`, the shared PHY and RF. |
+| `BTBB` | `esp_btbb_enable()`, the baseband. |
+
+Build or flash it like the peer:
+`cargo hil firmware flash ieee802154-peer-enable-bisect --board esp32c5`.

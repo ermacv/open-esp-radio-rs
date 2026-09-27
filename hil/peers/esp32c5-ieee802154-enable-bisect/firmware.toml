@@ -1,0 +1,6 @@
+# Firmware catalog entry: `cargo hil firmware flash ieee802154-peer-enable-bisect --board esp32c5`.
+# The IEEE 802.15.4 peer with esp_ieee802154_enable deferred and split into
+# steps, to find which step of the radio enable a console fault follows.
+image = "ieee802154-peer-enable-bisect"
+chip = "esp32c5"
+pins = "esp32s31"

@@ -488,9 +488,14 @@ image, the repository files its build read in the bundle's
 `firmware/<image>/source-inputs.json`: the sources Cargo's dep-info lists for
 the runtime and bootstrap binaries, the repository inputs their build scripts
 declare (linker scripts), and each compiled package's manifest and build
-script. A shard binds those files, its own observer's manifest directories and
-the lockfiles, stack policy, partition table, toolchain file and observer input
-registry, so a change in another radio's driver leaves it current. A replayed
+script. A shard binds those files, its own observer's manifest directories,
+the lockfiles, stack policy, partition table, toolchain file, observer input
+registry, both firmware workspace manifests (release profile and `[patch]`)
+and the `.cargo/config.toml` files the builds discover, so a change in another
+radio's driver leaves it current. The evaluator independently runs `cargo tree`
+for the image's runtime (with the features its build provenance records) and
+bootstrap; when the recorded list lacks the manifest of any package found
+there, the shard falls back to the broad binding. A replayed
 image or an older bundle without recorded inputs binds the path packages of
 `hil/targets/esp32s31` and `platform/esp32s31` and every qualifying observer
 instead. The evaluator reads shards next to run bundles. A shard whose

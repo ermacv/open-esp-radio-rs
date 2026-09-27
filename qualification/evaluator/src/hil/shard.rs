@@ -28,7 +28,13 @@ const BUILD_FILES: &[&str] = &[
     "platform/esp32s31/partitions/applications.csv",
     "hil/schema/observer-inputs.json",
     "rust-toolchain.toml",
+    // Workspace manifests hold the release profile and `[patch]` sections.
+    "hil/targets/esp32s31/Cargo.toml",
+    "platform/esp32s31/Cargo.toml",
 ];
+/// The packages the runner builds in each firmware workspace.
+const RUNTIME_PACKAGE: &str = "oer-hil-esp32s31-runtime";
+const BOOTSTRAP_PACKAGE: &str = "oer-esp32s31-platform-bootstrap";
 /// Workspaces whose path packages compose the firmware image.
 const FIRMWARE_WORKSPACES: &[&str] = &[
     "hil/targets/esp32s31/Cargo.toml",
@@ -208,19 +214,105 @@ fn observer_directories(observers: &[&Value]) -> Result<BTreeSet<PathBuf>> {
 /// The sources of one observation: the repository files its firmware was
 /// built from, which the run bundle records per image as
 /// `firmware/<image>/source-inputs.json`, its own observer's manifest
-/// directories and the build files. `None` when a firmware image records no
-/// inputs, such as a replay or an older bundle.
-fn observation_sources(observation: &ScenarioEvidence) -> Result<Option<Vec<PathBuf>>> {
+/// directories, the build files and the Cargo configuration the builds read.
+/// `None` when a firmware image records no inputs, such as a replay or an
+/// older bundle, or when its list lacks a package that `cargo tree`
+/// independently finds in the image.
+///
+/// The digests of these sources are taken from the current tree when the
+/// shard is recorded. That is sound only because `distill` records
+/// observations that qualify on the current checkout; keep that condition.
+fn observation_sources(
+    root: &Path,
+    observation: &ScenarioEvidence,
+) -> Result<Option<Vec<PathBuf>>> {
     let (Some(run), Some(subject)) = (&observation.run_directory, &observation.subject) else {
         return Ok(None);
     };
-    recorded_sources(run, &subject.firmware, subject.observer.as_ref())
+    recorded_sources(
+        root,
+        run,
+        &subject.firmware,
+        subject.observer.as_ref(),
+        &|provenance| image_packages(root, provenance),
+    )
+}
+
+/// Repository package directories of an image's runtime and bootstrap, with
+/// the runtime features its build provenance records, from `cargo tree`.
+fn image_packages(root: &Path, provenance: &Value) -> Result<Option<BTreeSet<PathBuf>>> {
+    let parameters = &provenance["parameters"];
+    let (Some(features), Some(target)) = (
+        parameters["runtime_features"].as_str(),
+        parameters["target"].as_str(),
+    ) else {
+        return Ok(None);
+    };
+    let root = root.canonicalize()?;
+    let mut packages = BTreeSet::new();
+    for (workspace, package, features) in [
+        (FIRMWARE_WORKSPACES[0], RUNTIME_PACKAGE, Some(features)),
+        (FIRMWARE_WORKSPACES[1], BOOTSTRAP_PACKAGE, None),
+    ] {
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(&root)
+            .args([
+                "tree",
+                "--offline",
+                "--locked",
+                "--manifest-path",
+                workspace,
+                "-p",
+                package,
+            ])
+            .args(["--target", target, "-e", "normal,build", "--prefix", "none"])
+            .args(["--format", "{p}"]);
+        if let Some(features) = features {
+            command.args(["--no-default-features", "--features", features]);
+        }
+        let output = command.output()?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let Some(path) = line
+                .rsplit_once(" (")
+                .map(|(_, path)| path.trim_end_matches(" (*)").trim_end_matches(')'))
+            else {
+                continue;
+            };
+            if let Ok(relative) = Path::new(path).strip_prefix(&root) {
+                packages.insert(relative.to_owned());
+            }
+        }
+    }
+    Ok(Some(packages))
+}
+
+/// Cargo configuration files the builds of the firmware workspaces discover
+/// by walking up from each workspace directory.
+fn cargo_configuration(root: &Path) -> BTreeSet<PathBuf> {
+    let mut files = BTreeSet::new();
+    for workspace in FIRMWARE_WORKSPACES {
+        for directory in Path::new(workspace).ancestors().skip(1) {
+            for name in [".cargo/config.toml", ".cargo/config"] {
+                let path = directory.join(name);
+                if root.join(&path).is_file() {
+                    files.insert(path);
+                }
+            }
+        }
+    }
+    files
 }
 
 fn recorded_sources(
+    root: &Path,
     run: &Path,
     images: &[subject::FirmwareIdentity],
     observer: Option<&Value>,
+    packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>,
 ) -> Result<Option<Vec<PathBuf>>> {
     if images.is_empty() {
         return Ok(None);
@@ -230,15 +322,15 @@ fn recorded_sources(
         let Some(image) = firmware.image.as_deref().filter(|_| !firmware.replayed) else {
             return Ok(None);
         };
-        let Some(inputs) = read_optional_json::<Value>(
-            &run.join("firmware").join(image).join("source-inputs.json"),
-        )?
+        let directory = run.join("firmware").join(image);
+        let Some(inputs) = read_optional_json::<Value>(&directory.join("source-inputs.json"))?
         else {
             return Ok(None);
         };
         if inputs["schema"] != 1 {
             return Err(format!("{image}: unsupported source-inputs schema").into());
         }
+        let mut files = BTreeSet::new();
         for file in inputs["files"]
             .as_array()
             .ok_or("source-inputs lists no files")?
@@ -247,12 +339,30 @@ fn recorded_sources(
             if !safe_relative(&path) {
                 return Err(format!("unsafe source input {}", path.display()).into());
             }
-            paths.insert(path);
+            files.insert(path);
         }
+        // A list that silently lost a package would make a stale shard look
+        // current: every package `cargo tree` finds must be listed.
+        let Some(provenance) =
+            read_optional_json::<Value>(&directory.join("build-provenance.json"))?
+        else {
+            return Ok(None);
+        };
+        let Some(expected) = packages(&provenance)? else {
+            return Ok(None);
+        };
+        if expected
+            .iter()
+            .any(|package| !files.contains(&package.join("Cargo.toml")))
+        {
+            return Ok(None);
+        }
+        paths.extend(files);
     }
     let observers = observer.into_iter().collect::<Vec<_>>();
     paths.extend(observer_directories(&observers)?);
     paths.extend(BUILD_FILES.iter().map(PathBuf::from));
+    paths.extend(cargo_configuration(root));
     paths.remove(Path::new(""));
     Ok(Some(paths.into_iter().collect()))
 }
@@ -337,7 +447,7 @@ pub(crate) fn distill(
             completion_seal: seal.clone(),
             subject: subject.clone(),
             procedure,
-            sources: match observation_sources(observation)? {
+            sources: match observation_sources(root, observation)? {
                 Some(recorded) => digests(&recorded)?,
                 None => digests(sources)?,
             },
@@ -381,31 +491,53 @@ mod tests {
 
     #[test]
     fn a_shard_binds_the_files_its_images_were_built_from() {
-        let run = std::env::temp_dir().join(format!("oer-shard-sources-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("oer-shard-root-{}", std::process::id()));
+        fs::create_dir_all(root.join(".cargo")).unwrap();
+        fs::write(root.join(".cargo/config.toml"), "").unwrap();
+        let run = root.join("run");
         let inputs = |image: &str, files: Value| {
-            fs::create_dir_all(run.join("firmware").join(image)).unwrap();
+            let directory = run.join("firmware").join(image);
+            fs::create_dir_all(&directory).unwrap();
             fs::write(
-                run.join("firmware").join(image).join("source-inputs.json"),
+                directory.join("source-inputs.json"),
                 serde_json::to_vec(&json!({"schema": 1, "files": files})).unwrap(),
+            )
+            .unwrap();
+            fs::write(
+                directory.join("build-provenance.json"),
+                serde_json::to_vec(&json!({"parameters": {}})).unwrap(),
             )
             .unwrap();
         };
         inputs(
             "correctness",
-            json!(["crates/radio/src/lib.rs", "platform/linker/link.x"]),
+            json!([
+                "crates/radio/Cargo.toml",
+                "crates/radio/src/lib.rs",
+                "platform/linker/link.x"
+            ]),
         );
         let observer = json!({"build": {"resolved": {"manifests": {
             "hil/host/runner/Cargo.toml": {}
         }}}});
-        let sources = recorded_sources(&run, &[image("correctness", false)], Some(&observer))
-            .unwrap()
-            .unwrap();
+        let radio = |_: &Value| Ok(Some(BTreeSet::from([PathBuf::from("crates/radio")])));
+        let sources = recorded_sources(
+            &root,
+            &run,
+            &[image("correctness", false)],
+            Some(&observer),
+            &radio,
+        )
+        .unwrap()
+        .unwrap();
         for expected in [
             "crates/radio/src/lib.rs",
             "platform/linker/link.x",
             "hil/host/runner",
             "rust-toolchain.toml",
             "Cargo.lock",
+            "hil/targets/esp32s31/Cargo.toml",
+            ".cargo/config.toml",
         ] {
             assert!(
                 sources.contains(&PathBuf::from(expected)),
@@ -413,20 +545,58 @@ mod tests {
             );
         }
         assert!(sources.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
+        // A package `cargo tree` finds but the list lacks: the broad binding.
+        let more = |_: &Value| {
+            Ok(Some(BTreeSet::from([
+                PathBuf::from("crates/radio"),
+                PathBuf::from("crates/wifi"),
+            ])))
+        };
+        let recorded =
+            |images: &[subject::FirmwareIdentity],
+             packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>| {
+                recorded_sources(&root, &run, images, None, packages).unwrap()
+            };
+        assert!(recorded(&[image("correctness", false)], &more).is_none());
         // A replay or an image without recorded inputs keeps the broad set.
-        assert!(
-            recorded_sources(&run, &[image("correctness", true)], None)
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            recorded_sources(&run, &[image("performance", false)], None)
-                .unwrap()
-                .is_none()
-        );
-        assert!(recorded_sources(&run, &[], None).unwrap().is_none());
+        assert!(recorded(&[image("correctness", true)], &radio).is_none());
+        assert!(recorded(&[image("performance", false)], &radio).is_none());
+        assert!(recorded(&[], &radio).is_none());
         inputs("performance", json!(["../outside.rs"]));
-        assert!(recorded_sources(&run, &[image("performance", false)], None).is_err());
-        fs::remove_dir_all(run).unwrap();
+        assert!(
+            recorded_sources(&root, &run, &[image("performance", false)], None, &radio).is_err()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cargo_tree_finds_the_packages_of_one_image() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let provenance = json!({"parameters": {
+            "runtime_features": "bluetooth-hil,phy-rx-hot-sram,psram-task-stack,code-psram,profile-psram-data",
+            "target": "riscv32imafc-unknown-none-elf"
+        }});
+        let packages = image_packages(&root, &provenance).unwrap().unwrap();
+        for expected in [
+            "hil/targets/esp32s31/runtime",
+            "crates/hardware/esp32s31/driver/bluetooth",
+            "platform/esp32s31/bootstrap",
+        ] {
+            assert!(
+                packages.contains(Path::new(expected)),
+                "{expected}: {packages:?}"
+            );
+        }
+        assert!(
+            !packages
+                .iter()
+                .any(|package| package.starts_with("crates/protocols/ieee80211")),
+            "{packages:?}"
+        );
+        assert!(
+            image_packages(&root, &json!({"parameters": {}}))
+                .unwrap()
+                .is_none()
+        );
     }
 }

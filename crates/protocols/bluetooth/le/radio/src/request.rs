@@ -96,6 +96,23 @@ pub struct AdvertisingConfiguration<'pdu> {
     pub tx_power: TxPower,
 }
 
+/// How urgently one event needs the shared antenna.
+///
+/// A radio that shares the antenna with other protocols raises the event's
+/// coexistence priority with the level. The Controller core derives it from
+/// the role's state: an advertising set periodically, a connection when it
+/// is new, has missed receptions or runs a control procedure.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, PartialOrd, Ord)]
+pub enum CoexistenceLevel {
+    /// The role's ordinary priority.
+    #[default]
+    Baseline,
+    /// Above the ordinary priority.
+    Elevated,
+    /// The highest priority of the role.
+    Critical,
+}
+
 /// One advertising event of a configured set.
 ///
 /// Channel `i` in index order has its anchor at `anchor + i *
@@ -114,6 +131,8 @@ pub struct AdvertisingEvent {
     pub channels: AdvertisingChannels,
     /// Time between the anchors of consecutive channels.
     pub channel_spacing: RadioDuration,
+    /// Coexistence urgency of the event.
+    pub coexistence: CoexistenceLevel,
 }
 
 impl AdvertisingEvent {
@@ -198,6 +217,8 @@ pub struct ConnectionEvent {
     pub timing: ConnectionEventTiming,
     /// Scheduling priority, 0 to 15.
     pub priority: u8,
+    /// Coexistence urgency of the event.
+    pub coexistence: CoexistenceLevel,
 }
 
 /// One Direct Test Mode transmitter event.
@@ -392,6 +413,7 @@ mod tests {
             anchor: RadioInstant::from_micros(1_000),
             channels: AdvertisingChannels::new(false, true, true).unwrap(),
             channel_spacing: RadioDuration::from_micros(400),
+            coexistence: super::CoexistenceLevel::Baseline,
         };
         assert_eq!(
             event.channel_anchor(1),

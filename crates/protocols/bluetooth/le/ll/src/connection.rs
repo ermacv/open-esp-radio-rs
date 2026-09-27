@@ -962,6 +962,11 @@ impl LePeripheralConnectionEventPrepared {
         self.connection.event_counter
     }
 
+    /// Establishment and supervision state before this event.
+    pub const fn state(&self) -> LePeripheralConnectionState {
+        self.connection.state
+    }
+
     pub const fn channel(&self) -> LeDataChannelIndex {
         self.channel
     }

@@ -43,6 +43,7 @@ extern crate std;
 
 mod advertising;
 mod arbiter;
+mod coexistence;
 mod controller;
 mod dtm;
 mod output;

@@ -4,11 +4,11 @@ use oer_esp32s31_bluetooth_memory::BlePhyLe1MPacketStartCalibration;
 
 use oer_bluetooth_radio::{
     AccessAddress, AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration,
-    AdvertisingEvent, AdvertisingPdu, AdvertisingSetId, ConnectionConfiguration, ConnectionEvent,
-    ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu, DataPduKind, EventId,
-    EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioWindow,
-    RequestError, ScanWindow, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive,
-    TestReport, TxPower,
+    AdvertisingEvent, AdvertisingPdu, AdvertisingSetId, CoexistenceLevel, ConnectionConfiguration,
+    ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu,
+    DataPduKind, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
+    RadioWindow, RequestError, ScanWindow, ScannerConfiguration, ScannerId, TestChannel, TestPhy,
+    TestReceive, TestReport, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -114,6 +114,7 @@ fn advertise(id: u32, anchor: u64, channels: AdvertisingChannels) -> RadioReques
         anchor: RadioInstant::from_micros(anchor),
         channels,
         channel_spacing: RadioDuration::from_micros(1_000),
+        coexistence: CoexistenceLevel::Baseline,
     })
 }
 
@@ -343,6 +344,7 @@ fn a_connectable_set_receives_its_requests() {
             anchor: RadioInstant::from_micros(10_000),
             channels,
             channel_spacing: RadioDuration::from_micros(600),
+            coexistence: CoexistenceLevel::Baseline,
         })
     };
     // Every primary channel gets its own item.
@@ -437,6 +439,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
             window: window(start, 2_000),
             timing,
             priority: 13,
+            coexistence: CoexistenceLevel::Baseline,
         })
     };
     radio

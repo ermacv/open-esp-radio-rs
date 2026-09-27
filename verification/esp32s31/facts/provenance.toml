@@ -78,6 +78,12 @@ code = "f313b154865f0d18a11cefcab3f065e4a70eb8708409d815b695742c315cac84"
 
 [[function]]
 artifact = "libble_app"
+member = "ble_2.o"
+symbol = "r_sym_ble_2eLkvpKuoaxT83Mj406p"
+code = "6979807a845881b89aeb1dddc729dd5988687fa8158297b720aa15e020f15702"
+
+[[function]]
+artifact = "libble_app"
 member = "ble_25.o"
 symbol = "r_sym_ble_60U2aYYZeD1Ql9djxRaO"
 code = "eabc4cb7a5314c03a4370f2b4aeef6560f7f99bd571b6a1d640c8655144018e6"
@@ -291,6 +297,48 @@ artifact = "libble_app"
 member = "ble_8.o"
 symbol = "r_sym_ble_vNVoB3u8sNalnntugADe"
 code = "a7ae8c382e9a8edcb0dc8e1dfd0af27f62b5b300993ecc03dee470ebae310f93"
+
+[[function]]
+artifact = "libble_app"
+member = "coexAdv.c.o_1.o"
+symbol = "r_sym_coexAdv_A5DXuOYpsXb125NuYN3d"
+code = "8e7913df9a252e7a32071aac3e3bd31c400ef82d8c8bb4eecff2fd5327d64f4d"
+
+[[function]]
+artifact = "libble_app"
+member = "coexAdv.c.o_1.o"
+symbol = "r_sym_coexAdv_VG7vTjgdtb9y55QZyPP0"
+code = "7ad50b500c3ccdb77b241279e942415b55682bce9b2a3a24a097bc94b3fefb44"
+
+[[function]]
+artifact = "libble_app"
+member = "coexConn.c.o_1.o"
+symbol = "r_sym_coexConn_8zwo11wSByltviHFU8eN"
+code = "8587c7694d3e90c77a839efb9d417a3a59f5ed4575c532f144371b4d15f5a1f6"
+
+[[function]]
+artifact = "libble_app"
+member = "coexConn.c.o_1.o"
+symbol = "r_sym_coexConn_FwW1rUBEXrFbsmQm3dvU"
+code = "68f71f6a64e5aa61bebeba18919b028975bc57734946ce8f212801902f983e61"
+
+[[function]]
+artifact = "libble_app"
+member = "coexConn.c.o_1.o"
+symbol = "r_sym_coexConn_zaMnJdgVnBd25ru35IkB"
+code = "3e6b4ef10f98e1edaca3c2fc884b512f2775e4e74a12282089ce928e276c7777"
+
+[[function]]
+artifact = "libble_app"
+member = "coexHook.c.o_1.o"
+symbol = "r_sym_coexHook_QgUvVmt2sVpZ9D6zbl3P"
+code = "c8186efd4f906f9bc0ce288b297cbfd74f832624279b983f584aa3fd95c9e8f7"
+
+[[function]]
+artifact = "libble_app"
+member = "coexHook.c.o_1.o"
+symbol = "r_sym_coexHook_RqzHsepjtcxRQpoBqpK6"
+code = "a8b891ba63d7bc40a2ea22bb2a6ac15f07577754e7c6022e2eb8b01db7295e08"
 
 [[function]]
 artifact = "libble_app"
@@ -915,6 +963,12 @@ artifact = "libbtdm_common"
 member = "20.o"
 symbol = "r_btdm_task_shutdown"
 code = "4fc591fcf0f99b816f66977528188ef9f9808c0967d4907e3725ef49b8025869"
+
+[[function]]
+artifact = "libbtdm_common"
+member = "4.o"
+symbol = "wr_btdm_coex_schm_status_bit_set"
+code = "ece4bf640ecd5992be03a2254b4fad07a317b954eba834d3777fac3b3588cf00"
 
 [[function]]
 artifact = "libbtdm_common"

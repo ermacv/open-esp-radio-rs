@@ -34,7 +34,10 @@ use oer_bluetooth_radio::{
     RadioTiming, RadioWindow, TxPower,
 };
 
-use crate::arbiter::{Proposal, reservation};
+use crate::{
+    arbiter::{Proposal, reservation},
+    coexistence,
+};
 
 /// Longest legacy advertising PDU: header, AdvA and 31 data octets.
 pub(crate) const ADVERTISING_PDU_CAPACITY: usize = 2 + 6 + 31;
@@ -93,6 +96,10 @@ pub(crate) struct Advertiser {
     interval: RadioDuration,
     next_anchor: Option<RadioInstant>,
     outstanding: Option<Outstanding>,
+    /// Events between raised coexistence levels, from the interval.
+    coexistence_period: u16,
+    /// Events of the running set that ended.
+    ended: u16,
     /// The removal in progress is followed by a new configuration.
     restart: bool,
     completion: Option<Status>,
@@ -114,6 +121,8 @@ impl Advertiser {
             interval: RadioDuration::from_micros(0),
             next_anchor: None,
             outstanding: None,
+            coexistence_period: 1,
+            ended: 0,
             restart: false,
             completion: None,
             connection: None,
@@ -268,6 +277,8 @@ impl Advertiser {
         match self.phase {
             Phase::Configuring { .. } if accepted => {
                 self.phase = Phase::Running;
+                self.coexistence_period = coexistence::advertising_period(self.interval);
+                self.ended = 0;
                 self.completion = Some(Status::SUCCESS);
             }
             Phase::Configuring { .. } => {
@@ -372,6 +383,7 @@ impl Advertiser {
             anchor,
             channels: self.channels,
             channel_spacing: self.channel_spacing(timing),
+            coexistence: coexistence::advertising_level(self.coexistence_period, self.ended),
         })
     }
 
@@ -414,6 +426,7 @@ impl Advertiser {
             }
             RadioOutcome::EventEnded { id, .. } if self.owns(id) => {
                 self.outstanding = None;
+                self.ended = self.ended.wrapping_add(1);
                 if let Phase::Cancelling { .. } = self.phase {
                     self.phase = Phase::Removing { sent: false };
                 }

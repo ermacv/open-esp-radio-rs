@@ -63,7 +63,7 @@ use oer_bluetooth_radio::{
     RadioRequest, RadioTiming, RadioWindow, TxPower,
 };
 
-use crate::advertising::ConnectionIndication;
+use crate::{advertising::ConnectionIndication, coexistence};
 
 /// The connection's identifier at the backend.
 pub(crate) const CONNECTION: ConnectionId = ConnectionId::new(0);
@@ -451,6 +451,12 @@ impl Peripheral {
             ..
         } = event;
         let first = prepared.first_transmit_window_micros().is_some();
+        let coexistence = coexistence::peripheral_connection_level(
+            prepared.event_counter(),
+            prepared.state().supervision_anchor_event_counter(),
+            prepared.timing().interval_micros(),
+            connection.local_procedure_pending(),
+        );
         let channel = DataChannel::new(prepared.channel().get()).expect("a data channel index");
         let plan = if first {
             timing::first(event.anchor, transmit_window, timing.connection)?
@@ -486,6 +492,7 @@ impl Peripheral {
             window: plan.window,
             timing: plan.timing,
             priority: if first { FIRST_PRIORITY } else { PRIORITY },
+            coexistence,
         }))
     }
 
@@ -908,10 +915,7 @@ impl Connection {
 
     /// Procedure timeouts, checked before planning.
     fn check_procedures(&mut self, now: RadioInstant, events: &mut Events) {
-        let waiting = !self.security.is_idle() && !self.security.is_active()
-            || self.control.local_feature_request_transmitted()
-            || self.control.local_version_request_transmitted();
-        if !waiting {
+        if !self.local_procedure_pending() {
             self.procedure_since = None;
             return;
         }
@@ -928,6 +932,13 @@ impl Connection {
             self.control.expire_local_procedure();
             self.poll_procedures(events);
         }
+    }
+
+    /// Whether a local procedure awaits the central.
+    fn local_procedure_pending(&self) -> bool {
+        !self.security.is_idle() && !self.security.is_active()
+            || self.control.local_feature_request_transmitted()
+            || self.control.local_version_request_transmitted()
     }
 
     fn close_procedures(&mut self, events: &mut Events) {

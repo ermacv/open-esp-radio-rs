@@ -610,6 +610,41 @@ fn cancelling_a_running_test_stops_the_scheduler_instead_of_skipping_it() {
 }
 
 #[test]
+fn a_test_event_stops_a_busy_scheduler_and_starts_as_the_list_head() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio
+        .request(
+            RadioRequest::TestReceive(TestReceive {
+                id: EventId::new(4),
+                channel: TestChannel::new(19).unwrap(),
+                phy: TestPhy::Le1M,
+                window: window(10_000, 1_000),
+                recurring: false,
+                tx_power: TxPower::from_dbm(0),
+            }),
+            &mut sink,
+        )
+        .unwrap();
+    // A busy scheduler takes no live insertion of a test event.
+    assert!(matches!(
+        radio.drive(view(true), &mut sink),
+        RadioStep::Idle
+    ));
+    assert!(radio.stop_requested());
+    radio
+        .enter_stopped(oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped::for_validation())
+        .unwrap();
+    radio
+        .resume(&ControllerTimeSample::for_validation(0))
+        .unwrap();
+    let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
+        panic!("the stopped scheduler starts at the test event")
+    };
+    assert!(sink.0.is_empty());
+}
+
+#[test]
 fn configuration_errors_leave_the_radio_unchanged() {
     let mut radio = radio();
     let mut sink = Sink::default();

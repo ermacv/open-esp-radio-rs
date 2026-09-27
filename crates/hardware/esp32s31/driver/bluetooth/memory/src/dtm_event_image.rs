@@ -15,7 +15,7 @@ use crate::{
 };
 
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
-const LINK_STATE_POWER_MASK: u32 = 0x0f80_0000;
+const LINK_STATE_POWER_BYTE_MASK: u32 = 0x0000_ff00;
 const LINK_STATE_CONFIG_MASK: u32 = 0x3f00_0000;
 const SCHEDULER_FREQUENCY_MASK: u32 = 0x0000_7f00;
 const SCHEDULER_RATE_LANES_MASK: u32 = 0xf000_0000;
@@ -220,7 +220,7 @@ impl DtmSchedulerItemEventType {
     }
 }
 
-/// The eight link-state words whose reset behavior is complete.
+/// The nine link-state words whose reset behavior is complete.
 ///
 /// Names are byte offsets, not semantic descriptor fields. The omitted bytes
 /// and the hardware consumer remain unresolved.
@@ -228,8 +228,6 @@ impl DtmSchedulerItemEventType {
 pub struct DtmLinkStateReviewedWords {
     /// Complete word at byte offset `+0x00`; low 20 bits carry the TX head.
     pub(crate) word_00: u32,
-    /// Complete word at byte offset `+0x04`.
-    pub(crate) word_04: u32,
     /// Complete word at byte offset `+0x08`; low 20 bits carry the RX tail.
     pub(crate) word_08: u32,
     /// Private word at byte offset `+0x14`; its field-specific hardware
@@ -238,6 +236,9 @@ pub struct DtmLinkStateReviewedWords {
     /// Protocol-level CRC initialization value encoded in the low 24 bits by
     /// the private SRAM codec. The high byte remains opaque and preserved.
     pub(super) crc_init: LeCrcInit,
+    /// Complete word at byte offset `+0x30`; the reset rewrites its low
+    /// halfword.
+    pub(crate) word_30: u32,
     /// Complete word at byte offset `+0x34`.
     pub(crate) word_34: u32,
     /// Protocol-level synchronization value encoded by the private SRAM
@@ -245,10 +246,19 @@ pub struct DtmLinkStateReviewedWords {
     pub(super) access_address: LeAccessAddress,
     /// Complete word at byte offset `+0x50`.
     pub(crate) word_50: u32,
+    /// Complete word at byte offset `+0x60`; byte `+0x61` carries the
+    /// transmit-power index.
+    pub(crate) word_60: u32,
 }
 
 impl DtmLinkStateReviewedWords {
     /// Apply the complete reviewed DTM reset to this CPU-owned word subset.
+    ///
+    /// SOURCE: pinned `libble_app.a[dtm_4.o]::sym_dtm_7gOGApwmDG1TxZOfQhrh`
+    /// (`r_ble_lll_dtm_reset_link_state`). It stores the power index in byte
+    /// `+0x61`, rewrites the low halfword of `+0x30` and, for a receiver,
+    /// stores the zero tick difference in `+0x34`; unlike the 7f20740 body it
+    /// leaves `+0x04` alone.
     ///
     /// All positional encoding stays inside the controller-memory codec. The
     /// caller supplies only validated semantic values and bound graph links.
@@ -267,14 +277,16 @@ impl DtmLinkStateReviewedWords {
         let transformed_high_half = (((word_00_with_link >> 16) as u16 & 0x600f) | 0x8ff0) as u32;
 
         self.word_00 = (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16);
-        self.word_04 =
-            (self.word_04 & !LINK_STATE_POWER_MASK) | ((default_tx_power.index() as u32) << 23);
         self.word_08 = match rx_tail {
             Some(rx_tail) => rx_tail.apply_to_link_state_word(self.word_08),
             None => self.word_08 & !LOW_TWENTY_MASK,
         };
         self.word_08 = (self.word_08 & 0xf00f_ffff) | 0x0ff0_0000;
         self.profile_word_14 = self.profile_word_14.select_direct_test_mode();
+        let halfword_30 = ((self.word_30 as u16) & 0xc100) | 0x1e00;
+        self.word_30 = (self.word_30 & 0xffff_0000) | halfword_30 as u32;
+        self.word_60 = (self.word_60 & !LINK_STATE_POWER_BYTE_MASK)
+            | ((default_tx_power.index() as u32) << 8);
         if matches!(role, DtmRole::Receiver) {
             self.word_34 = 0;
         }
@@ -283,23 +295,9 @@ impl DtmLinkStateReviewedWords {
             .with_access_address(LeAccessAddress::DIRECT_TEST_MODE)
     }
 
-    /// Apply the role-specific link-state write performed while constructing
-    /// one event after reset.
-    ///
-    /// The reviewed receiver path replaces word `+0x34` with the raw
-    /// controller-time projection of scheduler origin zero. The transmitter
-    /// path does not write this word. This remains a CPU-owned positional
-    /// transform and grants no descriptor-publication authority.
-    pub const fn apply_event_context(mut self, role: DtmRole, raw_scheduler_origin: u32) -> Self {
-        if matches!(role, DtmRole::Receiver) {
-            self.word_34 = raw_scheduler_origin;
-        }
-        self
-    }
-
-    /// Return the five-bit rounded-power value consumed by scheduler insert.
-    const fn rounded_power(self) -> u8 {
-        ((self.word_04 & LINK_STATE_POWER_MASK) >> 23) as u8
+    /// Return the transmit-power index a recurring event copies.
+    const fn power_index(self) -> u8 {
+        ((self.word_60 & LINK_STATE_POWER_BYTE_MASK) >> 8) as u8
     }
 
     pub(super) const fn access_address(self) -> LeAccessAddress {
@@ -321,7 +319,7 @@ impl DtmLinkStateReviewedWords {
     }
 }
 
-/// The eleven scheduler-item words whose DTM event transform is complete.
+/// The ten scheduler-item words whose DTM event transform is complete.
 ///
 /// Names are byte offsets. This is not the complete scheduler object and has
 /// no list-linkage or hardware-ownership authority.
@@ -335,8 +333,6 @@ pub struct DtmSchedulerItemReviewedWords {
     pub(crate) word_08: u32,
     /// Complete sequence-start word at byte offset `+0x0c`.
     pub(crate) word_0c: u32,
-    /// Complete sequence-duration word at byte offset `+0x10`.
-    pub(crate) word_10: u32,
     /// Complete word at byte offset `+0x14`.
     pub(crate) word_14: u32,
     /// Complete word at byte offset `+0x18`.
@@ -352,6 +348,12 @@ pub struct DtmSchedulerItemReviewedWords {
 }
 
 impl DtmSchedulerItemReviewedWords {
+    /// The power index the item carries.
+    #[cfg(test)]
+    const fn power_index(self) -> u8 {
+        ((self.word_14 & SCHEDULER_ROUNDED_POWER_REGION_MASK) >> 20) as u8
+    }
+
     /// Apply every complete reviewed DTM event transform before insertion.
     ///
     /// `frequency` and `rate` are already validated controller images;
@@ -379,7 +381,6 @@ impl DtmSchedulerItemReviewedWords {
             word_04: self.word_04 | 0x8000_0000,
             word_08: self.word_08 & 0xff0f_ffff,
             word_0c: self.word_0c,
-            word_10: self.word_10,
             word_14: (self.word_14 & !SCHEDULER_RATE_LANES_MASK) | (rate << 28) | (rate << 30),
             word_18: (self.word_18 & !(SCHEDULER_FREQUENCY_MASK | 0x0f))
                 | ((frequency as u32) << 8)
@@ -401,26 +402,30 @@ impl DtmSchedulerItemReviewedWords {
         }
     }
 
-    /// Apply the complete per-item sequence-time projection.
+    /// Store the sequence start the DTM event bodies derive from the item's
+    /// own start.
     ///
-    /// The common scheduler adds its configured raw-tick lead to the already
-    /// projected start and stores the wrapping window length separately. The
-    /// broker notification performed between these two writes belongs to the
-    /// scheduler runtime, not this CPU-owned memory codec.
-    pub const fn apply_sequence_timing(mut self, raw_sequence_lead: u32) -> Self {
-        self.word_0c = self.word_44.wrapping_add(raw_sequence_lead);
-        self.word_10 = self.word_48.wrapping_sub(self.word_44);
+    /// SOURCE: pinned `libble_app.a[dtm_4.o]` initial event
+    /// `sym_dtm_2zeOUjc7g55zkDNQuZkg` and recurring event
+    /// `sym_dtm_C15YAGhOCEEdWMnhjaY3.part.1` store
+    /// `r_sched_timer_convertTimeToTicks(r_sched_timer_convertTimeToUs(+0x44))`
+    /// in `+0x0c`. They publish the item directly as the list head and leave
+    /// the window length at `+0x10` to the allocation, so this codec does not
+    /// write it.
+    pub const fn apply_sequence_start(mut self, raw_sequence_start: u32) -> Self {
+        self.word_0c = raw_sequence_start;
         self
     }
 
-    /// Apply the common overlap-insertion rounded-power projection.
-    pub const fn apply_overlap_insertion_power(
-        mut self,
-        link_state: DtmLinkStateReviewedWords,
-    ) -> Self {
-        let rounded_power = link_state.rounded_power() as u32;
-        self.word_14 =
-            (self.word_14 & !SCHEDULER_ROUNDED_POWER_REGION_MASK) | (rounded_power << 20);
+    /// Copy the link state's power index into the item, as only the
+    /// recurring event body does.
+    ///
+    /// SOURCE: pinned `sym_dtm_C15YAGhOCEEdWMnhjaY3.part.1` stores link-state
+    /// byte `+0x61` in bits 27:20 of `+0x14`; the initial event body
+    /// `sym_dtm_2zeOUjc7g55zkDNQuZkg` writes no power into the item.
+    pub const fn apply_recurring_power(mut self, link_state: DtmLinkStateReviewedWords) -> Self {
+        let power = link_state.power_index() as u32;
+        self.word_14 = (self.word_14 & !SCHEDULER_ROUNDED_POWER_REGION_MASK) | (power << 20);
         self
     }
 }
@@ -497,3 +502,6 @@ impl DtmSchedulerHardwareChainWord {
         self.0
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -199,6 +199,13 @@ impl RadioClock {
         self.epoch.raw_ticks_for_micros(micros as u32)
     }
 
+    /// The raw time of `raw` after conversion to scheduler microseconds and
+    /// back, as the DTM event bodies derive the sequence start.
+    fn round_trip(&self, raw: u32) -> u32 {
+        self.epoch
+            .raw_ticks_for_micros(self.epoch.project_capture(raw))
+    }
+
     fn duration(&self, micros: u32) -> u32 {
         self.epoch.raw_duration_ticks_for_micros(micros)
     }
@@ -237,6 +244,9 @@ pub struct BluetoothRadio<
     scanners: [Option<Slot<ScannerId>>; SCANNERS],
     connections: [Option<(Slot<ConnectionId>, ConnectionFacts)>; CONNECTIONS],
     dtm: Option<Slot<()>>,
+    /// The test instance already carried an event, so the next one is a
+    /// recurring event.
+    dtm_recurring: bool,
     clock: RadioClock,
     timing: RadioTiming,
     policy: SchedulerTimingPolicy,
@@ -285,6 +295,7 @@ impl<
             scanners: [const { None }; SCANNERS],
             connections: [const { None }; CONNECTIONS],
             dtm: None,
+            dtm_recurring: false,
             clock: RadioClock {
                 now: u64::from(epoch.project_without_reanchor(sample)),
                 epoch,
@@ -443,6 +454,13 @@ impl<
                 None => RadioStep::Idle,
             };
         };
+        // The vendor test event bodies stop the scheduler
+        // (`r_sym_bt_74l62ZLsZuXg67pPHSd7`), publish the item as the list-zero
+        // head and run it; a test event never enters a running list.
+        if view.busy.is_busy() && id.kind() == SchedulerRoleKind::DirectTestMode {
+            self.stop_requested = true;
+            return RadioStep::Idle;
+        }
         if !view.busy.is_busy() {
             let mut head = None;
             let mut inserted = [None; ITEMS];
@@ -1366,6 +1384,7 @@ impl<
             Some(_) => Ok(()),
             None => {
                 let instance = self.memory.dtm.acquire().ok_or(RequestError::NoInstance)?;
+                self.dtm_recurring = false;
                 self.dtm = Some(Slot {
                     id: (),
                     instance,
@@ -1451,29 +1470,30 @@ impl<
         event_type: DtmSchedulerItemEventType,
         tx_power: LeTxPower,
     ) -> Result<(), RequestError> {
-        let origin = self.clock.raw(0);
-        let lead = self.policy.sequence_lead_raw_delta();
+        let recurring = self.dtm_recurring;
+        let sequence_start = self.clock.round_trip(window.start());
         let role = event_type.role();
         let slot = self.dtm.as_mut().expect("the test holds its instance");
         self.memory
             .dtm
             .prepare_event(&slot.instance, |seed| {
                 let current = seed.words();
-                let link_state = current
-                    .link_state()
-                    .apply_reset(
-                        Some(seed.tx_header_head_projection()),
-                        Some(seed.rx_header_tail_projection()),
-                        tx_power,
-                        DTM_REVIEWED_CONFIG,
-                        role,
-                    )
-                    .apply_event_context(role, origin);
+                let link_state = current.link_state().apply_reset(
+                    Some(seed.tx_header_head_projection()),
+                    Some(seed.rx_header_tail_projection()),
+                    tx_power,
+                    DTM_REVIEWED_CONFIG,
+                    role,
+                );
                 let item = current
                     .scheduler_item()
                     .apply_event(rf_channel * 2, event_type, window.start(), window.end())
-                    .apply_overlap_insertion_power(link_state)
-                    .apply_sequence_timing(lead);
+                    .apply_sequence_start(sequence_start);
+                let item = if recurring {
+                    item.apply_recurring_power(link_state)
+                } else {
+                    item
+                };
                 Ok::<_, Infallible>(oer_esp32s31_bluetooth_memory::DtmPositionalEventWords::new(
                     link_state, item,
                 ))
@@ -1488,6 +1508,7 @@ impl<
         event.receiver = matches!(role, DtmRole::Receiver);
         slot.event = Some(event);
         self.push_pending(item, window);
+        self.dtm_recurring = true;
         Ok(())
     }
 

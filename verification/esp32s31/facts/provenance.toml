@@ -6,18 +6,6 @@ schema = 1
 
 [[function]]
 artifact = "libble_app"
-member = "55.o"
-symbol = "r_sym_ble_G4zC4UNjJYmyjOsZ3vNq"
-code = "b985bbd3777f5f7fdc2280323ae918c3cb1cc23f06c5ddd0f00d01744f394d23"
-
-[[function]]
-artifact = "libble_app"
-member = "64.o"
-symbol = "r_sym_ble_4QeP6vZAoSzLLHdFgwD0"
-code = "a3dfe556923ad1cfe2a3cf000815ba51e68775c5e2315dae6e17322b37e6a78a"
-
-[[function]]
-artifact = "libble_app"
 member = "base_3.o"
 symbol = "api_base_ll_dumpDebugStatus"
 code = "4283829f189d5f9d8b8052d130d29a42a4a85a6919e66470dfb31af6adb2f2f6"
@@ -421,8 +409,20 @@ code = "bc47bc9bf7c678ba1592dde25709aeb8ae73b216f83655abc22fc157b376a48d"
 [[function]]
 artifact = "libble_app"
 member = "dtm_4.o"
+symbol = "sym_dtm_2zeOUjc7g55zkDNQuZkg"
+code = "00a673c477e4b2968c14730dd18968d240413d4c0df521332b5be7b4afcc5ba8"
+
+[[function]]
+artifact = "libble_app"
+member = "dtm_4.o"
 symbol = "sym_dtm_7gOGApwmDG1TxZOfQhrh"
 code = "2aeb263b593ed1648abbc95f97c762a76e2be9b96f1bcb3c509812bcd92cacfe"
+
+[[function]]
+artifact = "libble_app"
+member = "dtm_4.o"
+symbol = "sym_dtm_C15YAGhOCEEdWMnhjaY3"
+code = "1063887884965de58b8f4af8f5a7b11189c1144a66d41a7a496a670064da516f"
 
 [[function]]
 artifact = "libble_app"
@@ -441,6 +441,12 @@ artifact = "libble_app"
 member = "dtm_4.o"
 symbol = "sym_dtm_ikQ7xyHA5qBHWlaqAjZu"
 code = "fa1f708d56eaa01180e8bdfff261cde32fb32fdbabd4597479c5fe8712b9c79b"
+
+[[function]]
+artifact = "libble_app"
+member = "dtm_4.o"
+symbol = "sym_dtm_qzyGhbH1fEoUEmtalnva"
+code = "37895c21a9c2115d27c4ab70df2d0d97834ddd562ae5aaf26fa07e97c95ef12e"
 
 [[function]]
 artifact = "libble_app"
@@ -1029,6 +1035,12 @@ artifact = "libbtdm_common"
 member = "19.o"
 symbol = "r_sym_bt_32zs9B7Gv9vHIVpsl2A7"
 code = "795205aac8a497696a30ff869f363c3f8c5952b413b2bf28926fb99a0f291dca"
+
+[[function]]
+artifact = "libbtdm_common"
+member = "19.o"
+symbol = "r_sym_bt_Ceh2khbCcopEBybBO6Z5"
+code = "dbeeb00fab7a4fdca15e1d6d0592474c9938e0c61f0fc0e4f535f78a8dfbcd36"
 
 [[function]]
 artifact = "libbtdm_common"

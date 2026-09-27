@@ -62,7 +62,10 @@ const SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET: usize = 0x1c / 4;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0xffdf_ffff;
 const SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET: usize = 0x20 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_OFFSET: usize = 0x24 / 4;
-const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
+/// SOURCE: pinned `libble_app.a[dtm_4.o]::sym_dtm_qzyGhbH1fEoUEmtalnva`
+/// (`r_ble_lll_dtm_alloc_memory`) stores `0x8421` in the low twenty bits,
+/// four five-bit coexistence priority lanes of one each.
+const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0000_8421;
 const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4;
 const RX_PACKET_WORDS: usize = BLUETOOTH_DTM_RX_PACKET_BYTES.div_ceil(4);
 
@@ -152,25 +155,27 @@ impl DtmLinkStateStorage {
     pub(super) fn reviewed_words(&self) -> DtmLinkStateReviewedWords {
         DtmLinkStateReviewedWords {
             word_00: self.read_word(0),
-            word_04: self.read_word(1),
             word_08: self.read_word(2),
             profile_word_14: DtmLinkStateProfileWord::from_storage(self.read_word(5)),
             crc_init: self.crc_init(),
+            word_30: self.read_word(12),
             word_34: self.read_word(13),
             access_address: self.access_address(),
             word_50: self.read_word(20),
+            word_60: self.read_word(24),
         }
     }
 
     pub(super) fn write_reviewed_words(&self, words: DtmLinkStateReviewedWords) {
         self.write_word(0, words.word_00);
-        self.write_word(1, words.word_04);
         self.write_word(2, words.word_08);
         self.write_word(5, words.profile_word_14.into_storage());
         self.write_crc_init(words.crc_init());
+        self.write_word(12, words.word_30);
         self.write_word(13, words.word_34);
         self.write_access_address(words.access_address());
         self.write_word(20, words.word_50);
+        self.write_word(24, words.word_60);
     }
 }
 
@@ -231,7 +236,6 @@ impl DtmSchedulerItemStorage {
             word_04: self.read_word(1),
             word_08: self.read_word(2),
             word_0c: self.read_word(3),
-            word_10: self.read_word(4),
             word_14: self.read_word(5),
             word_18: self.read_word(6),
             word_2c: self.read_word(11),
@@ -246,7 +250,6 @@ impl DtmSchedulerItemStorage {
         self.write_word(1, words.word_04);
         self.write_word(2, words.word_08);
         self.write_word(3, words.word_0c);
-        self.write_word(4, words.word_10);
         self.write_word(5, words.word_14);
         self.write_word(6, words.word_18);
         self.write_word(11, words.word_2c);

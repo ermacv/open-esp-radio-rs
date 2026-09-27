@@ -769,6 +769,33 @@ fn compiler_review_admits_functional_evidence_but_never_timing_or_changed_flags(
         )
         .unwrap()
     );
+    // An older runner's graph without today's runner package does not project:
+    // the observation is excluded with that reason, not as an identity change.
+    let mut old_graph = manifest["runner"]["observer"].clone();
+    old_graph["build"]["resolved"]["nodes"] = json!([]);
+    old_graph["build_sha256"] = json!(digest(&serde_json::to_vec(&old_graph["build"]).unwrap()));
+    assert_eq!(
+        observer::assess(
+            &fixture.0,
+            &observer::Current::load(&fixture.0),
+            source,
+            Some(&old_graph),
+            None
+        )
+        .unwrap(),
+        observer::Compatibility::GraphNotProjectable
+    );
+    assert_eq!(
+        observer::assess(
+            &fixture.0,
+            &observer::Current::load(&fixture.0),
+            source,
+            Some(&profile_only),
+            None
+        )
+        .unwrap(),
+        observer::Compatibility::IdentityDiffers
+    );
     let mut proof = manifest["runner"]["observer"].clone();
     proof["build"]["environment"]["CARGO_ENCODED_RUSTFLAGS"] = json!("--cfg=changed");
     proof["build_sha256"] = json!(digest(&serde_json::to_vec(&proof["build"]).unwrap()));

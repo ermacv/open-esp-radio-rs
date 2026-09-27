@@ -608,14 +608,16 @@ impl HilEvidenceIndex {
                         observation
                             .exclusions
                             .push(decision::Exclusion::CurrentObserverConfigurationUnavailable);
-                    } else if !observer::matches(root, &current_observer, observation, None)? {
-                        observation.exclusions.push(
-                            if observer::recorded_graph_projects(root, observation) {
-                                decision::Exclusion::ObserverIdentityNotEstablished
-                            } else {
-                                decision::Exclusion::ObserverGraphNotProjectable
-                            },
-                        );
+                    } else {
+                        match observer::assess(root, &current_observer, observation, None, None)? {
+                            observer::Compatibility::Compatible => {}
+                            observer::Compatibility::GraphNotProjectable => observation
+                                .exclusions
+                                .push(decision::Exclusion::ObserverGraphNotProjectable),
+                            observer::Compatibility::IdentityDiffers => observation
+                                .exclusions
+                                .push(decision::Exclusion::ObserverIdentityNotEstablished),
+                        }
                     }
                     if observation.exclusions.is_empty() && observation.outcome == Outcome::Passed {
                         qualifying = true;

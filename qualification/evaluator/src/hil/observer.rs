@@ -257,38 +257,6 @@ fn inputs(root: &Path, prefixes: &[PathBuf]) -> Result<BTreeMap<String, String>>
     Ok(files)
 }
 
-/// Whether the observation's recorded observer graph projects onto today's
-/// observer inputs for its workload; an older runner's graph may not.
-pub(super) fn recorded_graph_projects(root: &Path, observation: &ScenarioEvidence) -> bool {
-    let Some(proof) = observation
-        .subject
-        .as_ref()
-        .and_then(|s| s.observer.as_ref())
-    else {
-        return true;
-    };
-    let document = observation
-        .run_directory
-        .as_ref()
-        .zip(
-            observation
-                .subject
-                .as_ref()
-                .and_then(|s| s.procedure.as_ref()),
-        )
-        .and_then(|(run, p)| read_json::<Value>(&run.join(&p.path)).ok());
-    let Ok(registry) = read_json::<Value>(&root.join("hil/schema/observer-inputs.json")) else {
-        return true;
-    };
-    let workload = document
-        .as_ref()
-        .and_then(build_inputs::workload)
-        .unwrap_or_default();
-    build_inputs::dependencies(&registry, &workload).is_ok_and(|dependencies| {
-        build_inputs::projection(&proof["build"]["resolved"], &dependencies).is_ok()
-    })
-}
-
 pub(super) fn matches(
     root: &Path,
     current: &Current,
@@ -298,6 +266,16 @@ pub(super) fn matches(
     compatible(root, current, observation, proof, None)
 }
 
+/// Why an observation's observer is or is not the current observer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Compatibility {
+    Compatible,
+    /// The recorded package graph, from an older runner, does not project
+    /// onto today's observer inputs.
+    GraphNotProjectable,
+    IdentityDiffers,
+}
+
 pub(super) fn compatible(
     root: &Path,
     current: &Current,
@@ -305,10 +283,23 @@ pub(super) fn compatible(
     proof: Option<&Value>,
     configuration_review: Option<&Value>,
 ) -> Result<bool> {
+    Ok(
+        assess(root, current, observation, proof, configuration_review)?
+            == Compatibility::Compatible,
+    )
+}
+
+pub(super) fn assess(
+    root: &Path,
+    current: &Current,
+    observation: &ScenarioEvidence,
+    proof: Option<&Value>,
+    configuration_review: Option<&Value>,
+) -> Result<Compatibility> {
     // A tracked shard is current only while the observer's recorded sources
     // match the checkout, which establishes the observer's identity.
     if observation.source_bound && proof.is_none() && configuration_review.is_none() {
-        return Ok(true);
+        return Ok(Compatibility::Compatible);
     }
     let Some(proof) = proof.or_else(|| {
         observation
@@ -316,7 +307,7 @@ pub(super) fn compatible(
             .as_ref()
             .and_then(|s| s.observer.as_ref())
     }) else {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     };
     if proof["schema"] != 1
         || proof["build"]["schema"] != 2
@@ -333,7 +324,7 @@ pub(super) fn compatible(
                 Sha256::digest(serde_json::to_vec(&proof["build"])?)
             ))
     {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     }
     let document = observation
         .run_directory
@@ -353,10 +344,10 @@ pub(super) fn compatible(
         .unwrap_or_default();
     let dependencies = build_inputs::dependencies(&registry, &workload)?;
     let Some(current) = current.resolved.as_ref() else {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     };
     if build_inputs::validate_registry(current, &registry).is_err() {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     }
     // An observer recorded by an older runner whose package graph no longer
     // projects onto today's inputs cannot be this observer: the observation
@@ -364,7 +355,7 @@ pub(super) fn compatible(
     let Ok(mut old_dependencies) =
         build_inputs::projection(&proof["build"]["resolved"], &dependencies)
     else {
-        return Ok(false);
+        return Ok(Compatibility::GraphNotProjectable);
     };
     let mut new_dependencies = build_inputs::projection(current, &dependencies)?;
     let old_units = build_inputs::take_unit_profiles(&mut old_dependencies);
@@ -376,7 +367,7 @@ pub(super) fn compatible(
             .remove("profile");
     }
     if old_dependencies != new_dependencies {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     }
     let prefixes = source_inputs(root, &new_dependencies)?;
     // Used manifests have already been compared through the shared Cargo
@@ -386,7 +377,7 @@ pub(super) fn compatible(
     let mut expected = inputs(root, &prefixes)?;
     expected.retain(|path, _| !projected_manifest(path));
     let Some(recorded) = proof["build"]["inputs"].as_object() else {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     };
     let relevant = recorded
         .iter()
@@ -394,7 +385,7 @@ pub(super) fn compatible(
         .map(|(path, hash)| (path.clone(), hash.as_str().unwrap_or_default().to_owned()))
         .collect::<BTreeMap<_, _>>();
     if expected != relevant {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     }
     let actual = json!({"units":old_units,"cargo":proof["build"]["resolved"]["cargo_config"],"compiler":proof["build"]["compiler"],"environment":proof["build"]["environment"],"profiles":profile_configuration(&proof["build"]["resolved"])});
     let mut required = current["configuration"].clone();
@@ -402,22 +393,22 @@ pub(super) fn compatible(
     required["cargo"] = current["cargo_config"].clone();
     required["profiles"] = profile_configuration(current);
     if actual == required {
-        return Ok(true);
+        return Ok(Compatibility::Compatible);
     }
     let mut actual_environment = actual["environment"].clone();
     let mut required_environment = required["environment"].clone();
     for environment in [&mut actual_environment, &mut required_environment] {
         let Some(environment) = environment.as_object_mut() else {
-            return Ok(false);
+            return Ok(Compatibility::IdentityDiffers);
         };
         for field in ["PROFILE", "OPT_LEVEL", "DEBUG"] {
             environment.remove(field);
         }
     }
     if actual_environment != required_environment || actual["cargo"] != required["cargo"] {
-        return Ok(false);
+        return Ok(Compatibility::IdentityDiffers);
     }
-    Ok(configuration_review.is_some_and(|review| {
+    let reviewed = configuration_review.is_some_and(|review| {
         review["build_sha256"] == proof["build_sha256"]
             && review["required_sha256"]
                 == json!(format!(
@@ -427,7 +418,12 @@ pub(super) fn compatible(
             && review["reason"]
                 .as_str()
                 .is_some_and(|s| !s.trim().is_empty())
-    }))
+    });
+    Ok(if reviewed {
+        Compatibility::Compatible
+    } else {
+        Compatibility::IdentityDiffers
+    })
 }
 
 /// A legacy observation needs an explicit reviewer-owned execution/build binding.

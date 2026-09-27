@@ -517,6 +517,10 @@ const PPDU_HE_CANONICAL_BSS_COLOR: usize = 9;
 /// First HT rate-control code of each guard interval.
 const PPDU_HT_LONG_GI_CODE: u32 = 0x10;
 const PPDU_HT_SHORT_GI_CODE: u32 = 0x1a;
+/// The PTI of coexistence event one in the pinned `libcoexist.a`
+/// `coex_pti_tab`, which `mac_tx_set_pti` takes the minimum with: every
+/// data priority production sends lies below it.
+const PPDU_COEX_EVENT_ONE_PTI: u32 = 5;
 /// Vendor PP object addresses of that fixture: the transmit context, the
 /// first descriptor, the `pTxRx` rate table and the OSI function table.
 const PPDU_PROGRAM: u32 = 0x3fff_1000;
@@ -826,7 +830,7 @@ fn ppdu_objects(
     ]);
     let clamp = CallDeclaration {
         id: "coex-pti-clamp".into(),
-        applicability: "the OSI coexistence PTI clamp returns one through its output word".into(),
+        applicability: "the OSI coexistence PTI of event one, through its output byte".into(),
         lifetime: RegionLifetime::Phase,
         binding: CallBinding {
             address: PPDU_COEX_PTI_CLAMP,
@@ -842,7 +846,7 @@ fn ppdu_objects(
                 pointer_argument: 1,
                 byte_offset: 0,
                 width: 1,
-                value: 1,
+                value: PPDU_COEX_EVENT_ONE_PTI,
                 scope: CallOutputScope::PrivateStack,
             }],
             allocation: None,

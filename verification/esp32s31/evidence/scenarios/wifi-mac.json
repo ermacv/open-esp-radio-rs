@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "a5a9228162cf0375880c6b325eaea2bb000491c3c7c6ffe8354dddf485c948a9",
+    "input-2": "08c84320961100be3fa2cb1d7e5b5cd0e8ea65f7c974207d29bd1c44639384e0",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d"
   },
@@ -189,7 +189,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "a9df31b4d73875165e7fb745dd13ddd6678a5c92f7a65e0fcf4dd1c9f9e1fb1a"
+      "sha256": "0194afcfd027b2717e54c43d3ad59c89425a0a1c1d99c93e7ba98a726a624a79"
     },
     {
       "path": "verification/harness/codegen",
@@ -1181,7 +1181,7 @@
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 84,
+          "reached": 83,
           "total": 281
         },
         "directions": {
@@ -1189,8 +1189,8 @@
           "total": 282
         },
         "open": 21,
-        "excluded": 277,
-        "untriaged": 163
+        "excluded": 295,
+        "untriaged": 146
       },
       "observation": {
         "executed": 84,
@@ -1215,7 +1215,7 @@
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 54,
+          "reached": 53,
           "total": 281
         },
         "directions": {
@@ -1223,8 +1223,8 @@
           "total": 282
         },
         "open": 21,
-        "excluded": 273,
-        "untriaged": 217
+        "excluded": 291,
+        "untriaged": 200
       },
       "observation": {
         "executed": 73,
@@ -1251,7 +1251,7 @@
       ],
       "coverage": {
         "blocks": {
-          "reached": 88,
+          "reached": 87,
           "total": 281
         },
         "directions": {
@@ -1259,8 +1259,8 @@
           "total": 282
         },
         "open": 21,
-        "excluded": 257,
-        "untriaged": 182
+        "excluded": 276,
+        "untriaged": 164
       },
       "observation": {
         "executed": 90,
@@ -1361,8 +1361,8 @@
           "total": 2064
         },
         "open": 113,
-        "excluded": 521,
-        "untriaged": 3661
+        "excluded": 547,
+        "untriaged": 3635
       },
       "observation": {
         "executed": 2,
@@ -1463,8 +1463,8 @@
           "total": 2038
         },
         "open": 113,
-        "excluded": 463,
-        "untriaged": 3566
+        "excluded": 489,
+        "untriaged": 3540
       },
       "observation": {
         "executed": 10,
@@ -1497,8 +1497,8 @@
           "total": 2094
         },
         "open": 113,
-        "excluded": 463,
-        "untriaged": 3634
+        "excluded": 489,
+        "untriaged": 3608
       },
       "observation": {
         "executed": 10,
@@ -1531,8 +1531,8 @@
           "total": 2122
         },
         "open": 113,
-        "excluded": 493,
-        "untriaged": 3671
+        "excluded": 519,
+        "untriaged": 3645
       },
       "observation": {
         "executed": 17,
@@ -1565,8 +1565,8 @@
           "total": 1744
         },
         "open": 109,
-        "excluded": 469,
-        "untriaged": 3042
+        "excluded": 495,
+        "untriaged": 3016
       },
       "observation": {
         "executed": 23,
@@ -6115,26 +6115,6 @@
       "kind": "block"
     },
     {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 60,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 86,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 112,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_get_rts_rate",
-      "offset": 130,
-      "kind": "taken"
-    },
-    {
       "function": "mac_tx_set_hesig",
       "offset": 402,
       "kind": "taken"
@@ -6195,31 +6175,6 @@
       "kind": "taken"
     },
     {
-      "function": "mac_tx_set_plcp0",
-      "offset": 66,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_plcp0",
-      "offset": 72,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_plcp0",
-      "offset": 76,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_plcp0",
-      "offset": 584,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_plcp0",
-      "offset": 662,
-      "kind": "block"
-    },
-    {
       "function": "mac_tx_set_plcp1",
       "offset": 50,
       "kind": "fallthrough"
@@ -6231,27 +6186,7 @@
     },
     {
       "function": "mac_tx_set_plcp1",
-      "offset": 82,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "mac_tx_set_plcp1",
-      "offset": 86,
-      "kind": "block"
-    },
-    {
-      "function": "mac_tx_set_plcp1",
       "offset": 128,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_plcp1",
-      "offset": 138,
-      "kind": "taken"
-    },
-    {
-      "function": "mac_tx_set_pti",
-      "offset": 68,
       "kind": "taken"
     },
     {

@@ -11,6 +11,82 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "a packet PTI at least coexistence event one's PTI 5, which `mac_tx_set_pti` \
+            then publishes instead: every data priority production sends is 3 or lower",
+        places: &[Place::Range {
+            function: "mac_tx_set_pti",
+            start: 0x44,
+            end: 0x4c,
+        }],
+    },
+    Decision {
+        reason: "rate codes production never transmits in the control-rate and PLCP1 maps: \
+            code 4 and every code above HE MCS 9 (0x23); and two branches of \
+            `mac_tx_get_rts_rate` no code reaches (the HT sub-ranges above 0x12 and 0x1c, \
+            and a legacy code outside its three masks, which cover all eight)",
+        places: &[
+            Place::Range {
+                function: "mac_tx_get_rts_rate",
+                start: 0x3c,
+                end: 0x3e,
+            },
+            Place::Range {
+                function: "mac_tx_get_rts_rate",
+                start: 0x56,
+                end: 0x58,
+            },
+            Place::Range {
+                function: "mac_tx_get_rts_rate",
+                start: 0x70,
+                end: 0x72,
+            },
+            Place::Range {
+                function: "mac_tx_get_rts_rate",
+                start: 0x82,
+                end: 0x84,
+            },
+            Place::Range {
+                function: "mac_tx_set_plcp1",
+                start: 0x52,
+                end: 0x5a,
+            },
+        ],
+    },
+    Decision {
+        reason: "an HE PPDU at 40 MHz: production transmits HE at 20 MHz only (reviewed with \
+            the Wi-Fi owner)",
+        places: &[Place::Range {
+            function: "mac_tx_set_plcp1",
+            start: 0x8a,
+            end: 0x8c,
+        }],
+    },
+    Decision {
+        reason: "descriptor classes production never publishes a PPDU for: an A-MPDU \
+            container without its first-MPDU bit 19 (only later MPDUs carry that, and no PLCP0 \
+            follows them), the bit-20 class of PLCP0 format three, and an HE PPDU without the \
+            SU-acknowledgement bit 30 (HE no-ack and trigger-based are fail-closed); \
+            production publishes the PLCP0 format from its typed program (reviewed with the \
+            Wi-Fi owner)",
+        places: &[
+            Place::Range {
+                function: "mac_tx_set_plcp0",
+                start: 0x42,
+                end: 0x5a,
+            },
+            Place::Range {
+                function: "mac_tx_set_plcp0",
+                start: 0x248,
+                end: 0x24a,
+            },
+            Place::Range {
+                function: "mac_tx_set_plcp0",
+                start: 0x296,
+                end: 0x2a0,
+            },
+        ],
+    },
+    Decision {
         reason: "diagnostic output of `mac_tx_set_plcp0` that publishes no register: the \
             protection-threshold log of a non-HE descriptor with threshold fields, and the \
             PPDU dump (`dbg_read_tx_ppdu`, which only reads and prints) of a descriptor and \

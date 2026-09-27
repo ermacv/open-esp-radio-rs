@@ -940,6 +940,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32c5-hal"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32c5-pac",
+ "oer-ieee802154-engine",
+ "oer-radio-analog",
+ "oer-radio-clock",
+]
+
+[[package]]
 name = "oer-esp32c5-pac"
 version = "0.1.0"
 dependencies = [
@@ -964,8 +974,10 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "esp32c5",
+ "oer-esp32c5-hal",
  "oer-esp32c5-pac",
  "oer-esp32c5-pac-raw",
+ "oer-radio-analog",
 ]
 
 [[package]]
@@ -974,6 +986,25 @@ version = "0.1.0"
 dependencies = [
  "vcell",
 ]
+
+[[package]]
+name = "oer-ieee802154"
+version = "0.1.0"
+
+[[package]]
+name = "oer-ieee802154-engine"
+version = "0.1.0"
+dependencies = [
+ "oer-ieee802154",
+]
+
+[[package]]
+name = "oer-radio-analog"
+version = "0.1.0"
+
+[[package]]
+name = "oer-radio-clock"
+version = "0.1.0"
 
 [[package]]
 name = "paste"

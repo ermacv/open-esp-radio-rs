@@ -13,8 +13,10 @@ esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "a22
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["esp32c5", "rt", "unstable"] }
 esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["auto", "esp32c5"] }
 esp32c5 = { git = "https://github.com/esp-rs/esp-pacs", rev = "5cd68d2", default-features = false }
+oer-esp32c5-hal = { path = "../../../../crates/hardware/esp32c5/hal" }
 oer-esp32c5-pac = { path = "../../../../crates/hardware/esp32c5/pac" }
 oer-esp32c5-pac-raw = { path = "../../../../crates/hardware/esp32c5/pac/raw" }
+oer-radio-analog = { path = "../../../../crates/hardware/radio/analog" }
 
 [profile.release]
 codegen-units = 1

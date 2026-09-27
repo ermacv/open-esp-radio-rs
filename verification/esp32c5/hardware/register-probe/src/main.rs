@@ -14,6 +14,9 @@
 //! production analog I2C owner and compares each byte with the ROM leaf
 //! `phy_chip_i2c_readReg_org`, called with the same block, read mask and
 //! host. The leaf is identical to the libphy one and reads no RAM table.
+//! It repeats the BBPLL reads as polled field reads over the HAL analog bus,
+//! and writes each of the first four ULP_CAL registers with its own value
+//! through a polled field write, checking that the byte reads back unchanged.
 
 #![no_std]
 #![no_main]
@@ -21,11 +24,13 @@
 use esp_backtrace as _;
 use esp_hal::main;
 use esp_println::println;
+use oer_esp32c5_hal::analog::AnalogI2c;
 use oer_esp32c5_pac::{
     ModemClockDevice, ModemClockRegisters, PhyI2cAddress, PhyI2cBlock, PhyI2cHost, PhyI2cRegisters,
     RadioPartitions,
 };
 use oer_esp32c5_pac_raw::Ieee802154Mac;
+use oer_radio_analog::{AnalogField, FieldRead, FieldWrite, Step};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -224,6 +229,61 @@ fn probe_phy_i2c(i2c: &mut PhyI2cRegisters, failures: &mut u32) {
     }
 }
 
+fn drive<T>(mut poll: impl FnMut() -> Step<T>) -> Option<T> {
+    for _ in 0..I2C_POLLS {
+        if let Step::Ready(value) = poll() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn probe_analog_bus(bus: &mut AnalogI2c, failures: &mut u32) {
+    let bbpll = PhyI2cBlock::from_vendor_abi(0x66).expect("BBPLL");
+    let mut differences = 0;
+    let mut incomplete = false;
+    for register in 0..I2C_REGISTERS {
+        let address = PhyI2cAddress::new(bbpll, register);
+        let field = AnalogField::new(address, 7, 0).expect("whole byte");
+        let mut read = FieldRead::new(field);
+        let Some(ours) = drive(|| read.poll(bus)) else {
+            incomplete = true;
+            break;
+        };
+        if ours != rom_read(address) {
+            differences += 1;
+        }
+    }
+    let verdict = match (incomplete, differences) {
+        (true, _) => "INCOMPLETE",
+        (false, 0) => "MATCH",
+        _ => "DIFF",
+    };
+    if verdict != "MATCH" {
+        *failures += 1;
+    }
+    println!("PROBE {verdict} HAL field reads of block 0x66 against the ROM leaf");
+
+    let ulp_cal = PhyI2cBlock::from_vendor_abi(0x61).expect("ULP_CAL");
+    let mut unchanged = true;
+    for register in 0..4 {
+        let address = PhyI2cAddress::new(ulp_cal, register);
+        let field = AnalogField::new(address, 7, 0).expect("whole byte");
+        let before = rom_read(address);
+        let mut write = FieldWrite::new(field, before).expect("byte fits");
+        if drive(|| write.poll(bus)).is_none() {
+            unchanged = false;
+            break;
+        }
+        unchanged &= rom_read(address) == before;
+    }
+    check(
+        failures,
+        "HAL field write of each ULP_CAL register's own value leaves it unchanged",
+        unchanged,
+    );
+}
+
 #[main]
 fn main() -> ! {
     let _peripherals = esp_hal::init(esp_hal::Config::default());
@@ -233,6 +293,7 @@ fn main() -> ! {
         ieee802154: _ieee802154,
         mut modem_clock,
         mut phy_i2c,
+        ..
     } = RadioPartitions::take().expect("first radio partition acquisition");
     probe_modem_clock(&mut modem_clock, &mut failures);
     check(
@@ -241,6 +302,8 @@ fn main() -> ! {
         modem_clock.analog_i2c_master_clock_enabled(),
     );
     probe_phy_i2c(&mut phy_i2c, &mut failures);
+    let mut bus = AnalogI2c::new(phy_i2c);
+    probe_analog_bus(&mut bus, &mut failures);
 
     // SAFETY: the probe is the sole user of the IEEE 802.15.4 MAC.
     let mac = unsafe { Ieee802154Mac::steal() };

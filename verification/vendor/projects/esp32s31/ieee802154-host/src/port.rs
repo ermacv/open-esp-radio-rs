@@ -665,7 +665,7 @@ impl Ieee802154Environment for PortEnv {
             Vec::new(),
         );
     }
-    fn transmit_sfd_done(&mut self, frame: &[u8; FRAME_SIZE]) {
+    fn transmit_sfd_done(&mut self, frame: &mut [u8; FRAME_SIZE]) {
         self.0.borrow_mut().event(
             "transmit_sfd_done",
             Vec::new(),

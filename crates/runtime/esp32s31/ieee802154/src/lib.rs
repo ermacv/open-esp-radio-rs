@@ -797,5 +797,51 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     }
 }
 
+/// Host models of the hardware for tests of this runtime and the crates
+/// that drive it; host targets only, where no MAC writes received frames.
+#[cfg(all(any(test, feature = "model"), not(target_arch = "riscv32")))]
+impl<M: RawMutex, const EVENTS: usize>
+    Ieee802154Runtime<'_, M, oer_ieee802154_engine::ll::model::Ieee802154LlModel, EVENTS>
+{
+    /// Model the MAC DMA writing `frame` into the published receive buffer
+    /// and raising `events`, then run the interrupt handler.
+    ///
+    /// # Panics
+    ///
+    /// No radio is installed, or a frame arrives with no receive buffer
+    /// published.
+    pub fn model_interrupt(
+        &self,
+        frame: Option<&[u8]>,
+        events: &[oer_ieee802154_engine::types::Ieee802154Event],
+    ) {
+        self.installed.lock(|installed| {
+            let mut installed = installed.borrow_mut();
+            let installed = installed.as_mut().expect("a radio is installed");
+            if let Some(frame) = frame {
+                let address = installed
+                    .hardware
+                    .rx_address
+                    .expect("a receive buffer is published");
+                assert!(installed.radio.engine().model_dma_write(address, frame));
+            }
+            installed.hardware.raise(events);
+        });
+        self.on_interrupt();
+    }
+
+    /// Inspect or set the modelled hardware.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn with_model<T>(
+        &self,
+        entry: impl FnOnce(&mut oer_ieee802154_engine::ll::model::Ieee802154LlModel) -> T,
+    ) -> Result<T, Ieee802154RuntimeError> {
+        self.with_radio(|_, hardware, _| entry(hardware))
+    }
+}
+
 #[cfg(test)]
 mod tests;

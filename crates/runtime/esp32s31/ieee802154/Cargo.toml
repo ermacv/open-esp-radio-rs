@@ -7,6 +7,11 @@ license.workspace = true
 repository.workspace = true
 description = "Executor-independent ESP32-S31 IEEE 802.15.4 radio runtime over the ported MAC engine and embassy-time"
 
+[features]
+# Host models of the hardware (`model_interrupt`, `with_model`) on host
+# targets, for tests of this runtime and the crates that drive it.
+model = ["oer-ieee802154-engine/model"]
+
 [dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"

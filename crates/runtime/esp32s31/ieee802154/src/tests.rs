@@ -84,23 +84,6 @@ fn enabled<const EVENTS: usize>() -> Runtime<EVENTS> {
     runtime
 }
 
-impl<const EVENTS: usize> Runtime<EVENTS> {
-    /// Model the MAC DMA writing `frame` and raising `events`, then run the
-    /// interrupt handler.
-    fn interrupt(&self, frame: Option<&[u8]>, events: &[Ieee802154Event]) {
-        self.installed.lock(|installed| {
-            let mut installed = installed.borrow_mut();
-            let installed = installed.as_mut().unwrap();
-            if let Some(frame) = frame {
-                let address = installed.hardware.rx_address.unwrap();
-                assert!(installed.radio.engine().model_dma_write(address, frame));
-            }
-            installed.hardware.raise(events);
-        });
-        self.on_interrupt();
-    }
-}
-
 #[test]
 fn install_admits_commands_only_after_enable() {
     let runtime = Runtime::<4>::new();
@@ -147,7 +130,7 @@ fn a_received_frame_arrives_as_an_owned_portable_event() {
             channel: channel(15),
         })
         .unwrap();
-    runtime.interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     let Ok(Ieee802154RadioEvent::Received(frame)) = block_on(runtime.next_event()) else {
         panic!("a frame was received");
     };
@@ -173,7 +156,7 @@ fn a_transmission_completes_through_the_event_queue() {
             time_sync: None,
         }))
         .unwrap();
-    runtime.interrupt(None, &[Ieee802154Event::TxDone]);
+    runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
     assert_eq!(
         block_on(runtime.next_event()),
         Ok(Ieee802154RadioEvent::TransmitDone {
@@ -200,7 +183,7 @@ fn an_overflowing_queue_reports_the_loss_once() {
         })
         .unwrap();
     for _ in 0..3 {
-        runtime.interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+        runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     }
     assert_eq!(block_on(runtime.next_event()), Err(Ieee802154EventsLost));
     assert!(matches!(
@@ -218,7 +201,7 @@ fn uninstall_returns_the_parts_and_discards_events() {
             channel: channel(11),
         })
         .unwrap();
-    runtime.interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     assert!(runtime.uninstall().is_some());
     assert!(runtime.events.try_receive().is_err());
     assert_eq!(runtime.state(), Err(Ieee802154RuntimeError::NotInstalled));
@@ -413,12 +396,12 @@ fn an_installed_enhanced_ack_generator_answers_2015_frames() {
     let mut image = [0; 13];
     image[0] = 12;
     image[1..11].copy_from_slice(&mac);
-    runtime.interrupt(Some(&image), &[Ieee802154Event::RxDone]);
+    runtime.model_interrupt(Some(&image), &[Ieee802154Event::RxDone]);
     assert!(
         runtime.events.try_receive().is_err(),
         "the frame waits for its ACK"
     );
-    runtime.interrupt(None, &[Ieee802154Event::AckTxDone]);
+    runtime.model_interrupt(None, &[Ieee802154Event::AckTxDone]);
     assert!(matches!(
         block_on(runtime.next_event()),
         Ok(Ieee802154RadioEvent::Received(frame)) if frame.frame.as_bytes() == mac
@@ -463,12 +446,12 @@ fn next_event_runs_csma_ca_backoffs() {
         installed.borrow_mut().as_mut().unwrap().hardware.tx_abort =
             Ieee802154TxAbortReasonObservation::Named(Ieee802154TxAbortReason::CcaBusy);
     });
-    runtime.interrupt(None, &[Ieee802154Event::TxAbort]);
+    runtime.model_interrupt(None, &[Ieee802154Event::TxAbort]);
     assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
     assert!(matches!(wait(), Either::Second(())));
     assert_eq!(command(), Some(Ieee802154LlCommand::CcaTxStart));
 
-    runtime.interrupt(None, &[Ieee802154Event::TxDone]);
+    runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
     assert_eq!(
         block_on(runtime.next_event()),
         Ok(Ieee802154RadioEvent::TransmitDone {
@@ -513,12 +496,12 @@ fn next_event_runs_retry_delays() {
         })
     };
     let no_ack = || {
-        runtime.interrupt(None, &[Ieee802154Event::TxDone]);
+        runtime.model_interrupt(None, &[Ieee802154Event::TxDone]);
         runtime.installed.lock(|installed| {
             installed.borrow_mut().as_mut().unwrap().hardware.tx_abort =
                 Ieee802154TxAbortReasonObservation::Named(Ieee802154TxAbortReason::RxAckTimeout);
         });
-        runtime.interrupt(None, &[Ieee802154Event::TxAbort]);
+        runtime.model_interrupt(None, &[Ieee802154Event::TxAbort]);
     };
     assert_eq!(take_command(), Some(Ieee802154LlCommand::TxStart));
     no_ack();
@@ -605,7 +588,7 @@ fn txrx_statistics_are_collected_on_request() {
             channel: channel(15),
         })
         .unwrap();
-    runtime.interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+    runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
     let statistics = runtime.txrx_statistics().unwrap().unwrap();
     assert_eq!(statistics.rx.done_nums, 1);
     runtime.clear_txrx_statistics().unwrap();

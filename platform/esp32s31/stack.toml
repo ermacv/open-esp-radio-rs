@@ -90,8 +90,8 @@ reason = "compiled station attempt poll materializes every recoverable phase own
 [[reviewed_frames]]
 function_contains = "::roles::station::connected::port::ConnectedStaPort>::compose::<"
 source_ends_with = ["crates/runtime/esp32s31/ieee80211/src/roles/station/connected/port/composition.rs", "oer-esp32s31-ieee80211-runtime-0.1.0/src/roles/station/connected/port/composition.rs"]
-max_bytes = 8704
-reason = "atomic connected composition retains the validated plan, including its BSS protection facts, and complete success-or-failure graph while transferring the affine pairwise replay endpoint; the separate 4-KiB move limit still rejects hidden owner copies"
+max_bytes = 9216
+reason = "atomic connected composition retains the validated plan, including its BSS protection facts, and complete success-or-failure graph, whose connected control now carries the leaving station's state, while transferring the affine pairwise replay endpoint; measured 8944 bytes; the separate 4-KiB move limit still rejects hidden owner copies"
 
 [[reviewed_frames]]
 function_contains = "::supervisor::new::{closure#0}"

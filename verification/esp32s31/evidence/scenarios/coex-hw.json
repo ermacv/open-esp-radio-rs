@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "81358a3c2258683a728add0446d796e04f2f914d836981c541e8b7ce9cc267d7",
+    "input-2": "bd22ff4480932623b57108113d0f9457fa5438fb8e2e185ccfd6327fc85904f7",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
@@ -112,7 +112,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/radio",
-      "sha256": "ea01cf83172774e9c0c1da6157d194a9d4575eaba844fd363b5f45812501d6da"
+      "sha256": "3937c1868d7f499c8c0bb529a94b8de579edb5076d51c060516a83ead9033510"
     },
     {
       "path": "crates/runtime/ieee80211",

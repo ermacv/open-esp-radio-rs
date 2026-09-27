@@ -32,6 +32,8 @@ const VENDOR_BOOT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Serial read poll interval; the USB-Serial/JTAG console ignores the rate.
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
 const BAUD_RATE: u32 = 115_200;
+/// Bootstrap ELF the HIL image build leaves beside the application.
+const BOOTSTRAP_ELF: &str = "bootstrap.elf";
 /// Longest wait for one production register image window.
 const REGISTER_IMAGE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Console characters an unanswered register read reports.
@@ -270,6 +272,10 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
             .join("build.json"),
     )?)?;
     let (production, production_sha256) = build_production(&root, &arguments.production_image)?;
+    // The image's bootstrap ELF, from which the runner restores the HIL
+    // bootloader on every production flash.
+    let production_bootstrap = Some(production.with_file_name(BOOTSTRAP_ELF))
+        .filter(|path| path.is_file());
     let registers = crate::registers::partition(&root, crate::registers::PARTITION)?;
     if let Some(parent) = arguments.output.parent() {
         std::fs::create_dir_all(parent)?;
@@ -287,6 +293,8 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         oer_hil_runner_core::device::flash_application(
             &root,
             &vendor_build.application,
+            // The vendor image keeps the board's HIL bootloader.
+            None,
             &output.join("flash-vendor"),
             &port,
         )?;
@@ -308,6 +316,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         oer_hil_runner_core::device::flash_application(
             &root,
             &production,
+            production_bootstrap.as_deref(),
             &output.join("flash-production"),
             &port,
         )?;

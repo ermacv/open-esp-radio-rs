@@ -114,3 +114,17 @@ fn the_table_stores_each_address_once_and_reuses_cleared_slots() {
     table.reset_extended();
     assert!(!table.contains(EXTENDED));
 }
+
+/// Room for an address: present, or a free slot in its half.
+#[test]
+fn room_is_a_present_address_or_a_free_slot() {
+    let mut table = PendingTable::<1>::new();
+    let short = FrameAddress::Short([1, 0]);
+    assert!(table.has_room(short));
+    table.add(short).unwrap();
+    assert!(table.has_room(short), "a present address needs no slot");
+    assert!(!table.has_room(FrameAddress::Short([2, 0])));
+    assert!(table.has_room(FrameAddress::Extended([1; 8])));
+    table.clear(short);
+    assert!(table.has_room(FrameAddress::Short([2, 0])));
+}

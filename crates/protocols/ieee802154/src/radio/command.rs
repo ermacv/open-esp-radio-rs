@@ -2,6 +2,8 @@
 
 use super::{RadioTimestamp, RequestId, channel::Channel};
 use crate::mac::frame::FrameView;
+use crate::mac::header::FrameAddress;
+use crate::mac::pending::AutoPendingMode;
 
 /// Portable Host-to-radio operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -234,6 +236,28 @@ pub enum Configuration {
     /// Act as the PAN coordinator: accept data and command frames without a
     /// destination address (`esp_ieee802154_set_coordinator`).
     PanCoordinator(bool),
+    /// How automatic acknowledgements decide frame pending
+    /// (`esp_ieee802154_set_pending_mode`).
+    PendingMode(AutoPendingMode),
+    /// Add a source to the frame-pending table
+    /// (`esp_ieee802154_add_pending_addr`); admission fails when the table
+    /// has no room for it.
+    AddPendingAddress(FrameAddress),
+    /// Remove a source from the frame-pending table
+    /// (`esp_ieee802154_clear_pending_addr`); an absent source is no error.
+    RemovePendingAddress(FrameAddress),
+    /// Empty the short or the extended half of the frame-pending table
+    /// (`esp_ieee802154_reset_pending_table`).
+    ResetPendingTable(PendingTableHalf),
+}
+
+/// One half of the frame-pending table.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PendingTableHalf {
+    /// The short addresses.
+    Short,
+    /// The extended addresses.
+    Extended,
 }
 
 /// How clear-channel assessment decides that the channel is busy

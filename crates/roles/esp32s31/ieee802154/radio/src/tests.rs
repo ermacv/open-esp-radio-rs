@@ -5,20 +5,23 @@
 use std::{boxed::Box, vec, vec::Vec};
 
 use oer_esp32s31_hal::ieee802154::{
-    Ieee802154CcaMode, Ieee802154TxPowerLevels,
+    Ieee802154CcaMode, Ieee802154MultipanIndex, Ieee802154TxPowerLevels,
     ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
     mac::{
         Ieee802154Event, Ieee802154RxAbortReason, Ieee802154RxAbortReasonObservation,
         Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
     },
 };
-use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154State};
+use oer_esp32s31_ieee802154::engine::{
+    Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154State, PENDING_TABLE_SIZE,
+};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
-    AppliedSecurity, CSL_IE_TEMPLATE, CcaMode, Channel, CommandError, Configuration,
-    EnergyScanRequest, FramePending, FrameView, MacKeys, RadioCommand, RadioEvent, RadioState,
-    RadioTimestamp, RequestId, RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode,
-    TxRequest, TxSecurity, TxStatus, csl_phase,
+    AppliedSecurity, AutoPendingMode, CSL_IE_TEMPLATE, CcaMode, Channel, CommandError,
+    Configuration, EnergyScanRequest, FrameAddress, FramePending, FrameView, MacKeys,
+    PendingTableHalf, RadioCommand, RadioEvent, RadioState, RadioTimestamp, RequestId,
+    RestingState, ScheduledReceiveRequest, SentAcknowledgement, TxMode, TxRequest, TxSecurity,
+    TxStatus, csl_phase,
 };
 
 use super::{
@@ -1176,4 +1179,63 @@ fn a_csl_receiver_fills_its_frames_and_secures_retries_anew() {
     bench.interrupt(&[Ieee802154Event::TxSfdDone]);
     let phase = csl_phase(42, CSL.sample_time, CSL.period).unwrap();
     assert_eq!(csl_content(&bench.transmit_image()), [phase, CSL.period]);
+}
+
+impl Bench {
+    fn configure(&mut self, configuration: Configuration) -> Result<(), CommandError> {
+        self.submit(RadioCommand::Configure {
+            id: RequestId::new(9),
+            configuration,
+        })
+    }
+}
+
+/// Source matching fills interface zero's pending table and mode; a full
+/// half refuses a new source before admission.
+#[test]
+fn source_matching_configures_the_pending_table() {
+    let mut bench = Bench::enabled();
+    bench
+        .configure(Configuration::PendingMode(AutoPendingMode::Enhanced))
+        .unwrap();
+    let short = |index: u8| FrameAddress::Short([index, 0]);
+    for index in 0..PENDING_TABLE_SIZE as u8 {
+        bench
+            .configure(Configuration::AddPendingAddress(short(index)))
+            .unwrap();
+    }
+    assert_eq!(
+        bench.configure(Configuration::AddPendingAddress(short(200))),
+        Err(CommandError::PendingTableFull)
+    );
+    bench
+        .configure(Configuration::AddPendingAddress(short(3)))
+        .unwrap();
+    bench
+        .configure(Configuration::AddPendingAddress(FrameAddress::Extended(
+            [7; 8],
+        )))
+        .unwrap();
+    bench
+        .configure(Configuration::RemovePendingAddress(short(3)))
+        .unwrap();
+    bench
+        .configure(Configuration::AddPendingAddress(short(200)))
+        .unwrap();
+
+    let engine = bench.radio.engine();
+    assert_eq!(
+        engine.pib().pending_mode(Ieee802154MultipanIndex::CONTEXT0),
+        AutoPendingMode::Enhanced
+    );
+    let table = engine.pending_table();
+    assert!(table.contains(short(200)) && !table.contains(short(3)));
+    assert!(table.contains(FrameAddress::Extended([7; 8])));
+
+    bench
+        .configure(Configuration::ResetPendingTable(PendingTableHalf::Short))
+        .unwrap();
+    let table = bench.radio.engine().pending_table();
+    assert!(!table.contains(short(0)));
+    assert!(table.contains(FrameAddress::Extended([7; 8])));
 }

@@ -91,6 +91,19 @@ impl<const CAPACITY: usize> PendingTable<CAPACITY> {
         }
     }
 
+    /// Whether [`Self::add`] of `address` would succeed: it is present or
+    /// its half has a free slot.
+    pub fn has_room(&self, address: FrameAddress) -> bool {
+        match address {
+            FrameAddress::Short(address) => {
+                self.short.contains(&Some(address)) || self.short.contains(&None)
+            }
+            FrameAddress::Extended(address) => {
+                self.extended.contains(&Some(address)) || self.extended.contains(&None)
+            }
+        }
+    }
+
     /// `ieee802154_clear_pending_addr`: whether the address was present.
     pub fn clear(&mut self, address: FrameAddress) -> bool {
         match address {

@@ -2,7 +2,7 @@
 //! IEEE 802.15.4 contract.
 
 use oer_ieee802154::{
-    AppliedSecurity, AutoPendingMode, FrameAddress, MAX_MAC_FRAME_LEN, MacKeys,
+    AppliedSecurity, AutoPendingMode, Configuration, FrameAddress, MAX_MAC_FRAME_LEN, MacKeys,
     SentAcknowledgement, TxSecurity, TxStatus,
 };
 
@@ -187,6 +187,45 @@ pub const CSL_UNCERTAINTY: u8 = 50;
 /// `otMacFrameSetCslIe` truncates it.
 pub const fn csl_period(period: u32) -> u16 {
     period as u16
+}
+
+/// The frame-pending table changes that take the sources `old_short` and
+/// `old_extended` to `new_short` and `new_extended`, as OpenThread's
+/// `otPlatRadio*SrcMatch*` calls reach ESP-IDF's port one entry at a time:
+/// removals first, then additions.
+pub fn pending_changes(
+    old_short: &[u16],
+    new_short: &[u16],
+    old_extended: &[u64],
+    new_extended: &[u64],
+    mut apply: impl FnMut(Configuration),
+) {
+    for &short in old_short.iter().filter(|short| !new_short.contains(short)) {
+        apply(Configuration::RemovePendingAddress(short_pending_address(
+            short,
+        )));
+    }
+    for &extended in old_extended
+        .iter()
+        .filter(|extended| !new_extended.contains(extended))
+    {
+        apply(Configuration::RemovePendingAddress(
+            extended_pending_address(extended),
+        ));
+    }
+    for &short in new_short.iter().filter(|short| !old_short.contains(short)) {
+        apply(Configuration::AddPendingAddress(short_pending_address(
+            short,
+        )));
+    }
+    for &extended in new_extended
+        .iter()
+        .filter(|extended| !old_extended.contains(extended))
+    {
+        apply(Configuration::AddPendingAddress(extended_pending_address(
+            extended,
+        )));
+    }
 }
 
 #[cfg(test)]

@@ -89,6 +89,17 @@ retry timers run inside `Ieee802154SystemRuntime::next_event`, so the
 consumer must await events while a transmission waits; the random words
 come from the hardware generator.
 
+Source matching is part of the portable contract: `Configuration` sets the
+pending mode and adds, removes or resets the sources of interface zero's
+frame-pending table (`esp_ieee802154_set_pending_mode`,
+`add_pending_addr`, `clear_pending_addr`, `reset_pending_table`); a source
+a full half has no room for is refused with `PendingTableFull`. The
+vendor's TX/RX statistics (`CONFIG_IEEE802154_TXRX_STATISTIC`) are
+collected on request through `Ieee802154SystemRuntime::set_txrx_statistics`:
+started transmissions, transmissions refused during a reception, `TX_DONE`
+and `RX_DONE` interrupts, TX coexistence breaks and the MAC's diagnostic
+counters, which every interrupt drains.
+
 Scheduled operations use the radio clock, `Ieee802154SystemRuntime::now`
 (ESP-HAL's microsecond clock, as `otPlatRadioGetNow` reads `esp_timer`). A
 `TxMode::Scheduled` transmission starts at its time through TIMER0 and the

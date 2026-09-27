@@ -32,15 +32,16 @@ use oer_esp32s31_ieee802154::engine::{
 use oer_ieee802154::{
     AcceptedCommand, AppliedSecurity, AttemptFailure, CSL_IE_TEMPLATE, CcaMode, Channel,
     CommandError, Configuration, CsmaCa, FcsStatus, FramePending, FrameRetries, FrameVersion,
-    FrameView, KeyIdMode, MacKeys, PhrFrame, RadioCapabilities, RadioCommand, RadioEvent,
-    RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId,
-    RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode, TxSecurity,
-    TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
+    FrameView, KeyIdMode, MacKeys, PendingTableHalf, PhrFrame, RadioCapabilities, RadioCommand,
+    RadioEvent, RadioFault, RadioState, RadioStateMachine, RadioTimestamp, ReceivedFrame,
+    RequestId, RestingState, RetryStart, RxMetadata, SecurityStatus, SentAcknowledgement, TxMode,
+    TxSecurity, TxStatus, csl_phase, generate_enhanced_ack, write_csl_ie,
 };
 
 /// The portable capabilities the role implements.
 ///
-/// Source matching has no portable command yet and is not advertised.
+/// Source matching configures the frame-pending table of interface zero, as
+/// ESP-IDF's single-interface API does.
 pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::NONE
     .union(RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT)
     .union(RadioCapabilities::CSMA_CA)
@@ -53,7 +54,8 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
     .union(RadioCapabilities::TRANSMIT_POWER)
     .union(RadioCapabilities::PROMISCUOUS)
     .union(RadioCapabilities::RECEIVE_TIMESTAMP)
-    .union(RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT);
+    .union(RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT)
+    .union(RadioCapabilities::SOURCE_MATCH);
 
 /// Header IE bytes an enhanced ACK carries at most (OpenThread
 /// `OT_ACK_IE_MAX_SIZE`).
@@ -722,6 +724,20 @@ impl<'storage> Ieee802154Radio<'storage> {
         command: RadioCommand<'_>,
         sink: &mut S,
     ) -> Result<AcceptedCommand, CommandError> {
+        // The pending table's room is the backend's to judge, after the
+        // capability the state machine checks.
+        if let RadioCommand::Configure {
+            configuration: Configuration::AddPendingAddress(address),
+            ..
+        } = command
+            && self
+                .machine
+                .capabilities()
+                .contains(RadioCapabilities::SOURCE_MATCH)
+            && !self.engine.pending_table().has_room(address)
+        {
+            return Err(CommandError::PendingTableFull);
+        }
         let accepted = self.machine.admit(command)?;
         let mut collector =
             Collector::new(self.platform, &mut self.enhanced_ack, &mut self.security);
@@ -761,6 +777,22 @@ impl<'storage> Ieee802154Radio<'storage> {
                 }
                 Configuration::CcaMode(mode) => engine.pib().set_cca_mode(hal_cca_mode(mode)),
                 Configuration::PanCoordinator(enable) => engine.pib().set_coordinator(enable),
+                Configuration::PendingMode(mode) => engine
+                    .pib()
+                    .set_pending_mode(Ieee802154MultipanIndex::CONTEXT0, mode),
+                Configuration::AddPendingAddress(address) => {
+                    // Room was checked before admission.
+                    let _ = engine.pending_table().add(address);
+                }
+                Configuration::RemovePendingAddress(address) => {
+                    engine.pending_table().clear(address);
+                }
+                Configuration::ResetPendingTable(PendingTableHalf::Short) => {
+                    engine.pending_table().reset_short();
+                }
+                Configuration::ResetPendingTable(PendingTableHalf::Extended) => {
+                    engine.pending_table().reset_extended();
+                }
             },
             RadioCommand::Transmit(request) => {
                 let channel = hal_channel(request.channel);

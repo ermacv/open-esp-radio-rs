@@ -1,12 +1,13 @@
 use oer_ieee802154::{
-    AppliedSecurity, AutoPendingMode, FrameAddress, SentAcknowledgement, TxSecurity, TxStatus,
+    AppliedSecurity, AutoPendingMode, Configuration, FrameAddress, SentAcknowledgement, TxSecurity,
+    TxStatus,
 };
 
 use super::{
     PORT_INITIAL_KEYS, TransmitFailure, csl_period, extended_address, extended_pending_address,
-    pending_mode, psdu_mac, radio_time, scan_micros, sent_ack_security, set_frame_counter,
-    set_mac_keys, short_pending_address, transmit_failure, tx_security, write_applied_security,
-    write_psdu,
+    pending_changes, pending_mode, psdu_mac, radio_time, scan_micros, sent_ack_security,
+    set_frame_counter, set_mac_keys, short_pending_address, transmit_failure, tx_security,
+    write_applied_security, write_psdu,
 };
 
 #[test]
@@ -166,4 +167,22 @@ fn radio_times_extend_around_now() {
 fn csl_periods_fit_the_ie() {
     assert_eq!(csl_period(3_125), 3_125);
     assert_eq!(csl_period(0x1_0005), 5);
+}
+
+/// Source-match changes remove what left, then add what came, per entry.
+#[test]
+fn pending_changes_follow_the_table_entry_by_entry() {
+    let mut changes = std::vec::Vec::new();
+    pending_changes(&[1, 2], &[2, 3], &[10], &[], |change| changes.push(change));
+    assert_eq!(
+        changes,
+        [
+            Configuration::RemovePendingAddress(short_pending_address(1)),
+            Configuration::RemovePendingAddress(extended_pending_address(10)),
+            Configuration::AddPendingAddress(short_pending_address(3)),
+        ]
+    );
+    let mut none = 0;
+    pending_changes(&[1], &[1], &[5], &[5], |_| none += 1);
+    assert_eq!(none, 0);
 }

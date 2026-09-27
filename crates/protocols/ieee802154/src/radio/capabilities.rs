@@ -104,6 +104,10 @@ impl RadioCapabilities {
             Configuration::CcaThresholdDbm(_) | Configuration::CcaMode(_) => {
                 self.contains(Self::CLEAR_CHANNEL_ASSESSMENT)
             }
+            Configuration::PendingMode(_)
+            | Configuration::AddPendingAddress(_)
+            | Configuration::RemovePendingAddress(_)
+            | Configuration::ResetPendingTable(_) => self.contains(Self::SOURCE_MATCH),
             Configuration::PanId(_)
             | Configuration::ShortAddress(_)
             | Configuration::ExtendedAddress(_)

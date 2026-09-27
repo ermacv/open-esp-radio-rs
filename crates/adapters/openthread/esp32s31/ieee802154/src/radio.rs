@@ -5,12 +5,12 @@ use heapless::Deque;
 use oer_esp32s31_hal::ieee802154::ll::Ieee802154LowLevel;
 use oer_esp32s31_ieee802154_runtime::{
     Ieee802154Csl, Ieee802154EnhancedAckGenerator, Ieee802154OwnedFrame, Ieee802154RadioEvent,
-    Ieee802154Runtime,
+    Ieee802154Runtime, Ieee802154RuntimeError,
 };
 use oer_ieee802154::{
     AppliedSecurity, Channel, CommandError, Configuration, EnergyScanRequest, FrameView,
-    RadioCommand, RadioState, RadioTimestamp, RequestId, ScheduledReceiveRequest, TxMode,
-    TxRequest, TxSecurity,
+    PendingTableHalf, RadioCommand, RadioState, RadioTimestamp, RequestId, ScheduledReceiveRequest,
+    TxMode, TxRequest, TxSecurity,
 };
 use openthread::{
     AckSecurity, Capabilities, Config, CslConfig, FrameCounterUpdate, MacCapabilities, MacKeys,
@@ -19,9 +19,9 @@ use openthread::{
 
 use crate::frames::{
     CSL_ACCURACY_PPM, CSL_UNCERTAINTY, PORT_INITIAL_KEYS, TransmitFailure, csl_period,
-    extended_address, extended_pending_address, pending_mode, psdu_mac, radio_time, scan_micros,
-    sent_ack_security, set_frame_counter, set_mac_keys, short_pending_address, transmit_failure,
-    tx_security, write_applied_security, write_psdu,
+    extended_address, pending_changes, pending_mode, psdu_mac, radio_time, scan_micros,
+    sent_ack_security, set_frame_counter, set_mac_keys, transmit_failure, tx_security,
+    write_applied_security, write_psdu,
 };
 
 /// The PHY capabilities the radio reports, as ESP-IDF's OpenThread port
@@ -62,6 +62,14 @@ pub struct OpenThreadRadio<'r, 's, M: RawMutex, H, const EVENTS: usize, const QU
     clock: Option<RadioClock>,
     /// The CCA threshold the radio holds, in dBm.
     cca_threshold: Option<i8>,
+    /// The source-match table the radio holds.
+    src_match: SrcMatchConfig,
+}
+
+/// Why a source-match change was refused.
+enum PendingRefusal {
+    TableFull,
+    Other,
 }
 
 /// One frame to transmit and how.
@@ -103,6 +111,22 @@ where
             next_id: 0,
             clock: None,
             cca_threshold: None,
+            src_match: SrcMatchConfig::new(),
+        }
+    }
+
+    /// Admit one configuration, telling a full pending table apart.
+    fn submit_configuration(&mut self, configuration: Configuration) -> Result<(), PendingRefusal> {
+        let id = self.id();
+        match self
+            .runtime
+            .submit(RadioCommand::Configure { id, configuration })
+        {
+            Ok(_) => Ok(()),
+            Err(Ieee802154RuntimeError::Rejected(CommandError::PendingTableFull)) => {
+                Err(PendingRefusal::TableFull)
+            }
+            Err(_) => Err(PendingRefusal::Other),
         }
     }
 
@@ -316,6 +340,16 @@ where
         // The radio holds the threshold OpenThread starts from.
         self.cca_threshold = None;
         self.apply_cca_threshold(self.defaults.cca_threshold_dbm)?;
+        // And the empty source-match table it starts from: every poll is
+        // answered with frame pending.
+        self.src_match = SrcMatchConfig::new();
+        for configuration in [
+            Configuration::ResetPendingTable(PendingTableHalf::Short),
+            Configuration::ResetPendingTable(PendingTableHalf::Extended),
+            Configuration::PendingMode(pending_mode(false)),
+        ] {
+            self.configure(configuration)?;
+        }
         Ok(RadioCaps {
             phy: OPEN_THREAD_RADIO_CAPABILITIES,
             mac: MacCapabilities::all(),
@@ -342,20 +376,29 @@ where
     }
 
     async fn set_src_match_config(&mut self, config: &SrcMatchConfig) -> Result<(), Self::Error> {
-        self.runtime
-            .with_pending_table(|table| {
-                *table = oer_ieee802154::PendingTable::new();
-                for &short in &config.short_addrs {
-                    let _ = table.add(short_pending_address(short));
+        self.settle().await;
+        if config.enabled != self.src_match.enabled {
+            self.configure(Configuration::PendingMode(pending_mode(config.enabled)))?;
+        }
+        let old = core::mem::replace(&mut self.src_match, config.clone());
+        let mut result = Ok(());
+        pending_changes(
+            &old.short_addrs,
+            &config.short_addrs,
+            &old.ext_addrs,
+            &config.ext_addrs,
+            |change| {
+                // As ESP-IDF's port, a full table is no error.
+                match self.submit_configuration(change) {
+                    Ok(()) | Err(PendingRefusal::TableFull) => {}
+                    Err(PendingRefusal::Other) if result.is_ok() => {
+                        result = Err(RadioErrorKind::Other);
+                    }
+                    Err(PendingRefusal::Other) => {}
                 }
-                for &extended in &config.ext_addrs {
-                    let _ = table.add(extended_pending_address(extended));
-                }
-            })
-            .map_err(|_| RadioErrorKind::Other)?;
-        self.runtime
-            .set_pending_mode(pending_mode(config.enabled))
-            .map_err(|_| RadioErrorKind::Other)
+            },
+        );
+        result
     }
 
     async fn set_receive(&mut self, number: u8) -> Result<(), Self::Error> {

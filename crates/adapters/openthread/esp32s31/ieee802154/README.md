@@ -46,7 +46,8 @@ The capabilities are the ones the radio keeps under this trait:
   extended address filtering, promiscuous mode and source matching. A
   disabled source-match table answers every poll with frame pending; an
   enabled one uses the enhanced pending mode ESP-IDF's port selects for
-  Thread 1.2 and later.
+  Thread 1.2 and later. Table changes reach the radio entry by entry, and a
+  full table is no error, as in the port.
 
 As over ESP-IDF's radio, OpenThread's `SubMac` runs CSMA-CA backoffs and
 retries itself; each of its attempts reaches the radio as one transmission,

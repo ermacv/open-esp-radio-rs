@@ -90,6 +90,8 @@ pub enum CommandError {
         /// Complete active state.
         state: RadioState,
     },
+    /// The frame-pending table has no room for the source.
+    PendingTableFull,
     /// The controller did not publish the required capability.
     Unsupported {
         /// Rejected operation kind.
@@ -450,6 +452,10 @@ const fn required_configuration_capability(configuration: Configuration) -> Radi
         Configuration::CcaThresholdDbm(_) | Configuration::CcaMode(_) => {
             RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT
         }
+        Configuration::PendingMode(_)
+        | Configuration::AddPendingAddress(_)
+        | Configuration::RemovePendingAddress(_)
+        | Configuration::ResetPendingTable(_) => RadioCapabilities::SOURCE_MATCH,
         Configuration::PanId(_)
         | Configuration::ShortAddress(_)
         | Configuration::ExtendedAddress(_)

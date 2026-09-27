@@ -731,7 +731,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     {
         let progress = self.service_step(hardware, tx, context).await;
         #[cfg(feature = "diagnostics")]
-        self.trace_step(&progress, tx.now_micros());
+        self.trace_step(&progress, tx.now_micros(), hardware.station_tsf());
         progress
     }
 
@@ -743,6 +743,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             ConnectedControlError,
         >,
         now_micros: u64,
+        station_tsf: u64,
     ) {
         let outcome = match progress {
             Ok(DatapathControlProgress::More) => 0,
@@ -764,6 +765,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             self.receiver.is_empty(),
             self.core.tx_in_flight(),
             self.power.is_some_and(StationPowerLink::outstanding),
+        );
+        log::info!(
+            "open-radio: station tsf={} last_beacon_tsf={:?}",
+            station_tsf,
+            self.core
+                .beacon_monitor()
+                .and_then(|monitor| monitor.last_observation())
+                .map(|observation| observation.timestamp_tsf),
         );
         log::info!("open-radio: station power {:?}", self.core.power_debug());
         *trace = ControlStepTrace {

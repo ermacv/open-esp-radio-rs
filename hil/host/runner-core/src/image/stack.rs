@@ -1,8 +1,8 @@
-pub fn enable_stack_checks(
+pub fn configure_image_compiler(
     command: &mut std::process::Command,
     budget: &oer_memory_report::StackBudget,
 ) {
-    oer_esp32s31_firmware::stack::enable_stack_checks(command, budget);
+    oer_esp32s31_firmware::compiler::configure_image_compiler(command, budget);
     command
         .env(
             "OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES",

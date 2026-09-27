@@ -67,7 +67,7 @@ pub fn build(
     if !features.is_empty() {
         command.arg("--features").arg(features.join(","));
     }
-    oer_esp32s31_firmware::stack::enable_stack_checks(&mut command, &budget);
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget);
     process::run(&mut command)?;
     runtime_lock.validate(&ctx.root, network.unwrap_or_default())?;
     let runtime = workspace.snapshot(
@@ -91,7 +91,7 @@ pub fn build(
     let mut command = ctx.cargo();
     oer_esp32s31_firmware::bootstrap_command(&mut command, &ctx.root, &packed, &bootstrap_target);
     command.arg("--locked");
-    oer_esp32s31_firmware::stack::enable_stack_checks(&mut command, &budget);
+    oer_esp32s31_firmware::compiler::configure_image_compiler(&mut command, &budget);
     process::run(&mut command)?;
     let bootstrap = workspace.snapshot(
         &bootstrap_target

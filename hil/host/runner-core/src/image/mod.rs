@@ -589,7 +589,7 @@ fn build_resolved(
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
     enable_experimental_path_trimming(&mut runtime, trim_paths);
-    crate::image::stack::enable_stack_checks(&mut runtime, &stack_budget);
+    crate::image::stack::configure_image_compiler(&mut runtime, &stack_budget);
     if mono_stats {
         mono::configure(&mut runtime, &output)?;
     }
@@ -638,7 +638,7 @@ fn build_resolved(
     add_local_embassy_patches(&mut bootstrap, local_embassy);
     add_local_xarxa_patches(&mut bootstrap, local_xarxa);
     enable_experimental_path_trimming(&mut bootstrap, trim_paths);
-    crate::image::stack::enable_stack_checks(&mut bootstrap, &stack_budget);
+    crate::image::stack::configure_image_compiler(&mut bootstrap, &stack_budget);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&compiled_bootstrap_elf, "bootstrap ELF")?;
     fs::copy(&compiled_bootstrap_elf, &bootstrap_elf)?;

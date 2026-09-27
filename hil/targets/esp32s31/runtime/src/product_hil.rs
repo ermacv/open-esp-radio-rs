@@ -1417,6 +1417,9 @@ fn station_status_edge(state: StationLinkState) -> Option<StationLinkEdge> {
                 ConnectedDisconnectReason::ControlMailboxOverflow => {
                     StationDisconnectReason::ControlMailboxOverflow
                 }
+                ConnectedDisconnectReason::SaQueryTimeout => {
+                    StationDisconnectReason::SaQueryTimeout
+                }
             }))
         }
         StationLinkState::Disconnected(None) => None,

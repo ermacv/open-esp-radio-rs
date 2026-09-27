@@ -617,6 +617,9 @@ pub enum StationDisconnectReason {
     /// Kept at the end so the discriminants of the existing wire vocabulary
     /// remain stable.
     ControlMailboxOverflow,
+    /// The access point did not answer the SA Query an unprotected
+    /// disconnect started under management frame protection.
+    SaQueryTimeout,
 }
 
 /// Stable station stage vocabulary used by HIL lifecycle evidence.

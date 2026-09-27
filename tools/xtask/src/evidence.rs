@@ -121,7 +121,8 @@ pub fn run(
     crate::checks::vendor::run(ctx, chip, false)?;
     let (radio, bluetooth) = probes(chip);
     let radio = crate::checks::vendor::elf(ctx, &radio)?;
-    let bluetooth = crate::checks::vendor::elf(ctx, &bluetooth)?;
+    // Only chips with Bluetooth scenarios build a Bluetooth probe.
+    let bluetooth = crate::checks::vendor::elf(ctx, &bluetooth).ok();
     // Several scenarios run concurrently under one budget in `all`.
     let runs: Vec<String> = if selected.len() > 1 {
         vec!["all".into()]
@@ -142,7 +143,10 @@ pub fn run(
             "--index".into(),
             ctx.root.join(directory).into(),
         ];
-        if scenario == "all" || scenario == "bluetooth" {
+        if let Some(bluetooth) = bluetooth
+            .as_ref()
+            .filter(|_| scenario == "all" || scenario == "bluetooth")
+        {
             args.extend(["--bluetooth-production".into(), bluetooth.clone().into()]);
         }
         let code = crate::vendor_scenario::run(ctx, chip, &args)?;

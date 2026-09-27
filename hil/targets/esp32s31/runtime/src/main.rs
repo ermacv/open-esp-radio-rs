@@ -283,6 +283,10 @@ use oer_esp32s31_platform_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
+    OER_RESET_TRACE[2].store(
+        0xdead_0000 | info.location().map_or(0, |l| l.line()),
+        core::sync::atomic::Ordering::SeqCst,
+    );
     #[cfg(not(feature = "open-radio-hil"))]
     let _ = info;
     #[cfg(feature = "open-radio-hil")]
@@ -317,6 +321,8 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
             }
         }
         console::panic_interrupt_dispatch_context(mcause, hart_id, pending_words);
+        OER_RESET_TRACE[3].store(mepc as u32, core::sync::atomic::Ordering::SeqCst);
+        OER_RESET_TRACE[0].store(0xc000_0000 | (mcause as u32 & 0xfff), core::sync::atomic::Ordering::SeqCst);
         console::panic_report(mcause, mepc, mtval);
     }
     #[cfg(feature = "boot-smoke")]
@@ -325,8 +331,19 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     halt()
 }
 
+#[unsafe(link_section = ".rtc_fast.persistent")]
+#[unsafe(no_mangle)]
+static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 4] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 4];
+
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
+    {
+        use core::sync::atomic::Ordering::SeqCst;
+        let reason = esp_hal::system::reset_reason().map_or(0xff, |r| r as u32);
+        OER_RESET_TRACE[0].store(OER_RESET_TRACE[1].load(SeqCst), SeqCst);
+        OER_RESET_TRACE[1].store(0xb000_0000 | reason, SeqCst);
+    }
     unsafe { ets_install_usb_printf() };
     print(c"OPEN_RADIO_HIL runtime=START profile=");
     print(PROFILE_NAME);

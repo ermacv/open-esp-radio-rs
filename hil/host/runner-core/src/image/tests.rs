@@ -1,12 +1,13 @@
 use super::*;
 
 #[test]
-fn gatt_beside_the_performance_wifi_image_is_the_joint_image() {
-    // The features the joint image advertised on hardware.
+fn gatt_beside_the_correctness_wifi_image_is_the_joint_image() {
+    // The features the joint image advertises on hardware.
     let joint = FeatureCapabilities {
         bidirectional: true,
         bluetooth_gatt: true,
         data_plane_placement: true,
+        driver_observation_evidence: true,
         psram_task_stack: true,
         runtime_configuration: true,
         runtime_initialization: true,
@@ -30,9 +31,14 @@ fn gatt_beside_the_performance_wifi_image_is_the_joint_image() {
         classify_flashed_capabilities(&joint),
         Some(ImageClass::WifiBleCoex)
     );
-    // GATT beside a diagnostic Wi-Fi image is no class.
+    // GATT beside any other Wi-Fi image is no class.
+    let performance = FeatureCapabilities {
+        driver_observation_evidence: false,
+        ..joint
+    };
+    assert_eq!(classify_flashed_capabilities(&performance), None);
     let diagnostic = FeatureCapabilities {
-        driver_observation_evidence: true,
+        task_poll_evidence: true,
         ..joint
     };
     assert_eq!(classify_flashed_capabilities(&diagnostic), None);

@@ -20,6 +20,7 @@ pub mod connected_rx;
 pub mod control_tx;
 pub mod ftm;
 pub mod join;
+pub mod modem_sleep;
 pub mod peer;
 mod peer_policy;
 pub mod scan;

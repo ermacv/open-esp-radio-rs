@@ -1501,6 +1501,12 @@ code = "d7cfea578f01a31570395ad2a0936b2b7abedcf5f5d3ca1e0e424832674ea5e9"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_ioctl.o"
+symbol = "ieee80211_sta_disconnect"
+code = "521105c8611db38cf6a1e78da1caeb3003b3317dc2ba8f95c56ed253d1a424d4"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ioctl.o"
 symbol = "map_wifi_config_sae_pwe_to_supp"
 code = "6e60ed09400ea79080aa64536e4ad61cdfb4bb52d303c9313e8a915f99353176"
 
@@ -1563,6 +1569,12 @@ artifact = "libnet80211"
 member = "ieee80211_output.o"
 symbol = "ieee80211_recycle_cache_eb"
 code = "e4c6e50229a6ce3261f3b8ce298c92b0c2130abea7bc8c7eea831c269143341d"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_output.o"
+symbol = "ieee80211_send_mgmt"
+code = "f3eca92c93a3f454724dce591995005e307fb21114026b438fac511aa4f694c3"
 
 [[function]]
 artifact = "libnet80211"

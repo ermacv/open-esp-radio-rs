@@ -59,6 +59,16 @@ traffic phases, counting `repetitions` times workload `cycles`, and no
 itself, tagged `soak` or `thermal`, are exempt. A catalog test enforces this
 budget.
 
+## Target chips
+
+A scenario runs on the esp32s31 unless its header names its chips:
+`targets = ["esp32c5"]` or `targets = ["esp32c5", "esp32s31"]`. A run takes
+the chip every selected scenario names, the esp32s31 first, or the one
+`cargo hil run --target CHIP` asks for, and uses that chip's device under
+test from the lab configuration. The runner builds and flashes HIL images for
+the esp32s31 only so far and refuses another chip with that reason. A default
+`targets` is not written into scenario documents, so it changes no digest.
+
 ## Stand claims
 
 A run claims the boards and fixtures its scenarios require and the frequency

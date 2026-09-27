@@ -231,6 +231,54 @@ fn prebuild(
     Ok(built)
 }
 
+/// The chip that runs `selected`: `requested`, which every scenario must
+/// name, or else the one they all name, the esp32s31 first.
+pub(crate) fn select_target(selected: &[&Scenario], requested: Option<&str>) -> Result<String> {
+    let common = |chip: &str| {
+        selected
+            .iter()
+            .all(|scenario| scenario.header.targets.iter().any(|target| target == chip))
+    };
+    if let Some(chip) = requested {
+        if let Some(scenario) = selected
+            .iter()
+            .find(|scenario| !scenario.header.targets.iter().any(|target| target == chip))
+        {
+            return Err(format!(
+                "scenario `{}` runs on {}, not {chip}",
+                scenario.id(),
+                scenario.header.targets.join(", ")
+            )
+            .into());
+        }
+        return Ok(chip.to_owned());
+    }
+    let default = hil_core::lab::config::DEFAULT_TARGET;
+    if common(default) {
+        return Ok(default.to_owned());
+    }
+    let first = selected.first().ok_or("no scenario selected")?;
+    first
+        .header
+        .targets
+        .iter()
+        .find(|chip| common(chip))
+        .cloned()
+        .ok_or_else(|| "the selected scenarios share no target chip; run them separately".into())
+}
+
+/// Refuse a chip the runner cannot build and flash images for yet.
+pub(crate) fn require_image_pipeline(chip: &str) -> Result<()> {
+    if chip == hil_core::lab::config::DEFAULT_TARGET {
+        return Ok(());
+    }
+    Err(format!(
+        "the runner builds and flashes HIL images only for {} so far; {chip} needs its HIL target (hil/targets/{chip}) and image pipeline",
+        hil_core::lab::config::DEFAULT_TARGET
+    )
+    .into())
+}
+
 /// Tag of scenarios that measure the radio environment and transmit without
 /// regard for others: they need their ranges quiet and are noisy themselves.
 /// It stands for `air-strict` plus `air-noisy`.

@@ -111,6 +111,10 @@ pub(crate) enum CliCommand {
         /// join the lease. Its exit status does not change the run's outcome.
         #[arg(long, value_name = "COMMAND")]
         then: Option<String>,
+        /// Chip whose device under test runs the scenarios; default: the one
+        /// every selected scenario names, the esp32s31 first.
+        #[arg(long, value_name = "CHIP")]
+        target: Option<String>,
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     RunAll {

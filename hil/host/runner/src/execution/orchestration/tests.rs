@@ -499,3 +499,25 @@ fn the_then_command_joins_the_lease_and_names_the_run() {
         format!("token {}", run.display())
     );
 }
+
+#[test]
+fn a_run_takes_the_chip_its_scenarios_share_and_refuses_others() {
+    let catalog = catalog();
+    let [first, second] = two_same_image(&catalog);
+    assert_eq!(first.header.targets, ["esp32s31"], "the default target");
+    assert_eq!(select_target(&[first, second], None).unwrap(), "esp32s31");
+    let mut both = first.clone();
+    both.header.targets = vec!["esp32c5".into(), "esp32s31".into()];
+    let mut esp32c5 = second.clone();
+    esp32c5.header.targets = vec!["esp32c5".into()];
+    assert_eq!(select_target(&[&both], None).unwrap(), "esp32s31");
+    assert_eq!(select_target(&[&both, &esp32c5], None).unwrap(), "esp32c5");
+    assert_eq!(select_target(&[&both], Some("esp32c5")).unwrap(), "esp32c5");
+    assert!(
+        select_target(&[first, &esp32c5], None).is_err(),
+        "no shared chip"
+    );
+    assert!(select_target(&[first], Some("esp32c5")).is_err());
+    assert!(require_image_pipeline("esp32s31").is_ok());
+    assert!(require_image_pipeline("esp32c5").is_err());
+}

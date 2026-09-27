@@ -273,9 +273,14 @@ pub(crate) fn run() -> Result<()> {
             firmware_from,
             network,
             then,
+            target,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let mut selected = orchestration::named_scenarios(&catalog, &scenarios)?;
+            let target = orchestration::select_target(
+                &selected.iter().collect::<Vec<_>>(),
+                target.as_deref(),
+            )?;
             for scenario in &mut selected {
                 preflight::configure_run_selection(
                     scenario,
@@ -298,7 +303,8 @@ pub(crate) fn run() -> Result<()> {
                 }
                 None => RunFirmware::BuildCurrent(network),
             };
-            let lab = lab::config::LabConfig::load(&lab_path)?;
+            let lab = lab::config::LabConfig::load(&lab_path)?.for_target(&target)?;
+            orchestration::require_image_pipeline(&target)?;
             let selected = selected.iter().collect::<Vec<_>>();
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;

@@ -373,6 +373,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         }
     };
     oer_esp32s31_radio_runtime::runtime_trace(0x6101);
+    oer_esp32s31_radio_runtime::trace_rate();
     let (lease, platform, clocks) = guard.parts();
     if acquired == ConcurrentAcquire::TrackingDue {
         let issued_at = Instant::now().as_micros();
@@ -410,6 +411,7 @@ pub async fn start<P, C: PlatformClockProvider>(
     }
 
     oer_esp32s31_radio_runtime::runtime_trace(0x6102);
+    oer_esp32s31_radio_runtime::trace_rate();
     let reset = match clocked.reset_mac(lease) {
         Ok(reset) => reset,
         Err(failure) => {
@@ -425,6 +427,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         }
     };
     oer_esp32s31_radio_runtime::runtime_trace(0x6103);
+    oer_esp32s31_radio_runtime::trace_rate();
     let foundation = match reset.configure_foundation() {
         Ok(foundation) => foundation,
         Err(failure) => {
@@ -454,6 +457,7 @@ pub async fn start<P, C: PlatformClockProvider>(
     };
     let platform_services = Ieee802154Platform { now_micros, random };
     oer_esp32s31_radio_runtime::runtime_trace(0x6104);
+    oer_esp32s31_radio_runtime::trace_rate();
     if let Err(parts) = RUNTIME.install(parts, platform_services, defaults) {
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);

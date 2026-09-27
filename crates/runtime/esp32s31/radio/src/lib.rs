@@ -28,7 +28,7 @@
 mod system;
 
 #[cfg(target_arch = "riscv32")]
-pub use system::{runtime_trace, 
+pub use system::{runtime_trace, trace_rate, 
     CoexPreemptionEnd, CoexWifiChannel, ExternalCoexStopError, Ieee802154JoinError, Ieee802154Left,
     RadioGuard, RadioPhyError, RadioPhyPrepared, RadioResources, RadioSystem, WifiAsleep,
     WifiCoexView, WifiCoexViewCell, WifiWakeError, WifiWakeFailure,

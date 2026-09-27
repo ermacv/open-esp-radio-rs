@@ -726,11 +726,14 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154JoinError> {
         // The client needs RF open, not the registration report.
         runtime_trace(0x6001);
+        trace_rate();
         let _prepared = self.prepare_phy().await.map_err(Ieee802154JoinError::Phy)?;
         runtime_trace(0x6002);
+        trace_rate();
         let joined = join_ieee802154(self.lease(), clocked, &mut EmbassyPhyTime)
             .map_err(Ieee802154JoinError::Client);
         runtime_trace(0x6003);
+        trace_rate();
         joined
     }
 
@@ -755,14 +758,17 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         membership: Ieee802154PhyMembership,
     ) -> Result<Ieee802154Left, Ieee802154PhyLeaveFailure> {
         runtime_trace(0x4001);
+        trace_rate();
         let last = leave_ieee802154(self.lease(), clocked, membership)?;
         runtime_trace(0x4002);
+        trace_rate();
         let rf_closed = if last {
             self.close_phy_if_idle().await
         } else {
             Ok(false)
         };
         runtime_trace(0x4003);
+        trace_rate();
         Ok(Ieee802154Left { rf_closed })
     }
 
@@ -1207,4 +1213,10 @@ fn snapshot() {
     }
     slot[2] = at as u32;
     slot[3] = 0x5eed_ffff;
+}
+
+/// Debug: trace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL.
+#[allow(unsafe_code)]
+pub fn trace_rate() {
+    runtime_trace(unsafe { core::ptr::read_volatile(0x2010_448c as *const u32) });
 }

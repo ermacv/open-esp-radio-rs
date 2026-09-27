@@ -1,0 +1,10 @@
+# The facts of the ESP32-S31 that host tools cannot derive from the chip id.
+# Paths follow the id by convention: verification/<id>, registers/<id>,
+# hil/targets/<id>, qualification/targets/<id>, target/hil/<id>.
+schema = 1
+id = "esp32s31"
+rust-target = "riscv32imafc-unknown-none-elf"
+# The ROM loads platform/esp32s31/bootstrap, which stages the runtime into PSRAM.
+boot = "staged"
+espflash-chip = "esp32s31"
+revisions = ["rev0"]

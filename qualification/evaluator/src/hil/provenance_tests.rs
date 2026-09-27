@@ -34,8 +34,14 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     super::tests::add_current_build(&root, &run);
     let check = |expected| {
         super::tests::seal(&run);
-        let mut index =
-            HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+        let mut index = HilEvidenceIndex::load(
+            &root,
+            Path::new("runs"),
+            Path::new("evidence"),
+            "esp32s31",
+            &repository,
+        )
+        .unwrap();
         // This fixture deliberately uses unresolved external lock entries to exercise
         // firmware pins. Observer compatibility has its own resolved-graph tests.
         for observation in index.scenarios.values_mut().flatten() {
@@ -130,8 +136,14 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     escaping["firmware"][0]["build_provenance_path"] = json!("../outside.json");
     write(&run.join("manifest.json"), &escaping);
     super::tests::seal(&run);
-    let error =
-        HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap_err();
+    let error = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("contained"));
     fs::remove_dir_all(root).unwrap();
 }

@@ -9,6 +9,7 @@ mod observer;
 mod procedure;
 mod provenance;
 pub(crate) mod review;
+pub(crate) mod shard;
 mod snapshot;
 mod subject;
 
@@ -228,6 +229,9 @@ pub(crate) struct HilEvidenceSummary {
     pub(crate) passing: usize,
     pub(crate) current_source_producer: usize,
     pub(crate) qualifying: usize,
+    /// Tracked evidence shards, and those whose sources match the checkout.
+    pub(crate) shards: usize,
+    pub(crate) current_shards: usize,
     pub(crate) sealed_attempts: usize,
     pub(crate) evaluator_dirty: bool,
 }
@@ -248,6 +252,12 @@ struct ScenarioEvidence {
     run_directory: Option<PathBuf>,
     review: Option<review::ReviewLink>,
     resolution: Option<review::ResolutionLink>,
+    /// The executed scenario document of an observation recorded in a
+    /// tracked shard, which has no run directory to read it from.
+    procedure_document: Option<serde_json::Value>,
+    /// An observation from a tracked shard whose recorded sources, including
+    /// the observer's, match the checkout.
+    source_bound: bool,
 }
 
 impl ScenarioEvidence {
@@ -271,7 +281,7 @@ impl ScenarioEvidence {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, Deserialize)]
 struct CompletionSeal {
     path: PathBuf,
     sha256: String,
@@ -332,6 +342,8 @@ impl HilEvidenceIndex {
                             exclusions: Vec::new(),
                             repetitions: *repetitions,
                             measurements: vec![Vec::new(); *repetitions],
+                            procedure_document: None,
+                            source_bound: false,
                         }],
                     )
                 })
@@ -343,7 +355,36 @@ impl HilEvidenceIndex {
         }
     }
 
+    /// Run bundles below `runs`, and the tracked shards below `evidence`
+    /// whose sources match the checkout.
     pub(crate) fn load(
+        root: &Path,
+        runs: &Path,
+        evidence: &Path,
+        target: &str,
+        repository: &RepositoryState,
+    ) -> Result<Self> {
+        let mut index = Self::load_runs(root, runs, target, repository)?;
+        for (shard, current) in shard::load(root, evidence, target)? {
+            index.summary.shards += 1;
+            if !current {
+                continue;
+            }
+            index.summary.current_shards += 1;
+            let observation = shard.observation();
+            let observations = index
+                .scenarios
+                .entry(shard.scenario().to_owned())
+                .or_default();
+            if observations.iter().any(|o| o.run_id == observation.run_id) {
+                continue;
+            }
+            observations.push(observation);
+        }
+        Ok(index)
+    }
+
+    fn load_runs(
         root: &Path,
         runs: &Path,
         target: &str,
@@ -357,6 +398,7 @@ impl HilEvidenceIndex {
                     evaluator_dirty: repository.dirty,
                     ..HilEvidenceSummary::default()
                 },
+                current_observer,
                 ..Self::default()
             });
         }
@@ -542,6 +584,8 @@ impl HilEvidenceIndex {
                                 .into_iter()
                                 .map(|repetition| repetition.measurements)
                                 .collect(),
+                            procedure_document: None,
+                            source_bound: false,
                         });
                     let observation = scenarios.get_mut(&scenario_id).unwrap().last_mut().unwrap();
                     if !current_observer.available() {

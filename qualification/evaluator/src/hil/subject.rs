@@ -7,14 +7,14 @@
 use super::*;
 use serde::Serialize;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(super) struct FileIdentity {
     pub(super) path: PathBuf,
     pub(super) size_bytes: u64,
     pub(super) sha256: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(super) struct FirmwareIdentity {
     pub(super) image: Option<String>,
     pub(super) build_id: Option<String>,
@@ -23,7 +23,7 @@ pub(super) struct FirmwareIdentity {
     pub(super) replayed: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(super) struct ObservationSubject {
     pub(super) observer: Option<serde_json::Value>,
     pub(super) repository: RepositoryProvenance,

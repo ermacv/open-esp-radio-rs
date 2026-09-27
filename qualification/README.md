@@ -409,8 +409,9 @@ axes, evidence requirements or capability dependency graph.
 
 ```text
 reviewed capability declarations ─┐
-Blobray vendor evidence index ─────┼─> qualification evaluator ─> JSON/verdict
-sealed HIL run bundles ────────────┘
+vendor evidence shards ────────────┤
+sealed HIL run bundles ────────────┼─> qualification evaluator ─> JSON/verdict
+tracked HIL evidence shards ───────┘
 ```
 
 Blobray and the HIL runner never decide product readiness. Blobray owns vendor
@@ -468,6 +469,23 @@ original complete observation for a specific capability/property and destination
 build after validating an explicit engineering conclusion and its bindings.
 Original outcomes and exclusions remain visible; a commit change or another PASS
 does not establish that a failure was resolved.
+
+A run bundle stays in ignored output and qualifies only for the checkout it
+was produced from. `cargo qualification hil-evidence --manifest PATH` records
+the latest qualifying observation of every scenario as a tracked shard in the
+program's `[hil] evidence` directory (`hil/evidence/esp32s31`). A shard holds
+the observation's outcome, repetitions, measurements and failures, the run's
+completion seal, the observation subject (observer proof, firmware identity,
+repository provenance) and the executed scenario document, and the digests of
+the sources the firmware and observer were built from: the path packages of
+`hil/targets/esp32s31` and `platform/esp32s31`, the observer's manifest
+directories, and the lockfiles, stack policy, partition table and observer
+input registry. The evaluator reads shards next to run bundles. A shard whose
+recorded sources all match the checkout supports its scenario whatever else the
+repository changed, and those digests stand for the observer's identity; a
+changed source makes it stale until the scenario runs again and is recorded.
+Run the command on the lab machine right after a run qualifies, and commit the
+shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
 
 The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,

@@ -27,6 +27,11 @@ observer build identity, Cargo input projection and canonical scenarios —
 lives in the `schema/` crate; its `producer` feature adds the Cargo-running
 operations that only the runner and repository tools use.
 Generated runs stay below `target/hil/<chip>/runs`; they are not tracked.
+After a run qualifies on the current checkout, `cargo qualification hil-evidence
+--manifest qualification/targets/esp32s31/<program>.toml` records its
+observations as tracked shards in `hil/evidence/<chip>/`, bound to the firmware
+and observer sources rather than to the commit; see
+[qualification](../qualification/README.md#evidence-ownership).
 
 ## Safe source-only route
 

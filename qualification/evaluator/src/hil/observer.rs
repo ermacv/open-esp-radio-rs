@@ -273,6 +273,11 @@ pub(super) fn compatible(
     proof: Option<&Value>,
     configuration_review: Option<&Value>,
 ) -> Result<bool> {
+    // A tracked shard is current only while the observer's recorded sources
+    // match the checkout, which establishes the observer's identity.
+    if observation.source_bound && proof.is_none() && configuration_review.is_none() {
+        return Ok(true);
+    }
     let Some(proof) = proof.or_else(|| {
         observation
             .subject

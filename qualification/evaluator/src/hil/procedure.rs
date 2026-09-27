@@ -20,16 +20,20 @@ pub(super) fn matches(
         // Qualification validates every requirement against a loaded catalog.
         return Ok(true);
     };
-    let (Some(run), Some(identity)) = (
-        &observation.run_directory,
-        observation
-            .subject
-            .as_ref()
-            .and_then(|s| s.procedure.as_ref()),
-    ) else {
-        return Ok(false);
+    let document: Value = if let Some(document) = &observation.procedure_document {
+        document.clone()
+    } else {
+        let (Some(run), Some(identity)) = (
+            &observation.run_directory,
+            observation
+                .subject
+                .as_ref()
+                .and_then(|s| s.procedure.as_ref()),
+        ) else {
+            return Ok(false);
+        };
+        super::read_json(&run.join(&identity.path))?
     };
-    let document: Value = super::read_json(&run.join(&identity.path))?;
     Ok(for_requirement(current, requirement) == for_requirement(&document, requirement))
 }
 

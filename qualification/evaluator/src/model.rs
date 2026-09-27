@@ -246,6 +246,11 @@ impl Qualification {
         ManifestDocument::load_and_validate(path, root)?.evaluate(root)
     }
 
+    /// Record the program's qualifying HIL observations as tracked shards.
+    pub(crate) fn record_hil_evidence(path: &Path, root: &Path) -> Result<Vec<String>> {
+        ManifestDocument::load_and_validate(path, root)?.record_hil_evidence(root)
+    }
+
     pub(crate) fn is_ready(&self, id: &str) -> bool {
         fn visit(qualification: &Qualification, id: &str) -> bool {
             let capability = &qualification.capabilities[id];
@@ -324,6 +329,9 @@ struct HilConfig {
     target: String,
     catalog: PathBuf,
     runs: PathBuf,
+    /// Tracked evidence shards of qualifying observations; none when absent.
+    #[serde(default)]
+    evidence: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -501,6 +509,24 @@ impl ValidatedProgram {
         &self.document.catalog
     }
 
+    /// Record the qualifying HIL observations of this program's runs as
+    /// tracked shards bound to their sources; returns the scenarios recorded.
+    fn record_hil_evidence(self, root: &Path) -> Result<Vec<String>> {
+        let document = self.document;
+        let hil_target = slug(&document.hil.target, "HIL target")?;
+        let evidence = document
+            .hil
+            .evidence
+            .as_deref()
+            .ok_or("the program's [hil] section names no evidence directory")?;
+        let repository = RepositoryState::read(root)?;
+        let index =
+            HilEvidenceIndex::load(root, &document.hil.runs, evidence, &hil_target, &repository)?;
+        let sources =
+            crate::hil::shard::tracked_sources(root, &crate::hil::shard::observers(&index))?;
+        crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources)
+    }
+
     fn evaluate(self, root: &Path) -> Result<Qualification> {
         let document = self.document;
         let program_source = document
@@ -513,7 +539,13 @@ impl ValidatedProgram {
         let evidence =
             NativeEvidence::load(root, &document.verification.evidence_index, &hil_target)?;
         let scenario_catalog = ScenarioCatalog::load(root, &document.hil.catalog)?;
-        let hil_index = HilEvidenceIndex::load(root, &document.hil.runs, &hil_target, &repository)?;
+        let hil_index = HilEvidenceIndex::load(
+            root,
+            &document.hil.runs,
+            document.hil.evidence.as_deref().unwrap_or(Path::new("")),
+            &hil_target,
+            &repository,
+        )?;
         let evidence_inputs = EvidenceInputs {
             verification_entries: evidence.entries(),
             verification_current_release_entries: evidence.current_entries(),

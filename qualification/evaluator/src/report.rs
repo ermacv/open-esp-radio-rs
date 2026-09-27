@@ -52,6 +52,8 @@ struct HilInputsReport {
     current_source_producer: usize,
     qualifying: usize,
     sealed_attempts: usize,
+    shards: usize,
+    current_shards: usize,
     evaluator_dirty: bool,
 }
 
@@ -138,6 +140,8 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 current_source_producer: qualification.evidence_inputs.hil.current_source_producer,
                 qualifying: qualification.evidence_inputs.hil.qualifying,
                 sealed_attempts: qualification.evidence_inputs.hil.sealed_attempts,
+                shards: qualification.evidence_inputs.hil.shards,
+                current_shards: qualification.evidence_inputs.hil.current_shards,
                 observer_configuration_problem: qualification
                     .evidence_inputs
                     .hil
@@ -181,7 +185,7 @@ fn report(qualification: &Qualification) -> Report<'_> {
 
 pub(crate) fn print(qualification: &Qualification) {
     println!(
-        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\tevaluator-dirty={}",
+        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-source-producer={}\thil-qualifying={}\thil-sealed-attempts={}\thil-shards={}\thil-current-shards={}\tevaluator-dirty={}",
         qualification.evidence_inputs.verification_entries,
         qualification
             .evidence_inputs
@@ -194,6 +198,8 @@ pub(crate) fn print(qualification: &Qualification) {
         qualification.evidence_inputs.hil.current_source_producer,
         qualification.evidence_inputs.hil.qualifying,
         qualification.evidence_inputs.hil.sealed_attempts,
+        qualification.evidence_inputs.hil.shards,
+        qualification.evidence_inputs.hil.current_shards,
         qualification.evidence_inputs.hil.evaluator_dirty,
     );
     if let Some(problem) = &qualification

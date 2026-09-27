@@ -479,6 +479,7 @@ fn identical_snapshot_is_direct_evidence_regardless_of_commit_or_dirty_state() {
         let index = HilEvidenceIndex::load(
             &fixture.0,
             Path::new("runs"),
+            Path::new("evidence"),
             "esp32s31",
             &crate::hil::RepositoryState {
                 commit: "current".into(),

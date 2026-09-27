@@ -11,7 +11,7 @@ use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence --manifest PATH [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs as tracked shards bound to their firmware and observer sources.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -23,6 +23,7 @@ enum Command {
     Gate,
     CatalogCheck,
     CatalogRender,
+    HilEvidence,
 }
 
 impl Command {
@@ -34,6 +35,7 @@ impl Command {
             "validate" => Ok(Self::Validate),
             "evaluate" => Ok(Self::Evaluate),
             "gate" => Ok(Self::Gate),
+            "hil-evidence" => Ok(Self::HilEvidence),
             _ => Err(format!("unknown qualification command {value:?}").into()),
         }
     }
@@ -226,6 +228,14 @@ fn execute(arguments: Arguments) -> Result<()> {
     } else {
         arguments.root.join(manifest)
     };
+    if arguments.command == Command::HilEvidence {
+        let recorded = Qualification::record_hil_evidence(&manifest_path, &arguments.root)?;
+        println!("HIL-EVIDENCE\tshards={}", recorded.len());
+        for scenario in recorded {
+            println!("HIL-SHARD\t{scenario}");
+        }
+        return Ok(());
+    }
     if arguments.command == Command::CatalogCheck {
         let catalog = CatalogView::load_for_program(&arguments.root, &manifest_path)?;
         println!(

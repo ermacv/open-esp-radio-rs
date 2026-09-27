@@ -184,7 +184,14 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+    let index = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap();
     assert!(
         index
             .evidence_for(
@@ -202,13 +209,24 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
         commit: "different-commit".to_owned(),
         dirty: false,
     };
-    let stale =
-        HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &stale_repository).unwrap();
+    let stale = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &stale_repository,
+    )
+    .unwrap();
     assert_eq!(stale.summary().qualifying, 0);
-    let wrong_target =
-        HilEvidenceIndex::load(&root, Path::new("runs"), "other-target", &repository)
-            .unwrap_err()
-            .to_string();
+    let wrong_target = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "other-target",
+        &repository,
+    )
+    .unwrap_err()
+    .to_string();
     assert!(wrong_target.contains("configured target"));
 
     let mut manifest: serde_json::Value =
@@ -224,8 +242,14 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     )
     .unwrap();
     seal(&run);
-    let replayed =
-        HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+    let replayed = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap();
     assert_eq!(replayed.summary().current_source_producer, 0);
     assert_eq!(replayed.summary().qualifying, 0);
 
@@ -247,8 +271,14 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     )
     .unwrap();
     seal(&run);
-    let planned_replay =
-        HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+    let planned_replay = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap();
     assert_eq!(planned_replay.summary().current_source_producer, 0);
     assert_eq!(planned_replay.summary().qualifying, 0);
 
@@ -256,7 +286,16 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     seal(&run);
 
     fs::write(run.join("suite.json"), b"{}").unwrap();
-    assert!(HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository,).is_err());
+    assert!(
+        HilEvidenceIndex::load(
+            &root,
+            Path::new("runs"),
+            Path::new("evidence"),
+            "esp32s31",
+            &repository,
+        )
+        .is_err()
+    );
 
     suite["counts"]["passed"] = json!(0);
     fs::write(
@@ -265,7 +304,16 @@ fn current_sealed_run_qualifies_and_tampering_fails_closed() {
     )
     .unwrap();
     seal(&run);
-    assert!(HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository,).is_err());
+    assert!(
+        HilEvidenceIndex::load(
+            &root,
+            Path::new("runs"),
+            Path::new("evidence"),
+            "esp32s31",
+            &repository,
+        )
+        .is_err()
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -304,7 +352,14 @@ fn unsealed_running_run_is_mutable_state_not_evidence() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+    let index = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap();
     assert_eq!(index.summary().directories, 1);
     assert_eq!(index.summary().bundles, 1);
     assert_eq!(index.summary().incomplete, 0);
@@ -330,7 +385,14 @@ fn manifestless_generated_run_is_incomplete_not_an_error() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let index = HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+    let index = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap();
     assert_eq!(index.summary().directories, 1);
     assert_eq!(index.summary().bundles, 0);
     assert_eq!(index.summary().incomplete, 1);
@@ -356,8 +418,14 @@ fn malformed_existing_manifest_still_fails_closed() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let error =
-        HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap_err();
+    let error = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("cannot parse HIL evidence"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -397,8 +465,14 @@ fn unsealed_completed_run_still_fails_closed() {
         commit: "abc123".to_owned(),
         dirty: false,
     };
-    let error =
-        HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap_err();
+    let error = HilEvidenceIndex::load(
+        &root,
+        Path::new("runs"),
+        Path::new("evidence"),
+        "esp32s31",
+        &repository,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("integrity.json"));
     fs::remove_dir_all(root).unwrap();
 }
@@ -504,4 +578,112 @@ pub(super) fn prepare_observer(root: &Path) -> serde_json::Value {
     fs::create_dir_all(root.join("target/hil")).unwrap();
     fs::write(root.join("target/hil/current-observer.json"), serde_json::to_vec(&json!({"build":{"schema":2,"resolved":resolved,"compiler":configuration["compiler"],"environment":configuration["environment"]}})).unwrap()).unwrap();
     resolved
+}
+
+#[test]
+fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
+    let root = std::env::temp_dir().join(format!(
+        "open-radio-qualification-hil-shard-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        fs::remove_dir_all(&root).unwrap();
+    }
+    let run = root.join("runs/run-1");
+    fs::create_dir_all(&run).unwrap();
+    fs::write(
+        run.join("manifest.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": 2, "run_id": "run-1", "target": "esp32s31", "state": "completed",
+            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+            "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        run.join("suite.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schema": 2, "run_id": "run-1", "target": "esp32s31", "outcome": "passed",
+            "started_unix_millis": 100, "finished_unix_millis": 200, "duration_millis": 100,
+            "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
+                "blocked": 0, "interrupted": 0},
+            "scenarios": [{
+                "schema": 2, "scenario": "station-reconnect", "outcome": "passed",
+                "required_repetitions": 2,
+                "repetitions": [
+                    {"schema": 2, "repetition": 1, "outcome": "passed", "failure": null,
+                        "measurements": [{"name": "received", "value": 40, "unit": "count",
+                            "threshold": null, "verdict": null}]},
+                    {"schema": 2, "repetition": 2, "outcome": "passed", "failure": null}
+                ],
+                "failure": null,
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    add_current_build(&root, &run);
+    seal(&run);
+    fs::create_dir_all(root.join("firmware/src")).unwrap();
+    fs::write(root.join("firmware/src/lib.rs"), "one").unwrap();
+    let requirement = HilRequirement {
+        scenario: "station-reconnect".to_owned(),
+        checks: vec![],
+        minimum_repetitions: 2,
+    };
+    let (runs, evidence) = (Path::new("runs"), Path::new("evidence"));
+    let repository = RepositoryState {
+        commit: "abc123".to_owned(),
+        dirty: false,
+    };
+    let index = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &repository).unwrap();
+    let recorded = shard::distill(
+        &root,
+        &index,
+        evidence,
+        "esp32s31",
+        &[PathBuf::from("firmware")],
+    )
+    .unwrap();
+    assert_eq!(recorded, ["station-reconnect"]);
+
+    // Without the run bundle and at another commit, the shard still
+    // qualifies, with its measurements.
+    fs::remove_dir_all(root.join("runs")).unwrap();
+    let later = RepositoryState {
+        commit: "later-commit".to_owned(),
+        dirty: false,
+    };
+    let index = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).unwrap();
+    assert_eq!(index.summary().shards, 1);
+    assert_eq!(index.summary().current_shards, 1);
+    assert!(
+        index
+            .evidence_for(&requirement, &ScenarioCatalog::default())
+            .is_some()
+    );
+    assert_eq!(
+        index.scenarios["station-reconnect"][0].measurements[0],
+        [
+            json!({"name": "received", "value": 40, "unit": "count", "threshold": null,
+            "verdict": null})
+        ]
+    );
+
+    // A changed firmware source makes it stale.
+    fs::write(root.join("firmware/src/lib.rs"), "two").unwrap();
+    let index = HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).unwrap();
+    assert_eq!(index.summary().current_shards, 0);
+    assert!(
+        index
+            .evidence_for(&requirement, &ScenarioCatalog::default())
+            .is_none()
+    );
+
+    // A shard names its own scenario, and only shards live in the directory.
+    fs::write(root.join("firmware/src/lib.rs"), "one").unwrap();
+    fs::write(root.join("evidence/notes.txt"), "").unwrap();
+    assert!(HilEvidenceIndex::load(&root, runs, evidence, "esp32s31", &later).is_err());
+    fs::remove_dir_all(root).unwrap();
 }

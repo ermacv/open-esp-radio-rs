@@ -2,8 +2,8 @@
   "schema": 2,
   "target": "esp32s31",
   "scenario": "ieee802154-peer-exchange",
-  "run-id": "1790533334526-001ec54b",
-  "started-unix-millis": 1790533334526,
+  "run-id": "1790552276206-00396174",
+  "started-unix-millis": 1790552276206,
   "outcome": "passed",
   "failure": null,
   "repetitions": [
@@ -170,32 +170,32 @@
   ],
   "completion-seal": {
     "path": "attempts/ieee802154-peer-exchange.json",
-    "sha256": "537251396e7a2db67af9f5040828db6b0fb70bb2bb69ce9709c804db276f1610"
+    "sha256": "170bc004b87df8b3c77759c56a92bb0cd66689d006f48b134878ba20bfad3dca"
   },
   "subject": {
     "observer": {
-      "build_sha256": "0bed5c5d12c92ad40a141edb6b57c198b4173cedb22f70bda9ae5aedc479a3dd",
-      "executable_sha256": "b28ea04a2fad3f7af8adcf86f50d1980a7be44672b99c251401fb843e0bde6b2",
+      "build_sha256": "a3579aff6bcbf780922f91a0bebc248d4bfcdebc2bc19bc9aa1b3e52de26cd72",
+      "executable_sha256": "52586a8157274a47f2afd965a89b82839ae702dca06692e19f062b449d5d07a6",
       "schema": 2
     },
     "repository": {
-      "commit": "9a44bf01016e52c0860c17fe4f7926941e431d0f",
+      "commit": "b4438a6f46c0e57528b4ed9e267a186a3c4c6dca",
       "dirty": false,
-      "workspace_sha256": "a048c232cc9efc836529dbc72381ab7a9787c53c6f782373c4539795a4403669"
+      "workspace_sha256": "cb7e956f68d72f2ea54fad58b170cb3e196b9af1e53900cbaca918f379f98672"
     },
     "firmware": [
       {
         "image": "diagnostic-ieee802154-radio",
-        "build_id": "5355e565f9a380fa8615b93e85f0c36625a608c8636436e671814d3b3ebebc70",
+        "build_id": "9f12e1972615a2e6c5935c6ae8982be094d9648a3298516f3758f93b9b41befd",
         "application": {
           "path": "firmware/diagnostic-ieee802154-radio/application.bin",
-          "size_bytes": 3555088,
-          "sha256": "c46be49e1eb13533095f3c40f168776361d38c8bee234f826882753063d9b821"
+          "size_bytes": 3620624,
+          "sha256": "cdb0b3c9fc73e81edae14e2e9cd7b9a4275ea0a854530c2279e1491715a3ff0c"
         },
         "build_provenance": {
           "path": "firmware/diagnostic-ieee802154-radio/build-provenance.json",
-          "size_bytes": 5724,
-          "sha256": "8e61505e220aa107348311256d824c9a201a76e48d8b2e114250a3e5ec6aefa9"
+          "size_bytes": 5717,
+          "sha256": "aa69476758c773da6dbba1effe303b761481d1302da92b1b95884c2c6de3c7b8"
         },
         "replayed": false
       }
@@ -208,12 +208,12 @@
     "fixture": {
       "path": "lab-provenance.json",
       "size_bytes": 2018,
-      "sha256": "b645f5a3d4c3f8bf4ce3720c18f961d71648b1a926b44ab55c745aadf4ac1fd1"
+      "sha256": "76bc13888599080488291dbedfcc723b9f2db19b8916002fadc70ea083d058f6"
     },
     "source_snapshot_manifest": {
       "path": "source/snapshot/manifest.json",
-      "size_bytes": 789201,
-      "sha256": "c065ba216012e689580984c5b89bccf88da6fa55fc138aa3a9e4938d27a3d425"
+      "size_bytes": 802247,
+      "sha256": "30c81d9d607ebe01ca56f6e459ca3d2abcea817583f38fe041dba0ac99dbd780"
     }
   },
   "procedure": {
@@ -250,7 +250,7 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "1cac6d10c40cce2e3aa2b7610e0cad3ecaca946ac09290fd747aa5e6c0744732"
+      "sha256": "c4863d4cb007dc21109facb946880adef277403fb9642480c13da8afa6729413"
     },
     {
       "path": "crates/adapters/embassy/esp32s31/executor/Cargo.toml",
@@ -301,6 +301,26 @@
       "sha256": "00120760c6a2ef98e69c614938f0f4b148be918d6017fae311a2eb22c7708a0d"
     },
     {
+      "path": "crates/adapters/embassy-net/owned/Cargo.toml",
+      "sha256": "b8060c697b6ed0feaf1d2b47eae3984e4c0738dbd020e54e0b52a3cab62898ef"
+    },
+    {
+      "path": "crates/adapters/embassy-net/owned/src/lib.rs",
+      "sha256": "885c17746ab2fe3f19a3e4d5bafca48848d0c914f3ce454fc0e24dd9c4b1aff2"
+    },
+    {
+      "path": "crates/adapters/embassy-net/owned/src/owned/tx_budget.rs",
+      "sha256": "3b790065ea6b13cedbe6ab5a573b6f055d3751cb49e1b679fd3954a3e2893f1e"
+    },
+    {
+      "path": "crates/adapters/embassy-net/owned/src/owned/tx_queue.rs",
+      "sha256": "a9a8076ef4403c89030ff0d3b92d28d02ed880a333d3fa6bbb6202857464af64"
+    },
+    {
+      "path": "crates/adapters/embassy-net/owned/src/owned.rs",
+      "sha256": "aff4d5f3b5738d48b514d250e17e4a3f34660d6c91db645e40248436c68a2241"
+    },
+    {
       "path": "crates/adapters/esp-hal/esp32s31/ieee80211/Cargo.toml",
       "sha256": "93f1a0891bb187a4ab930cfa25a13ed8127b167759ceece590fa41aad992b096"
     },
@@ -322,7 +342,7 @@
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/ieee802154/src/lib.rs",
-      "sha256": "9ef739f99f95c67d8629788cd03d0d9467a52a4cf2a82152b4c183c8239c9a1f"
+      "sha256": "bea4afb0c8c83a1bbba34eda605373933cf7959f391bdb527bcd3ac478e6e7bb"
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/radio/Cargo.toml",
@@ -389,28 +409,8 @@
       "sha256": "5756a16299a737d13ae2304dd5cf25a0888f6569302187175b66cb19bbbd458d"
     },
     {
-      "path": "crates/adapters/xarxa/esp32s31/ieee80211-upstream/Cargo.toml",
-      "sha256": "ceb05f53b739e13eb6599d5db06f747697ccc20cb522953656d0b6402ea0a223"
-    },
-    {
-      "path": "crates/adapters/xarxa/esp32s31/ieee80211-upstream/src/lib.rs",
-      "sha256": "c1158b6e0eccb805a5943e33a399270e3442dfa02f9fd2057d2e28a14b566939"
-    },
-    {
-      "path": "crates/adapters/xarxa/upstream/Cargo.toml",
-      "sha256": "d582ad9ff0df94b5dedc358761f138bebb9f272486852ca1106a2a528f275def"
-    },
-    {
-      "path": "crates/adapters/xarxa/upstream/src/device.rs",
-      "sha256": "406104b5f6c8ab3072f19d1ec1510b0f3f565efa10a98262fefc438d2d8ccd32"
-    },
-    {
-      "path": "crates/adapters/xarxa/upstream/src/lib.rs",
-      "sha256": "3851805e4e3c43521d0e311a7704f9a6e97a6aba1684a333f19ab49b523634d9"
-    },
-    {
       "path": "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml",
-      "sha256": "47c908ea67a047a73a1bb63a4e5d1941c4991089adca6c0f685a1cc4b5036ab1"
+      "sha256": "93d9275aa33bad912ff57bc98bccb57fb0680fb1ec2ca78d7e92e64b3545ec0e"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/composition/start.rs",
@@ -438,7 +438,7 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/lib.rs",
-      "sha256": "56073bd417624ccaffb47ce83908038333e2606af14f28c865eed5d23e4989f2"
+      "sha256": "d6b8113eca3015ddad08e62a0dae7c2f0c8f159544cb2d1989d750f9f13e0981"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/lifecycle_policy.rs",
@@ -450,19 +450,15 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/network_diagnostics.rs",
-      "sha256": "3093d4010296ff385cd9338d150ba7ce10f20564d686a432bb6bfa65a1055505"
-    },
-    {
-      "path": "crates/composition/esp32s31/embassy/ieee80211/src/radio_resources/upstream.rs",
-      "sha256": "8c21aac6cd6a52581a020a957088213ec607302460e95c033f96106fc1319f1b"
+      "sha256": "8e7bc590beba27f3d5d51e662d18b807bb85994d9555a00d4d8cf8bca9b96cda"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/radio_resources.rs",
-      "sha256": "119e43c96c6bc639e1ff317626412297421b9102c81960844b936db60f1594cb"
+      "sha256": "cff189cfffbf264b7834be67eb972e74ae330e1d3d56a9dd1f32a1092da0c0e6"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/resources/profile.rs",
-      "sha256": "54dc605ee9706561ffd75959644480c24d3cc9a2b7152ee5d89efdbebb548db0"
+      "sha256": "7a875332d4b929b10fbd58744a1302515cb45dbe76249c3b3b9ed3737042231c"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/resources.rs",
@@ -482,7 +478,7 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/access_point.rs",
-      "sha256": "c6ba18c5ceec9de061862e4011244787381afcc38ed95c78f4c0d2be142a4043"
+      "sha256": "44df8945d5e0cd7109d93ea03d8fd8aafdb003187e529cd3bd00575ecafef261"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/concurrent.rs",
@@ -518,7 +514,7 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station.rs",
-      "sha256": "f7cd401ee56329205f238a7d108fdb589e7fd1a41784e16b896425bc148f720b"
+      "sha256": "9ffaa2780cb8e8b53aed8f9c21c826f7267918ce3b3f2911382346930212b86d"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs",
@@ -527,6 +523,10 @@
     {
       "path": "crates/composition/esp32s31/embassy/ieee80211/src/watchdog.rs",
       "sha256": "e733b04ed5049074fbd64dbf487b31a2cb91c4918f92380f4dbcd61c83cb583a"
+    },
+    {
+      "path": "crates/composition/esp32s31/embassy/ieee80211/src/wifi_network.rs",
+      "sha256": "0a6457a269ce4d39b6e170193781d3cac2d85e5918b32ac2a04b144546446f7a"
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee802154/Cargo.toml",
@@ -542,7 +542,7 @@
     },
     {
       "path": "crates/composition/esp32s31/embassy/ieee802154/src/system.rs",
-      "sha256": "325e04f97a1c6507d67e9506fc312ee3fd49cc8fbe8700273f1c9410a8e4845a"
+      "sha256": "52d3e6b28523a9010a42f66310505fbcd4b1c7aa1dbcee7f60df960ee6eb4276"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/Cargo.toml",
@@ -562,7 +562,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/connectable_advertising.rs",
-      "sha256": "d410ba5aa6822d0946281201b0b959a9951578d305e13089279d8041f58e5e3c"
+      "sha256": "ad971efedbdcb54e92f7007d98946aa99ef26f1df5c7cd5f4525bfbed02f2c6f"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/direction_finding_workspace.rs",
@@ -578,7 +578,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/dtm_event_image.rs",
-      "sha256": "478458594066f882b08cdb0d5ae32426ed0867f32217700698e9abc0019df3c9"
+      "sha256": "b8b172f7507bfbffc817983004029062e0da2d55458f62e463b86b4a30cef592"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/dtm_rx_result.rs",
@@ -606,11 +606,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/legacy_advertising.rs",
-      "sha256": "811e6e54adc7e1c983a18867ed8b4beb9bf496e1f6a5fdb48b8ab4a93f59f5a5"
+      "sha256": "58c533157a568edd3f8e3169152068cc19e985753ee8defd0db5002b33dd7096"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/legacy_advertising_event_image.rs",
-      "sha256": "2b8609c982814b7acbb22b324fdc15cd2873d74f8a29426edcbfb6f4f11d5a7a"
+      "sha256": "4558448ae928a326e50bc7cc9dd4a0671df6162c79b8658f558e076ee474220c"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/legacy_advertising_tx_packet.rs",
@@ -618,15 +618,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/lib.rs",
-      "sha256": "c88f7d96c3818d9e3b50d9c684197e0695462224522cb14b4199b7613ad787df"
+      "sha256": "ab701c11151d8cbfd887de7a438b21cf291e32bed3e920480d0fb8af00bdfff1"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/passive_scanning.rs",
-      "sha256": "6531327b38ff5a78db07eabb39e9b08ce07300cd5cabd140f7b7b656b897f099"
+      "sha256": "79c209af31b63d72cd454c12c18ba32eb1a787a80a72d043607907dfe184149e"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/passive_scanning_event_image.rs",
-      "sha256": "2ac6b10f831a0470e95e78d78badd3556e12102737d73e948821cde403dba72f"
+      "sha256": "2257edc5389a7dcf7b02914260dadcb8a198a6ec36dd2b75502cedd5ee3c43e0"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/peripheral_connection/values.rs",
@@ -634,7 +634,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/peripheral_connection.rs",
-      "sha256": "2f1fed53d8eb1510a2087acbbcee22c83dc81e5f5e868499cf7862125a56bfcd"
+      "sha256": "bcd9b6890ade48f519ef7ebbbadd1845476ef77f7ddd43aa87eff4a4e39d712c"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory/src/rx_memory_list.rs",
@@ -722,15 +722,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
-      "sha256": "ffadb0c5cf1a2e7d4ff44e8e18794bb9220365244c5d3f395fa2a98c89348004"
+      "sha256": "f084e5b8a868457186b166d622950087364137e5387be4d06034325a2d459b1f"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/resources.rs",
-      "sha256": "4de2cf0a925c04335a22496916e5dbd75639669df81599fd55e01f7546fa9ac8"
+      "sha256": "6356fba88d0d16577b0947311f422ba7ff768e06a81c6221f52b8f21bc0f56d1"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/runtime_resources/scheduler.rs",
-      "sha256": "b57fb55ea99b99b2837d89c9d9760c4b51d5052225fcd0a4752dedb4efc908a6"
+      "sha256": "227342cc30542d797086004d4a76073782f90eaaf11ef6754ba3b1af63148061"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/runtime_resources.rs",
@@ -738,7 +738,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/config.rs",
-      "sha256": "a2b01670467b94d193e6b684afaf5e44fde077e95c721cd6b50f6b4023aa0aa7"
+      "sha256": "54f9b35799bafecb9cb7ad6f4760f44065f94223962c83dcd6340f84548780cb"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/core.rs",
@@ -766,11 +766,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware/live.rs",
-      "sha256": "8364de2e497b086be79396c424ea1bafe46df618683334ad2da9b592fc4739f9"
+      "sha256": "40ab488b023e60ce5620d3059b656681fbd58bfd472e497be3ca0c1095224f50"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware.rs",
-      "sha256": "456dda3563f76c14cbd8bd708094a115eafe40fbd53e540e2406637ddb68eab0"
+      "sha256": "1cb2b3ec82d0103cd115389dbda6577adb14f4a385f1a7548d9771c947736a17"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/list.rs",
@@ -794,7 +794,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/shutdown.rs",
-      "sha256": "24458b8e9dbb72345ecaea8c51dcc375b326a41be563d9a6b6f5a4ff56ae3c35"
+      "sha256": "85958a9352b731cb12125ce2c3da2ffcec3bb7d9862b59d1ab9b428b6b984aa0"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/timed_preparation.rs",
@@ -806,11 +806,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/arbiter.rs",
-      "sha256": "c7ad3c5394b83c6292d6812aa7a0aeee14beb1e490115bf9667a7203d549d3f4"
+      "sha256": "afd788bc2e6653397e46e28e54961225ee16c7b4ef837ab9b733a31606f4b94c"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/clock.rs",
-      "sha256": "1e0ed91355513f9c5ba4e1bc5da05d4114c8cec0ffee5c29b413b23b4cf73847"
+      "sha256": "0ef15ea51c97976a1d0115ee013266f4bb9c8415ba4f4c45c09b7258512d2464"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/core.rs",
@@ -1122,7 +1122,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/src/cooperative_hardware.rs",
-      "sha256": "189b746bfed605c00ccf6a967605410411ff45d31e117ffbed5704339907e66c"
+      "sha256": "64fbc1663db43b4494d6cfe7838e2ae1885edd839276fbc056121609cf3ac562"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/src/datapath/lifecycle.rs",
@@ -1218,11 +1218,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/Cargo.toml",
-      "sha256": "d7959529962e0658939ea8155ecf9c47f87453b0775b731d19828f0642085e87"
+      "sha256": "c47fd4c233c69842bbb3adc0709224555ffcafe68ad7f26742187f77bee929a6"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/controller_time.rs",
       "sha256": "453b966e373003a7a1b9a219f26fb6d5f2a6e0174a6cd836951291f8a71953ca"
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_lock.rs",
+      "sha256": "ce1a999fd5eaab9d65558ebdddef9301bf9538594d95e841d7559225ceeb759f"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_modify.rs",
@@ -1238,7 +1242,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth.rs",
-      "sha256": "5680321650ec4c5fbe0c25736909e81278ecefcd1439975b35bc07cb5dd496f5"
+      "sha256": "f3fd0993773699b8d1a2f9cc6798d5035fbba09a37bf474e6f6a216461b1a05a"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/clock.rs",
@@ -1266,7 +1270,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee80211/mac.rs",
-      "sha256": "5333368e3e32a8bd45d84df0af4bba05cd76d4b557acc880dbb58b13eceb5731"
+      "sha256": "8205447811c5ce017f97c97366ea3b01e63bff23dd9fd2942e569c6666509395"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee80211/station_wake.rs",
@@ -1290,7 +1294,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/ll.rs",
-      "sha256": "7f3f97bc5e472c8a02e40d8b0f6c7fdb0b27e2199be4b3382e54059551033c03"
+      "sha256": "39a777edd8c3d9d6daf1075c5ae5c1547dc30567bb7740c6798f92fbf6af31b2"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/ieee802154/mac.rs",
@@ -1330,7 +1334,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/owner.rs",
-      "sha256": "badf11f7223704c5c3543ea7402b8d363ac5cff6f75353db083aa5920cf047a8"
+      "sha256": "56628ede6408504683c926c3c7e29422766ec38a0fe29535145f7ab7057f8b77"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/phy/agc.rs",
@@ -1406,11 +1410,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/power/clock/executor.rs",
-      "sha256": "bb5278ed28216a6ead1a97d8b99df5dd5be7c5502b5a19c430bbac9c9e87e260"
+      "sha256": "9ef7fa01393dd619ff7aaeb7d117f17fc03e18f357745b535ff6f5171ddb54d7"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/power/clock.rs",
-      "sha256": "db9f77de1a25c054eb79dc4a5b7e23cf8024b49eb4681db58384c3f9c211461a"
+      "sha256": "43a0c4dfb07a80aaf07afbf075632c8b8f50d58720b57508b3d0c2d239f5ea19"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/power.rs",
@@ -1422,7 +1426,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "sha256": "3e3deba126de21e016d97412870d94ae70cc07b04da341dbb35aaa9b76cb4761"
+      "sha256": "1c28ea4e8d353ca90c014312ececda75fbba26ff46caf86a877db9124d0f0f6b"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/types.rs",
@@ -1438,7 +1442,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "e824d7ab96e3762ce8417dfdb7d585feb1fa5b02629f405e247627812de0026b"
+      "sha256": "3cfb977ae138b051614c05e6b6434c29b439d47e078ee9e185cc8fbf2c8edcf9"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
@@ -1486,7 +1490,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "sha256": "79a35c604ceaa1d63ce9a84f0c9bc8a71a5c2ce4869bd66cceca2b3ffde87f8f"
+      "sha256": "5cc09a82d38668a0a821742bf2e80807c60010f9f0522f83de43290b05a23a27"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scan.rs",
@@ -1525,6 +1529,10 @@
       "sha256": "2139cd85e37e91e84267a9fb6a387a8fa2e9e966d19e92a5822170dea267e5e4"
     },
     {
+      "path": "crates/hardware/esp32s31/pac/src/ieee802154/baseband.rs",
+      "sha256": "c1ed4569983db59a247877d7d5e538ac558c1cd6d0d64ab5fa7067db3012b529"
+    },
+    {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154/mac/etm.rs",
       "sha256": "cafa071ca1a75aea02853a8d7dcb624115c3779f5d0e75038373f24c680ff7a7"
     },
@@ -1534,7 +1542,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154/mac.rs",
-      "sha256": "834c931e93277e624cf2ef96a7049cc68207fa8a827221228cc0b8d9b029b209"
+      "sha256": "77b9f3d333e7e40a77f2bcbd9295365417cb1d87a7cb79df705583b80248c058"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154/ownership/single_field.rs",
@@ -1546,7 +1554,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154.rs",
-      "sha256": "f23b3f2c4d59eb834376f88f2916f8e47acaf2a1533649a736a24eaf8fef529f"
+      "sha256": "683d649f5dc2c443763907a2ed0060e8b06c6f0082e0e63774d3b003674b6301"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/lib.rs",
@@ -1566,7 +1574,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/etm.rs",
-      "sha256": "382068f766b23774cc4aac36b2e13aa41eec0161245cbafbe2ac0a1c5f475360"
+      "sha256": "c4095fa78e04fbd9ecf50e21fc8a871003014ff72c115328d67772821075aba9"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/low_power_phy.rs",
@@ -1590,7 +1598,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ownership.rs",
-      "sha256": "e5bcfa911edeea25ce0641d6e2d04d8c92432891adf05de3d5c601714840cdb6"
+      "sha256": "44dbd0ffa8e687c65ad66a02821cf2763f3f1093f3d294321c577b0ddb9a7e2d"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/phy/agc/runtime.rs",
@@ -1746,7 +1754,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/wifi/mac/tsf.rs",
-      "sha256": "dbf23f3c326af9d70743cacd5fb2d450a312a7cbdb87f06cdfdc700cf6ffa5c3"
+      "sha256": "038f1317b9133dc699e109275bdc72379a771c5dfe9f01fad43dcda032385217"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/wifi/mac/tx/power_init.rs",
@@ -2094,7 +2102,7 @@
     },
     {
       "path": "crates/hardware/ieee802154/engine/src/ll.rs",
-      "sha256": "7c4777058c166187b2097c8b296cd32ef0c81d742d85fe21daa073f527eeb704"
+      "sha256": "490ef4bf2e7a2fd944f0e009405099c2313fb7a38378117bad9f66f4ed743fd2"
     },
     {
       "path": "crates/hardware/ieee802154/engine/src/pib.rs",
@@ -2107,6 +2115,14 @@
     {
       "path": "crates/hardware/ieee802154/engine/src/types.rs",
       "sha256": "53d2e32d02ca3cade9b0c35cd99214451fe9fcdf59a61ec27932af5e2fabae74"
+    },
+    {
+      "path": "crates/hardware/radio/clock/Cargo.toml",
+      "sha256": "e2f880abbd8cfa4a12212b365148ba2f98ae961e2f42aa92aca3b8f2f72a99a1"
+    },
+    {
+      "path": "crates/hardware/radio/clock/src/lib.rs",
+      "sha256": "172828778965736b0a480837fdf0fdd2c4f8df6a4c3ae0c34997a96cb56a4962"
     },
     {
       "path": "crates/memory/Cargo.toml",
@@ -2146,11 +2162,11 @@
     },
     {
       "path": "crates/oer/Cargo.toml",
-      "sha256": "82d1f991732b4fc2994921f6b0599b1b51393e276794508d6b5cfa6374ad7369"
+      "sha256": "f6ca19464f52e12f33a725b8c05bd21135918cb6e8161f8406270b3fc0a5eab1"
     },
     {
       "path": "crates/oer/src/lib.rs",
-      "sha256": "571c3b41f27175a7daf9594b1ea950c7c107dfcd1e8c12b5572fa001c80f1125"
+      "sha256": "8466a95d7cdca74ec964cd3ec16afb2ac81fc28cdd65bd62e876db09d8c7230e"
     },
     {
       "path": "crates/protocols/bluetooth/hci/Cargo.toml",
@@ -2258,11 +2274,19 @@
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/lib.rs",
-      "sha256": "f30a83ffba76c174a46c5f6772367a2c9fdeb38c93e48b08d600c7a256504cf4"
+      "sha256": "f0aa08fe2e87334fa0b3cf7556b9d62e9d2d256ba1633c082f09f6bbbb6722c0"
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/limits.rs",
       "sha256": "788edcadb87a0f1e2941dd38c9abc9f70d451128a93a955f768c9ef0be4f32be"
+    },
+    {
+      "path": "crates/protocols/ieee80211/ap/src/pmksa.rs",
+      "sha256": "0ace03f8ebce1d4b1be6dcd08f02efae21439b053ebbc503d80ad3192b4175f7"
+    },
+    {
+      "path": "crates/protocols/ieee80211/ap/src/sae.rs",
+      "sha256": "a0eb849cb49b33e355f47ed66a751c2b089e2a9b9cab38eb18d6c5d7fb931a67"
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/service/block_ack.rs",
@@ -2270,7 +2294,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/service/peer.rs",
-      "sha256": "e3b19210283f8581c7c3792829a6ad7e19f720f98c8c54958a2be6eb7e6c3e57"
+      "sha256": "6fd82ed78f294fd3fd43daadabe5baf4c06cfde006420e55673f33f3a4da00a3"
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/service/power_save.rs",
@@ -2278,11 +2302,11 @@
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/service/security.rs",
-      "sha256": "219c0f4cd25468e955331a84c9fdf277cbbda9818b350feaea714f0780ae5ca4"
+      "sha256": "b52e8759f6ac5b5baacdd7851ed0f8a909c3528b8d90e6c6089c24fa974ccc1e"
     },
     {
       "path": "crates/protocols/ieee80211/ap/src/service.rs",
-      "sha256": "53f68e01a2525e0d4b684f85ed21163914c5317595f2c24ea0ee58df0230d0ec"
+      "sha256": "54ea6ea5039281fdcb667a3b2791f3d38f0976e776f8b71beb1ab2ee4099f421"
     },
     {
       "path": "crates/protocols/ieee80211/datapath/Cargo.toml",
@@ -2306,7 +2330,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac",
-      "sha256": "c75c122cd340705e3391310267fc75b8b86d01960088e480abe66497d71b0802"
+      "sha256": "de260429f30e2a6fface68abc3c5073bb405c6720aa5ff006cfd2a2b90ccaa57"
     },
     {
       "path": "crates/protocols/ieee80211/mac/Cargo.toml",
@@ -2322,11 +2346,11 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/ap.rs",
-      "sha256": "3b237a69f9e46bf8cf16ef390ab3d4970687420af43e805236d326c5251cdd63"
+      "sha256": "ea7952458c2290db4794285b2aee1af53d2491445dd165101ddb1bd58e826018"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/beacon.rs",
-      "sha256": "78e7a4b5aad4ee3eedd21eadd4cb0cfca858d7abf4d98d0d6027576a75783bf9"
+      "sha256": "92c2c20ad4971decc12f758e0a36e5e8be9e34e5968b6d9cc4334592e4364b7d"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/block_ack/frame.rs",
@@ -2358,7 +2382,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/data.rs",
-      "sha256": "6f57d2daeda11869369f55dfbcd2ebabc42776d6741473c524abcca5437ae360"
+      "sha256": "8cb2132467d37b1cb5c1d07f667d1e4199ce500725610c7399d4893b28138b55"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/extensions/espressif/esp_now/v2/reassembly.rs",
@@ -2378,7 +2402,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/extensions/wmm.rs",
-      "sha256": "28b1da9d48c29d4fc4eb1c1ec6c5c1a8162bce0d2d42df4ab5ede51c939bd128"
+      "sha256": "92d1fe511b94fe4aded33e526551cc55e3b714a941a1abadb6c4c401ff5e3585"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/extensions.rs",
@@ -2402,7 +2426,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/he.rs",
-      "sha256": "30ecbdf8d4652718b04eb44a08a59b82e1fa175a8153423d9f4bc934fa917a57"
+      "sha256": "297209060c635f7a9b0c8141a05dd38391e3aa2b724c3baf97697f14023e142b"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/ht.rs",
@@ -2418,11 +2442,11 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/management_protection.rs",
-      "sha256": "0a79f9e01eabee25edaeda2a7cff44375b530a461e4328a877d3ac7192c301e8"
+      "sha256": "539fbaaf89457bc8c131dca824dd256fdf07b38edb7160e090039f676acd46fa"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/ndpa.rs",
-      "sha256": "4008e0065138310b6f78fc41086b23dacfba992463e2fc22e6abda62814207e7"
+      "sha256": "8bf3806f088845642c3dc89b9460dd1216a4bd11fba8985ad0868f727c875ed2"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/protection.rs",
@@ -2434,15 +2458,15 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/scan.rs",
-      "sha256": "59da392a35d21f0b5674e14674405424ebdb03f07b978e6d40b28e6c9b2b7ddc"
+      "sha256": "0c0f425281ab79130b8f1b1485cd5f6cdc005af17fb2fc5c357ed8a30f551dde"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/security/rsn.rs",
-      "sha256": "b9c28ca2d682bc647701081875585077c8749d09e776a8ad94bd5cd1ad6d7f9e"
+      "sha256": "c3e8dcfee31a4bafb0c90fbf03223f39fbbe491bb5732bcf7577d39aea544e8b"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/security.rs",
-      "sha256": "019c09dcaf48b55e5e0cd36fc1fed8f8ff7337f6cf0a31983b78a8bf7fa92085"
+      "sha256": "bb120f44454b755337360b9eea779d5d37e53411a9f024261f5bf6dced802b30"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/sequence.rs",
@@ -2454,27 +2478,27 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/association.rs",
-      "sha256": "2dd0ee9892fc637aad36fcaa935dd186b65cfd44b81646ddcadbe68c22b3929e"
+      "sha256": "192d1459174e53051fb6856c03273473d307e5dcd9e14c4b3317174ef540b4e4"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/data/amsdu.rs",
-      "sha256": "8d13ff4e54a23772a90c4a8bf28a393019de4b91d3de08a49583c9b5a0f81e7c"
+      "sha256": "cb2eb4d022ba0108f86cb9258f4ba89cb1dafba70ed4a919439bdcf7fbe13a3e"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/data.rs",
-      "sha256": "016a73bd9319021096425f76235c38947fcba6f66ca94a5bf4fc37421a60741b"
+      "sha256": "cda84d2191b9469ef7a20cc6feaf6865eceedbcffd940915dfcba40f422a43d2"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/management.rs",
-      "sha256": "c2bd2d3731c8a4b1ded79747bb849878cff982ef8878f7bb9c8c8031e6a82a2d"
+      "sha256": "d0ff723ce5f5c67aa804700fe49a1e9e0d6c2099baa571bb8f04671c91069a4e"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/security.rs",
-      "sha256": "562d59a855eab6c0b2bb5f88d4ab70470826e0619eca62bd9ddf7abcb2220933"
+      "sha256": "b4857547db6ce9a5a8e83689c8079b0badfd3c528198a19839cf5664f576b6fa"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station/sequence.rs",
-      "sha256": "18b2638202e2e116c3b29a17efa26c5fe098967cae3d098439b9f6244a4a56e8"
+      "sha256": "1f1bf948b3b1429d2c0e42c76b2ba919cbaf57a9cb0a510d530f60290cc8c59d"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/station.rs",
@@ -2494,7 +2518,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/trigger.rs",
-      "sha256": "e44d9a73443ccbd359f342c127f953ce4289fcdc80608d159cbce5af07f43fa9"
+      "sha256": "0bdeec469e49fbdc8f9d2a5f788c6563ea11d35fce57a0026b3407b75160932a"
     },
     {
       "path": "crates/protocols/ieee80211/mac/src/twt.rs",
@@ -2518,7 +2542,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/bip.rs",
-      "sha256": "63e1725da9c02bc43682e253ba2a361c5831b4568c1c54ee7f316896ccb0cd1c"
+      "sha256": "1639dc5b219f4d86a6a27f42344fd941cb9ff5065feb2be45ba4d62a3148934e"
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/crypto.rs",
@@ -2530,11 +2554,11 @@
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/element.rs",
-      "sha256": "b7fc430fb483afc9b0cacd41d888d00eaf30a79790a05f2a646847a1f65be10c"
+      "sha256": "ec32f97d4af268fa992c17764625307fa964602cca83caa40586662afb495325"
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/frames/key_data.rs",
-      "sha256": "9baed8ee3ff06c16f72fc90075092b4b525245d9d6cd3d1f9412a20855b4c945"
+      "sha256": "559cf5bc9b43bbffc1fa05c51dde6b6ea8f8f7157f99cffcf805d404e35cdafa"
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/frames/security_ies.rs",
@@ -2562,7 +2586,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/management_ccmp.rs",
-      "sha256": "b062d5d00d8bd79c3080c9e6ad25c05c6b9285ee8eddb94f9e2ed16a5ecc3668"
+      "sha256": "667ced5249e479427acd7edab71ca7a94d377d43f0c5a504f4c2cc50f4d03ebc"
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/retry.rs",
@@ -2574,7 +2598,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/sae.rs",
-      "sha256": "e7fb86c4d76a9a4e21074ea81e097fd63f2e13d0f63298ddaabd4b76155a206b"
+      "sha256": "00517bb6123bf147fe795d02d2215903dcd1f844fd516cb41da3c0e695afa078"
     },
     {
       "path": "crates/protocols/ieee80211/security/rsn/src/state/authenticator.rs",
@@ -2662,19 +2686,19 @@
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/join/association.rs",
-      "sha256": "6e120c882d87e79c01b22b84346b2fc5b86b7752c1db57f3f8bb1c67ba2668f0"
+      "sha256": "869c2f33ce0f314fa552491cf59378dfd2125570f40ee0e7798235eb11d223ae"
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/join/authentication.rs",
-      "sha256": "507b266598b6934cc2b0d45a6662958037110d83d4c9f2a737b8662c91851af4"
+      "sha256": "a3f00a0da290d1fb2ed8ccd6be3e8f32aaa1487cb06f0d04e3bd126fdd46565a"
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/join/sae.rs",
-      "sha256": "a56eadf0ad587196880e36db05453ce114cf61d4461e7a9d3fcc9d8f1e6175aa"
+      "sha256": "85d4512dfd8c8775d21cf8fdb5d64e499300a7246fe8a26c940b835371742c1c"
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/join.rs",
-      "sha256": "8da7850dea18df15719752a7e9dbb041a0cb59196774642027842a9dbc8dbdc2"
+      "sha256": "d078d12ff612c03e9d8a32dcfc5ad5c8f4f644de835abc6fe94f392653a092cb"
     },
     {
       "path": "crates/protocols/ieee80211/sta/src/lib.rs",
@@ -2818,11 +2842,11 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap/src/beacon.rs",
-      "sha256": "5fd6b0d475f8439e4aa89a5e19a8f034752ad67f8e3b295036acf1cedfa93726"
+      "sha256": "70738609540bc1b368b7327d81aea6a17335e25eae836a90ca7899489189b16a"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap/src/engine/management.rs",
-      "sha256": "b44439021a15963786773722f58034a50db6e30756c9339852e5448881cdddde"
+      "sha256": "94aaa17d2075fc69a4020ccfb8c4b97924e207d8b736e8c2b00c3a4e822954ae"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap/src/engine/power_save.rs",
@@ -2838,7 +2862,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap/src/engine.rs",
-      "sha256": "77d97a48d987711f549ba93283100e99dac1a2fb0ff44912a152a73139f58fbd"
+      "sha256": "2f7d3ef5806a5d721ee02402a9692cb8f0ff1244be6993c3fdb843eaf87f000c"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap/src/hardware.rs",
@@ -2894,7 +2918,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_control/power.rs",
-      "sha256": "e88e015cc627128ed34c52c290003f7031d760bd00dbeb1478892b62e5739b70"
+      "sha256": "07864008b1e471deef749bc67f8f6afb3bac1b5736498c88b1a776bd2343d874"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_control/sa_query.rs",
@@ -2902,11 +2926,11 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_control.rs",
-      "sha256": "0dfc13f9db657fc78081bf9b2e66e2bc971b7dda1a5b650f3ea51e9e60098fa5"
+      "sha256": "03531c3963c4af12b14bceef0046168dc569f2006629e4d225ba52084e893278"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_rx.rs",
-      "sha256": "1a3ba1834dd08e37ebf3d5c877d4550cd0a9ff3a0fe974d04e9f73d7b5d76fcd"
+      "sha256": "9757f64ded9f8199feb43ae6c3d58c466a663f6fc2a6bd7be55d40c83c9d8faf"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connection_coex.rs",
@@ -2930,7 +2954,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/hardware/control.rs",
-      "sha256": "fcf0214112fc8dbd0617eca3e1b43609b8638f80c508ff440fd0e681bf610dc3"
+      "sha256": "0cdaf0a33df098e9be25dd5481c92ec2c47c174b80564700d37fd281e0d7afa9"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/hardware/mod.rs",
@@ -2950,7 +2974,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/peer.rs",
-      "sha256": "91d18602f4762413b320755dd2a9f602889a0b0b21b498d9473658d5b9d30cf5"
+      "sha256": "0592183a41020d4299c3afced5ad135a6af5cd03e2ead7dbf2546331d7102e67"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/peer_policy.rs",
@@ -3010,7 +3034,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/irq/mac_runtime.rs",
-      "sha256": "5ac7ec6650c113e5f0439dac29176400465bf40231191d1ad7ba3bf49baabb4e"
+      "sha256": "41a331a82450bf6f5f3a4fcb92ea91b629e38b1c2deab62b985b447cfd8f46ae"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/irq/power_runtime.rs",
@@ -3027,6 +3051,10 @@
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/network.rs",
       "sha256": "6fe484d27167de6ab5ecbea552658fd267885e6ba466cf80089f5942721ab131"
+    },
+    {
+      "path": "crates/runtime/esp32s31/ieee80211/src/datapath/owned.rs",
+      "sha256": "2aa332d5227e6a404f39590fd61e115161fee6efdbe3e83ffda508baf19633b5"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/owner.rs",
@@ -3094,11 +3122,11 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/scheduler.rs",
-      "sha256": "bc61f2a12b53b1940c270bdcb6d7606123b4b749df7eb84f3153b92777ec0176"
+      "sha256": "83e887c027d8a69d15c8be3661082db8dbf56eee615a58f0255ae405a671295a"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/service.rs",
-      "sha256": "a39c151a7315dcdbd6899312334cf2a726a8c2ba689b24190fc5a6912e76b55d"
+      "sha256": "e52392ed3b03f9497fb708c70fe0242d7862f2b6d0b6bd0a167677c5dd1dad8d"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/datapath/services.rs",
@@ -3174,7 +3202,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/diagnostics.rs",
-      "sha256": "913fd18f70c6ea1a95f9a38cc3c05c49c3ae1b1dbc6dd2c8b6a0b265e493b700"
+      "sha256": "5209f20db18069f5495b74d1723886dfa6e0c5556e56a98dac2f9594fe3ba47b"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/lib.rs",
@@ -3374,7 +3402,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/scan/rx.rs",
-      "sha256": "3159835579904385924fe8023e169b04ce2d3d586f246ff566a9132c2fc38847"
+      "sha256": "4b0977dd2261934e5266c8810dde94b27d87a507d82a2057e6406bdbe7396188"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs",
@@ -3434,7 +3462,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/port/composition.rs",
-      "sha256": "dd85b0c0700f0024a0581af97d4835f2b6e9a79773d28803e830ecbf02738241"
+      "sha256": "ca5ec721b8098ad4a4bc959cb4eff4be720a33c3ebd648605c901f4a14b3d2ef"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/port/plan.rs",
@@ -3446,7 +3474,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/port.rs",
-      "sha256": "cc33c8f4b54fe9f79c579b1855763646d4c3962c11456fddf1b074d29d503324"
+      "sha256": "a51e69b24aff96d66281b5b441d841f19d49f357560c1711ccbe106d8bc9ab6f"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/preparation.rs",
@@ -3470,7 +3498,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/control.rs",
-      "sha256": "289c31035536dec55cb8bb894beaa8aa48632736cd16de2d0c7b5f68907d8efd"
+      "sha256": "493e408a4da71eab820192b34f1515bdd54b9fe0007abf6802aa8c92127529cb"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/control_mailbox.rs",
@@ -3526,7 +3554,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/power.rs",
-      "sha256": "79ed2ed1463d6d77136985f1d23e1c4496a7827aa28bc4536b5a8d9dd9808586"
+      "sha256": "2a4a3eec9e7249ce6c1148f7dd94721ecd2a29fb06e97647da598109ed14fbb9"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/reclaim.rs",
@@ -3618,11 +3646,11 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee802154/Cargo.toml",
-      "sha256": "85af3ec7f37215155f34390d2985aade48145999eae0c508c643209d7b35b4dc"
+      "sha256": "49883fe7cf99d8de1427f2f26d048c4fa09351c51d8ed16fde3aebdda5ba2e13"
     },
     {
       "path": "crates/runtime/esp32s31/ieee802154/src/lib.rs",
-      "sha256": "670f2637614903524ca653ca50613930c34ee0efa181a0718f910606c18c0248"
+      "sha256": "77e5ae47da36c74bb20b43770faf2b6a723a85adf948fc96469a1378e661cf1a"
     },
     {
       "path": "crates/runtime/esp32s31/phy/Cargo.toml",
@@ -3686,7 +3714,7 @@
     },
     {
       "path": "hil/host/arbiter",
-      "sha256": "10e08c2a4bf73f8ab07d8b1a9d4f9da4196152ec8a5f89cb09afa07cb9b3499d"
+      "sha256": "80adb3080981e9d26b27acc5d6b4fd84ee34c6434683163fdc964b0e2d750796"
     },
     {
       "path": "hil/host/fixture",
@@ -3698,15 +3726,15 @@
     },
     {
       "path": "hil/host/runner",
-      "sha256": "1e5bfbab690d4ed150b99f9c94d6739c23ffd182f277dd0448d68ec7f39ef9c0"
+      "sha256": "8244e545ca457d1fcfb8652be92c7b5c2a6977be1e31108801b1f273b2e20419"
     },
     {
       "path": "hil/host/runner-bluetooth",
-      "sha256": "1503ad3d729c77f8dc21ee137c6adb96838b824b3e64c6a1b9964f3b13cae864"
+      "sha256": "1775bf9af12a4697ef345b1ce8b841afa43dfa3cec12d7aee40aec716b51572c"
     },
     {
       "path": "hil/host/runner-core",
-      "sha256": "51d9ad9fd7673f7f8a1f70e3cf69a2a3e74df0ea19af52c63fd10ee60bcd5d58"
+      "sha256": "51b4d62fb0e8bc3b2bf08048ac39c72fce0329ff535f19d03ee39700268ede49"
     },
     {
       "path": "hil/host/runner-ieee80211",
@@ -3714,7 +3742,7 @@
     },
     {
       "path": "hil/host/runner-ieee802154",
-      "sha256": "dfb227154acdf13ba65a82e222ca879350f4820bab021adc1d8ba4fffe7aaf60"
+      "sha256": "ef2abc1cb44a4eb21862324cdfd6998c2d91f8a6070fb8a8691f2fd63642885a"
     },
     {
       "path": "hil/host/runner-system",
@@ -3722,7 +3750,7 @@
     },
     {
       "path": "hil/protocol",
-      "sha256": "9681c2a354f93174c81044c51e155386e4f4a5d8379d8e04ac0087fd8c982768"
+      "sha256": "32d1a62bae9a36baf037534061ff269d37d85ef8b3e6bd19d89018c900ee22d3"
     },
     {
       "path": "hil/protocol/Cargo.toml",
@@ -3750,7 +3778,7 @@
     },
     {
       "path": "hil/protocol/src/lib.rs",
-      "sha256": "d3dcef4c8108dc405902084835361ba11a140c512f59032af86c685d262e7c87"
+      "sha256": "e252dea5f68914a9f72fa0c15ca887457b6ff4cef116dfd5b8969c92eb418c31"
     },
     {
       "path": "hil/protocol/src/memory_benchmark.rs",
@@ -3762,7 +3790,7 @@
     },
     {
       "path": "hil/protocol/src/message/ieee802154.rs",
-      "sha256": "7142454d7015adc78c18539b21827e098a234c6c73a9ba806e50a69becc5c083"
+      "sha256": "584032abe0f3b5df3504cf408bb09a672f2c8f35c5477f4f7376f54b6e505f51"
     },
     {
       "path": "hil/protocol/src/message/session.rs",
@@ -3774,7 +3802,7 @@
     },
     {
       "path": "hil/protocol/src/message.rs",
-      "sha256": "e4521ec832b354f2e02b935cce0343407ee4399a045ba5674973f6ee7846469e"
+      "sha256": "918d6355d0fdc309b7156dfb37505488e5c1c4ca44f4ddb8c9d1705b35a32043"
     },
     {
       "path": "hil/protocol/src/phy_fault.rs",
@@ -3790,7 +3818,7 @@
     },
     {
       "path": "hil/protocol/src/system.rs",
-      "sha256": "d47d46dbd3215d3b78503bfb6fc674588095a1548447845af0806c27b86318e5"
+      "sha256": "cf9e3a215f0ba1b4cc3ebe213bc39e2e0e523a845cf33914c7766c72ec070f91"
     },
     {
       "path": "hil/protocol/src/udp_probe.rs",
@@ -3810,15 +3838,15 @@
     },
     {
       "path": "hil/schema",
-      "sha256": "0c37495bed42027b0d154d06af5d6a1c046d2b3386a3e1b5b9cf313d949da254"
+      "sha256": "774c68285f3cea8c39a55d0a86aa5fcfd0f8ba5159cb888dd96ab62f7af7c919"
     },
     {
       "path": "hil/schema/observer-inputs.json",
-      "sha256": "ca796647d180610b5462ee503bbe22f5319a562294d20f347afa3c788c84d978"
+      "sha256": "92c37d340cddf4e85608f331a29347797f3e3b0103fb7d64058e7dd83e52b5cf"
     },
     {
       "path": "hil/target-core/Cargo.toml",
-      "sha256": "759a95aa9a063b98fcf6b60af1b643e516401554a776dca00e7f57d381403205"
+      "sha256": "1e33895be4424e01be9467f57ddd754d026dd035ff49258b948740f76812f613"
     },
     {
       "path": "hil/target-core/src/console/progress.rs",
@@ -3834,39 +3862,35 @@
     },
     {
       "path": "hil/target-core/src/lib.rs",
-      "sha256": "89bf9171190f523b5cf603392b0591e55dc23c69d6bfc0178a6fe9b1c514fb83"
+      "sha256": "958a6f37e1efdf11446dbb80f0db27c9b22b40e77ac924937fadbd73db8756aa"
     },
     {
       "path": "hil/target-core/src/memory_benchmark.rs",
       "sha256": "91672ce1d254fc104d8134de6d20b110f50f4c5554bc01d439ca722a1321d1dd"
     },
     {
-      "path": "hil/target-core/src/network/checksum.rs",
-      "sha256": "60cc7273844f317a77ca826e79db409750b5510500a047098446326b18f7aa4c"
+      "path": "hil/target-core/src/network/embassy_ipv4.rs",
+      "sha256": "6008444950952daa3b4bddd68f2352d62e0872947766bdeeaf1bea682ab86557"
     },
     {
-      "path": "hil/target-core/src/network/ipv4.rs",
-      "sha256": "47d4aef3243f86714e6626e9a1ed9aa045e05ce34668fedec201e2658b08ea6c"
-    },
-    {
-      "path": "hil/target-core/src/network/progress/xarxa.rs",
-      "sha256": "8286fed1b9d90098983f3f0de4954ff7ce87c11991c8f6f9d2653a19730803a6"
+      "path": "hil/target-core/src/network/progress/owned.rs",
+      "sha256": "4b0286af2a93225605dd4dd5f4a40fb40b8ef08bede681c50adfadb20405f299"
     },
     {
       "path": "hil/target-core/src/network/progress.rs",
-      "sha256": "94253f26212220356183ca3e0fed69a021cdff0eaf7891282705895c01be0774"
+      "sha256": "e40f79bac2664f739446c06826389845e63239d778b374f6efd6a61f72246f70"
     },
     {
       "path": "hil/target-core/src/network/sockets/xarxa.rs",
-      "sha256": "10fd52514d35b99fe0920c046ad5924d8a4a3a52f4e8690fc9f62a92f5d8fb0a"
+      "sha256": "4f0f85eafb575ae058ca0722cb778d758f9238c40ef02442bbc3de2b57c61228"
     },
     {
       "path": "hil/target-core/src/network/sockets.rs",
-      "sha256": "2e0ecd63bf6579ee483cd2fd0a4a3a44851c927ac6a407b722da5a68ebba7c4c"
+      "sha256": "786657dfa4a1d21a7edc2faa63413e7a61a01a8d0eeaaeef3cbb91a2fbcfca9a"
     },
     {
       "path": "hil/target-core/src/network.rs",
-      "sha256": "d4e07ffb0f853c4c819dd3d43868024db361d822ce3013b14efc7e56a2a26f8a"
+      "sha256": "3e1cd7ef3c2b2d12c4ddc91f70acde4b53a489967399ab01b21051a09605f5fb"
     },
     {
       "path": "hil/target-core/src/traffic/connection.rs",
@@ -3882,11 +3906,11 @@
     },
     {
       "path": "hil/targets/esp32s31/Cargo.lock",
-      "sha256": "f3dc1d1aedd387e9f147fdb210a179a94cf199da66d785f861a340bdae639869"
+      "sha256": "cb658778ec975bf0501bdc8e3db9315ad235432e513a448bcb97f566a744bf0e"
     },
     {
       "path": "hil/targets/esp32s31/Cargo.toml",
-      "sha256": "ac837d5573b4e1831a1e1d1fe6f271a2fefdd33a4ee9f2722c3a135debaa83a2"
+      "sha256": "fd0d503b1b991bbcefe725c29f8ec239ecaf53fbd230d243619858cd941e0355"
     },
     {
       "path": "hil/targets/esp32s31/calibration-artifact/Cargo.toml",
@@ -3898,7 +3922,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/Cargo.toml",
-      "sha256": "b88c955eaf2445c6ec17aa624e7636965d7e4b1504e8ccf3861c55c50755e747"
+      "sha256": "c83a639bc4a9987d89454b01a6dec11a7aa8194301fb7b632b36dfca57d05af6"
     },
     {
       "path": "hil/targets/esp32s31/runtime/build.rs",
@@ -3914,7 +3938,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/console.rs",
-      "sha256": "d75d63c347848e81318ce070cb48321890e6645bef9cc80916ab3a468f6d69ac"
+      "sha256": "979ea259ce5f6f7fbd294668ea1ea43341a6f0490b347e4e09fb98392e5ee9a5"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/exception.rs",
@@ -3922,7 +3946,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/main.rs",
-      "sha256": "37b21ff68e794330202c9afb42ecdcde058473ddfd1fedc6758c8207e97d5e25"
+      "sha256": "d9a9d99eb1f257baee6ea5530822d1a679713e8cc535d9b8453ed200018d8733"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/phy_calibration_artifact.rs",
@@ -3946,31 +3970,39 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/client.rs",
-      "sha256": "bee79f4dfa1d5a57fe7ba5e495c2d3e1b9169ea0840e3a7b2c1f6d70d25addc7"
+      "sha256": "ebb67919367b4004f3525a849ab6fd8c93f8b114545385d1e822786fe8b07491"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/session/radio.rs",
+      "sha256": "1061ffeaa924a95f417296c0c2c4e0ea63fec772a3fbe010b1dec1d3bdfabc01"
+    },
+    {
+      "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/session/serve.rs",
+      "sha256": "10a352e6dcf6a60210736f0cb0ae4c5eefb698f80fdecec1a63075c349b1e42b"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154/session.rs",
-      "sha256": "1048b3fe566c3c867c926a99a482f02c3b61a1a06289c8296e2a002d3851260d"
+      "sha256": "04b8c7fb8bcf77c25cd926addd8355eabc4ada9f431a3635c7e0da3ef70f7b7a"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/ieee802154.rs",
       "sha256": "2077ee76fe9d063b5c707236f1b08da7af725149e97d682a121044dd3214156f"
     },
     {
-      "path": "hil/targets/esp32s31/runtime/src/product_hil/network/upstream.rs",
-      "sha256": "6e05282cf96534cc46216bdb609f714d084c40d9b510c836041f295e38a6ba4c"
+      "path": "hil/targets/esp32s31/runtime/src/product_hil/network/embassy.rs",
+      "sha256": "7d8ef9d6c1aa44fc2a8d768e78df09a6a1705a3e912e44761adb0202fdd1d37b"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/network.rs",
-      "sha256": "11bd3aa461708f29fcc28501b71a67b94194e1bf977d284c6ccab9d9d44bc2dc"
+      "sha256": "cbcfe5990f589ad034eabe485aea686d47a131c3708cbe8efeabb6ab4dbcf32b"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/phy_register_image.rs",
-      "sha256": "63934616a2a7d728f47bb9e19597f9d8779fc8cf7af259925a7901374656f99c"
+      "sha256": "0356130cbd88398a393b9904e5b66517f9769835823fd416840f20d9f851868e"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/rx_qualification.rs",
-      "sha256": "4e898e07dd5073e039895ce58801b2951be494cfffa75a1cee0f37efb499a340"
+      "sha256": "5d774b8b1f66dee8070662aced348dd06c004dcaba3ffb9ebcac83d849cbd821"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/rx_rejection.rs",
@@ -4010,7 +4042,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/udp/rx/receive.rs",
-      "sha256": "90a853c5c14e402e06f022a1be5be3ce8da5db14c4a69cad596c1184b8d3e819"
+      "sha256": "3c82e77c9101e49f69e187e5fd295dbac087cfb0a19a04fb11c95e0ea900ee08"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil/traffic/udp/rx.rs",
@@ -4022,7 +4054,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/product_hil.rs",
-      "sha256": "2bb3e5fbc86890d90f8e3fda6345752a8c0c157481b94f019f0f73276e954949"
+      "sha256": "e13cd448265445fcdb2050fa859ae8933921770b05f559c67662a5b984f0f64d"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/stack_evidence.rs",
@@ -4030,7 +4062,7 @@
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/system/mod.rs",
-      "sha256": "3c5199c998f048dc3abcfc5833f8da6950a7b96af1c9d49189011a3f4e7d5cce"
+      "sha256": "0937cb4196531ec1a9defb30ca3264b1f742754085c3a36f697ba976a1a10b14"
     },
     {
       "path": "hil/targets/esp32s31/runtime/src/watchdog.rs",
@@ -4038,7 +4070,7 @@
     },
     {
       "path": "hil/targets/esp32s31/stack.toml",
-      "sha256": "fd22954332fd090ab1f2156ddd76b4251080b3b6142e6dd4668a6cc79e636231"
+      "sha256": "12fac05e8234557c198b8be9ff2d082109d6b6d5b5543b8ce6ec48453cc42194"
     },
     {
       "path": "hil/targets/esp32s31/telemetry/Cargo.toml",
@@ -4233,8 +4265,12 @@
       "sha256": "4f2a18bc72b318bd18159aad0df21687e552d04c2cf352173b282ff810a34bd4"
     },
     {
+      "path": "tools/chip-profile",
+      "sha256": "6af98baf2f8a53278d58401f4314be43a8744e83e468f6a4d80a8ff217e6cf39"
+    },
+    {
       "path": "tools/firmware",
-      "sha256": "28d19e9876a9b1c0e5be1f96b73d258e711e2a9674ab28cf30ee2454e286f5d3"
+      "sha256": "482fea2de757a1249de9f5763dd9590529f9de2ae3cc89b89115cd4cee5a94f3"
     },
     {
       "path": "tools/memory-report",

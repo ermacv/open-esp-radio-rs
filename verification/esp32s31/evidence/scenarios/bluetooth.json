@@ -104,7 +104,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "9800409d4ed92e38833a031a35b65bab48d24dfa9e10cad2437b45e2c603ecd1"
+      "sha256": "ca4458f17e6bc27ebfccfcc2bc175b03ea0f04053d1af9186a0b821d2b317fdf"
     },
     {
       "path": "verification/harness/codegen",
@@ -116,7 +116,7 @@
     },
     {
       "path": "verification/harness/scenarios",
-      "sha256": "be5f23a501d0d45c2cc96971fe38702b1a1bbdb4925a8c795a4ebea2d514a272"
+      "sha256": "68470633448e5c97182c2985e36d2ec2fb7112cf2eed6c84b28e10c030bfcd5e"
     },
     {
       "path": "verification/schema",

@@ -146,7 +146,11 @@ pub fn phy_sdk_input(path: &Path) -> Input<'_> {
     Input {
         role: "phy-sdk",
         path,
-        sha256: Some(crate::artifacts::sha256(layout().phy_sdk)),
+        sha256: Some(crate::artifacts::sha256(
+            layout()
+                .phy_sdk
+                .expect("the chip's PHY layout names its SDK firmware"),
+        )),
     }
 }
 

@@ -196,7 +196,24 @@ pub struct Leaf {
     /// Vendor functions answered with a zero return and no other effect:
     /// assertions the compared domain never fails.
     pub quiet_calls: &'static [&'static str],
+    /// Further reviewed rules of the leaf's effect contract, such as the
+    /// polling a transport leaves to its hardware.
+    pub rules: Option<fn() -> Vec<EffectRule>>,
+    /// An expectation independent of both executions, checked against the
+    /// vendor side of every case: the case words (probe words, then the
+    /// object state) and what the vendor did.
+    pub expect: Option<Expectation>,
 }
+
+/// What the vendor side of one leaf case did: its returned low word and its
+/// ordered word MMIO effects.
+pub struct Observed {
+    pub returned: Option<u32>,
+    pub effects: Vec<crate::evidence::PhyEffect>,
+}
+
+/// Checks one case against an independent expectation.
+pub type Expectation = fn(&[u32], &Observed) -> std::result::Result<(), String>;
 
 /// The vendor and production callees a dispatcher selects for the words.
 pub type Dispatch = fn(&[u32]) -> (&'static str, &'static str);
@@ -224,6 +241,9 @@ pub struct Objects {
     /// a read beyond the runs fails the case, so both sides must read each
     /// exactly as often as the runs allow.
     pub sequences: Vec<(u32, Vec<blobray_domain::ReadRun>)>,
+    /// Further device models both sides share, ahead of the radio aperture,
+    /// such as the analog command bank a transport drives.
+    pub devices: Vec<blobray_domain::DeviceDeclaration>,
 }
 
 /// Builds a case's objects from the semantic probe words, followed by the
@@ -303,6 +323,8 @@ pub const fn leaf(
         states: &[],
         dispatch: None,
         quiet_calls: &[],
+        rules: None,
+        expect: None,
     }
 }
 
@@ -386,6 +408,22 @@ pub const fn replaced(leaf: Leaf, replacements: &'static [Replacement]) -> Leaf 
 pub const fn vendor_reads(leaf: Leaf, registers: &'static [(u32, &'static str)]) -> Leaf {
     Leaf {
         vendor_reads: registers,
+        ..leaf
+    }
+}
+
+/// A leaf whose effect contract also carries the reviewed `rules`.
+pub const fn ruled(leaf: Leaf, rules: fn() -> Vec<EffectRule>) -> Leaf {
+    Leaf {
+        rules: Some(rules),
+        ..leaf
+    }
+}
+
+/// A leaf whose vendor side every case checks against `expect`.
+pub const fn expected(leaf: Leaf, expect: Expectation) -> Leaf {
+    Leaf {
+        expect: Some(expect),
         ..leaf
     }
 }
@@ -703,6 +741,9 @@ impl LeafRun {
                 reason: (*reason).into(),
             });
         }
+        if let Some(extra) = leaf.rules {
+            rules.extend(extra());
+        }
         if leaf.release_fences != 0 {
             rules.push(EffectRule {
                 name: "lease-release-fence".into(),
@@ -790,6 +831,7 @@ impl LeafRun {
             || leaf.release_fences != 0
             || !leaf.replacements.is_empty()
             || !leaf.vendor_reads.is_empty()
+            || leaf.rules.is_some()
         {
             Some(self.ordering_contract(leaf)?)
         } else {
@@ -895,6 +937,7 @@ impl LeafRun {
                     image,
                     registers,
                     sequences,
+                    case_devices,
                 ) = match leaf.vendor_abi {
                     Some(abi) => {
                         let mut semantic = words.clone();
@@ -919,6 +962,7 @@ impl LeafRun {
                             objects.image,
                             objects.registers,
                             objects.sequences,
+                            objects.devices,
                         )
                     }
                     None => (
@@ -931,11 +975,12 @@ impl LeafRun {
                         vec![],
                         vec![],
                         vec![],
+                        vec![],
                     ),
                 };
                 // Exact register models take precedence over the aperture.
                 let devices = |fill: u8| {
-                    let mut devices = vec![];
+                    let mut devices = case_devices.clone();
                     for (index, (address, runs)) in sequences.iter().enumerate() {
                         devices.push(crate::phy::layout::sequence_read(
                             &format!("case-sequence-{index}"),
@@ -1122,7 +1167,9 @@ impl LeafRun {
                             replacement: index,
                         })
                         .collect();
-                    rows.push((setup, row, initial.clone(), words.clone()));
+                    let mut case_words = words.clone();
+                    case_words.extend(state);
+                    rows.push((setup, row, initial.clone(), case_words));
                 }
             }
         }
@@ -1180,6 +1227,23 @@ pub fn exercise(ctx: &mut LeafRun) -> Result<()> {
                     }
                 }
                 continue;
+            }
+            if let Some(expect) = leaf.expect {
+                let observed = Observed {
+                    returned: match crate::evidence::stop(&records, case, false) {
+                        blobray_domain::ExecutionStop::Returned { low, .. } => low,
+                        _ => None,
+                    },
+                    effects: crate::evidence::phy_effects(&crate::evidence::events(
+                        &records, case, false,
+                    )),
+                };
+                expect(&case_words[index], &observed).map_err(|error| {
+                    invalid(format!(
+                        "{} case {case} words {:x?}: {error}",
+                        leaf.vendor, case_words[index]
+                    ))
+                })?;
             }
             // A leaf must act: a register effect, a write that changes an
             // object it is compared through, or a compared return word.

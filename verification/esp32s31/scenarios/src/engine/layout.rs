@@ -99,7 +99,7 @@ pub static PHY_LAYOUT: oer_vendor_scenario_engine::phy::PhyLayout =
     oer_vendor_scenario_engine::phy::PhyLayout {
         library: "libphy",
         rom: "rom",
-        phy_sdk: "phy-sdk",
+        phy_sdk: Some("phy-sdk"),
         input: INPUT,
         output: OUTPUT,
         parameter_copy: PARAMETER_COPY,

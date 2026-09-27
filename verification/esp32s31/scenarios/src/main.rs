@@ -1,6 +1,6 @@
 //! Run one authenticated ESP32-S31 vendor-comparison scenario.
 use clap::{Parser, Subcommand};
-use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Index};
+use oer_esp32s31_vendor_scenarios::session::evidence_index::Index;
 use oer_esp32s31_vendor_scenarios::{
     ble, calibration_leaves, calibration_prefix, channel, coex, coex_hw, coverage, decisions,
     gain::{Gain, Options},
@@ -745,169 +745,26 @@ mod evidence {
     use oer_esp32s31_vendor_scenarios::{
         BLUETOOTH_PROBES_PACKAGE, PROBES_MANIFEST, PROBES_PACKAGE, PROBES_TARGET,
     };
+    use oer_vendor_scenario_engine::shard::ProbeImages;
 
-    /// Qualification target of this scenario package.
-    const TARGET: &str = "esp32s31";
-    /// Blobray workspace and this scenario package, whose path dependencies
-    /// are the scenario code and the Blobray engine behind every verdict.
-    const TOOL_MANIFEST: &str = "tools/blobray/Cargo.toml";
-    const TOOL_PACKAGE: &str = env!("CARGO_PKG_NAME");
-    /// Shared schema sources the scenarios include by path.
-    const SCHEMA_SOURCES: &str = "verification/schema";
+    /// The probe images of the ESP32-S31 scenarios.
+    const PROBES: ProbeImages = ProbeImages {
+        manifest: PROBES_MANIFEST,
+        packages: &[PROBES_PACKAGE, BLUETOOTH_PROBES_PACKAGE],
+        target: PROBES_TARGET,
+    };
 
-    pub use oer_esp32s31_vendor_scenarios::observation::root;
-
-    /// Path packages in the resolved dependency closure of `package`.
-    fn path_closure(
-        root: &Path,
-        manifest: &str,
-        package: &str,
-        platform: Option<&str>,
-    ) -> Result<Vec<PathBuf>> {
-        let mut command = std::process::Command::new("cargo");
-        command
-            .current_dir(root)
-            .args(["metadata", "--format-version", "1", "--offline", "--locked"])
-            .args(["--manifest-path", manifest]);
-        if let Some(platform) = platform {
-            command.args(["--filter-platform", platform]);
-        }
-        let output = command.output()?;
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
-        }
-        let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-        let packages = metadata["packages"]
-            .as_array()
-            .ok_or("cargo metadata packages")?;
-        let id_of = |name: &str| {
-            packages
-                .iter()
-                .find(|p| p["name"] == name)
-                .and_then(|p| p["id"].as_str())
-                .map(str::to_owned)
-        };
-        let nodes = metadata["resolve"]["nodes"]
-            .as_array()
-            .ok_or("cargo metadata resolve")?;
-        let mut pending = vec![id_of(package).ok_or_else(|| format!("package {package} missing"))?];
-        let mut seen = std::collections::BTreeSet::new();
-        while let Some(id) = pending.pop() {
-            if !seen.insert(id.clone()) {
-                continue;
-            }
-            let node = nodes
-                .iter()
-                .find(|n| n["id"] == id.as_str())
-                .ok_or("unresolved package")?;
-            for dependency in node["dependencies"].as_array().into_iter().flatten() {
-                pending.push(dependency.as_str().ok_or("dependency id")?.to_owned());
-            }
-        }
-        let mut directories = std::collections::BTreeSet::new();
-        for package in packages {
-            let local = package["source"].is_null();
-            if local && seen.contains(package["id"].as_str().unwrap_or_default()) {
-                let manifest = Path::new(package["manifest_path"].as_str().ok_or("manifest path")?);
-                let directory = manifest.parent().ok_or("manifest directory")?;
-                directories.insert(directory.canonicalize()?.strip_prefix(root)?.to_path_buf());
-            }
-        }
-        Ok(directories.into_iter().collect())
-    }
-
-    /// The shard of `scenario`'s claims against the probe image at
-    /// `production`: the sources are the image package's path closure, the
-    /// scenario code and engine, and the shared schema.
     pub fn shard(scenario: &str, production: &Path, claims: &session::Claims) -> Result<Index> {
-        let root = root()?;
-        let package = production
-            .file_name()
-            .and_then(|n| n.to_str())
-            .filter(|n| [PROBES_PACKAGE, BLUETOOTH_PROBES_PACKAGE].contains(n))
-            .ok_or_else(|| {
-                format!(
-                    "{} is not a probe image the index knows the sources of",
-                    production.display()
-                )
-            })?;
-        let mut directories = path_closure(&root, PROBES_MANIFEST, package, Some(PROBES_TARGET))?;
-        directories.extend(path_closure(&root, TOOL_MANIFEST, TOOL_PACKAGE, None)?);
-        directories.push(PathBuf::from(SCHEMA_SOURCES));
-        directories.sort();
-        directories.dedup();
-        let sources = directories
-            .into_iter()
-            .map(|path| {
-                Ok(evidence_index::SourceDigest {
-                    sha256: evidence_index::digest_directory(&root, &path)?,
-                    path,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let line = |(path, line): (PathBuf, u32)| evidence_index::SourceLine { path, line };
-        let mut observation = observation::Sources::default();
-        let (_, unobserved) = observation.classify(
-            &root,
-            decisions::observation::DECISIONS,
-            &claims.lines.unobserved(),
-        )?;
-        let mut unprojected = std::collections::BTreeSet::new();
-        for (vendor, production, byte) in &claims.unprojected {
-            let (_, untriaged) = state::classify(
-                decisions::state::DECISIONS,
-                (vendor, production),
-                &std::collections::BTreeSet::from([byte.clone()]),
-            );
-            unprojected.extend(untriaged);
-        }
-        let index = Index {
-            schema: evidence_index::SCHEMA,
-            command: evidence_index::COMMAND.into(),
-            target: TARGET.into(),
-            scenario: scenario.into(),
-            inputs: claims.inputs.clone(),
-            sources,
-            entries: claims.entries.clone(),
-            untriaged: coverage::uncovered_everywhere(&claims.closures, claims.untriaged.clone())
-                .into_iter()
-                .collect(),
-            functions: claims
-                .closures
-                .iter()
-                .flat_map(|c| c.functions.iter().cloned())
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect(),
-            unobserved: unobserved.into_iter().map(line).collect(),
-            observed: claims.lines.observed.iter().cloned().map(line).collect(),
-            unprojected: state::ranges(&unprojected)
-                .into_iter()
-                .map(|(symbol, offset, length)| evidence_index::StateRange {
-                    symbol,
-                    offset,
-                    length,
-                })
-                .collect(),
-        };
-        index.validate(TARGET)?;
-        Ok(index)
+        oer_vendor_scenario_engine::shard::shard(
+            scenario,
+            production,
+            claims,
+            &PROBES,
+            env!("CARGO_PKG_NAME"),
+        )
     }
 
-    /// Write `index` as its scenario's shard of the index at `directory`.
-    pub fn write(directory: &Path, index: &Index) -> Result<()> {
-        std::fs::create_dir_all(directory)?;
-        let path = directory.join(format!(
-            "{}.{}",
-            index.scenario,
-            evidence_index::SHARD_EXTENSION
-        ));
-        let mut bytes = serde_json::to_vec_pretty(index)?;
-        bytes.push(b'\n');
-        std::fs::write(&path, bytes)?;
-        println!("evidence shard {}", path.display());
-        Ok(())
-    }
+    pub use oer_vendor_scenario_engine::shard::write;
 }
 
 /// Every vendor input and extra production image `all` requires.

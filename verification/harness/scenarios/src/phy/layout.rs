@@ -12,10 +12,11 @@ use blobray_domain::{
 /// One chip's PHY session layout.
 #[derive(Debug)]
 pub struct PhyLayout {
-    /// Manifest ids of the PHY archive, the ROM ELF and the PHY SDK firmware.
+    /// Manifest ids of the PHY archive, the ROM ELF and, where the chip's
+    /// PHY images need one, the PHY SDK firmware.
     pub library: &'static str,
     pub rom: &'static str,
-    pub phy_sdk: &'static str,
+    pub phy_sdk: Option<&'static str>,
     /// Caller-owned scratch RAM for probe inputs and for selected outputs.
     pub input: u32,
     pub output: u32,

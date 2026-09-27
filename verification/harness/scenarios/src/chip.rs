@@ -104,7 +104,7 @@ pub(crate) static TEST: Chip = Chip {
 static TEST_PHY: crate::phy::PhyLayout = crate::phy::PhyLayout {
     library: "libphy",
     rom: "rom",
-    phy_sdk: "phy-sdk",
+    phy_sdk: Some("phy-sdk"),
     input: 0x1000,
     output: 0x2000,
     parameter_copy: 0x1800,

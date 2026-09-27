@@ -16,7 +16,7 @@ pub use oer_vendor_scenario_engine::leaf::{
     Dispatch, Domain, LEAF_EVENTS, LEAF_FILLS, Leaf, LeafCase, LeafOptions as MacOptions,
     LeafRun as Mac, OUTPUT_FILL, Objects, Replacement, Suite, Vendor, VendorAbi, call_boundary,
     claims, compared_bytes, dispatching, exercise, image_symbols, in_archive, leaf, objects,
-    ordered, output, prefix, quiet, released, released_when_leased, replaced, rom, stated,
+    ordered, output, prefix, quiet, released, released_when_leased, replaced, rom, ruled, stated,
     tail_prefix, vendor_reads,
 };
 use std::any::Any;

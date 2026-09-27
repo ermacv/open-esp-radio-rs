@@ -15,6 +15,7 @@ use oer_esp32s31_coex::{
     CoexTimerIndex,
 };
 use oer_esp32s31_hal::{
+    ieee802154::Ieee802154Clocked,
     root::{ConcurrentPartitions, RadioHardware},
     shared_radio::{PlatformClockProvider, SharedRadio, SharedRadioLease},
 };
@@ -24,8 +25,11 @@ use oer_esp32s31_phy::{
     PhyCalibrationIdentity, PhyRegisterConfig, close_concurrent_rf,
     concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
     ieee802154_client::{
-        Ieee802154PhyClientError, RegisteredIeee802154OperationalRoute,
-        RegisteredIeee802154RouteFailure, RegisteredIeee802154SuspendedRoute,
+        Ieee802154PhyClientError, Ieee802154PhyLeaveFailure, Ieee802154PhyMembership,
+        Ieee802154PhySuspended, Ieee802154PhySuspendedFailure,
+        RegisteredIeee802154OperationalRoute, RegisteredIeee802154RouteFailure,
+        RegisteredIeee802154SuspendedRoute, join_ieee802154, leave_ieee802154,
+        leave_suspended_ieee802154,
     },
     register_concurrent_phy,
     state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS,
@@ -157,6 +161,26 @@ pub enum Ieee802154WakeError {
     Phy(RadioPhyError),
     /// The PHY domain rejected the client; nothing changed.
     Client(Ieee802154PhyClientError),
+}
+
+/// Why IEEE 802.15.4 could not join the shared PHY.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154JoinError {
+    /// The shared PHY could not be prepared ([`RadioPhyError::started`]).
+    Phy(RadioPhyError),
+    /// The PHY domain rejected the client; the client set is unchanged.
+    Client(Ieee802154PhyClientError),
+}
+
+/// IEEE 802.15.4 after it left the shared PHY with
+/// [`RadioGuard::leave_ieee802154`] or
+/// [`RadioGuard::leave_suspended_ieee802154`].
+#[must_use = "closing RF after the last client may have failed"]
+pub struct Ieee802154Left {
+    /// Whether RF closed because no client remains, or why closing it
+    /// failed; a [`ConcurrentRfError::Recoverable`] failure keeps RF open,
+    /// any other started failure requires reset.
+    pub rf_closed: Result<bool, ConcurrentRfError>,
 }
 
 /// Failed wake retaining the sleeping route.
@@ -581,6 +605,84 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
                 error: Ieee802154WakeError::Client(failure.error()),
                 route: failure.into_route(),
             })
+    }
+
+    /// Join IEEE 802.15.4 to the shared PHY, as the vendor
+    /// `esp_ieee802154_enable` does through `esp_phy_enable` and
+    /// `esp_btbb_enable`: prepare the shared PHY - registering the domain
+    /// when no client did, or waking closed RF - then take the BTBB
+    /// reference and enter the PHY client set. A returned
+    /// [`ConcurrentAcquire::TrackingDue`] means the domain must run its
+    /// tracking, within the client's quiescence, before the MAC uses RF.
+    ///
+    /// # Errors
+    ///
+    /// Preparing the shared PHY failed ([`RadioPhyError::started`] tells
+    /// whether hardware work began), or the domain rejected the client.
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result.
+    pub async fn join_ieee802154(
+        &mut self,
+        clocked: &Ieee802154Clocked,
+    ) -> Result<(Ieee802154PhyMembership, ConcurrentAcquire), Ieee802154JoinError> {
+        // The client needs RF open, not the registration report.
+        let _prepared = self.prepare_phy().await.map_err(Ieee802154JoinError::Phy)?;
+        join_ieee802154(self.lease(), clocked, &mut EmbassyPhyTime)
+            .map_err(Ieee802154JoinError::Client)
+    }
+
+    /// Leave the shared PHY, as the vendor `esp_ieee802154_disable` does
+    /// through `esp_phy_disable` and `esp_btbb_disable`: release the PHY
+    /// client and the BTBB reference, then close RF when no client remains.
+    ///
+    /// The caller must have stopped the MAC first.
+    ///
+    /// # Errors
+    ///
+    /// The domain rejected the release; nothing changed and the membership
+    /// is returned. An RF close failure after the release is reported in
+    /// [`Ieee802154Left::rf_closed`].
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result.
+    pub async fn leave_ieee802154(
+        &mut self,
+        clocked: &Ieee802154Clocked,
+        membership: Ieee802154PhyMembership,
+    ) -> Result<Ieee802154Left, Ieee802154PhyLeaveFailure> {
+        let last = leave_ieee802154(self.lease(), clocked, membership)?;
+        let rf_closed = if last {
+            self.close_phy_if_idle().await
+        } else {
+            Ok(false)
+        };
+        Ok(Ieee802154Left { rf_closed })
+    }
+
+    /// Leave the shared PHY while asleep: release the BTBB reference of a
+    /// client [`Self::suspend_ieee802154`] already took out of the PHY
+    /// client set, then close RF when it is still open and no client
+    /// remains.
+    ///
+    /// # Errors
+    ///
+    /// The BTBB reference is missing; the suspended client is returned. An
+    /// RF close failure is reported in [`Ieee802154Left::rf_closed`].
+    ///
+    /// # Cancellation
+    ///
+    /// Once polled, drive this future to a terminal result.
+    pub async fn leave_suspended_ieee802154(
+        &mut self,
+        clocked: &Ieee802154Clocked,
+        suspended: Ieee802154PhySuspended,
+    ) -> Result<Ieee802154Left, Ieee802154PhySuspendedFailure> {
+        leave_suspended_ieee802154(self.lease(), clocked, suspended)?;
+        let rf_closed = self.close_phy_if_idle().await;
+        Ok(Ieee802154Left { rf_closed })
     }
 
     /// One tick of the vendor `phy_track_pll` under this guard: evaluate

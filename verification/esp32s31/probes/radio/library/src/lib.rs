@@ -1312,6 +1312,7 @@ oer_probe_macros::probe! {
             0 => TxCompletionDisposition::AckTimeout,
             1 => TxCompletionDisposition::CtsTimeout,
             2 => TxCompletionDisposition::Collision,
+            3 => TxCompletionDisposition::Success,
             _ => panic!("verification disposition is out of range"),
         };
         // SAFETY: see `RetryProbeState`; the reset entry ran first.

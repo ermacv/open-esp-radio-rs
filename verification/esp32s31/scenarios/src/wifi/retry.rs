@@ -9,7 +9,9 @@
 //! the descriptor retry counters, the queue's contention exponent and the
 //! frame's Retry bit, and the scenario checks that both sides choose the same
 //! continuation: the vendor retries through its leaf's continuation, or ends
-//! the exchange, as production retries or completes.
+//! the exchange, as production retries or completes. A second family of
+//! sequences follows one failed attempt with `lmacProcessTxSuccess`, which
+//! returns the contention exponent to its minimum and ends the exchange.
 use crate::harness::{Arg, Result, case, direct, invalid, known, region, selection};
 use crate::mac::{LEAF_FILLS, Mac};
 use blobray_domain::{
@@ -23,6 +25,7 @@ pub const ROOTS: &[&str] = &[
     "lmacProcessCtsTimeout",
     "lmacProcessCollision",
     "lmacProcessAckTimeout",
+    SUCCESS,
 ];
 /// Evidence claims: each vendor retry leaf with the production retry owner.
 pub const CLAIMS: &[(&str, &str, &str)] = &[
@@ -41,7 +44,26 @@ pub const CLAIMS: &[(&str, &str, &str)] = &[
         "lmacProcessAckTimeout",
         "open_libpp_tx_retry_trace_step",
     ),
+    ("archive", SUCCESS, "open_libpp_tx_retry_trace_step"),
 ];
+/// The vendor success leaf, `lmacProcessTxSuccess(queue, ack_snr)`: it
+/// stores the ACK SNR in the transmit descriptor, returns the queue's
+/// contention exponent to its minimum and ends the exchange through
+/// `lmacEndFrameExchangeSequence(context, 1, 0)`.
+const SUCCESS: &str = "lmacProcessTxSuccess";
+/// The ACK SNR byte the success phases report, an ordinary encoded sample.
+const SUCCESS_ACK_SNR: u32 = 0x20;
+/// The step probe's disposition of a successful completion.
+const SUCCESS_DISPOSITION: u32 = 3;
+/// Transmit-descriptor word 0 before a success, one per branch of
+/// `lmacProcessTxSuccess`: no class flag (the short-frame reset only),
+/// bit 8 (both resets), bit 1 and the bit-22 pattern (the frame length
+/// against the RTS threshold decides). Each reset returns the exponent to
+/// its minimum; they differ only in the queue's short or long counter.
+const SUCCESS_FLAGS: [u32; 5] = [0, 0x100, 0x2, 0x40_0000, 0x8000_0002];
+/// The continuation of a success and its third argument word: the
+/// exchange ends without a retry.
+const SUCCESS_CONTINUATION: (&str, Option<u32>) = ("lmacEndFrameExchangeSequence", Some(0));
 /// `lmacConfMib`, which `lmacInit` fills: the long and short retry limits
 /// at 0x14 and 0x15 and the RTS length threshold at 0x16.
 const CONF: &str = "lmacConfMib";
@@ -144,6 +166,16 @@ const COMPLETIONS: [Completion; 3] = [
         publication_limited: true,
     },
 ];
+/// What a row of a retry sequence compares.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    /// Vendor initialization and queue-context patches, not compared.
+    Setup,
+    /// A failed attempt of the sequence's completion.
+    Failure,
+    /// A successful completion after the failed attempts.
+    Success,
+}
 /// The vendor's own limits: long and short retry limits and the RTS length
 /// threshold.
 #[derive(Clone, Copy)]
@@ -234,7 +266,8 @@ fn model_with(
 
 /// One retry sequence of `queue`: the vendor `lmacInit` and production reset,
 /// the queue-context patch, and one compared `completion` phase per attempt
-/// until the frame's retry limit ends it.
+/// until the frame's retry limit ends it or, for a `success` sequence, one
+/// failed attempt and a successful completion from that descriptor word 0.
 #[allow(clippy::too_many_arguments)]
 fn sequence(
     ctx: &Mac,
@@ -244,7 +277,8 @@ fn sequence(
     limit: u8,
     limits: Limits,
     long: bool,
-) -> Result<Vec<(ExecutionCase, bool)>> {
+    success: Option<u32>,
+) -> Result<Vec<(ExecutionCase, Phase)>> {
     let image = ctx.image_symbols()?;
     let symbol = |name: &str| ctx.symbol_address(&image, name);
     let boundary = |name: &str| crate::mac::call_boundary(&image, name);
@@ -313,7 +347,7 @@ fn sequence(
             SessionReset::Cold,
             false,
         ),
-        false,
+        Phase::Setup,
     )];
     // Warm: the vendor's transmit path installs the frame and marks the
     // queue transmitting; production has no counterpart.
@@ -348,7 +382,7 @@ fn sequence(
                 SessionReset::Warm,
                 false,
             ),
-            false,
+            Phase::Setup,
         ));
     }
     let named = |name: &str, address: u32, length: u32| blobray_domain::MemorySelection {
@@ -380,14 +414,66 @@ fn sequence(
         .chain(completion.arguments)
         .copied()
         .collect();
-    for step in 0..u32::from(attempts) {
-        let mut vendor = direct(leaf, &arguments, vec![], vec![], observed.clone());
+    // A success sequence fails once, inside the frame's limit, then succeeds.
+    let phases: Vec<Phase> = if success.is_some() {
+        if attempts < 2 {
+            return Err(invalid(format!(
+                "retry-{}: a limit of {attempts} leaves no attempt before success",
+                completion.label
+            )));
+        }
+        vec![Phase::Failure, Phase::Success]
+    } else {
+        vec![Phase::Failure; usize::from(attempts)]
+    };
+    // After a success the descriptor belongs to no frame: only the
+    // exponent and the Retry bit remain comparable.
+    let success_observed = observed[1..].to_vec();
+    let success_arguments = [queue, SUCCESS_ACK_SNR];
+    for (step, phase) in phases.iter().enumerate() {
+        let step = step as u32;
+        if let (Phase::Success, Some(flags)) = (*phase, success) {
+            let bytes = flags.to_le_bytes();
+            let length = bytes.len() as u32;
+            rows.push((
+                case(
+                    format!(
+                        "retry-{}-flags-q{queue}-{long}-{flags:x}-{fill:02x}",
+                        completion.label
+                    ),
+                    direct(
+                        memcpy,
+                        &[DESCRIPTOR, PATCH, length],
+                        vec![known(PATCH, length, &bytes)?],
+                        vec![],
+                        vec![],
+                    ),
+                    Some(direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![])),
+                    SessionReset::Warm,
+                    false,
+                ),
+                Phase::Setup,
+            ));
+        }
+        let (leaf, arguments, observed, disposition) = if *phase == Phase::Success {
+            (
+                symbol(SUCCESS)?,
+                &success_arguments[..],
+                &success_observed,
+                SUCCESS_DISPOSITION,
+            )
+        } else {
+            (leaf, &arguments[..], &observed, completion.disposition)
+        };
+        let mut vendor = direct(leaf, arguments, vec![], vec![], observed.clone());
         for name in RETRY_QUIET {
             vendor
                 .calls
                 .push(model(name, symbol(name)?, boundary(name), 1));
         }
-        let retries = step + 1 < u32::from(attempts) && completion.retry.0 == "lmacRetryTxFrame";
+        let retries = *phase == Phase::Failure
+            && (success.is_some() || step + 1 < u32::from(attempts))
+            && completion.retry.0 == "lmacRetryTxFrame";
         for name in CONTINUATIONS {
             vendor
                 .calls
@@ -400,10 +486,7 @@ fn sequence(
         let mut production = ctx.session.probes.invoke(
             "open_libpp_tx_retry_trace_step",
             vec![
-                (
-                    "disposition",
-                    Arg::Word(Some(i64::from(completion.disposition))),
-                ),
+                ("disposition", Arg::Word(Some(i64::from(disposition)))),
                 ("context", Arg::Word(Some(i64::from(context)))),
                 ("descriptor", Arg::Word(Some(i64::from(DESCRIPTOR)))),
                 ("buffer", Arg::Word(Some(i64::from(FRAME)))),
@@ -414,8 +497,9 @@ fn sequence(
         production.arguments.resize(8, Some(0));
         let mut row = case(
             format!(
-                "retry-{}-q{queue}-{long}-{step}-{fill:02x}",
-                completion.label
+                "retry-{}{}-q{queue}-{long}-{step}-{fill:02x}",
+                completion.label,
+                success.map_or(String::new(), |flags| format!("-success-{flags:x}"))
             ),
             vendor,
             Some(production),
@@ -429,7 +513,7 @@ fn sequence(
                 replacement: index,
             })
             .collect();
-        rows.push((row, true));
+        rows.push((row, *phase));
     }
     for (row, _) in &mut rows {
         row.stack_fill = Some(fill);
@@ -546,59 +630,78 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
         .map(|name| Ok((ctx.symbol_address(&image, name)?, *name)))
         .collect::<Result<_>>()?;
     for completion in COMPLETIONS {
-        for queue in QUEUES_COMPARED {
-            let mut rows = vec![];
-            // Compared phases of each sequence, in order.
-            let mut sequences = vec![];
-            for long in [false, true] {
-                for fill in LEAF_FILLS {
-                    let mut compared = vec![];
-                    for (row, is_compared) in
-                        sequence(ctx, completion, queue, fill, limit, limits, long)?
-                    {
-                        if is_compared {
-                            compared.push(rows.len() as u32);
+        let families = [None].into_iter().chain(SUCCESS_FLAGS.map(Some));
+        for success in families {
+            for queue in QUEUES_COMPARED {
+                let mut rows = vec![];
+                // Compared phases of each sequence, in order.
+                let mut sequences = vec![];
+                for long in [false, true] {
+                    for fill in LEAF_FILLS {
+                        let mut compared = vec![];
+                        for (row, phase) in
+                            sequence(ctx, completion, queue, fill, limit, limits, long, success)?
+                        {
+                            if phase != Phase::Setup {
+                                compared.push((rows.len() as u32, phase));
+                            }
+                            rows.push(row);
                         }
-                        rows.push(row);
+                        sequences.push(compared);
                     }
-                    sequences.push(compared);
                 }
-            }
-            let label = format!("retry-{}-q{queue}", completion.label);
-            let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
-            let records = ctx
-                .submit(
-                    &label,
-                    &crate::session::request(&vendor, Some(&production), None, rows, RETRY_EVENTS),
-                    Some(ComparisonVerdict::Match),
-                )?
-                .records
-                .clone();
-            for compared in sequences {
-                for (phase, case) in compared.iter().enumerate() {
-                    let last = phase + 1 == compared.len();
-                    let decision = crate::i2c::returned_low(&records, *case, true);
-                    // Each sequence retries until its last phase completes it.
-                    let expected = if last {
-                        RETRY_COMPLETE
-                    } else {
-                        completion.retry_decision
-                    };
-                    if decision != Some(expected) {
-                        return Err(invalid(format!(
-                            "{label} case {case}: production decided {decision:?} at phase {phase}"
-                        )));
-                    }
-                    let reached = continuation(&records, *case, &targets);
-                    let (callee, flag) = completion.retry;
-                    let retried = matches!(
-                        reached,
-                        Some((name, word)) if name == callee && (flag.is_none() || word == flag)
-                    );
-                    if reached.is_none() || retried == last {
-                        return Err(invalid(format!(
-                            "{label} case {case}: production decided {decision:?}, the vendor reached {reached:?}"
-                        )));
+                let label = format!(
+                    "retry-{}{}-q{queue}",
+                    completion.label,
+                    success.map_or(String::new(), |flags| format!("-success-{flags:x}"))
+                );
+                let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
+                let records = ctx
+                    .submit(
+                        &label,
+                        &crate::session::request(
+                            &vendor,
+                            Some(&production),
+                            None,
+                            rows,
+                            RETRY_EVENTS,
+                        ),
+                        Some(ComparisonVerdict::Match),
+                    )?
+                    .records
+                    .clone();
+                for compared in sequences {
+                    for (index, (case, phase)) in compared.iter().enumerate() {
+                        let last = index + 1 == compared.len();
+                        let decision = crate::i2c::returned_low(&records, *case, true);
+                        // Each failure sequence retries until its last phase
+                        // completes it; a success completes at once.
+                        let expected = if last {
+                            RETRY_COMPLETE
+                        } else {
+                            completion.retry_decision
+                        };
+                        if decision != Some(expected) {
+                            return Err(invalid(format!(
+                                "{label} case {case}: production decided {decision:?} at phase {index}"
+                            )));
+                        }
+                        let reached = continuation(&records, *case, &targets);
+                        let consistent = if *phase == Phase::Success {
+                            reached == Some(SUCCESS_CONTINUATION)
+                        } else {
+                            let (callee, flag) = completion.retry;
+                            let retried = matches!(
+                                reached,
+                                Some((name, word)) if name == callee && (flag.is_none() || word == flag)
+                            );
+                            reached.is_some() && retried != last
+                        };
+                        if !consistent {
+                            return Err(invalid(format!(
+                                "{label} case {case}: production decided {decision:?}, the vendor reached {reached:?}"
+                            )));
+                        }
                     }
                 }
             }

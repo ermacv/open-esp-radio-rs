@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "58dbb8309485d7c95da4d7c1dc17c7741e61a342c52531544a3e2f9af1fb5d6f",
+    "input-2": "96140b887e9f6561338a2d3d1783b7f59e1e8a37f4773cc360dd063ea818911c",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d"
   },
@@ -165,11 +165,11 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library",
-      "sha256": "974580e2b4e83944ca0f17be04d49d423bc5394613877e60fcb1a55beeba96dc"
+      "sha256": "e3840ebf42ee9e63600cff3b459e2cfd42ecc0b56b534138caa8b8bfd6cda27a"
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "b641fea18bc9b40fe416a14251dea7c2e49b813d1dbb4956bb48f5d8f383775d"
+      "sha256": "85f8839dbbd552dc86b1945072ecbd9535a8902c543e5b60e0766923b2046a3c"
     },
     {
       "path": "verification/harness/codegen",
@@ -189,7 +189,7 @@
     }
   ],
   "dependence": {
-    "read-data": "308f4c7e2a166019a246996a4b11a77c3e0a01856cb53c3ad1fcf4dd9cb30408",
+    "read-data": "05800a9e701c5daa144eb8161898083752676020fad661dec0cb6aeb90e9e37b",
     "fallback": null
   },
   "entries": [
@@ -1429,20 +1429,20 @@
       "symbol": "lmacProcessCtsTimeout",
       "production": "open_libpp_tx_retry_trace_step",
       "verdict": "match",
-      "cases": 1024,
+      "cases": 1184,
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 55,
+          "reached": 59,
           "total": 1981
         },
         "directions": {
-          "reached": 41,
+          "reached": 44,
           "total": 2038
         },
         "open": 113,
         "excluded": 121,
-        "untriaged": 3915
+        "untriaged": 3908
       },
       "observation": {
         "executed": 10,
@@ -1463,20 +1463,20 @@
       "symbol": "lmacProcessCollision",
       "production": "open_libpp_tx_retry_trace_step",
       "verdict": "match",
-      "cases": 1024,
+      "cases": 1184,
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 79,
+          "reached": 80,
           "total": 2031
         },
         "directions": {
-          "reached": 59,
+          "reached": 61,
           "total": 2094
         },
         "open": 113,
         "excluded": 121,
-        "untriaged": 3979
+        "untriaged": 3976
       },
       "observation": {
         "executed": 10,
@@ -1497,20 +1497,20 @@
       "symbol": "lmacProcessAckTimeout",
       "production": "open_libpp_tx_retry_trace_step",
       "verdict": "match",
-      "cases": 1024,
+      "cases": 1184,
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 66,
+          "reached": 78,
           "total": 2066
         },
         "directions": {
-          "reached": 50,
+          "reached": 59,
           "total": 2122
         },
         "open": 113,
         "excluded": 121,
-        "untriaged": 4064
+        "untriaged": 4043
       },
       "observation": {
         "executed": 17,
@@ -1523,6 +1523,40 @@
         "compared": 7,
         "reviewed": 8,
         "untriaged": 0
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "lmacProcessTxSuccess",
+      "production": "open_libpp_tx_retry_trace_step",
+      "verdict": "match",
+      "cases": 480,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 39,
+          "total": 1726
+        },
+        "directions": {
+          "reached": 29,
+          "total": 1744
+        },
+        "open": 109,
+        "excluded": 95,
+        "untriaged": 3416
+      },
+      "observation": {
+        "executed": 23,
+        "observed": 23,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 18,
+        "compared": 4,
+        "reviewed": 0,
+        "untriaged": 14
       }
     }
   ],
@@ -4989,21 +5023,6 @@
     },
     {
       "function": "lmacIsLongFrame",
-      "offset": 16,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacIsLongFrame",
-      "offset": 20,
-      "kind": "block"
-    },
-    {
-      "function": "lmacIsLongFrame",
-      "offset": 22,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacIsLongFrame",
       "offset": 22,
       "kind": "fallthrough"
     },
@@ -5144,47 +5163,12 @@
     },
     {
       "function": "lmacProcessLongFrameSuccess",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 14,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 14,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 18,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 30,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
       "offset": 30,
       "kind": "fallthrough"
     },
     {
       "function": "lmacProcessLongFrameSuccess",
       "offset": 32,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 36,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongFrameSuccess",
-      "offset": 52,
       "kind": "block"
     },
     {
@@ -5489,47 +5473,12 @@
     },
     {
       "function": "lmacProcessShortFrameSuccess",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 14,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 14,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 18,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 30,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
       "offset": 30,
       "kind": "fallthrough"
     },
     {
       "function": "lmacProcessShortFrameSuccess",
       "offset": 32,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 36,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortFrameSuccess",
-      "offset": 52,
       "kind": "block"
     },
     {
@@ -5870,6 +5819,16 @@
     {
       "function": "lmacProcessTxError",
       "offset": 234,
+      "kind": "block"
+    },
+    {
+      "function": "lmacProcessTxSuccess",
+      "offset": 72,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "lmacProcessTxSuccess",
+      "offset": 76,
       "kind": "block"
     },
     {
@@ -21144,6 +21103,7 @@
     "lmacProcessShortFrameSuccess",
     "lmacProcessShortRetryFail",
     "lmacProcessTxError",
+    "lmacProcessTxSuccess",
     "lmacProcessTxopQComplete",
     "lmacProcessTxseckiderr",
     "lmacRecycleMPDU",
@@ -23236,5 +23196,56 @@
       "line": 1427
     }
   ],
-  "unprojected": []
+  "unprojected": [
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439051,
+      "length": 2
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439058,
+      "length": 1
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439107,
+      "length": 2
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439114,
+      "length": 1
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439163,
+      "length": 2
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439170,
+      "length": 1
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439219,
+      "length": 2
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276439226,
+      "length": 1
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276440333,
+      "length": 1
+    },
+    {
+      "symbol": "0x2f850000",
+      "offset": 276440339,
+      "length": 1
+    }
+  ]
 }

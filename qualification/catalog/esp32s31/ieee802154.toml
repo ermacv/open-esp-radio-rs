@@ -319,7 +319,7 @@ section = "ieee802154-phy-and-rf"
 title = "2.4 GHz O-QPSK / 250 kbit/s"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "MAC/PHY configuration and frame geometry exist, but registered common-PHY, RF wake/tracking and whole-radio operation are not composed."
+scope-and-limitations = "MAC/PHY configuration and frame geometry exist. The composition's `start` registers or joins the shared PHY domain on the radio arbiter, runs the tracking due at the join and brings up the MAC, and the runtime serves the portable contract over it. Whole-radio operation is not qualified on air."
 
 [[items]]
 id = "ieee802154-phy-and-rf-channels-11-26"
@@ -345,7 +345,7 @@ section = "ieee802154-phy-and-rf"
 title = "LQI"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine reports hardware LQI; the whole-radio receive path remains incomplete."
+scope-and-limitations = "The engine reports hardware LQI with each received frame through the runtime. It is not qualified on air."
 
 [[items]]
 id = "ieee802154-phy-and-rf-tx-power"
@@ -396,7 +396,7 @@ section = "ieee802154-cca-and-channel-access"
 title = "CCA-before-TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine issues the CCA-then-TX command and reports CCA busy or failure. The portable contract sets the CCA energy threshold and mode, and the OpenThread adapter applies OpenThread's threshold as the port does. Whole-radio transmission remains incomplete."
+scope-and-limitations = "The engine issues the CCA-then-TX command and reports CCA busy or failure. The portable contract sets the CCA energy threshold and mode, and the OpenThread adapter applies OpenThread's threshold as the port does. CCA before transmission is not qualified on air."
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-csma-ca"
@@ -420,7 +420,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "RX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The [engine](src/engine.rs) owns the twenty-buffer receive ring with its stub buffer and receive-when-idle rearm; the runtime hands frames to the consumer. RF-ready public service and on-air reception remain incomplete."
+scope-and-limitations = "The [engine](src/engine.rs) owns the twenty-buffer receive ring with its stub buffer and receive-when-idle rearm; the runtime hands frames to the consumer. On-air reception is not qualified."
 packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
@@ -429,7 +429,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Direct TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine copies the frame into its DMA buffer and starts the transmission; completion and failures reach the runtime queue. No complete RF-ready radio composition exists."
+scope-and-limitations = "The engine copies the frame into its DMA buffer and starts the transmission; completion and failures reach the runtime queue of the composed client. On-air transmission is not qualified."
 packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
@@ -519,7 +519,7 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Promiscuous receive mode"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Static control and readback exist; no complete public operational receive service is composed."
+scope-and-limitations = "Static control and readback exist, and the portable contract switches it on the composed runtime (`Configuration::Promiscuous`). On-air promiscuous reception is not qualified."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-four-multi-pan-contexts"
@@ -567,7 +567,7 @@ section = "ieee802154-timing"
 title = "TX/RX SFD events"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "The engine reports TX and RX SFD events through the runtime queue. Whole-radio composition remains incomplete."
+scope-and-limitations = "The engine reports TX and RX SFD events: the RX SFD stamps the receive timestamp, and at the TX SFD the role writes the CSL and Time IEs of the frame going out. The events are not qualified on air."
 packages = ["oer-esp32s31-ieee802154"]
 
 [[items]]
@@ -625,7 +625,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "RX-on-when-idle"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine rearms receive after each operation when the PIB receive-when-idle flag is set. Radio lifetime is not composed."
+scope-and-limitations = "The engine rearms receive after each operation when the PIB receive-when-idle flag is set, which the role sets for `Receive` and clears for `Sleep`. It is not qualified on air."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-radio-sleep-wake"
@@ -641,7 +641,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "Powered lifecycle"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "Clock/reset foundation and masked-policy transitions exist. Shared-PHY maintenance and complete RF-ready start/stop ownership remain incomplete."
+scope-and-limitations = "The composition's `start` and `stop` bring the client up and down on the shared radio arbiter: common radio power, module clocks, the PHY join and leave, BTBB, the MAC foundation and the interrupt route; its maintenance entry runs the shared PHY's tracking. Modem retention and light sleep are absent, and the lifecycle is not qualified on air."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-wifi-bluetooth-coexistence"

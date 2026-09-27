@@ -32,8 +32,6 @@ fn register_directories(chip: &str) -> [String; 2] {
 
 /// Production sources scanned for `SOURCE:` blocks.
 const PRODUCTION: &str = "crates";
-/// The marker opening a recovered-fact comment block.
-const MARKER: &str = "SOURCE";
 /// Shortest identifier taken as a reference; shorter words are prose.
 const MINIMUM_NAME: usize = 4;
 
@@ -92,13 +90,22 @@ fn render_registry(entries: &[Entry]) -> String {
     text
 }
 
+/// Code-shaped identifiers of `text`. A word directly followed by `.o` is
+/// an archive member name such as `phy_init.o`, not a function.
 fn identifiers(text: &str, out: &mut BTreeSet<String>) {
     let mut word = String::new();
-    for c in text.chars().chain([' ']) {
+    let characters: Vec<char> = text.chars().chain([' ']).collect();
+    for (index, &c) in characters.iter().enumerate() {
         if c.is_ascii_alphanumeric() || c == '_' {
             word.push(c);
         } else {
+            let member = c == '.'
+                && characters.get(index + 1) == Some(&'o')
+                && !characters
+                    .get(index + 2)
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_');
             if word.len() >= MINIMUM_NAME
+                && !member
                 && !word.starts_with(|c: char| c.is_ascii_digit())
                 && is_code_name(&word)
             {
@@ -119,19 +126,64 @@ fn is_code_name(word: &str) -> bool {
         || word.chars().skip(1).any(|c| c.is_ascii_uppercase())
 }
 
-fn is_comment(line: &str) -> bool {
-    let line = line.trim_start();
-    line.starts_with("//") || line.starts_with("/*") || line.starts_with('*')
+/// The chips with a vendor verification project, which a citation may name.
+fn citable_chips(root: &Path, supported: &[String]) -> Vec<String> {
+    supported
+        .iter()
+        .filter(|chip| crate::chips::Chip::new(root, chip).is_ok())
+        .cloned()
+        .collect()
 }
 
-/// Identifiers of every `SOURCE:` comment block under `directory`, outside
-/// the directories of other chips, whose facts cite their own pins.
-fn production_words(
-    directory: &Path,
-    chip: &crate::chips::Chip,
-    supported: &[String],
-    out: &mut BTreeSet<String>,
-) -> Result<()> {
+/// Identifiers of every `SOURCE:` comment block under `directory` that cites
+/// `chip`, a violation for every block that is malformed or names its chips
+/// wrongly, and the location and identifiers of every chip-neutral block
+/// that names no chip (see [`crate::source_citation`]). Paths are reported
+/// and placed relative to `base`.
+/// A violation for every chip-neutral block without a chip list that cites
+/// one of the scanned chip's `known` functions. A block that cites no vendor
+/// function, such as a standard or a HIL record, needs no chip.
+fn uncharted_citations(
+    uncharted: &[(String, BTreeSet<String>)],
+    known: &BTreeSet<&str>,
+) -> Vec<String> {
+    uncharted
+        .iter()
+        .filter_map(|(location, block)| {
+            block
+                .iter()
+                .find(|w| known.contains(w.as_str()))
+                .map(|function| {
+                    format!(
+                        "{location}: SOURCE block cites `{function}` under a chip-neutral path but \
+                     names no chip"
+                    )
+                })
+        })
+        .collect()
+}
+
+/// The chip a production scan attributes blocks to.
+struct Scan<'a> {
+    /// Base the scanned paths are placed and reported relative to.
+    base: &'a Path,
+    chip: &'a str,
+    supported: &'a [String],
+    /// Chips a citation may name.
+    citable: &'a [String],
+}
+
+/// What a production scan found.
+#[derive(Default)]
+struct Found {
+    words: BTreeSet<String>,
+    problems: Vec<String>,
+    /// Location and identifiers of every neutral block that names no chip.
+    uncharted: Vec<(String, BTreeSet<String>)>,
+}
+
+fn production_words(scan: &Scan<'_>, directory: &Path, found: &mut Found) -> Result<()> {
+    use crate::source_citation::{Attribution, attribute, blocks, place};
     for entry in std::fs::read_dir(directory)? {
         let path = entry?.path();
         let name = path
@@ -139,23 +191,43 @@ fn production_words(
             .and_then(|n| n.to_str())
             .unwrap_or_default();
         if path.is_dir() {
-            if name != "target"
-                && !name.starts_with('.')
-                && !chip.excludes(Path::new(name), supported)
-            {
-                production_words(&path, chip, supported, out)?;
+            if name != "target" && !name.starts_with('.') {
+                production_words(scan, &path, found)?;
             }
         } else if name.ends_with(".rs") {
+            let relative = path.strip_prefix(scan.base).unwrap_or(&path);
+            let Some(place) = place(relative, scan.chip, scan.supported) else {
+                continue;
+            };
             let text = std::fs::read_to_string(&path)?;
-            let mut in_block = false;
-            for line in text.lines() {
-                if !is_comment(line) {
-                    in_block = false;
+            let blocks = match blocks(&text) {
+                Ok(blocks) => blocks,
+                Err(malformed) => {
+                    found.problems.push(format!(
+                        "{}:{}: malformed SOURCE marker: {}",
+                        relative.display(),
+                        malformed.line,
+                        malformed.reason
+                    ));
                     continue;
                 }
-                in_block |= line.contains(MARKER);
-                if in_block {
-                    identifiers(line, out);
+            };
+            for block in blocks {
+                match attribute(&block, place, scan.chip, scan.citable) {
+                    Attribution::Cited => identifiers(&block.text, &mut found.words),
+                    Attribution::NotCited => {}
+                    Attribution::Uncharted => {
+                        let mut words = BTreeSet::new();
+                        identifiers(&block.text, &mut words);
+                        found
+                            .uncharted
+                            .push((format!("{}:{}", relative.display(), block.line), words));
+                    }
+                    Attribution::Invalid(reason) => found.problems.push(format!(
+                        "{}:{}: SOURCE block {reason}",
+                        relative.display(),
+                        block.line
+                    )),
                 }
             }
         }
@@ -220,6 +292,8 @@ fn pinned_functions(
 }
 
 struct Survey {
+    /// Malformed or wrongly attributed `SOURCE` blocks.
+    citations: Vec<String>,
     registry: Vec<Entry>,
     /// Current definitions: (artifact, member, symbol) -> code.
     current: BTreeMap<(String, String, String), String>,
@@ -247,10 +321,25 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
             );
         }
     }
-    let mut words = BTreeSet::new();
     let supported = crate::chips::supported(&ctx.root)?;
     let scanned = crate::chips::Chip::new(&ctx.root, chip)?;
-    production_words(&ctx.root.join(PRODUCTION), &scanned, &supported, &mut words)?;
+    let citable = citable_chips(&ctx.root, &supported);
+    let mut found = Found::default();
+    production_words(
+        &Scan {
+            base: &ctx.root,
+            chip: scanned.name(),
+            supported: &supported,
+            citable: &citable,
+        },
+        &ctx.root.join(PRODUCTION),
+        &mut found,
+    )?;
+    let Found {
+        mut words,
+        problems: mut citations,
+        uncharted,
+    } = found;
     for directory in register_directories(chip) {
         register_words(&ctx.root.join(directory), &mut words)?;
     }
@@ -259,6 +348,7 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
         .map(|(_, _, name)| name.as_str())
         .chain(registry.iter().map(|e| e.symbol.as_str()))
         .collect();
+    citations.extend(uncharted_citations(&uncharted, &known));
     let references = words
         .iter()
         .filter(|w| known.contains(w.as_str()))
@@ -270,13 +360,14 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
         references,
         words,
         pinned,
+        citations,
     })
 }
 
 /// Every provenance violation of `chip`, one line each.
 pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
     let survey = survey(ctx, chip)?;
-    let mut problems = vec![];
+    let mut problems = survey.citations.clone();
     let registered: BTreeSet<(&str, &str, &str)> = survey
         .registry
         .iter()

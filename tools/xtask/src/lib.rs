@@ -23,6 +23,7 @@ pub mod hil_runs;
 pub mod hil_store;
 pub mod paths;
 pub mod process;
+pub mod source_citation;
 pub mod vendor_diff;
 pub mod vendor_fetch;
 pub mod vendor_fingerprint;

@@ -1633,12 +1633,6 @@ code = "17e65359f373432d452f37db4ca9bb61c91192516aef214d3576d89925df6124"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_ioctl.o"
-symbol = "ieee80211_ioctl"
-code = "d7cfea578f01a31570395ad2a0936b2b7abedcf5f5d3ca1e0e424832674ea5e9"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_ioctl.o"
 symbol = "ieee80211_sta_disconnect"
 code = "521105c8611db38cf6a1e78da1caeb3003b3317dc2ba8f95c56ed253d1a424d4"
 
@@ -1695,12 +1689,6 @@ artifact = "libnet80211"
 member = "ieee80211_output.o"
 symbol = "ieee80211_encap_esfbuf"
 code = "d94b327c795da2b81e7ca542efc8ca6f20f1b776f16820dbe944224e428ef7f5"
-
-[[function]]
-artifact = "libnet80211"
-member = "ieee80211_output.o"
-symbol = "ieee80211_output"
-code = "c666fc8cc6c1212c0d48b5d019ee72223fc943b96d2c7f718a07d43845698ed8"
 
 [[function]]
 artifact = "libnet80211"
@@ -4137,12 +4125,6 @@ artifact = "libpp"
 member = "wdev.o"
 symbol = "wdev_process_tbtt"
 code = "101cd146279b40460a640dec5dbd08a3e81d22becf3437a1fdc0355cef22255e"
-
-[[function]]
-artifact = "librftest"
-member = "wifi.o"
-symbol = "phy_init"
-code = "8874813780a7bc498969a2b6676f0284450e11dc3764dfa3b56c00d1235d2d49"
 
 [[function]]
 artifact = "rom"

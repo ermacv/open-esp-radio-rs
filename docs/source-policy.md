@@ -53,6 +53,17 @@ that changes or removes such a function fails `cargo xtask check provenance --ch
 `cargo xtask vendor-diff --chip <chip>` shows what changed, and after the facts follow the
 pinned code, `cargo xtask vendor-provenance --chip <chip> --accept` records its fingerprint.
 
+A `SOURCE` block names the chips whose pinned artifacts its facts describe in
+parentheses directly after the marker, before any bracketed evidence tag:
+`SOURCE(esp32s31):` or `SOURCE(esp32s31,esp32c5)[EVIDENCE_ID]:`. Each name must
+be a chip with a `verification/<chip>/artifacts.toml`. A block under a chip's
+own directory belongs to that chip and may omit the list; naming only other
+chips there is a violation. A block under a chip-neutral path that cites a
+function of a chip's pins must name its chips, and the check of each chip
+counts only the neutral blocks that name it. A neutral block that cites no
+vendor function, such as a standard or a HIL record, needs no list. A word
+directly followed by `.o` is an archive member name, not a cited function.
+
 Raw archive/ELF files, bulk section dumps, disassembly and unreviewed extraction
 outputs remain private oracle inputs or ignored reports. A reviewed table
 expressed as named source constants is production hardware knowledge, not an

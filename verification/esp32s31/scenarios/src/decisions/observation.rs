@@ -371,15 +371,6 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
-        reason: "dating of a tracking temperature sample for the runtime's freshness policy: \
-            the probe's delay backend reports no time, and the vendor keeps no sample age to \
-            compare",
-        places: &[
-            ("phy/src/target_executor.rs", "None"),
-            ("phy/src/target_port.rs", "let started = D::now_micros();"),
-        ],
-    },
-    Decision {
         reason: "relaxed power-tracking flag stored in the validation state fixture: the \
             compiled probe forwards the same input straight into the tracking policy, whose \
             threshold selection is observed",

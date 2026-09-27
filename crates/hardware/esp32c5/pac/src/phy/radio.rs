@@ -9,14 +9,15 @@
 //! `phy_pwdet_sar2_init`) with `ESP_IDF_4D59230D_C5_LP_AON_SARADC`, and
 //! `C5_BLOB_LIBPHY_RF_INIT_LEAVES_4` (the `phy_rf_init` prologue,
 //! `phy_set_tsens_power`, `phy_set_tsens_pwr`, `phy_tsens_read_init`) with
-//! `ESP_IDF_4D59230D_C5_PCR_TSENS`.
+//! `ESP_IDF_4D59230D_C5_PCR_TSENS`, and `C5_BLOB_LIBPHY_RF_INIT_LEAVES_5`
+//! (`phy_rxevm_init_cfg`, `phy_rxevm_reset_mem`).
 
 #![forbid(unsafe_code)]
 
 use crate::{
     generated::{
-        self, PhyDacScale, PhyPowerDetectorMode, PhyRateBit, PhyRxIqScale,
-        PhySar2PowerDetectorCapacitor,
+        self, PhyDacScale, PhyPowerDetectorMode, PhyRateBit, PhyRxEvmEnable, PhyRxEvmParameter,
+        PhyRxIqScale, PhySar2PowerDetectorCapacitor,
     },
     svd,
 };
@@ -215,5 +216,37 @@ impl PhyRadioRegisters {
         generated::release_tsens_reset(pcr);
         generated::select_tsens_clock(&self.peripherals.apb_saradc_radio);
         self.power_temperature_sensor();
+    }
+
+    /// `phy_rxevm_init_cfg(enable, second, third)`.
+    pub fn initialize_rx_evm(
+        &mut self,
+        enable: bool,
+        second: PhyRxEvmParameter,
+        third: PhyRxEvmParameter,
+    ) {
+        let baseband = self.baseband();
+        generated::set_phy_rx_evm_mode(baseband);
+        generated::set_phy_rx_evm_third_parameter(baseband, third);
+        generated::set_phy_rx_evm_second_parameter(baseband, second);
+        generated::set_phy_rx_evm_enable(
+            baseband,
+            if enable {
+                PhyRxEvmEnable::Enabled
+            } else {
+                PhyRxEvmEnable::Disabled
+            },
+        );
+        generated::clear_phy_rx_evm_word_7920(baseband);
+        self.reset_rx_evm_memory();
+    }
+
+    /// `phy_rxevm_reset_mem`: pulse both RX EVM memory resets.
+    pub fn reset_rx_evm_memory(&mut self) {
+        let baseband = self.baseband();
+        generated::assert_phy_rx_evm_memory_reset(baseband);
+        generated::release_phy_rx_evm_memory_reset(baseband);
+        generated::assert_phy_rx_evm_memory_reset_2(baseband);
+        generated::release_phy_rx_evm_memory_reset_2(baseband);
     }
 }

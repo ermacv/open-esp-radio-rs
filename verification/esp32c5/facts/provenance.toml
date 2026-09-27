@@ -18,6 +18,18 @@ code = "4c169c568fd0b9c7814c59f77ac05f9df285e44a5a3669d9fe7849ee131d8648"
 
 [[function]]
 artifact = "libphy"
+member = "phy_feature.o"
+symbol = "phy_rxevm_init_cfg"
+code = "581096f5d9af261e9bd43aba7e1ebe001cd6fee05583fb2cfd40bb76ada76332"
+
+[[function]]
+artifact = "libphy"
+member = "phy_feature.o"
+symbol = "phy_rxevm_reset_mem"
+code = "e70664274b537c2cfcc220b516e7a9cebdac33cd74a17c0aa4d7b53ba32b2b02"
+
+[[function]]
+artifact = "libphy"
 member = "phy_i2c.o"
 symbol = "phy_adc_rate_set"
 code = "00a3c5580bb7cc88ec5d8751822485da3efe51c2528a92269b9f6b611e82e553"
@@ -169,6 +181,18 @@ code = "1da1a1cd882464447f9ab9249f8100f7fcd04b72b664658f35b7525697b76a64"
 [[function]]
 artifact = "libphy"
 member = "phy_reg.o"
+symbol = "phy_bbpll_cal"
+code = "31f850cae3278a0d378733b1ddc86af92e293f96f7c75567e718a2c353e90688"
+
+[[function]]
+artifact = "libphy"
+member = "phy_reg.o"
+symbol = "phy_bbpll_recal"
+code = "0ae53a11edf43c851f645075fa8ff34d413cf7476761f591eb6c0f4d6e3b9b96"
+
+[[function]]
+artifact = "libphy"
+member = "phy_reg.o"
 symbol = "phy_dac_scale_set"
 code = "a120d75bfb9b76fb5f91dcac9ba224cdf26c5654d19178b031aaac19bd28b1df"
 
@@ -225,6 +249,12 @@ artifact = "rom-rev0"
 member = ""
 symbol = "phy_adc_rate_set"
 code = "b6216c61ba4fbae23ef063ceb364e90b84ff8ac534cfc6781137b02552ead7b2"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_bbpll_cal"
+code = "e81408c33974a24b56f0cf81c54bdfeb01f7981eca2ec48fbd6bcbf563612aa3"
 
 [[function]]
 artifact = "rom-rev0"
@@ -357,6 +387,12 @@ artifact = "rom-rev100"
 member = ""
 symbol = "phy_adc_rate_set"
 code = "b6216c61ba4fbae23ef063ceb364e90b84ff8ac534cfc6781137b02552ead7b2"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_bbpll_cal"
+code = "e81408c33974a24b56f0cf81c54bdfeb01f7981eca2ec48fbd6bcbf563612aa3"
 
 [[function]]
 artifact = "rom-rev100"

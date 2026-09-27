@@ -2624,6 +2624,90 @@ documentation establishes their electrical meaning.</description>
             </field>
           </fields>
         </register>
+        <register>
+          <name>RX_EVM_WORD_7920</name>
+          <description>Word whose bits 15:12 phy_rxevm_init_cfg clears.</description>
+          <addressOffset>0x7920</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>CLEAR_UNKNOWN</name>
+              <description>Four bits phy_rxevm_init_cfg clears; meaning unknown.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_EVM_CONTROL</name>
+          <description>RX EVM measurement control.</description>
+          <addressOffset>0x7A34</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ENABLE_LOW_UNKNOWN</name>
+              <description>Set with bit 2 when phy_rxevm_init_cfg enables the measurement.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MEMORY_RESET_UNKNOWN</name>
+              <description>Pulsed by phy_rxevm_reset_mem.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENABLE_HIGH_UNKNOWN</name>
+              <description>Set with bit 0 when phy_rxevm_init_cfg enables the measurement.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_EVM_CONFIG</name>
+          <description>RX EVM measurement configuration.</description>
+          <addressOffset>0x7A38</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>MODE_UNKNOWN</name>
+              <description>Five bits phy_rxevm_init_cfg sets to 0x18.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>5</bitWidth>
+            </field>
+            <field>
+              <name>SECOND_PARAMETER</name>
+              <description>The second argument of phy_rxevm_init_cfg.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>7</bitWidth>
+            </field>
+            <field>
+              <name>THIRD_PARAMETER</name>
+              <description>The third argument of phy_rxevm_init_cfg.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>7</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_EVM_MEMORY_RESET</name>
+          <description>Word whose bit 8 phy_rxevm_reset_mem pulses.</description>
+          <addressOffset>0x7C50</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>RESET_UNKNOWN</name>
+              <description>Pulsed by phy_rxevm_reset_mem.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
       </registers>
     </peripheral>
     <peripheral>

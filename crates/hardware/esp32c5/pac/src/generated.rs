@@ -181,6 +181,40 @@ impl PhyDacScale {
     }
 }
 
+/// BBPLL calibration modes phy_bbpll_cal and phy_bbpll_recal select.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyBbpllCalibrationMode {
+    /// phy_bbpll_cal with a zero argument.
+    One = 0x00000001,
+    /// phy_bbpll_cal with a nonzero argument, and phy_bbpll_recal before it.
+    Two = 0x00000002,
+}
+
+impl PhyBbpllCalibrationMode {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// RX EVM control bits 2:0 phy_rxevm_init_cfg writes.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyRxEvmEnable {
+    /// A zero first argument.
+    Disabled = 0x00000000,
+    /// A nonzero first argument.
+    Enabled = 0x00000005,
+}
+
+impl PhyRxEvmEnable {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Sixteen-bit energy-detection duration subset accepted by the reviewed public IEEE 802.15.4 common LL setter; physical units remain outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154EdDurationUnits(u32);
@@ -261,6 +295,29 @@ impl PhyI2cSclPulseDuration {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x0000003f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Seven-bit RX EVM configuration parameter of phy_rxevm_init_cfg.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyRxEvmParameter(u32);
+
+impl PhyRxEvmParameter {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000007f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000007f {
             Some(Self(value))
         } else {
             None
@@ -579,6 +636,18 @@ pub(crate) fn select_tsens_clock(registers: &crate::svd::ApbSaradcRadio) {
     crate::svd::field_or_modify::select_tsens_clock(registers);
 }
 
+/// Typed bridge for the reviewed `assert_phy_rx_evm_memory_reset` fixed field-OR transaction.
+#[inline]
+pub(crate) fn assert_phy_rx_evm_memory_reset(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::assert_phy_rx_evm_memory_reset(registers);
+}
+
+/// Typed bridge for the reviewed `assert_phy_rx_evm_memory_reset_2` fixed field-OR transaction.
+#[inline]
+pub(crate) fn assert_phy_rx_evm_memory_reset_2(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::assert_phy_rx_evm_memory_reset_2(registers);
+}
+
 /// Typed bridge for the reviewed `set_ieee802154_apb_clock` field-replacement transaction.
 #[inline]
 pub(crate) fn set_ieee802154_apb_clock(
@@ -889,4 +958,64 @@ pub(crate) fn release_tsens_reset(registers: &crate::svd::PcrRadio) {
 #[inline]
 pub(crate) fn set_tsens_power(registers: &crate::svd::ApbSaradcRadio, value: PhyRateBit) {
     crate::svd::field_replace_modify::set_tsens_power(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_bbpll_calibration_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_bbpll_calibration_mode(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyBbpllCalibrationMode,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_bbpll_calibration_mode(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_phy_rx_evm_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_rx_evm_mode(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::set_phy_rx_evm_mode(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_rx_evm_third_parameter` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_rx_evm_third_parameter(
+    registers: &crate::svd::PhyBasebandConfig,
+    value: PhyRxEvmParameter,
+) {
+    crate::svd::field_replace_modify::set_phy_rx_evm_third_parameter(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_phy_rx_evm_second_parameter` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_rx_evm_second_parameter(
+    registers: &crate::svd::PhyBasebandConfig,
+    value: PhyRxEvmParameter,
+) {
+    crate::svd::field_replace_modify::set_phy_rx_evm_second_parameter(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_phy_rx_evm_enable` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_rx_evm_enable(
+    registers: &crate::svd::PhyBasebandConfig,
+    value: PhyRxEvmEnable,
+) {
+    crate::svd::field_replace_modify::set_phy_rx_evm_enable(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `clear_phy_rx_evm_word_7920` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_rx_evm_word_7920(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_rx_evm_word_7920(registers);
+}
+
+/// Typed bridge for the reviewed `release_phy_rx_evm_memory_reset` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn release_phy_rx_evm_memory_reset(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::release_phy_rx_evm_memory_reset(registers);
+}
+
+/// Typed bridge for the reviewed `release_phy_rx_evm_memory_reset_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn release_phy_rx_evm_memory_reset_2(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::release_phy_rx_evm_memory_reset_2(registers);
 }

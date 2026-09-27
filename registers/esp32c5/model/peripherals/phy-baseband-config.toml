@@ -381,3 +381,83 @@ name = "STATE"
 description = "Complete baseband clock-gate image; individual gate meanings are unknown."
 bitOffset = 0
 bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "RX_EVM_WORD_7920"
+description = "Word whose bits 15:12 phy_rxevm_init_cfg clears."
+addressOffset = 0x7920
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "CLEAR_UNKNOWN"
+description = "Four bits phy_rxevm_init_cfg clears; meaning unknown."
+bitOffset = 12
+bitWidth = 4
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "RX_EVM_CONTROL"
+description = "RX EVM measurement control."
+addressOffset = 0x7a34
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE_LOW_UNKNOWN"
+description = "Set with bit 2 when phy_rxevm_init_cfg enables the measurement."
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "MEMORY_RESET_UNKNOWN"
+description = "Pulsed by phy_rxevm_reset_mem."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE_HIGH_UNKNOWN"
+description = "Set with bit 0 when phy_rxevm_init_cfg enables the measurement."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "RX_EVM_CONFIG"
+description = "RX EVM measurement configuration."
+addressOffset = 0x7a38
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "MODE_UNKNOWN"
+description = "Five bits phy_rxevm_init_cfg sets to 0x18."
+bitOffset = 2
+bitWidth = 5
+
+[[peripherals.registers.register.fields]]
+name = "SECOND_PARAMETER"
+description = "The second argument of phy_rxevm_init_cfg."
+bitOffset = 15
+bitWidth = 7
+
+[[peripherals.registers.register.fields]]
+name = "THIRD_PARAMETER"
+description = "The third argument of phy_rxevm_init_cfg."
+bitOffset = 22
+bitWidth = 7
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "RX_EVM_MEMORY_RESET"
+description = "Word whose bit 8 phy_rxevm_reset_mem pulses."
+addressOffset = 0x7c50
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "RESET_UNKNOWN"
+description = "Pulsed by phy_rxevm_reset_mem."
+bitOffset = 8
+bitWidth = 1

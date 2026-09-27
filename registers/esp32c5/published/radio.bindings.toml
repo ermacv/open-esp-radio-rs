@@ -2242,6 +2242,106 @@ bit-width = 1
 access = "write-only"
 
 [[registers]]
+address = 1611299104
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.RX_EVM_WORD_7920"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "rx_evm_word_7920"
+
+[[registers.fields]]
+svd-name = "CLEAR_UNKNOWN"
+method = "clear_unknown"
+bit-offset = 12
+bit-width = 4
+access = "read-write"
+
+[[registers]]
+address = 1611299380
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.RX_EVM_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "rx_evm_control"
+
+[[registers.fields]]
+svd-name = "ENABLE_LOW_UNKNOWN"
+method = "enable_low_unknown"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MEMORY_RESET_UNKNOWN"
+method = "memory_reset_unknown"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE_HIGH_UNKNOWN"
+method = "enable_high_unknown"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611299384
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.RX_EVM_CONFIG"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "rx_evm_config"
+
+[[registers.fields]]
+svd-name = "MODE_UNKNOWN"
+method = "mode_unknown"
+bit-offset = 2
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SECOND_PARAMETER"
+method = "second_parameter"
+bit-offset = 15
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "THIRD_PARAMETER"
+method = "third_parameter"
+bit-offset = 22
+bit-width = 7
+access = "read-write"
+
+[[registers]]
+address = 1611299920
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "rx_evm_memory_reset"
+
+[[registers.fields]]
+svd-name = "RESET_UNKNOWN"
+method = "reset_unknown"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 1611299968
 width = 32
 access = "read-write"

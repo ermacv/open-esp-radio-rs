@@ -495,6 +495,28 @@ impl PhyI2cRegisters {
         crate::generated::enable_phy_i2c_master_registers(self.master());
     }
 
+    /// `phy_bbpll_cal(start)`: select BBPLL calibration mode two when
+    /// `start` and one otherwise.
+    ///
+    /// SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES_5`.
+    pub fn calibrate_bbpll(&mut self, start: bool) {
+        use crate::generated::PhyBbpllCalibrationMode;
+        let mode = if start {
+            PhyBbpllCalibrationMode::Two
+        } else {
+            PhyBbpllCalibrationMode::One
+        };
+        crate::generated::set_phy_i2c_bbpll_calibration_mode(self.master(), mode);
+    }
+
+    /// `phy_bbpll_recal`: mode two, one read of the master control word, then
+    /// `phy_bbpll_cal(0)`.
+    pub fn recalibrate_bbpll(&mut self) {
+        self.calibrate_bbpll(true);
+        let _ = svd::field_read::observe_phy_i2c_bbpll_calibration_mode(self.master());
+        self.calibrate_bbpll(false);
+    }
+
     /// Whether a host is executing a command.
     pub fn is_busy(&self, host: PhyI2cHost) -> bool {
         match host {

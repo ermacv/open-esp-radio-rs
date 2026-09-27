@@ -301,3 +301,35 @@ kind = "mmio"
 start = 0x6000e058
 end-exclusive = 0x6000e060
 permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-7920"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a7920
+end-exclusive = 0x600a7924
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-7a34"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a7a34
+end-exclusive = 0x600a7a38
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-7a38"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a7a38
+end-exclusive = 0x600a7a3c
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-7c50"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a7c50
+end-exclusive = 0x600a7c54
+permissions = "rw"

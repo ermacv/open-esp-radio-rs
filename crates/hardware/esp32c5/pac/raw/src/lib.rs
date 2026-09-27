@@ -6281,7 +6281,14 @@ pub mod phy_baseband_config {
         iq_correction_aux: IqCorrectionAux,
         _reserved20: [u8; 0x10],
         front_end_init_0c20: FrontEndInit0c20,
-        _reserved21: [u8; 0x705c],
+        _reserved21: [u8; 0x6cfc],
+        rx_evm_word_7920: RxEvmWord7920,
+        _reserved22: [u8; 0x0110],
+        rx_evm_control: RxEvmControl,
+        rx_evm_config: RxEvmConfig,
+        _reserved24: [u8; 0x0214],
+        rx_evm_memory_reset: RxEvmMemoryReset,
+        _reserved25: [u8; 0x2c],
         bb_clock_gate: BbClockGate,
     }
     impl RegisterBlock {
@@ -6389,6 +6396,26 @@ pub mod phy_baseband_config {
         #[inline(always)]
         pub const fn front_end_init_0c20(&self) -> &FrontEndInit0c20 {
             &self.front_end_init_0c20
+        }
+        #[doc = "0x7920 - Word whose bits 15:12 phy_rxevm_init_cfg clears."]
+        #[inline(always)]
+        pub const fn rx_evm_word_7920(&self) -> &RxEvmWord7920 {
+            &self.rx_evm_word_7920
+        }
+        #[doc = "0x7a34 - RX EVM measurement control."]
+        #[inline(always)]
+        pub const fn rx_evm_control(&self) -> &RxEvmControl {
+            &self.rx_evm_control
+        }
+        #[doc = "0x7a38 - RX EVM measurement configuration."]
+        #[inline(always)]
+        pub const fn rx_evm_config(&self) -> &RxEvmConfig {
+            &self.rx_evm_config
+        }
+        #[doc = "0x7c50 - Word whose bit 8 phy_rxevm_reset_mem pulses."]
+        #[inline(always)]
+        pub const fn rx_evm_memory_reset(&self) -> &RxEvmMemoryReset {
+            &self.rx_evm_memory_reset
         }
         #[doc = "0x7c80 - Baseband clock-gate word; phy_open_fe_bb_clk writes all ones."]
         #[inline(always)]
@@ -7447,6 +7474,218 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "RX_EVM_WORD_7920 (rw) register accessor: Word whose bits 15:12 phy_rxevm_init_cfg clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_word_7920::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_word_7920::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_evm_word_7920`] module"]
+    #[doc(alias = "RX_EVM_WORD_7920")]
+    pub type RxEvmWord7920 = crate::Reg<rx_evm_word_7920::RxEvmWord7920Spec>;
+    #[doc = "Word whose bits 15:12 phy_rxevm_init_cfg clears."]
+    pub mod rx_evm_word_7920 {
+        #[doc = "Register `RX_EVM_WORD_7920` reader"]
+        pub type R = crate::R<RxEvmWord7920Spec>;
+        #[doc = "Register `RX_EVM_WORD_7920` writer"]
+        pub type W = crate::W<RxEvmWord7920Spec>;
+        #[doc = "Field `CLEAR_UNKNOWN` reader - Four bits phy_rxevm_init_cfg clears; meaning unknown."]
+        pub type ClearUnknownR = crate::FieldReader;
+        #[doc = "Field `CLEAR_UNKNOWN` writer - Four bits phy_rxevm_init_cfg clears; meaning unknown."]
+        pub type ClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 12:15 - Four bits phy_rxevm_init_cfg clears; meaning unknown."]
+            #[inline(always)]
+            pub fn clear_unknown(&self) -> ClearUnknownR {
+                ClearUnknownR::new(((self.bits >> 12) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 12:15 - Four bits phy_rxevm_init_cfg clears; meaning unknown."]
+            #[inline(always)]
+            pub fn clear_unknown(&mut self) -> ClearUnknownW<'_, RxEvmWord7920Spec> {
+                ClearUnknownW::new(self, 12)
+            }
+        }
+        #[doc = "Word whose bits 15:12 phy_rxevm_init_cfg clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_word_7920::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_word_7920::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxEvmWord7920Spec;
+        impl crate::RegisterSpec for RxEvmWord7920Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_evm_word_7920::R`](R) reader structure"]
+        impl crate::Readable for RxEvmWord7920Spec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_evm_word_7920::W`](W) writer structure"]
+        impl crate::Writable for RxEvmWord7920Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_EVM_CONTROL (rw) register accessor: RX EVM measurement control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_evm_control`] module"]
+    #[doc(alias = "RX_EVM_CONTROL")]
+    pub type RxEvmControl = crate::Reg<rx_evm_control::RxEvmControlSpec>;
+    #[doc = "RX EVM measurement control."]
+    pub mod rx_evm_control {
+        #[doc = "Register `RX_EVM_CONTROL` reader"]
+        pub type R = crate::R<RxEvmControlSpec>;
+        #[doc = "Register `RX_EVM_CONTROL` writer"]
+        pub type W = crate::W<RxEvmControlSpec>;
+        #[doc = "Field `ENABLE_LOW_UNKNOWN` reader - Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
+        pub type EnableLowUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_LOW_UNKNOWN` writer - Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
+        pub type EnableLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MEMORY_RESET_UNKNOWN` reader - Pulsed by phy_rxevm_reset_mem."]
+        pub type MemoryResetUnknownR = crate::BitReader;
+        #[doc = "Field `MEMORY_RESET_UNKNOWN` writer - Pulsed by phy_rxevm_reset_mem."]
+        pub type MemoryResetUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE_HIGH_UNKNOWN` reader - Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
+        pub type EnableHighUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_HIGH_UNKNOWN` writer - Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
+        pub type EnableHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
+            #[inline(always)]
+            pub fn enable_low_unknown(&self) -> EnableLowUnknownR {
+                EnableLowUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Pulsed by phy_rxevm_reset_mem."]
+            #[inline(always)]
+            pub fn memory_reset_unknown(&self) -> MemoryResetUnknownR {
+                MemoryResetUnknownR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
+            #[inline(always)]
+            pub fn enable_high_unknown(&self) -> EnableHighUnknownR {
+                EnableHighUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Set with bit 2 when phy_rxevm_init_cfg enables the measurement."]
+            #[inline(always)]
+            pub fn enable_low_unknown(&mut self) -> EnableLowUnknownW<'_, RxEvmControlSpec> {
+                EnableLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1 - Pulsed by phy_rxevm_reset_mem."]
+            #[inline(always)]
+            pub fn memory_reset_unknown(&mut self) -> MemoryResetUnknownW<'_, RxEvmControlSpec> {
+                MemoryResetUnknownW::new(self, 1)
+            }
+            #[doc = "Bit 2 - Set with bit 0 when phy_rxevm_init_cfg enables the measurement."]
+            #[inline(always)]
+            pub fn enable_high_unknown(&mut self) -> EnableHighUnknownW<'_, RxEvmControlSpec> {
+                EnableHighUnknownW::new(self, 2)
+            }
+        }
+        #[doc = "RX EVM measurement control.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxEvmControlSpec;
+        impl crate::RegisterSpec for RxEvmControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_evm_control::R`](R) reader structure"]
+        impl crate::Readable for RxEvmControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_evm_control::W`](W) writer structure"]
+        impl crate::Writable for RxEvmControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_EVM_CONFIG (rw) register accessor: RX EVM measurement configuration.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_evm_config`] module"]
+    #[doc(alias = "RX_EVM_CONFIG")]
+    pub type RxEvmConfig = crate::Reg<rx_evm_config::RxEvmConfigSpec>;
+    #[doc = "RX EVM measurement configuration."]
+    pub mod rx_evm_config {
+        #[doc = "Register `RX_EVM_CONFIG` reader"]
+        pub type R = crate::R<RxEvmConfigSpec>;
+        #[doc = "Register `RX_EVM_CONFIG` writer"]
+        pub type W = crate::W<RxEvmConfigSpec>;
+        #[doc = "Field `MODE_UNKNOWN` reader - Five bits phy_rxevm_init_cfg sets to 0x18."]
+        pub type ModeUnknownR = crate::FieldReader;
+        #[doc = "Field `MODE_UNKNOWN` writer - Five bits phy_rxevm_init_cfg sets to 0x18."]
+        pub type ModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `SECOND_PARAMETER` reader - The second argument of phy_rxevm_init_cfg."]
+        pub type SecondParameterR = crate::FieldReader;
+        #[doc = "Field `SECOND_PARAMETER` writer - The second argument of phy_rxevm_init_cfg."]
+        pub type SecondParameterW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `THIRD_PARAMETER` reader - The third argument of phy_rxevm_init_cfg."]
+        pub type ThirdParameterR = crate::FieldReader;
+        #[doc = "Field `THIRD_PARAMETER` writer - The third argument of phy_rxevm_init_cfg."]
+        pub type ThirdParameterW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        impl R {
+            #[doc = "Bits 2:6 - Five bits phy_rxevm_init_cfg sets to 0x18."]
+            #[inline(always)]
+            pub fn mode_unknown(&self) -> ModeUnknownR {
+                ModeUnknownR::new(((self.bits >> 2) & 0x1f) as u8)
+            }
+            #[doc = "Bits 15:21 - The second argument of phy_rxevm_init_cfg."]
+            #[inline(always)]
+            pub fn second_parameter(&self) -> SecondParameterR {
+                SecondParameterR::new(((self.bits >> 15) & 0x7f) as u8)
+            }
+            #[doc = "Bits 22:28 - The third argument of phy_rxevm_init_cfg."]
+            #[inline(always)]
+            pub fn third_parameter(&self) -> ThirdParameterR {
+                ThirdParameterR::new(((self.bits >> 22) & 0x7f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 2:6 - Five bits phy_rxevm_init_cfg sets to 0x18."]
+            #[inline(always)]
+            pub fn mode_unknown(&mut self) -> ModeUnknownW<'_, RxEvmConfigSpec> {
+                ModeUnknownW::new(self, 2)
+            }
+            #[doc = "Bits 15:21 - The second argument of phy_rxevm_init_cfg."]
+            #[inline(always)]
+            pub fn second_parameter(&mut self) -> SecondParameterW<'_, RxEvmConfigSpec> {
+                SecondParameterW::new(self, 15)
+            }
+            #[doc = "Bits 22:28 - The third argument of phy_rxevm_init_cfg."]
+            #[inline(always)]
+            pub fn third_parameter(&mut self) -> ThirdParameterW<'_, RxEvmConfigSpec> {
+                ThirdParameterW::new(self, 22)
+            }
+        }
+        #[doc = "RX EVM measurement configuration.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxEvmConfigSpec;
+        impl crate::RegisterSpec for RxEvmConfigSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_evm_config::R`](R) reader structure"]
+        impl crate::Readable for RxEvmConfigSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_evm_config::W`](W) writer structure"]
+        impl crate::Writable for RxEvmConfigSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_EVM_MEMORY_RESET (rw) register accessor: Word whose bit 8 phy_rxevm_reset_mem pulses.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_memory_reset::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_memory_reset::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_evm_memory_reset`] module"]
+    #[doc(alias = "RX_EVM_MEMORY_RESET")]
+    pub type RxEvmMemoryReset = crate::Reg<rx_evm_memory_reset::RxEvmMemoryResetSpec>;
+    #[doc = "Word whose bit 8 phy_rxevm_reset_mem pulses."]
+    pub mod rx_evm_memory_reset {
+        #[doc = "Register `RX_EVM_MEMORY_RESET` reader"]
+        pub type R = crate::R<RxEvmMemoryResetSpec>;
+        #[doc = "Register `RX_EVM_MEMORY_RESET` writer"]
+        pub type W = crate::W<RxEvmMemoryResetSpec>;
+        #[doc = "Field `RESET_UNKNOWN` reader - Pulsed by phy_rxevm_reset_mem."]
+        pub type ResetUnknownR = crate::BitReader;
+        #[doc = "Field `RESET_UNKNOWN` writer - Pulsed by phy_rxevm_reset_mem."]
+        pub type ResetUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 8 - Pulsed by phy_rxevm_reset_mem."]
+            #[inline(always)]
+            pub fn reset_unknown(&self) -> ResetUnknownR {
+                ResetUnknownR::new(((self.bits >> 8) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 8 - Pulsed by phy_rxevm_reset_mem."]
+            #[inline(always)]
+            pub fn reset_unknown(&mut self) -> ResetUnknownW<'_, RxEvmMemoryResetSpec> {
+                ResetUnknownW::new(self, 8)
+            }
+        }
+        #[doc = "Word whose bit 8 phy_rxevm_reset_mem pulses.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_evm_memory_reset::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_evm_memory_reset::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxEvmMemoryResetSpec;
+        impl crate::RegisterSpec for RxEvmMemoryResetSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_evm_memory_reset::R`](R) reader structure"]
+        impl crate::Readable for RxEvmMemoryResetSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_evm_memory_reset::W`](W) writer structure"]
+        impl crate::Writable for RxEvmMemoryResetSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
 }
 #[doc = "ESP32-C5 LP_AON field the PHY's power-detector SAR initialization drives. Other fields remain absent and are preserved by every field transaction."]
 pub type LpAonRadio = crate::Periph<lp_aon_radio::RegisterBlock, 0x600b_1000>;
@@ -8156,6 +8395,12 @@ pub mod field_read {
     #[inline]
     pub fn observe_peripheral_analog_i2c_released(registers: &crate::PmuRadio) -> bool {
         registers.rf_pwc().read().perif_i2c_rstb().bit()
+    }
+
+    /// Read `I2C_ANA_MST`.`ANA_CONF0`.`BBPLL_CAL_MODE` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_i2c_bbpll_calibration_mode(registers: &crate::I2cAnaMst) -> u8 {
+        registers.ana_conf0().read().bbpll_cal_mode().bits()
     }
 }
 
@@ -9096,6 +9341,32 @@ pub mod field_or_modify {
                 .bit(reader.tsens_clk_sel().bit() || ((input >> 15) & 0x00000001) != 0)
         });
     }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[MEMORY_RESET_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn assert_phy_rx_evm_memory_reset(registers: &crate::PhyBasebandConfig) {
+        registers.rx_evm_control().modify(|reader, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .memory_reset_unknown()
+                .bit(reader.memory_reset_unknown().bit() || ((input >> 1) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET fields `[RESET_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn assert_phy_rx_evm_memory_reset_2(registers: &crate::PhyBasebandConfig) {
+        registers.rx_evm_memory_reset().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .reset_unknown()
+                .bit(reader.reset_unknown().bit() || (input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
@@ -9558,6 +9829,96 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.tsens_pu().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields `[BBPLL_CAL_MODE]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_bbpll_calibration_mode(registers: &crate::I2cAnaMst, input: u32) {
+        registers.ana_conf0().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bbpll_cal_mode().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONFIG fields `[MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_rx_evm_mode(registers: &crate::PhyBasebandConfig) {
+        registers.rx_evm_config().modify(|_, writer| {
+            let input = 0x00000018_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.mode_unknown().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONFIG fields `[THIRD_PARAMETER]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_rx_evm_third_parameter(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.rx_evm_config().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.third_parameter().bits((input & 0x0000007f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONFIG fields `[SECOND_PARAMETER]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_rx_evm_second_parameter(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.rx_evm_config().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.second_parameter().bits((input & 0x0000007f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[ENABLE_LOW_UNKNOWN, MEMORY_RESET_UNKNOWN, ENABLE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_rx_evm_enable(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.rx_evm_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .enable_low_unknown()
+                .bit((input & 0x00000001) != 0)
+                .memory_reset_unknown()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .enable_high_unknown()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_WORD_7920 fields `[CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_rx_evm_word_7920(registers: &crate::PhyBasebandConfig) {
+        registers.rx_evm_word_7920().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.clear_unknown().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_CONTROL fields `[MEMORY_RESET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn release_phy_rx_evm_memory_reset(registers: &crate::PhyBasebandConfig) {
+        registers.rx_evm_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.memory_reset_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET fields `[RESET_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn release_phy_rx_evm_memory_reset_2(registers: &crate::PhyBasebandConfig) {
+        registers.rx_evm_memory_reset().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.reset_unknown().bit((input & 0x00000001) != 0)
         });
     }
 }

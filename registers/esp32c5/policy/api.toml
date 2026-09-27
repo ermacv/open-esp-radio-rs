@@ -1347,3 +1347,149 @@ fields = [{ field = "TSENS_PU", source-bit-offset = 0 }]
 domain = "PhyRateBit"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_bbpll_calibration_mode"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF0"
+fields = [{ field = "BBPLL_CAL_MODE", source-bit-offset = 0 }]
+domain = "PhyBbpllCalibrationMode"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-reads]]
+name = "observe_phy_i2c_bbpll_calibration_mode"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF0"
+field = "BBPLL_CAL_MODE"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[enum-domains]]
+name = "PhyBbpllCalibrationMode"
+description = "BBPLL calibration modes phy_bbpll_cal and phy_bbpll_recal select."
+
+[[enum-domains.values]]
+name = "One"
+value = 1
+description = "phy_bbpll_cal with a zero argument."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[enum-domains.values]]
+name = "Two"
+value = 2
+description = "phy_bbpll_cal with a nonzero argument, and phy_bbpll_recal before it."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-replace-modifies]]
+name = "set_phy_rx_evm_mode"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_CONFIG"
+fields = [{ field = "MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 0x18
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[bounded-domains]]
+name = "PhyRxEvmParameter"
+description = "Seven-bit RX EVM configuration parameter of phy_rxevm_init_cfg."
+min = 0
+max = 127
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-replace-modifies]]
+name = "set_phy_rx_evm_third_parameter"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_CONFIG"
+fields = [{ field = "THIRD_PARAMETER", source-bit-offset = 0 }]
+domain = "PhyRxEvmParameter"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-replace-modifies]]
+name = "set_phy_rx_evm_second_parameter"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_CONFIG"
+fields = [{ field = "SECOND_PARAMETER", source-bit-offset = 0 }]
+domain = "PhyRxEvmParameter"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-replace-modifies]]
+name = "set_phy_rx_evm_enable"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_CONTROL"
+fields = [
+    { field = "ENABLE_LOW_UNKNOWN", source-bit-offset = 0 },
+    { field = "MEMORY_RESET_UNKNOWN", source-bit-offset = 1 },
+    { field = "ENABLE_HIGH_UNKNOWN", source-bit-offset = 2 },
+]
+domain = "PhyRxEvmEnable"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[enum-domains]]
+name = "PhyRxEvmEnable"
+description = "RX EVM control bits 2:0 phy_rxevm_init_cfg writes."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "A zero first argument."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 5
+description = "A nonzero first argument."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-replace-modifies]]
+name = "clear_phy_rx_evm_word_7920"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_WORD_7920"
+fields = [{ field = "CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-or-modifies]]
+name = "assert_phy_rx_evm_memory_reset"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_CONTROL"
+value = 2
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-or-modifies.fields]]
+field = "MEMORY_RESET_UNKNOWN"
+source-bit-offset = 1
+
+[[field-replace-modifies]]
+name = "release_phy_rx_evm_memory_reset"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_CONTROL"
+fields = [{ field = "MEMORY_RESET_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-or-modifies]]
+name = "assert_phy_rx_evm_memory_reset_2"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_MEMORY_RESET"
+value = 1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
+
+[[field-or-modifies.fields]]
+field = "RESET_UNKNOWN"
+source-bit-offset = 0
+
+[[field-replace-modifies]]
+name = "release_phy_rx_evm_memory_reset_2"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_EVM_MEMORY_RESET"
+fields = [{ field = "RESET_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]

@@ -138,8 +138,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
-  cargo hil firmware flash IMAGE --board NAME|MAC   flash under a lease of that board, journaled
-  cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air shared|exclusive|none] ELF
+  cargo hil firmware flash IMAGE --board NAME|MAC [--jtag]   flash under a lease of that board, journaled
+  cargo hil flash --board NAME|MAC [--image NAME] [--monitor 30s [--until TEXT]] [--air shared|exclusive|none] [--via usb|jtag] ELF
                                       flash an ELF for the board's chip under a lease of that board,
                                       journal it, capture the console for a bounded time
 
@@ -774,6 +774,10 @@ fn firmware(
             image: String,
             #[arg(long, value_name = "NAME|MAC")]
             board: String,
+            /// Write and reset through OpenOCD and the chip's JTAG instead of
+            /// espflash and the USB Serial/JTAG reset lines.
+            #[arg(long)]
+            jtag: bool,
         },
     }
     match FirmwareCli::try_parse_from(args)? {
@@ -781,7 +785,7 @@ fn firmware(
         FirmwareCli::Build { image } => {
             crate::firmware_catalog::build(ctx, &image)?;
         }
-        FirmwareCli::Flash { image, board } => {
+        FirmwareCli::Flash { image, board, jtag } => {
             let request = oer_hil_arbiter::Request {
                 owner: options.owner(ctx),
                 work: format!("firmware flash {image} --board {board}"),
@@ -790,7 +794,7 @@ fn firmware(
                 scenarios: Vec::new(),
                 claims: Vec::new(),
             };
-            crate::firmware_catalog::flash(ctx, &image, &board, request)?;
+            crate::firmware_catalog::flash(ctx, &image, &board, jtag, request)?;
         }
     }
     Ok(std::process::ExitCode::SUCCESS)

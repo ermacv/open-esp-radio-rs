@@ -77,7 +77,8 @@ fault.
   field with this constraint and the observation as its evidence.
 - Any other ESP-IDF image on an ESP32-C5 rev 1.0, such as a vendor comparison
   image without the workaround, is reset or flashed through JTAG
-  (OpenOCD `program_esp … reset`), not over USB Serial/JTAG.
+  (`cargo hil flash --via jtag`, `cargo hil firmware flash --jtag`), not over
+  USB Serial/JTAG.
 
 **Limits.** Observed on one board of revision v1.0. Other revisions and
 boards are unverified.

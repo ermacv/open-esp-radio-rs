@@ -131,7 +131,14 @@ and leave an esp32c5 in download mode. `--monitor 30s` captures the console,
 read from the port itself, into
 `target/hil/flash/<mac>/console-*.log` for at most that long; with
 `--until TEXT` it ends at the first line containing TEXT and fails when none
-does. The lease ends with the capture, so an open monitor never holds a board.
+does. `--via jtag` writes the bootloader, partition table and
+application merged from offset 0 through OpenOCD and the chip's JTAG, and
+resets it through the debug module; the console is opened first without
+touching the reset lines. It works over any running image, including one that
+breaks USB Serial/JTAG resets (see [Hardware errata](../../docs/hardware-errata.md)).
+`cargo hil firmware flash IMAGE --board BOARD --jtag` does the same for a
+catalog image, writing each of its flash files at its address. The OpenOCD
+build comes from the ESP-IDF tools in the shared cache. The lease ends with the capture, so an open monitor never holds a board.
 
 ```console
 cargo hil --budget 3m flash --board esp32c5 --monitor 30s --until READY target/.../app.elf

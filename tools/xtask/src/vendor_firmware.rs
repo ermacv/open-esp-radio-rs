@@ -213,7 +213,7 @@ fn bash(script: &str, env: &[(&str, &Path)], log: &Path) -> Result<()> {
 }
 
 /// The host-wide cache of ESP-IDF trees and tools.
-fn cache_directory() -> Result<PathBuf> {
+pub(crate) fn cache_directory() -> Result<PathBuf> {
     if let Some(directory) = std::env::var_os(CACHE_ENV).filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(directory));
     }

@@ -18,6 +18,7 @@ pub mod graph;
 pub mod hil;
 pub mod hil_dashboard;
 pub mod hil_flash;
+pub mod hil_jtag;
 pub mod hil_runs;
 pub mod hil_store;
 pub mod paths;

@@ -41,7 +41,18 @@ struct FlashCli {
     /// which then runs beside an exclusive air lease.
     #[arg(long, value_parser = parse_air, default_value = "shared")]
     air: Air,
+    /// How to write and reset the board: `usb` through espflash and the USB
+    /// Serial/JTAG reset lines, or `jtag` through OpenOCD and the chip's
+    /// debug module, which works over any running image.
+    #[arg(long, value_enum, default_value = "usb")]
+    via: Via,
     elf: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, clap::ValueEnum)]
+enum Via {
+    Usb,
+    Jtag,
 }
 
 /// How an image uses the radio environment; `None` claims no air.
@@ -103,6 +114,18 @@ pub fn run(
             .arg(&application),
     )?;
     let application_sha256 = crate::vendor_fetch::sha256(&application)?;
+    // JTAG writes one image from offset 0: bootloader, partition table and
+    // application merged.
+    let merged = output.join("merged.bin");
+    if cli.via == Via::Jtag {
+        crate::process::run(
+            Command::new(espflash())
+                .args(["save-image", "--chip", &chip, "--merge", "--bootloader"])
+                .arg(&bootloader)
+                .arg(&elf)
+                .arg(&merged),
+        )?;
+    }
 
     let request = oer_hil_arbiter::Request {
         work: format!("flash {} --board {}", elf.display(), cli.board),
@@ -116,22 +139,34 @@ pub fn run(
     };
     let _grant = arbiter.acquire(&request)?;
     let _device = oer_esp32s31_firmware::device::DeviceLease::acquire(&board.port)?;
-    crate::process::run(
-        Command::new(espflash())
-            .args([
-                "flash",
-                "--non-interactive",
-                "--chip",
-                &chip,
-                "--after",
-                "no-reset",
-                "--port",
-            ])
-            .arg(&board.port)
-            .arg("--bootloader")
-            .arg(&bootloader)
-            .arg(&elf),
-    )?;
+    // Over JTAG the console is opened first, without touching the reset
+    // lines, so the capture starts at the boot the programming ends with.
+    let quiet = match cli.via {
+        Via::Usb => {
+            crate::process::run(
+                Command::new(espflash())
+                    .args([
+                        "flash",
+                        "--non-interactive",
+                        "--chip",
+                        &chip,
+                        "--after",
+                        "no-reset",
+                        "--port",
+                    ])
+                    .arg(&board.port)
+                    .arg("--bootloader")
+                    .arg(&bootloader)
+                    .arg(&elf),
+            )?;
+            None
+        }
+        Via::Jtag => {
+            let serial = open_without_reset(&board.port)?;
+            crate::hil_jtag::program(&chip, &board.mac, &[(0, merged.clone())])?;
+            Some(serial)
+        }
+    };
     let (commit, dirty) = crate::firmware_catalog::source_revision(&ctx.root, Path::new("."));
     arbiter.record_board_by(
         request.owner.clone(),
@@ -150,7 +185,10 @@ pub fn run(
     )?;
     eprintln!("hil-arbiter: recorded {image} on {}", board.mac);
 
-    let serial = reset_into_application(&board.port)?;
+    let serial = match quiet {
+        Some(serial) => serial,
+        None => reset_into_application(&board.port)?,
+    };
     let Some(duration) = monitor else {
         return Ok(std::process::ExitCode::SUCCESS);
     };
@@ -185,6 +223,17 @@ pub(crate) fn reset_into_application(port: &Path) -> Result<Box<dyn serialport::
     serial.write_request_to_send(true)?;
     std::thread::sleep(Duration::from_millis(200));
     serial.write_request_to_send(false)?;
+    Ok(serial)
+}
+
+/// The console at `port`, opened without a reset: RTS is released before
+/// DTR, so the lines never pass through the reset-with-boot-strap state.
+fn open_without_reset(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
+    let mut serial = serialport::new(port.to_string_lossy(), 115_200)
+        .timeout(Duration::from_millis(200))
+        .open()?;
+    serial.write_request_to_send(false)?;
+    serial.write_data_terminal_ready(false)?;
     Ok(serial)
 }
 

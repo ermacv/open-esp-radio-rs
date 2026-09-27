@@ -241,6 +241,7 @@ pub fn flash(
     ctx: &Context,
     image: &str,
     board: &str,
+    jtag: bool,
     request: oer_hil_arbiter::Request,
 ) -> Result<()> {
     let entries = entries(&ctx.root)?;
@@ -278,24 +279,36 @@ pub fn flash(
     };
     let _grant = arbiter.acquire(&request)?;
     let _device = oer_esp32s31_firmware::device::DeviceLease::acquire(&port)?;
-    for (address, file) in &files {
-        let mut command =
-            ctx.command(std::env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-        command
-            .args([
-                "write-bin",
-                "--chip",
-                &entry.chip,
-                "--non-interactive",
-                "--port",
-            ])
-            .arg(&port)
-            .args(["--after", "no-reset", address])
-            .arg(file);
-        crate::process::run(&mut command)?;
+    if jtag {
+        let files = files
+            .iter()
+            .map(|(address, file)| {
+                let offset = u64::from_str_radix(address.trim_start_matches("0x"), 16)
+                    .map_err(|_| format!("flash address `{address}` is not hexadecimal"))?;
+                Ok((offset, file.clone()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        crate::hil_jtag::program(&entry.chip, &mac, &files)?;
+    } else {
+        for (address, file) in &files {
+            let mut command =
+                ctx.command(std::env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
+            command
+                .args([
+                    "write-bin",
+                    "--chip",
+                    &entry.chip,
+                    "--non-interactive",
+                    "--port",
+                ])
+                .arg(&port)
+                .args(["--after", "no-reset", address])
+                .arg(file);
+            crate::process::run(&mut command)?;
+        }
+        // espflash's reset leaves an esp32c5 in its ROM download mode.
+        drop(crate::hil_flash::reset_into_application(&port)?);
     }
-    // espflash's reset leaves an esp32c5 in its ROM download mode.
-    drop(crate::hil_flash::reset_into_application(&port)?);
     arbiter.register_device(oer_hil_arbiter::Device {
         mac: mac.clone(),
         chip: Some(entry.chip.clone()),
@@ -459,7 +472,7 @@ mod tests {
             scenarios: Vec::new(),
             claims: Vec::new(),
         };
-        let error = flash(&ctx, "held-peer", "esp32c5", request)
+        let error = flash(&ctx, "held-peer", "esp32c5", false, request)
             .unwrap_err()
             .to_string();
         assert!(

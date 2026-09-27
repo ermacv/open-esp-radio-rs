@@ -3,7 +3,7 @@ id = "bluetooth-dtm-watchdog-reset"
 description = "Diagnostic MWDT1 reset during active DTM TX/RX; peer checks RF silence before any new DUT HCI command"
 repetitions = 3
 transfer = "identical-image"
-tags = ["bluetooth", "dtm", "watchdog", "fault-injection"]
+tags = ["bluetooth", "dtm", "watchdog", "fault-injection", "air-exclusive"]
 
 [bluetooth]
 kind = "watchdog-reset"

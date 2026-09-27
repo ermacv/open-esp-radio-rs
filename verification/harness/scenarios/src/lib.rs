@@ -16,4 +16,4 @@ pub mod session;
 pub mod setup_cache;
 pub mod state;
 
-pub use chip::{Chip, chip, install};
+pub use chip::{Chip, Isa, chip, install};

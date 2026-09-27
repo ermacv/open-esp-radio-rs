@@ -29,6 +29,30 @@ pub struct Chip {
     pub state: &'static [crate::state::Decision],
     /// PHY session layout, for chips whose scenarios link the PHY archive.
     pub phy: Option<&'static crate::phy::PhyLayout>,
+    /// The instruction set both implementations run under.
+    pub isa: Isa,
+}
+
+/// The instruction set a chip's code is built for. The executor stops a
+/// run at any instruction outside it, so code the chip could not execute
+/// never produces evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Isa {
+    /// RV32IMAFC with Zba, Zbb, Zbs, Zcb and Zcmp, as ESP-IDF builds the
+    /// ESP32-S31 (floating point stays unsupported by the executor).
+    Rv32imafcZbaZbbZbsZcbZcmp,
+    /// Base RV32IMAC, as ESP-IDF builds the ESP32-C5.
+    Rv32imac,
+}
+
+impl Isa {
+    /// The executor that admits exactly this instruction set.
+    pub fn executor(self) -> &'static dyn blobray_domain::Executor {
+        match self {
+            Self::Rv32imafcZbaZbbZbsZcbZcmp => &blobray_backend_riscv::RiscvExecutor,
+            Self::Rv32imac => &blobray_backend_riscv::Rv32imacExecutor,
+        }
+    }
 }
 
 impl Chip {
@@ -72,6 +96,7 @@ pub(crate) static TEST: Chip = Chip {
     observation: &[],
     state: &[],
     phy: Some(&TEST_PHY),
+    isa: Isa::Rv32imac,
 };
 
 /// The test chip's PHY layout: distinct transport and scratch addresses.

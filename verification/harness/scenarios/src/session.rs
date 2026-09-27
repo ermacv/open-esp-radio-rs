@@ -461,7 +461,7 @@ impl Session {
                 dependence: Some(&blobray_backend_riscv::RiscvDecoder),
                 patches: &self.patches,
             },
-            &blobray_backend_riscv::RiscvExecutor,
+            crate::chip().isa.executor(),
             &memory,
             &mut crate::harness::InProcessControl::new(&budget),
         )

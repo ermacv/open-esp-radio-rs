@@ -80,7 +80,7 @@
     },
     {
       "path": "tools/blobray/crates/riscv",
-      "sha256": "4a6188f6fa3d2d6bd058cdc2ca3b1548454810c4c734b7b47d1693218830e129"
+      "sha256": "9c8a751d92a8c1f973da4dac30d4b1838744af2b54fefd3e3974976818085631"
     },
     {
       "path": "tools/blobray/crates/store",
@@ -104,7 +104,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "4ee2bc7f65375e366d40798b803c71dda794f1984b786175774d668fc46511db"
+      "sha256": "1a840803ad8e6ac4ae3dae1394b26d9501c26d8a0205c23aec734b62684f5521"
     },
     {
       "path": "verification/harness/codegen",
@@ -116,7 +116,7 @@
     },
     {
       "path": "verification/harness/scenarios",
-      "sha256": "2698d8cf550a86c520b6666b1c0894b8f80e1ddb07fd53147514df9b14788827"
+      "sha256": "3bd9b7ec00a0a10999f33d9923a87a7aab3a06b6c9450671cade1a8e6b50b285"
     },
     {
       "path": "verification/schema",

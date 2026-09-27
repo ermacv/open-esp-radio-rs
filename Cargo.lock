@@ -2850,6 +2850,7 @@ name = "oer-hil-target-core"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
+ "crc",
  "critical-section",
  "embassy-futures",
  "embassy-net",
@@ -2857,6 +2858,7 @@ dependencies = [
  "embassy-time",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
+ "heapless 0.9.3",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
  "oer-example-bluetooth-gatt",

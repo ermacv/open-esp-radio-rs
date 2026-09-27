@@ -133,6 +133,8 @@ async fn run(
                     match service.arm(budget) {
                         Err(_) => Event::Rejected(RejectReason::InvalidState),
                         Ok(lease) => {
+                            // The host finds this in the next boot's post-mortem.
+                            super::postmortem::checkpoint("watchdog.arm", mode as u32);
                             if mode == WatchdogTestMode::Complete {
                                 lease.complete().expect("immediate diagnostic completion");
                                 Event::SystemWatchdogTest(mode)

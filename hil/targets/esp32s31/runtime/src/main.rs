@@ -282,6 +282,12 @@ use oer_esp32s31_platform_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
+    #[cfg(any(
+        feature = "system-watchdog",
+        feature = "open-radio-hil",
+        feature = "bluetooth-radio"
+    ))]
+    system::postmortem::record_panic(info);
     #[cfg(not(feature = "open-radio-hil"))]
     let _ = info;
     #[cfg(feature = "open-radio-hil")]
@@ -335,6 +341,13 @@ extern "C" fn runtime_main() -> ! {
 
     let peripherals =
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
+    // Before anything records a checkpoint over the previous boot's record.
+    #[cfg(any(
+        feature = "system-watchdog",
+        feature = "open-radio-hil",
+        feature = "bluetooth-radio"
+    ))]
+    system::postmortem::begin();
     // The bootstrap configured PSRAM before entering this separately linked
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
     // across that ELF boundary, so stage two explicitly adopts the live

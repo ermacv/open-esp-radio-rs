@@ -36,11 +36,31 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             if reboot.is_some() && fresh.reset_reason != ResetReason::MainWatchdog1 {
                 return Err("expected autonomous MWDT1 reset, not software reset".into());
             }
+            // The boot the watchdog reset left its record in retained memory:
+            // its newest checkpoint is the arming this scenario requested.
+            let checkpoints = match (&reboot, &fresh.post_mortem) {
+                (None, _) => Vec::new(),
+                (Some(_), None) => {
+                    return Err("no post-mortem survived the MWDT1 reset".into());
+                }
+                (Some(_), Some(summary)) => capture.post_mortem_checkpoints(summary.checkpoints)?,
+            };
+            if reboot.is_some()
+                && checkpoints
+                    .last()
+                    .is_none_or(|last| last.name != "watchdog.arm" || last.arg != mode as u32)
+            {
+                return Err(format!(
+                    "the post-mortem after the MWDT1 reset does not end at this arming: {checkpoints:?}"
+                )
+                .into());
+            }
             hil_core::durable::atomic_json(
                 &directory.join("watchdog.json"),
                 &serde_json::json!({
                     "schema": 2, "mode": mode, "budget_micros": 1_000_000,
-                    "reboot": reboot, "fresh_boot": fresh, "rf_stop_bound_micros": null,
+                    "reboot": reboot, "fresh_boot": fresh, "post_mortem_checkpoints": checkpoints,
+                    "rf_stop_bound_micros": null,
                     "scope": "SoC service without a radio; not a PHY restoration fault injection",
                     "passed": true
                 }),

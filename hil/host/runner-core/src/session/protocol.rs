@@ -1065,6 +1065,34 @@ impl SerialCapture {
         }
     }
 
+    /// The previous boot's post-mortem checkpoints, oldest first: `count`
+    /// of them, as its boot evidence reports, fetched page by page.
+    pub fn post_mortem_checkpoints(&self, count: u8) -> Result<Vec<oer_hil_protocol::Checkpoint>> {
+        let mut checkpoints = Vec::with_capacity(usize::from(count));
+        while checkpoints.len() < usize::from(count) {
+            let first = checkpoints.len() as u8;
+            match self
+                .send_command(
+                    0,
+                    Command::GetPostMortemCheckpoints { first },
+                    Duration::from_secs(5),
+                )?
+                .body
+            {
+                Event::PostMortemCheckpoints(page)
+                    if page.first == first && !page.checkpoints.is_empty() =>
+                {
+                    checkpoints.extend(page.checkpoints);
+                }
+                response => {
+                    return Err(format!("invalid post-mortem page {first}: {response:?}").into());
+                }
+            }
+        }
+        checkpoints.truncate(usize::from(count));
+        Ok(checkpoints)
+    }
+
     pub fn system_watchdog_test(&self, mode: oer_hil_protocol::WatchdogTestMode) -> Result<()> {
         match self
             .send_command(0, Command::SystemWatchdogTest(mode), Duration::from_secs(5))?

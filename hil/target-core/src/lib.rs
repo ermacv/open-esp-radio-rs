@@ -17,4 +17,5 @@ pub mod bluetooth_gatt;
 pub mod console;
 pub mod memory_benchmark;
 pub mod network;
+pub mod postmortem;
 pub mod traffic;

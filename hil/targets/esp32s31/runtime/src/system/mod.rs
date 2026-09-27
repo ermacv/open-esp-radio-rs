@@ -1,6 +1,7 @@
 //! Platform observations and diagnostics, independent of radio protocols.
 #[cfg(feature = "system-watchdog")]
 pub(super) mod console;
+pub(crate) mod postmortem;
 #[cfg(feature = "system-watchdog")]
 mod watchdog;
 
@@ -23,14 +24,19 @@ pub(super) fn boot_evidence() -> oer_hil_protocol::BootEvidence {
             _ => ResetReason::Other,
         },
         raw_reset_reason: raw.map_or(0, |reason| reason as u8),
-        post_mortem: None,
+        post_mortem: postmortem::previous(|previous| previous.map(|previous| previous.summary())),
     }
 }
 
 /// Checkpoints `first..` of the previous boot's post-mortem.
 pub(super) fn post_mortem_checkpoints(first: u8) -> oer_hil_protocol::PostMortemCheckpoints {
-    oer_hil_protocol::PostMortemCheckpoints {
-        first,
-        checkpoints: Default::default(),
-    }
+    postmortem::previous(|previous| {
+        previous.map_or_else(
+            || oer_hil_protocol::PostMortemCheckpoints {
+                first,
+                checkpoints: Default::default(),
+            },
+            |previous| previous.page(first),
+        )
+    })
 }

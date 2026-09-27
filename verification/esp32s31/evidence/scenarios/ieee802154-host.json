@@ -49,7 +49,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "286830cde7ea5e5498ca6f0f6b56bba87499eda0ee3669ba9d186a524c0d1622"
+      "sha256": "1140557327ca57da3d277df3b2840a3349581fb88dde31c482c6b2ad1e20b944"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",

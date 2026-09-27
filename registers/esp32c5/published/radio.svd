@@ -1992,6 +1992,10 @@ every field transaction.</description>
                   <name>REVIEWED_RADIO_MAP</name>
                   <value>6593</value>
                 </enumeratedValue>
+                <enumeratedValue>
+                  <name>PARALLEL_INITIALIZATION_MAP</name>
+                  <value>518</value>
+                </enumeratedValue>
               </enumeratedValues>
             </field>
           </fields>

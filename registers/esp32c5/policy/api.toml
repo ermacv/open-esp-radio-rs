@@ -592,6 +592,15 @@ value = 0x19c1
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_PHY_I2C", "ESP_IDF_4D59230D_C5_I2C_ANA_MST", "HIL_OPEN_C5_PHY_I2C_READ_PROBE_2026_09_27"]
 
+[[field-replace-modifies]]
+name = "configure_phy_i2c_parallel_host_map"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF2"
+fields = [{ field = "PHY_HOST_MAP", source-bit-offset = 0 }]
+value = 0x206
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_PHY_I2C_INIT1"]
+
 [[zero-based-field-writes]]
 name = "publish_phy_i2c_read_mask"
 peripheral = "I2C_ANA_MST"

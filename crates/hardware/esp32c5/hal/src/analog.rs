@@ -6,9 +6,11 @@
 //! block alias.
 
 use oer_esp32c5_pac::{PhyI2cAccessError, PhyI2cAddress, PhyI2cRegisters};
-use oer_radio_analog::{AnalogRegisterBus, Busy};
+use oer_radio_analog::{AnalogRegisterBus, Busy, ParallelAnalogBus, ParallelHost, ParallelWrites};
 
-pub use oer_esp32c5_pac::{PhyI2cBlock, PhyI2cHost};
+pub use oer_esp32c5_pac::{
+    PhyI2cBlock, PhyI2cHost, PhyI2cInitializationInputs, PhyI2cParallelWrite,
+};
 
 /// Unique owner of the ESP32-C5 analog register bus.
 #[must_use = "dropping the analog register bus loses the analog I2C master"]
@@ -48,4 +50,35 @@ impl AnalogRegisterBus for AnalogI2c {
     fn try_finish_write(&self, address: PhyI2cAddress) -> Result<(), Busy> {
         self.registers.try_finish_write(address).map_err(busy)
     }
+}
+
+impl ParallelAnalogBus for AnalogI2c {
+    type Pair = PhyI2cParallelWrite;
+
+    fn select_parallel_host_map(&mut self) {
+        self.registers.select_parallel_host_map();
+    }
+
+    fn restore_host_map(&mut self) {
+        self.registers.restore_host_map();
+    }
+
+    fn start_pair(&mut self, pair: PhyI2cParallelWrite) {
+        self.registers.start_parallel_pair(pair);
+    }
+
+    fn is_busy(&self, host: ParallelHost) -> bool {
+        self.registers.is_busy(match host {
+            ParallelHost::First => PhyI2cHost::Host0,
+            ParallelHost::Second => PhyI2cHost::Host1,
+        })
+    }
+}
+
+/// The parallel analog I2C initialization `phy_i2c_init1` performs, over
+/// the `phy_param` fields it reads; poll it on an [`AnalogI2c`].
+pub fn initialization(
+    inputs: PhyI2cInitializationInputs,
+) -> ParallelWrites<impl Fn(usize) -> Option<PhyI2cParallelWrite>> {
+    ParallelWrites::new(move |index| inputs.pair(index))
 }

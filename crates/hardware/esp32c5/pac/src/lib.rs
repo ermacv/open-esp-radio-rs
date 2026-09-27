@@ -57,4 +57,7 @@ pub use ownership::{
     Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154Partition,
     Ieee802154TaskRegisters, RadioPartitions,
 };
-pub use phy::i2c::{PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock, PhyI2cHost, PhyI2cRegisters};
+pub use phy::i2c::{
+    PHY_I2C_INITIALIZATION_PAIR_COUNT, PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock, PhyI2cHost,
+    PhyI2cInitializationInputs, PhyI2cParallelWrite, PhyI2cRegisters,
+};

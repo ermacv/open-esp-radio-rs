@@ -5660,6 +5660,8 @@ pub mod i2c_ana_mst {
         pub enum PhyHostMap {
             #[doc = "6593: `1100111000001`"]
             ReviewedRadioMap = 6593,
+            #[doc = "518: `1000000110`"]
+            ParallelInitializationMap = 518,
         }
         impl From<PhyHostMap> for u16 {
             #[inline(always)]
@@ -5679,6 +5681,7 @@ pub mod i2c_ana_mst {
             pub const fn variant(&self) -> Option<PhyHostMap> {
                 match self.bits {
                     6593 => Some(PhyHostMap::ReviewedRadioMap),
+                    518 => Some(PhyHostMap::ParallelInitializationMap),
                     _ => None,
                 }
             }
@@ -5686,6 +5689,11 @@ pub mod i2c_ana_mst {
             #[inline(always)]
             pub fn is_reviewed_radio_map(&self) -> bool {
                 *self == PhyHostMap::ReviewedRadioMap
+            }
+            #[doc = "`1000000110`"]
+            #[inline(always)]
+            pub fn is_parallel_initialization_map(&self) -> bool {
+                *self == PhyHostMap::ParallelInitializationMap
             }
         }
         #[doc = "Field `PHY_HOST_MAP` writer - Host-selection field that phy_get_i2c_hostid_ replaces on every analog-register access while preserving the other bits."]
@@ -5699,6 +5707,11 @@ pub mod i2c_ana_mst {
             #[inline(always)]
             pub fn reviewed_radio_map(self) -> &'a mut crate::W<REG> {
                 self.variant(PhyHostMap::ReviewedRadioMap)
+            }
+            #[doc = "`1000000110`"]
+            #[inline(always)]
+            pub fn parallel_initialization_map(self) -> &'a mut crate::W<REG> {
+                self.variant(PhyHostMap::ParallelInitializationMap)
             }
         }
         impl R {
@@ -6661,6 +6674,17 @@ pub mod field_replace_modify {
     pub fn configure_phy_i2c_host_map(registers: &crate::I2cAnaMst) {
         registers.ana_conf2().modify(|_, writer| {
             let input = 0x000019c1_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.phy_host_map().bits((input & 0x00001fff) as u16) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.ANA_CONF2 fields `[PHY_HOST_MAP]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_parallel_host_map(registers: &crate::I2cAnaMst) {
+        registers.ana_conf2().modify(|_, writer| {
+            let input = 0x00000206_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.phy_host_map().bits((input & 0x00001fff) as u16) }

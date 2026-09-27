@@ -100,6 +100,127 @@ impl PhyI2cAddress {
     }
 }
 
+/// One command of each host in a parallel write, as `phy_i2c_paral_write`
+/// publishes them: host 0 first, then host 1, without the start bit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cParallelWrite {
+    first: (u8, u8, u8),
+    second: (u8, u8, u8),
+}
+
+impl PhyI2cParallelWrite {
+    /// The (block, register, data) commands of host 0 and host 1.
+    pub const fn new(first: (u8, u8, u8), second: (u8, u8, u8)) -> Self {
+        Self { first, second }
+    }
+
+    pub const fn first(self) -> (u8, u8, u8) {
+        self.first
+    }
+
+    pub const fn second(self) -> (u8, u8, u8) {
+        self.second
+    }
+}
+
+/// `phy_get_data_sat(value, high, low)`.
+const fn clamp(value: u8, low: u8, high: u8) -> u8 {
+    if high < value {
+        high
+    } else if value < low {
+        low
+    } else {
+        value
+    }
+}
+
+/// The `phy_param` fields `phy_i2c_init1` reads, named by their offset.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PhyI2cInitializationInputs {
+    pub parameter_f5: u8,
+    pub parameter_f6: u8,
+    pub parameter_f7: u8,
+    pub parameter_f8: u8,
+    pub parameter_f9: u8,
+    pub parameter_fa: u8,
+    pub parameter_fb: u8,
+    pub parameter_fc: u8,
+    /// Low byte of the halfword at 0x410.
+    pub parameter_410: u8,
+    /// Low byte of the halfword at 0x412.
+    pub parameter_412: u8,
+    /// The halfword at 0x416.
+    pub parameter_416: u16,
+}
+
+/// Pairs of the parallel sequence of `phy_i2c_init1`.
+pub const PHY_I2C_INITIALIZATION_PAIR_COUNT: usize = 44;
+
+impl PhyI2cInitializationInputs {
+    /// Pair `index` of the 44-pair parallel sequence `phy_i2c_init1` issues.
+    ///
+    /// SOURCE: reviewed evidence `C5_BLOB_LIBPHY_PHY_I2C_INIT1`.
+    pub const fn pair(self, index: usize) -> Option<PhyI2cParallelWrite> {
+        let (first, second) = match index {
+            0 => ((0x6b, 0x2, 0x72), (0x6a, 0x0, 0xff)),
+            1 => ((0x6b, 0x3, 0xaa), (0x6a, 0x1, 0x7f)),
+            2 => ((0x6b, 0xe, 0x55), (0x67, 0x3, 0x44)),
+            3 => ((0x6b, 0x7, 0xff), (0x67, 0x3, 0x44)),
+            4 => ((0x6b, 0xa, 0x8), (0x67, 0x2, 0x3)),
+            5 => ((0x6b, 0xc, 0x55), (0x67, 0x1, 0x6f)),
+            6 => ((0x6b, 0xf, 0x81), (0x67, 0x5, 0x6b)),
+            7 => ((0x6b, 0x9, 0x0), (0x67, 0x1d, 0xc2)),
+            8 => ((0x6b, 0x5, 0x33), (0x67, 0x6, self.parameter_f5)),
+            9 => (
+                (0x6b, 0x6, 0x30),
+                (0x67, 0x8, clamp(self.parameter_f7, 10, 50)),
+            ),
+            10 => ((0x6b, 0xd, 0x57), (0x67, 0xa, self.parameter_f5)),
+            11 => ((0x6b, 0x8, 0xfd), (0x67, 0xc, self.parameter_f7)),
+            12 => ((0x6b, 0x4, 0xac), (0x67, 0x7, self.parameter_f6)),
+            13 => (
+                (0x6e, 0x5, ((self.parameter_416 >> 2) as u8) | 0x40),
+                (0x67, 0x9, clamp(self.parameter_f8, 10, 60)),
+            ),
+            14 => ((0x6e, 0x7, 0x63), (0x67, 0xb, self.parameter_f6)),
+            15 => ((0x6e, 0x8, 0x73), (0x67, 0xd, self.parameter_f8)),
+            16 => ((0x6e, 0x9, 0xc), (0x67, 0xe, self.parameter_fb)),
+            17 => ((0x6e, 0xd, 0x22), (0x67, 0x10, self.parameter_fb)),
+            18 => ((0x6e, 0x1, 0x71), (0x67, 0x12, self.parameter_f9)),
+            19 => ((0x6e, 0x10, 0x63), (0x67, 0x14, self.parameter_f9)),
+            20 => ((0x6e, 0x11, 0x73), (0x67, 0xf, self.parameter_fc)),
+            21 => ((0x6e, 0x4, 0x47), (0x67, 0x11, self.parameter_fc)),
+            22 => (
+                (0x6e, 0xc, ((self.parameter_416 << 4) as u8) & 0x30),
+                (0x67, 0x13, self.parameter_fa),
+            ),
+            23 => ((0x6e, 0xf, 0x47), (0x67, 0x15, self.parameter_fa)),
+            24 => ((0x6e, 0x12, 0x44), (0x6a, 0x3, 0xf)),
+            25 => ((0x6e, 0x13, 0x63), (0x67, 0x3, 0x44)),
+            26 => ((0x6e, 0x14, 0x73), (0x67, 0x3, 0x44)),
+            27 => ((0x63, 0xf, 0x3f), (0x67, 0x3, 0x44)),
+            28 => ((0x63, 0x1, 0xab), (0x67, 0x3, 0x44)),
+            29 => ((0x63, 0x13, 0x90), (0x67, 0x3, 0x44)),
+            30 => ((0x63, 0x6, 0xe0), (0x67, 0x3, 0x44)),
+            31 => ((0x63, 0x15, 0x98), (0x67, 0x3, 0x44)),
+            32 => ((0x63, 0x11, 0xc), (0x67, 0x3, 0x44)),
+            33 => ((0x63, 0x14, 0xa), (0x67, 0x3, 0x44)),
+            34 => ((0x63, 0x0, 0xdb), (0x67, 0x3, 0x44)),
+            35 => ((0x63, 0xe, 0x0), (0x67, 0x3, 0x44)),
+            36 => ((0x63, 0x8, 0x61), (0x67, 0x3, 0x44)),
+            37 => ((0x63, 0x7, 0x0), (0x67, 0x3, 0x44)),
+            38 => ((0x6e, 0xa, self.parameter_410), (0x67, 0x3, 0x44)),
+            39 => ((0x6e, 0xb, self.parameter_412), (0x67, 0x3, 0x44)),
+            40 => ((0x63, 0x1a, 0x11), (0x67, 0x3, 0x44)),
+            41 => ((0x63, 0x19, 0x48), (0x67, 0x3, 0x44)),
+            42 => ((0x63, 0x12, 0x0), (0x67, 0x3, 0x44)),
+            43 => ((0x63, 0x18, 0xdd), (0x67, 0x3, 0x44)),
+            _ => return None,
+        };
+        Some(PhyI2cParallelWrite::new(first, second))
+    }
+}
+
 /// A command is still owned by its host.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cAccessError {
@@ -143,6 +264,39 @@ impl PhyI2cRegisters {
     pub fn configure_and_select_host(&mut self, block: PhyI2cBlock) -> PhyI2cHost {
         crate::generated::configure_phy_i2c_host_map(self.master());
         block.host()
+    }
+
+    /// Install the host map of the parallel initialization sequence.
+    pub fn select_parallel_host_map(&mut self) {
+        crate::generated::configure_phy_i2c_parallel_host_map(self.master());
+    }
+
+    /// Restore the normal host map after a parallel sequence.
+    pub fn restore_host_map(&mut self) {
+        crate::generated::configure_phy_i2c_host_map(self.master());
+    }
+
+    /// Publish both commands of a parallel write, host 0 first, without
+    /// waiting for either host.
+    pub fn start_parallel_pair(&mut self, pair: PhyI2cParallelWrite) {
+        let (block, register, value) = pair.first;
+        svd::zero_based_field_write::publish_phy_i2c_host0_command(
+            self.master(),
+            block,
+            register,
+            value,
+            true,
+            false,
+        );
+        let (block, register, value) = pair.second;
+        svd::zero_based_field_write::publish_phy_i2c_host1_command(
+            self.master(),
+            block,
+            register,
+            value,
+            true,
+            false,
+        );
     }
 
     /// Whether a host is executing a command.
@@ -311,5 +465,47 @@ mod tests {
             PhyI2cBlock::from_vendor_abi(0x6f).map(PhyI2cBlock::host),
             Some(PhyI2cHost::Host0)
         );
+    }
+
+    #[test]
+    fn saturation_follows_phy_get_data_sat() {
+        assert_eq!(clamp(9, 10, 50), 10);
+        assert_eq!(clamp(10, 10, 50), 10);
+        assert_eq!(clamp(50, 10, 50), 50);
+        assert_eq!(clamp(51, 10, 50), 50);
+        assert_eq!(clamp(0xff, 10, 60), 60);
+    }
+
+    #[test]
+    fn the_initialization_pairs_carry_their_parameters() {
+        let base = PhyI2cInitializationInputs::default();
+        let changed = PhyI2cInitializationInputs {
+            parameter_f7: 0xff,
+            parameter_416: 0x3ff,
+            ..base
+        };
+        let differing: std::vec::Vec<usize> = (0..PHY_I2C_INITIALIZATION_PAIR_COUNT)
+            .filter(|&index| base.pair(index) != changed.pair(index))
+            .collect();
+        // parameter_f7 feeds one raw and one saturated byte; 0x416 feeds two.
+        assert_eq!(differing.len(), 4);
+        assert!(base.pair(PHY_I2C_INITIALIZATION_PAIR_COUNT).is_none());
+        assert!(base.pair(PHY_I2C_INITIALIZATION_PAIR_COUNT - 1).is_some());
+        // The saturated byte never leaves 10..=50.
+        let saturated = |inputs: PhyI2cInitializationInputs| {
+            (0..PHY_I2C_INITIALIZATION_PAIR_COUNT)
+                .filter_map(|index| inputs.pair(index))
+                .map(|pair| pair.second().2)
+                .collect::<std::vec::Vec<_>>()
+        };
+        let low = saturated(PhyI2cInitializationInputs {
+            parameter_f7: 0,
+            ..base
+        });
+        let high = saturated(PhyI2cInitializationInputs {
+            parameter_f7: 0xff,
+            ..base
+        });
+        assert!(low.contains(&10) && high.contains(&50));
     }
 }

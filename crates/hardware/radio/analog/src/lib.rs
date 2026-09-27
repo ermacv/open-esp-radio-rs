@@ -11,7 +11,9 @@
 //! implementation, and every completion is observed with the same address
 //! that started the command. [`FieldRead`] and [`FieldWrite`] are the
 //! vendor field transactions `phy_i2c_readReg_Mask` and
-//! `phy_i2c_writeReg_Mask` as polled machines over that contract.
+//! `phy_i2c_writeReg_Mask` as polled machines over that contract, and
+//! [`ParallelWrites`] the vendor parallel sequence `phy_i2c_paral_write_num`
+//! over [`ParallelAnalogBus`].
 //!
 //! This crate performs no MMIO and holds no delay or deadline; those belong
 //! to the executor that polls it.
@@ -232,6 +234,98 @@ impl<Address: Copy> FieldWrite<Address> {
                 Err(Busy) => Step::Pending,
             },
         }
+    }
+}
+
+/// One of the two analog I2C hosts of a parallel write.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParallelHost {
+    First,
+    Second,
+}
+
+/// Parallel writes on both analog I2C hosts, as `phy_i2c_paral_write`
+/// issues them: one command per host, then each host polled idle.
+pub trait ParallelAnalogBus {
+    /// One pair of commands, the first for each host.
+    type Pair: Copy + core::fmt::Debug;
+
+    /// Install the host map of the parallel sequence.
+    fn select_parallel_host_map(&mut self);
+
+    /// Restore the normal host map.
+    fn restore_host_map(&mut self);
+
+    /// Publish both commands of `pair`.
+    fn start_pair(&mut self, pair: Self::Pair);
+
+    /// Whether `host` is executing its command.
+    fn is_busy(&self, host: ParallelHost) -> bool;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ParallelPhase {
+    Select,
+    Start(usize),
+    Await(usize, ParallelHost),
+    Restore,
+    Done,
+}
+
+/// Polled `phy_i2c_paral_write_num` between a parallel host map and its
+/// restoration: for each pair, publish both commands, then poll the first
+/// host idle and the second host idle.
+#[must_use = "a parallel write sequence does nothing until it is polled to completion"]
+#[derive(Clone, Copy, Debug)]
+pub struct ParallelWrites<Pairs> {
+    pairs: Pairs,
+    phase: ParallelPhase,
+}
+
+impl<Pairs> ParallelWrites<Pairs> {
+    /// The sequence of the pairs `pairs(0)`, `pairs(1)`, ... up to the first
+    /// `None`.
+    pub const fn new(pairs: Pairs) -> Self {
+        Self {
+            pairs,
+            phase: ParallelPhase::Select,
+        }
+    }
+
+    /// Advance the sequence by at most one bus action.
+    pub fn poll<Bus>(&mut self, bus: &mut Bus) -> Step<()>
+    where
+        Bus: ParallelAnalogBus,
+        Pairs: Fn(usize) -> Option<Bus::Pair>,
+    {
+        match self.phase {
+            ParallelPhase::Select => {
+                bus.select_parallel_host_map();
+                self.phase = ParallelPhase::Start(0);
+            }
+            ParallelPhase::Start(index) => match (self.pairs)(index) {
+                Some(pair) => {
+                    bus.start_pair(pair);
+                    self.phase = ParallelPhase::Await(index, ParallelHost::First);
+                }
+                None => self.phase = ParallelPhase::Restore,
+            },
+            ParallelPhase::Await(index, host) => {
+                if !bus.is_busy(host) {
+                    self.phase = match host {
+                        ParallelHost::First => ParallelPhase::Await(index, ParallelHost::Second),
+                        ParallelHost::Second => ParallelPhase::Start(index + 1),
+                    };
+                }
+            }
+            ParallelPhase::Restore => {
+                bus.restore_host_map();
+                self.phase = ParallelPhase::Done;
+                return Step::Ready(());
+            }
+            ParallelPhase::Done => return Step::Ready(()),
+        }
+        Step::Pending
     }
 }
 

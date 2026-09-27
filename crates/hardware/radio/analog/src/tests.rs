@@ -138,3 +138,83 @@ fn a_value_wider_than_its_field_is_rejected() {
     let field = AnalogField::new(0_u8, 1, 0).expect("field");
     assert_eq!(FieldWrite::new(field, 4).err(), Some(ValueTooWide));
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ParallelOperation {
+    Select,
+    Restore,
+    Pair(u8),
+}
+
+struct ParallelModel {
+    operations: Vec<ParallelOperation>,
+    busy: [u8; 2],
+    latency: [u8; 2],
+}
+
+impl ParallelAnalogBus for ParallelModel {
+    type Pair = u8;
+
+    fn select_parallel_host_map(&mut self) {
+        self.operations.push(ParallelOperation::Select);
+    }
+
+    fn restore_host_map(&mut self) {
+        self.operations.push(ParallelOperation::Restore);
+    }
+
+    fn start_pair(&mut self, pair: u8) {
+        assert_eq!(self.busy, [0; 2], "a pair started while a host was busy");
+        self.busy = self.latency;
+        self.operations.push(ParallelOperation::Pair(pair));
+    }
+
+    fn is_busy(&self, host: ParallelHost) -> bool {
+        self.busy[host as usize] != 0
+    }
+}
+
+#[test]
+fn parallel_pairs_start_after_both_hosts_are_idle_between_the_host_maps() {
+    let mut model = ParallelModel {
+        operations: Vec::new(),
+        busy: [0; 2],
+        latency: [2, 3],
+    };
+    let mut writes = ParallelWrites::new(|index| (index < 3).then_some(index as u8));
+    let mut polls = 0;
+    loop {
+        let step = writes.poll(&mut model);
+        model.busy = model.busy.map(|busy| busy.saturating_sub(1));
+        polls += 1;
+        if step == Step::Ready(()) {
+            break;
+        }
+        assert!(polls < 100);
+    }
+    assert_eq!(
+        model.operations,
+        [
+            ParallelOperation::Select,
+            ParallelOperation::Pair(0),
+            ParallelOperation::Pair(1),
+            ParallelOperation::Pair(2),
+            ParallelOperation::Restore,
+        ]
+    );
+}
+
+#[test]
+fn an_empty_parallel_sequence_still_selects_and_restores_the_map() {
+    let mut model = ParallelModel {
+        operations: Vec::new(),
+        busy: [0; 2],
+        latency: [0; 2],
+    };
+    let mut writes = ParallelWrites::new(|_| None);
+    while writes.poll(&mut model) == Step::Pending {}
+    assert_eq!(
+        model.operations,
+        [ParallelOperation::Select, ParallelOperation::Restore]
+    );
+}

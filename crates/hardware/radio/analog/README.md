@@ -16,4 +16,8 @@ field write reads the register, replaces bits `msb..=lsb` and writes the
 byte back. The vendor ORs an unmasked value into the byte, so `FieldWrite`
 rejects a value wider than its field instead of reproducing that leak.
 
+`ParallelWrites` is `phy_i2c_paral_write_num` over `ParallelAnalogBus`: it
+installs a parallel host map, publishes each pair of host commands, polls
+host 0 and then host 1 idle, and restores the normal map.
+
 The ESP32-C5 implementation is `oer_esp32c5_hal::analog::AnalogI2c`.

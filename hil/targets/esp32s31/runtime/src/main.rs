@@ -292,7 +292,11 @@ use oer_esp32s31_platform_runtime as _;
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     OER_RESET_TRACE[2].store(
-        0xdead_0000 | info.location().map_or(0, |l| l.line()),
+        0xdead_0000
+            | match info.location() {
+                Some(l) => l.line(),
+                None => 0,
+            },
         core::sync::atomic::Ordering::SeqCst,
     );
     #[cfg(not(feature = "open-radio-hil"))]
@@ -348,7 +352,10 @@ static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 4] =
 extern "C" fn runtime_main() -> ! {
     {
         use core::sync::atomic::Ordering::SeqCst;
-        let reason = esp_hal::system::reset_reason().map_or(0xff, |r| r as u32);
+        let reason = match esp_hal::system::reset_reason() {
+            Some(r) => r as u32,
+            None => 0xff,
+        };
         OER_RESET_TRACE[0].store(OER_RESET_TRACE[1].load(SeqCst), SeqCst);
         OER_RESET_TRACE[1].store(0xb000_0000 | reason, SeqCst);
     }

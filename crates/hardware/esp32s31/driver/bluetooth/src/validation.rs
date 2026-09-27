@@ -40,6 +40,49 @@ pub fn sample_scheduler_stop_busy() -> bool {
     oer_esp32s31_hal::bluetooth::validation::sample_scheduler_stop_busy()
 }
 
+/// Run the production execution modify of hardware list `index` until it
+/// leaves `Pending`: zero when command one became ready, one when hardware
+/// rejected it, `None` for an index outside `0..16`.
+///
+/// # Safety
+///
+/// The caller must model the list ownership the production admission
+/// requires and perform no later radio operation in this image.
+#[allow(
+    unsafe_code,
+    reason = "the validation-only API forwards the execution-modify admission contract"
+)]
+#[inline(always)]
+pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> Option<u32> {
+    // SAFETY: forwarded unchanged from this function's `# Safety` contract.
+    unsafe {
+        oer_esp32s31_hal::bluetooth::validation::run_scheduler_execution_modify(
+            index,
+            list_deletion,
+        )
+    }
+}
+
+/// Publish the production execution lock of `address` on hardware list
+/// `index` and observe it until it leaves `Pending`: zero retained, one
+/// current-head reconciliation, two an unsupported hardware result, `None`
+/// for an invalid index or address.
+///
+/// # Safety
+///
+/// The caller must model the merge-selected item and list serialization the
+/// production publication requires and perform no later radio operation in
+/// this image.
+#[allow(
+    unsafe_code,
+    reason = "the validation-only API forwards the execution-lock publication contract"
+)]
+#[inline(always)]
+pub unsafe fn run_scheduler_execution_lock(address: u32, index: u8) -> Option<u32> {
+    // SAFETY: forwarded unchanged from this function's `# Safety` contract.
+    unsafe { oer_esp32s31_hal::bluetooth::validation::run_scheduler_execution_lock(address, index) }
+}
+
 /// Execute the exact production scheduler hardware-list head clear transaction.
 #[inline(always)]
 pub fn clear_scheduler_hardware_list_heads() {

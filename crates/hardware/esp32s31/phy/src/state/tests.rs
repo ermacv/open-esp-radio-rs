@@ -586,6 +586,26 @@ fn runtime_views_are_independent_named_state() {
 }
 
 #[test]
+fn generated_rx_gain_tables_commit_the_latest_temperature_as_common_reference() {
+    let mut state = PhyState::default();
+    state.common.temperature = 27;
+    state.common.calibration_tracking_temperature = 20;
+    let outcome = crate::rx::gain::PhyRxGainInitOutcome {
+        dc: None,
+        generated_tables: false,
+        wifi_last_index: 69,
+        shared_last_index: 75,
+    };
+    state.apply_rx_gain_init_outcome(outcome);
+    assert_eq!(state.common.calibration_tracking_temperature, 20);
+    state.apply_rx_gain_init_outcome(crate::rx::gain::PhyRxGainInitOutcome {
+        generated_tables: true,
+        ..outcome
+    });
+    assert_eq!(state.common.calibration_tracking_temperature, 27);
+}
+
+#[test]
 fn rx_table_preparation_updates_both_semantic_indices() {
     let mut state = PhyState::default();
     assert_eq!(

@@ -909,6 +909,10 @@ impl PhyState {
         }
     }
 
+    /// Commit an RX-gain initialization. Generated tables also commit the
+    /// latest temperature as the common calibration reference, as
+    /// `phy_set_rx_gain_table` of the pinned libphy stores `phy_param[0]`
+    /// into `phy_param[400]` after publishing them.
     pub fn apply_rx_gain_init_outcome(&mut self, outcome: PhyRxGainInitOutcome) {
         if let Some(dc) = outcome.dc {
             self.apply_rx_gain_dc_outcome(dc);
@@ -922,6 +926,7 @@ impl PhyState {
             self.wifi
                 .calibration
                 .set(WifiCalibrationStatus::RX_GAIN_TABLES, true);
+            self.common.calibration_tracking_temperature = self.common.temperature;
         }
     }
 

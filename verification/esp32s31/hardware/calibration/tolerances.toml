@@ -1,9 +1,54 @@
-# Reviewed tolerances of the hardware calibration cross-check.
+# Reviews of the hardware calibration cross-check fields.
 #
-# One entry per compared field of the `phy_param` relation
-# (verification/esp32s31/scenarios/src/phy/committed.rs). A production value
-# passes when it lies within the range the vendor cold boots span on the same
-# board, widened by `margin` element units. `signed` reads the elements as
-# two's-complement values. A compared field without an entry leaves the
-# cross-check INCOMPLETE.
-schema = 1
+# One entry per field of the `phy_param` relation
+# (verification/esp32s31/scenarios/src/phy/committed.rs). A field's margin is
+# the widest range its vendor boots span in any one element; a production
+# element passes within its vendor range widened by that margin. `signed`
+# reads elements as two's-complement values, `mask` compares only the bits
+# the relation models per element, and `excluded` leaves a field that
+# describes the environment rather than calibration out of the comparison.
+# A field without an entry leaves the cross-check INCOMPLETE.
+schema = 2
+
+[fields.current-temperature]
+excluded = true
+reason = "the latest sensor sample follows the board temperature at each boot, not a calibration result"
+
+[fields.common-reference]
+signed = true
+reason = "temperature the common calibration commits as its tracking reference"
+
+[fields.transmit-reference]
+signed = true
+reason = "temperature the TX calibration commits as its tracking reference"
+
+[fields.channel]
+reason = "channel the calibration ran on"
+
+[fields.bandwidth]
+reason = "bandwidth the calibration ran with"
+
+[fields.wifi-dc-rows]
+reason = "Wi-Fi TX DC calibration codes"
+
+[fields.bluetooth-dc-rows]
+reason = "Bluetooth TX DC calibration codes"
+
+[fields.wifi-rx-dc]
+reason = "Wi-Fi per-gain RX DC codes and the phy_rxdc_fine_cal pairs"
+
+[fields.shared-rx-dc]
+reason = "shared RX DC codes"
+
+[fields.dcode]
+reason = "DCODE calibration codes"
+
+[fields.calibration-status]
+mask = [0x80, 0x02]
+reason = "the relation models the RX-gain DC (0x80 of the first byte) and RX-gain table (0x02 of the second) completion bits; the vendor's other status bits are outside it"
+
+[fields.rx-table-last-indices]
+reason = "shared and Wi-Fi RX-gain table last indices"
+
+[fields.sensor-index]
+reason = "temperature sensor window the calibration selected"

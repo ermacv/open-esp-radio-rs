@@ -1,11 +1,14 @@
 //! Comparison of captured vendor and production calibrations under the
 //! reviewed `phy_param` relation and reviewed tolerances.
 //!
-//! Each compared field element passes when every production capture lies
-//! within the range the vendor captures span, widened by the field's
-//! reviewed margin: cold calibrations differ from boot to boot, so the
-//! vendor's own spread on the same board is the reference. A field without
-//! a reviewed tolerance leaves the comparison INCOMPLETE; tolerances naming
+//! Cold calibrations differ from boot to boot, so the vendor's own spread on
+//! the same board is the reference: a field's margin is the widest range its
+//! vendor boots span in any one element, and each element passes when every
+//! production capture lies within that element's vendor range widened by the
+//! margin (user decision 2026-09-27). Every compared field carries a review:
+//! whether its elements are signed, which bits the relation models, or that
+//! it describes the environment rather than calibration and is excluded. A
+//! field without a review leaves the comparison INCOMPLETE; reviews naming
 //! no compared field are rejected.
 use crate::capture::{Capture, PRODUCTION_PREFIX, VENDOR_PREFIX};
 use crate::committed::{
@@ -17,9 +20,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Summary format.
-const SCHEMA: u16 = 1;
+const SCHEMA: u16 = 2;
 /// Tolerance file format.
-const TOLERANCE_SCHEMA: u16 = 1;
+const TOLERANCE_SCHEMA: u16 = 2;
 /// Reviewed tolerances, relative to this package.
 const TOLERANCES: &str = "tolerances.toml";
 /// Tracked summary, relative to the repository root.
@@ -45,13 +48,18 @@ struct Tolerances {
     fields: BTreeMap<String, Tolerance>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Tolerance {
     /// Whether the field's elements are two's-complement values.
+    #[serde(default)]
     signed: bool,
-    /// Allowed distance beyond the vendor range, in element units.
-    margin: u32,
+    /// Per element, the bits the relation models; others are not compared.
+    #[serde(default)]
+    mask: Option<Vec<u64>>,
+    /// The field describes the environment rather than calibration.
+    #[serde(default)]
+    excluded: bool,
     reason: String,
 }
 
@@ -78,10 +86,17 @@ struct Summary {
     production_application_sha256: String,
     production_captures: usize,
     fields: Vec<FieldSummary>,
-    /// Fields of the relation that are not calibration.
-    excluded: Vec<&'static str>,
+    /// Relation fields that are not compared, with their reasons.
+    excluded: Vec<Excluded>,
     /// Vendor object byte ranges no compared field covers, `[start, end)`.
     uncovered: Vec<[usize; 2]>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct Excluded {
+    name: &'static str,
+    reason: String,
 }
 
 #[derive(Serialize)]
@@ -89,8 +104,10 @@ struct Summary {
 struct FieldSummary {
     name: &'static str,
     verdict: Verdict,
+    /// The widest vendor range of any element.
+    margin: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    margin: Option<u32>,
+    mask: Option<Vec<u64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
     /// Per element, the vendor and production `[min, max]`.
@@ -145,28 +162,39 @@ fn compare_field(
     production: &[Vec<u8>],
 ) -> Result<FieldSummary> {
     let signed = tolerance.is_some_and(|t| t.signed);
-    let (mut vendor_ranges, mut production_ranges) = (vec![], vec![]);
-    let mut within = true;
-    for index in 0..field.count {
-        let v = range(
-            vendor
-                .iter()
-                .map(|bytes| element(bytes, field.parameter, field, index, signed))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter(),
-        );
-        let p = range(
-            production
-                .iter()
-                .map(|bytes| element(bytes, field.output, field, index, signed))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter(),
-        );
-        let margin = i64::from(tolerance.map_or(0, |t| t.margin));
-        within &= v[0] - margin <= p[0] && p[1] <= v[1] + margin;
-        vendor_ranges.push(v);
-        production_ranges.push(p);
+    let mask = tolerance.and_then(|t| t.mask.clone());
+    if mask
+        .as_ref()
+        .is_some_and(|m| m.len() != field.count as usize)
+    {
+        return Err(format!("the mask of {} does not cover its elements", field.name).into());
     }
+    let values = |captures: &[Vec<u8>], offset: u32, index: u32| -> Result<[i64; 2]> {
+        let bits = mask.as_ref().map(|m| m[index as usize] as i64);
+        Ok(range(
+            captures
+                .iter()
+                .map(|bytes| {
+                    element(bytes, offset, field, index, signed).map(|v| bits.map_or(v, |b| v & b))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter(),
+        ))
+    };
+    let (mut vendor_ranges, mut production_ranges) = (vec![], vec![]);
+    for index in 0..field.count {
+        vendor_ranges.push(values(vendor, field.parameter, index)?);
+        production_ranges.push(values(production, field.output, index)?);
+    }
+    let margin = vendor_ranges
+        .iter()
+        .map(|[low, high]| high - low)
+        .max()
+        .unwrap_or(0);
+    let within = vendor_ranges
+        .iter()
+        .zip(&production_ranges)
+        .all(|(v, p)| v[0] - margin <= p[0] && p[1] <= v[1] + margin);
     Ok(FieldSummary {
         name: field.name,
         verdict: match (tolerance, within) {
@@ -174,7 +202,8 @@ fn compare_field(
             (Some(_), true) => Verdict::Match,
             (Some(_), false) => Verdict::Diff,
         },
-        margin: tolerance.map(|t| t.margin),
+        margin,
+        mask,
         reason: tolerance.map(|t| t.reason.clone()),
         vendor: vendor_ranges,
         production: production_ranges,
@@ -275,8 +304,23 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     if vendor.iter().any(|bytes| bytes.len() != length) {
         return Err(format!("{VENDOR_OBJECT} captures differ in length").into());
     }
+    let excluded = fields
+        .iter()
+        .filter_map(|field| {
+            let review = tolerances.fields.get(field.name).filter(|t| t.excluded)?;
+            Some(Excluded {
+                name: field.name,
+                reason: review.reason.clone(),
+            })
+        })
+        .chain(std::iter::once(Excluded {
+            name: TRACKING_PROGRESS_FIELD,
+            reason: "counts tracking work, not calibration".into(),
+        }))
+        .collect::<Vec<_>>();
     let summaries = fields
         .iter()
+        .filter(|field| !excluded.iter().any(|e| e.name == field.name))
         .map(|field| {
             compare_field(
                 field,
@@ -305,7 +349,7 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
         production_application_sha256: capture.production_application_sha256,
         production_captures: production.len(),
         fields: summaries,
-        excluded: vec![TRACKING_PROGRESS_FIELD],
+        excluded,
         uncovered: uncovered(length, &fields),
     };
     let output = arguments
@@ -338,29 +382,40 @@ mod tests {
     use super::*;
     use crate::committed::field;
 
-    fn tolerance(margin: u32) -> Tolerance {
+    fn review() -> Tolerance {
         Tolerance {
-            signed: true,
-            margin,
-            reason: String::new(),
+            reason: String::from("reviewed"),
+            ..Tolerance::default()
         }
     }
 
     #[test]
-    fn production_within_the_widened_vendor_range_matches() {
-        let field = field("value", 0, 1, 1, 1);
-        let vendor = [vec![10], vec![12]];
-        let production = [vec![0, 13]];
-        let exact = compare_field(&field, Some(&tolerance(0)), &vendor, &production).unwrap();
-        assert_eq!(exact.verdict, Verdict::Diff);
-        let widened = compare_field(&field, Some(&tolerance(1)), &vendor, &production).unwrap();
-        assert_eq!(widened.verdict, Verdict::Match);
-        assert_eq!(
-            (widened.vendor[0], widened.production[0]),
-            ([10, 12], [13, 13])
-        );
-        let unreviewed = compare_field(&field, None, &vendor, &production).unwrap();
+    fn production_within_the_vendor_spread_matches() {
+        let field = field("value", 0, 1, 1, 2);
+        // The second element's vendor boots span 2, so every element's
+        // range widens by 2.
+        let vendor = [vec![10, 20], vec![10, 22]];
+        let within = [vec![0, 12, 24]];
+        let summary = compare_field(&field, Some(&review()), &vendor, &within).unwrap();
+        assert_eq!((summary.verdict, summary.margin), (Verdict::Match, 2));
+        let beyond = [vec![0, 13, 20]];
+        let summary = compare_field(&field, Some(&review()), &vendor, &beyond).unwrap();
+        assert_eq!(summary.verdict, Verdict::Diff);
+        let unreviewed = compare_field(&field, None, &vendor, &within).unwrap();
         assert_eq!(unreviewed.verdict, Verdict::Incomplete);
+    }
+
+    #[test]
+    fn masks_compare_only_modeled_bits() {
+        let field = field("status", 0, 0, 1, 1);
+        let masked = Tolerance {
+            mask: Some(vec![0x80]),
+            ..review()
+        };
+        let summary = compare_field(&field, Some(&masked), &[vec![0xa8]], &[vec![0x80]]).unwrap();
+        assert_eq!(summary.verdict, Verdict::Match);
+        let whole = compare_field(&field, Some(&review()), &[vec![0xa8]], &[vec![0x80]]).unwrap();
+        assert_eq!(whole.verdict, Verdict::Diff);
     }
 
     #[test]

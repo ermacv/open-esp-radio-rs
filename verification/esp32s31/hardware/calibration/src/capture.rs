@@ -3,9 +3,10 @@
 //!
 //! Run under the stand lease (`cargo hil --owner <name> lease -- ...`). The
 //! vendor firmware comes from `cargo xtask vendor-firmware`; the production
-//! image from `cargo hil image build`. Each production boot receives a fresh
-//! startup artifact path, so it calibrates fully and publishes the new
-//! retained calibration there.
+//! image from `cargo hil image build`. Each round flashes and boots the
+//! vendor firmware, then the production image, so both sides see the same
+//! board temperature. Each production boot receives a fresh startup artifact
+//! path, so it calibrates fully and publishes the new retained calibration.
 use crate::{Result, repository_root, vendor};
 use oer_hil_runner_core::lab::config::LabConfig;
 use oer_hil_runner_core::session::{SerialCapture, Settings, Target};
@@ -46,8 +47,8 @@ pub struct Arguments {
     /// New directory for the captures.
     #[arg(long)]
     output: PathBuf,
-    /// Cold boots per side.
-    #[arg(long, default_value_t = 3)]
+    /// Cold boots per side, alternating vendor and production.
+    #[arg(long, default_value_t = 10)]
     boots: u32,
     /// Vendor firmware project of `verification/esp32s31/hil-vendor`.
     #[arg(long, default_value = "calibration")]
@@ -186,32 +187,35 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     let started_unix_seconds = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let _lease = oer_esp32s31_firmware::device::DeviceLease::acquire(&port)?;
 
+    // Vendor and production boots alternate, so both sides see the same
+    // board temperature drift.
     let journal_name = format!("{JOURNAL_PREFIX}{}", arguments.vendor_project);
-    oer_hil_runner_core::device::flash_application(
-        &root,
-        &vendor_build.application,
-        &output.join("flash-vendor"),
-        &port,
-    )?;
-    journal(&root, &journal_name, &vendor_build.application, &port)?;
     for boot in 1..=arguments.boots {
+        oer_hil_runner_core::device::flash_application(
+            &root,
+            &vendor_build.application,
+            &output.join("flash-vendor"),
+            &port,
+        )?;
+        journal(&root, &journal_name, &vendor_build.application, &port)?;
         let console = vendor_boot(&port)?;
-        std::fs::write(output.join(format!("{VENDOR_PREFIX}{boot}.log")), console)?;
+        std::fs::write(
+            output.join(format!("{VENDOR_PREFIX}{boot:02}.log")),
+            console,
+        )?;
         println!("vendor boot {boot}: report captured");
-    }
 
-    oer_hil_runner_core::device::flash_application(
-        &root,
-        &production,
-        &output.join("flash-production"),
-        &port,
-    )?;
-    journal(&root, &arguments.production_image, &production, &port)?;
-    for boot in 1..=arguments.boots {
+        oer_hil_runner_core::device::flash_application(
+            &root,
+            &production,
+            &output.join("flash-production"),
+            &port,
+        )?;
+        journal(&root, &arguments.production_image, &production, &port)?;
         production_boot(
             &lab,
-            &output.join(format!("{PRODUCTION_PREFIX}{boot}.bin")),
-            &output.join(format!("session-production-{boot}")),
+            &output.join(format!("{PRODUCTION_PREFIX}{boot:02}.bin")),
+            &output.join(format!("session-production-{boot:02}")),
         )?;
         println!("production boot {boot}: retained calibration captured");
     }

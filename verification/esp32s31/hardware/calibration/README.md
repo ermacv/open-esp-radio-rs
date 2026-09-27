@@ -19,16 +19,16 @@ cargo run -p oer-esp32s31-phy-vendor-calibration -- compare --captures <director
 ## Capture
 
 `capture` holds the board's device lease and records every flash in the
-board journal. It takes these steps:
+board journal. For each of `--boots` rounds (ten by default) it takes these
+steps:
 
 1. Flash the [vendor calibration firmware](../../hil-vendor/README.md) into
-   `ota_0`.
-2. Reset the board `--boots` times and keep each boot's `phy_param` report.
-3. Flash the production image class (`--production-image`, `correctness` by
-   default) and prepare each of `--boots` resets with a fresh startup
-   artifact path. Every production boot therefore calibrates fully and
-   publishes its retained calibration.
+   `ota_0`, reset the board and keep the boot's `phy_param` report.
+2. Flash the production image class (`--production-image`, `correctness` by
+   default) and prepare one reset with a fresh startup artifact path, so the
+   boot calibrates fully and publishes its retained calibration.
 
+Alternating the sides exposes both to the same board temperature drift.
 Captures stay in the ignored output directory.
 
 ## Compare
@@ -40,10 +40,20 @@ Captures stay in the ignored output directory.
   words.
 - Reads the same fields from each vendor `phy_param`.
 
-A field element passes when every production value lies within the range the
-vendor boots span, widened by the field's reviewed margin in
-[`tolerances.toml`](tolerances.toml). If a compared field has no reviewed
-tolerance, the verdict is INCOMPLETE.
+Cold calibrations vary from boot to boot, so the vendor's own spread is the
+reference. A field's margin is the widest range its vendor boots span in any
+one element. An element passes when every production value lies within its
+vendor range widened by that margin.
+
+Every field carries a review in [`tolerances.toml`](tolerances.toml) with
+these parts:
+
+- whether its elements are signed;
+- which bits the relation models (`mask`);
+- whether it describes the environment rather than calibration (`excluded`);
+- the reason.
+
+A field without a review leaves the verdict INCOMPLETE.
 
 The summary goes to
 [`evidence/hardware/calibration.json`](../../evidence/hardware/calibration.json).
@@ -51,8 +61,8 @@ It records:
 
 - the capture date and verdict;
 - both images;
-- each field's vendor and production ranges;
-- the relation field excluded as tracking progress;
+- each field's margin and its vendor and production ranges;
+- the excluded fields with their reasons;
 - the vendor byte ranges no compared field covers.
 
 ## Limitations

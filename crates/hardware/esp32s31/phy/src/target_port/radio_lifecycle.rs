@@ -65,7 +65,7 @@ pub(super) async fn observe_temperature_with_hal<P, D: PhyAsyncDelay>(
 pub static OER_WAKE_TRACE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 #[allow(unsafe_code)]
-const WAKE_EXECUTE: core::ops::RangeInclusive<u32> = 0..=0;
+const WAKE_EXECUTE: core::ops::RangeInclusive<u32> = 4..=18;
 
 #[allow(unsafe_code)]
 pub fn wake_trace(value: u32) {

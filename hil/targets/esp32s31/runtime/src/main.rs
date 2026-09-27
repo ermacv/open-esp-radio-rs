@@ -368,16 +368,18 @@ extern "C" fn runtime_main() -> ! {
         };
         unsafe {
             ets_printf(
-                c"OER_TRACE wake=%x runtime=%x reset_prev=%x reset_now=%x panic=%x mepc=%x older=%x %x\r\n"
-                    .as_ptr(),
+                c"OER_TRACE wake=%x runtime=%x beat=%x mepc=%x\r\n".as_ptr(),
                 wake,
                 runtime,
-                OER_RESET_TRACE[0].load(SeqCst),
-                OER_RESET_TRACE[1].load(SeqCst),
                 OER_RESET_TRACE[2].load(SeqCst),
                 OER_RESET_TRACE[3].load(SeqCst),
+            );
+            ets_printf(
+                c"OER_RESET %x %x %x %x\r\n".as_ptr(),
                 OER_RESET_TRACE[4].load(SeqCst),
                 OER_RESET_TRACE[5].load(SeqCst),
+                OER_RESET_TRACE[0].load(SeqCst),
+                OER_RESET_TRACE[1].load(SeqCst),
             )
         };
     }

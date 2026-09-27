@@ -2957,6 +2957,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "serialport",
  "tempfile",
 ]
 

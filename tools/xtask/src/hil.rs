@@ -54,6 +54,8 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     match args.first().and_then(|argument| argument.to_str()) {
         Some("queue") => return queue(&args[1..]),
         Some("lease") => return lease(ctx, options, &args[1..]),
+        Some("board") => return board(ctx, &options, &args[1..]),
+        Some("devices") => return devices(&args[1..]),
         _ => {}
     }
     let (runner, receipt_path) = prepare(ctx)?;
@@ -188,24 +190,129 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
 /// Exit status of a lease command terminated at twice its budget.
 const BUDGET_EXCEEDED_EXIT: u8 = 124;
 
+fn parse_budget(text: &str) -> std::result::Result<std::time::Duration, String> {
+    oer_hil_arbiter::parse_duration(text).map_err(|error| error.to_string())
+}
+
+/// `cargo hil lease [OPTIONS] -- COMMAND...`
+#[derive(Debug, clap::Parser)]
+#[command(name = "cargo hil lease", no_binary_name = true)]
+struct LeaseCli {
+    /// Who holds the lease.
+    #[arg(long)]
+    owner: Option<String>,
+    /// Lease budget, e.g. 90s, 15m or 1h30m.
+    #[arg(long, value_parser = parse_budget)]
+    budget: Option<std::time::Duration>,
+    /// A budget of at most two minutes, granted ahead of the queue head.
+    #[arg(long)]
+    short: bool,
+    /// Journal a flash that COMMAND performs when it succeeds.
+    #[command(flatten)]
+    flashed: FlashedArgs,
+    #[arg(last = true, required = true)]
+    command: Vec<OsString>,
+}
+
+/// A flash performed outside the HIL runner, recorded in the board journal.
+#[derive(Clone, Debug, Default, clap::Args)]
+struct FlashedArgs {
+    /// Name of the flashed image, e.g. `ieee802154-peer`.
+    #[arg(long = "flashed", visible_alias = "image")]
+    image: Option<String>,
+    /// The flashed application binary, whose SHA-256 is recorded.
+    #[arg(long, requires = "image", conflicts_with = "sha256")]
+    application: Option<std::path::PathBuf>,
+    /// SHA-256 of the flashed application instead of `--application`.
+    #[arg(long, requires = "image")]
+    sha256: Option<String>,
+    /// Serial port of the flashed board; its USB serial number is its MAC.
+    #[arg(long, requires = "image", conflicts_with = "device")]
+    port: Option<std::path::PathBuf>,
+    /// MAC of the flashed board.
+    #[arg(long, requires = "image")]
+    device: Option<String>,
+    /// Chip of the flashed board, registered when still unknown.
+    #[arg(long, requires = "image")]
+    chip: Option<String>,
+    /// Source commit of the image.
+    #[arg(long, requires = "image")]
+    commit: Option<String>,
+}
+
+impl FlashedArgs {
+    fn record(
+        &self,
+        arbiter: &oer_hil_arbiter::Arbiter,
+        owner: String,
+        origin: String,
+    ) -> Result<()> {
+        let Some(image) = &self.image else {
+            return Ok(());
+        };
+        let application_sha256 = match (&self.application, &self.sha256) {
+            (Some(application), None) => {
+                use sha2::Digest as _;
+                format!("{:x}", Sha256::digest(fs::read(application)?))
+            }
+            (None, Some(hash))
+                if hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+            {
+                hash.to_ascii_lowercase()
+            }
+            (None, Some(hash)) => return Err(format!("`{hash}` is not a SHA-256").into()),
+            _ => return Err("a recorded flash needs --application or --sha256".into()),
+        };
+        let device = match (&self.device, &self.port) {
+            (Some(device), None) => oer_hil_arbiter::normalize_mac(device)?,
+            (None, Some(port)) => oer_hil_arbiter::port_mac(port).ok_or_else(|| {
+                format!(
+                    "{} reports no USB serial number; name the board with --device MAC",
+                    port.display()
+                )
+            })?,
+            _ => return Err("a recorded flash needs --port or --device".into()),
+        };
+        if let Some(chip) = &self.chip {
+            arbiter.register_device(oer_hil_arbiter::Device {
+                mac: device.clone(),
+                chip: Some(chip.clone()),
+                ..oer_hil_arbiter::Device::default()
+            })?;
+        }
+        arbiter.record_board_by(
+            owner,
+            Some(device.clone()),
+            oer_hil_arbiter::BoardEventKind::Flashed {
+                image: image.clone(),
+                application_sha256,
+                commit: self.commit.clone(),
+                dirty: None,
+                origin,
+            },
+        )?;
+        eprintln!("hil-arbiter: recorded {image} on {device}");
+        Ok(())
+    }
+}
+
 /// Run one command, typically a series of HIL commands, under one lease.
 /// Nested `cargo hil` commands join the lease instead of queueing.
 fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
-    let (options, command) = LeaseOptions::split(args)?;
-    let usage = "usage: cargo hil lease [--owner NAME] [--budget DURATION] [--short] -- COMMAND...";
-    let [separator, program, arguments @ ..] = command.as_slice() else {
-        return Err(usage.into());
-    };
-    if separator != "--" {
-        return Err(usage.into());
-    }
+    use clap::Parser as _;
+    let cli = LeaseCli::try_parse_from(args)?;
     let options = LeaseOptions {
-        owner: options.owner.or(outer.owner),
-        budget: options.budget.or(outer.budget),
-        short: options.short || outer.short,
+        owner: cli.owner.or(outer.owner),
+        budget: cli.budget.or(outer.budget),
+        short: cli.short || outer.short,
     };
-    let work = std::iter::once(program)
-        .chain(arguments)
+    let (program, arguments) = cli
+        .command
+        .split_first()
+        .ok_or("cargo hil lease needs a COMMAND after --")?;
+    let work = cli
+        .command
+        .iter()
         .map(|argument| argument.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ");
@@ -215,7 +322,8 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         budget: options.budget,
         short: options.short,
     };
-    let grant = oer_hil_arbiter::Arbiter::open()?.acquire(&request)?;
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let grant = arbiter.acquire(&request)?;
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         ctx.command(program)
             .args(arguments)
@@ -223,26 +331,40 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
             .envs(grant.environment()),
         std::time::Duration::from_secs(300),
     )?;
-    supervise(&grant, &mut child)
+    let (code, succeeded) = supervise(&grant, &mut child)?;
+    if cli.flashed.image.is_some() {
+        if succeeded {
+            cli.flashed.record(
+                &arbiter,
+                request.owner.clone(),
+                format!("lease `{}`", request.work),
+            )?;
+        } else {
+            eprintln!("hil-arbiter: the command failed; its flash is not recorded");
+        }
+    }
+    Ok(code)
 }
 
 /// Warn at the budget and terminate the command group at twice the budget.
+/// Returns the exit code and whether the command succeeded.
 fn supervise(
     grant: &oer_hil_arbiter::Grant,
     child: &mut oer_process::owned::Child,
-) -> Result<std::process::ExitCode> {
+) -> Result<(std::process::ExitCode, bool)> {
+    let finished = |status: std::process::ExitStatus| (exit_code(status), status.success());
     let Some(budget) = grant.budget() else {
-        return Ok(exit_code(child.wait_forwarding_cancellation()?));
+        return Ok(finished(child.wait_forwarding_cancellation()?));
     };
     let started = std::time::Instant::now();
     let mut warned = false;
     loop {
         if let Some(status) = child.try_wait()? {
-            return Ok(exit_code(status));
+            return Ok(finished(status));
         }
         if oer_process::cancellation_requested() {
             child.kill()?;
-            return Ok(std::process::ExitCode::from(130));
+            return Ok((std::process::ExitCode::from(130), false));
         }
         let elapsed = started.elapsed();
         if !warned && elapsed >= budget {
@@ -252,10 +374,96 @@ fn supervise(
         if elapsed >= budget * 2 {
             grant.mark_budget_exceeded();
             child.kill()?;
-            return Ok(std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT));
+            return Ok((std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT), false));
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
+}
+
+/// `cargo hil board flashed ...`: journal a flash made outside the runner.
+fn board(
+    ctx: &Context,
+    options: &LeaseOptions,
+    args: &[OsString],
+) -> Result<std::process::ExitCode> {
+    use clap::Parser as _;
+    #[derive(clap::Parser)]
+    #[command(name = "cargo hil board", no_binary_name = true)]
+    enum BoardCli {
+        /// Record a flash performed outside the HIL runner.
+        Flashed(FlashedArgs),
+    }
+    let BoardCli::Flashed(flashed) = BoardCli::try_parse_from(args)?;
+    if flashed.image.is_none() {
+        return Err("cargo hil board flashed needs --image NAME".into());
+    }
+    flashed.record(
+        &oer_hil_arbiter::Arbiter::open()?,
+        options.owner(ctx),
+        String::from("cargo hil board flashed"),
+    )?;
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// `cargo hil devices [--json]` and `cargo hil devices set MAC ...`.
+fn devices(args: &[OsString]) -> Result<std::process::ExitCode> {
+    use clap::Parser as _;
+    #[derive(clap::Parser)]
+    #[command(name = "cargo hil devices", no_binary_name = true)]
+    struct DevicesCli {
+        #[arg(long)]
+        json: bool,
+        #[command(subcommand)]
+        command: Option<DevicesCommand>,
+    }
+    #[derive(clap::Subcommand)]
+    enum DevicesCommand {
+        /// Register or change a board's chip, role and name.
+        Set {
+            mac: String,
+            #[arg(long)]
+            chip: Option<String>,
+            #[arg(long)]
+            role: Option<String>,
+            #[arg(long)]
+            name: Option<String>,
+        },
+    }
+    let cli = DevicesCli::try_parse_from(args)?;
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    if let Some(DevicesCommand::Set {
+        mac,
+        chip,
+        role,
+        name,
+    }) = cli.command
+    {
+        let device = arbiter.set_device(oer_hil_arbiter::Device {
+            mac,
+            chip,
+            role,
+            name,
+        })?;
+        println!("{} {}", device.mac, device.label());
+        return Ok(std::process::ExitCode::SUCCESS);
+    }
+    let status = arbiter.status()?;
+    if cli.json {
+        println!("{}", serde_json::to_string_pretty(&status.devices)?);
+    } else {
+        for device in &status.devices {
+            println!(
+                "{} [{}]: {}",
+                device.label,
+                device.port.as_deref().unwrap_or("not attached"),
+                device
+                    .firmware
+                    .as_ref()
+                    .map_or_else(|| String::from("firmware unknown"), ToString::to_string)
+            );
+        }
+    }
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// The HIL target the runner executes on.
@@ -377,13 +585,71 @@ mod tests {
             std::time::Duration::from_secs(1),
         )
         .unwrap();
-        let code = supervise(&grant, &mut child).unwrap();
+        let (code, succeeded) = supervise(&grant, &mut child).unwrap();
+        assert!(!succeeded);
         assert_eq!(code, std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT));
         assert!(started.elapsed() >= std::time::Duration::from_secs(2));
         drop(grant);
         assert_eq!(
             arbiter.history().unwrap()[0].outcome,
             oer_hil_arbiter::LeaseOutcome::BudgetExceeded
+        );
+    }
+
+    #[test]
+    fn lease_records_a_described_flash_on_the_named_board() {
+        use clap::Parser as _;
+        let cli = LeaseCli::try_parse_from([
+            "--owner",
+            "802154",
+            "--flashed",
+            "ieee802154-peer",
+            "--sha256",
+            &"AB".repeat(32),
+            "--device",
+            "38:44:be:aa:25:64",
+            "--chip",
+            "esp32c5",
+            "--",
+            "idf.py",
+            "flash",
+        ])
+        .unwrap();
+        assert_eq!(cli.command, ["idf.py", "flash"]);
+        assert!(
+            LeaseCli::try_parse_from(["idf.py"]).is_err(),
+            "COMMAND follows --"
+        );
+        assert!(
+            LeaseCli::try_parse_from(["--sha256", "ab", "--", "x"]).is_err(),
+            "flash details need --flashed"
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = oer_hil_arbiter::Arbiter::at(directory.path()).unwrap();
+        cli.flashed
+            .record(&arbiter, "802154".into(), "test".into())
+            .unwrap();
+        let events = arbiter.board_events().unwrap();
+        assert_eq!(events[0].device.as_deref(), Some("38:44:BE:AA:25:64"));
+        assert_eq!(events[0].owner, "802154");
+        assert!(matches!(
+            &events[0].kind,
+            oer_hil_arbiter::BoardEventKind::Flashed { application_sha256, .. }
+                if *application_sha256 == "ab".repeat(32)
+        ));
+        assert_eq!(
+            arbiter.devices().unwrap()[0].chip.as_deref(),
+            Some("esp32c5")
+        );
+        let incomplete = FlashedArgs {
+            image: Some("x".into()),
+            sha256: Some("ab".repeat(32)),
+            ..FlashedArgs::default()
+        };
+        assert!(
+            incomplete
+                .record(&arbiter, "802154".into(), "test".into())
+                .is_err()
         );
     }
 

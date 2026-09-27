@@ -91,6 +91,7 @@ impl SerialCapture {
         {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
             crate::lab::lock::record_board(
+                &target.lab.device.serial,
                 oer_hil_arbiter::BoardEventKind::StartupArtifactUploaded {
                     path: path.display().to_string(),
                     sha256: crate::durable::sha256_bytes(&bytes),
@@ -119,6 +120,7 @@ impl SerialCapture {
             }
             crate::session::startup_artifact::persist_atomically(path, &bytes)?;
             crate::lab::lock::record_board(
+                &target.lab.device.serial,
                 oer_hil_arbiter::BoardEventKind::StartupArtifactWritten {
                     path: path.display().to_string(),
                     sha256: crate::durable::sha256_bytes(&bytes),

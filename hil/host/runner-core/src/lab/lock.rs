@@ -149,17 +149,30 @@ impl std::fmt::Display for FixtureBusy {
 
 impl std::error::Error for FixtureBusy {}
 
-/// Journal a board change. Failure is reported and never fails the run.
-pub fn record_board(kind: oer_hil_arbiter::BoardEventKind) {
-    if let Err(error) =
-        oer_hil_arbiter::Arbiter::open().and_then(|arbiter| arbiter.record_board(kind))
-    {
+/// Journal a change of the DUT at `port`. The runner targets the ESP32-S31,
+/// so an unregistered DUT is registered with that chip. Failure is reported
+/// and never fails the run.
+pub fn record_board(port: &Path, kind: oer_hil_arbiter::BoardEventKind) {
+    let result = oer_hil_arbiter::Arbiter::open().and_then(|arbiter| {
+        let device = oer_hil_arbiter::port_mac(port);
+        if let Some(mac) = &device {
+            arbiter.register_device(oer_hil_arbiter::Device {
+                mac: mac.clone(),
+                chip: Some(String::from("esp32s31")),
+                role: Some(String::from("dut")),
+                name: None,
+            })?;
+        }
+        arbiter.record_board(device, kind)
+    });
+    if let Err(error) = result {
         eprintln!("hil-arbiter: cannot record board change: {error}");
     }
 }
 
-/// Journal a successful flash of `application`.
+/// Journal a successful flash of `application` to the DUT at `port`.
 pub fn record_flash(
+    port: &Path,
     image: &str,
     application: &Path,
     commit: Option<String>,
@@ -167,13 +180,16 @@ pub fn record_flash(
     origin: String,
 ) {
     match crate::durable::sha256_file(application) {
-        Ok(application_sha256) => record_board(oer_hil_arbiter::BoardEventKind::Flashed {
-            image: image.to_owned(),
-            application_sha256,
-            commit,
-            dirty,
-            origin,
-        }),
+        Ok(application_sha256) => record_board(
+            port,
+            oer_hil_arbiter::BoardEventKind::Flashed {
+                image: image.to_owned(),
+                application_sha256,
+                commit,
+                dirty,
+                origin,
+            },
+        ),
         Err(error) => eprintln!("hil-arbiter: cannot identify flashed application: {error}"),
     }
 }

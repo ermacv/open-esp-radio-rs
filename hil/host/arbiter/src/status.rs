@@ -5,7 +5,10 @@ use std::{fmt::Write as _, time::Duration};
 use serde::Serialize;
 
 use crate::{
-    Arbiter, BoardEvent, BudgetSource, LeaseRecord, board::latest, budget::format_duration, queue,
+    Arbiter, BoardEvent, BudgetSource, LeaseRecord,
+    board::{device_label, latest},
+    budget::format_duration,
+    queue,
 };
 
 const RECENT_LEASES: usize = 5;
@@ -15,9 +18,20 @@ pub struct Status {
     pub holder: Option<HolderStatus>,
     /// In expected grant order.
     pub queue: Vec<QueuedStatus>,
-    pub firmware: Option<BoardEvent>,
+    /// Registered, attached or journaled boards.
+    pub devices: Vec<DeviceStatus>,
     pub startup_artifact: Option<BoardEvent>,
     pub recent: Vec<LeaseRecord>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DeviceStatus {
+    /// `None` for journal records that predate device identities.
+    pub mac: Option<String>,
+    pub label: String,
+    /// The port it is attached at now.
+    pub port: Option<String>,
+    pub firmware: Option<BoardEvent>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -68,7 +82,40 @@ impl Arbiter {
             })
             .collect();
         let events = self.board_events()?;
-        let (firmware, startup_artifact) = latest(&events);
+        let (flashes, startup_artifact) = latest(&events);
+        let registered = self.devices()?;
+        let attached = crate::attached_ports();
+        let mut macs: Vec<Option<String>> = registered
+            .iter()
+            .map(|device| Some(device.mac.clone()))
+            .chain(
+                attached
+                    .iter()
+                    .filter_map(|port| port.mac.clone().map(Some)),
+            )
+            .chain(flashes.iter().map(|flash| flash.device.clone()))
+            .collect();
+        let mut seen = Vec::new();
+        macs.retain(|mac| {
+            let new = !seen.contains(mac);
+            seen.push(mac.clone());
+            new
+        });
+        let devices = macs
+            .into_iter()
+            .map(|mac| DeviceStatus {
+                label: device_label(mac.as_deref(), &registered),
+                port: attached
+                    .iter()
+                    .find(|port| port.mac.is_some() && port.mac == mac)
+                    .map(|port| port.port.clone()),
+                firmware: flashes
+                    .iter()
+                    .find(|flash| flash.device == mac)
+                    .map(|flash| (*flash).clone()),
+                mac,
+            })
+            .collect();
         let history = self.history()?;
         Ok(Status {
             holder: state.holder.map(|holder| HolderStatus {
@@ -82,7 +129,7 @@ impl Arbiter {
                 over_budget: holder.over_budget,
             }),
             queue,
-            firmware: firmware.cloned(),
+            devices,
             startup_artifact: startup_artifact.cloned(),
             recent: history.iter().rev().take(RECENT_LEASES).cloned().collect(),
         })
@@ -138,7 +185,18 @@ impl std::fmt::Display for Status {
                 .as_ref()
                 .map_or_else(|| String::from("unknown"), ToString::to_string)
         };
-        writeln!(text, "firmware: {}", describe(&self.firmware))?;
+        if self.devices.is_empty() {
+            writeln!(text, "boards:  none known")?;
+        }
+        for device in &self.devices {
+            writeln!(
+                text,
+                "board {} [{}]: {}",
+                device.label,
+                device.port.as_deref().unwrap_or("not attached"),
+                describe(&device.firmware)
+            )?;
+        }
         writeln!(
             text,
             "startup artifact: {}",

@@ -212,6 +212,7 @@ pub(crate) fn run() -> Result<()> {
                 let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash(&root, &artifacts, &lab.device.serial)?;
                 lab::lock::record_flash(
+                    &lab.device.serial,
                     class.id(),
                     &artifacts.application_image,
                     None,
@@ -228,6 +229,7 @@ pub(crate) fn run() -> Result<()> {
                 let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash_archived(&root, &firmware, &lab.device.serial)?;
                 lab::lock::record_flash(
+                    &lab.device.serial,
                     firmware.image.id(),
                     &firmware.application_path,
                     None,

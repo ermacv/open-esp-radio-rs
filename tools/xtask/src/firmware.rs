@@ -197,13 +197,21 @@ pub fn flash(
         process::run(&mut command)?;
     }
     let application = fs::read(output.join("application.bin"))?;
-    arbiter.record_board(oer_hil_arbiter::BoardEventKind::Flashed {
-        image: example.to_owned(),
-        application_sha256: format!("{:x}", sha2::Sha256::digest(&application)),
-        commit: None,
-        dirty: None,
-        origin: format!("xtask build firmware {example} --flash"),
-    })?;
+    arbiter.record_board(
+        lease
+            .port()
+            .canonicalize()
+            .ok()
+            .as_deref()
+            .and_then(oer_hil_arbiter::port_mac),
+        oer_hil_arbiter::BoardEventKind::Flashed {
+            image: example.to_owned(),
+            application_sha256: format!("{:x}", sha2::Sha256::digest(&application)),
+            commit: None,
+            dirty: None,
+            origin: format!("xtask build firmware {example} --flash"),
+        },
+    )?;
     if monitor {
         monitor::run(port.ok_or("--monitor requires --port")?)?;
     }

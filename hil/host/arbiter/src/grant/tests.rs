@@ -198,18 +198,26 @@ fn status_and_board_report_the_latest_state() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     arbiter
-        .record_board(BoardEventKind::StartupArtifactWritten {
-            path: "/tmp/a".into(),
-            sha256: "ab".into(),
-            disposition: "Created".into(),
-        })
+        .record_board(
+            None,
+            BoardEventKind::StartupArtifactWritten {
+                path: "/tmp/a".into(),
+                sha256: "ab".into(),
+                disposition: "Created".into(),
+            },
+        )
         .unwrap();
     let (mut holder, identity) = other_process();
     hold(&arbiter, ticket(4, "802154", identity, false));
     let status = arbiter.status().unwrap();
     assert_eq!(status.holder.as_ref().unwrap().owner, "802154");
     assert!(status.startup_artifact.is_some());
-    assert!(status.firmware.is_none());
+    assert!(
+        status
+            .devices
+            .iter()
+            .all(|device| device.firmware.is_none())
+    );
     let text = status.to_string();
     assert!(text.contains("802154"), "{text}");
     holder.kill().unwrap();

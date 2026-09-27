@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     Arbiter,
-    board::latest,
+    board::{device_label, latest},
     budget::{self, MAX_SHORT_BUDGET, format_duration},
     history::{self, LeaseOutcome, LeaseRecord},
     notify,
@@ -288,6 +288,8 @@ impl Arbiter {
             eprintln!("hil-arbiter: board journal unavailable");
             return;
         };
+        let devices = self.devices().unwrap_or_default();
+        let label = |event: &crate::BoardEvent| device_label(event.device.as_deref(), &devices);
         let previous = history
             .iter()
             .rev()
@@ -301,18 +303,20 @@ impl Arbiter {
             if !changes.is_empty() {
                 eprintln!("hil-arbiter: board changes by others since your previous lease:");
                 for event in changes.iter().rev().take(10).rev() {
-                    eprintln!("hil-arbiter:   {event}");
+                    eprintln!("hil-arbiter:   {}: {event}", label(event));
                 }
             }
         }
-        let (flash, artifact) = latest(&events);
-        let describe = |event: Option<&crate::BoardEvent>| {
-            event.map_or_else(|| String::from("unknown"), ToString::to_string)
-        };
-        eprintln!("hil-arbiter: board firmware: {}", describe(flash));
+        let (flashes, artifact) = latest(&events);
+        if flashes.is_empty() {
+            eprintln!("hil-arbiter: board firmware: unknown");
+        }
+        for flash in flashes {
+            eprintln!("hil-arbiter: firmware on {}: {flash}", label(flash));
+        }
         eprintln!(
-            "hil-arbiter: board startup artifact: {}",
-            describe(artifact)
+            "hil-arbiter: startup artifact: {}",
+            artifact.map_or_else(|| String::from("unknown"), ToString::to_string)
         );
     }
 }

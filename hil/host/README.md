@@ -120,12 +120,36 @@ the notification for an agent. The user receives desktop notifications through
 `notify-send` when a waiting owner is granted the stand, when the stand becomes
 free, and when a lease exceeds its budget; `OER_HIL_NOTIFY=0` disables them.
 
-On every grant the arbiter prints the board's last flashed firmware (image,
-commit, application hash, owner) and the last startup-artifact upload or write,
-which carries the PHY calibration cache, and lists the changes other owners
-made since this owner's previous lease. It only reports this state; it never
-erases or restores it. A checkout without the arbiter still fails fast on the
-fixture locks; a granted holder waits for such a process to finish.
+The stand holds several boards: the ESP32-S31 DUT and peers such as an
+ESP32-C5 that scenarios may flash with their own firmware. Each board is
+identified by the MAC address its USB Serial/JTAG port reports as USB serial
+number, independent of `/dev/ttyACM*` numbering. Every board is part of the
+stand: flash and use a peer only under a lease.
+
+```console
+cargo hil devices                     # boards: label, port, last firmware
+cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --role peer --name c5-peer
+cargo hil lease --flashed ieee802154-peer --application build/peer.bin \
+    --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
+    --chip esp32c5 -- idf.py -p /dev/ttyACM1 flash
+cargo hil board flashed --image NAME --sha256 HASH --device MAC   # inside a lease
+```
+
+The runner records its own DUT flashes and registers the DUT as `esp32s31`.
+Any other flash (a peer, a vendor image, a manual `espflash`) is recorded
+with `lease --flashed`, which journals it only when the command succeeds, or
+with `board flashed`. Name the board with `--port` or `--device`, and the
+application with `--application FILE` or `--sha256`.
+
+On every grant the arbiter prints the last flashed firmware of every board
+(image, commit, application hash, owner) and the last startup-artifact upload
+or write, which carries the PHY calibration cache, and lists the changes other
+owners made since this owner's previous lease. It only reports this state; it
+never erases or restores it. The queue, history, journal and device registry live in the
+user's host cache, so every checkout of the repository shares them; the
+default owner is the checkout directory name. A checkout without the arbiter
+still fails fast on the fixture locks and bypasses the queue; a granted holder
+waits for such a process to finish.
 
 ## Build and run
 

@@ -57,12 +57,26 @@ impl Arbiter {
         &self,
         action: impl FnOnce(&mut State) -> crate::Result<T>,
     ) -> crate::Result<T> {
+        self.locked(|| self.state_transaction(action))
+    }
+
+    /// Run `action` under the exclusive lock of every arbiter file.
+    pub(crate) fn locked<T>(&self, action: impl FnOnce() -> crate::Result<T>) -> crate::Result<T> {
         let lock = fs::OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
             .open(self.directory.join("arbiter.lock"))?;
         lock.lock_exclusive()?;
+        let result = action();
+        drop(lock);
+        result
+    }
+
+    fn state_transaction<T>(
+        &self,
+        action: impl FnOnce(&mut State) -> crate::Result<T>,
+    ) -> crate::Result<T> {
         let path = self.directory.join("state.json");
         let before = match fs::read(&path) {
             Ok(bytes) => {
@@ -89,7 +103,6 @@ impl Arbiter {
             fs::write(&temporary, serde_json::to_vec_pretty(&state)?)?;
             fs::rename(&temporary, &path)?;
         }
-        drop(lock);
         Ok(result)
     }
 
@@ -130,18 +143,34 @@ impl Arbiter {
         history::read_lines(&self.board_path())
     }
 
-    /// Append a board change, attributed to the current owner.
-    pub fn record_board(&self, kind: crate::BoardEventKind) -> crate::Result<()> {
+    /// Append a change of the board with MAC `device` (the DUT when unknown),
+    /// attributed to the current owner.
+    pub fn record_board(
+        &self,
+        device: Option<String>,
+        kind: crate::BoardEventKind,
+    ) -> crate::Result<()> {
+        self.record_board_by(crate::grant::owner_from_environment(), device, kind)
+    }
+
+    /// [`Self::record_board`] attributed to `owner`.
+    pub fn record_board_by(
+        &self,
+        owner: String,
+        device: Option<String>,
+        kind: crate::BoardEventKind,
+    ) -> crate::Result<()> {
         let event = BoardEvent {
             unix: crate::unix_now(),
-            owner: crate::grant::owner_from_environment(),
+            owner,
             checkout: std::env::current_dir()
                 .ok()
                 .map(|directory| directory.display().to_string()),
+            device,
             kind,
         };
         let path = self.board_path();
-        self.transaction(|_| {
+        self.locked(|| {
             history::append_line(&path, &event)?;
             if fs::metadata(&path)?.len() > 1 << 20 {
                 history::retain_newest::<BoardEvent>(&path)?;

@@ -10,6 +10,9 @@ pub struct BoardEvent {
     pub owner: String,
     /// Repository checkout of the recording process.
     pub checkout: Option<String>,
+    /// MAC of the board (its USB serial number); unknown in older records.
+    #[serde(default)]
+    pub device: Option<String>,
     #[serde(flatten)]
     pub kind: BoardEventKind,
 }
@@ -84,12 +87,21 @@ fn short_hash(hash: &str) -> &str {
     hash.get(..12).unwrap_or(hash)
 }
 
-/// The newest firmware and startup-artifact events.
-pub(crate) fn latest(events: &[BoardEvent]) -> (Option<&BoardEvent>, Option<&BoardEvent>) {
-    let flash = events
-        .iter()
-        .rev()
-        .find(|event| matches!(event.kind, BoardEventKind::Flashed { .. }));
+/// The newest flash of every board, in order of first appearance, and the
+/// newest startup-artifact event.
+pub(crate) fn latest(events: &[BoardEvent]) -> (Vec<&BoardEvent>, Option<&BoardEvent>) {
+    let mut flashes: Vec<&BoardEvent> = Vec::new();
+    for event in events {
+        if matches!(event.kind, BoardEventKind::Flashed { .. }) {
+            match flashes
+                .iter_mut()
+                .find(|flash| flash.device == event.device)
+            {
+                Some(flash) => *flash = event,
+                None => flashes.push(event),
+            }
+        }
+    }
     let artifact = events.iter().rev().find(|event| {
         matches!(
             event.kind,
@@ -97,7 +109,18 @@ pub(crate) fn latest(events: &[BoardEvent]) -> (Option<&BoardEvent>, Option<&Boa
                 | BoardEventKind::StartupArtifactWritten { .. }
         )
     });
-    (flash, artifact)
+    (flashes, artifact)
+}
+
+/// The registered label of a board, its MAC, or `unidentified board`.
+pub(crate) fn device_label(device: Option<&str>, devices: &[crate::Device]) -> String {
+    match device {
+        Some(mac) => devices
+            .iter()
+            .find(|registered| registered.mac == mac)
+            .map_or_else(|| mac.to_owned(), crate::Device::label),
+        None => String::from("unidentified board"),
+    }
 }
 
 #[cfg(test)]
@@ -110,6 +133,7 @@ mod tests {
             unix: 5,
             owner: "wifi".into(),
             checkout: Some("/src/wifi".into()),
+            device: Some("30:ED:A0:F3:F6:D0".into()),
             kind: BoardEventKind::Flashed {
                 image: "correctness".into(),
                 application_sha256: "0123456789abcdef".into(),
@@ -133,9 +157,30 @@ mod tests {
             },
             ..event.clone()
         };
-        let events = [event.clone(), artifact.clone(), event.clone()];
-        let (flash, startup) = latest(&events);
-        assert_eq!(flash, Some(&event));
+        let peer = BoardEvent {
+            device: Some("38:44:BE:AA:25:64".into()),
+            unix: 6,
+            ..event.clone()
+        };
+        let newer = BoardEvent {
+            unix: 7,
+            ..event.clone()
+        };
+        let events = [event.clone(), artifact.clone(), peer.clone(), newer.clone()];
+        let (flashes, startup) = latest(&events);
+        assert_eq!(flashes, [&newer, &peer]);
         assert_eq!(startup, Some(&artifact));
+        let devices = [crate::Device {
+            mac: "38:44:BE:AA:25:64".into(),
+            chip: Some("esp32c5".into()),
+            role: Some("peer".into()),
+            name: None,
+        }];
+        assert_eq!(
+            device_label(Some("38:44:BE:AA:25:64"), &devices),
+            "38:44:BE:AA:25:64 (esp32c5, peer)"
+        );
+        assert_eq!(device_label(Some("AA"), &devices), "AA");
+        assert_eq!(device_label(None, &devices), "unidentified board");
     }
 }

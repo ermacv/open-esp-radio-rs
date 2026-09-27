@@ -104,6 +104,7 @@ pub(crate) fn flash_built(
     if failure.is_none() {
         let repository = session.repository();
         hil_core::lab::lock::record_flash(
+            &lab.device.serial,
             class.id(),
             &artifacts.application_image,
             Some(repository.commit.clone()),
@@ -190,6 +191,7 @@ fn prepare_replayed_image(
     })?;
     if let Some(application) = flashed {
         hil_core::lab::lock::record_flash(
+            &lab.device.serial,
             archived.image.id(),
             &application,
             None,

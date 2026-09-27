@@ -27,7 +27,13 @@ Wi-Fi scanning, connecting or keeping only a connectionless window, they loop
 on the schedule's own timer; a connected Wi-Fi stops them at the last phase
 and restarts them itself (`restart`) at its beacons. Each `CoexPhaseStep`
 tells the runtime owner how long to arm the phase timer and whom to notify.
-No runtime owner runs this schedule yet, and no radio publishes status to it.
+`CoexScheduleExecutor` turns each step into a phase-timer command with a
+generation; an expiry of an older generation lost a race with a later phase
+change and steps nothing. The [radio runtime](../../../../runtime/esp32s31/radio/README.md)
+runs the timer; no radio publishes status to it yet.
+
+`CoexArbiterPorts` lends one arbiter lease's timer bank, event priorities and
+clock to `CoexCore` as its timer and clock ports.
 
 ## Event requests
 

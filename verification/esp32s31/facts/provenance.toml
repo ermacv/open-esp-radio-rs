@@ -1140,6 +1140,12 @@ code = "3f44274c6de56a44dee3439a1290833f2104fadd8fb78402583d7726a9e72df1"
 
 [[function]]
 artifact = "libnet80211"
+member = "ieee80211.o"
+symbol = "ieee80211_is_robust_mgmt_frm"
+code = "5af8d19bf265dc215a47aba26e7f06300bf803a75bb07077fe28432b9bda3ee9"
+
+[[function]]
+artifact = "libnet80211"
 member = "ieee80211_action.o"
 symbol = "ieee80211_send_action"
 code = "048e57c04daefe447bc7314081872d0d44c8d80547fc79071e4d40a719a9168d"
@@ -1161,6 +1167,12 @@ artifact = "libnet80211"
 member = "ieee80211_api.o"
 symbol = "esp_wifi_internal_set_partial_ru_max_tx_pwr"
 code = "b0c66878d4340ffe71c93c455923f35a91b0ac52ba3e2798a0f4e6e98ba675df"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_crypto_ccmp.o"
+symbol = "ieee80211_ccmp_decrypt"
+code = "b1ff3f0521cf9d1eaed31429f790427e526d311684d1de83e0626b6c924f1c50"
 
 [[function]]
 artifact = "libnet80211"
@@ -1209,6 +1221,12 @@ artifact = "libnet80211"
 member = "ieee80211_he.o"
 symbol = "wifi_htc_omc_txcb"
 code = "af7f9d9a308d38672d490428cb6bbe50dcd62ffa17c57efce7f375a8d975063d"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_hostap.o"
+symbol = "ieee80211_is_action_category_robust"
+code = "b87d58e20de879861835baa6700cb0a44310437f0a0b599db8398e35c21f7b34"
 
 [[function]]
 artifact = "libnet80211"
@@ -1341,6 +1359,12 @@ artifact = "libnet80211"
 member = "ieee80211_scan.o"
 symbol = "scan_op_end"
 code = "2db0e8c44e34f06bf14dbdb4b3dc5458f539530d7cf7c03f79ae4437ba4f83ce"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_sta.o"
+symbol = "ieee80211_is_action_category_robust"
+code = "b87d58e20de879861835baa6700cb0a44310437f0a0b599db8398e35c21f7b34"
 
 [[function]]
 artifact = "libnet80211"

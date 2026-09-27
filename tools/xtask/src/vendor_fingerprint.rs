@@ -233,7 +233,28 @@ pub fn is_binary(bytes: &[u8]) -> bool {
 
 /// Every defined function of an archive's ELF members, or of one ELF.
 pub fn functions(bytes: &[u8]) -> Result<Vec<Function>> {
+    Ok(functions_and_symbols(bytes)?.0)
+}
+
+/// Every defined function and the name of every defined symbol of any kind,
+/// collected in one pass over an archive's ELF members or one ELF.
+pub fn functions_and_symbols(
+    bytes: &[u8],
+) -> Result<(Vec<Function>, std::collections::BTreeSet<String>)> {
     let mut out = vec![];
+    let mut symbols = std::collections::BTreeSet::new();
+    let mut member_symbols = |data: &[u8]| -> Result<()> {
+        let file = object::File::parse(data)?;
+        for symbol in file.symbols() {
+            if symbol.is_definition()
+                && let Ok(name) = symbol.name()
+                && !name.is_empty()
+            {
+                symbols.insert(name.to_owned());
+            }
+        }
+        Ok(())
+    };
     if let Ok(archive) = ArchiveFile::parse(bytes) {
         for member in archive.members() {
             let member = member?;
@@ -241,12 +262,14 @@ pub fn functions(bytes: &[u8]) -> Result<Vec<Function>> {
             let data = member.data(bytes)?;
             if object::File::parse(data).is_ok() {
                 object_functions(&name, data, &mut out)?;
+                member_symbols(data)?;
             }
         }
     } else {
         object_functions("", bytes, &mut out)?;
+        member_symbols(bytes)?;
     }
-    Ok(out)
+    Ok((out, symbols))
 }
 
 /// Similarity of two token sequences: twice their longest common

@@ -270,12 +270,15 @@ fn register_words(directory: &Path, out: &mut BTreeSet<String>) -> Result<()> {
     Ok(())
 }
 
-/// Every function of every fetched vendor artifact of `chip`, by artifact.
+/// Every function of every fetched vendor artifact of `chip`, by artifact,
+/// and the name of every symbol they define.
+#[allow(clippy::type_complexity, reason = "read once and split by the survey")]
 fn pinned_functions(
     ctx: &Context,
     chip: &str,
-) -> Result<BTreeMap<String, (PathBuf, Vec<Function>)>> {
+) -> Result<(BTreeMap<String, (PathBuf, Vec<Function>)>, BTreeSet<String>)> {
     let mut out = BTreeMap::new();
+    let mut symbols = BTreeSet::new();
     for artifact in crate::vendor_fetch::pinned(ctx, chip)? {
         if artifact.local {
             continue;
@@ -285,10 +288,11 @@ fn pinned_functions(
         if !crate::vendor_fingerprint::is_binary(&bytes) {
             continue;
         }
-        let functions = crate::vendor_fingerprint::functions(&bytes)?;
+        let (functions, defined) = crate::vendor_fingerprint::functions_and_symbols(&bytes)?;
+        symbols.extend(defined);
         out.insert(artifact.id, (artifact.path, functions));
     }
-    Ok(out)
+    Ok((out, symbols))
 }
 
 struct Survey {
@@ -303,6 +307,9 @@ struct Survey {
     /// Every cited identifier, whether or not it names a function.
     words: BTreeSet<String>,
     pinned: BTreeMap<String, (PathBuf, Vec<Function>)>,
+    /// Obfuscated vendor symbols the chip's vendor documents name that no
+    /// pinned artifact defines.
+    documents: Vec<String>,
 }
 
 fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
@@ -311,7 +318,7 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => vec![],
         Err(error) => return Err(error.into()),
     };
-    let pinned = pinned_functions(ctx, chip)?;
+    let (pinned, defined) = pinned_functions(ctx, chip)?;
     let mut current = BTreeMap::new();
     for (artifact, (_, functions)) in &pinned {
         for f in functions {
@@ -354,7 +361,13 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
         .filter(|w| known.contains(w.as_str()))
         .cloned()
         .collect();
+    let documents = if pinned.is_empty() {
+        vec![]
+    } else {
+        document_symbols(ctx, chip, &pinned, &defined)?
+    };
     Ok(Survey {
+        documents,
         registry,
         current,
         references,
@@ -364,10 +377,41 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
     })
 }
 
+/// Undefined obfuscated symbols of every document under `docs/vendor/<chip>`.
+fn document_symbols(
+    ctx: &Context,
+    chip: &str,
+    pinned: &BTreeMap<String, (PathBuf, Vec<Function>)>,
+    defined: &BTreeSet<String>,
+) -> Result<Vec<String>> {
+    let directory = ctx.root.join("docs/vendor").join(chip);
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        return Ok(vec![]);
+    };
+    let artifacts = pinned.keys().cloned().collect::<Vec<_>>().join(", ");
+    let mut paths = entries
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    paths.retain(|path| path.extension().and_then(|e| e.to_str()) == Some("md"));
+    paths.sort();
+    let mut problems = vec![];
+    for path in paths {
+        let relative = path.strip_prefix(&ctx.root).unwrap_or(&path);
+        problems.extend(docs::undefined_symbols(
+            &relative.display().to_string(),
+            &std::fs::read_to_string(&path)?,
+            defined,
+            &artifacts,
+        ));
+    }
+    Ok(problems)
+}
+
 /// Every provenance violation of `chip`, one line each.
 pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
     let survey = survey(ctx, chip)?;
     let mut problems = survey.citations.clone();
+    problems.extend(survey.documents.iter().cloned());
     let registered: BTreeSet<(&str, &str, &str)> = survey
         .registry
         .iter()
@@ -523,6 +567,8 @@ pub fn update(
     println!("{} registered functions", entries.len());
     Ok(())
 }
+
+mod docs;
 
 #[cfg(test)]
 mod tests;

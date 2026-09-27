@@ -3169,8 +3169,38 @@ code = "ac249e3f4df06c66f39fb57d5c6ebd3cfe66895ac29268d811057b5d1d432d40"
 [[function]]
 artifact = "libpp"
 member = "pm.o"
+symbol = "hal_pm_unblock_txq"
+code = "93f098c8babefb300a9df9275540812a2bc6b2248557886314c285f2426f164a"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_attach"
+code = "3cc080f8c9c48dfdb8d4ed4281471c4a0dcb2897c1bfd0d06ecae9f36b2e112e"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
 symbol = "pm_clear_wakeup_signal"
 code = "3c725048ce97a28fe0c013e073c59c87ad527eea92e608bcdb697c48fdcfd569"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_coex_go_to_sleep"
+code = "96e8e34946d363ffb7290eaeea97a480cb3e4a7959d5fe9c17e8ed39e3842631"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_coex_schm_process"
+code = "45a597d4b8ad933909d03e6d52425ec28f3fc4933fc7c985110e25c32ef219ec"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_get_tx_blocks_retention_mask"
+code = "1d73e2b676e1bfe2e3a8ac9a8755742d368d658634e35265951bb822b22cfee2"
 
 [[function]]
 artifact = "libpp"
@@ -3207,6 +3237,12 @@ artifact = "libpp"
 member = "pm.o"
 symbol = "pm_update_next_tbtt"
 code = "1eba78c72219e5cbb4280adeef87cf114439ea4765cbac413d411a31d5505790"
+
+[[function]]
+artifact = "libpp"
+member = "pm.o"
+symbol = "pm_update_params"
+code = "3ff42c30e01c012926618ae60dac8e4a403389a42bf7664953a8a6f5563ec31c"
 
 [[function]]
 artifact = "libpp"

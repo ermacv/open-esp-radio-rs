@@ -955,6 +955,249 @@ const BANDS: &[u32] = &[0, 1];
 const RATES: &[u32] = &[0, 1];
 const NO_ARGUMENT: &[(&str, Domain)] = &[];
 
+/// One register operation of an independent leaf reading.
+#[derive(Clone, Copy)]
+enum Op {
+    /// A fresh RMW: the written word is the word just read with `clear`
+    /// cleared and `set` set.
+    Rmw(u32, u32, u32),
+    /// A write of a complete image.
+    Image(u32, u32),
+}
+
+/// The radio-register writes of a case match `ops` in order, each RMW
+/// writing the word it read with its bits replaced.
+fn check_ops(observed: &Observed, ops: &[Op]) -> std::result::Result<(), String> {
+    let watched: Vec<u32> = ops
+        .iter()
+        .map(|op| match op {
+            Op::Rmw(a, ..) | Op::Image(a, _) => *a,
+        })
+        .collect();
+    let mut last_read = std::collections::BTreeMap::new();
+    let mut writes = vec![];
+    for effect in &observed.effects {
+        match effect {
+            PhyEffect::Read(a, v) if watched.contains(a) => {
+                last_read.insert(*a, *v);
+            }
+            PhyEffect::Write(a, v) if watched.contains(a) => {
+                writes.push((*a, *v, last_read.get(a).copied()))
+            }
+            _ => {}
+        }
+    }
+    if writes.len() != ops.len() {
+        return Err(format!(
+            "{} writes {writes:x?}, expected {}",
+            writes.len(),
+            ops.len()
+        ));
+    }
+    for (index, (op, (address, value, read))) in ops.iter().zip(&writes).enumerate() {
+        let expected = match *op {
+            Op::Image(a, image) => (a, image),
+            Op::Rmw(a, clear, set) => {
+                let Some(read) = read else {
+                    return Err(format!("write {index} to {a:#x} without a read"));
+                };
+                (a, read & !clear | set)
+            }
+        };
+        if (*address, *value) != expected {
+            return Err(format!(
+                "write {index} {:x?}, expected {expected:x?}",
+                (address, value)
+            ));
+        }
+    }
+    Ok(())
+}
+
+const APB_SARADC_CTRL: u32 = 0x6000_e000;
+const LP_AON_SAR_CCT: u32 = 0x600b_1054;
+const BB: u32 = 0x600a_0000;
+/// Initial SAR ADC and LP_AON words: clear and set.
+const OUTSIDE_STATES: &[u32] = &[0, u32::MAX];
+
+fn outside_bank(value: u32) -> DeviceDeclaration {
+    DeviceDeclaration {
+        id: "sar".into(),
+        applicability: "APB_SARADC CTRL and LP_AON SAR_CCT retain writes".into(),
+        lifetime: RegionLifetime::Phase,
+        behavior: DeviceBehavior::RegisterBank {
+            cells: vec![
+                RegisterCell {
+                    address: APB_SARADC_CTRL,
+                    width: 4,
+                    value,
+                },
+                RegisterCell {
+                    address: LP_AON_SAR_CCT,
+                    width: 4,
+                    value,
+                },
+            ],
+        },
+    }
+}
+
+/// `(arguments…, state)` of a leaf without parameters: the SAR words start
+/// at the state.
+fn register_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let (state, arguments) = words.split_last().expect("a state");
+    Ok(Objects {
+        vendor_words: arguments.to_vec(),
+        devices: vec![outside_bank(*state)],
+        ..Default::default()
+    })
+}
+
+/// `phy_param` states of the parameter leaves: the IQ swap byte 0x2A and
+/// the RX IQ scale byte 0x28A, as `swap | scale << 8`.
+const SWAP_SCALE_STATES: &[u32] = &[0x000, 0x001, 0x100, 0x201, 0x300, 0x0ff];
+
+fn swap_scale_image(state: u32) -> Vec<u8> {
+    let mut image = vec![0; crate::PHY_PARAM_BYTES as usize];
+    image[0x2a] = state as u8;
+    image[0x28a] = (state >> 8) as u8;
+    image
+}
+
+fn parameter_leaf_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [parameters, state] = *words else {
+        return Err(oer_vendor_scenario_engine::harness::invalid(
+            "parameter words",
+        ));
+    };
+    let image = swap_scale_image(state);
+    Ok(Objects {
+        vendor_words: vec![],
+        production: vec![(parameters, image.clone())],
+        image: vec![(vendor.image_symbol("phy_param")?, image)],
+        devices: vec![outside_bank(0)],
+        ..Default::default()
+    })
+}
+
+const OPEN_FE_BB_CLK: &[Op] = &[
+    Op::Image(BB + 0x400, 0x1e7),
+    Op::Rmw(BB + 0x800, 0, 0x3),
+    Op::Image(BB + 0x7c80, 0xffff_ffff),
+];
+const I2C_ANA_CONF0: u32 = 0x600a_f818;
+const I2CMST_REG_INIT: &[Op] = &[
+    Op::Rmw(I2C_ANA_CONF0, 0x600, 0x400),
+    Op::Rmw(I2C_ANA_CONF0, 0, 0x40),
+];
+const PWDET_REG_INIT: &[Op] = &[
+    Op::Image(BB + 0x810, 0x0f0f_0fff),
+    Op::Image(BB + 0x814, 0x00ff_0f64),
+    Op::Rmw(BB + 0x808, 0xff0, 0x500),
+    Op::Image(BB + 0x818, 0xaaaa),
+    Op::Rmw(BB + 0x808, 0x70_0000, 0x20_0000),
+    Op::Rmw(APB_SARADC_CTRL, 0, 1 << 29),
+    Op::Rmw(LP_AON_SAR_CCT, 0xe000_0000, 0x8000_0000),
+];
+
+fn dac_scale_ops(full: bool) -> Vec<Op> {
+    let byte = if full { 0xff } else { 0 };
+    vec![
+        Op::Rmw(BB + 0xc04, 0xff_0000, byte << 16),
+        Op::Rmw(BB + 0xc04, 0xff00, byte << 8),
+    ]
+}
+
+fn rxiq_scale_ops(selection: u32) -> Vec<Op> {
+    let (high, low) = match selection {
+        1 => (0xfa, 0),
+        2 => (0, 0xfa),
+        _ => (0, 0),
+    };
+    vec![
+        Op::Rmw(BB + 0x43c, 0xff00, high << 8),
+        Op::Rmw(BB + 0x43c, 0xff, low),
+    ]
+}
+
+fn iq_swap_ops(swap: bool) -> Vec<Op> {
+    vec![
+        if swap {
+            Op::Rmw(BB + 0xc08, 1 << 25, 0)
+        } else {
+            Op::Rmw(BB + 0xc08, 0, 0x600_0000)
+        },
+        Op::Rmw(BB + 0x434, 0xc0_0000, 0),
+    ]
+}
+
+fn fe_reg_init_ops(swap: bool, selection: u32) -> Vec<Op> {
+    let mut ops = vec![
+        Op::Rmw(BB + 0x894, 0, 1 << 22),
+        Op::Rmw(BB + 0x444, 1 << 8, 0),
+        Op::Rmw(BB + 0x408, 0xff00_0000, 0xb400_0000),
+        Op::Rmw(BB + 0x40c, 0, 0x4),
+        Op::Rmw(BB + 0x438, 0, 0xe000_0000),
+        Op::Rmw(BB + 0xc0c, 0, 0x6000),
+        Op::Rmw(BB + 0x43c, 0xff00, 0),
+        Op::Rmw(BB + 0x43c, 0xff, 0),
+        if swap {
+            Op::Rmw(BB + 0x888, 0, 1 << 29)
+        } else {
+            Op::Rmw(BB + 0x888, 1 << 29, 0)
+        },
+        Op::Rmw(BB + 0xc20, 0xff, 0x57),
+        Op::Rmw(BB + 0x870, 0xff00, 0x9600),
+    ];
+    ops.extend(PWDET_REG_INIT);
+    ops.extend(dac_scale_ops(true));
+    ops.extend(rxiq_scale_ops(selection));
+    ops
+}
+
+fn pwdet_sar2_init_ops(swap: bool) -> Vec<Op> {
+    vec![
+        Op::Rmw(BB + 0x80c, 0, 0x3000),
+        Op::Rmw(BB + 0x80c, 1 << 9, 0),
+        Op::Image(BB + 0x818, 0xaaaa),
+        Op::Rmw(BB + 0x808, 0x70_0000, 0x60_0000),
+        Op::Rmw(LP_AON_SAR_CCT, 0xe000_0000, if swap { 4 } else { 2 } << 29),
+    ]
+}
+
+fn swap_scale(words: &[u32]) -> (bool, u32) {
+    let state = words[1];
+    (state & 0xff != 0, state >> 8 & 0xff)
+}
+
+fn expect_open_fe_bb_clk(_: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, OPEN_FE_BB_CLK)
+}
+fn expect_i2cmst_reg_init(_: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, I2CMST_REG_INIT)
+}
+fn expect_pwdet_reg_init(_: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, PWDET_REG_INIT)
+}
+fn expect_dac_scale(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &dac_scale_ops(words[0] != 0))
+}
+fn expect_iq_swap(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &iq_swap_ops(swap_scale(words).0))
+}
+fn expect_fe_reg_init(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    let (swap, selection) = swap_scale(words);
+    check_ops(observed, &fe_reg_init_ops(swap, selection))
+}
+fn expect_rxiq_scale(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &rxiq_scale_ops(swap_scale(words).1))
+}
+fn expect_pwdet_sar2_init(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &pwdet_sar2_init_ops(swap_scale(words).0))
+}
+
+const DAC_SCALES: &[u32] = &[0, 1, 0x100];
+
 const LEAVES: &[Leaf] = &[
     expected(
         leaf(
@@ -1234,6 +1477,126 @@ const LEAVES: &[Leaf] = &[
             polling,
         ),
         expect_bbpll,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_open_fe_bb_clk",
+                    "open_phy_i2c_trace_phy_open_fe_bb_clk",
+                    NO_ARGUMENT,
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_open_fe_bb_clk,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_i2cmst_reg_init",
+                    "open_phy_i2c_trace_phy_i2cmst_reg_init",
+                    NO_ARGUMENT,
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_i2cmst_reg_init,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_pwdet_reg_init",
+                    "open_phy_i2c_trace_phy_pwdet_reg_init",
+                    NO_ARGUMENT,
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_pwdet_reg_init,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_dac_scale_set",
+                    "open_phy_i2c_trace_phy_dac_scale_set",
+                    &[("scale", Domain::Words(DAC_SCALES))],
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_dac_scale,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_iq_swap_set",
+                    "open_phy_i2c_trace_phy_iq_swap_set",
+                    &[("parameters", Domain::Words(PARAMETER_IMAGE))],
+                    false,
+                ),
+                parameter_leaf_abi,
+            ),
+            SWAP_SCALE_STATES,
+        ),
+        expect_iq_swap,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_fe_reg_init",
+                    "open_phy_i2c_trace_phy_fe_reg_init",
+                    &[("parameters", Domain::Words(PARAMETER_IMAGE))],
+                    false,
+                ),
+                parameter_leaf_abi,
+            ),
+            SWAP_SCALE_STATES,
+        ),
+        expect_fe_reg_init,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_rxiq_scale_set",
+                    "open_phy_i2c_trace_phy_rxiq_scale_set",
+                    &[("parameters", Domain::Words(PARAMETER_IMAGE))],
+                    false,
+                ),
+                parameter_leaf_abi,
+            ),
+            SWAP_SCALE_STATES,
+        ),
+        expect_rxiq_scale,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_pwdet_sar2_init",
+                    "open_phy_i2c_trace_phy_pwdet_sar2_init",
+                    &[("parameters", Domain::Words(PARAMETER_IMAGE))],
+                    false,
+                ),
+                parameter_leaf_abi,
+            ),
+            SWAP_SCALE_STATES,
+        ),
+        expect_pwdet_sar2_init,
     ),
 ];
 

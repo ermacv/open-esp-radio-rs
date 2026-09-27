@@ -333,3 +333,83 @@ oer_probe_macros::probe! {
         open_phy_i2c_trace_phy_adc_rate_set(0)
     }
 }
+
+/// Byte `offset` of the `phy_param` image at `parameters`.
+fn parameter(parameters: u32, offset: usize) -> u8 {
+    // SAFETY: the harness supplies a readable parameter image of the vendor
+    // `phy_param` size at `parameters`.
+    unsafe { core::ptr::read_volatile((parameters as usize + offset) as *const u8) }
+}
+
+/// Whether phy_param byte 0x2A, the IQ swap, is set.
+fn iq_swap(parameters: u32) -> bool {
+    parameter(parameters, 0x2a) != 0
+}
+
+oer_probe_macros::probe! {
+    /// `phy_open_fe_bb_clk()`.
+    pub fn open_phy_i2c_trace_phy_open_fe_bb_clk() -> u32 {
+        with_radio(|radio| radio.open_front_end_baseband_clocks());
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_i2cmst_reg_init()`.
+    pub fn open_phy_i2c_trace_phy_i2cmst_reg_init() -> u32 {
+        let RadioPartitions { mut phy_i2c, .. } = RadioPartitions::for_validation();
+        phy_i2c.initialize_master_registers();
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_iq_swap_set()` over the `phy_param` image at `parameters`.
+    pub fn open_phy_i2c_trace_phy_iq_swap_set(parameters: u32) -> u32 {
+        with_radio(|radio| radio.set_iq_swap(iq_swap(parameters)));
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_fe_reg_init()` over the `phy_param` image at `parameters`.
+    pub fn open_phy_i2c_trace_phy_fe_reg_init(parameters: u32) -> u32 {
+        let (swap, scale) = (iq_swap(parameters), parameter(parameters, 0x28a));
+        with_radio(|radio| radio.initialize_front_end(swap, scale));
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_pwdet_reg_init()`.
+    pub fn open_phy_i2c_trace_phy_pwdet_reg_init() -> u32 {
+        with_radio(|radio| radio.initialize_power_detector());
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_dac_scale_set(scale)`.
+    pub fn open_phy_i2c_trace_phy_dac_scale_set(scale: u32) -> u32 {
+        with_radio(|radio| radio.set_dac_scale(scale != 0));
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_rxiq_scale_set()` over the `phy_param` image at `parameters`.
+    pub fn open_phy_i2c_trace_phy_rxiq_scale_set(parameters: u32) -> u32 {
+        let selection = parameter(parameters, 0x28a);
+        with_radio(|radio| radio.set_rx_iq_scale(selection));
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_pwdet_sar2_init()` over the `phy_param` image at `parameters`.
+    pub fn open_phy_i2c_trace_phy_pwdet_sar2_init(parameters: u32) -> u32 {
+        let swap = iq_swap(parameters);
+        with_radio(|radio| radio.initialize_power_detector_sar2(swap));
+        0
+    }
+}

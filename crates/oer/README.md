@@ -22,10 +22,15 @@ Chip selection and protocol backends are separate:
 | `esp32s31-wifi` | Wi-Fi protocols and `chips::esp32s31::driver::ieee80211::{mac,sta,ap}` |
 | `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine |
 | `upstream-xarxa`, `owned-xarxa` or `embassy-smoltcp` | Wi-Fi backend, `embassy::radio` service mailbox and `systems::esp32s31::embassy::wifi` with the selected network stack |
+| `esp32s31-ieee802154` | IEEE 802.15.4 contracts and `chips::esp32s31::driver::ieee802154`: the MAC engine |
+| `embassy-ieee802154` | The engine and `systems::esp32s31::embassy::ieee802154`: the IEEE 802.15.4 client of the shared radio with its construction inputs |
+| `openthread` | The client and `systems::esp32s31::embassy::ieee802154::openthread`: the OpenThread radio adapter |
 
 Each backend feature includes its chip and portable protocol feature. Selecting
 `wifi,esp32s31` exposes portable Wi-Fi and HAL; select `esp32s31-wifi` to add the
-Wi-Fi backend. Raw PAC authority requires an explicit restricted dependency.
+Wi-Fi backend. Each IEEE 802.15.4 feature includes the one before it in the
+table; the [Thread](../../examples/esp32s31/thread/) example uses only
+`openthread`. Raw PAC authority requires an explicit restricted dependency.
 
 No Bluetooth LE Controller or Embassy Bluetooth composition is currently
 exposed; the facade provides only the portable protocols and the hardware

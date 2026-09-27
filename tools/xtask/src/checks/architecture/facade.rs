@@ -90,6 +90,21 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             required: &["oer-ieee802154", "oer-esp32s31-hal"],
             forbidden: &[WIFI, BLUETOOTH],
         },
+        Profile {
+            features: Some("esp32s31-ieee802154"),
+            required: &["oer-esp32s31-ieee802154", "oer-ieee802154"],
+            forbidden: &[WIFI, BLUETOOTH],
+        },
+        // The composition joins the shared radio through the esp-hal radio
+        // platform, which carries the Bluetooth hardware engine's resources.
+        Profile {
+            features: Some("openthread"),
+            required: &[
+                "oer-esp32s31-ieee802154-system",
+                "oer-esp32s31-ieee802154-openthread",
+            ],
+            forbidden: &[WIFI],
+        },
     ] {
         let flags = match profile.features {
             None => vec![],
@@ -152,6 +167,6 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
                 .args(&flags),
         )?;
     }
-    eprintln!("facade isolation and API checks passed (10 consumer profiles)");
+    eprintln!("facade isolation and API checks passed (12 consumer profiles)");
     Ok(())
 }

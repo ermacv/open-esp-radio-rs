@@ -45,6 +45,19 @@ transaction that fails keeps its owner as fail-stop; the chip must be reset.
 
 ## Use
 
+The crate reexports what construction needs, so an application builds the
+client through it, or through the `oer` facade's `embassy-ieee802154`
+feature at `oer::systems::esp32s31::embassy::ieee802154`, alone:
+`RadioHardware`, `EspHalRadioPlatform` and `EspHalRadioClocks` create the
+`SharedRadio`, whose `run_tracking` the application runs;
+`Ieee802154Parked::new` takes the radio's IEEE 802.15.4 partition and the
+`Ieee802154PibDefaults`, and `start` joins the shared radio with them.
+`Ieee802154MacOwners` names the runtime's owners for adapters generic over
+them. With the facade's `openthread` feature, the
+[OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/README.md)
+is at `ieee802154::openthread`; the
+[Thread example](../../../../../examples/esp32s31/thread/) uses only this path.
+
 The runtime is a process singleton. After `start`, `Ieee802154System::runtime`
 accepts portable `RadioCommand`s and yields `Ieee802154RadioEvent`s. The
 engine resolves transmit power through the recovered ESP32-S31 BTBB level set.

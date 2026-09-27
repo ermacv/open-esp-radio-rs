@@ -42,6 +42,10 @@ pub mod chips {
             #[cfg(feature = "esp32s31-bluetooth")]
             pub use chip_bluetooth as bluetooth;
 
+            /// IEEE 802.15.4 MAC engine.
+            #[cfg(feature = "esp32s31-ieee802154")]
+            pub use chip_ieee802154 as ieee802154;
+
             #[cfg(feature = "esp32s31-wifi")]
             pub mod ieee80211 {
                 pub use {chip_ap as ap, chip_mac as mac, chip_sta as sta};
@@ -63,12 +67,28 @@ pub mod embassy {
 #[cfg(any(
     feature = "upstream-xarxa",
     feature = "owned-xarxa",
-    feature = "embassy-smoltcp"
+    feature = "embassy-smoltcp",
+    feature = "embassy-ieee802154"
 ))]
 pub mod systems {
     pub mod esp32s31 {
         pub mod embassy {
+            #[cfg(any(
+                feature = "upstream-xarxa",
+                feature = "owned-xarxa",
+                feature = "embassy-smoltcp"
+            ))]
             pub use wifi_composition as wifi;
+
+            /// The IEEE 802.15.4 client of the shared radio and, with
+            /// `openthread`, its OpenThread radio.
+            #[cfg(feature = "embassy-ieee802154")]
+            pub mod ieee802154 {
+                pub use ieee802154_composition::*;
+
+                #[cfg(feature = "openthread")]
+                pub use ieee802154_openthread as openthread;
+            }
         }
     }
 }

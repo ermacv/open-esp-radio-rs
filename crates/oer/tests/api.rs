@@ -71,3 +71,33 @@ fn bluetooth_backend_preserves_controller_event_cell_identity() {
         -> oer::chips::esp32s31::driver::bluetooth::runtime_resources::ControllerEventCells =
         |cells| cells;
 }
+
+#[cfg(feature = "esp32s31-ieee802154")]
+#[test]
+fn chip_ieee802154_namespace_preserves_engine_type_identity() {
+    let _: fn(
+        chip_ieee802154::pib::Ieee802154PibDefaults,
+    ) -> oer::chips::esp32s31::driver::ieee802154::pib::Ieee802154PibDefaults = |defaults| defaults;
+}
+
+#[cfg(feature = "embassy-ieee802154")]
+#[test]
+fn ieee802154_system_exposes_its_construction_inputs() {
+    use oer::systems::esp32s31::embassy::ieee802154;
+
+    let _: fn(chip_ieee802154::pib::Ieee802154PibDefaults) -> ieee802154::Ieee802154PibDefaults =
+        |defaults| defaults;
+    let _: fn(
+        ieee802154_composition::Ieee802154PhyMaintenance,
+    ) -> ieee802154::Ieee802154PhyMaintenance = |outcome| outcome;
+}
+
+#[cfg(feature = "openthread")]
+#[test]
+fn openthread_radio_is_reachable_through_the_ieee802154_system() {
+    use oer::systems::esp32s31::embassy::ieee802154::openthread;
+
+    let _: fn(
+        ieee802154_openthread::frames::TransmitFailure,
+    ) -> openthread::frames::TransmitFailure = |failure| failure;
+}

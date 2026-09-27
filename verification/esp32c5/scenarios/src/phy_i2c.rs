@@ -1294,6 +1294,75 @@ fn expect_filter_dcap(words: &[u32], observed: &Observed) -> std::result::Result
     )
 }
 
+const PCR_SARADC_CONF: u32 = 0x6009_6088;
+const PCR_TSENS_CLK_CONF: u32 = 0x6009_6090;
+const APB_SARADC_TSENS_CTRL: u32 = 0x6000_e058;
+const APB_SARADC_TSENS_CTRL2: u32 = 0x6000_e05c;
+
+fn tsens_abi(words: &[u32], _vendor: &Vendor<'_>) -> Result<Objects> {
+    let (state, arguments) = words.split_last().expect("a state");
+    Ok(Objects {
+        vendor_words: arguments.to_vec(),
+        devices: vec![DeviceDeclaration {
+            id: "tsens".into(),
+            applicability:
+                "PCR SAR ADC and TSENS clocks and the APB_SARADC TSENS controls retain writes"
+                    .into(),
+            lifetime: RegionLifetime::Phase,
+            behavior: DeviceBehavior::RegisterBank {
+                cells: [
+                    PCR_SARADC_CONF,
+                    PCR_TSENS_CLK_CONF,
+                    APB_SARADC_TSENS_CTRL,
+                    APB_SARADC_TSENS_CTRL2,
+                ]
+                .into_iter()
+                .map(|address| RegisterCell {
+                    address,
+                    width: 4,
+                    value: *state,
+                })
+                .collect(),
+            },
+        }],
+        ..Default::default()
+    })
+}
+
+fn tsens_power_ops(on: bool) -> Vec<Op> {
+    vec![Op::Rmw(APB_SARADC_TSENS_CTRL, 1 << 22, u32::from(on) << 22)]
+}
+
+fn tsens_pwr_ops() -> Vec<Op> {
+    let mut ops = tsens_power_ops(true);
+    ops.push(Op::Rmw(APB_SARADC_TSENS_CTRL2, 0, 1 << 15));
+    ops
+}
+
+fn tsens_read_init_ops() -> Vec<Op> {
+    let mut ops = vec![
+        Op::Rmw(PCR_SARADC_CONF, 0, 0x5),
+        Op::Rmw(PCR_TSENS_CLK_CONF, 0, 0x50_0000),
+        Op::Rmw(PCR_TSENS_CLK_CONF, 1 << 23, 0),
+        Op::Rmw(APB_SARADC_TSENS_CTRL2, 0, 1 << 15),
+    ];
+    ops.extend(tsens_pwr_ops());
+    ops
+}
+
+fn expect_tsens_power(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &tsens_power_ops(words[0] != 0))
+}
+fn expect_tsens_pwr(_: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &tsens_pwr_ops())
+}
+fn expect_tsens_read_init(_: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &tsens_read_init_ops())
+}
+
+const TSENS_ON: &[u32] = &[0, 1];
+const TSENS_MODES: &[u32] = &[0, 1];
+
 const LEAVES: &[Leaf] = &[
     expected(
         leaf(
@@ -1769,6 +1838,54 @@ const LEAVES: &[Leaf] = &[
             long_polling,
         ),
         expect_filter_dcap,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_set_tsens_power",
+                    "open_phy_i2c_trace_phy_set_tsens_power",
+                    &[("on", Domain::Words(TSENS_ON))],
+                    false,
+                ),
+                tsens_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_tsens_power,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_set_tsens_pwr",
+                    "open_phy_i2c_trace_phy_set_tsens_pwr",
+                    NO_ARGUMENT,
+                    false,
+                ),
+                tsens_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_tsens_pwr,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_tsens_read_init",
+                    "open_phy_i2c_trace_phy_tsens_read_init",
+                    &[
+                        ("mode", Domain::Words(TSENS_MODES)),
+                        ("code", Domain::Words(BYTES)),
+                    ],
+                    false,
+                ),
+                tsens_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_tsens_read_init,
     ),
 ];
 

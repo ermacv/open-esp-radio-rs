@@ -470,3 +470,33 @@ oer_probe_macros::probe! {
         configure(oer_esp32c5_pac::PhyI2cConfiguration::Sar2InitializationCode(code))
     }
 }
+
+oer_probe_macros::probe! {
+    /// `phy_set_tsens_power(on)` for `on` of 0 or 1.
+    pub fn open_phy_i2c_trace_phy_set_tsens_power(on: u32) -> u32 {
+        let on = match on {
+            0 => false,
+            1 => true,
+            _ => return INVALID_ARGUMENT,
+        };
+        with_radio(|radio| radio.set_temperature_sensor_power(on));
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_set_tsens_pwr()`.
+    pub fn open_phy_i2c_trace_phy_set_tsens_pwr() -> u32 {
+        with_radio(|radio| radio.power_temperature_sensor());
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_tsens_read_init(mode, code)`; the vendor ignores both arguments.
+    pub fn open_phy_i2c_trace_phy_tsens_read_init(mode: u32, code: u32) -> u32 {
+        let _ = (mode, code);
+        with_radio(|radio| radio.initialize_temperature_sensor());
+        0
+    }
+}

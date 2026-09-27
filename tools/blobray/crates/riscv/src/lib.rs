@@ -2,7 +2,7 @@
 mod execution;
 mod extensions;
 use blobray_domain::*;
-pub use execution::RiscvExecutor;
+pub use execution::{RiscvExecutor, Rv32imacExecutor};
 use extensions::{Classified, Extension};
 use object::elf::*;
 use rv_asm::{Inst, IsCompressed, Xlen};

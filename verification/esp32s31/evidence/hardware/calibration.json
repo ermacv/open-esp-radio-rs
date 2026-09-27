@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "date": "2026-09-27",
-  "verdict": "diff",
+  "verdict": "match",
   "vendor-object": "phy_param",
   "vendor-application-sha256": "04df7148588b4812471615c9fe4a719b308a0cbf5ca42d015f0ccfd66876e243",
   "vendor-idf-revision": "4d59230ddff16327812782151ef0afef202dc6d7",
@@ -1046,22 +1046,10 @@
     ]
   ],
   "registers": {
-    "verdict": "diff",
-    "compared": 156,
+    "verdict": "match",
+    "compared": 155,
     "matched": 155,
-    "differing": [
-      {
-        "name": "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL",
-        "vendor": [
-          111986632,
-          111986632
-        ],
-        "production": [
-          111986624,
-          111986624
-        ]
-      }
-    ],
+    "differing": [],
     "excluded": [
       {
         "name": "PHY_PBUS.COMMAND",
@@ -1090,6 +1078,10 @@
       {
         "name": "PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE",
         "reason": "live state: AGC RSSI status"
+      },
+      {
+        "name": "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL",
+        "reason": "lifecycle: the last writer is phy_reg_update_new after cold registration and phy_bb_agc_reg_update after an RF wake or RX table init; the vendor read follows the RF wake of its Wi-Fi start, production's read its cold registration, and production's wake keeps the vendor order"
       },
       {
         "name": "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL",

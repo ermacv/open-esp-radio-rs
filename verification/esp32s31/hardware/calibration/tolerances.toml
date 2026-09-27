@@ -162,3 +162,7 @@ reason = "live state: the last PBus command word"
 [registers."HP_SYS_CLKRST_RADIO.MODEM_CONF"]
 excluded = true
 reason = "clock policy: the modem XTAL clock enable follows the active radio modules"
+
+[registers."PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL"]
+excluded = true
+reason = "lifecycle: the last writer is phy_reg_update_new after cold registration and phy_bb_agc_reg_update after an RF wake or RX table init; the vendor read follows the RF wake of its Wi-Fi start, production's read its cold registration, and production's wake keeps the vendor order"

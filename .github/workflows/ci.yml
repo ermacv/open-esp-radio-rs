@@ -240,6 +240,9 @@ jobs:
       - run: cargo fetch --locked
       - run: cargo registers validate --manifest registers/esp32s31/publication/registers.toml
       - run: cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
+      - run: cargo registers validate --manifest registers/esp32c5/publication/registers.toml
+      - run: cargo registers generate --manifest registers/esp32c5/publication/registers.toml --check
+      - run: cargo build --locked -p oer-esp32c5-pac --target riscv32imac-unknown-none-elf
       - run: cargo xtask check phy
 
   # Both final HIL application images, their placement/stack audits and the

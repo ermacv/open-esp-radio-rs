@@ -9,6 +9,9 @@ The [ESP32-S31 model](esp32s31/README.md) distinguishes editable hardware
 semantics, publication policy, upstream inputs and generated outputs. Runtime
 register owners and both generated Rust outputs remain in
 [`crates/hardware/esp32s31/pac`](../crates/hardware/esp32s31/pac/README.md).
+The [ESP32-C5 model](esp32c5/README.md) follows the same layout for the
+IEEE 802.15.4 MAC, its interrupt route and ETM channels; its outputs are
+[`crates/hardware/esp32c5/pac`](../crates/hardware/esp32c5/pac).
 
 Generic loading, validation and generation remain in
 [register tool](../tools/registers/README.md). A vendor project references the

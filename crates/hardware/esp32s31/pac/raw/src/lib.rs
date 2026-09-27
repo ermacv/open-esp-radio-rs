@@ -58729,7 +58729,6 @@ pub mod peripheral_ownership {
         pub phy_brx_recovered_gaps: crate::PhyBrxRecoveredGaps,
         pub phy_btagc_recovered: crate::PhyBtagcRecovered,
         pub phy_clock_oracle: crate::PhyClockOracle,
-        pub phy_cold_deadline_oracle: crate::PhyColdDeadlineOracle,
         pub phy_fectrl_recovered: crate::PhyFectrlRecovered,
         pub phy_fedata_recovered: crate::PhyFedataRecovered,
         pub phy_fedata_wifi_recovered: crate::PhyFedataWifiRecovered,
@@ -58746,6 +58745,11 @@ pub mod peripheral_ownership {
         pub phy_nrx_recovered_gaps: crate::PhyNrxRecoveredGaps,
         pub phy_pbus: crate::PhyPbus,
         pub phy_rx_dco_oracle: crate::PhyRxDcoOracle,
+    }
+
+    /// Read-only free-running MAC microsecond counter that the PHY samples for its SDM deadline and Wi-Fi reads for its coexistence slices; reads have no effect, so the PAC splits it into one reader per owner.
+    pub struct MacTimeCounterPeripherals {
+        pub phy_cold_deadline_oracle: crate::PhyColdDeadlineOracle,
     }
 
     /// Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition.
@@ -58813,6 +58817,8 @@ pub mod peripheral_ownership {
         pub wifi_interrupts: WifiInterruptPeripherals,
         /// Role-neutral RF and PHY register views serialized by the shared radio lifecycle.
         pub radio_phy: RadioPhyPeripherals,
+        /// Read-only free-running MAC microsecond counter that the PHY samples for its SDM deadline and Wi-Fi reads for its coexistence slices; reads have no effect, so the PAC splits it into one reader per owner.
+        pub mac_time_counter: MacTimeCounterPeripherals,
         /// Shared coexistence arbitration register views owned by the radio arbitration service rather than any protocol role; per-protocol priority configuration belongs to that protocol's partition.
         pub coexistence: CoexistencePeripherals,
         /// Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle.
@@ -59016,7 +59022,6 @@ pub mod peripheral_ownership {
                 phy_brx_recovered_gaps,
                 phy_btagc_recovered,
                 phy_clock_oracle,
-                phy_cold_deadline_oracle,
                 phy_fectrl_recovered,
                 phy_fedata_recovered,
                 phy_fedata_wifi_recovered,
@@ -59033,6 +59038,9 @@ pub mod peripheral_ownership {
                 phy_nrx_recovered_gaps,
                 phy_pbus,
                 phy_rx_dco_oracle,
+            },
+            mac_time_counter: MacTimeCounterPeripherals {
+                phy_cold_deadline_oracle,
             },
             coexistence: CoexistencePeripherals {
                 coex_hw_timer,

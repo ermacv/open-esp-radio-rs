@@ -252,6 +252,7 @@ pub use ownership::{
 
 pub(crate) use ownership::device_fence;
 pub(crate) mod bluetooth;
+pub(crate) mod mac_time;
 pub(crate) mod ieee802154;
 pub(crate) mod modem;
 pub(crate) mod wifi;

@@ -33,6 +33,7 @@ pub(crate) struct Ieee802154TaskPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
+    pub(crate) time: crate::mac_time::MacTimeCounter,
 }
 
 /// Unique owner of every radio register partition shared by more than one
@@ -103,7 +104,10 @@ impl SharedRadioRegisters {
 
 /// Opaque Wi-Fi MAC register partition.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
-pub struct WifiMacPartition(svd::peripheral_ownership::WifiMacPeripherals);
+pub struct WifiMacPartition {
+    mac: svd::peripheral_ownership::WifiMacPeripherals,
+    time: crate::mac_time::MacTimeCounter,
+}
 
 /// Opaque coexistence register partition.
 #[must_use = "dropping a radio partition permanently loses its register authority"]
@@ -172,14 +176,20 @@ impl RadioPartitions {
             shared_radio,
             ieee802154,
             modem_etm,
+            mac_time_counter,
         } = svd::peripheral_ownership::partition(peripherals);
+        let (phy_time, wifi_time) = crate::mac_time::split(mac_time_counter);
         let (ieee802154_etm, bluetooth_phy_etm, bluetooth_etm) =
             crate::modem::etm::split(modem_etm);
         Self {
-            wifi_mac: WifiMacPartition(wifi_mac),
+            wifi_mac: WifiMacPartition {
+                mac: wifi_mac,
+                time: wifi_time,
+            },
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
+                time: phy_time,
             },
             coexistence: CoexistencePartition(coexistence),
             bluetooth: BluetoothControllerPartition {
@@ -520,25 +530,40 @@ pub(crate) fn device_fence() {
 /// ```
 pub struct WifiRadioRegisters {
     pub(crate) peripherals: WifiRadioPeripheralOwners,
+    time: crate::mac_time::MacTimeCounter,
 }
 
 impl WifiRadioRegisters {
     /// Assemble the Wi-Fi register set. This performs no MMIO.
     pub fn new(wifi_mac: WifiMacPartition) -> Self {
-        let WifiMacPartition(wifi_mac) = wifi_mac;
+        let WifiMacPartition {
+            mac: wifi_mac,
+            time,
+        } = wifi_mac;
         Self {
             peripherals: WifiRadioPeripheralOwners { wifi_mac },
+            time,
         }
     }
 
     /// Return the partition. This performs no MMIO.
     pub fn into_partition(self) -> WifiMacPartition {
-        WifiMacPartition(self.peripherals.wifi_mac)
+        WifiMacPartition {
+            mac: self.peripherals.wifi_mac,
+            time: self.time,
+        }
     }
 
     /// Order descriptor memory and MMIO at a hardware ownership boundary.
     pub fn order_device_accesses(&mut self) {
         device_fence();
+    }
+
+    /// Sample the free-running MAC microsecond counter, as the pinned
+    /// `libpp.a[pm_coex.o]` power management reads it at each beacon and
+    /// coexistence slice. The word wraps; only differences are meaningful.
+    pub fn mac_time_counter(&self) -> u32 {
+        self.time.sample()
     }
 
     #[cfg(test)]

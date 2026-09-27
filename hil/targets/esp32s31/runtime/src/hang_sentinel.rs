@@ -3,8 +3,9 @@
 //!
 //! A task on the core 0 protocol executor advances a heartbeat every 100 ms.
 //! A periodic SYSTIMER alarm 0 interrupt at the highest priority checks it every
-//! 500 ms and panics after three seconds without progress. The panic report
-//! then carries `mepc`, the instruction the interrupt preempted, and the
+//! 250 ms. After 1.5 s without progress it samples `mepc`, the instruction
+//! the interrupt preempted, at each of 16 further checks and panics with the
+//! samples; the panic report adds the
 //! pending interrupt sources, which tell a busy loop, an interrupt storm and
 //! a wait apart. A core that spins with its interrupts masked never takes the
 //! sentinel interrupt, which is itself evidence.
@@ -26,7 +27,7 @@ static STALE_CHECKS: AtomicU32 = AtomicU32::new(0);
 static TIMER: Mutex<CriticalSectionRawMutex, RefCell<Option<PeriodicTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
 
-const CHECK_PERIOD_MILLIS: u64 = 500;
+const CHECK_PERIOD_MILLIS: u64 = 250;
 const STALE_CHECK_LIMIT: u32 = 6;
 
 /// Start the sentinel on SYSTIMER alarm 0; its interrupt runs on this core.
@@ -66,7 +67,36 @@ fn check() {
         STALE_CHECKS.store(0, Ordering::Relaxed);
         return;
     }
-    if STALE_CHECKS.fetch_add(1, Ordering::Relaxed) + 1 == STALE_CHECK_LIMIT {
-        panic!("hang sentinel: the core 0 protocol executor made no progress for 3 s");
+    let stale = STALE_CHECKS.fetch_add(1, Ordering::Relaxed) + 1;
+    if stale < STALE_CHECK_LIMIT {
+        return;
     }
+    // A stalled executor loops through more than one instruction: sample
+    // the preempted instruction at every later check to map the loop.
+    let index = (stale - STALE_CHECK_LIMIT) as usize;
+    SAMPLES[index].store(preempted_instruction(), Ordering::Relaxed);
+    if index + 1 == SAMPLES.len() {
+        let mut samples = [0_u32; SAMPLE_COUNT];
+        for (sample, stored) in samples.iter_mut().zip(&SAMPLES) {
+            *sample = stored.load(Ordering::Relaxed);
+        }
+        panic!(
+            "hang sentinel: the core 0 protocol executor made no progress; preempted at {:08x?}",
+            samples
+        );
+    }
+}
+
+const SAMPLE_COUNT: usize = 16;
+static SAMPLES: [AtomicU32; SAMPLE_COUNT] = [const { AtomicU32::new(0) }; SAMPLE_COUNT];
+
+/// `mepc`: the instruction this interrupt preempted.
+fn preempted_instruction() -> u32 {
+    let mepc: usize;
+    // SAFETY: reading a machine CSR has no side effect.
+    #[allow(unsafe_code, reason = "reading mepc requires a CSR instruction")]
+    unsafe {
+        core::arch::asm!("csrr {0}, mepc", out(reg) mepc);
+    }
+    mepc as u32
 }

@@ -124,6 +124,12 @@ pub fn classify_flashed_capabilities(
         return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
             .then_some(ImageClass::DiagnosticRxOwnership);
     }
+    if features.ieee802154_route_probe {
+        let mut control = *features;
+        control.ieee802154_route_probe = false;
+        return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
+            .then_some(ImageClass::DiagnosticIeee802154Route);
+    }
     if features.ieee802154_air_check || features.ieee802154_session || features.ieee802154_thread {
         let mut control = *features;
         control.ieee802154_air_check = false;

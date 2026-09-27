@@ -131,6 +131,10 @@ static IEEE802154_EVENT_STATUS_PROBES: Channel<
     Ieee802154EventStatusProbe,
     1,
 > = Channel::new();
+#[cfg(feature = "ieee802154-route-probe")]
+#[unsafe(link_section = ".critical.data.logging")]
+static IEEE802154_ROUTE_PROBES: Channel<CriticalSectionRawMutex, Ieee802154RouteProbe, 1> =
+    Channel::new();
 #[cfg(feature = "ieee802154-ed-event-probe")]
 #[unsafe(link_section = ".critical.data.logging")]
 static IEEE802154_ED_EVENT_PROBES: Channel<CriticalSectionRawMutex, Ieee802154EdEventProbe, 1> =
@@ -239,6 +243,12 @@ pub struct StartupConfiguration {
 pub struct Ieee802154EventStatusProbe {
     pub request_id: u32,
     pub request: Ieee802154EventStatusProbeRequest,
+}
+
+#[cfg(feature = "ieee802154-route-probe")]
+pub struct Ieee802154RouteProbe {
+    pub request_id: u32,
+    pub request: oer_hil_protocol::Ieee802154RouteProbeRequest,
 }
 
 #[cfg(feature = "ieee802154-ed-event-probe")]
@@ -1286,6 +1296,54 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                     }
                                 }
                                 #[cfg(not(feature = "ieee802154-event-status-probe"))]
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(RejectReason::Unsupported),
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    Command::ProbeIeee802154Route(request) => {
+                        let admission = ieee802154_event_status_probe_admission(
+                            capabilities.features.ieee802154_route_probe,
+                            initialized,
+                            state == SessionState::WaitingForInitialization,
+                            session_id,
+                            ieee802154_diagnostic_requested,
+                            request.validate(),
+                        );
+                        match admission {
+                            Ieee802154EventStatusProbeAdmission::Reject(reason) => {
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    Event::Rejected(reason),
+                                )
+                                .await;
+                            }
+                            Ieee802154EventStatusProbeAdmission::Admit => {
+                                #[cfg(feature = "ieee802154-route-probe")]
+                                {
+                                    if IEEE802154_ROUTE_PROBES
+                                        .try_send(Ieee802154RouteProbe {
+                                            request_id,
+                                            request,
+                                        })
+                                        .is_err()
+                                    {
+                                        publish_event_reliably(
+                                            session_id,
+                                            request_id,
+                                            Event::Rejected(RejectReason::Busy),
+                                        )
+                                        .await;
+                                    } else {
+                                        ieee802154_diagnostic_requested = true;
+                                    }
+                                }
+                                #[cfg(not(feature = "ieee802154-route-probe"))]
                                 publish_event_reliably(
                                     session_id,
                                     request_id,

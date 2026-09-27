@@ -64,6 +64,7 @@ pub const fn hil_capabilities() -> Capabilities {
             ieee802154_air_check: cfg!(feature = "ieee802154-radio"),
             ieee802154_session: cfg!(feature = "ieee802154-radio"),
             ieee802154_thread: cfg!(feature = "ieee802154-thread"),
+            ieee802154_route_probe: cfg!(feature = "ieee802154-route-probe"),
         },
         maximum_payload_bytes: if cfg!(feature = "memory-benchmark") {
             MEMORY_BENCHMARK_PAYLOAD_CAPACITY

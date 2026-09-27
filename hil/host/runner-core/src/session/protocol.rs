@@ -1200,6 +1200,23 @@ impl SerialCapture {
         }
     }
 
+    pub fn probe_ieee802154_route(
+        &self,
+        request: Ieee802154RouteProbeRequest,
+        timeout: Duration,
+    ) -> Result<Ieee802154RouteProbeEvidence> {
+        match self
+            .send_command(0, Command::ProbeIeee802154Route(request), timeout)?
+            .body
+        {
+            Event::Ieee802154RouteProbeCompleted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected the IEEE 802.15.4 route probe: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid IEEE 802.15.4 route probe response".into()),
+        }
+    }
+
     pub fn run_ieee802154_air_check(
         &self,
         request: Ieee802154AirCheckRequest,

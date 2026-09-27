@@ -15,6 +15,17 @@ pub(super) use session::run_session;
 mod thread;
 #[cfg(feature = "ieee802154-thread")]
 pub(super) use thread::run_thread;
+#[cfg(feature = "ieee802154-route-probe")]
+mod route_probe;
+#[cfg(feature = "ieee802154-route-probe")]
+use oer_esp32s31_hal::{
+    ieee802154::{Ieee802154Cold, Ieee802154FoundationConfigured},
+    root::RadioHardware,
+};
+#[cfg(feature = "ieee802154-route-probe")]
+use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
+#[cfg(feature = "ieee802154-route-probe")]
+pub(super) use route_probe::run_route_probe;
 
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
@@ -94,7 +105,8 @@ use oer_hil_protocol::{Ieee802154ObservedEventState, Ieee802154ValidationEventEn
 /// release.
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
-    feature = "ieee802154-ed-event-probe"
+    feature = "ieee802154-ed-event-probe",
+    feature = "ieee802154-route-probe"
 ))]
 fn ieee802154_foundation(_radio: EspHalRadioPlatform) -> Option<Ieee802154FoundationConfigured> {
     let (shared, partitions) = RadioHardware::take()?.into_concurrent(());

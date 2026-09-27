@@ -2261,6 +2261,7 @@ dependencies = [
  "oer-esp32s31-ieee80211-mac",
  "oer-esp32s31-ieee80211-runtime",
  "oer-esp32s31-ieee80211-system",
+ "oer-esp32s31-ieee802154-esp-hal",
  "oer-esp32s31-ieee802154-openthread",
  "oer-esp32s31-ieee802154-runtime",
  "oer-esp32s31-ieee802154-system",

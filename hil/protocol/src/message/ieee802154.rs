@@ -762,3 +762,87 @@ pub struct Ieee802154ThreadReceiveEvidence {
     pub total: u16,
     pub datagrams: heapless::Vec<Ieee802154ThreadDatagram, IEEE802154_THREAD_RECORDED_DATAGRAMS>,
 }
+
+/// Entries one routed phase of the route probe records.
+pub const IEEE802154_ROUTE_PROBE_MAX_ENTRIES: usize = 4;
+
+/// Timing of one IEEE 802.15.4 route probe: the MAC timers fire
+/// `threshold_micros` after their start, and each wait for a second arrival
+/// lasts `settle_micros`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154RouteProbeRequest {
+    pub threshold_micros: u32,
+    pub settle_micros: u32,
+}
+
+impl Ieee802154RouteProbeRequest {
+    /// Returns whether the timing is inside the wire contract: a threshold
+    /// of 1 µs to 10 ms and a settle of at least four thresholds, at most
+    /// 100 ms.
+    pub const fn validate(self) -> bool {
+        self.threshold_micros >= 1
+            && self.threshold_micros <= 10_000
+            && self.settle_micros <= 100_000
+            && self.settle_micros >= self.threshold_micros.saturating_mul(4)
+    }
+}
+
+/// Why a route probe ended.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154RouteProbeStop {
+    Complete,
+    /// The image could not claim or bring up the MAC.
+    #[default]
+    UnsupportedSetup,
+    /// The event field was not clear before a phase.
+    NotClear,
+    /// A timer event did not latch within the bound.
+    LatchTimeout,
+    /// A phase observed an event it did not raise.
+    UnexpectedEvent,
+    /// The CPU route could not be bound or quiesced.
+    RouteFailed,
+}
+
+/// What acknowledging the first arrival left of a second arrival of the
+/// same, still latched event.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Ieee802154SameBitOutcome {
+    #[default]
+    NotRun,
+    /// The second arrival was cleared with the first.
+    Coalesced,
+    /// The bit stayed latched after the acknowledgement.
+    Retained,
+}
+
+/// One entry of the validation ISR.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154RouteProbeEntry {
+    /// The snapshot the entry sampled and consumed.
+    pub snapshot: Ieee802154ObservedEventState,
+    /// The field just before the snapshot was consumed.
+    pub before_acknowledgement: Ieee802154ObservedEventState,
+}
+
+/// Terminal observation of one route probe.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154RouteProbeEvidence {
+    pub stop: Ieee802154RouteProbeStop,
+    /// Polled phase, the route unbound: the first TIMER0 snapshot, the field
+    /// after acknowledging it once TIMER0 fired again, and the control
+    /// arrival after a restart that followed the acknowledgement.
+    pub polled_snapshot: Ieee802154ObservedEventState,
+    pub polled_after_acknowledgement: Ieee802154ObservedEventState,
+    pub polled_control: Ieee802154ObservedEventState,
+    pub polled_outcome: Ieee802154SameBitOutcome,
+    /// Routed phase: the first entry raises TIMER1 after its TIMER0 snapshot.
+    pub retrigger_entries:
+        heapless::Vec<Ieee802154RouteProbeEntry, IEEE802154_ROUTE_PROBE_MAX_ENTRIES>,
+    /// Routed phase: the first entry lets TIMER0 fire again after its
+    /// snapshot.
+    pub same_bit_entries:
+        heapless::Vec<Ieee802154RouteProbeEntry, IEEE802154_ROUTE_PROBE_MAX_ENTRIES>,
+    /// The field consumed after the last phase.
+    pub final_events: Ieee802154ObservedEventState,
+}

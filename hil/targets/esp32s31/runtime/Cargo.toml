@@ -176,6 +176,17 @@ ieee802154-ed-event-probe = [
     "dep:oer-esp32s31-radio-esp-hal",
     "oer-esp32s31-hal/validation-probes",
 ]
+# Diagnostic-only same-bit arrival and level-retrigger probe of the
+# IEEE 802.15.4 source-132 route over the production MAC owners and route
+# adapter, with the MAC timers as its only stimulus.
+ieee802154-route-probe = [
+    "ieee802154-diagnostic",
+    "dep:oer-esp32s31-hal",
+    "dep:oer-esp32s31-radio-esp-hal",
+    "dep:oer-esp32s31-ieee802154-esp-hal",
+    "dep:oer-ieee802154-engine",
+    "oer-esp32s31-hal/validation-probes",
+]
 # The composed IEEE 802.15.4 client on the shared radio arbiter: the
 # single-device on-air check and host-driven peer sessions.
 ieee802154-radio = [
@@ -229,6 +240,7 @@ oer-esp32s31-bluetooth = { workspace = true, optional = true }
 oer-esp32s31-bluetooth-system = { workspace = true, optional = true }
 oer-esp32s31-radio-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-ieee802154-engine = { workspace = true, optional = true }
+oer-esp32s31-ieee802154-esp-hal = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-runtime = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-system = { workspace = true, optional = true }
 oer-esp32s31-ieee802154-openthread = { workspace = true, optional = true }

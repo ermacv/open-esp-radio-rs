@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 184;
+pub const PROTOCOL_VERSION: u16 = 185;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -197,6 +197,9 @@ pub struct FeatureCapabilities {
     /// This image can run a Thread session: OpenThread over the composed
     /// IEEE 802.15.4 client.
     pub ieee802154_thread: bool,
+    /// This image can run the IEEE 802.15.4 route probe: same-bit arrival
+    /// and level retrigger of the source-132 route.
+    pub ieee802154_route_probe: bool,
 }
 
 /// Bounded alarm/clock agreement probe. It is intentionally independent of
@@ -521,6 +524,8 @@ pub enum Command {
     ProbeMemoryBenchmark(MemoryBenchmarkRequest),
     /// Run one bounded, observation-only IEEE 802.15.4 `EVENT_STATUS` probe.
     ProbeIeee802154EventStatus(Ieee802154EventStatusProbeRequest),
+    /// Run the IEEE 802.15.4 same-bit and level-retrigger route probe.
+    ProbeIeee802154Route(Ieee802154RouteProbeRequest),
     /// Run the bounded ED-DONE/TIMER0 selective-write discriminator.
     ProbeIeee802154EdEvent(Ieee802154EdEventProbeRequest),
     /// Run the single-device IEEE 802.15.4 on-air check.
@@ -1122,6 +1127,8 @@ pub enum Event {
     /// This event does not attest to same-bit concurrency, level-triggered
     /// retrigger behavior, or production interrupt readiness.
     Ieee802154EventStatusProbeCompleted(Ieee802154EventStatusProbeEvidence),
+    /// Correlated observation from [`Command::ProbeIeee802154Route`].
+    Ieee802154RouteProbeCompleted(Ieee802154RouteProbeEvidence),
     /// Correlated observation from [`Command::ProbeIeee802154EdEvent`].
     Ieee802154EdEventProbeCompleted(Ieee802154EdEventProbeEvidence),
     /// Correlated observation from [`Command::RunIeee802154AirCheck`].

@@ -1567,6 +1567,17 @@ pub async fn run(
             .await;
             return;
         }
+        #[cfg(feature = "ieee802154-route-probe")]
+        PreInitializationRequest::Ieee802154Route(probe) => {
+            let evidence = ieee802154::run_route_probe(platforms.radio, probe.request);
+            publish_event_reliably(
+                0,
+                probe.request_id,
+                HilEvent::Ieee802154RouteProbeCompleted(evidence),
+            )
+            .await;
+            return;
+        }
         #[cfg(feature = "ieee802154-ed-event-probe")]
         PreInitializationRequest::Ieee802154EdEvent(probe) => {
             let evidence = ieee802154::run_ed_event_probe(platforms.radio, probe.request);

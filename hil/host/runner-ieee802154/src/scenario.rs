@@ -22,6 +22,16 @@ pub enum Ieee802154Scenario {
     BackgroundMaintenance(BackgroundMaintenance),
     ChannelEnergy(ChannelEnergy),
     ThreadExchange(ThreadExchange),
+    RouteProbe(RouteProbe),
+}
+
+/// The same-bit arrival and level-retrigger probe of the source-132 route.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteProbe {
+    pub boots: u8,
+    pub threshold_micros: u32,
+    pub settle_micros: u32,
 }
 
 /// Channel energy and assessment against the reference peer's burst.
@@ -178,6 +188,18 @@ impl Ieee802154Scenario {
                 }
                 Ok(())
             }
+            Self::RouteProbe(probe) => {
+                bounded(probe.boots, 1, 20, "boots")?;
+                let request = oer_hil_protocol::Ieee802154RouteProbeRequest {
+                    threshold_micros: probe.threshold_micros,
+                    settle_micros: probe.settle_micros,
+                };
+                if request.validate() {
+                    Ok(())
+                } else {
+                    Err("IEEE 802.15.4 route probe timing is outside the wire contract".into())
+                }
+            }
             Self::ThreadExchange(exchange) => {
                 bounded(exchange.boots, 1, 20, "boots")?;
                 bounded(exchange.channel, 11, 26, "channel")?;
@@ -214,6 +236,7 @@ impl Ieee802154Scenario {
             }),
             Self::EventStatus(_)
             | Self::EdEvent(_)
+            | Self::RouteProbe(_)
             | Self::AirCheck(_)
             | Self::BackgroundMaintenance(_) => None,
         }
@@ -223,6 +246,7 @@ impl Ieee802154Scenario {
         let mut plan = Plan::target_only(match self {
             Self::EventStatus(_) => ImageClass::DiagnosticIeee802154EventStatus,
             Self::EdEvent(_) => ImageClass::DiagnosticIeee802154EdEvent,
+            Self::RouteProbe(_) => ImageClass::DiagnosticIeee802154Route,
             Self::AirCheck(_)
             | Self::PeerExchange(_)
             | Self::BackgroundMaintenance(_)
@@ -288,6 +312,15 @@ impl Ieee802154Scenario {
                     far_channel: energy.far_channel,
                     samples: energy.samples,
                     energy_scan_micros: energy.energy_scan_micros,
+                },
+                output,
+                context,
+            ),
+            Self::RouteProbe(probe) => ieee802154::route_probe::run(
+                ieee802154::route_probe::Config {
+                    boots: probe.boots,
+                    threshold_micros: probe.threshold_micros,
+                    settle_micros: probe.settle_micros,
                 },
                 output,
                 context,
@@ -402,6 +435,20 @@ mod tests {
         let air_check: Ieee802154Scenario = toml::from_str("kind = 'air-check'\nboots = 1\nchannel = 15\ncycles = 2\nenergy_scan_micros = 5000\nreceive_window_millis = 200\nscheduled_lead_micros = 20000\nscheduled_window_micros = 50000").unwrap();
         assert_eq!(air_check.peer_image(), None);
         assert!(!air_check.plan().requirements.ieee802154_peer);
+    }
+
+    #[test]
+    fn the_route_probe_implies_its_image_and_bounds_its_timing() {
+        let table = "kind = 'route-probe'\nboots = 1\nthreshold_micros = 100\nsettle_micros = 2000";
+        let scenario: Ieee802154Scenario = toml::from_str(table).unwrap();
+        scenario.validate().unwrap();
+        assert_eq!(
+            scenario.plan(),
+            Plan::target_only(ImageClass::DiagnosticIeee802154Route)
+        );
+        let invalid: Ieee802154Scenario =
+            toml::from_str(&table.replace("settle_micros = 2000", "settle_micros = 399")).unwrap();
+        assert!(invalid.validate().is_err());
     }
 
     #[test]

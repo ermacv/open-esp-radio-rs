@@ -26,6 +26,8 @@ pub enum PreInitializationRequest {
     Ieee802154EventStatus(Ieee802154EventStatusProbe),
     #[cfg(feature = "ieee802154-ed-event-probe")]
     Ieee802154EdEvent(Ieee802154EdEventProbe),
+    #[cfg(feature = "ieee802154-route-probe")]
+    Ieee802154Route(Ieee802154RouteProbe),
     #[cfg(feature = "ieee802154-radio")]
     Ieee802154AirCheck(Ieee802154AirCheck),
     #[cfg(feature = "ieee802154-radio")]
@@ -96,6 +98,18 @@ pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
         {
             Either::First(configuration) => PreInitializationRequest::Startup(configuration),
             Either::Second(probe) => PreInitializationRequest::Ieee802154EdEvent(probe),
+        }
+    }
+    #[cfg(feature = "ieee802154-route-probe")]
+    {
+        match select(
+            STARTUP_CONFIGURATIONS.receive(),
+            IEEE802154_ROUTE_PROBES.receive(),
+        )
+        .await
+        {
+            Either::First(configuration) => PreInitializationRequest::Startup(configuration),
+            Either::Second(probe) => PreInitializationRequest::Ieee802154Route(probe),
         }
     }
     #[cfg(all(feature = "ieee802154-radio", not(feature = "ieee802154-thread")))]

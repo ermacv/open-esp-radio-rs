@@ -1733,3 +1733,67 @@ fn ieee802154_thread_messages_at_their_bounds_fit_and_round_trip() {
         round_trip(Envelope::new(7, 3, 9, 2, event));
     }
 }
+
+#[test]
+fn ieee802154_route_probe_messages_at_their_bounds_fit_and_round_trip() {
+    use crate::{
+        IEEE802154_ROUTE_PROBE_MAX_ENTRIES, Ieee802154ObservedEventState,
+        Ieee802154RouteProbeEntry, Ieee802154RouteProbeEvidence, Ieee802154RouteProbeRequest,
+        Ieee802154RouteProbeStop, Ieee802154SameBitOutcome,
+    };
+    let request = Ieee802154RouteProbeRequest {
+        threshold_micros: 10_000,
+        settle_micros: 100_000,
+    };
+    assert!(request.validate());
+    for invalid in [
+        Ieee802154RouteProbeRequest {
+            threshold_micros: 0,
+            settle_micros: 400,
+        },
+        Ieee802154RouteProbeRequest {
+            threshold_micros: 100,
+            settle_micros: 399,
+        },
+        Ieee802154RouteProbeRequest {
+            threshold_micros: 10_001,
+            settle_micros: 100_000,
+        },
+    ] {
+        assert!(!invalid.validate(), "{invalid:?}");
+    }
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        Command::ProbeIeee802154Route(request),
+    ));
+    let entry = Ieee802154RouteProbeEntry {
+        snapshot: Ieee802154ObservedEventState::Unclassified,
+        before_acknowledgement: Ieee802154ObservedEventState::Timer0AndTimer1,
+    };
+    let full = || {
+        let mut entries = heapless::Vec::new();
+        for _ in 0..IEEE802154_ROUTE_PROBE_MAX_ENTRIES {
+            entries.push(entry).unwrap();
+        }
+        entries
+    };
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        Event::Ieee802154RouteProbeCompleted(Ieee802154RouteProbeEvidence {
+            stop: Ieee802154RouteProbeStop::RouteFailed,
+            polled_snapshot: Ieee802154ObservedEventState::Timer0Only,
+            polled_after_acknowledgement: Ieee802154ObservedEventState::Clear,
+            polled_control: Ieee802154ObservedEventState::Timer0Only,
+            polled_outcome: Ieee802154SameBitOutcome::Retained,
+            retrigger_entries: full(),
+            same_bit_entries: full(),
+            final_events: Ieee802154ObservedEventState::UnexpectedNamed,
+        }),
+    ));
+}

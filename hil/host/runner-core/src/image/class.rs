@@ -31,6 +31,8 @@ pub enum ImageClass {
     DiagnosticIeee802154Radio,
     /// The IEEE 802.15.4 radio image with OpenThread over its client.
     DiagnosticIeee802154Thread,
+    /// The IEEE 802.15.4 same-bit and level-retrigger route probe.
+    DiagnosticIeee802154Route,
     DiagnosticMemoryBenchmark,
 }
 
@@ -52,7 +54,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -76,6 +78,7 @@ impl ImageClass {
         Self::DiagnosticIeee802154EdEvent,
         Self::DiagnosticIeee802154Radio,
         Self::DiagnosticIeee802154Thread,
+        Self::DiagnosticIeee802154Route,
         Self::DiagnosticMemoryBenchmark,
     ];
 
@@ -104,6 +107,7 @@ impl ImageClass {
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
             Self::DiagnosticIeee802154Thread => "diagnostic-ieee802154-thread",
+            Self::DiagnosticIeee802154Route => "diagnostic-ieee802154-route",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
         }
     }
@@ -174,6 +178,9 @@ impl ImageClass {
             Self::DiagnosticIeee802154Thread => {
                 "open-radio-hil,ieee802154-thread,psram-task-stack,code-psram,profile-psram-data"
             }
+            Self::DiagnosticIeee802154Route => {
+                "open-radio-hil,ieee802154-route-probe,psram-task-stack,code-psram,profile-psram-data"
+            }
         }
     }
 
@@ -202,7 +209,8 @@ impl ImageClass {
             | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent
             | Self::DiagnosticIeee802154Radio
-            | Self::DiagnosticIeee802154Thread => "psram-code-psram-data-psram-stack",
+            | Self::DiagnosticIeee802154Thread
+            | Self::DiagnosticIeee802154Route => "psram-code-psram-data-psram-stack",
         }
     }
 

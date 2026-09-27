@@ -217,6 +217,7 @@ pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 ieee802154_air_check: false,
                 ieee802154_session: false,
                 ieee802154_thread: false,
+                ieee802154_route_probe: false,
             },
             maximum_payload_bytes: 1,
             maximum_wire_frame_bytes: 1,

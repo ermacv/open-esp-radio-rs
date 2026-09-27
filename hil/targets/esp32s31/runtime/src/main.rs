@@ -73,7 +73,15 @@ compile_error!("psram-task-stack requires code-psram and profile-psram-data");
         feature = "ieee802154-event-status-probe",
         feature = "ieee802154-radio"
     ),
-    all(feature = "ieee802154-ed-event-probe", feature = "ieee802154-radio")
+    all(feature = "ieee802154-ed-event-probe", feature = "ieee802154-radio"),
+    all(
+        feature = "ieee802154-route-probe",
+        any(
+            feature = "ieee802154-event-status-probe",
+            feature = "ieee802154-ed-event-probe",
+            feature = "ieee802154-radio"
+        )
+    )
 ))]
 compile_error!("IEEE 802.15.4 diagnostic images are mutually exclusive");
 

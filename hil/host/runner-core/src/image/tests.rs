@@ -227,7 +227,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 24);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 25);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -323,6 +323,22 @@ fn the_ieee802154_radio_image_is_the_performance_image_with_its_services() {
     assert_eq!(
         classify_flashed_capabilities(&thread),
         Some(ImageClass::DiagnosticIeee802154Thread)
+    );
+    let route = FeatureCapabilities {
+        ieee802154_route_probe: true,
+        ..performance
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&route),
+        Some(ImageClass::DiagnosticIeee802154Route)
+    );
+    // The route probe image carries no other radio service.
+    assert_eq!(
+        classify_flashed_capabilities(&FeatureCapabilities {
+            ieee802154_route_probe: true,
+            ..air_check
+        }),
+        None
     );
     // Thread runs over the radio image's client, never without it.
     let thread_alone = FeatureCapabilities {

@@ -704,6 +704,8 @@ impl Ieee802154System {
             oer_esp32s31_radio_runtime::runtime_trace(0x7004);
         }
         oer_esp32s31_radio_runtime::runtime_trace(0x7005);
+        embassy_time::Timer::after_secs(6).await;
+        oer_esp32s31_radio_runtime::runtime_trace(0x7006);
         Ok(())
     }
 

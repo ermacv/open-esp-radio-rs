@@ -2,8 +2,8 @@
   "schema": 1,
   "target": "esp32s31",
   "scenario": "bluetooth-trouble-secure-gatt-timing",
-  "run-id": "1790535847863-00221e04",
-  "started-unix-millis": 1790535847863,
+  "run-id": "1790538836132-0024c550",
+  "started-unix-millis": 1790538836132,
   "outcome": "passed",
   "failure": null,
   "repetitions": [
@@ -15,223 +15,98 @@
           "name": "target.capture.events",
           "threshold": null,
           "unit": "count",
-          "value": 239,
+          "value": 164,
           "verdict": null
         },
         {
           "name": "target.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 22869,
+          "value": 15883,
           "verdict": null
         },
         {
-          "name": "target.request-2.stack.cpu0-irq.capacity",
+          "name": "target.request-162.stack.cpu0-irq.capacity",
           "threshold": null,
           "unit": "bytes",
           "value": 32768,
           "verdict": null
         },
         {
-          "name": "target.request-2.stack.cpu0-irq.free",
+          "name": "target.request-162.stack.cpu0-irq.free",
           "threshold": null,
           "unit": "bytes",
           "value": 32488,
           "verdict": null
         },
         {
-          "name": "target.request-2.stack.cpu0-irq.minimum-free",
+          "name": "target.request-162.stack.cpu0-irq.minimum-free",
           "threshold": null,
           "unit": "bytes",
           "value": 4096,
           "verdict": null
         },
         {
-          "name": "target.request-237.stack.cpu0-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.request-237.stack.cpu0-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32488,
-          "verdict": null
-        },
-        {
-          "name": "target.request-237.stack.cpu0-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.request-238.link.lifetime.rx.checksum-errors",
+          "name": "target.request-163.link.lifetime.rx.checksum-errors",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.request-238.link.lifetime.rx.cobs-errors",
+          "name": "target.request-163.link.lifetime.rx.cobs-errors",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.request-238.link.lifetime.rx.decode-errors",
+          "name": "target.request-163.link.lifetime.rx.decode-errors",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.request-238.link.lifetime.rx.frames",
+          "name": "target.request-163.link.lifetime.rx.frames",
           "threshold": null,
           "unit": "count",
-          "value": 238,
+          "value": 163,
           "verdict": null
         },
         {
-          "name": "target.request-238.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-238.link.lifetime.text.dropped",
+          "name": "target.request-163.link.lifetime.rx.overflows",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.request-238.link.lifetime.text.truncated",
+          "name": "target.request-163.link.lifetime.text.dropped",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.request-238.link.lifetime.tx.dropped",
+          "name": "target.request-163.link.lifetime.text.truncated",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.request-238.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 238,
-          "verdict": null
-        }
-      ]
-    },
-    {
-      "outcome": "passed",
-      "failure": null,
-      "measurements": [
-        {
-          "name": "target.capture.events",
-          "threshold": null,
-          "unit": "count",
-          "value": 168,
-          "verdict": null
-        },
-        {
-          "name": "target.capture.received-bytes",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 16258,
-          "verdict": null
-        },
-        {
-          "name": "target.request-166.stack.cpu0-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.request-166.stack.cpu0-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32488,
-          "verdict": null
-        },
-        {
-          "name": "target.request-166.stack.cpu0-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.rx.checksum-errors",
+          "name": "target.request-163.link.lifetime.tx.dropped",
           "threshold": null,
           "unit": "count",
           "value": 0,
           "verdict": null
         },
         {
-          "name": "target.request-167.link.lifetime.rx.cobs-errors",
+          "name": "target.request-163.link.lifetime.tx.frames",
           "threshold": null,
           "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 167,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-167.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 167,
+          "value": 163,
           "verdict": null
         },
         {
@@ -265,98 +140,14 @@
           "name": "target.capture.events",
           "threshold": null,
           "unit": "count",
-          "value": 170,
+          "value": 218,
           "verdict": null
         },
         {
           "name": "target.capture.received-bytes",
           "threshold": null,
           "unit": "bytes",
-          "value": 16450,
-          "verdict": null
-        },
-        {
-          "name": "target.request-168.stack.cpu0-irq.capacity",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32768,
-          "verdict": null
-        },
-        {
-          "name": "target.request-168.stack.cpu0-irq.free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 32488,
-          "verdict": null
-        },
-        {
-          "name": "target.request-168.stack.cpu0-irq.minimum-free",
-          "threshold": null,
-          "unit": "bytes",
-          "value": 4096,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.rx.checksum-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.rx.cobs-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.rx.decode-errors",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.rx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 169,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.rx.overflows",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.text.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.text.truncated",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.tx.dropped",
-          "threshold": null,
-          "unit": "count",
-          "value": 0,
-          "verdict": null
-        },
-        {
-          "name": "target.request-169.link.lifetime.tx.frames",
-          "threshold": null,
-          "unit": "count",
-          "value": 169,
+          "value": 20905,
           "verdict": null
         },
         {
@@ -371,6 +162,215 @@
           "threshold": null,
           "unit": "bytes",
           "value": 32508,
+          "verdict": null
+        },
+        {
+          "name": "target.request-2.stack.cpu0-irq.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-216.stack.cpu0-irq.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32768,
+          "verdict": null
+        },
+        {
+          "name": "target.request-216.stack.cpu0-irq.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32488,
+          "verdict": null
+        },
+        {
+          "name": "target.request-216.stack.cpu0-irq.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 217,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-217.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 217,
+          "verdict": null
+        }
+      ]
+    },
+    {
+      "outcome": "passed",
+      "failure": null,
+      "measurements": [
+        {
+          "name": "target.capture.events",
+          "threshold": null,
+          "unit": "count",
+          "value": 179,
+          "verdict": null
+        },
+        {
+          "name": "target.capture.received-bytes",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 17278,
+          "verdict": null
+        },
+        {
+          "name": "target.request-177.stack.cpu0-irq.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32768,
+          "verdict": null
+        },
+        {
+          "name": "target.request-177.stack.cpu0-irq.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32368,
+          "verdict": null
+        },
+        {
+          "name": "target.request-177.stack.cpu0-irq.minimum-free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 4096,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.rx.checksum-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.rx.cobs-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.rx.decode-errors",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.rx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 178,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.rx.overflows",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.text.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.text.truncated",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.tx.dropped",
+          "threshold": null,
+          "unit": "count",
+          "value": 0,
+          "verdict": null
+        },
+        {
+          "name": "target.request-178.link.lifetime.tx.frames",
+          "threshold": null,
+          "unit": "count",
+          "value": 178,
+          "verdict": null
+        },
+        {
+          "name": "target.request-2.stack.cpu0-irq.capacity",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32768,
+          "verdict": null
+        },
+        {
+          "name": "target.request-2.stack.cpu0-irq.free",
+          "threshold": null,
+          "unit": "bytes",
+          "value": 32504,
           "verdict": null
         },
         {
@@ -385,7 +385,7 @@
   ],
   "completion-seal": {
     "path": "attempts/bluetooth-trouble-secure-gatt-timing.json",
-    "sha256": "b0b0babdf01ce61bf3d8e9c577208b0c8b90d87a7c758cd36fbf056ce0b3a4a7"
+    "sha256": "4d0f3fe0affceae8d68673de931b3e72392cc8b0c3a8a1dfec155dd2dc70d8d4"
   },
   "subject": {
     "observer": {
@@ -400,17 +400,17 @@
         },
         "inputs": {
           ".cargo/config.toml": "5df4bde4735925017628aa3c7d769fbc20bca4d16fffa0fe09cc4ce88db7ae29",
-          "Cargo.lock": "39a315953635b300ba07a707c7b831e18bf65db842670e9e189a0f8e46245efa",
-          "Cargo.toml": "e4a1288c91c558ac2197604bce855c64ceceb2a3265be21402100b00ace753c5",
+          "Cargo.lock": "3c8b70ea7efe2272aaa45a50760d2714ea5a8ac065a8871a5ccf6fc022ddef51",
+          "Cargo.toml": "f155c85559e556724a7826d31397b0fc712dc8797ac7fb110c504bc7427b7212",
           "crates/protocols/ieee80211/mac/Cargo.toml": "e1787c2f9cad02090c5681c96a6f0c314bbf8d9239a09b3d7d9ccb107d36eb7d",
-          "crates/protocols/ieee80211/mac/src/ap.rs": "3b237a69f9e46bf8cf16ef390ab3d4970687420af43e805236d326c5251cdd63",
+          "crates/protocols/ieee80211/mac/src/ap.rs": "ea7952458c2290db4794285b2aee1af53d2491445dd165101ddb1bd58e826018",
           "crates/protocols/ieee80211/mac/src/ap/probe.rs": "b52888ad3a42de955a7119c2c7b9acffd5abdeda4d35cbfb580cb7f6ff0c2ba3",
-          "crates/protocols/ieee80211/mac/src/ap/probe/tests.rs": "386d0e8e6191befe735aaf70a02fdf13c6a211cf91e34d9fee4c8c3d8ce98690",
+          "crates/protocols/ieee80211/mac/src/ap/probe/tests.rs": "b094b45e8904bd8e3280794e85c7b4ac5fb380b07247294f586f3aa4efd366e6",
           "crates/protocols/ieee80211/mac/src/ap/profile.rs": "4cddf46821f66377781b060edcdec6f39e9777c3adb7ef2ce03e2fbbb90ec5c9",
-          "crates/protocols/ieee80211/mac/src/ap/profile/tests.rs": "3f571aedca68df704a84aa082a58056a339b82abfabc59624cc6e3d99ebf5d2d",
-          "crates/protocols/ieee80211/mac/src/ap/tests.rs": "69eb20bd4c271fc2a3a383ad2a2a46f6851bdc258552762d203fe8082f34a4a9",
-          "crates/protocols/ieee80211/mac/src/beacon.rs": "78e7a4b5aad4ee3eedd21eadd4cb0cfca858d7abf4d98d0d6027576a75783bf9",
-          "crates/protocols/ieee80211/mac/src/beacon/tests.rs": "7b1a04c2f5d4bd472d8d15ed0e45ba7a7fd09cbbf5da83ab044804e7a7dbd934",
+          "crates/protocols/ieee80211/mac/src/ap/profile/tests.rs": "7839f79ff3c85099369b02a02a4f35a58785adc72a9604bb7c28e5f11125feab",
+          "crates/protocols/ieee80211/mac/src/ap/tests.rs": "bfbd5bbd2a016dd61e517a18605eedf8e4b57662b5178998a016880d4bcf374e",
+          "crates/protocols/ieee80211/mac/src/beacon.rs": "92c2c20ad4971decc12f758e0a36e5e8be9e34e5968b6d9cc4334592e4364b7d",
+          "crates/protocols/ieee80211/mac/src/beacon/tests.rs": "0e71e82f3d59595f17faff30a3767f58c0dde78ab21e55d6e62a34676b978937",
           "crates/protocols/ieee80211/mac/src/block_ack.rs": "61d373700cc9be977b38a963def1b0377a5c5609f3e9d82b67d4f5f70592a4ba",
           "crates/protocols/ieee80211/mac/src/block_ack/frame.rs": "23fe95c73b39c3543bd8b17bb75d66e9f24301c12c74e5ba834e565b958409a6",
           "crates/protocols/ieee80211/mac/src/block_ack/frame/tests.rs": "ba281c579ec5fb86106ffb82e0d514292606924d362471b367a64b7ee28ce558",
@@ -455,7 +455,7 @@
           "crates/protocols/ieee80211/mac/src/qos/tests.rs": "88e46483ab49cd52bd3283c53d6d3eea8d376b689c0bd4bb93a888f51bdac3e6",
           "crates/protocols/ieee80211/mac/src/scan.rs": "59da392a35d21f0b5674e14674405424ebdb03f07b978e6d40b28e6c9b2b7ddc",
           "crates/protocols/ieee80211/mac/src/scan/tests.rs": "d86633859e5adcc124490c17578acd57755c742e5406f10fbf0610fd029455ac",
-          "crates/protocols/ieee80211/mac/src/security.rs": "019c09dcaf48b55e5e0cd36fc1fed8f8ff7337f6cf0a31983b78a8bf7fa92085",
+          "crates/protocols/ieee80211/mac/src/security.rs": "bb120f44454b755337360b9eea779d5d37e53411a9f024261f5bf6dced802b30",
           "crates/protocols/ieee80211/mac/src/security/rsn.rs": "b9c28ca2d682bc647701081875585077c8749d09e776a8ad94bd5cd1ad6d7f9e",
           "crates/protocols/ieee80211/mac/src/security/rsn/tests.rs": "c7b00735aa525448c8d0d3c48fc0166caabd1a5e2fddcc89d26ed05bf85fb59c",
           "crates/protocols/ieee80211/mac/src/sequence.rs": "d50bc67b4f85d154e5b3460942d15019b2f7294a67cebe2209b16856a7f747fd",
@@ -592,8 +592,8 @@
           "hil/host/runner-core/src/evidence/run/tests.rs": "a3ed0185a54f35e393534da00a1ff3026007c42f3f6a55026abacc1784446df5",
           "hil/host/runner-core/src/evidence/run/tests/workflow.rs": "87697184652266c78515bb506a915537d5ce5dd2297af1cb34aafc2114244aa2",
           "hil/host/runner-core/src/evidence/run/validation.rs": "6d7f433c36caadb57866b866d363fe9cf1ffc4de2b2c84500578bdff286ae993",
-          "hil/host/runner-core/src/evidence/verify.rs": "9adba02d5efd27735896b818f89ec2f6d6be827438a0ce11a8392e5188afeda1",
-          "hil/host/runner-core/src/evidence/verify/tests.rs": "7766590b489b1933d85455f460bf9337ec1b4c32d10be815851bf18b19ae60de",
+          "hil/host/runner-core/src/evidence/verify.rs": "34349aef8dae3638de1a8e167255d59e39c06448798a8b64f38e643b1d7eac09",
+          "hil/host/runner-core/src/evidence/verify/tests.rs": "ad320e3ab4c76256d6a4dc57bc81ddaeb69528970839bb5de73357e86d82b021",
           "hil/host/runner-core/src/failure.rs": "c6af35f336a03cd3c130c865bb10f7b9ea1ea07358be0c8df380a71066f87673",
           "hil/host/runner-core/src/fixture.rs": "813bdbe04497bf6b74b2d13333c7202f96fc85833383b93fe4a9462d1f5a0c60",
           "hil/host/runner-core/src/fixture/cleanup.rs": "ac1d873ec755752bfac768aa4ef0fff73b8e398a098afc08d4d524f6c7f9c1a0",
@@ -1048,6 +1048,7 @@
                   "crates/hardware/esp32s31/driver/ieee80211",
                   "crates/hardware/esp32s31/driver/ieee80211/dma",
                   "crates/hardware/ieee802154/engine",
+                  "crates/hardware/radio/analog",
                   "crates/hardware/radio/clock",
                   "crates/hardware/esp32s31/driver/ieee80211/mac",
                   "crates/roles/esp32s31/ieee80211/ap",
@@ -378316,28 +378317,28 @@
         },
         "schema": 2
       },
-      "build_sha256": "d63ff96fcf409b096af476e0eb7f28e3c736fdd2ad9d850903d1e49ae6d8098d",
-      "executable_sha256": "87f9e9869b8d049cbe610e5adcf25ecb2420b00f47200a8c06a17b322af6f09c",
+      "build_sha256": "8d70610789a20d96a8fb848d949f8ce409dac03c36cbcf325c9c0bde4cf1846e",
+      "executable_sha256": "87cba498b0defe4054acacc8c27ddfe237f12b54fff032adca57096233788d59",
       "schema": 1
     },
     "repository": {
-      "commit": "5a0806d383ff46ec6ca67d44f8e12498473fb822",
+      "commit": "1d116f54039417a48b4dbd0a938c8ab832faa19f",
       "dirty": true,
-      "workspace_sha256": "eaf076cb08d4a1b7e81b43c51f0b49cfde1b5460cceb291c0c85e58d232963e7"
+      "workspace_sha256": "83d8356f3a091cc18ed869319499b3668c03378dede988c365274dfbb1f17d66"
     },
     "firmware": [
       {
         "image": "bluetooth-secure-gatt",
-        "build_id": "4451df2317bc3b19b2ac7830060cf3bd71f12326c9fa1a52843cdbec6af3acda",
+        "build_id": "4d4030d98510396fda633e0b4d4fe6a6203a8cde537df5245e494c91a168f577",
         "application": {
           "path": "firmware/bluetooth-secure-gatt/application.bin",
-          "size_bytes": 1073712,
-          "sha256": "90b564b63860111e841999bb49e8b6043b20f17bacd7665e822a7ee48e8bd051"
+          "size_bytes": 1130256,
+          "sha256": "bac97eba789556a614e23466f27f0c66f51135c2f68c735a834bc5ab6d6ab610"
         },
         "build_provenance": {
           "path": "firmware/bluetooth-secure-gatt/build-provenance.json",
           "size_bytes": 5653,
-          "sha256": "abc07a9fbe38b17bb8dd1f1357244262e83673f79cd210644c7da42382b94a3c"
+          "sha256": "9aaed9c315f8d2c78121b397e616ce8ac715caf2fa5d236e4f8160f760e38c18"
         },
         "replayed": false
       }
@@ -378349,13 +378350,13 @@
     },
     "fixture": {
       "path": "lab-provenance.json",
-      "size_bytes": 2016,
-      "sha256": "826929e925fe8bdfe8c76d130e82aac46a4c4d0f41c061b068dbf4d65951826d"
+      "size_bytes": 2018,
+      "sha256": "fcb6de400a3c5a28205ef971bac62b1387c7960554862a6c4a60a31e7ebc433c"
     },
     "source_snapshot_manifest": {
       "path": "source/snapshot/manifest.json",
-      "size_bytes": 792388,
-      "sha256": "198fc667215bad1bf3a0f2a23534daabc9496cb892ea15f4fe530da96b71a36b"
+      "size_bytes": 798832,
+      "sha256": "832442a4654d5537b65d9f1ae23b1f40fff748e0650fffc0d8bd451d7ef48252"
     }
   },
   "procedure": {
@@ -378387,7 +378388,7 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "39a315953635b300ba07a707c7b831e18bf65db842670e9e189a0f8e46245efa"
+      "sha256": "3c8b70ea7efe2272aaa45a50760d2714ea5a8ac065a8871a5ccf6fc022ddef51"
     },
     {
       "path": "crates/adapters/embassy/esp32s31/executor/Cargo.toml",
@@ -378715,11 +378716,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware/live.rs",
-      "sha256": "8364de2e497b086be79396c424ea1bafe46df618683334ad2da9b592fc4739f9"
+      "sha256": "40ab488b023e60ce5620d3059b656681fbd58bfd472e497be3ca0c1095224f50"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware.rs",
-      "sha256": "456dda3563f76c14cbd8bd708094a115eafe40fbd53e540e2406637ddb68eab0"
+      "sha256": "1cb2b3ec82d0103cd115389dbda6577adb14f4a385f1a7548d9771c947736a17"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/list.rs",
@@ -378802,6 +378803,10 @@
       "sha256": "453b966e373003a7a1b9a219f26fb6d5f2a6e0174a6cd836951291f8a71953ca"
     },
     {
+      "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_lock.rs",
+      "sha256": "ce1a999fd5eaab9d65558ebdddef9301bf9538594d95e841d7559225ceeb759f"
+    },
+    {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_modify.rs",
       "sha256": "89e4c784297db3166b36db1115a7742f9ef0abed790f5317b7b5e50f80daef4a"
     },
@@ -378815,7 +378820,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth.rs",
-      "sha256": "20a97d89b5070bc03d622cf0bc4397297857eb72d4b232769f25c9b69c86ec7f"
+      "sha256": "f3fd0993773699b8d1a2f9cc6798d5035fbba09a37bf474e6f6a216461b1a05a"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/clock.rs",
@@ -379951,7 +379956,7 @@
     },
     {
       "path": "crates/protocols/ieee80211/mac",
-      "sha256": "c75c122cd340705e3391310267fc75b8b86d01960088e480abe66497d71b0802"
+      "sha256": "af92b3ce06738941f42b36af3e1f9caa13079b2491fbe9f1b6bd9321885f3e49"
     },
     {
       "path": "crates/protocols/ieee802154/Cargo.toml",
@@ -380183,7 +380188,7 @@
     },
     {
       "path": "hil/host/runner-core",
-      "sha256": "1ce226e385417c287b35a08f3aa39faabae8ad3ea95af514dee10cd5575c027c"
+      "sha256": "6eb040bc8dced6437b0c38d70e174d13f7a0cb600cdafeb1d07985977ae9b072"
     },
     {
       "path": "hil/host/runner-ieee80211",

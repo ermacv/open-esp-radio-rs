@@ -375,7 +375,7 @@ mod tests {
         worker.join().unwrap();
         assert!(report.connection_complete && report.reset_completed);
         assert!(report.remote_features_command_status && report.remote_features_complete);
-        assert_eq!(report.remote_features, Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]));
+        assert_eq!(report.remote_features, Some([0x39, 0x40, 0, 0, 0, 0, 0, 0]));
         assert!(report.remote_features_after_micros.is_some());
         assert!(report.remote_version_command_status && report.remote_version_complete);
         assert_eq!(report.remote_version, Some(0x0d));

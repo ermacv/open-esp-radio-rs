@@ -435,7 +435,7 @@ mod connection_reset_tests {
     fn complete_remote_information(report: &mut ConnectionReset) {
         report.remote_features_command_status = true;
         report.remote_features_complete = true;
-        report.remote_features = Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.remote_features = Some([0x39, 0x40, 0, 0, 0, 0, 0, 0]);
         report.remote_features_after_micros = Some(1);
         report.remote_version_command_status = true;
         report.remote_version_complete = true;
@@ -570,13 +570,13 @@ mod connection_reset_tests {
         // An old unencrypted profile and an old helper report are not accepted.
         report.remote_features = Some([0x18, 0x40, 0, 0, 0, 0, 0, 0]);
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
-        report.remote_features = Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.remote_features = Some([0x39, 0x40, 0, 0, 0, 0, 0, 0]);
         report.schema = 9;
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
         report.schema = CONNECTION_RESET_SCHEMA;
         report.remote_features = Some([0x18, 0, 0, 0, 0, 0, 0, 0]);
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
-        report.remote_features = Some([0x19, 0x40, 0, 0, 0, 0, 0, 0]);
+        report.remote_features = Some([0x39, 0x40, 0, 0, 0, 0, 0, 0]);
         report.remote_version_subversion = Some(2);
         assert!(!report.passed(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset));
         report.remote_version_subversion = Some(1);

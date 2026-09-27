@@ -725,7 +725,7 @@ mod tests {
         // turn the command write into ECONNREFUSED instead of the ordering
         // error under test.
         server
-            .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x19, 0x40, 0, 0, 0, 0, 0, 0])
+            .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x39, 0x40, 0, 0, 0, 0, 0, 0])
             .unwrap();
         let adapter = super::super::model::Adapter(0);
         let peer = super::super::model::PeerAddress([1, 2, 3, 4, 5, 6]);

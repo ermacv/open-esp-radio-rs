@@ -12,6 +12,7 @@ pub mod checks;
 pub mod doc;
 pub mod evidence;
 pub mod firmware;
+pub mod firmware_catalog;
 pub mod graph;
 pub mod hil;
 pub mod paths;

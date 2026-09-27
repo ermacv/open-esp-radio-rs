@@ -57,6 +57,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
         Some("devices") => return devices(&args[1..]),
+        Some("firmware") => return firmware(ctx, &options, &args[1..]),
         _ => {}
     }
     let (runner, receipt_path) = prepare(ctx)?;
@@ -105,6 +106,9 @@ Stand commands (shared by every checkout of this user):
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil devices [--json]          boards: name, chip, port, last firmware
   cargo hil devices set MAC [--chip CHIP] [--name NAME]
+  cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
+  cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
+  cargo hil firmware flash IMAGE --board NAME|MAC   flash under a lease of that board, journaled
 
 Lease options, before any HIL command or after `lease`:
   --owner NAME     default: enclosing lease owner, else the checkout directory name
@@ -488,6 +492,48 @@ fn board(
         options.owner(ctx),
         String::from("cargo hil board flashed"),
     )?;
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// `cargo hil firmware list | build IMAGE | flash IMAGE --board BOARD`.
+fn firmware(
+    ctx: &Context,
+    options: &LeaseOptions,
+    args: &[OsString],
+) -> Result<std::process::ExitCode> {
+    use clap::Parser as _;
+    #[derive(clap::Parser)]
+    #[command(name = "cargo hil firmware", no_binary_name = true)]
+    enum FirmwareCli {
+        /// Catalog images: name, chip, project and last build.
+        List,
+        /// Build an image against the pinned ESP-IDF.
+        Build { image: String },
+        /// Build an image, then flash it to a board under a lease of that
+        /// board and journal it.
+        Flash {
+            image: String,
+            #[arg(long, value_name = "NAME|MAC")]
+            board: String,
+        },
+    }
+    match FirmwareCli::try_parse_from(args)? {
+        FirmwareCli::List => crate::firmware_catalog::list(ctx)?,
+        FirmwareCli::Build { image } => {
+            crate::firmware_catalog::build(ctx, &image)?;
+        }
+        FirmwareCli::Flash { image, board } => {
+            let request = oer_hil_arbiter::Request {
+                owner: options.owner(ctx),
+                work: format!("firmware flash {image} --board {board}"),
+                budget: options.budget,
+                short: options.short,
+                scenarios: Vec::new(),
+                claims: Vec::new(),
+            };
+            crate::firmware_catalog::flash(ctx, &image, &board, request)?;
+        }
+    }
     Ok(std::process::ExitCode::SUCCESS)
 }
 

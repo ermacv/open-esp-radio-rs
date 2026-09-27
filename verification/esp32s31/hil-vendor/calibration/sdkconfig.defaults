@@ -8,3 +8,5 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../../platform/esp32s31/partitions
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 # The HIL serial device is the USB-Serial/JTAG console.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# Equal sources give an equal image, so the board journal identifies it.
+CONFIG_APP_REPRODUCIBLE_BUILD=y

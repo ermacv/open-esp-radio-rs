@@ -166,6 +166,26 @@ cargo hil lease --flashed ieee802154-peer --application build/peer.bin \
 cargo hil board flashed --image NAME --sha256 HASH --device MAC   # inside a lease
 ```
 
+Tracked ESP-IDF firmware forms one catalog: every project with a
+`firmware.toml` beside its `CMakeLists.txt`, peers in `hil/peers/<project>/`
+and vendor references in `verification/<chip>/hil-vendor/<project>/`. The
+manifest names the image as the board journal records it, the target chip and
+the chip whose `artifacts.toml` pins the one ESP-IDF revision and vendor
+archives every image builds against. Builds are reproducible
+(`CONFIG_APP_REPRODUCIBLE_BUILD`), so equal sources give an equal digest.
+
+```console
+cargo hil firmware list
+cargo hil firmware build ieee802154-peer
+cargo hil --budget 5m firmware flash ieee802154-peer --board c5
+```
+
+`firmware flash` builds the image, leases only the named board with the air
+shared, writes every file of the build's `flasher_args.json` and journals the
+image with the digest from its `build.json`, the repository commit and whether
+the project differs from it. A board whose registered chip differs from the
+image's target is refused.
+
 The runner records its own flashes and registers the board it flashes as
 `esp32s31` when its chip is unknown.
 Any other flash (a peer, a vendor image, a manual `espflash`) is recorded

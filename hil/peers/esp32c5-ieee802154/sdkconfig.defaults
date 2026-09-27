@@ -7,3 +7,5 @@ CONFIG_BOOTLOADER_LOG_LEVEL_ERROR=y
 # the console in both directions.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+# Equal sources give an equal image, so the board journal identifies it.
+CONFIG_APP_REPRODUCIBLE_BUILD=y

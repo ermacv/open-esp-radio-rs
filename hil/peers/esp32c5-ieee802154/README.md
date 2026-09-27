@@ -7,34 +7,26 @@ exchanges with the device under test run against the vendor implementation.
 
 ## Build and flash
 
-The peer is built with a system-installed ESP-IDF release (currently v6.1);
-the repository does not provision ESP-IDF. From this directory:
+The peer is a [firmware catalog](../../host/README.md#share-the-stand) entry
+(`firmware.toml`). It builds against the one ESP-IDF revision pinned in
+[`verification/esp32s31/artifacts.toml`](../../../verification/esp32s31/artifacts.toml),
+installed below `target/` apart from any user installation:
 
 ```console
-. ~/.espressif/v6.1/esp-idf/export.sh
-idf.py set-target esp32c5
-idf.py build
-idf.py -p /dev/ttyACM1 flash
+cargo hil --budget 5m firmware flash ieee802154-peer --board c5
 ```
 
-The console is the USB Serial/JTAG port, through which the HIL stand reaches
-the peer (`sdkconfig.defaults`). To use a UART instead, select it under
-*Component config → ESP System Settings → Channel for console output*; the
-application follows that choice.
+This builds the image, flashes it under a lease of that board only and records
+it in the board journal as `ieee802154-peer`. The tracked
+`sdkconfig.defaults` selects the USB Serial/JTAG console the stand uses and a
+reproducible build.
 
 Name the peer's board or serial port in the `[ieee802154_peer]` table of the
-lab configuration. The board is shared with other consumers, so flash it under
-a stand lease and record the flash as `ieee802154-peer`:
-
-```console
-cargo hil lease --flashed ieee802154-peer --application build/<app>.bin \
-    --port <port> --chip esp32c5 -- idf.py -p <port> flash
-```
-
-Before an IEEE 802.15.4 peer scenario the runner reads the board journal and
-blocks the scenario when the board's newest recorded flash is another image,
-naming who flashed it. A board without a recorded flash is accepted; the
-peer's `@READY` handshake then decides.
+lab configuration. The board is shared with other consumers. Before an
+IEEE 802.15.4 peer scenario the runner reads the board journal and blocks the
+scenario when the board's newest recorded flash is another image, naming who
+flashed it. A board without a recorded flash is accepted; the peer's `@READY`
+handshake then decides.
 
 ## Line protocol
 

@@ -223,32 +223,12 @@ fn install_tools(root: &Path, tree: &Path, chip: &str, revision: &str) -> Result
     Ok(tools)
 }
 
-/// The name that identifies an archive against the pins: its file name with
-/// its directory, such as `esp32s31/libphy.a`, since vendor libraries keep
-/// one directory per chip under the same file names.
-fn archive_key(path: &Path) -> Option<String> {
-    let name = path.file_name()?.to_str()?;
-    match path
-        .parent()
-        .and_then(Path::file_name)
-        .and_then(|n| n.to_str())
-    {
-        Some(directory) => Some(format!("{directory}/{name}")),
-        None => Some(name.to_owned()),
-    }
-}
-
-/// Archives the linker map `map` names below `tree` that share a file name
-/// and chip directory with a pinned artifact but differ from it.
+/// Archives the linker map `map` names below `tree` that a pinned artifact
+/// describes but that differ from it. A linked archive is described by a pin
+/// when its path ends with the pinned path relative to the pin's checkout:
+/// `esp32s31/libphy.a` keeps another chip's `esp32c5/libphy.a` apart, and a
+/// pin without a directory, such as `libble_app.a`, matches by file name.
 fn unpinned_archives(map: &str, tree: &Path, pins: &[GitPin]) -> Result<Vec<String>> {
-    let mut pinned: BTreeMap<String, Vec<&str>> = BTreeMap::new();
-    for pin in pins {
-        for (path, sha256) in &pin.artifacts {
-            if let Some(key) = archive_key(Path::new(path)) {
-                pinned.entry(key).or_default().push(sha256);
-            }
-        }
-    }
     let tree = tree.to_string_lossy();
     let mut linked = std::collections::BTreeSet::new();
     for token in map.split(|c: char| c.is_whitespace() || c == '(' || c == ')') {
@@ -258,11 +238,15 @@ fn unpinned_archives(map: &str, tree: &Path, pins: &[GitPin]) -> Result<Vec<Stri
     }
     let mut unpinned = vec![];
     for archive in linked {
-        let path = Path::new(&archive);
-        let Some(digests) = archive_key(path).and_then(|key| pinned.get(&key)) else {
-            continue;
-        };
-        if !digests.contains(&vendor_fetch::sha256(path)?.as_str()) {
+        let digests = pins
+            .iter()
+            .flat_map(|pin| &pin.artifacts)
+            .filter(|(path, _)| archive.ends_with(&format!("/{}", path.trim_start_matches('/'))))
+            .map(|(_, sha256)| sha256.as_str())
+            .collect::<Vec<_>>();
+        if !digests.is_empty()
+            && !digests.contains(&vendor_fetch::sha256(Path::new(&archive))?.as_str())
+        {
             unpinned.push(archive);
         }
     }
@@ -465,6 +449,8 @@ mod tests {
         std::fs::write(tree.join("esp32s31/libbtbb.a"), b"other").unwrap();
         std::fs::write(tree.join("esp32c5/libphy.a"), b"another chip").unwrap();
         std::fs::write(tree.join("libmain.a"), b"local").unwrap();
+        std::fs::create_dir_all(tree.join("esp32s31-bt-lib")).unwrap();
+        std::fs::write(tree.join("esp32s31-bt-lib/libble_app.a"), b"substituted").unwrap();
         let digest = |bytes: &[u8]| {
             let path = tree.join("digest");
             std::fs::write(&path, bytes).unwrap();
@@ -477,13 +463,22 @@ mod tests {
             artifacts: vec![
                 ("esp32s31/libphy.a".into(), digest(b"pinned")),
                 ("esp32s31/libbtbb.a".into(), digest(b"pinned")),
+                // A pin without a directory matches by file name.
+                ("libble_app.a".into(), digest(b"pinned")),
             ],
         }];
         let map = format!(
-            "LOAD {0}/esp32s31/libphy.a\n {0}/esp32s31/libbtbb.a(x.o)\n{0}/esp32c5/libphy.a\n{0}/libmain.a\n",
+            "LOAD {0}/esp32s31/libphy.a\n {0}/esp32s31/libbtbb.a(x.o)\n{0}/esp32c5/libphy.a\n\
+             {0}/libmain.a\n{0}/esp32s31-bt-lib/libble_app.a\n",
             tree.display()
         );
         let unpinned = unpinned_archives(&map, tree, &pins).unwrap();
-        assert_eq!(unpinned, [format!("{}/esp32s31/libbtbb.a", tree.display())]);
+        assert_eq!(
+            unpinned,
+            [
+                format!("{}/esp32s31-bt-lib/libble_app.a", tree.display()),
+                format!("{}/esp32s31/libbtbb.a", tree.display()),
+            ]
+        );
     }
 }

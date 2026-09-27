@@ -26,11 +26,13 @@ const PMKID: &str = "8747a600eea3f9f22475df58ca1e5498";
 fn hunting_and_pecking_matches_annex_j10() {
     let pwe = SaePasswordElement::hunting_and_pecking(PASSWORD, ADDR1, ADDR2).unwrap();
     let commit = SaeCommit::new(pwe, hex(LOCAL_RAND), hex(LOCAL_MASK)).unwrap();
+    let mut body = [0; SAE_COMMIT_LEN];
     assert_eq!(
-        commit.values().encode(),
-        hex::<SAE_COMMIT_LEN>(LOCAL_COMMIT)
+        commit.values().encode(None, false, &mut body),
+        Ok(SAE_COMMIT_LEN)
     );
-    let peer = SaeCommitValues::parse(&hex::<SAE_COMMIT_LEN>(PEER_COMMIT)).unwrap();
+    assert_eq!(body, hex::<SAE_COMMIT_LEN>(LOCAL_COMMIT));
+    let peer = SaeCommitValues::parse(&hex::<SAE_COMMIT_LEN>(PEER_COMMIT), false).unwrap();
     let keys = commit.process(peer).unwrap();
     assert_eq!(keys.kck, hex(KCK));
     assert_eq!(keys.pmk, hex(PMK));
@@ -128,14 +130,78 @@ fn invalid_commits_are_refused() {
         commit.process(off_curve).err(),
         Some(SaeError::InvalidElement)
     );
-    let mut body = commit.values().encode();
+    let mut body = [0; SAE_COMMIT_LEN];
+    commit.values().encode(None, false, &mut body).unwrap();
     body[0] = 20;
     assert_eq!(
-        SaeCommitValues::parse(&body),
+        SaeCommitValues::parse(&body, false),
         Err(SaeError::UnsupportedGroup(20))
     );
+    body[0] = 19;
     assert_eq!(
-        SaeCommitValues::parse(&body[..10]),
-        Err(SaeError::UnsupportedGroup(20))
+        SaeCommitValues::parse(&body[..10], false),
+        Err(SaeError::Malformed)
+    );
+}
+
+#[test]
+fn tokens_sit_where_the_vendor_writes_them() {
+    let commit = SaeCommit::new(
+        SaePasswordElement::hunting_and_pecking(PASSWORD, ADDR1, ADDR2).unwrap(),
+        [0x11; 32],
+        [0x22; 32],
+    )
+    .unwrap();
+    let token = [0xab; 5];
+    let mut hunting = [0; 128];
+    let length = commit
+        .values()
+        .encode(Some(&token), false, &mut hunting)
+        .unwrap();
+    assert_eq!(length, SAE_COMMIT_LEN + 5);
+    assert_eq!(&hunting[2..7], &token);
+    assert_eq!(&hunting[7..39], &commit.values().scalar);
+
+    let mut h2e = [0; 128];
+    let length = commit
+        .values()
+        .encode(Some(&token), true, &mut h2e)
+        .unwrap();
+    assert_eq!(length, SAE_COMMIT_LEN + 3 + 5);
+    assert_eq!(&h2e[2..34], &commit.values().scalar);
+    assert_eq!(&h2e[SAE_COMMIT_LEN..SAE_COMMIT_LEN + 3], &[255, 6, 93]);
+
+    // A status-76 refusal carries the token after the group.
+    assert_eq!(
+        anti_clogging_token(&[19, 0, 1, 2, 3], false),
+        Ok(&[1, 2, 3][..])
+    );
+    assert_eq!(
+        anti_clogging_token(&[19, 0, 255, 4, 93, 1, 2, 3], true),
+        Ok(&[1, 2, 3][..])
+    );
+    assert!(anti_clogging_token(&[19, 0, 1, 2, 3], true).is_err());
+}
+
+#[test]
+fn an_h2e_commit_admits_only_a_rejected_groups_element_without_19() {
+    let commit = SaeCommit::new(
+        SaePasswordElement::hunting_and_pecking(PASSWORD, ADDR1, ADDR2).unwrap(),
+        [0x11; 32],
+        [0x22; 32],
+    )
+    .unwrap();
+    let mut body = [0; SAE_COMMIT_LEN + 5];
+    commit.values().encode(None, true, &mut body).unwrap();
+    body[SAE_COMMIT_LEN..].copy_from_slice(&[255, 3, 92, 20, 0]);
+    assert_eq!(SaeCommitValues::parse(&body, true), Ok(commit.values()));
+    assert_eq!(
+        SaeCommitValues::parse(&body, false),
+        Err(SaeError::Malformed)
+    );
+    body[SAE_COMMIT_LEN + 3] = 19;
+    assert_eq!(
+        SaeCommitValues::parse(&body, true),
+        Err(SaeError::Malformed)
     );
 }

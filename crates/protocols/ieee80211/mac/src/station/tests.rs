@@ -138,6 +138,45 @@ fn encodes_protected_action_frame_with_its_ccmp_header() {
 }
 
 #[test]
+fn sae_authentication_frames_round_trip() {
+    let body = [0x13, 0x00, 0xaa, 0xbb];
+    let mut output = [0xa5; 40];
+    let length = SaeAuthenticationFrame {
+        source: LOCAL,
+        bssid: BSSID,
+        sequence_number: seq(0x123),
+        transaction: SAE_COMMIT_TRANSACTION,
+        status_code: 126,
+        body: &body,
+    }
+    .encode(&mut output)
+    .unwrap();
+    assert_eq!(length, 34);
+    assert_eq!(&output[0..2], &[0xb0, 0]);
+    assert_eq!(&output[24..30], &[3, 0, 1, 0, 126, 0]);
+    assert_eq!(&output[30..34], &body);
+
+    // The access point's reply swaps the addresses.
+    let mut reply = output;
+    reply[4..10].copy_from_slice(&LOCAL);
+    reply[10..16].copy_from_slice(&BSSID);
+    reply[26] = 2;
+    assert_eq!(
+        parse_sae_authentication(&reply[..length], LOCAL, BSSID),
+        Some(SaeAuthentication {
+            transaction: SAE_CONFIRM_TRANSACTION,
+            status_code: 126,
+            body: &body,
+        })
+    );
+    reply[24] = 0;
+    assert_eq!(
+        parse_sae_authentication(&reply[..length], LOCAL, BSSID),
+        None
+    );
+}
+
+#[test]
 fn parses_only_matching_open_authentication_response() {
     let frame = authentication_response(17);
     assert_eq!(

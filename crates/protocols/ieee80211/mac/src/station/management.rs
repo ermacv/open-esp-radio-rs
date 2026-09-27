@@ -145,6 +145,86 @@ impl StaProtectedActionFrame<'_> {
     }
 }
 
+/// SAE authentication algorithm number.
+pub const SAE_AUTHENTICATION_ALGORITHM: u16 = 3;
+/// SAE Commit authentication transaction.
+pub const SAE_COMMIT_TRANSACTION: u16 = 1;
+/// SAE Confirm authentication transaction.
+pub const SAE_CONFIRM_TRANSACTION: u16 = 2;
+
+/// One SAE Authentication frame this station sends: a Commit or a Confirm.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SaeAuthenticationFrame<'a> {
+    pub source: [u8; 6],
+    pub bssid: [u8; 6],
+    pub sequence_number: SequenceNumber,
+    pub transaction: u16,
+    pub status_code: u16,
+    pub body: &'a [u8],
+}
+
+impl SaeAuthenticationFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
+        validate_peer(self.bssid)?;
+        let body_start = MANAGEMENT_HEADER_LEN + 6;
+        let required =
+            body_start
+                .checked_add(self.body.len())
+                .ok_or(StationFrameError::OutputTooSmall {
+                    required: usize::MAX,
+                })?;
+        if output.len() < required {
+            return Err(StationFrameError::OutputTooSmall { required });
+        }
+        let frame = &mut output[..required];
+        frame.fill(0);
+        write_management_header(
+            frame,
+            OPEN_AUTHENTICATION_FRAME_CONTROL,
+            self.bssid,
+            self.source,
+            self.bssid,
+            self.sequence_number,
+        );
+        frame[24..26].copy_from_slice(&SAE_AUTHENTICATION_ALGORITHM.to_le_bytes());
+        frame[26..28].copy_from_slice(&self.transaction.to_le_bytes());
+        frame[28..30].copy_from_slice(&self.status_code.to_le_bytes());
+        frame[body_start..].copy_from_slice(self.body);
+        Ok(required)
+    }
+}
+
+/// One SAE Authentication frame the selected access point sent this station.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SaeAuthentication<'a> {
+    pub transaction: u16,
+    pub status_code: u16,
+    pub body: &'a [u8],
+}
+
+/// Parse an SAE Authentication frame addressed to this station and BSSID;
+/// `None` for any other frame.
+pub fn parse_sae_authentication(
+    frame: &[u8],
+    local: [u8; 6],
+    bssid: [u8; 6],
+) -> Option<SaeAuthentication<'_>> {
+    if frame.len() < MANAGEMENT_HEADER_LEN + 6
+        || read_u16(frame, 0)? & 0x00fc != OPEN_AUTHENTICATION_FRAME_CONTROL
+        || frame[4..10] != local
+        || frame[10..16] != bssid
+        || frame[16..22] != bssid
+        || read_u16(frame, 24)? != SAE_AUTHENTICATION_ALGORITHM
+    {
+        return None;
+    }
+    Some(SaeAuthentication {
+        transaction: read_u16(frame, 26)?,
+        status_code: read_u16(frame, 28)?,
+        body: &frame[MANAGEMENT_HEADER_LEN + 6..],
+    })
+}
+
 /// Parse a response addressed to this station and BSSID.
 ///
 /// `None` means that the frame is valid input but belongs to another

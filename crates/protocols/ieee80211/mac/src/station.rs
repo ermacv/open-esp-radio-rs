@@ -93,9 +93,10 @@ pub use data::{
     sta_protected_amsdu_pair_frame_length,
 };
 pub use management::{
-    OpenAuthenticationRequest, OpenAuthenticationResponse, StaActionFrame, StaDisconnect,
-    StaDisconnectKind, StaProtectedActionFrame, parse_open_authentication_response,
-    parse_sta_disconnect,
+    OpenAuthenticationRequest, OpenAuthenticationResponse, SAE_AUTHENTICATION_ALGORITHM,
+    SAE_COMMIT_TRANSACTION, SAE_CONFIRM_TRANSACTION, SaeAuthentication, SaeAuthenticationFrame,
+    StaActionFrame, StaDisconnect, StaDisconnectKind, StaProtectedActionFrame,
+    parse_open_authentication_response, parse_sae_authentication, parse_sta_disconnect,
 };
 pub use security::{SelectedRsn, StaSecurityError, select_association_rsn, select_wpa2_psk_rsn};
 

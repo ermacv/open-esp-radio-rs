@@ -48,6 +48,12 @@ pub const SAE_CONFIRM_LEN: usize = 2 + 32;
 pub const SAE_KEY_LEN: usize = 32;
 pub const SAE_PMKID_LEN: usize = 16;
 
+const EXTENSION_ELEMENT_ID: u8 = 255;
+/// Element ID Extension of the Rejected Groups element.
+const REJECTED_GROUPS_ELEMENT: u8 = 92;
+/// Element ID Extension of the Anti-Clogging Token Container element.
+const ANTI_CLOGGING_TOKEN_ELEMENT: u8 = 93;
+
 /// The minimum hunting-and-pecking iterations of an ECC group.
 const MINIMUM_PWE_ITERATIONS: u8 = 40;
 /// The vendor gives up hunting and pecking after this many iterations.
@@ -283,8 +289,12 @@ pub struct SaeCommitValues {
 }
 
 impl SaeCommitValues {
-    /// Parse a group-19 commit body without a token or optional elements.
-    pub fn parse(body: &[u8]) -> Result<Self, SaeError> {
+    /// Parse the access point's group-19 commit body. Hunting and pecking
+    /// admits nothing after the element. H2E admits a Rejected Groups
+    /// element that does not reject group 19, as the vendor's
+    /// `wpa3_check_sae_rejected_groups` does; a Password Identifier, which
+    /// this station never sends, is refused.
+    pub fn parse(body: &[u8], h2e: bool) -> Result<Self, SaeError> {
         let group = u16::from_le_bytes([
             *body.first().ok_or(SaeError::Malformed)?,
             *body.get(1).ok_or(SaeError::Malformed)?,
@@ -292,7 +302,7 @@ impl SaeCommitValues {
         if group != SAE_GROUP_P256 {
             return Err(SaeError::UnsupportedGroup(group));
         }
-        if body.len() != SAE_COMMIT_LEN {
+        if body.len() < SAE_COMMIT_LEN {
             return Err(SaeError::Malformed);
         }
         let mut values = Self {
@@ -300,17 +310,90 @@ impl SaeCommitValues {
             element: [0; 2 * SAE_PRIME_LEN],
         };
         values.scalar.copy_from_slice(&body[2..2 + SAE_PRIME_LEN]);
-        values.element.copy_from_slice(&body[2 + SAE_PRIME_LEN..]);
+        values
+            .element
+            .copy_from_slice(&body[2 + SAE_PRIME_LEN..SAE_COMMIT_LEN]);
+        let mut rest = &body[SAE_COMMIT_LEN..];
+        while !rest.is_empty() {
+            if !h2e {
+                return Err(SaeError::Malformed);
+            }
+            let [EXTENSION_ELEMENT_ID, length, extension, ..] = *rest else {
+                return Err(SaeError::Malformed);
+            };
+            let end = 2 + usize::from(length);
+            if length == 0 || rest.len() < end {
+                return Err(SaeError::Malformed);
+            }
+            let value = &rest[3..end];
+            match extension {
+                REJECTED_GROUPS_ELEMENT
+                    if value.len().is_multiple_of(2)
+                        && !value
+                            .chunks_exact(2)
+                            .any(|group| group == SAE_GROUP_P256.to_le_bytes()) => {}
+                _ => return Err(SaeError::Malformed),
+            }
+            rest = &rest[end..];
+        }
         Ok(values)
     }
 
-    /// The commit body: group, scalar and element.
-    pub fn encode(&self) -> [u8; SAE_COMMIT_LEN] {
-        let mut body = [0; SAE_COMMIT_LEN];
-        body[..2].copy_from_slice(&SAE_GROUP_P256.to_le_bytes());
-        body[2..2 + SAE_PRIME_LEN].copy_from_slice(&self.scalar);
-        body[2 + SAE_PRIME_LEN..].copy_from_slice(&self.element);
-        body
+    /// This station's commit body: group, the anti-clogging token of hunting
+    /// and pecking, scalar and element, then the token container of H2E, as
+    /// the vendor's `sae_write_commit` orders them. Returns the length.
+    pub fn encode(
+        &self,
+        token: Option<&[u8]>,
+        h2e: bool,
+        output: &mut [u8],
+    ) -> Result<usize, SaeError> {
+        let token = token.unwrap_or(&[]);
+        let container = if h2e && !token.is_empty() {
+            u8::try_from(1 + token.len()).map_err(|_| SaeError::Malformed)?;
+            3
+        } else {
+            0
+        };
+        let length = SAE_COMMIT_LEN + token.len() + container;
+        let output = output.get_mut(..length).ok_or(SaeError::Malformed)?;
+        output[..2].copy_from_slice(&SAE_GROUP_P256.to_le_bytes());
+        let mut offset = 2;
+        if !h2e {
+            output[offset..offset + token.len()].copy_from_slice(token);
+            offset += token.len();
+        }
+        output[offset..offset + SAE_PRIME_LEN].copy_from_slice(&self.scalar);
+        offset += SAE_PRIME_LEN;
+        output[offset..offset + 2 * SAE_PRIME_LEN].copy_from_slice(&self.element);
+        offset += 2 * SAE_PRIME_LEN;
+        if container != 0 {
+            output[offset] = EXTENSION_ELEMENT_ID;
+            output[offset + 1] = (1 + token.len()) as u8;
+            output[offset + 2] = ANTI_CLOGGING_TOKEN_ELEMENT;
+            output[offset + 3..].copy_from_slice(token);
+        }
+        Ok(length)
+    }
+}
+
+/// The anti-clogging token of a commit refused with status 76: after the
+/// group under hunting and pecking, inside its container element under H2E.
+pub fn anti_clogging_token(body: &[u8], h2e: bool) -> Result<&[u8], SaeError> {
+    let rest = body.get(2..).ok_or(SaeError::Malformed)?;
+    if !h2e {
+        return Ok(rest);
+    }
+    match *rest {
+        [
+            EXTENSION_ELEMENT_ID,
+            length,
+            ANTI_CLOGGING_TOKEN_ELEMENT,
+            ..,
+        ] if length != 0 && usize::from(length) + 2 <= rest.len() => {
+            Ok(&rest[3..2 + usize::from(length)])
+        }
+        _ => Err(SaeError::Malformed),
     }
 }
 

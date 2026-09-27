@@ -6,8 +6,10 @@
 //! that on the [`WifiClocked`] owner and issues the affine
 //! [`WifiPhyMembership`]; [`leave_wifi`] consumes it again. While it holds
 //! the membership, Wi-Fi switches its baseband receive path with
-//! [`set_wifi_rx`], the vendor `phy_wifi_enable_set`. Wi-Fi uses no BTBB
-//! baseband.
+//! [`set_wifi_rx`], the vendor `phy_wifi_enable_set`. Modem sleep trades the
+//! membership for a [`WifiPhySuspended`] token ([`suspend_wifi`], the vendor
+//! `wifi_rf_phy_disable`) and back ([`resume_wifi`], `wifi_rf_phy_enable`).
+//! Wi-Fi uses no BTBB baseband.
 
 use core::fmt;
 
@@ -120,6 +122,98 @@ pub fn leave_wifi(
         }
         Err(error) => Err(WifiPhyLeaveFailure { membership, error }),
     }
+}
+
+/// Wi-Fi left the PHY client set for modem sleep and may re-enter it.
+///
+/// ```compile_fail
+/// use oer_esp32s31_phy::wifi_client::WifiPhySuspended;
+/// fn requires_clone<T: Clone>() {}
+/// requires_clone::<WifiPhySuspended>();
+/// ```
+#[must_use = "the suspended Wi-Fi client must resume or leave"]
+pub struct WifiPhySuspended {
+    _private: (),
+}
+
+impl fmt::Debug for WifiPhySuspended {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("WifiPhySuspended")
+    }
+}
+
+/// Failed resume retaining the suspended client.
+#[must_use = "a failed resume still holds the suspended Wi-Fi client"]
+pub struct WifiPhySuspendedFailure {
+    suspended: WifiPhySuspended,
+    error: ConcurrentPhyError,
+}
+
+impl WifiPhySuspendedFailure {
+    pub const fn error(&self) -> ConcurrentPhyError {
+        self.error
+    }
+
+    /// Recover the suspended client for a retry.
+    pub fn into_suspended(self) -> WifiPhySuspended {
+        self.suspended
+    }
+}
+
+impl fmt::Debug for WifiPhySuspendedFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WifiPhySuspendedFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Put Wi-Fi's RF to sleep: the vendor modem sleep's `wifi_rf_phy_disable`,
+/// which is `esp_phy_disable(PHY_MODEM_WIFI)`. The registration and its
+/// calibration stay. Returns whether Wi-Fi was the last PHY client; the
+/// caller then closes RF through the radio system. No register access
+/// happens here.
+///
+/// # Errors
+///
+/// As [`leave_wifi`]; the membership is returned.
+pub fn suspend_wifi(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    clocked: &WifiClocked,
+    membership: WifiPhyMembership,
+) -> Result<(WifiPhySuspended, bool), WifiPhyLeaveFailure> {
+    let last = leave_wifi(lease, clocked, membership)?;
+    Ok((WifiPhySuspended { _private: () }, last))
+}
+
+/// Wake Wi-Fi's RF: the vendor modem wake's `wifi_rf_phy_enable`, which is
+/// `esp_phy_enable(PHY_MODEM_WIFI)`. The radio system must have woken closed
+/// RF first. The returned [`ConcurrentAcquire::TrackingDue`] means the domain
+/// must run its tracking before the MAC uses RF.
+///
+/// # Errors
+///
+/// As [`join_wifi`]; the suspended client is returned.
+pub fn resume_wifi(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    clocked: &WifiClocked,
+    suspended: WifiPhySuspended,
+    clock: &mut impl PhyPllTrackClock,
+) -> Result<(WifiPhyMembership, ConcurrentAcquire), WifiPhySuspendedFailure> {
+    match join_wifi(lease, clocked, clock) {
+        Ok(joined) => {
+            let WifiPhySuspended { _private: () } = suspended;
+            Ok(joined)
+        }
+        Err(error) => Err(WifiPhySuspendedFailure { suspended, error }),
+    }
+}
+
+/// Stop Wi-Fi while its RF sleeps: the client already left the PHY domain,
+/// so only the token ends. No register access happens here.
+pub fn leave_suspended_wifi(suspended: WifiPhySuspended) {
+    let WifiPhySuspended { _private: () } = suspended;
 }
 
 #[cfg(test)]

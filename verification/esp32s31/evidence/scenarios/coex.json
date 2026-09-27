@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "549ca4128dcc79a0c1282156f3705626855a22a0713fd655622ede036324991a"
+    "input-2": "0ecec888507ff1472cf76921a442d0cbf5e7e0dba6fc43bfc6fda703edf79a44"
   },
   "sources": [
     {
@@ -43,7 +43,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "4ebb430cb5c9909150febe5abd28d4efd85a9ac2608746e12dd4528e77c3f858"
+      "sha256": "164679406cb66a54c44dd9688dce2e4287fa8fb4bb2bb328c262616f730b80f8"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
@@ -163,7 +163,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "e36f9a890b95a3e691842da02c2c819b3a3bb0a06599a612f8462a336deaf2f6"
+      "sha256": "6c6c5021a7de7ca5fcea6d48cde154efd0cabb70600ae03f75267b725b7713eb"
     },
     {
       "path": "verification/harness/codegen",

@@ -363,4 +363,11 @@ pub const DECISIONS: &[Decision] = &[
             "state.wifi.tx_power_tracking_slow = relaxed_threshold.into();",
         )],
     },
+    Decision {
+        reason: "stop-tone branch of the out-of-line calibration tone: both of its callers, \
+            the two `phy_txdc_cal_pwdet_init` instances, pass `enabled = true`, so the branch \
+            is always taken to its post-dominating return and no executed step depends on it; \
+            the disabled arm is compared at the inlined sites that pass `false`",
+        places: &[("pac/src/phy/baseband.rs", "if !enabled {")],
+    },
 ];

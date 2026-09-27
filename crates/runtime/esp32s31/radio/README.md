@@ -82,8 +82,10 @@ system.
 
 ## Limits
 
-Persisting the calibration cache across resets is the caller's policy. No
-protocol publishes its coexistence status or reacts to phases yet, so the
-schedule stays at its all-default scheme. There is no modem retention or light
+Persisting the calibration cache across resets is the caller's policy. Wi-Fi
+publishes its coexistence status and reacts to its phases. Bluetooth LE
+publishes its status (advertising, scanning, connection) and enables
+coexistence for each Controller epoch, but does not react to phases: the
+vendor BLE Controller only logs them. IEEE 802.15.4 publishes no status. There is no modem retention or light
 sleep: RF close keeps the registration and calibration, nothing else. A tracking failure
 leaves the domain poisoned; the chip must be reset.

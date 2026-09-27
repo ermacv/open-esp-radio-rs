@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 description = "ESP32-S31 Bluetooth LE composition: static memory, powered epoch, interrupts, radio runtime and HCI Controller"
 
+[dependencies]
+oer-bluetooth-radio = { path = "../../../../protocols/bluetooth/le/radio" }
+
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 critical-section = "1.2.0"
 embassy-futures = "0.1.2"
@@ -19,6 +22,7 @@ oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetoot
 oer-esp32s31-bluetooth-memory = { path = "../../../../hardware/esp32s31/driver/bluetooth/memory" }
 oer-esp32s31-bluetooth-radio = { path = "../../../../roles/esp32s31/bluetooth/radio" }
 oer-esp32s31-bluetooth-runtime = { path = "../../../../runtime/esp32s31/bluetooth" }
+oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
 oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }

@@ -4,10 +4,11 @@
 use core::cell::Cell;
 
 use critical_section::Mutex;
-use embassy_futures::select::{Either, select};
+use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Instant;
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
+use oer_bluetooth_radio::RadioActivity;
 use oer_esp32s31_bluetooth::{
     ble_phy::{BlePhyRetainedOwners, BlePhyRuntime},
     controller_hal::ControllerHalInitialized,
@@ -42,6 +43,7 @@ use oer_esp32s31_bluetooth_runtime::{
     BluetoothInstallError, BluetoothRuntime, BluetoothRuntimeFault, LiveBluetoothHardware,
     ModemTimerFault, run_modem_timer, settle_modem_timer,
 };
+use oer_esp32s31_coex::{CoexError, CoexStatusType};
 use oer_esp32s31_hal::{
     bluetooth::{
         BluetoothClockError, BluetoothPrimaryFaultSources, ClockedOwner, ColdOwner,
@@ -67,7 +69,13 @@ use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothPrimaryInterruptStep, EspHalBluetoothSchedulerRunInterruptError,
     PublishedEspHalBluetoothInterruptOwners,
 };
-use oer_esp32s31_radio_runtime::{RadioPhyError, RadioSystem};
+
+use crate::coex::BleCoexStatusChange;
+
+/// Every Bluetooth LE schedule status bit, withdrawn when the Controller
+/// stops as the status hook's task-disable index does.
+const BLE_COEX_STATUS_ALL: u16 = 0xffff;
+use oer_esp32s31_radio_runtime::{RadioGuard, RadioPhyError, RadioSystem};
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// Slots of the source-127 software timer queue.
@@ -397,6 +405,8 @@ pub enum BluetoothStopError {
     InterruptStorage,
     /// The Controller shutdown failed.
     Shutdown(ControllerShutdownError),
+    /// Coexistence could not be disabled for Bluetooth.
+    Coex(CoexError),
     /// Shared RF could not be closed after the last PHY client left.
     PhyClose(ConcurrentRfError),
     /// The Bluetooth clocks could not be released.
@@ -468,19 +478,24 @@ impl BluetoothSystem {
     }
 
     /// Drive the radio runtime and the source-127 timer task until a fault
-    /// stops either or an interrupt service fails.
+    /// stops either or an interrupt service fails, and publish the active
+    /// roles to the coexistence schedule of `radio`.
     ///
     /// Cancel it before [`Self::stop`]; the stop settles whatever work the
-    /// cancelled future left.
-    pub async fn run(&mut self) -> BluetoothRunnerFault {
+    /// cancelled future left and withdraws every Bluetooth LE status bit.
+    pub async fn run<P, C: PlatformClockProvider>(
+        &mut self,
+        radio: &RadioSystem<P, C>,
+    ) -> BluetoothRunnerFault {
         let workers = select(
             RUNTIME.run(),
             run_modem_timer(&mut self.epoch.modem_timer, &MODEM_TIMER_WAKE),
         );
-        match select(workers, INTERRUPT_FAULT.wait()).await {
-            Either::First(Either::First(fault)) => BluetoothRunnerFault::Radio(fault),
-            Either::First(Either::Second(fault)) => BluetoothRunnerFault::ModemTimer(fault),
-            Either::Second(fault) => BluetoothRunnerFault::Interrupt(fault),
+        match select3(workers, INTERRUPT_FAULT.wait(), publish_coex_status(radio)).await {
+            Either3::First(Either::First(fault)) => BluetoothRunnerFault::Radio(fault),
+            Either3::First(Either::Second(fault)) => BluetoothRunnerFault::ModemTimer(fault),
+            Either3::Second(fault) => BluetoothRunnerFault::Interrupt(fault),
+            Either3::Third(never) => match never {},
         }
     }
 
@@ -569,6 +584,9 @@ impl BluetoothSystem {
         };
 
         let mut guard = radio.lock().await;
+        // The scheduler is stopped: no role is active any more.
+        guard.clear_coex_status_bits(CoexStatusType::Ble, BLE_COEX_STATUS_ALL);
+        RUNTIME.clear_activity();
         let (retired, last) = match retire(guard.lease(), task, retained, output, timer) {
             Ok(retired) => retired,
             Err(failure) => {
@@ -578,6 +596,13 @@ impl BluetoothSystem {
                 ));
             }
         };
+        // As `coex_disable` after the stack is disabled.
+        if let Err(error) = guard.disable_coex() {
+            return Err(stop_fail(
+                BluetoothStopError::Coex(error),
+                FailStopOwner::Retired(role, retired),
+            ));
+        }
         if last && let Err(error) = guard.close_phy_if_idle().await {
             return Err(stop_fail(
                 BluetoothStopError::PhyClose(error),
@@ -875,9 +900,43 @@ pub async fn start<P, C: PlatformClockProvider>(
     let runtime = joined
         .initialize_ble_phy_engine(lease, ble_phy, direction_finding, public_address)
         .activate();
+    // `esp_bt_controller_enable` enables coexistence for Bluetooth; a later
+    // start failure is fail-stop and keeps it enabled.
+    guard.enable_coex();
     drop(guard);
 
     publish_and_install(runtime, radio_memory, published).await
+}
+
+/// Move the published status from `published` to `activity`.
+fn apply_coex_status<P, C: PlatformClockProvider>(
+    guard: &mut RadioGuard<'_, P, C>,
+    published: RadioActivity,
+    activity: RadioActivity,
+) {
+    let change = BleCoexStatusChange::between(published, activity);
+    if change.clear != 0 {
+        guard.clear_coex_status_bits(CoexStatusType::Ble, change.clear);
+    }
+    if change.set != 0 {
+        guard.set_coex_status_bits(CoexStatusType::Ble, change.set);
+    }
+}
+
+/// Publish every change of the Controller's active roles as Bluetooth LE
+/// schedule status. [`BluetoothSystem::stop`] withdraws what is left.
+async fn publish_coex_status<P, C: PlatformClockProvider>(
+    radio: &RadioSystem<P, C>,
+) -> core::convert::Infallible {
+    let mut published = RadioActivity::IDLE;
+    loop {
+        let activity = RUNTIME.next_activity().await;
+        if activity == published {
+            continue;
+        }
+        apply_coex_status(&mut radio.lock().await, published, activity);
+        published = activity;
+    }
 }
 
 // Keep interrupt publication, route binding and installation out of the PHY

@@ -22,7 +22,11 @@
 //!
 //! The dispatcher services source 124, 127 and 133 and forwards the scheduler
 //! and source-127 worker wakes. [`BluetoothSystem::run`] drives the radio
-//! runtime and the source-127 timer task until a fault stops either.
+//! runtime and the source-127 timer task until a fault stops either, and
+//! publishes the Controller's active roles as Bluetooth LE status bits in the
+//! radio system's coexistence schedule. Each epoch enables coexistence for
+//! Bluetooth when it starts and disables it when it stops, after withdrawing
+//! every status bit.
 //! [`BluetoothSystem::stop`] reverses the epoch and returns the parked
 //! partition with the controller memory back at its allocation-time image,
 //! ready for the next [`start`]. Periodic PHY tracking belongs to the radio
@@ -38,6 +42,8 @@
 //! Power and clock failures roll back to the parked client; any failure
 //! after the first Controller write keeps its owners fail-stop.
 
+#[cfg(any(target_arch = "riscv32", test))]
+mod coex;
 #[cfg(target_arch = "riscv32")]
 mod hci;
 #[cfg(target_arch = "riscv32")]

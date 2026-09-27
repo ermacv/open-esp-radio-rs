@@ -103,7 +103,7 @@ async fn main(
     secure::run(radio, system, hci, public_address, usb, boot).await;
     #[cfg(not(feature = "bluetooth-secure-gatt"))]
     {
-        spawner.spawn(runner(SYSTEM.init(system)).expect("Bluetooth runner task"));
+        spawner.spawn(runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));
         spawner.spawn(service(hci.service).expect("Bluetooth HCI task"));
         image(spawner, hci.host, usb, boot).await;
     }
@@ -137,8 +137,8 @@ async fn tracking(radio: &'static Radio) {
 
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
 #[embassy_executor::task]
-async fn runner(system: &'static mut BluetoothSystem) {
-    let _fault = system.run().await;
+async fn runner(radio: &'static Radio, system: &'static mut BluetoothSystem) {
+    let _fault = system.run(radio).await;
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n");
 }
 

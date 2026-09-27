@@ -110,6 +110,7 @@ async fn lifecycle(
         };
         let exit = {
             let mut epoch = pin!(run_epoch(
+                radio,
                 &mut system,
                 &mut service,
                 transport,
@@ -167,6 +168,7 @@ async fn lifecycle(
 
 /// Run one Host epoch beside the radio runner and the HCI service.
 async fn run_epoch(
+    radio: &'static Radio,
     system: &mut BluetoothSystem,
     service: &mut BluetoothHciService,
     transport: BluetoothHostTransport,
@@ -189,7 +191,7 @@ async fn run_epoch(
         state.restart.wait(),
         |event| state.observe(event),
     ));
-    let hardware = pin!(select(system.run(), service.run()));
+    let hardware = pin!(select(system.run(radio), service.run()));
     match select(host, hardware).await {
         Either::First(exit) => exit,
         Either::Second(Either::First(_)) => {

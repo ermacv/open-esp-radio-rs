@@ -160,7 +160,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "b641fea18bc9b40fe416a14251dea7c2e49b813d1dbb4956bb48f5d8f383775d"
+      "sha256": "85f8839dbbd552dc86b1945072ecbd9535a8902c543e5b60e0766923b2046a3c"
     },
     {
       "path": "verification/harness/codegen",

@@ -135,7 +135,6 @@ pub(crate) fn covers(outer: &[Claim], inner: &[Claim]) -> bool {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct State {
     pub(crate) schema: u32,
     pub(crate) next_id: u64,
@@ -144,6 +143,9 @@ pub(crate) struct State {
     /// The previous grant went to a short request ahead of earlier
     /// conflicting requests, so the next grant may not jump.
     pub(crate) jumped: bool,
+    /// Fields a newer build wrote, kept when this build rewrites the record.
+    #[serde(flatten)]
+    pub(crate) unknown: crate::Unknown,
 }
 
 impl Default for State {
@@ -154,12 +156,12 @@ impl Default for State {
             queue: Vec::new(),
             holders: Vec::new(),
             jumped: false,
+            unknown: crate::Unknown::default(),
         }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Ticket {
     pub(crate) id: u64,
     pub(crate) owner: String,
@@ -170,16 +172,21 @@ pub(crate) struct Ticket {
     pub(crate) process: ProcessIdentity,
     pub(crate) enqueued_unix: u64,
     pub(crate) claims: Vec<Claim>,
+    /// Fields a newer build wrote, kept when this build rewrites the record.
+    #[serde(flatten)]
+    pub(crate) unknown: crate::Unknown,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Holder {
     pub(crate) ticket: Ticket,
     /// Exported to commands inside the lease, which then join it.
     pub(crate) token: String,
     pub(crate) granted_unix: u64,
     pub(crate) over_budget: bool,
+    /// Fields a newer build wrote, kept when this build rewrites the record.
+    #[serde(flatten)]
+    pub(crate) unknown: crate::Unknown,
 }
 
 /// Whether a schema 1 state has a live holder or waiting ticket.

@@ -28,6 +28,7 @@ pub mod spectrum;
 mod state;
 mod status;
 mod store;
+mod unknown;
 
 pub use board::{BoardEvent, BoardEventKind};
 pub use budget::{
@@ -44,6 +45,7 @@ pub use process::process_started_unix_millis;
 pub use state::{AIR, Claim, Mode, STAND};
 pub use status::{HolderStatus, QueuedStatus, Status};
 pub use store::{Arbiter, DIRECTORY_ENV};
+pub use unknown::Unknown;
 
 pub type Result<T> = oer_process::Result<T>;
 

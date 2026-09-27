@@ -168,6 +168,7 @@ impl Arbiter {
                     budget_secs: holder.ticket.budget_secs,
                     outcome: LeaseOutcome::Abandoned,
                     scenarios: Vec::new(),
+                    unknown: Default::default(),
                 },
             )?;
             crate::notify::send(

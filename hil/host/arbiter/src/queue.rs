@@ -107,6 +107,7 @@ mod tests {
             },
             enqueued_unix: id,
             claims,
+            unknown: Default::default(),
         }
     }
 
@@ -120,6 +121,7 @@ mod tests {
             token: "t".into(),
             granted_unix: 1000,
             over_budget: false,
+            unknown: Default::default(),
         }
     }
 

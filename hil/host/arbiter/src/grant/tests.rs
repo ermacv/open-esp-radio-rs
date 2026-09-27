@@ -47,6 +47,7 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity, claims: Vec<Claim>) ->
         process,
         enqueued_unix: crate::unix_now(),
         claims: normalize(&claims),
+        unknown: Default::default(),
     }
 }
 
@@ -58,6 +59,7 @@ fn hold(arbiter: &Arbiter, ticket: Ticket) {
                 token: "other".into(),
                 granted_unix: crate::unix_now(),
                 over_budget: false,
+                unknown: Default::default(),
             });
             Ok(())
         })

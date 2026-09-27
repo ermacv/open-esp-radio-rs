@@ -904,6 +904,7 @@ fn devices(
                 chip,
                 name,
                 control,
+                unknown: Default::default(),
             })?;
             println!("{} {}", device.mac, device.label());
             return Ok(std::process::ExitCode::SUCCESS);
@@ -957,6 +958,7 @@ fn devices(
                 since_unix: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_secs(),
+                unknown: Default::default(),
             })?;
             println!("{board} ({mac}) is under maintenance by {owner}");
             for holder in arbiter.conflicting_holders(&[oer_hil_arbiter::Claim::board(&mac)])? {

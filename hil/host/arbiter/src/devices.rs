@@ -20,6 +20,9 @@ pub struct Device {
     /// How the stand resets or powers the board out of band.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<crate::Control>,
+    /// Fields a newer build wrote, kept when this build rewrites the record.
+    #[serde(flatten)]
+    pub unknown: crate::Unknown,
 }
 
 impl Device {
@@ -35,10 +38,11 @@ impl Device {
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct Registry {
     schema: u32,
     devices: Vec<Device>,
+    #[serde(flatten)]
+    unknown: crate::Unknown,
 }
 
 /// A USB serial port attached now.
@@ -240,6 +244,7 @@ fn read_registry(path: &Path) -> crate::Result<Registry> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Registry {
             schema: REGISTRY_SCHEMA,
             devices: Vec::new(),
+            unknown: Default::default(),
         }),
         Err(error) => Err(error.into()),
     }
@@ -286,6 +291,7 @@ mod tests {
             chip: None,
             name: Some("esp32c5".into()),
             control: None,
+            unknown: Default::default(),
         }];
         assert_eq!(board_mac(&devices, "esp32c5").unwrap(), "38:44:BE:AA:25:64");
         // A chip names its only registered board, never one of several.
@@ -294,6 +300,7 @@ mod tests {
             chip: Some("esp32h2".into()),
             name: name.map(Into::into),
             control: None,
+            unknown: Default::default(),
         };
         let one = [chip_only(None, "AA:AA:AA:AA:AA:01")];
         assert_eq!(board_mac(&one, "esp32h2").unwrap(), "AA:AA:AA:AA:AA:01");
@@ -321,6 +328,7 @@ mod tests {
                     chip: Some(chip.into()),
                     name: None,
                     control: None,
+                    unknown: Default::default(),
                 })
                 .unwrap()
         };
@@ -334,6 +342,7 @@ mod tests {
                 chip: Some("esp32s31".into()),
                 name: Some("bench-dut".into()),
                 control: None,
+                unknown: Default::default(),
             })
             .unwrap();
         assert_eq!(
@@ -402,5 +411,43 @@ mod tests {
             })
             .unwrap();
         assert_eq!(arbiter.devices().unwrap()[0].control, Some(control));
+    }
+
+    #[test]
+    fn fields_a_newer_build_wrote_survive_a_rewrite() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        fs::write(
+            directory.path().join("devices.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema": REGISTRY_SCHEMA,
+                "future": {"kept": true},
+                "devices": [{"mac": "38:44:BE:AA:25:64", "chip": "esp32c5", "name": "esp32c5",
+                    "control": {"reset": {"via": "uart-rts-dtr", "serial": "5B90165754",
+                        "en": "rts", "boot": "dtr"}},
+                    "future_field": [1, 2]}],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        arbiter
+            .register_device(Device {
+                mac: "30:ED:A0:F3:F6:D0".into(),
+                chip: Some("esp32s31".into()),
+                ..Device::default()
+            })
+            .unwrap();
+        let stored: serde_json::Value =
+            serde_json::from_slice(&fs::read(directory.path().join("devices.json")).unwrap())
+                .unwrap();
+        assert_eq!(stored["future"], serde_json::json!({"kept": true}));
+        let c5 = stored["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|device| device["mac"] == "38:44:BE:AA:25:64")
+            .unwrap();
+        assert_eq!(c5["future_field"], serde_json::json!([1, 2]));
+        assert_eq!(c5["control"]["reset"]["serial"], "5B90165754");
     }
 }

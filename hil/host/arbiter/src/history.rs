@@ -34,6 +34,9 @@ pub struct LeaseRecord {
     /// HIL scenarios the lease executed, when its holder named them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenarios: Vec<String>,
+    /// Fields a newer build wrote, kept when this build rewrites the record.
+    #[serde(flatten)]
+    pub unknown: crate::Unknown,
 }
 
 impl LeaseRecord {
@@ -113,6 +116,7 @@ mod tests {
             budget_secs: 60,
             outcome: LeaseOutcome::Released,
             scenarios: Vec::new(),
+            unknown: Default::default(),
         };
         append(&path, &record).unwrap();
         fs::OpenOptions::new()

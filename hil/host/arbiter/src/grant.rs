@@ -206,6 +206,7 @@ impl Arbiter {
                 process: me,
                 enqueued_unix: crate::unix_now(),
                 claims: claims.clone(),
+                unknown: Default::default(),
             });
             Ok(id)
         })?;
@@ -315,6 +316,7 @@ impl Arbiter {
                     token: token.to_owned(),
                     granted_unix: crate::unix_now(),
                     over_budget: false,
+                    unknown: Default::default(),
                 });
                 return Ok(Poll::Granted {
                     waited: started.elapsed(),
@@ -680,6 +682,7 @@ impl Drop for Grant {
                     budget_secs: holder.ticket.budget_secs,
                     outcome,
                     scenarios: held.scenarios.clone(),
+                    unknown: Default::default(),
                 },
             )?;
             Ok(Some(state.queue.is_empty() && state.holders.is_empty()))

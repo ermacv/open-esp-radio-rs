@@ -150,6 +150,7 @@ mod tests {
             budget_secs: 600,
             outcome,
             scenarios: Vec::new(),
+            unknown: Default::default(),
         }
     }
 

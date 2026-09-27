@@ -16,7 +16,6 @@ const SCHEMA: u32 = 1;
 
 /// One board out of service.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Maintenance {
     /// The board's MAC.
     pub mac: String,
@@ -24,13 +23,17 @@ pub struct Maintenance {
     pub owner: String,
     pub reason: String,
     pub since_unix: u64,
+    /// Fields a newer build wrote, kept when this build rewrites the record.
+    #[serde(flatten)]
+    pub unknown: crate::Unknown,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct Boards {
     schema: u32,
     boards: Vec<Maintenance>,
+    #[serde(flatten)]
+    unknown: crate::Unknown,
 }
 
 impl Arbiter {
@@ -108,6 +111,7 @@ fn read(path: &std::path::Path) -> crate::Result<Boards> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Boards {
             schema: SCHEMA,
             boards: Vec::new(),
+            unknown: Default::default(),
         }),
         Err(error) => Err(error.into()),
     }
@@ -130,6 +134,7 @@ mod tests {
             owner: owner.into(),
             reason: "USB hangs after a reset".into(),
             since_unix: 1,
+            unknown: Default::default(),
         }
     }
 
@@ -161,5 +166,27 @@ mod tests {
         assert_eq!(arbiter.maintenance().unwrap(), [board("AA", "other")]);
         assert!(arbiter.clear_maintenance("AA").unwrap());
         assert!(!arbiter.clear_maintenance("AA").unwrap());
+    }
+
+    #[test]
+    fn fields_a_newer_build_wrote_survive_a_rewrite() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        fs::write(
+            directory.path().join("maintenance.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema": SCHEMA, "future": 1,
+                "boards": [{"mac": "AA", "owner": "stand", "reason": "r", "since_unix": 1,
+                    "until_unix": 2}],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        arbiter.set_maintenance(board("BB", "stand")).unwrap();
+        let stored: serde_json::Value =
+            serde_json::from_slice(&fs::read(directory.path().join("maintenance.json")).unwrap())
+                .unwrap();
+        assert_eq!(stored["future"], 1);
+        assert_eq!(stored["boards"][0]["until_unix"], 2);
     }
 }

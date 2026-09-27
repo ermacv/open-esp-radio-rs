@@ -3,7 +3,7 @@ id = "bluetooth-trouble-gatt"
 description = "Shared standalone Trouble application: discover, read/write and gracefully disconnect/reconnect three times on one Host/Controller epoch; plaintext, not secure GATT qualification"
 repetitions = 3
 transfer = "identical-image"
-tags = ["bluetooth", "peripheral", "gatt", "trouble", "lifecycle"]
+tags = ["bluetooth", "peripheral", "gatt", "trouble", "lifecycle", "air-exclusive"]
 
 [bluetooth]
 kind = "gatt"

@@ -177,10 +177,10 @@ vendor-anchors = [
 ]
 hil-requirements = [
   { scenario = "ieee802154-air-check", minimum-repetitions = 1 },
+  { scenario = "ieee802154-route-probe", minimum-repetitions = 1 },
 ]
 gaps = [
   { axis = "vendor", id = "active-route-and-concurrent-acknowledgement-proof-missing" },
-  { axis = "hil", id = "level-triggered-route-and-same-bit-arrival-cell-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },
 ]
 

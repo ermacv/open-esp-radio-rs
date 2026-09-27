@@ -79,3 +79,78 @@ reason = "shared and Wi-Fi RX-gain table last indices"
 
 [fields.sensor-index]
 reason = "temperature sensor window the calibration selected"
+
+# Registers of the radio-PHY image, by published name. Unreviewed registers
+# follow the vendor-spread rule. Reviews by the PHY owner, 2026-09-27.
+
+[registers."PHY_PBUS.READ_RESULT_0"]
+excluded = true
+reason = "live state: the last PBus read result, set by whichever transaction ran last"
+
+[registers."PHY_PBUS.READ_RESULT_1"]
+excluded = true
+reason = "live state: the last PBus read result, set by whichever transaction ran last"
+
+[registers."PHY_PBUS.READ_RESULT_2"]
+excluded = true
+reason = "live state: the last PBus read result, set by whichever transaction ran last"
+
+[registers."PHY_PBUS.READ_RESULT_3"]
+excluded = true
+reason = "live state: the last PBus read result, set by whichever transaction ran last"
+
+[registers."PHY_PBUS.READ_RESULT_4"]
+excluded = true
+reason = "live state: the last PBus read result, set by whichever transaction ran last"
+
+[registers."I2C_ANA_MST.I2C0_CTRL"]
+excluded = true
+reason = "live state: the last analog I2C command of its host"
+
+[registers."I2C_ANA_MST.I2C1_CTRL"]
+excluded = true
+reason = "live state: the last analog I2C command of its host"
+
+[registers."I2C_ANA_MST.ANA_CONF1"]
+excluded = true
+reason = "live state: the read mask of the analog I2C block last addressed"
+
+[registers."PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE"]
+excluded = true
+reason = "live state: carrier frequency offset estimation"
+
+[registers."PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE"]
+excluded = true
+reason = "live state: AGC RSSI status"
+
+[registers."PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_STATUS"]
+excluded = true
+reason = "live state: baseband watchdog status"
+
+[registers."PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL"]
+excluded = true
+reason = "live state: varies between production boots with the running AGC"
+
+[registers."PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN"]
+excluded = true
+reason = "live state: a free-running deadline counter"
+
+[registers."LP_TSENS.CTRL"]
+excluded = true
+reason = "live state: the temperature sensor reading"
+
+[registers."MODEM_SYSCON_RADIO.CLK_CONF1"]
+excluded = true
+reason = "clock policy: modem clock enables follow the active radio clients and leases, not calibration"
+
+[registers."MODEM_LPCON_SHARED_CLOCK.CLK_CONF"]
+excluded = true
+reason = "clock policy: shared low-power clock enables follow the active radio clients"
+
+[registers."PMU_RADIO.HP_ACTIVE_HP_CK_POWER"]
+excluded = true
+reason = "clock policy: active-state clock power follows the active radio clients"
+
+[registers."LP_TSENS.CLK_CONF"]
+excluded = true
+reason = "clock policy: the temperature sensor clock follows the tracking client"

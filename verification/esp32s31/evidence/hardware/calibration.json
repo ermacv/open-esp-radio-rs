@@ -1047,8 +1047,8 @@
   ],
   "registers": {
     "verdict": "diff",
-    "compared": 173,
-    "matched": 152,
+    "compared": 155,
+    "matched": 150,
     "differing": [
       {
         "name": "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL",
@@ -1059,39 +1059,6 @@
         "production": [
           1350567436,
           1350567436
-        ]
-      },
-      {
-        "name": "PHY_PBUS.READ_RESULT_0",
-        "vendor": [
-          1249984,
-          1249984
-        ],
-        "production": [
-          1249848,
-          1250172
-        ]
-      },
-      {
-        "name": "PHY_PBUS.READ_RESULT_2",
-        "vendor": [
-          72507128,
-          73032437
-        ],
-        "production": [
-          68050678,
-          73032451
-        ]
-      },
-      {
-        "name": "PHY_PBUS.READ_RESULT_3",
-        "vendor": [
-          16875008,
-          16875008
-        ],
-        "production": [
-          33390080,
-          33390080
         ]
       },
       {
@@ -1128,28 +1095,6 @@
         ]
       },
       {
-        "name": "PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE",
-        "vendor": [
-          4261412864,
-          4261412864
-        ],
-        "production": [
-          4261415239,
-          4266068807
-        ]
-      },
-      {
-        "name": "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL",
-        "vendor": [
-          3525250080,
-          3525250080
-        ],
-        "production": [
-          3523242662,
-          3525241536
-        ]
-      },
-      {
         "name": "PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL",
         "vendor": [
           386148546,
@@ -1159,130 +1104,82 @@
           386154197,
           386154197
         ]
+      }
+    ],
+    "excluded": [
+      {
+        "name": "PHY_PBUS.READ_RESULT_0",
+        "reason": "live state: the last PBus read result, set by whichever transaction ran last"
+      },
+      {
+        "name": "PHY_PBUS.READ_RESULT_1",
+        "reason": "live state: the last PBus read result, set by whichever transaction ran last"
+      },
+      {
+        "name": "PHY_PBUS.READ_RESULT_2",
+        "reason": "live state: the last PBus read result, set by whichever transaction ran last"
+      },
+      {
+        "name": "PHY_PBUS.READ_RESULT_3",
+        "reason": "live state: the last PBus read result, set by whichever transaction ran last"
+      },
+      {
+        "name": "PHY_PBUS.READ_RESULT_4",
+        "reason": "live state: the last PBus read result, set by whichever transaction ran last"
+      },
+      {
+        "name": "PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE",
+        "reason": "live state: AGC RSSI status"
+      },
+      {
+        "name": "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL",
+        "reason": "live state: varies between production boots with the running AGC"
       },
       {
         "name": "PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE",
-        "vendor": [
-          1073741824,
-          1073741824
-        ],
-        "production": [
-          1092747409,
-          1212757540
-        ]
+        "reason": "live state: carrier frequency offset estimation"
       },
       {
         "name": "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_STATUS",
-        "vendor": [
-          0,
-          0
-        ],
-        "production": [
-          599801876,
-          612348971
-        ]
+        "reason": "live state: baseband watchdog status"
       },
       {
         "name": "MODEM_SYSCON_RADIO.CLK_CONF1",
-        "vendor": [
-          3727488,
-          3727488
-        ],
-        "production": [
-          3926015,
-          3926015
-        ]
+        "reason": "clock policy: modem clock enables follow the active radio clients and leases, not calibration"
       },
       {
         "name": "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN",
-        "vendor": [
-          617077,
-          623475
-        ],
-        "production": [
-          3889978,
-          4011618
-        ]
+        "reason": "live state: a free-running deadline counter"
       },
       {
         "name": "MODEM_LPCON_SHARED_CLOCK.CLK_CONF",
-        "vendor": [
-          5,
-          5
-        ],
-        "production": [
-          7,
-          7
-        ]
+        "reason": "clock policy: shared low-power clock enables follow the active radio clients"
       },
       {
         "name": "I2C_ANA_MST.I2C0_CTRL",
-        "vendor": [
-          19859049,
-          19859049
-        ],
-        "production": [
-          3081833,
-          3081833
-        ]
+        "reason": "live state: the last analog I2C command of its host"
       },
       {
         "name": "I2C_ANA_MST.I2C1_CTRL",
-        "vendor": [
-          5963875,
-          5963875
-        ],
-        "production": [
-          12780139,
-          12780139
-        ]
+        "reason": "live state: the last analog I2C command of its host"
       },
       {
         "name": "I2C_ANA_MST.ANA_CONF1",
-        "vendor": [
-          16777199,
-          16777199
-        ],
-        "production": [
-          16775167,
-          16775167
-        ]
+        "reason": "live state: the read mask of the analog I2C block last addressed"
       },
       {
         "name": "PMU_RADIO.HP_ACTIVE_HP_CK_POWER",
-        "vendor": [
-          432013312,
-          432013312
-        ],
-        "production": [
-          1572864000,
-          1572864000
-        ]
+        "reason": "clock policy: active-state clock power follows the active radio clients"
       },
       {
         "name": "LP_TSENS.CTRL",
-        "vendor": [
-          4297827,
-          4297828
-        ],
-        "production": [
-          4297831,
-          4297833
-        ]
+        "reason": "live state: the temperature sensor reading"
       },
       {
         "name": "LP_TSENS.CLK_CONF",
-        "vendor": [
-          0,
-          0
-        ],
-        "production": [
-          1,
-          1
-        ]
+        "reason": "clock policy: the temperature sensor clock follows the tracking client"
       }
     ],
-    "excluded": [],
     "unreadable": [
       "PHY_BTAGC_RECOVERED.CTE_DC_SHIFT",
       "PHY_BTAGC_RECOVERED.CTE_RE_GAIN",

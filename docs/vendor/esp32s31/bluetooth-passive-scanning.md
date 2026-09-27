@@ -76,9 +76,9 @@ software object graph:
 2. reset the hardware-consumed link state through
    `r_ble_lll_scan_reset_link_state` (`r_sym_ble_KkAldzIlkQuEkNQp1g6q`) and
    set bit 31 of link-state `+0x18`;
-3. publish `1` to `BLE_SCAN_CONTROL.COMMAND_2` and `COMMAND_1`, then either
+3. publish `1` to `BLE_SCAN_BACKOFF.BACKOFF_STATE_1` and `BACKOFF_STATE_0`, then either
    `1` or the controller option `scan_backoff_upperlimitmax` (options
-   `+0x5c`, masked to nine bits) to `COMMAND_0`;
+   `+0x5c`, masked to nine bits) to `UPPER_LIMIT_MAX`;
 4. wake the common RF owner and derive the first window start from the
    current time, the scheduler lead and the module's start delay;
 5. call `r_ble_lll_scan_restart`, which places the channel in the first free
@@ -86,7 +86,7 @@ software object graph:
    result `-2`, increasing the requested delay by 100 controller-time units on
    every retry.
 
-The branch that chooses the `COMMAND_0` value is reduced without guessing a
+The branch that chooses the `UPPER_LIMIT_MAX` value is reduced without guessing a
 hardware field. The start body reads byte `+0x50` of the controller options,
 `esp_bt_controller_config_t::ble.dis_scan_backoff`; the public
 `ble_user_cfg.h` fixes `NIMBLE_DISABLE_SCAN_BACKOFF` to zero. A zero predicate
@@ -94,10 +94,10 @@ publishes the configured upper limit, whose default
 `UC_BT_CTRL_LE_SCAN_BACKOFF_UPPERLIMITMAX` is 256 (`0x100`), while disabling the
 backoff publishes `1`. The three words therefore carry the Core Specification
 scan-backoff state (Vol 6, Part B, 4.4.3.2): the maximum upper limit in
-`COMMAND_0` and the initial upper limit and backoff count of one in
-`COMMAND_1` and `COMMAND_2`. The vendor's internal test command
+`UPPER_LIMIT_MAX` and the initial upper limit and backoff count of one in
+`BACKOFF_STATE_0` and `BACKOFF_STATE_1`. The vendor's internal test command
 `sym_ble_J4xWLLnJTN2yd1WPJrtH`, reached from
-`api_internalTest_hci_procVsCmds`, reads `COMMAND_2` and `COMMAND_1` back as
+`api_internalTest_hci_procVsCmds`, reads `BACKOFF_STATE_1` and `BACKOFF_STATE_0` back as
 two nine-bit values, so the hardware maintains that state; which word is the
 count and which the limit is not established. The open Controller supports
 only the default backoff policy, so the restricted PAC owns one fixed

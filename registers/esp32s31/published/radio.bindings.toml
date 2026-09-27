@@ -5577,55 +5577,55 @@ access = "read-write"
 address = 537926000
 width = 32
 access = "write-only"
-identity = "BLE_SCAN_CONTROL.COMMAND_0"
-peripheral = "BLE_SCAN_CONTROL"
-peripheral-type = "BleScanControl"
-peripheral-module = "ble_scan_control"
+identity = "BLE_SCAN_BACKOFF.UPPER_LIMIT_MAX"
+peripheral = "BLE_SCAN_BACKOFF"
+peripheral-type = "BleScanBackoff"
+peripheral-module = "ble_scan_backoff"
 scope = []
-register-method = "command_0"
+register-method = "upper_limit_max"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
-bit-width = 32
+bit-width = 9
 access = "write-only"
 
 [[registers]]
 address = 537926004
 width = 32
-access = "write-only"
-identity = "BLE_SCAN_CONTROL.COMMAND_1"
-peripheral = "BLE_SCAN_CONTROL"
-peripheral-type = "BleScanControl"
-peripheral-module = "ble_scan_control"
+access = "read-write"
+identity = "BLE_SCAN_BACKOFF.BACKOFF_STATE_0"
+peripheral = "BLE_SCAN_BACKOFF"
+peripheral-type = "BleScanBackoff"
+peripheral-module = "ble_scan_backoff"
 scope = []
-register-method = "command_1"
+register-method = "backoff_state_0"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 9
+access = "read-write"
 
 [[registers]]
 address = 537926008
 width = 32
-access = "write-only"
-identity = "BLE_SCAN_CONTROL.COMMAND_2"
-peripheral = "BLE_SCAN_CONTROL"
-peripheral-type = "BleScanControl"
-peripheral-module = "ble_scan_control"
+access = "read-write"
+identity = "BLE_SCAN_BACKOFF.BACKOFF_STATE_1"
+peripheral = "BLE_SCAN_BACKOFF"
+peripheral-type = "BleScanBackoff"
+peripheral-module = "ble_scan_backoff"
 scope = []
-register-method = "command_2"
+register-method = "backoff_state_1"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "VALUE"
+method = "value"
 bit-offset = 0
-bit-width = 32
-access = "write-only"
+bit-width = 9
+access = "read-write"
 
 [[registers]]
 address = 537926044

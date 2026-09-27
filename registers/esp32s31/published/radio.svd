@@ -20268,52 +20268,54 @@ not turn that context into an undocumented hardware meaning.
       </registers>
     </peripheral>
     <peripheral>
-      <name>BLE_SCAN_CONTROL</name>
-      <description>Three positional complete images published by one ble_lll_scan.c path. The
-source file establishes scan-path ownership, but the undocumented hardware
-actions represented by the images remain unknown.
+      <name>BLE_SCAN_BACKOFF</name>
+      <description>Scan-backoff state of the Link Layer scanner (Core Specification Vol 6, Part
+B, 4.4.3.2). Scanner start publishes the maximum upper limit and initializes
+the two hardware-maintained backoff words to one; a vendor test command reads
+those two words back as nine-bit values. Which word is the backoff count and
+which the upper limit is not established.
 </description>
       <baseAddress>0x20101970</baseAddress>
       <registers>
         <register>
-          <name>COMMAND_0</name>
-          <description>The observed path publishes the finite complete images 0x00000100 and 0x00000001 at different points.</description>
+          <name>UPPER_LIMIT_MAX</name>
+          <description>Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>9</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_1</name>
-          <description>Both observed publications write the finite complete image one.</description>
+          <name>BACKOFF_STATE_0</name>
+          <description>One of the two hardware-maintained backoff words (upper limit or backoff count); scanner start writes one.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
-          <access>write-only</access>
+          <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>9</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>COMMAND_2</name>
-          <description>Both observed publications write the finite complete image one.</description>
+          <name>BACKOFF_STATE_1</name>
+          <description>The other hardware-maintained backoff word; scanner start writes one.</description>
           <addressOffset>0x8</addressOffset>
           <size>0x20</size>
-          <access>write-only</access>
+          <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>VALUE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>9</bitWidth>
             </field>
           </fields>
         </register>

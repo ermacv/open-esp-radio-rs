@@ -132,7 +132,7 @@ peripherals = [
     "BLE_ISO_SCHEDULER_NOTIFY",
     "BLE_HW_POSITIONAL_WORD_1FF0",
     "BLE_HW_POSITIONAL_WORD_891C",
-    "BLE_SCAN_CONTROL",
+    "BLE_SCAN_BACKOFF",
     "BLE_SYNC_PUBLICATION",
     "BLUETOOTH_CONTROLLER_CORE",
     "BLUETOOTH_RESET_IDLE_STATUS_0",
@@ -1919,25 +1919,25 @@ sources = [
 ]
 
 [[fixed-register-images]]
-name = "publish_bluetooth_scan_command_2_image_1"
-peripheral = "BLE_SCAN_CONTROL"
-register = "COMMAND_2"
+name = "initialize_bluetooth_scan_backoff_state_1"
+peripheral = "BLE_SCAN_BACKOFF"
+register = "BACKOFF_STATE_1"
 value = 1
-sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+sources = ["BLOB_LIBBLE_SCAN_BACKOFF"]
 
 [[fixed-register-images]]
-name = "publish_bluetooth_scan_command_1_image_1"
-peripheral = "BLE_SCAN_CONTROL"
-register = "COMMAND_1"
+name = "initialize_bluetooth_scan_backoff_state_0"
+peripheral = "BLE_SCAN_BACKOFF"
+register = "BACKOFF_STATE_0"
 value = 1
-sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+sources = ["BLOB_LIBBLE_SCAN_BACKOFF"]
 
 [[fixed-register-images]]
-name = "publish_bluetooth_scan_standard_backoff"
-peripheral = "BLE_SCAN_CONTROL"
-register = "COMMAND_0"
+name = "publish_bluetooth_scan_standard_upper_limit_max"
+peripheral = "BLE_SCAN_BACKOFF"
+register = "UPPER_LIMIT_MAX"
 value = 0x100
-sources = ["BLOB_LIBBLE_SCAN_CONTROL"]
+sources = ["BLOB_LIBBLE_SCAN_BACKOFF"]
 
 [[field-replace-modifies]]
 name = "configure_bluetooth_cte_six_buffer_limit"

@@ -47703,114 +47703,140 @@ pub mod ble_sync_publication {
         }
     }
 }
-#[doc = "Three positional complete images published by one ble_lll_scan.c path. The source file establishes scan-path ownership, but the undocumented hardware actions represented by the images remain unknown."]
-pub type BleScanControl = crate::Periph<ble_scan_control::RegisterBlock, 0x2010_1970>;
-impl core::fmt::Debug for BleScanControl {
+#[doc = "Scan-backoff state of the Link Layer scanner (Core Specification Vol 6, Part B, 4.4.3.2). Scanner start publishes the maximum upper limit and initializes the two hardware-maintained backoff words to one; a vendor test command reads those two words back as nine-bit values. Which word is the backoff count and which the upper limit is not established."]
+pub type BleScanBackoff = crate::Periph<ble_scan_backoff::RegisterBlock, 0x2010_1970>;
+impl core::fmt::Debug for BleScanBackoff {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BleScanControl").finish()
+        f.debug_struct("BleScanBackoff").finish()
     }
 }
-#[doc = "Three positional complete images published by one ble_lll_scan.c path. The source file establishes scan-path ownership, but the undocumented hardware actions represented by the images remain unknown."]
-pub mod ble_scan_control {
+#[doc = "Scan-backoff state of the Link Layer scanner (Core Specification Vol 6, Part B, 4.4.3.2). Scanner start publishes the maximum upper limit and initializes the two hardware-maintained backoff words to one; a vendor test command reads those two words back as nine-bit values. Which word is the backoff count and which the upper limit is not established."]
+pub mod ble_scan_backoff {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        command_0: Command0,
-        command_1: Command1,
-        command_2: Command2,
+        upper_limit_max: UpperLimitMax,
+        backoff_state_0: BackoffState0,
+        backoff_state_1: BackoffState1,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - The observed path publishes the finite complete images 0x00000100 and 0x00000001 at different points."]
+        #[doc = "0x00 - Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled."]
         #[inline(always)]
-        pub const fn command_0(&self) -> &Command0 {
-            &self.command_0
+        pub const fn upper_limit_max(&self) -> &UpperLimitMax {
+            &self.upper_limit_max
         }
-        #[doc = "0x04 - Both observed publications write the finite complete image one."]
+        #[doc = "0x04 - One of the two hardware-maintained backoff words (upper limit or backoff count); scanner start writes one."]
         #[inline(always)]
-        pub const fn command_1(&self) -> &Command1 {
-            &self.command_1
+        pub const fn backoff_state_0(&self) -> &BackoffState0 {
+            &self.backoff_state_0
         }
-        #[doc = "0x08 - Both observed publications write the finite complete image one."]
+        #[doc = "0x08 - The other hardware-maintained backoff word; scanner start writes one."]
         #[inline(always)]
-        pub const fn command_2(&self) -> &Command2 {
-            &self.command_2
+        pub const fn backoff_state_1(&self) -> &BackoffState1 {
+            &self.backoff_state_1
         }
     }
-    #[doc = "COMMAND_0 (w) register accessor: The observed path publishes the finite complete images 0x00000100 and 0x00000001 at different points.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0`] module"]
-    #[doc(alias = "COMMAND_0")]
-    pub type Command0 = crate::Reg<command_0::Command0Spec>;
-    #[doc = "The observed path publishes the finite complete images 0x00000100 and 0x00000001 at different points."]
-    pub mod command_0 {
-        #[doc = "Register `COMMAND_0` writer"]
-        pub type W = crate::W<Command0Spec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+    #[doc = "UPPER_LIMIT_MAX (w) register accessor: Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`upper_limit_max::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@upper_limit_max`] module"]
+    #[doc(alias = "UPPER_LIMIT_MAX")]
+    pub type UpperLimitMax = crate::Reg<upper_limit_max::UpperLimitMaxSpec>;
+    #[doc = "Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled."]
+    pub mod upper_limit_max {
+        #[doc = "Register `UPPER_LIMIT_MAX` writer"]
+        pub type W = crate::W<UpperLimitMaxSpec>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:8"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&mut self) -> ValueW<'_, UpperLimitMaxSpec> {
+                ValueW::new(self, 0)
             }
         }
-        #[doc = "The observed path publishes the finite complete images 0x00000100 and 0x00000001 at different points.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0Spec;
-        impl crate::RegisterSpec for Command0Spec {
+        #[doc = "Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`upper_limit_max::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct UpperLimitMaxSpec;
+        impl crate::RegisterSpec for UpperLimitMaxSpec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0::W`](W) writer structure"]
-        impl crate::Writable for Command0Spec {
+        #[doc = "`write(|w| ..)` method takes [`upper_limit_max::W`](W) writer structure"]
+        impl crate::Writable for UpperLimitMaxSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_1 (w) register accessor: Both observed publications write the finite complete image one.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_1::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_1`] module"]
-    #[doc(alias = "COMMAND_1")]
-    pub type Command1 = crate::Reg<command_1::Command1Spec>;
-    #[doc = "Both observed publications write the finite complete image one."]
-    pub mod command_1 {
-        #[doc = "Register `COMMAND_1` writer"]
-        pub type W = crate::W<Command1Spec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl W {
-            #[doc = "Bits 0:31"]
+    #[doc = "BACKOFF_STATE_0 (rw) register accessor: One of the two hardware-maintained backoff words (upper limit or backoff count); scanner start writes one.\n\nYou can [`read`](crate::Reg::read) this register and get [`backoff_state_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backoff_state_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backoff_state_0`] module"]
+    #[doc(alias = "BACKOFF_STATE_0")]
+    pub type BackoffState0 = crate::Reg<backoff_state_0::BackoffState0Spec>;
+    #[doc = "One of the two hardware-maintained backoff words (upper limit or backoff count); scanner start writes one."]
+    pub mod backoff_state_0 {
+        #[doc = "Register `BACKOFF_STATE_0` reader"]
+        pub type R = crate::R<BackoffState0Spec>;
+        #[doc = "Register `BACKOFF_STATE_0` writer"]
+        pub type W = crate::W<BackoffState0Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u16>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        impl R {
+            #[doc = "Bits 0:8"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command1Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&self) -> ValueR {
+                ValueR::new((self.bits & 0x01ff) as u16)
             }
         }
-        #[doc = "Both observed publications write the finite complete image one.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command1Spec;
-        impl crate::RegisterSpec for Command1Spec {
+        impl W {
+            #[doc = "Bits 0:8"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, BackoffState0Spec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "One of the two hardware-maintained backoff words (upper limit or backoff count); scanner start writes one.\n\nYou can [`read`](crate::Reg::read) this register and get [`backoff_state_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backoff_state_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BackoffState0Spec;
+        impl crate::RegisterSpec for BackoffState0Spec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_1::W`](W) writer structure"]
-        impl crate::Writable for Command1Spec {
+        #[doc = "`read()` method returns [`backoff_state_0::R`](R) reader structure"]
+        impl crate::Readable for BackoffState0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`backoff_state_0::W`](W) writer structure"]
+        impl crate::Writable for BackoffState0Spec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "COMMAND_2 (w) register accessor: Both observed publications write the finite complete image one.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_2::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_2`] module"]
-    #[doc(alias = "COMMAND_2")]
-    pub type Command2 = crate::Reg<command_2::Command2Spec>;
-    #[doc = "Both observed publications write the finite complete image one."]
-    pub mod command_2 {
-        #[doc = "Register `COMMAND_2` writer"]
-        pub type W = crate::W<Command2Spec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl W {
-            #[doc = "Bits 0:31"]
+    #[doc = "BACKOFF_STATE_1 (rw) register accessor: The other hardware-maintained backoff word; scanner start writes one.\n\nYou can [`read`](crate::Reg::read) this register and get [`backoff_state_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backoff_state_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backoff_state_1`] module"]
+    #[doc(alias = "BACKOFF_STATE_1")]
+    pub type BackoffState1 = crate::Reg<backoff_state_1::BackoffState1Spec>;
+    #[doc = "The other hardware-maintained backoff word; scanner start writes one."]
+    pub mod backoff_state_1 {
+        #[doc = "Register `BACKOFF_STATE_1` reader"]
+        pub type R = crate::R<BackoffState1Spec>;
+        #[doc = "Register `BACKOFF_STATE_1` writer"]
+        pub type W = crate::W<BackoffState1Spec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u16>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        impl R {
+            #[doc = "Bits 0:8"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command2Spec> {
-                ImageW::new(self, 0)
+            pub fn value(&self) -> ValueR {
+                ValueR::new((self.bits & 0x01ff) as u16)
             }
         }
-        #[doc = "Both observed publications write the finite complete image one.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_2::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command2Spec;
-        impl crate::RegisterSpec for Command2Spec {
+        impl W {
+            #[doc = "Bits 0:8"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, BackoffState1Spec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "The other hardware-maintained backoff word; scanner start writes one.\n\nYou can [`read`](crate::Reg::read) this register and get [`backoff_state_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backoff_state_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BackoffState1Spec;
+        impl crate::RegisterSpec for BackoffState1Spec {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_2::W`](W) writer structure"]
-        impl crate::Writable for Command2Spec {
+        #[doc = "`read()` method returns [`backoff_state_1::R`](R) reader structure"]
+        impl crate::Readable for BackoffState1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`backoff_state_1::W`](W) writer structure"]
+        impl crate::Writable for BackoffState1Spec {
             type Safety = crate::Unsafe;
         }
     }
@@ -58592,8 +58618,8 @@ pub struct Peripherals {
     pub ble_hw_positional_word_1874: BleHwPositionalWord1874,
     #[doc = "BLE_SYNC_PUBLICATION"]
     pub ble_sync_publication: BleSyncPublication,
-    #[doc = "BLE_SCAN_CONTROL"]
-    pub ble_scan_control: BleScanControl,
+    #[doc = "BLE_SCAN_BACKOFF"]
+    pub ble_scan_backoff: BleScanBackoff,
     #[doc = "BLE_HW_ACCELERATOR"]
     pub ble_hw_accelerator: BleHwAccelerator,
     #[doc = "BLE_HW_RESOLVING_LIST"]
@@ -58744,7 +58770,7 @@ impl Peripherals {
             ble_controller_address_slots: unsafe { BleControllerAddressSlots::steal() },
             ble_hw_positional_word_1874: unsafe { BleHwPositionalWord1874::steal() },
             ble_sync_publication: unsafe { BleSyncPublication::steal() },
-            ble_scan_control: unsafe { BleScanControl::steal() },
+            ble_scan_backoff: unsafe { BleScanBackoff::steal() },
             ble_hw_accelerator: unsafe { BleHwAccelerator::steal() },
             ble_hw_resolving_list: unsafe { BleHwResolvingList::steal() },
             ble_hw_runtime_control: unsafe { BleHwRuntimeControl::steal() },
@@ -59393,7 +59419,7 @@ pub mod peripheral_ownership {
         pub ble_iso_scheduler_notify: crate::BleIsoSchedulerNotify,
         pub ble_hw_positional_word_1ff0: crate::BleHwPositionalWord1ff0,
         pub ble_hw_positional_word_891c: crate::BleHwPositionalWord891c,
-        pub ble_scan_control: crate::BleScanControl,
+        pub ble_scan_backoff: crate::BleScanBackoff,
         pub ble_sync_publication: crate::BleSyncPublication,
         pub bluetooth_controller_core: crate::BluetoothControllerCore,
         pub bluetooth_reset_idle_status_0: crate::BluetoothResetIdleStatus0,
@@ -59557,7 +59583,7 @@ pub mod peripheral_ownership {
             ble_controller_address_slots,
             ble_hw_positional_word_1874,
             ble_sync_publication,
-            ble_scan_control,
+            ble_scan_backoff,
             ble_hw_accelerator,
             ble_hw_resolving_list,
             ble_hw_runtime_control,
@@ -59678,7 +59704,7 @@ pub mod peripheral_ownership {
                 ble_iso_scheduler_notify,
                 ble_hw_positional_word_1ff0,
                 ble_hw_positional_word_891c,
-                ble_scan_control,
+                ble_scan_backoff,
                 ble_sync_publication,
                 bluetooth_controller_core,
                 bluetooth_reset_idle_status_0,
@@ -61206,41 +61232,41 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_2`.
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_BACKOFF`.`BACKOFF_STATE_1`.
     #[inline]
-    pub fn publish_bluetooth_scan_command_2_image_1(registers: &crate::BleScanControl) {
+    pub fn initialize_bluetooth_scan_backoff_state_1(registers: &crate::BleScanBackoff) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_2()
+                .backoff_state_1()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_CONTROL`.`COMMAND_1`.
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_SCAN_BACKOFF`.`BACKOFF_STATE_0`.
     #[inline]
-    pub fn publish_bluetooth_scan_command_1_image_1(registers: &crate::BleScanControl) {
+    pub fn initialize_bluetooth_scan_backoff_state_0(registers: &crate::BleScanBackoff) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_1()
+                .backoff_state_0()
                 .write_with_zero(|writer| writer.bits(0x00000001));
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000100` to `BLE_SCAN_CONTROL`.`COMMAND_0`.
+    /// Publish the SVD-qualified image `0x00000100` to `BLE_SCAN_BACKOFF`.`UPPER_LIMIT_MAX`.
     #[inline]
-    pub fn publish_bluetooth_scan_standard_backoff(registers: &crate::BleScanControl) {
+    pub fn publish_bluetooth_scan_standard_upper_limit_max(registers: &crate::BleScanBackoff) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .command_0()
+                .upper_limit_max()
                 .write_with_zero(|writer| writer.bits(0x00000100));
         }
     }

@@ -1,4 +1,4 @@
-//! Restricted BLE scanner command publication.
+//! Restricted BLE scanner start: the scan-backoff state publication.
 
 #![deny(unsafe_code)]
 
@@ -10,42 +10,46 @@ pub struct BluetoothScanStartPublished {
     _private: (),
 }
 
+/// The scan-backoff start sequence: both backoff words start at one before
+/// the maximum upper limit is published.
 trait BluetoothScanStartTransaction {
-    fn publish_command_2_image_1(&mut self);
-    fn publish_command_1_image_1(&mut self);
-    fn publish_standard_backoff(&mut self);
+    fn initialize_backoff_state_1(&mut self);
+    fn initialize_backoff_state_0(&mut self);
+    fn publish_standard_upper_limit_max(&mut self);
 }
 
 fn execute_scan_start_transaction(transaction: &mut impl BluetoothScanStartTransaction) {
-    transaction.publish_command_2_image_1();
-    transaction.publish_command_1_image_1();
-    transaction.publish_standard_backoff();
+    transaction.initialize_backoff_state_1();
+    transaction.initialize_backoff_state_0();
+    transaction.publish_standard_upper_limit_max();
 }
 
 struct PacBluetoothScanStartTransaction<'registers> {
-    registers: &'registers crate::svd::BleScanControl,
+    registers: &'registers crate::svd::BleScanBackoff,
 }
 
 impl BluetoothScanStartTransaction for PacBluetoothScanStartTransaction<'_> {
-    fn publish_command_2_image_1(&mut self) {
-        crate::svd::fixed_register_image::publish_bluetooth_scan_command_2_image_1(self.registers);
+    fn initialize_backoff_state_1(&mut self) {
+        crate::svd::fixed_register_image::initialize_bluetooth_scan_backoff_state_1(self.registers);
     }
 
-    fn publish_command_1_image_1(&mut self) {
-        crate::svd::fixed_register_image::publish_bluetooth_scan_command_1_image_1(self.registers);
+    fn initialize_backoff_state_0(&mut self) {
+        crate::svd::fixed_register_image::initialize_bluetooth_scan_backoff_state_0(self.registers);
     }
 
-    fn publish_standard_backoff(&mut self) {
-        crate::svd::fixed_register_image::publish_bluetooth_scan_standard_backoff(self.registers);
+    fn publish_standard_upper_limit_max(&mut self) {
+        crate::svd::fixed_register_image::publish_bluetooth_scan_standard_upper_limit_max(
+            self.registers,
+        );
     }
 }
 
 impl BluetoothTaskRegisters {
-    /// Publish the complete reviewed three-command scanner transaction.
+    /// Publish the complete reviewed scanner start: initialize both
+    /// scan-backoff words to one, then publish the default maximum upper
+    /// limit (256) of the source-owned standalone Controller profile.
     ///
-    /// Descriptor and list writes are ordered before the first command. The
-    /// final command selects the standard scan-backoff policy fixed by the
-    /// source-owned standalone Controller profile.
+    /// Descriptor and list writes are ordered before the first write.
     ///
     /// # Safety
     ///
@@ -60,7 +64,7 @@ impl BluetoothTaskRegisters {
     pub unsafe fn publish_scan_start(&mut self) -> BluetoothScanStartPublished {
         device_fence();
         let mut transaction = PacBluetoothScanStartTransaction {
-            registers: &self.bluetooth.ble_scan_control,
+            registers: &self.bluetooth.ble_scan_backoff,
         };
         execute_scan_start_transaction(&mut transaction);
         device_fence();

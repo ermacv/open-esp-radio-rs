@@ -249,9 +249,9 @@ where
     match closed {
         Ok(()) => {
             *phy.slot_mut() = Slot::RfClosed(domain);
-            lease
-                .disable_phy_modem_clocks(PhyClockModule::Phy, clocks)
-                .map_err(ConcurrentRfError::Clock)
+            // DEBUG: keep the PHY module clock across close.
+            let _ = clocks;
+            Ok(())
         }
         Err(PhyRfCloseTemperatureFailure::Recoverable(error)) => {
             *phy.slot_mut() = Slot::Registered(domain);
@@ -304,7 +304,8 @@ where
         ));
     }
     super::radio_lifecycle::wake_trace(0x2e00);
-    if let Err(error) = enable_phy_clocks(lease, clocks) {
+    // DEBUG: the PHY module clock stayed on; enable only calibration.
+    if let Err(error) = lease.enable_phy_modem_clocks(PhyClockModule::Calibration, clocks) {
         *lease.attachment_mut().slot_mut() = Slot::RfClosed(domain);
         return Err(ConcurrentRfError::Rejected(ConcurrentPhyError::Clock(
             error,

@@ -3,21 +3,21 @@
   "date": "2026-09-27",
   "verdict": "diff",
   "vendor-object": "phy_param",
-  "vendor-application-sha256": "c886aefe8ec0d3dcaf820abd0bea0acf7affa891346958a5062c2daa8fbbc254",
+  "vendor-application-sha256": "b878f6f14667909918ca09d8d962190fbf671735bc5f4bf4a6c5f91add9f0ff0",
   "vendor-idf-revision": "7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe",
   "vendor-captures": 10,
   "production-image": "correctness",
-  "production-application-sha256": "c53a989cc3404e1351aab4661745dbe72fe9badd016701ea2995adf1bc4048f6",
+  "production-application-sha256": "2038baa3bf18d94afd1b85f210d2abb92bf252e0976e9515436b5384207420b1",
   "production-captures": 10,
   "fields": [
     {
       "name": "common-reference",
-      "verdict": "match",
-      "margin": 3,
+      "verdict": "diff",
+      "margin": 1,
       "reason": "temperature the common calibration commits as its tracking reference",
       "vendor": [
         [
-          24,
+          26,
           27
         ]
       ],
@@ -30,12 +30,12 @@
     },
     {
       "name": "transmit-reference",
-      "verdict": "match",
-      "margin": 2,
+      "verdict": "diff",
+      "margin": 1,
       "reason": "temperature the TX calibration commits as its tracking reference",
       "vendor": [
         [
-          21,
+          22,
           23
         ]
       ],
@@ -85,15 +85,15 @@
     {
       "name": "wifi-dc-rows",
       "verdict": "match",
-      "margin": 4,
+      "margin": 3,
       "reason": "Wi-Fi TX DC calibration codes",
       "vendor": [
         [
           243,
-          245
+          246
         ],
         [
-          265,
+          264,
           267
         ],
         [
@@ -101,35 +101,35 @@
           259
         ],
         [
-          254,
+          253,
           256
         ],
         [
           243,
-          246
+          245
         ],
         [
-          263,
-          265
+          262,
+          264
         ],
         [
-          256,
+          257,
           260
         ],
         [
-          253,
-          255
+          254,
+          256
         ],
         [
           244,
-          245
+          246
         ],
         [
           260,
           262
         ],
         [
-          258,
+          256,
           259
         ],
         [
@@ -139,20 +139,20 @@
       ],
       "production": [
         [
-          243,
-          245
+          242,
+          244
         ],
         [
-          263,
+          265,
           266
         ],
         [
           257,
-          259
+          260
         ],
         [
           254,
-          256
+          255
         ],
         [
           244,
@@ -164,51 +164,51 @@
         ],
         [
           257,
-          259
+          258
         ],
         [
-          254,
-          256
+          253,
+          255
         ],
         [
-          244,
+          243,
           245
         ],
         [
-          259,
+          261,
           262
         ],
         [
           257,
-          258
+          259
         ],
         [
-          254,
-          257
+          253,
+          255
         ]
       ]
     },
     {
       "name": "bluetooth-dc-rows",
       "verdict": "match",
-      "margin": 10,
+      "margin": 9,
       "reason": "Bluetooth TX DC calibration codes",
       "vendor": [
         [
           260,
-          260
+          261
         ],
         [
-          258,
+          259,
           259
         ],
         [
-          257,
-          259
+          252,
+          258
         ],
         [
           251,
-          256
+          254
         ],
         [
           259,
@@ -223,8 +223,8 @@
           259
         ],
         [
-          252,
-          254
+          253,
+          256
         ],
         [
           259,
@@ -239,26 +239,26 @@
           258
         ],
         [
-          248,
+          249,
           258
         ]
       ],
       "production": [
         [
           260,
-          261
+          260
         ],
         [
           258,
           259
         ],
         [
-          252,
+          256,
           258
         ],
         [
           251,
-          257
+          258
         ],
         [
           259,
@@ -270,68 +270,36 @@
         ],
         [
           252,
-          261
+          260
         ],
         [
           252,
-          254
+          255
         ],
         [
           259,
-          260
+          259
         ],
         [
           257,
           258
         ],
         [
-          248,
+          255,
           257
         ],
         [
           248,
-          257
+          258
         ]
       ]
     },
     {
       "name": "wifi-rx-dc",
       "verdict": "match",
-      "margin": 17,
+      "margin": 14,
       "reason": "Wi-Fi per-gain RX DC codes and the phy_rxdc_fine_cal pairs",
       "vendor": [
-        [
-          259,
-          262
-        ],
-        [
-          303,
-          304
-        ],
-        [
-          259,
-          262
-        ],
-        [
-          303,
-          305
-        ],
-        [
-          259,
-          262
-        ],
-        [
-          303,
-          303
-        ],
-        [
-          258,
-          260
-        ],
-        [
-          304,
-          305
-        ],
         [
           260,
           262
@@ -341,7 +309,39 @@
           305
         ],
         [
+          261,
+          262
+        ],
+        [
+          303,
+          305
+        ],
+        [
           259,
+          262
+        ],
+        [
+          302,
+          304
+        ],
+        [
+          259,
+          262
+        ],
+        [
+          304,
+          306
+        ],
+        [
+          261,
+          262
+        ],
+        [
+          303,
+          305
+        ],
+        [
+          260,
           262
         ],
         [
@@ -350,15 +350,15 @@
         ],
         [
           261,
-          262
+          263
         ],
         [
-          300,
+          301,
           302
         ],
         [
-          259,
-          261
+          260,
+          262
         ],
         [
           303,
@@ -366,97 +366,97 @@
         ],
         [
           276,
-          279
+          278
         ],
         [
-          246,
-          248
-        ],
-        [
-          276,
-          279
-        ],
-        [
-          246,
-          248
+          245,
+          249
         ],
         [
           276,
-          279
+          282
         ],
         [
-          246,
-          248
+          245,
+          249
+        ],
+        [
+          276,
+          282
+        ],
+        [
+          245,
+          249
         ],
         [
           267,
           278
         ],
         [
-          247,
-          255
+          245,
+          258
         ],
         [
-          258,
-          275
+          262,
+          274
         ],
         [
-          252,
-          259
+          249,
+          263
         ]
       ],
       "production": [
         [
-          260,
-          262
-        ],
-        [
-          303,
-          304
-        ],
-        [
-          259,
-          262
-        ],
-        [
-          303,
-          304
-        ],
-        [
-          259,
-          260
-        ],
-        [
-          302,
-          303
-        ],
-        [
-          258,
-          262
+          261,
+          263
         ],
         [
           303,
           305
         ],
         [
-          260,
-          262
+          261,
+          263
         ],
         [
           303,
-          304
+          305
         ],
         [
-          260,
+          259,
           262
         ],
         [
-          303,
+          302,
           304
+        ],
+        [
+          259,
+          261
+        ],
+        [
+          303,
+          305
+        ],
+        [
+          261,
+          263
+        ],
+        [
+          303,
+          305
         ],
         [
           261,
           262
+        ],
+        [
+          302,
+          304
+        ],
+        [
+          261,
+          264
         ],
         [
           300,
@@ -464,51 +464,51 @@
         ],
         [
           260,
-          261
+          263
         ],
         [
-          303,
-          304
+          301,
+          305
         ],
         [
           275,
-          279
+          280
         ],
         [
-          246,
+          245,
           249
         ],
         [
           275,
-          279
+          280
         ],
         [
-          246,
+          245,
           249
         ],
         [
           275,
-          279
+          280
         ],
         [
-          246,
+          245,
           249
         ],
         [
-          265,
-          279
+          266,
+          280
+        ],
+        [
+          245,
+          259
+        ],
+        [
+          259,
+          272
         ],
         [
           246,
-          257
-        ],
-        [
-          258,
-          271
-        ],
-        [
-          251,
-          262
+          260
         ]
       ]
     },
@@ -543,7 +543,7 @@
           289
         ],
         [
-          241,
+          242,
           243
         ],
         [
@@ -552,7 +552,73 @@
         ],
         [
           242,
-          242
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          288
+        ],
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          229,
+          230
+        ],
+        [
+          283,
+          283
+        ],
+        [
+          259,
+          260
+        ],
+        [
+          302,
+          304
+        ]
+      ],
+      "production": [
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          242,
+          243
         ],
         [
           288,
@@ -581,6 +647,30 @@
         [
           288,
           289
+        ],
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          289
+        ],
+        [
+          242,
+          243
+        ],
+        [
+          288,
+          288
         ],
         [
           242,
@@ -600,96 +690,6 @@
         ],
         [
           258,
-          259
-        ],
-        [
-          302,
-          304
-        ]
-      ],
-      "production": [
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          242,
-          243
-        ],
-        [
-          288,
-          288
-        ],
-        [
-          241,
-          243
-        ],
-        [
-          288,
-          289
-        ],
-        [
-          229,
-          231
-        ],
-        [
-          282,
-          283
-        ],
-        [
-          257,
           261
         ],
         [
@@ -701,11 +701,11 @@
     {
       "name": "power-temperature",
       "verdict": "diff",
-      "margin": 2,
+      "margin": 1,
       "reason": "temperature the TX power calibration commits as its power tracking reference",
       "vendor": [
         [
-          21,
+          22,
           23
         ]
       ],
@@ -808,12 +808,12 @@
     },
     {
       "name": "rfpll-reference",
-      "verdict": "match",
-      "margin": 2,
+      "verdict": "diff",
+      "margin": 1,
       "reason": "temperature the RFPLL calibration commits as its tracking reference",
       "vendor": [
         [
-          21,
+          22,
           23
         ]
       ],
@@ -1044,5 +1044,283 @@
       480,
       492
     ]
-  ]
+  ],
+  "registers": {
+    "verdict": "diff",
+    "compared": 173,
+    "matched": 152,
+    "differing": [
+      {
+        "name": "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL",
+        "vendor": [
+          1350567486,
+          1350567486
+        ],
+        "production": [
+          1350567436,
+          1350567436
+        ]
+      },
+      {
+        "name": "PHY_PBUS.READ_RESULT_0",
+        "vendor": [
+          1249984,
+          1249984
+        ],
+        "production": [
+          1249848,
+          1250172
+        ]
+      },
+      {
+        "name": "PHY_PBUS.READ_RESULT_2",
+        "vendor": [
+          72507128,
+          73032437
+        ],
+        "production": [
+          68050678,
+          73032451
+        ]
+      },
+      {
+        "name": "PHY_PBUS.READ_RESULT_3",
+        "vendor": [
+          16875008,
+          16875008
+        ],
+        "production": [
+          33390080,
+          33390080
+        ]
+      },
+      {
+        "name": "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL",
+        "vendor": [
+          3251189552,
+          3251189552
+        ],
+        "production": [
+          3251320656,
+          3251320656
+        ]
+      },
+      {
+        "name": "PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL",
+        "vendor": [
+          22282242,
+          22282242
+        ],
+        "production": [
+          0,
+          0
+        ]
+      },
+      {
+        "name": "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL",
+        "vendor": [
+          1356943372,
+          1356943372
+        ],
+        "production": [
+          1373720588,
+          1373720588
+        ]
+      },
+      {
+        "name": "PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE",
+        "vendor": [
+          4261412864,
+          4261412864
+        ],
+        "production": [
+          4261415239,
+          4266068807
+        ]
+      },
+      {
+        "name": "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL",
+        "vendor": [
+          3525250080,
+          3525250080
+        ],
+        "production": [
+          3523242662,
+          3525241536
+        ]
+      },
+      {
+        "name": "PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL",
+        "vendor": [
+          386148546,
+          386148546
+        ],
+        "production": [
+          386154197,
+          386154197
+        ]
+      },
+      {
+        "name": "PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE",
+        "vendor": [
+          1073741824,
+          1073741824
+        ],
+        "production": [
+          1092747409,
+          1212757540
+        ]
+      },
+      {
+        "name": "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_STATUS",
+        "vendor": [
+          0,
+          0
+        ],
+        "production": [
+          599801876,
+          612348971
+        ]
+      },
+      {
+        "name": "MODEM_SYSCON_RADIO.CLK_CONF1",
+        "vendor": [
+          3727488,
+          3727488
+        ],
+        "production": [
+          3926015,
+          3926015
+        ]
+      },
+      {
+        "name": "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN",
+        "vendor": [
+          617077,
+          623475
+        ],
+        "production": [
+          3889978,
+          4011618
+        ]
+      },
+      {
+        "name": "MODEM_LPCON_SHARED_CLOCK.CLK_CONF",
+        "vendor": [
+          5,
+          5
+        ],
+        "production": [
+          7,
+          7
+        ]
+      },
+      {
+        "name": "I2C_ANA_MST.I2C0_CTRL",
+        "vendor": [
+          19859049,
+          19859049
+        ],
+        "production": [
+          3081833,
+          3081833
+        ]
+      },
+      {
+        "name": "I2C_ANA_MST.I2C1_CTRL",
+        "vendor": [
+          5963875,
+          5963875
+        ],
+        "production": [
+          12780139,
+          12780139
+        ]
+      },
+      {
+        "name": "I2C_ANA_MST.ANA_CONF1",
+        "vendor": [
+          16777199,
+          16777199
+        ],
+        "production": [
+          16775167,
+          16775167
+        ]
+      },
+      {
+        "name": "PMU_RADIO.HP_ACTIVE_HP_CK_POWER",
+        "vendor": [
+          432013312,
+          432013312
+        ],
+        "production": [
+          1572864000,
+          1572864000
+        ]
+      },
+      {
+        "name": "LP_TSENS.CTRL",
+        "vendor": [
+          4297827,
+          4297828
+        ],
+        "production": [
+          4297831,
+          4297833
+        ]
+      },
+      {
+        "name": "LP_TSENS.CLK_CONF",
+        "vendor": [
+          0,
+          0
+        ],
+        "production": [
+          1,
+          1
+        ]
+      }
+    ],
+    "excluded": [],
+    "unreadable": [
+      "PHY_BTAGC_RECOVERED.CTE_DC_SHIFT",
+      "PHY_BTAGC_RECOVERED.CTE_RE_GAIN",
+      "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE",
+      "PHY_BTAGC_RECOVERED.RX_COMP_CONTROL",
+      "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE",
+      "PHY_BTAGC_RECOVERED.RX_CONFIG_004C",
+      "PHY_BTAGC_RECOVERED.AGC_GAIN_MAX_CONTROL",
+      "PHY_BTAGC_RECOVERED.AGC_GAIN_IMAGE",
+      "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE",
+      "PHY_BTAGC_RECOVERED.AGC_RECORRECT_CONTROL_006C",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_CONFIG_0084",
+      "PHY_BTAGC_RECOVERED.RX_CONFIG_0088",
+      "PHY_BTAGC_RECOVERED.RX_CONFIG_008C",
+      "PHY_BTAGC_RECOVERED.CCA_CONFIG",
+      "PHY_BTAGC_RECOVERED.CTE_AGC_TARGET",
+      "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0",
+      "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8",
+      "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B0",
+      "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_TARGET_00B4",
+      "PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8",
+      "PHY_BTAGC_RECOVERED.AGC_RECORRECT_AND_RESTART_00BC",
+      "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C0",
+      "PHY_BTAGC_RECOVERED.AGC_DETECT_CONFIG_00C4",
+      "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D0",
+      "PHY_BTAGC_RECOVERED.AGC_CONFIG_00D4",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E0",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E4",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00EC",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F0",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8",
+      "PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100",
+      "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL",
+      "PHY_BRX_RECOVERED_GAPS.FREQUENCY_CORRECTION_CONTROL_OPAQUE",
+      "PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL"
+    ],
+    "not-read": []
+  }
 }

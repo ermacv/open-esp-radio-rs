@@ -31,7 +31,9 @@ steps:
    recorded as unreadable and the reads continue after the new boot.
 2. Flash the production image class (`--production-image`, `correctness` by
    default) and prepare one reset with a fresh startup artifact path, so the
-   boot calibrates fully and publishes its retained calibration.
+   boot calibrates fully and publishes its retained calibration. Then read
+   the radio-PHY register image (HIL `PhyRegisterImage`) at the indices the
+   vendor boot of the round read.
 
 Alternating the sides exposes both to the same board temperature drift.
 Captures stay in the ignored output directory.
@@ -69,11 +71,18 @@ It records:
 - each field's margin and its vendor and production ranges;
 - the excluded fields with their reasons;
 - the vendor byte ranges no compared field covers;
-- the vendor register state: registers read, unreadable, and varying
-  between vendor boots. Production does not publish its register state
-  yet, so registers are not compared.
+- the register image: registers compared and matched, the registers
+  outside their vendor range widened by their own vendor spread with both
+  ranges, reviewed exclusions, registers whose read reset the chip, and
+  vendor-readable registers production did not report.
 
 ## Limitations
+
+The two sides reach different lifecycle points: the vendor firmware only
+enables the PHY, while the production image has also brought Wi-Fi up, so
+registers of the MAC clocks, AGC status and runtime counters differ by
+lifecycle rather than calibration until they are reviewed.
+
 
 The relation covers these parts of the committed calibration, in the order
 the tracking roots commit them:

@@ -485,16 +485,19 @@ pub fn run(arguments: &Arguments) -> Result<std::process::ExitCode> {
     // The IEEE 802.15.4 reference firmware reports no calibration objects:
     // those points compare register state only.
     let calibrated = !capture.lifecycle.ieee802154();
-    let vendor = numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
-        .iter()
-        .map(|path| {
-            let mut objects = vendor::parse(&std::fs::read_to_string(path)?)?;
-            objects
-                .remove(VENDOR_OBJECT)
-                .ok_or_else(|| format!("{} lacks {VENDOR_OBJECT}", path.display()).into())
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let vendor = if calibrated { vendor } else { vec![] };
+    let vendor: Vec<Vec<u8>> = if !calibrated {
+        vec![]
+    } else {
+        numbered(&arguments.captures, VENDOR_PREFIX, CONSOLE_EXTENSION)?
+            .iter()
+            .map(|path| {
+                let mut objects = vendor::parse(&std::fs::read_to_string(path)?)?;
+                objects
+                    .remove(VENDOR_OBJECT)
+                    .ok_or_else(|| format!("{} lacks {VENDOR_OBJECT}", path.display()).into())
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
     let texts = |prefix: &str, extension: &str| -> Result<Vec<String>> {
         numbered(&arguments.captures, prefix, extension)?
             .iter()

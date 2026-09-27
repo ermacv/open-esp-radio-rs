@@ -331,8 +331,15 @@ fn production_boot(
         if lifecycle.ieee802154() {
             ieee802154_session(&capture)?;
             if lifecycle == Lifecycle::Ieee802154Restart {
-                capture.stop_ieee802154_session(SESSION_TIMEOUT)?;
-                ieee802154_session(&capture)?;
+                // The session stops and starts its radio client, then
+                // configures and receives again without transmitting.
+                let restarted = capture.restart_ieee802154_session_radio(SESSION_TIMEOUT)?;
+                if !restarted.rf_closed {
+                    return Err(format!(
+                        "the production session restart kept RF open: {restarted:?}"
+                    )
+                    .into());
+                }
             }
         }
         let mut replies = String::new();

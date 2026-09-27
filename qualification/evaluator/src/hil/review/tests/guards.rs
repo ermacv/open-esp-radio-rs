@@ -63,7 +63,7 @@ fn explicit_inapplicability_retains_failure_and_requires_a_reason() {
     assert_eq!(failure["resolution"]["disposition"], "not-applicable");
     review.failures[0].reason.clear();
     save(&fixture, &review);
-    assert!(validate(&fixture.0, &declaration(), &catalog).is_err());
+    assert!(validate(&fixture.0, &declaration()).is_err());
 }
 
 #[test]

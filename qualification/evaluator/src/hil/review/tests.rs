@@ -522,3 +522,4 @@ fn observation_of_an_unclassified_workload_is_excluded_not_fatal() {
         observer::Compatibility::GraphNotProjectable
     );
 }
+mod guards;

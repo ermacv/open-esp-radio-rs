@@ -33,10 +33,10 @@ use oer_hil_protocol::{
     Ieee802154SessionConfig, Ieee802154SessionFrame, Ieee802154SessionMaintenanceCounts,
     Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
     Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
-    Ieee802154SessionStopEvidence, Ieee802154SessionTransmitEvidence,
-    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, RejectReason,
-    ieee802154_frame_crc32c,
+    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame,
+    Ieee802154SessionRestartEvidence, Ieee802154SessionResult, Ieee802154SessionStopEvidence,
+    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
+    RejectReason, ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, EnergyScanRequest, FrameAddress, FrameView, Interface,
@@ -323,6 +323,15 @@ impl Session {
     }
 }
 
+/// Why the command loop returned.
+#[derive(Clone, Copy)]
+enum Served {
+    /// The host stopped the session with this request.
+    Stop(u32),
+    /// The host asked to restart the session's radio with this request.
+    Restart(u32),
+}
+
 /// The foreground maintainer: the running system and what PHY maintenance
 /// borrows.
 type Foreground<'a> = (&'a mut Ieee802154System, &'a Radio);
@@ -330,7 +339,11 @@ type Foreground<'a> = (&'a mut Ieee802154System, &'a Radio);
 /// Serve host commands until the host stops the session; returns the stop
 /// request. `foreground` serves explicit maintenance requests; without it
 /// background maintenance owns the schedule.
-async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) -> u32 {
+async fn serve(
+    session: &mut Session,
+    mut foreground: Option<Foreground<'_>>,
+    restartable: bool,
+) -> Served {
     loop {
         let command = match select(
             receive_ieee802154_session_command(),
@@ -433,7 +446,20 @@ async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) ->
                 )
                 .await;
             }
-            Ieee802154SessionCommand::Stop { request_id } => return request_id,
+            Ieee802154SessionCommand::Restart { request_id } => {
+                if restartable {
+                    return Served::Restart(request_id);
+                }
+                // Coexistence and background maintenance run beside the
+                // loop and would have to leave and rejoin with the client.
+                publish_event_reliably(
+                    0,
+                    request_id,
+                    HilEvent::Rejected(RejectReason::InvalidState),
+                )
+                .await;
+            }
+            Ieee802154SessionCommand::Stop { request_id } => return Served::Stop(request_id),
         }
     }
 }
@@ -481,6 +507,53 @@ async fn track_until(
         counts.set(tick_counts);
     }));
     tracking.await.is_ok() && !unavailable.get()
+}
+
+/// Stop the session's client and start it again, as the air check does
+/// between cycles: the stop leaves the shared PHY and closes RF after the
+/// last client, the start joins and wakes it. The session then applies its
+/// configuration and receives again. A failed step leaves no client.
+async fn restart(
+    client: &mut Client,
+    system: Ieee802154System,
+    session: &mut Session,
+    config: Ieee802154SessionConfig,
+) -> (Ieee802154SessionRestartEvidence, Option<Ieee802154System>) {
+    let mut evidence = Ieee802154SessionRestartEvidence::default();
+    let id = session.id();
+    let _ = session.submit(RadioCommand::Sleep { id });
+    let id = session.id();
+    let _ = session.submit(RadioCommand::Disable { id });
+    let stopped = {
+        let stopped = core::pin::pin!(client.stop(system));
+        stopped.await
+    };
+    let Some(parked) = stopped else {
+        evidence.result = Ieee802154SessionResult::StopFailed;
+        return (evidence, None);
+    };
+    evidence.rf_closed = client.radio.lock().await.lease().attachment().rf_closed();
+    let started = {
+        let started = core::pin::pin!(client.start(parked));
+        started.await
+    };
+    let Some(system) = started else {
+        evidence.result = Ieee802154SessionResult::StartFailed;
+        return (evidence, None);
+    };
+    session.runtime = system.runtime();
+    evidence.result = match session.configure(config) {
+        Ok(()) => {
+            let id = session.id();
+            let channel = session.channel;
+            match session.submit(RadioCommand::Receive { id, channel }) {
+                Ok(()) => Ieee802154SessionResult::Done,
+                Err(result) => result,
+            }
+        }
+        Err(result) => result,
+    };
+    (evidence, Some(system))
 }
 
 /// Run one peer session until the host stops it. The image is terminal.
@@ -537,7 +610,7 @@ pub(in crate::product_hil) async fn run_session(
     // Coexistence with Wi-Fi, as a Thread border router enters it.
     let mut coexistence = Ieee802154SessionCoexistence::default();
     if config.wifi_coexistence && started == Ieee802154SessionResult::Done {
-        system.enable_wifi_coexistence(&client.radio).await;
+        system.enable_wifi_coexistence(client.radio).await;
         coexistence.enabled = true;
     }
     publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionStarted(started)).await;
@@ -554,24 +627,50 @@ pub(in crate::product_hil) async fn run_session(
     };
     let counts = Cell::new(Ieee802154SessionMaintenanceCounts::default());
     let serving = async {
-        let served = core::pin::pin!(serve_session(
-            &mut session,
-            &mut system,
-            &client,
-            config,
-            &counts
-        ));
-        let stop_request = served.await;
-        schedule_stop.signal(());
-        stop_request
+        loop {
+            let served = {
+                let served = core::pin::pin!(serve_session(
+                    &mut session,
+                    &mut system,
+                    &client,
+                    config,
+                    &counts
+                ));
+                served.await
+            };
+            match served {
+                Served::Stop(stop_request) => {
+                    schedule_stop.signal(());
+                    return Some((stop_request, system));
+                }
+                Served::Restart(request_id) => {
+                    let restarted = {
+                        let restarted =
+                            core::pin::pin!(restart(&mut client, system, &mut session, config));
+                        restarted.await
+                    };
+                    let (evidence, restarted) = restarted;
+                    publish_event_reliably(
+                        0,
+                        request_id,
+                        HilEvent::Ieee802154SessionRadioRestarted(evidence),
+                    )
+                    .await;
+                    let Some(restarted) = restarted else {
+                        // The client is gone: the image ends without it.
+                        schedule_stop.signal(());
+                        return None;
+                    };
+                    system = restarted;
+                }
+            }
+        }
     };
-    let ((), stop_request) = core::pin::pin!(join(schedule, serving)).await;
-    if coexistence.enabled
-        && system
-            .disable_wifi_coexistence(&client.radio)
-            .await
-            .is_err()
-    {
+    let ((), served) = core::pin::pin!(join(schedule, serving)).await;
+    let Some((stop_request, mut system)) = served else {
+        return;
+    };
+    if coexistence.enabled && system.disable_wifi_coexistence(client.radio).await.is_err() {
         coexistence.disable_failed = true;
     }
 
@@ -600,24 +699,25 @@ pub(in crate::product_hil) async fn run_session(
 }
 
 /// Serve the session's commands, with background maintenance beside them
-/// when configured, until the host stops it; returns the stop request.
+/// when configured, until the host stops the session or restarts its radio.
 async fn serve_session(
     session: &mut Session,
     system: &mut Ieee802154System,
     client: &Client,
     config: Ieee802154SessionConfig,
     counts: &Cell<Ieee802154SessionMaintenanceCounts>,
-) -> u32 {
+) -> Served {
+    let restartable = !config.background_maintenance && !config.wifi_coexistence;
     if config.background_maintenance {
         let stop = Signal::<CriticalSectionRawMutex, ()>::new();
         let maintenance = async {
             let maintained = match config.maintenance_policy {
                 // The domain's own periodic loop, as the vendor timer runs it.
                 Ieee802154SessionMaintenancePolicy::Vendor => {
-                    track_until(&client.radio, stop.wait(), counts).await
+                    track_until(client.radio, stop.wait(), counts).await
                 }
                 Ieee802154SessionMaintenancePolicy::Quiesced => system
-                    .maintain_phy_until(&client.radio, stop.wait(), |outcome| {
+                    .maintain_phy_until(client.radio, stop.wait(), |outcome| {
                         counts.set(count(counts.get(), outcome))
                     })
                     .await
@@ -630,13 +730,13 @@ async fn serve_session(
             }
         };
         let commands = async {
-            let request = core::pin::pin!(serve(session, None)).await;
+            let request = core::pin::pin!(serve(session, None, restartable)).await;
             stop.signal(());
             request
         };
         let ((), request) = core::pin::pin!(join(maintenance, commands)).await;
         request
     } else {
-        core::pin::pin!(serve(session, Some((system, &client.radio)))).await
+        core::pin::pin!(serve(session, Some((system, client.radio)), restartable)).await
     }
 }

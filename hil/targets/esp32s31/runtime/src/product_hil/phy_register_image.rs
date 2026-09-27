@@ -18,7 +18,7 @@ const ANALOG_READ_POLLS: u32 = 10_000;
 static RADIO: OnceLock<&'static super::SharedRadio> = OnceLock::new();
 
 /// Make the product's shared radio observable.
-pub(super) fn install(radio: &'static super::SharedRadio) {
+pub(crate) fn install(radio: &'static super::SharedRadio) {
     let _ = RADIO.init(radio);
 }
 

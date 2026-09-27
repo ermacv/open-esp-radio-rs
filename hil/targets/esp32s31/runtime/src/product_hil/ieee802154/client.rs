@@ -2,6 +2,8 @@
 
 use core::pin::pin;
 
+use static_cell::StaticCell;
+
 use esp_hal::{efuse, time::Instant};
 use oer_esp32s31_hal::root::RadioHardware;
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
@@ -29,10 +31,15 @@ fn calibration_identity() -> PhyCalibrationIdentity {
     }
 }
 
+type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+
+static RADIO: StaticCell<Radio> = StaticCell::new();
+
 /// The concurrently split radio and the IEEE 802.15.4 client's owners. The
-/// images are terminal: the radio stays split.
+/// images are terminal: the radio stays split. The radio is published to
+/// the PHY register-image reader, which reads it under its lease.
 pub(super) struct Client {
-    pub(super) radio: RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>,
+    pub(super) radio: &'static Radio,
     pub(super) defaults: Ieee802154PibDefaults,
 }
 
@@ -46,6 +53,8 @@ impl Client {
             EspHalRadioClocks::new(),
             calibration_identity(),
         );
+        let radio: &'static Radio = RADIO.init(radio);
+        crate::product_hil::phy_register_image::install(radio);
         let defaults = Ieee802154PibDefaults::default();
         let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)?;
         Some((Self { radio, defaults }, parked))
@@ -54,7 +63,7 @@ impl Client {
     /// Start the client. Bring-up holds the PHY registration future, so it
     /// is pinned in place.
     pub(super) async fn start(&mut self, parked: Ieee802154Parked) -> Option<Ieee802154System> {
-        let started = pin!(start(&self.radio, parked, self.defaults));
+        let started = pin!(start(self.radio, parked, self.defaults));
         started.await.ok()
     }
 
@@ -72,7 +81,7 @@ impl Client {
 
     /// Stop the client. Teardown holds the RF close future, pinned in place.
     pub(super) async fn stop(&mut self, system: Ieee802154System) -> Option<Ieee802154Parked> {
-        let stopped = pin!(system.stop(&self.radio));
+        let stopped = pin!(system.stop(self.radio));
         stopped.await.ok()
     }
 }

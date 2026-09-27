@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 185;
+pub const PROTOCOL_VERSION: u16 = 186;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -546,6 +546,9 @@ pub enum Command {
     MaintainIeee802154SessionPhy,
     /// Measure the energy on one channel and assess it once.
     AssessIeee802154SessionChannel(Ieee802154SessionAssessRequest),
+    /// Stop the session's client and start it again, as between the air
+    /// check's cycles, then apply the session configuration and receive.
+    RestartIeee802154SessionRadio,
     /// Start OpenThread over the composed client and join the dataset's
     /// network.
     StartIeee802154Thread(Ieee802154ThreadStartRequest),
@@ -1148,6 +1151,8 @@ pub enum Event {
     Ieee802154SessionPhyMaintained(Ieee802154SessionPhyMaintenance),
     /// Correlated result of [`Command::AssessIeee802154SessionChannel`].
     Ieee802154SessionAssessed(Ieee802154SessionAssessment),
+    /// Correlated result of [`Command::RestartIeee802154SessionRadio`].
+    Ieee802154SessionRadioRestarted(Ieee802154SessionRestartEvidence),
     /// Correlated result of [`Command::StartIeee802154Thread`].
     Ieee802154ThreadStarted(Ieee802154SessionResult),
     /// Correlated result of [`Command::QueryIeee802154Thread`].

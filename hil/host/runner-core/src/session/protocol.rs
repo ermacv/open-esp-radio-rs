@@ -1396,6 +1396,25 @@ impl SerialCapture {
         }
     }
 
+    /// Stop the running session's client and start it again, then apply the
+    /// session configuration and receive.
+    pub fn restart_ieee802154_session_radio(
+        &self,
+        timeout: Duration,
+    ) -> Result<Ieee802154SessionRestartEvidence> {
+        match self
+            .send_command(0, Command::RestartIeee802154SessionRadio, timeout)?
+            .body
+        {
+            Event::Ieee802154SessionRadioRestarted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => Err(format!(
+                "device rejected the IEEE 802.15.4 session radio restart: {reason:?}"
+            )
+            .into()),
+            _ => Err("device returned an invalid IEEE 802.15.4 session radio restart".into()),
+        }
+    }
+
     /// Scan the energy on one channel and assess it once in the running
     /// session.
     pub fn assess_ieee802154_session_channel(

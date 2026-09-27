@@ -638,6 +638,14 @@ pub struct Ieee802154SessionReceiveEvidence {
     pub frames: heapless::Vec<Ieee802154SessionReceivedFrame, IEEE802154_SESSION_RECORDED_FRAMES>,
 }
 
+/// Outcome of restarting the radio of a running session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Ieee802154SessionRestartEvidence {
+    pub result: Ieee802154SessionResult,
+    /// The client's stop closed RF, as the last shared PHY client.
+    pub rf_closed: bool,
+}
+
 /// Outcome of one PHY maintenance request in a session.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Ieee802154SessionPhyMaintenance {

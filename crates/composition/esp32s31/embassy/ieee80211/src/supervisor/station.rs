@@ -1936,7 +1936,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                     _runner.services().hardware().mac_rx_dma_snapshot(),
                 );
                 log_rx_ring_topology("exit", _runner.services().rx().dma());
-                diagnostics_debug!(
+                diagnostics_event!(
                     "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} hardware_beacon_frontier={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} security={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),

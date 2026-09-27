@@ -173,6 +173,11 @@ impl Arbiter {
         if let Some(nested) = self.join_enclosing(me, enclosing, &claims)? {
             return Ok(nested);
         }
+        if let Some(refusal) =
+            crate::maintenance::refusal(&self.maintenance()?, &request.owner, &claims)
+        {
+            return Err(refusal.into());
+        }
         let (budget, source) = budget::resolve(
             request.budget,
             &request.work,

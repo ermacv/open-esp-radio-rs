@@ -98,6 +98,7 @@ fn snapshot(runs: &Path) -> Result<Value> {
         "holders": status.holders,
         "queue": status.queue,
         "devices": status.devices,
+        "maintenance": status.maintenance,
         "leases": history,
         "runs": newest_runs(runs, RECENT_RUNS),
     }))

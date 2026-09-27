@@ -143,16 +143,20 @@ function queue(list) {
     </div>`).join("");
 }
 
-function devices(list) {
+function devices(list, maintenance) {
   if (!list.length) return '<p class="empty">No boards known.</p>';
   const rows = list.map((d) => {
+    const held = (maintenance || []).find((m) => m.mac === d.mac);
+    const service = held
+      ? `<div class="bad">maintenance by ${esc(held.owner)}: ${esc(held.reason)}</div>`
+      : "";
     const f = d.firmware;
     const firmware = !f ? '<span class="muted">unknown</span>'
       : f.kind === "flashed"
         ? `<span class="work">${esc(f.image)}</span> <span class="muted">app ${esc(f.application_sha256.slice(0, 12))}</span>`
         : `<span class="muted">${esc(f.kind)}</span>`;
     const by = f ? `${esc(f.owner)} <span class="muted">${when(f.unix)}</span>` : "";
-    return `<tr><td><b>${esc(d.label)}</b><div class="claims">${esc(d.mac ?? "")}</div></td>
+    return `<tr><td><b>${esc(d.label)}</b><div class="claims">${esc(d.mac ?? "")}</div>${service}</td>
       <td>${d.port ? esc(d.port) : '<span class="muted">not attached</span>'}</td>
       <td>${firmware}</td><td>${by}</td></tr>`;
   }).join("");
@@ -192,7 +196,7 @@ async function refresh() {
     if (data.error) throw new Error(data.error);
     $("holders").innerHTML = holders(data.holders);
     $("queue").innerHTML = queue(data.queue);
-    $("devices").innerHTML = devices(data.devices);
+    $("devices").innerHTML = devices(data.devices, data.maintenance);
     $("runs").innerHTML = runs(data.runs);
     $("leases").innerHTML = leases(data.leases);
     last = Date.now();

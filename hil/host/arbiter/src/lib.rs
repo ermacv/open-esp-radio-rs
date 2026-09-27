@@ -19,6 +19,7 @@ mod budget;
 mod devices;
 mod grant;
 mod history;
+pub mod maintenance;
 mod notify;
 mod process;
 mod queue;
@@ -36,6 +37,7 @@ pub use devices::{
 };
 pub use grant::{BUDGET_ENV, Grant, LEASE_ENV, OWNER_ENV, Request, SHORT_ENV, default_owner};
 pub use history::{LeaseOutcome, LeaseRecord};
+pub use maintenance::Maintenance;
 pub use process::process_started_unix_millis;
 pub use state::{AIR, Claim, Mode, STAND};
 pub use status::{HolderStatus, QueuedStatus, Status};

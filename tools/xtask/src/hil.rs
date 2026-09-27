@@ -63,7 +63,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         }
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
-        Some("devices") => return devices(&args[1..]),
+        Some("devices") => return devices(ctx, &options, &args[1..]),
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
         Some("flash") => {
             let request = oer_hil_arbiter::Request {
@@ -130,6 +130,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil devices [--json]          boards: name, chip, port, last firmware
   cargo hil devices set MAC [--chip CHIP] [--name NAME]
+  cargo hil [--owner NAME] devices maintenance BOARD --reason TEXT   only NAME may claim BOARD until release
+  cargo hil devices release BOARD
   cargo hil runs list [--scenario S] [--outcome O] [--commit C] [--image I] [--since 3d]
   cargo hil runs why RUN              why a run did not pass: failure, missed criteria, log tail
   cargo hil runs compare A B [--measurement TEXT]   measurement means side by side
@@ -810,7 +812,11 @@ fn firmware(
 }
 
 /// `cargo hil devices [--json]` and `cargo hil devices set MAC ...`.
-fn devices(args: &[OsString]) -> Result<std::process::ExitCode> {
+fn devices(
+    ctx: &Context,
+    options: &LeaseOptions,
+    args: &[OsString],
+) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     #[derive(clap::Parser)]
     #[command(name = "cargo hil devices", no_binary_name = true)]
@@ -830,13 +836,59 @@ fn devices(args: &[OsString]) -> Result<std::process::ExitCode> {
             #[arg(long)]
             name: Option<String>,
         },
+        /// Take a board out of service: until `release`, only this owner
+        /// (`--owner`, else the checkout) may claim it. Leases already held
+        /// run on.
+        Maintenance {
+            #[arg(value_name = "NAME|MAC")]
+            board: String,
+            #[arg(long)]
+            reason: String,
+        },
+        /// Return a board to service.
+        Release {
+            #[arg(value_name = "NAME|MAC")]
+            board: String,
+        },
     }
     let cli = DevicesCli::try_parse_from(args)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
-    if let Some(DevicesCommand::Set { mac, chip, name }) = cli.command {
-        let device = arbiter.set_device(oer_hil_arbiter::Device { mac, chip, name })?;
-        println!("{} {}", device.mac, device.label());
-        return Ok(std::process::ExitCode::SUCCESS);
+    match cli.command {
+        Some(DevicesCommand::Set { mac, chip, name }) => {
+            let device = arbiter.set_device(oer_hil_arbiter::Device { mac, chip, name })?;
+            println!("{} {}", device.mac, device.label());
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
+        Some(DevicesCommand::Maintenance { board, reason }) => {
+            let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
+            let owner = options.owner(ctx);
+            arbiter.set_maintenance(oer_hil_arbiter::Maintenance {
+                mac: mac.clone(),
+                owner: owner.clone(),
+                reason,
+                since_unix: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_secs(),
+            })?;
+            println!("{board} ({mac}) is under maintenance by {owner}");
+            for holder in arbiter.conflicting_holders(&[oer_hil_arbiter::Claim::board(&mac)])? {
+                println!(
+                    "still held by #{} {} `{}` until it ends",
+                    holder.id, holder.owner, holder.work
+                );
+            }
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
+        Some(DevicesCommand::Release { board }) => {
+            let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
+            if arbiter.clear_maintenance(&mac)? {
+                println!("{board} ({mac}) is back in service");
+            } else {
+                println!("{board} ({mac}) was not under maintenance");
+            }
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
+        None => {}
     }
     let status = arbiter.status()?;
     if cli.json {

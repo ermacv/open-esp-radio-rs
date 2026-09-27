@@ -222,6 +222,13 @@ identified by the MAC address its USB Serial/JTAG port reports as USB serial
 number, independent of `/dev/ttyACM*` numbering. Every board is part of the
 stand: flash and use any board only under a lease.
 
+A board can be taken out of service: `cargo hil --owner NAME devices
+maintenance BOARD --reason TEXT` records it in `maintenance.json` of the
+arbiter directory, and until `cargo hil devices release BOARD` every request
+that claims the board, or the whole stand, is refused with the reason unless
+its owner is NAME. A lease already held runs on. `cargo hil queue` and the
+dashboard list boards under maintenance.
+
 A board is named by its full chip name (`esp32s31`, `esp32c5`). The registry
 names boards itself: the only board of a chip is the chip, and once a chip has
 several boards each becomes the chip with the last four hexadecimal digits of

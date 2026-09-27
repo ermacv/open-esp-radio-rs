@@ -24,6 +24,9 @@ pub struct Status {
     /// The newest event of every startup-artifact host file.
     pub startup_artifacts: Vec<BoardEvent>,
     pub recent: Vec<LeaseRecord>,
+    /// Boards out of service.
+    #[serde(default)]
+    pub maintenance: Vec<crate::Maintenance>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -144,7 +147,9 @@ impl Arbiter {
             })
             .collect();
         let history = self.history()?;
+        let maintenance = self.maintenance()?;
         Ok(Status {
+            maintenance,
             holders: state
                 .holders
                 .into_iter()
@@ -233,6 +238,13 @@ impl std::fmt::Display for Status {
                 device.label,
                 device.port.as_deref().unwrap_or("not attached"),
                 describe(&device.firmware)
+            )?;
+        }
+        for board in &self.maintenance {
+            writeln!(
+                text,
+                "MAINTENANCE {} by {}: {}",
+                board.mac, board.owner, board.reason
             )?;
         }
         for artifact in &self.startup_artifacts {

@@ -167,10 +167,6 @@ pub const DECISIONS: &[Decision] = &[
                 "phy/src/target_port.rs",
                 "registers: &mut impl SharedPhyAccess,",
             ),
-            (
-                "phy/src/target_port.rs",
-                "channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,",
-            ),
             ("phy/src/target_port.rs", "observer: &mut O,"),
             ("phy/src/target_port.rs", "platform: &mut P,"),
             ("phy/src/target_port.rs", "&'port mut self,"),
@@ -184,10 +180,6 @@ pub const DECISIONS: &[Decision] = &[
             (
                 "phy/src/target_port/temperature.rs",
                 "registers: &mut impl SharedPhyAccess,",
-            ),
-            (
-                "phy/src/validation.rs",
-                "channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,",
             ),
             ("phy/src/validation.rs", "observer: &mut O,"),
             (

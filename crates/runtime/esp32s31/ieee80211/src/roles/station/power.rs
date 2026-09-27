@@ -6,7 +6,8 @@
 //! [`StationPowerLink`] to [`run_station_power_agent`], which runs beside the
 //! datapath with the [`RadioSystem`]. The agent also carries the station
 //! TBTT interrupt, the coexistence phases and the Bluetooth preemption end
-//! back to control, each with the coexistence state it read.
+//! back to control. Control reads the coexistence state itself, from a
+//! [`PowerCoexSource`], at every step, as the vendor reads it at every input.
 //!
 //! Control counts the commands it sent and the agent the commands it
 //! performed. Until both agree, control holds every frame but its Null, so
@@ -30,9 +31,7 @@ use oer_esp32s31_ieee80211_sta::{
 };
 
 #[cfg(target_arch = "riscv32")]
-pub use agent::{
-    StationRf, StationRfPower, finish_station_power, read_power_coex, run_station_power_agent,
-};
+pub use agent::{StationRf, StationRfPower, finish_station_power, run_station_power_agent};
 
 /// Why the power agent stopped serving its station.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,9 +65,9 @@ pub struct StationPowerLink<M: RawMutex> {
     /// Wakes control for an input, a performed command or a failure.
     wake: Signal<M, ()>,
     tbtt: AtomicBool,
+    coex: BlockingMutex<M, Cell<Option<&'static (dyn PowerCoexSource + Sync)>>>,
     phase: BlockingMutex<M, Cell<Option<CoexPhaseView>>>,
     preemption: BlockingMutex<M, Cell<Option<Option<u64>>>>,
-    coex: BlockingMutex<M, Cell<Option<PowerCoexSnapshot>>>,
     failure: BlockingMutex<M, Cell<Option<StationPowerFailure>>>,
 }
 
@@ -78,18 +77,21 @@ impl<M: RawMutex> Default for StationPowerLink<M> {
     }
 }
 
-/// One association's use of a [`StationPowerLink`], with the coexistence
-/// state power management starts from.
-#[derive(Clone, Copy)]
+/// The coexistence state Wi-Fi's power management reads, without the
+/// arbiter lease.
+pub trait PowerCoexSource {
+    fn power_coex(&self) -> PowerCoexSnapshot;
+}
+
+/// One association's use of a [`StationPowerLink`].
 pub struct StationPowerBinding<'link, M: RawMutex> {
     pub(super) link: &'link StationPowerLink<M>,
-    pub(super) coex: PowerCoexSnapshot,
 }
 
 impl<M: RawMutex> StationPowerLink<M> {
-    /// Start one association on this link: forget the previous
-    /// association's inputs and commands, and publish `coex`.
-    pub fn bind(&self, coex: PowerCoexSnapshot) -> StationPowerBinding<'_, M> {
+    /// Start one association on this link, reading the coexistence state
+    /// from `coex`: forget the previous association's inputs and commands.
+    pub fn bind(&self, coex: &'static (dyn PowerCoexSource + Sync)) -> StationPowerBinding<'_, M> {
         self.commands.clear();
         self.sent.store(0, Ordering::Release);
         self.performed.store(0, Ordering::Release);
@@ -98,8 +100,8 @@ impl<M: RawMutex> StationPowerLink<M> {
         self.phase.lock(|cell| cell.set(None));
         self.preemption.lock(|cell| cell.set(None));
         self.failure.lock(|cell| cell.set(None));
-        self.publish_coex(coex);
-        StationPowerBinding { link: self, coex }
+        self.coex.lock(|cell| cell.set(Some(coex)));
+        StationPowerBinding { link: self }
     }
 
     pub const fn new() -> Self {
@@ -109,9 +111,9 @@ impl<M: RawMutex> StationPowerLink<M> {
             performed: AtomicU32::new(0),
             wake: Signal::new(),
             tbtt: AtomicBool::new(false),
+            coex: BlockingMutex::new(Cell::new(None)),
             phase: BlockingMutex::new(Cell::new(None)),
             preemption: BlockingMutex::new(Cell::new(None)),
-            coex: BlockingMutex::new(Cell::new(None)),
             failure: BlockingMutex::new(Cell::new(None)),
         }
     }
@@ -141,6 +143,11 @@ impl<M: RawMutex> StationPowerLink<M> {
             || self.failure.lock(Cell::get).is_some()
     }
 
+    /// The coexistence state now, once an association bound the link.
+    pub fn coex(&self) -> Option<PowerCoexSnapshot> {
+        self.coex.lock(Cell::get).map(PowerCoexSource::power_coex)
+    }
+
     pub fn take_tbtt(&self) -> bool {
         self.tbtt.swap(false, Ordering::AcqRel)
     }
@@ -151,10 +158,6 @@ impl<M: RawMutex> StationPowerLink<M> {
 
     pub fn take_preemption(&self) -> Option<Option<u64>> {
         self.preemption.lock(Cell::take)
-    }
-
-    pub fn coex(&self) -> Option<PowerCoexSnapshot> {
-        self.coex.lock(Cell::get)
     }
 
     pub fn failure(&self) -> Option<StationPowerFailure> {
@@ -187,10 +190,6 @@ impl<M: RawMutex> StationPowerLink<M> {
         }
         self.wake.signal(());
     }
-
-    fn publish_coex(&self, coex: PowerCoexSnapshot) {
-        self.coex.lock(|cell| cell.set(Some(coex)));
-    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -205,7 +204,9 @@ mod agent {
         connected_control::{ConnectedPowerCommand, PowerCoexSnapshot},
         modem_sleep::{CoexPhaseView, CoexView, PmCoexEvent},
     };
-    use oer_esp32s31_radio_runtime::{CoexPreemptionEnd, RadioGuard, RadioSystem};
+    use oer_esp32s31_radio_runtime::{
+        CoexPreemptionEnd, RadioGuard, RadioSystem, WifiCoexViewCell,
+    };
 
     use embassy_sync::blocking_mutex::raw::RawMutex;
 
@@ -214,7 +215,7 @@ mod agent {
         ConcurrentRfError, concurrent::ConcurrentAcquire, state::client::PhyPllTrackClock,
     };
 
-    use super::{StationPowerFailure, StationPowerLink, StationRfPowerError};
+    use super::{PowerCoexSource, StationPowerFailure, StationPowerLink, StationRfPowerError};
     use crate::datapath::irq::EmbassyPowerIrqRuntime;
 
     impl<M: RawMutex> StationPowerLink<M> {
@@ -316,27 +317,20 @@ mod agent {
         ) -> impl Future<Output = Result<(), StationRfPowerError>> + 'a;
     }
 
-    /// The coexistence state Wi-Fi's power management reads.
-    pub fn read_power_coex<P, C: PlatformClockProvider>(
-        radio: &mut RadioGuard<'_, P, C>,
-    ) -> PowerCoexSnapshot {
-        let beacon_pti = radio
-            .lease()
-            .coex_pti(PmCoexEvent::BeaconWindow.coex_event())
-            .value();
-        let schedule = radio.coex_schedule();
-        PowerCoexSnapshot {
-            view: CoexView {
-                active: radio.coex_active_for(CoexStatusType::Wifi),
-                current_period: schedule.current_period(),
-                flexible_period: schedule.flexible_period(),
-                interval: schedule.interval(),
-                phase0_share_percent: schedule
-                    .phase_by_index(0)
-                    .map_or(0, |phase| phase.share_percent()),
-            },
-            beacon_pti: MacPti::new(u32::from(beacon_pti))
-                .expect("coexistence priorities are four-bit values"),
+    impl PowerCoexSource for WifiCoexViewCell {
+        fn power_coex(&self) -> PowerCoexSnapshot {
+            let view = self.get();
+            PowerCoexSnapshot {
+                view: CoexView {
+                    active: view.active,
+                    current_period: view.current_period,
+                    flexible_period: view.flexible_period,
+                    interval: view.interval,
+                    phase0_share_percent: view.first_phase_share_percent,
+                },
+                beacon_pti: MacPti::new(u32::from(view.beacon_pti.value()))
+                    .expect("coexistence priorities are four-bit values"),
+            }
         }
     }
 
@@ -381,11 +375,9 @@ mod agent {
                         link.fail(failure);
                         return failure;
                     }
-                    link.publish_coex(read_power_coex(&mut guard));
                     link.performed.fetch_add(1, Ordering::AcqRel);
                 }
                 Either3::Second(phase) => {
-                    link.publish_coex(read_power_coex(&mut guard));
                     link.phase.lock(|cell| {
                         cell.set(Some(CoexPhaseView {
                             share_percent: phase.share_percent(),
@@ -394,7 +386,6 @@ mod agent {
                     });
                 }
                 Either3::Third(Either::First(end)) => {
-                    link.publish_coex(read_power_coex(&mut guard));
                     let end = match end {
                         CoexPreemptionEnd::At(at) => Some(at.as_micros()),
                         CoexPreemptionEnd::Unknown => None,
@@ -405,7 +396,6 @@ mod agent {
                     if !observation.sta_tbtt() {
                         continue;
                     }
-                    link.publish_coex(read_power_coex(&mut guard));
                     link.tbtt.store(true, Ordering::Release);
                 }
             }

@@ -289,8 +289,8 @@ impl ConnectedStaPort {
         Ok(tx)
     }
 
-    /// Construct BlockAck, beacon-loss and RX-reorder control from the same
-    /// connected plan used by RX and TX.
+    /// Construct BlockAck, beacon-loss, RX-reorder and power control from the
+    /// same connected plan used by RX and TX.
     pub fn build_control<'resources, M: RawMutex, const CAPACITY: usize>(
         plan: &ConnectedStaPlan,
         resources: ConnectedStaControlResources<'resources, M, CAPACITY>,

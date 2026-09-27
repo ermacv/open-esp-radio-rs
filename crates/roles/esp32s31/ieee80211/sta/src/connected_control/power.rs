@@ -139,6 +139,25 @@ impl ConnectedPower {
         }
     }
 
+    /// Start a new association in place, without a temporary of the whole
+    /// state on the caller's stack.
+    fn restart(&mut self, sleep_type: SleepType, join_beacon: PmBeacon, coex: PowerCoexSnapshot) {
+        self.engine = ModemSleep::new(sleep_type);
+        self.start = Some(join_beacon);
+        self.coex = Some(coex);
+        self.deadlines = [None; 5];
+        self.tbtt = false;
+        self.phase = None;
+        self.preemption = None;
+        self.nulls = [None; 2];
+        self.commands.fill(None);
+        self.command_head = 0;
+        self.command_len = 0;
+        self.tx_blocked = false;
+        self.network_held = false;
+        self.network_offered = false;
+    }
+
     pub(super) fn coex_view(&self) -> CoexView {
         match self.coex {
             Some(coex) => coex.view,
@@ -212,10 +231,7 @@ impl ConnectedControlCore {
         join_beacon: PmBeacon,
         coex: PowerCoexSnapshot,
     ) {
-        self.power = ConnectedPower::new();
-        self.power.engine = ModemSleep::new(sleep_type);
-        self.power.start = Some(join_beacon);
-        self.power.coex = Some(coex);
+        self.power.restart(sleep_type, join_beacon, coex);
     }
 
     /// The station's power management.

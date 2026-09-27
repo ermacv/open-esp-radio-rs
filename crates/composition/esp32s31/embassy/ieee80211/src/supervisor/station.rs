@@ -44,7 +44,7 @@ use oer_esp32s31_ieee80211_sta::connected_rx::{
 use oer_esp32s31_ieee80211_runtime::roles::radio_channel::WifiReconnectPolicy;
 use oer_esp32s31_ieee80211_runtime::roles::station::epoch::StoppedStaRx;
 use oer_esp32s31_ieee80211_runtime::roles::station::power::{
-    StationPowerLink, StationRf, finish_station_power, read_power_coex, run_station_power_agent,
+    StationPowerLink, StationRf, finish_station_power, run_station_power_agent,
 };
 use oer_esp32s31_ieee80211_runtime::{
     datapath::{
@@ -1689,10 +1689,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     };
     let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
     let tx_sequences = sequences;
-    let power = {
-        let mut guard = radio.lock().await;
-        STATION_POWER_LINK.bind(read_power_coex(&mut guard))
-    };
+    let power = STATION_POWER_LINK.bind(radio.wifi_coex_view());
     WifiReconnectPolicy::get().association_started();
     let drivers = match ConnectedStaPort::compose(
         plan,

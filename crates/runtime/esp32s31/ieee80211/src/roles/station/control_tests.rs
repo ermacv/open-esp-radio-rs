@@ -563,6 +563,15 @@ fn shared_coex() -> PowerCoexSnapshot {
     }
 }
 
+/// Wi-Fi shares the air with Bluetooth for the whole test.
+struct SharedCoex;
+
+impl crate::roles::station::power::PowerCoexSource for SharedCoex {
+    fn power_coex(&self) -> PowerCoexSnapshot {
+        shared_coex()
+    }
+}
+
 fn join_beacon() -> PmBeacon {
     PmBeacon {
         timestamp_tsf: 1_000_000,
@@ -1667,7 +1676,7 @@ fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
         false,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_power_management(SleepType::None, join_beacon(), link.bind(shared_coex()));
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1784,7 +1793,7 @@ fn frames_wait_until_the_agent_performed_the_commands_before_them() {
         false,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_power_management(SleepType::None, join_beacon(), link.bind(shared_coex()));
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1814,7 +1823,7 @@ fn shutdown_stops_power_management_and_hands_the_releases_to_the_agent() {
         false,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_power_management(SleepType::None, join_beacon(), link.bind(shared_coex()));
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,

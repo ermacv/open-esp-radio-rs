@@ -299,8 +299,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         join_beacon: PmBeacon,
         binding: StationPowerBinding<'resources, M>,
     ) {
+        let coex = binding
+            .link
+            .coex()
+            .expect("a bound power link reads its coexistence state");
         self.core
-            .enable_power_management(sleep_type, join_beacon, binding.coex);
+            .enable_power_management(sleep_type, join_beacon, coex);
         self.power = Some(binding.link);
     }
 

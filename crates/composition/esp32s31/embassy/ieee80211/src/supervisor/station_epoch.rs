@@ -102,7 +102,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let control = tx_storage
             .take_control()
             .expect("initial scan owns the ordinary TX owner");
-        let scan_plan = StationScanPlan::new(discovery, None, security.mode());
+        let scan_plan = StationScanPlan::new(discovery, None, security.policy());
         let scan_request = scan_plan.request(identity.station_address);
         let scan = run_esp32s31_station_scan(
             StationScanResources {
@@ -283,7 +283,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let control = tx_storage
             .take_control()
             .expect("connected teardown returned the ordinary TX owner");
-        let scan_plan = StationScanPlan::new(discovery, None, security.mode());
+        let scan_plan = StationScanPlan::new(discovery, None, security.policy());
         let scan_request = scan_plan.request(station.station_address);
         let scan = run_esp32s31_station_scan(
             StationScanResources {
@@ -897,19 +897,27 @@ impl ProductionWifiEpochRunner {
         );
         match security {
             StationSecurity::Open => StaAttemptSecurity::open(sequences),
-            StationSecurity::Wpa2Personal(pmk) => {
-                let mut supplicant_nonce = [0; 32];
-                for word in supplicant_nonce.chunks_exact_mut(4) {
-                    word.copy_from_slice(&self.trng.random().to_le_bytes());
-                }
-                StaAttemptSecurity::new(
-                    pmk,
-                    supplicant_nonce,
-                    sequences,
-                    oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::Unprotected,
-                )
-            }
+            StationSecurity::Wpa2Personal { pmk, password } => StaAttemptSecurity::new(
+                StaPersonalCredentials::wpa2(pmk, password, super::tx_entropy),
+                self.supplicant_nonce(),
+                sequences,
+                oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::Unprotected,
+            ),
+            StationSecurity::Wpa3Personal(password) => StaAttemptSecurity::new(
+                StaPersonalCredentials::wpa3(password, super::tx_entropy),
+                self.supplicant_nonce(),
+                sequences,
+                oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::Unprotected,
+            ),
         }
+    }
+
+    fn supplicant_nonce(&self) -> [u8; 32] {
+        let mut supplicant_nonce = [0; 32];
+        for word in supplicant_nonce.chunks_exact_mut(4) {
+            word.copy_from_slice(&self.trng.random().to_le_bytes());
+        }
+        supplicant_nonce
     }
 
     pub(super) fn prepare_station_task(
@@ -923,7 +931,7 @@ impl ProductionWifiEpochRunner {
             stopped.into_parts();
         let station_resources = join_station_activation_resources(physical_resources, station_role);
         let security = self.fresh_security(security);
-        let requested_security = security.mode();
+        let requested_security = security.policy();
         let owner = match station_resources {
             ProductionWifiStoppedResources::Fresh(fresh) => {
                 let materialized = materialize_production_wifi(wifi, fresh);

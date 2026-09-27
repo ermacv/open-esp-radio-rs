@@ -38,7 +38,7 @@ use oer_esp32s31_ieee80211_sta::{
 
 use oer_ieee80211_mac::{
     scan::{ScanRecord, ScanTable},
-    security::WifiSecurityMode,
+    security::StaSecurityPolicy,
     station::StaSequenceCounter,
 };
 
@@ -70,14 +70,14 @@ pub struct StationScanPlan {
     channels: [u8; 14],
     channel_count: u8,
     ssid: WifiSsid,
-    security: WifiSecurityMode,
+    security: StaSecurityPolicy,
 }
 
 impl StationScanPlan {
     pub fn new(
         discovery: StationDiscovery,
         preferred_channel: Option<u8>,
-        security: WifiSecurityMode,
+        security: StaSecurityPolicy,
     ) -> Self {
         let mut channels = [0; 14];
         let mut channel_count = 0_usize;
@@ -134,7 +134,7 @@ pub struct StationScanRequest<'ssid, 'rates, 'channels> {
     pub supported_rates: &'rates [u8],
     pub descriptor_capacity: Option<u32>,
     pub select_candidate: bool,
-    pub security: WifiSecurityMode,
+    pub security: StaSecurityPolicy,
 }
 
 impl<'ssid, 'rates, 'channels> StationScanRequest<'ssid, 'rates, 'channels> {
@@ -144,7 +144,7 @@ impl<'ssid, 'rates, 'channels> StationScanRequest<'ssid, 'rates, 'channels> {
         station_address: [u8; 6],
         target_ssid: &'ssid [u8],
         supported_rates: &'rates [u8],
-        security: WifiSecurityMode,
+        security: StaSecurityPolicy,
     ) -> Self {
         Self {
             config,

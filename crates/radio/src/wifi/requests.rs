@@ -14,8 +14,12 @@ pub use oer_ieee80211_ap::{
     AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
     AccessPointInactiveTimeoutError,
 };
-use oer_ieee80211_mac::{channel::WifiChannel, security::WifiSecurityMode, ssid::WifiSsid};
-use oer_ieee80211_rsn::Pmk;
+use oer_ieee80211_mac::{
+    channel::WifiChannel,
+    security::{StaSecurityPolicy, WifiSecurityMode},
+    ssid::WifiSsid,
+};
+use oer_ieee80211_rsn::{Pmk, PskDerivationError, sae::SaePassword};
 use oer_ieee80211_softmac::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
     EspNowPeerTableError, EspNowPhyMode, EspNowProtocol, MacServiceCapabilities,
@@ -148,12 +152,23 @@ impl WifiScanRequest {
 
 /// Security material owned by one station runtime request.
 ///
-/// Open owns no key material. WPA2-Personal owns the derived PMK rather than
-/// retaining a plaintext passphrase across reconnects; [`Pmk`] clears its key
-/// bytes on drop.
+/// Open owns no key material. WPA2-Personal owns the derived PMK and, since
+/// the station upgrades to SAE whenever the access point offers it, the
+/// password as well; WPA3-Personal owns only the password, from which every
+/// attempt derives its SAE password element. [`Pmk`] and [`SaePassword`]
+/// clear their bytes on drop and cannot be formatted.
 pub enum StationSecurity {
     Open,
-    Wpa2Personal(Pmk),
+    Wpa2Personal { pmk: Pmk, password: SaePassword },
+    Wpa3Personal(SaePassword),
+}
+
+/// Why personal station credentials were refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationCredentialError {
+    Psk(PskDerivationError),
+    /// An SAE password of 1 to 63 octets.
+    SaePasswordLength,
 }
 
 impl StationSecurity {
@@ -161,28 +176,28 @@ impl StationSecurity {
         Self::Open
     }
 
-    pub const fn wpa2_personal(pmk: Pmk) -> Self {
-        Self::Wpa2Personal(pmk)
+    /// WPA2-Personal from a passphrase: PSK with the PMK derived from the
+    /// passphrase and SSID, or SAE with the passphrase whenever the access
+    /// point offers it.
+    pub fn wpa2_personal(passphrase: &[u8], ssid: &[u8]) -> Result<Self, StationCredentialError> {
+        let password =
+            SaePassword::new(passphrase).ok_or(StationCredentialError::SaePasswordLength)?;
+        let pmk = Pmk::derive(passphrase, ssid).map_err(StationCredentialError::Psk)?;
+        Ok(Self::Wpa2Personal { pmk, password })
     }
 
-    pub const fn mode(&self) -> WifiSecurityMode {
-        match self {
-            Self::Open => WifiSecurityMode::Open,
-            Self::Wpa2Personal(_) => WifiSecurityMode::Wpa2Personal,
-        }
+    /// WPA3-Personal: SAE only.
+    pub fn wpa3_personal(password: &[u8]) -> Result<Self, StationCredentialError> {
+        SaePassword::new(password)
+            .map(Self::Wpa3Personal)
+            .ok_or(StationCredentialError::SaePasswordLength)
     }
 
-    pub const fn pmk(&self) -> Option<&Pmk> {
+    pub const fn policy(&self) -> StaSecurityPolicy {
         match self {
-            Self::Open => None,
-            Self::Wpa2Personal(pmk) => Some(pmk),
-        }
-    }
-
-    pub fn into_pmk(self) -> Option<Pmk> {
-        match self {
-            Self::Open => None,
-            Self::Wpa2Personal(pmk) => Some(pmk),
+            Self::Open => StaSecurityPolicy::Open,
+            Self::Wpa2Personal { .. } => StaSecurityPolicy::Wpa2Personal,
+            Self::Wpa3Personal(_) => StaSecurityPolicy::Wpa3Personal,
         }
     }
 }
@@ -191,7 +206,8 @@ impl fmt::Debug for StationSecurity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Open => formatter.write_str("Open"),
-            Self::Wpa2Personal(_) => formatter.write_str("Wpa2Personal(<redacted>)"),
+            Self::Wpa2Personal { .. } => formatter.write_str("Wpa2Personal(<redacted>)"),
+            Self::Wpa3Personal(_) => formatter.write_str("Wpa3Personal(<redacted>)"),
         }
     }
 }
@@ -740,6 +756,10 @@ impl WifiServiceRequest {
     }
 
     /// Join a checked station-only topology to its runtime policy.
+    #[allow(
+        clippy::result_large_err,
+        reason = "a rejected no-alloc station request must return its exact credential owner"
+    )]
     pub fn station(
         plan: WifiPlan,
         request: StationRequest,
@@ -1058,6 +1078,10 @@ impl WifiSupervisorConfiguration {
         self
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "a rejected no-alloc station request must return its exact credential owner"
+    )]
     pub fn plan_station(
         self,
         request: StationRequest,

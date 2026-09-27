@@ -8,8 +8,7 @@ use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use {
-    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::security::WifiSecurityMode,
-    oer_ieee80211_mac::station::StaTxSequenceCounters,
+    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::station::StaTxSequenceCounters,
     oer_ieee80211_mac::station::association::Preference,
 };
 
@@ -388,7 +387,7 @@ fn phase_owner_returns_runtime_target_and_security_without_reconstruction() {
         station_address: [2, 0, 0, 0, 0, 1],
         access_point: ScanRecord::EMPTY,
         association_preference: Preference::Automatic,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
     };
     let owner = StationServiceOwner::new(
         7_u8,
@@ -399,7 +398,11 @@ fn phase_owner_returns_runtime_target_and_security_without_reconstruction() {
             station,
         },
         StaAttemptSecurity::new(
-            pmk,
+            oer_esp32s31_ieee80211_sta::attempt::StaPersonalCredentials::wpa2(
+                pmk,
+                oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
+                || 7,
+            ),
             [0x5a; 32],
             sequences,
             oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
@@ -439,7 +442,7 @@ fn common_engine_rejects_running_scan_without_refresh_before_port_entry() {
         station_address: [2, 0, 0, 0, 0, 2],
         access_point: ScanRecord::EMPTY,
         association_preference: Preference::Automatic,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
     };
     let owner = StationServiceOwner::new(
         7_u8,
@@ -448,7 +451,11 @@ fn common_engine_rejects_running_scan_without_refresh_before_port_entry() {
             station,
         },
         StaAttemptSecurity::new(
-            pmk,
+            oer_esp32s31_ieee80211_sta::attempt::StaPersonalCredentials::wpa2(
+                pmk,
+                oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
+                || 7,
+            ),
             [0x33; 32],
             sequences,
             oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
@@ -491,7 +498,7 @@ fn common_engine_selects_candidate_before_dispatching_initial_join() {
     let identity = StaIdentity {
         station_address: [2, 0, 0, 0, 0, 4],
         association_preference: Preference::Automatic,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
     };
     let owner = StationServiceOwner::new(
         7_u8,
@@ -502,7 +509,11 @@ fn common_engine_selects_candidate_before_dispatching_initial_join() {
             identity,
         },
         StaAttemptSecurity::new(
-            pmk,
+            oer_esp32s31_ieee80211_sta::attempt::StaPersonalCredentials::wpa2(
+                pmk,
+                oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
+                || 7,
+            ),
             [0x55; 32],
             sequences,
             oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
@@ -550,7 +561,7 @@ fn common_engine_dispatches_join_ready_scan_owner_to_reconnected_phase() {
         station_address: [2, 0, 0, 0, 0, 3],
         access_point: ScanRecord::EMPTY,
         association_preference: Preference::Automatic,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
     };
     let owner = StationServiceOwner::new(
         7_u8,
@@ -559,7 +570,11 @@ fn common_engine_dispatches_join_ready_scan_owner_to_reconnected_phase() {
             station,
         },
         StaAttemptSecurity::new(
-            pmk,
+            oer_esp32s31_ieee80211_sta::attempt::StaPersonalCredentials::wpa2(
+                pmk,
+                oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
+                || 7,
+            ),
             [0x44; 32],
             sequences,
             oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
@@ -607,7 +622,11 @@ fn running_scan_completion_prepares_reconnect_only_for_a_selected_candidate() {
     let sequences = StaTxSequenceCounters::new(SequenceNumber::new(0).unwrap());
     let pmk = Pmk::derive(b"password", b"ssid").expect("test WPA2 input is valid");
     let security = StaAttemptSecurity::new(
-        pmk,
+        oer_esp32s31_ieee80211_sta::attempt::StaPersonalCredentials::wpa2(
+            pmk,
+            oer_ieee80211_rsn::sae::SaePassword::new(b"password").unwrap(),
+            || 7,
+        ),
         [0; 32],
         sequences,
         oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
@@ -616,7 +635,7 @@ fn running_scan_completion_prepares_reconnect_only_for_a_selected_candidate() {
         station_address: [2, 0, 0, 0, 0, 8],
         access_point: ScanRecord::EMPTY,
         association_preference: Preference::Automatic,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
     };
     let candidate = ScanRecord {
         bssid: [0x02, 1, 2, 3, 4, 9],

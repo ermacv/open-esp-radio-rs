@@ -14,7 +14,9 @@ use oer_esp32s31_ieee80211::tx::WifiTxPowerProfile;
 
 use oer_esp32s31_ieee80211_mac::tx::TxCompletion;
 
-use oer_ieee80211_mac::station::{AssociationRequest, OpenAuthenticationRequest};
+use oer_ieee80211_mac::station::{
+    AssociationRequest, OpenAuthenticationRequest, SaeAuthenticationFrame,
+};
 
 /// RX capability consumed by a concrete ESP32-S31 join adapter.
 pub trait StaJoinReceive<H> {
@@ -55,6 +57,13 @@ pub trait StaJoinTransmit<H> {
         &'a mut self,
         hardware: &'a mut H,
         request: AssociationRequest<'a>,
+        reconnect: Option<ReconnectFramePriority>,
+    ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a;
+
+    fn transmit_sae_authentication<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+        frame: SaeAuthenticationFrame<'a>,
         reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a;
 }

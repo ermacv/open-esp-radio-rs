@@ -41,7 +41,7 @@ use esp_hal::{
 };
 
 use oer::wifi::{
-    Pmk, Preference, StaReconnectPolicy, StationRequest, StationScanChannels, StationScanPolicy,
+    Preference, StaReconnectPolicy, StationRequest, StationScanChannels, StationScanPolicy,
     StationSecurity, WifiChannel, WifiMacAddress, WifiScanRequest, WifiSsid,
 };
 
@@ -140,11 +140,11 @@ async fn station_task(
     let access_point_mac = WifiMacAddress::new(access_point_address)
         .expect("ESP32-S31 eFuse must contain a unicast access-point address");
     let ssid = WifiSsid::new(STA_SSID.as_bytes()).expect("station SSID must be valid");
-    let pmk = Pmk::derive(STA_PASSPHRASE.as_bytes(), ssid.as_bytes())
+    let security = StationSecurity::wpa2_personal(STA_PASSPHRASE.as_bytes(), ssid.as_bytes())
         .expect("station credentials must be valid");
     let request = StationRequest::new(
         ssid,
-        StationSecurity::wpa2_personal(pmk),
+        security,
         StaReconnectPolicy::new(3, 100, 1_000, 100)
             .expect("station reconnect policy must be valid"),
         StationScanPolicy::new(

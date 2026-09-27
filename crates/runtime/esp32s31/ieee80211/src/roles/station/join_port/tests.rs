@@ -14,10 +14,11 @@ use oer_esp32s31_ieee80211_sta::{
 };
 
 use {
-    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::station::AssociationRequest,
-    oer_ieee80211_mac::station::OpenAuthenticationRequest,
+    oer_ieee80211_mac::scan::ScanRecord,
+    oer_ieee80211_mac::station::AssociationRequest,
     oer_ieee80211_mac::station::association::PhyMode,
     oer_ieee80211_mac::station::association::Preference,
+    oer_ieee80211_mac::station::{OpenAuthenticationRequest, SaeAuthenticationFrame},
 };
 
 use oer_ieee80211_sta::join::{
@@ -153,6 +154,18 @@ impl StaJoinTransmit<Hardware> for Transmit {
             request.phy,
             reconnect,
         ));
+        ready(Ok(completion()))
+    }
+
+    fn transmit_sae_authentication<'a>(
+        &'a mut self,
+        hardware: &'a mut Hardware,
+        frame: SaeAuthenticationFrame<'a>,
+        reconnect: Option<ReconnectFramePriority>,
+    ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
+        hardware
+            .actions
+            .push(Action::Authentication(frame.sequence_number, reconnect));
         ready(Ok(completion()))
     }
 }

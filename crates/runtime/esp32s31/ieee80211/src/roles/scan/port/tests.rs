@@ -124,13 +124,16 @@ impl ScanReceivePort<Hardware> for Receive {
         if mac_stopped {
             return Ok(ScanRxProgress::default());
         }
-        let mut beacon = [0_u8; 47];
+        let mut beacon = [0_u8; 67];
         beacon[0] = 0x80;
         beacon[34] = 0x10;
         beacon[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
         beacon[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
         beacon[42..45].copy_from_slice(&[3, 1, 11]);
-        beacon[45..47].copy_from_slice(&[48, 0]);
+        // WPA2-Personal: CCMP group and pairwise ciphers, PSK.
+        beacon[45..67].copy_from_slice(&[
+            48, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+        ]);
         assert_ne!(
             context.observe_management_frame(&beacon, -30),
             ScanObservation::Ignored
@@ -215,7 +218,7 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
             [7; 6],
             b"test",
             &[0x82, 0x84],
-            WifiSecurityMode::Wpa2Personal,
+            oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
         )
         .with_descriptor_capacity(88),
         DwellTimer::default(),
@@ -286,7 +289,7 @@ fn standalone_scan_records_matching_bss_without_selecting_it() {
             [7; 6],
             b"test",
             &[0x82, 0x84],
-            WifiSecurityMode::Wpa2Personal,
+            oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
         )
         .with_descriptor_capacity(88)
         .with_candidate_selection(false),

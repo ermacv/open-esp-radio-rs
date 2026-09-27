@@ -43,8 +43,9 @@ use oer_ieee80211_mac::{
     extensions::{espressif::esp_now::EspNowRandomValue, wmm::WmmParameterSet},
     management::{ProbeRequest, ProbeRequestError},
     station::{
-        AssociationRequest, AssociationRequestError, OpenAuthenticationRequest, StaDataFrame,
-        StaProtectedDataFrame, StaSequenceCounter, StationFrameError,
+        AssociationRequest, AssociationRequestError, OpenAuthenticationRequest,
+        SaeAuthenticationFrame, StaDataFrame, StaProtectedDataFrame, StaSequenceCounter,
+        StationFrameError,
     },
 };
 
@@ -402,6 +403,21 @@ where
             .await
     }
 
+    /// Publish one SAE Authentication frame on the management voice queue,
+    /// as Open Authentication is published.
+    pub async fn transmit_sae_authentication<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        frame: SaeAuthenticationFrame<'_>,
+        reconnect: Option<ReconnectFramePriority>,
+    ) -> Result<TxCompletion, ControlTxError> {
+        let frame_length = frame
+            .encode(&mut self.ordinary.buffer_mut()?[TX_METADATA_SIZE..])
+            .map_err(ControlTxError::StationEncode)?;
+        self.transmit_management_voice(hardware, frame_length, reconnect)
+            .await
+    }
+
     pub async fn transmit_association<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -611,6 +627,15 @@ where
         reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
         Self::transmit_association(self, hardware, request, reconnect)
+    }
+
+    fn transmit_sae_authentication<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+        frame: SaeAuthenticationFrame<'a>,
+        reconnect: Option<ReconnectFramePriority>,
+    ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
+        Self::transmit_sae_authentication(self, hardware, frame, reconnect)
     }
 }
 

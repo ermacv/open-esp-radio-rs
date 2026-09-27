@@ -11,7 +11,7 @@ pub use config::{
     WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
     WifiStationConfig,
 };
-pub use oer_ieee80211_rsn::Pmk;
+pub use oer_ieee80211_rsn::{Pmk, sae::SaePassword};
 pub use oer_ieee80211_softmac::{
     MONITOR_CHANNEL_SEQUENCE_CAPACITY, MacRxEvidence, MonitorChannelPolicy, MonitorChannelSequence,
     MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
@@ -24,8 +24,8 @@ pub use requests::{
     AccessPointInactiveTimeout, AccessPointInactiveTimeoutError, AccessPointRequest,
     AccessPointRequestError, AccessPointSecurity, MonitorCapturePolicy, MonitorRequest,
     StandaloneEspNowPeerError, StandaloneEspNowRequest, StationAccessPointRequest,
-    StationDiscovery, StationListenInterval, StationPowerMode, StationRequest,
-    StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationCredentialError, StationDiscovery, StationListenInterval, StationPowerMode,
+    StationRequest, StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
     StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
     WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
     WifiServiceRequestError, WifiServiceRequestFailure, WifiSupervisorConfiguration,

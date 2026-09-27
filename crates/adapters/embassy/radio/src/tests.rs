@@ -11,7 +11,6 @@ use embassy_futures::select::{Either, select};
 use embassy_futures::{block_on, join::join};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::signal::Signal;
-use oer_ieee80211_rsn::Pmk;
 use oer_ieee80211_sta::station::StaReconnectPolicy;
 use {
     oer_ieee80211_mac::channel::WifiChannel, oer_ieee80211_mac::station::association::Preference,
@@ -31,7 +30,7 @@ use oer_radio::wifi::test_support::TEST_CAPABILITIES;
 fn station_request() -> StationRequest {
     StationRequest::new(
         WifiSsid::new(b"mailbox").unwrap(),
-        StationSecurity::wpa2_personal(Pmk::derive(b"password", b"mailbox").unwrap()),
+        StationSecurity::wpa2_personal(b"password", b"mailbox").unwrap(),
         StaReconnectPolicy::new(2, 10, 100, 10).unwrap(),
         StationScanPolicy::new(
             StationScanChannels::CHANNELS_1_TO_13,

@@ -96,7 +96,7 @@ impl ProductionWifiEpochRunner {
             station.station_address(),
             &[],
             &ESP32S31_STATION_PROBE_RATES,
-            oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal,
+            oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
         )
         .with_descriptor_capacity(ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY)
         .without_candidate_selection();

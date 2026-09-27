@@ -31,7 +31,7 @@ use oer_esp32s31_ieee80211_sta::{
 
 use oer_ieee80211_mac::{
     scan::{ScanRecord, ScanTable, best_matching_ssid_and_security},
-    security::WifiSecurityMode,
+    security::StaSecurityPolicy,
     station::StaSequenceCounter,
 };
 
@@ -163,7 +163,7 @@ pub struct ScanStation<'ssid, 'rates> {
     supported_rates: &'rates [u8],
     descriptor_capacity: Option<u32>,
     select_candidate: bool,
-    security: WifiSecurityMode,
+    security: StaSecurityPolicy,
 }
 
 impl<'ssid, 'rates> ScanStation<'ssid, 'rates> {
@@ -171,7 +171,7 @@ impl<'ssid, 'rates> ScanStation<'ssid, 'rates> {
         station_address: [u8; 6],
         target_ssid: &'ssid [u8],
         supported_rates: &'rates [u8],
-        security: WifiSecurityMode,
+        security: StaSecurityPolicy,
     ) -> Self {
         Self {
             station_address,

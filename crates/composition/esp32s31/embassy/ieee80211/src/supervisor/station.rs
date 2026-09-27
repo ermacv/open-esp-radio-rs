@@ -1505,7 +1505,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     let material_is_open = matches!(&material, StaAttemptSecurityMaterial::Open);
     let material_has_connected_wpa2 = matches!(
         &material,
-        StaAttemptSecurityMaterial::Wpa2Personal {
+        StaAttemptSecurityMaterial::Personal {
             connected: Some(_),
             ..
         }
@@ -1765,7 +1765,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID,
         drivers.services,
     );
-    if let StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } = &mut material {
+    if let StaAttemptSecurityMaterial::Personal { connected, .. } = &mut material {
         let ConnectedStaGroupSecurity::Wpa2PersonalRekey {
             group,
             material: group_material,
@@ -1846,6 +1846,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         crate::status::StationLinkSecurity::new(
             negotiated_security,
             report.link.management_protection,
+            report.link.sae,
         ),
     );
     #[cfg(feature = "diagnostics")]
@@ -1986,7 +1987,7 @@ pub(crate) async fn run_connected<'state, 'security>(
         StaAttemptSecurityMaterial::Open => group_security
             .take()
             .expect("Open connected epoch retains its no-key group marker"),
-        StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } => {
+        StaAttemptSecurityMaterial::Personal { connected, .. } => {
             let security = stopped
                 .quiesced
                 .services
@@ -2159,12 +2160,17 @@ pub(crate) async fn run_connected<'state, 'security>(
         ),
         security: match material {
             StaAttemptSecurityMaterial::Open => StaAttemptSecurity::open(sequences),
-            StaAttemptSecurityMaterial::Wpa2Personal {
-                pmk,
+            StaAttemptSecurityMaterial::Personal {
+                credentials,
                 supplicant_nonce,
                 message4_protection,
                 ..
-            } => StaAttemptSecurity::new(pmk, supplicant_nonce, sequences, message4_protection),
+            } => StaAttemptSecurity::new(
+                credentials,
+                supplicant_nonce,
+                sequences,
+                message4_protection,
+            ),
         },
         outcome,
     };

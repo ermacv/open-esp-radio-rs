@@ -11,7 +11,11 @@ use oer_esp32s31_ieee80211_sta::{
     join::{StaJoinObserver, StaJoinPortError, StaJoinReceive, StaJoinTransmit},
 };
 
-use oer_ieee80211_mac::station::{AssociationRequest, OpenAuthenticationRequest};
+use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_ieee80211_mac::station::{
+    AssociationRequest, OpenAuthenticationRequest, SaeAuthenticationFrame,
+};
+use oer_ieee80211_sta::join::sae::StaSaeTransmission;
 
 use oer_ieee80211_sta::join::{
     StaJoinBackend, StaJoinRxObserver, association::StaAssociationAttempt,
@@ -67,6 +71,39 @@ where
                         source: self.station.station_address,
                         bssid: self.station.access_point.bssid,
                         sequence_number: attempt.sequence_number,
+                    },
+                    reconnect,
+                )
+                .await
+                .map_err(StaJoinPortError::Transmit)?;
+            self.storage.observer.authentication_transmitted(completion);
+            Ok(())
+        }
+    }
+
+    fn transmit_sae_authentication<'a>(
+        &'a mut self,
+        sequence_number: SequenceNumber,
+        transmission: &'a StaSaeTransmission,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        async move {
+            let reconnect = self
+                .radio
+                .coex
+                .connection_frame(ConnectionFrame::Authentication)
+                .await;
+            let completion = self
+                .radio
+                .transmit
+                .transmit_sae_authentication(
+                    self.radio.hardware,
+                    SaeAuthenticationFrame {
+                        source: self.station.station_address,
+                        bssid: self.station.access_point.bssid,
+                        sequence_number,
+                        transaction: transmission.transaction,
+                        status_code: transmission.status_code,
+                        body: transmission.body(),
                     },
                     reconnect,
                 )

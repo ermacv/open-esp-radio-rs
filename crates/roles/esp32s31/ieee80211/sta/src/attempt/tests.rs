@@ -173,7 +173,7 @@ fn selected_channel_preserves_negotiated_ht40_geometry() {
         station_address: [0; 6],
         access_point,
         association_preference: Preference::Automatic,
-        security: WifiSecurityMode::Open,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Open,
     };
     assert_eq!(
         station.selected_channel(),

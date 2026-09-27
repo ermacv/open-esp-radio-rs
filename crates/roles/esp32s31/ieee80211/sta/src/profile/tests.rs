@@ -2,7 +2,6 @@ use super::*;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::{
     scan::ScanRecord,
-    security::WifiSecurityMode,
     station::{AssociationRequest, HeUlMuPowerCapability, StaPowerCapability},
 };
 
@@ -67,7 +66,7 @@ fn ht20_association_request_reproduces_the_migration_capabilities() {
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 1,
         phy: PhyMode::Ht20,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
         power_capability: None,
         he_ul_mu_power: None,
     }
@@ -99,7 +98,7 @@ fn ht40_request_claims_width_short_gi_without_unqualified_mcs32() {
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 1,
         phy: PhyMode::Ht40,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
         power_capability: None,
         he_ul_mu_power: None,
     }
@@ -182,7 +181,7 @@ fn he20_request_masks_unowned_power_save_and_feedback_claims() {
         sequence_number: SequenceNumber::new(2).unwrap(),
         listen_interval: 3,
         phy: PhyMode::He20,
-        security: WifiSecurityMode::Wpa2Personal,
+        security: oer_ieee80211_mac::security::StaSecurityPolicy::Wpa2Personal,
         power_capability: Some(StaPowerCapability::new(-11, 20).unwrap()),
         he_ul_mu_power: Some(power),
     }

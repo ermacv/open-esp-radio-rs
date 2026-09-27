@@ -10,6 +10,8 @@ pub enum StaAttemptTargetError<J, W> {
     Association(StaJoinError<StaJoinPortError<RxFrontierError, J>>),
     Peer(StaPeerPortError),
     Security(StaSecurityError),
+    /// No SAE commit could be formed from the password.
+    SaeCommit(oer_ieee80211_rsn::sae::SaeError),
     Wpa2Handshake(
         RsnHandshakeError<Wpa2HandshakePortError<RxFrontierError, W>, SoftwareAesKeyUnwrapError>,
     ),

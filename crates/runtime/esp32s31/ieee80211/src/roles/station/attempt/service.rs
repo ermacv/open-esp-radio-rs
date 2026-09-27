@@ -76,7 +76,7 @@ where
         // or channel/MMIO mutation. A public caller may only pair a
         // station request with security material of the same exact mode;
         // never reinterpret missing WPA material as an Open attempt.
-        if owner.station.security != owner.security.mode() {
+        if owner.station.security != owner.security.policy() {
             return Err(StaAttemptStepError::terminal(
                 StaAttemptTargetError::Security(StaSecurityError::SecurityModeMismatch),
             ));
@@ -87,7 +87,7 @@ where
         owner.pending_keys = None;
         owner.installed_security = None;
         owner.report = StaAttemptReport::default();
-        owner.report.security = Some(match owner.security.mode() {
+        owner.report.security = Some(match owner.security.policy().link_mode() {
             WifiSecurityMode::Open => {
                 StaAttemptSecurityExecution::OpenHandshakeAndKeyInstallSkipped
             }
@@ -126,6 +126,35 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
+        let selected = select_association_rsn(&owner.station.access_point, owner.station.security)
+            .map_err(|error| {
+                StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
+            })?;
+        let sae = match selected.akm() {
+            SelectedAkm::Sae { h2e } => {
+                let credentials = owner.security.credentials().ok_or_else(|| {
+                    StaAttemptStepError::terminal(StaAttemptTargetError::State(
+                        StaAttemptStateError::MissingConnectedSecurity,
+                    ))
+                })?;
+                let commit = credentials
+                    .sae_commit(
+                        owner.station.station_address,
+                        &owner.station.access_point,
+                        h2e,
+                    )
+                    .map_err(|error| {
+                        StaAttemptStepError::retry_current(StaAttemptTargetError::SaeCommit(error))
+                    })?;
+                Some(StaSaeAuthentication::new(
+                    owner.station.station_address,
+                    owner.station.access_point.bssid,
+                    commit,
+                    h2e,
+                ))
+            }
+            SelectedAkm::Open | SelectedAkm::Psk | SelectedAkm::PskSha256 => None,
+        };
         owner
             .channel
             .publish_coex_activity(WifiCoexActivity::Connecting {
@@ -155,13 +184,30 @@ where
         );
         port.prepare_authentication();
         let mut runner = StaJoinRunner::new(port, EmbassyStaJoinTimer);
-        let result = runner
-            .authenticate(
-                owner.station.station_address,
-                owner.station.access_point.bssid,
-                owner.security.sequences.non_qos_mut(),
-            )
-            .await;
+        let result = match sae {
+            Some(exchange) => runner
+                .authenticate_sae(exchange, owner.security.sequences.non_qos_mut())
+                .await
+                .map(|pmk| {
+                    owner
+                        .security
+                        .set_sae_pmk(Some(oer_ieee80211_rsn::Pmk::from_bytes(pmk.pmk)));
+                    StaAuthenticationSuccess {
+                        attempt: 1,
+                        total_received_frames: 0,
+                    }
+                }),
+            None => {
+                owner.security.set_sae_pmk(None);
+                runner
+                    .authenticate(
+                        owner.station.station_address,
+                        owner.station.access_point.bssid,
+                        owner.security.sequences.non_qos_mut(),
+                    )
+                    .await
+            }
+        };
         let (port, _) = runner.into_parts();
         owner.receive = Some(port.into_receive().into_owner());
         match result {
@@ -211,7 +257,7 @@ where
             .associate(
                 owner.station.station_address,
                 owner.station.access_point.bssid,
-                owner.station.security,
+                owner.station.security.link_mode(),
                 owner.security.sequences.non_qos_mut(),
             )
             .await;
@@ -248,18 +294,17 @@ where
             owner.station.association_preference,
         )
         .phy;
-        let management_protection =
-            select_association_rsn(&owner.station.access_point, owner.station.security)
-                .map_err(|error| {
-                    StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
-                })?
-                .management_protection();
+        let selected = select_association_rsn(&owner.station.access_point, owner.station.security)
+            .map_err(|error| {
+                StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
+            })?;
         let ProgrammedStaPeer { peer, report } = StaPeerPort::program(
             StaPeerRadio::new(&mut *owner.hardware, &mut *owner.transmit),
             StaPeerStation::new(
                 owner.station.station_address,
                 association_phy,
-                management_protection,
+                selected.management_protection(),
+                matches!(selected.akm(), SelectedAkm::Sae { .. }),
             ),
             &response,
             prepared,
@@ -274,7 +319,7 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
-        if owner.security.mode() == WifiSecurityMode::Open {
+        if owner.security.policy().link_mode() == WifiSecurityMode::Open {
             owner.installed_security = Some(StaInstalledSecurity::Open);
             return Ok(());
         }
@@ -289,9 +334,10 @@ where
                 reconnecting: WifiReconnectPolicy::get().active(),
             })
             .await;
-        let selected_rsn = select_wpa2_psk_rsn(&owner.station.access_point).map_err(|error| {
-            StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
-        })?;
+        let selected_rsn =
+            select_association_rsn(&owner.station.access_point, owner.station.security).map_err(
+                |error| StaAttemptStepError::terminal(StaAttemptTargetError::Security(error)),
+            )?;
         let receive = owner.receive.take().ok_or_else(|| {
             StaAttemptStepError::terminal(StaAttemptTargetError::State(
                 StaAttemptStateError::MissingReceive,
@@ -353,7 +399,7 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
-        if owner.security.mode() == WifiSecurityMode::Open {
+        if owner.security.policy().link_mode() == WifiSecurityMode::Open {
             return Ok(());
         }
         let pending = owner.pending_keys.take().ok_or_else(|| {
@@ -442,7 +488,7 @@ where
                 Some(StaAttemptStateError::MissingConnectedPeer)
             } else if owner.installed_security.is_none() {
                 Some(StaAttemptStateError::MissingKeys)
-            } else if owner.security.mode() == WifiSecurityMode::Wpa2Personal
+            } else if owner.security.policy().link_mode() == WifiSecurityMode::Wpa2Personal
                 && !owner.security.has_connected_wpa2()
             {
                 Some(StaAttemptStateError::MissingConnectedSecurity)

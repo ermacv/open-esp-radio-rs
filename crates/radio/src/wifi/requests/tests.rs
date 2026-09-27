@@ -11,7 +11,7 @@ use {
 fn station_request() -> StationRequest {
     StationRequest::new(
         WifiSsid::new(b"test-network").unwrap(),
-        StationSecurity::wpa2_personal(Pmk::derive(b"password", b"test-network").unwrap()),
+        StationSecurity::wpa2_personal(b"password", b"test-network").unwrap(),
         StaReconnectPolicy::new(3, 100, 1_000, 100).unwrap(),
         StationScanPolicy::new(
             StationScanChannels::CHANNELS_1_TO_13,

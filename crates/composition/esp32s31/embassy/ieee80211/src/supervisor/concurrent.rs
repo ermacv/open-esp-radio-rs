@@ -502,7 +502,7 @@ impl ProductionWifiEpochRunner {
             matches!(&station_security_material, StaAttemptSecurityMaterial::Open);
         let material_is_wpa2 = matches!(
             &station_security_material,
-            StaAttemptSecurityMaterial::Wpa2Personal { .. }
+            StaAttemptSecurityMaterial::Personal { .. }
         );
         let (tx_security, mut group_security) = match installed_security {
             StaInstalledSecurity::Open if material_is_open => (
@@ -693,7 +693,7 @@ impl ProductionWifiEpochRunner {
                 power: None,
             },
         );
-        if let StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } =
+        if let StaAttemptSecurityMaterial::Personal { connected, .. } =
             &mut station_security_material
         {
             let ConnectedStaGroupSecurity::Wpa2PersonalRekey {
@@ -1078,7 +1078,7 @@ impl ProductionWifiEpochRunner {
             StaAttemptSecurityMaterial::Open => group_security
                 .take()
                 .expect("paired Open station retains its no-key group marker"),
-            StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } => {
+            StaAttemptSecurityMaterial::Personal { connected, .. } => {
                 let station_security = station_control
                     .take_wpa2_security()
                     .expect("paired WPA2 station control returns its security owner");
@@ -1114,13 +1114,13 @@ impl ProductionWifiEpochRunner {
         );
         let station_security = match station_security_material {
             StaAttemptSecurityMaterial::Open => StaAttemptSecurity::open(teardown.sequences),
-            StaAttemptSecurityMaterial::Wpa2Personal {
-                pmk,
+            StaAttemptSecurityMaterial::Personal {
+                credentials,
                 supplicant_nonce,
                 message4_protection,
                 ..
             } => StaAttemptSecurity::new(
-                pmk,
+                credentials,
                 supplicant_nonce,
                 teardown.sequences,
                 message4_protection,

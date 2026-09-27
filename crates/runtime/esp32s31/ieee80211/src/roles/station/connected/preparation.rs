@@ -78,7 +78,10 @@ impl<'security, R, E, S, N, T> StartedNetworkConnection<'security, R, E, S, N, T
         oer_ieee80211_mac::security::WifiSecurityMode,
         oer_ieee80211_mac::security::WifiSecurityMode,
     ) {
-        (self.installed_security.mode(), self.security.mode())
+        (
+            self.installed_security.mode(),
+            self.security.policy().link_mode(),
+        )
     }
 
     pub fn into_parts(self) -> ConnectedNetworkStartedParts<'security, R, E, S, N, T> {
@@ -189,7 +192,7 @@ pub fn prepare_esp32s31_connected_service<
         security,
     } = resources.into_parts();
     let installed_mode = installed_security.mode();
-    let material_mode = security.mode();
+    let material_mode = security.policy().link_mode();
     if installed_mode != material_mode {
         return Err(ConnectedServicePrepareFailure {
             error: ConnectedStaConfigError::SecurityModeMismatch {

@@ -57,11 +57,11 @@ use oer_esp32s31_ieee80211_sta::{
 
 use oer_ieee80211_mac::{
     security::WifiSecurityMode,
-    station::{AssociationResponse, StaSecurityError, select_association_rsn, select_wpa2_psk_rsn},
+    station::{AssociationResponse, SelectedAkm, StaSecurityError, select_association_rsn},
 };
 
 use oer_ieee80211_sta::{
-    join::{StaJoinError, StaJoinRunner},
+    join::{StaAuthenticationSuccess, StaJoinError, StaJoinRunner, sae::StaSaeAuthentication},
     station::StaFailureDisposition,
 };
 

@@ -22,9 +22,11 @@ use oer_esp32s31_ieee80211_mac::{
 };
 
 use {
-    oer_ieee80211_mac::channel::WifiChannel, oer_ieee80211_mac::channel::WifiChannelError,
-    oer_ieee80211_mac::channel::WifiChannelWidth, oer_ieee80211_mac::scan::ScanRecord,
-    oer_ieee80211_mac::security::WifiSecurityMode,
+    oer_ieee80211_mac::channel::WifiChannel,
+    oer_ieee80211_mac::channel::WifiChannelError,
+    oer_ieee80211_mac::channel::WifiChannelWidth,
+    oer_ieee80211_mac::scan::ScanRecord,
+    oer_ieee80211_mac::security::{StaSecurityPolicy, WifiSecurityMode},
     oer_ieee80211_mac::station::StaTxSequenceCounters,
     oer_ieee80211_mac::station::association::Preference,
 };
@@ -34,7 +36,12 @@ use oer_ieee80211_sta::{
     station::{StaFailureDisposition, StaLifecycleStage},
 };
 
-use oer_ieee80211_rsn::{Pmk, runner::RsnKeyInstallMetadata, supplicant::RsnConnectedSupplicant};
+use oer_ieee80211_rsn::{
+    Pmk,
+    runner::RsnKeyInstallMetadata,
+    sae::{SaeCommit, SaeError, SaePassword, SaePasswordElement, SaePasswordToken},
+    supplicant::RsnConnectedSupplicant,
+};
 
 /// Immutable local/candidate policy for one attempt.
 #[derive(Clone, Copy)]
@@ -42,7 +49,7 @@ pub struct StaAttemptStation {
     pub station_address: [u8; 6],
     pub access_point: ScanRecord,
     pub association_preference: Preference,
-    pub security: WifiSecurityMode,
+    pub security: StaSecurityPolicy,
 }
 
 impl StaAttemptStation {
@@ -71,7 +78,7 @@ impl StaAttemptStation {
 pub struct StaIdentity {
     pub station_address: [u8; 6],
     pub association_preference: Preference,
-    pub security: WifiSecurityMode,
+    pub security: StaSecurityPolicy,
 }
 
 impl StaIdentity {
@@ -85,16 +92,99 @@ impl StaIdentity {
     }
 }
 
+/// The personal credentials of one station request.
+///
+/// A WPA2-Personal request keeps its PSK and, because the station upgrades to
+/// SAE whenever the access point offers it, the password as well; a
+/// WPA3-Personal request keeps only the password. `sae_random` draws the
+/// random scalars of every SAE commit, as the vendor's `os_get_random` does.
+pub struct StaPersonalCredentials {
+    policy: StaSecurityPolicy,
+    psk: Option<Pmk>,
+    sae_password: SaePassword,
+    sae_random: fn() -> u32,
+}
+
+impl StaPersonalCredentials {
+    pub const fn wpa2(psk: Pmk, sae_password: SaePassword, sae_random: fn() -> u32) -> Self {
+        Self {
+            policy: StaSecurityPolicy::Wpa2Personal,
+            psk: Some(psk),
+            sae_password,
+            sae_random,
+        }
+    }
+
+    pub const fn wpa3(sae_password: SaePassword, sae_random: fn() -> u32) -> Self {
+        Self {
+            policy: StaSecurityPolicy::Wpa3Personal,
+            psk: None,
+            sae_password,
+            sae_random,
+        }
+    }
+
+    pub const fn policy(&self) -> StaSecurityPolicy {
+        self.policy
+    }
+
+    /// This station's SAE commit toward `access_point`, deriving the password
+    /// element by hash to element when `h2e`, by hunting and pecking
+    /// otherwise. Random values outside 1 < value < r are redrawn, up to the
+    /// vendor's 100 draws.
+    ///
+    /// SOURCE: ESP-IDF `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+    /// `components/wpa_supplicant/src/common/dragonfly.c`
+    /// (`dragonfly_generate_scalar`).
+    pub fn sae_commit(
+        &self,
+        local: [u8; 6],
+        access_point: &ScanRecord,
+        h2e: bool,
+    ) -> Result<SaeCommit, SaeError> {
+        let password = self.sae_password.as_bytes();
+        let pwe = if h2e {
+            SaePasswordToken::derive(access_point.ssid_bytes(), password, None)
+                .password_element(local, access_point.bssid)
+        } else {
+            SaePasswordElement::hunting_and_pecking(password, local, access_point.bssid)?
+        };
+        let draw = || -> [u8; 32] {
+            let mut bytes = [0; 32];
+            for word in bytes.chunks_exact_mut(4) {
+                word.copy_from_slice(&(self.sae_random)().to_le_bytes());
+            }
+            bytes
+        };
+        for _ in 0..SAE_SCALAR_DRAWS {
+            match SaeCommit::new(pwe, draw(), draw()) {
+                Err(SaeError::UnsuitableRandom) => {}
+                commit => return commit,
+            }
+        }
+        Err(SaeError::UnsuitableRandom)
+    }
+}
+
+/// The vendor's bound on drawing SAE rand and mask.
+const SAE_SCALAR_DRAWS: u8 = 100;
+
 /// Security and sequence ownership retained across every finite phase.
 ///
 /// These values are owned, rather than borrowed from a composition root, so a
 /// complete station owner can move into an executor task without becoming
 /// self-referential. A supervisor can replace credentials only after this
 /// value returns through the finite task's terminal edge.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the no-alloc attempt owner keeps its credentials and PMK inline"
+)]
 pub enum StaAttemptSecurityMaterial {
     Open,
-    Wpa2Personal {
-        pmk: Pmk,
+    Personal {
+        credentials: StaPersonalCredentials,
+        /// The PMK an SAE authentication of the current attempt derived.
+        sae_pmk: Option<Pmk>,
         supplicant_nonce: [u8; 32],
         message4_protection: Wpa2Message4Protection,
         connected: Option<RsnConnectedSupplicant>,
@@ -109,15 +199,16 @@ pub struct StaAttemptSecurity<'role> {
 
 impl StaAttemptSecurity<'_> {
     pub const fn new(
-        pmk: Pmk,
+        credentials: StaPersonalCredentials,
         supplicant_nonce: [u8; 32],
         sequences: StaTxSequenceCounters,
         message4_protection: Wpa2Message4Protection,
     ) -> Self {
         Self {
             sequences,
-            material: StaAttemptSecurityMaterial::Wpa2Personal {
-                pmk,
+            material: StaAttemptSecurityMaterial::Personal {
+                credentials,
+                sae_pmk: None,
                 supplicant_nonce,
                 message4_protection,
                 connected: None,
@@ -134,40 +225,63 @@ impl StaAttemptSecurity<'_> {
         }
     }
 
-    pub const fn mode(&self) -> WifiSecurityMode {
-        match self.material {
-            StaAttemptSecurityMaterial::Open => WifiSecurityMode::Open,
-            StaAttemptSecurityMaterial::Wpa2Personal { .. } => WifiSecurityMode::Wpa2Personal,
+    pub const fn policy(&self) -> StaSecurityPolicy {
+        match &self.material {
+            StaAttemptSecurityMaterial::Open => StaSecurityPolicy::Open,
+            StaAttemptSecurityMaterial::Personal { credentials, .. } => credentials.policy,
         }
     }
 
-    pub const fn wpa2_material(&self) -> Option<(&Pmk, [u8; 32], Wpa2Message4Protection)> {
+    pub const fn credentials(&self) -> Option<&StaPersonalCredentials> {
         match &self.material {
             StaAttemptSecurityMaterial::Open => None,
-            StaAttemptSecurityMaterial::Wpa2Personal {
-                pmk,
+            StaAttemptSecurityMaterial::Personal { credentials, .. } => Some(credentials),
+        }
+    }
+
+    /// Record the PMK the current attempt's authentication derived: the SAE
+    /// PMK, or `None` when the attempt authenticated by PSK.
+    pub fn set_sae_pmk(&mut self, pmk: Option<Pmk>) {
+        if let StaAttemptSecurityMaterial::Personal { sae_pmk, .. } = &mut self.material {
+            *sae_pmk = pmk;
+        }
+    }
+
+    pub fn wpa2_material(&self) -> Option<(&Pmk, [u8; 32], Wpa2Message4Protection)> {
+        match &self.material {
+            StaAttemptSecurityMaterial::Open => None,
+            StaAttemptSecurityMaterial::Personal {
+                credentials,
+                sae_pmk,
                 supplicant_nonce,
                 message4_protection,
                 ..
-            } => Some((pmk, *supplicant_nonce, *message4_protection)),
+            } => sae_pmk
+                .as_ref()
+                .or(credentials.psk.as_ref())
+                .map(|pmk| (pmk, *supplicant_nonce, *message4_protection)),
         }
     }
 
     pub fn wpa2_handshake_parts(&mut self) -> Option<(&Pmk, [u8; 32], &mut StaTxSequenceCounters)> {
         match &self.material {
             StaAttemptSecurityMaterial::Open => None,
-            StaAttemptSecurityMaterial::Wpa2Personal {
-                pmk,
+            StaAttemptSecurityMaterial::Personal {
+                credentials,
+                sae_pmk,
                 supplicant_nonce,
                 ..
-            } => Some((pmk, *supplicant_nonce, &mut self.sequences)),
+            } => sae_pmk
+                .as_ref()
+                .or(credentials.psk.as_ref())
+                .map(|pmk| (pmk, *supplicant_nonce, &mut self.sequences)),
         }
     }
 
     pub fn set_connected(&mut self, value: RsnConnectedSupplicant) -> bool {
         match &mut self.material {
             StaAttemptSecurityMaterial::Open => false,
-            StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } => {
+            StaAttemptSecurityMaterial::Personal { connected, .. } => {
                 *connected = Some(value);
                 true
             }
@@ -177,7 +291,7 @@ impl StaAttemptSecurity<'_> {
     pub const fn has_connected_wpa2(&self) -> bool {
         matches!(
             &self.material,
-            StaAttemptSecurityMaterial::Wpa2Personal {
+            StaAttemptSecurityMaterial::Personal {
                 connected: Some(_),
                 ..
             }

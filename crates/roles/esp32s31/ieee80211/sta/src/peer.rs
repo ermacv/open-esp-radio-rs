@@ -72,6 +72,8 @@ pub struct StaPeerStation {
     /// The association request's RSN element negotiated management frame
     /// protection.
     pub management_protection: bool,
+    /// SAE authenticated the association (WPA3-Personal).
+    pub sae: bool,
 }
 
 impl StaPeerStation {
@@ -79,11 +81,13 @@ impl StaPeerStation {
         station_address: [u8; 6],
         association_phy: PhyMode,
         management_protection: bool,
+        sae: bool,
     ) -> Self {
         Self {
             station_address,
             association_phy,
             management_protection,
+            sae,
         }
     }
 }
@@ -102,6 +106,8 @@ pub struct StaConnectedLink {
     pub peer_qos: bool,
     /// The association protects its robust management frames.
     pub management_protection: bool,
+    /// SAE authenticated the association (WPA3-Personal).
+    pub sae: bool,
     pub association_phy: PhyMode,
     /// The selected HT channel width is allowed to use a 400 ns guard
     /// interval according to the AP's retained HT Capabilities IE.
@@ -246,6 +252,7 @@ impl StaPeerPort {
             beacon_timestamp_tsf: prepared.access_point.timestamp,
             peer_qos: plan.peer_qos,
             management_protection: station.management_protection,
+            sae: station.sae,
             association_phy: station.association_phy,
             peer_supports_ht_short_guard_interval: match station.association_phy {
                 PhyMode::Ht20 => prepared

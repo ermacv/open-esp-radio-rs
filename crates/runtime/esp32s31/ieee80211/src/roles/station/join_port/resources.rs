@@ -1,5 +1,5 @@
 use {
-    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::security::WifiSecurityMode,
+    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::security::StaSecurityPolicy,
     oer_ieee80211_mac::station::association::Preference,
 };
 
@@ -50,7 +50,7 @@ pub struct StaJoinStation {
     pub(super) access_point: ScanRecord,
     pub(super) association_preference: Preference,
     pub(super) listen_interval: u16,
-    pub(super) security: WifiSecurityMode,
+    pub(super) security: StaSecurityPolicy,
 }
 
 impl StaJoinStation {
@@ -64,7 +64,7 @@ impl StaJoinStation {
             access_point,
             association_preference,
             listen_interval: StationListenInterval::DEFAULT.get(),
-            security: WifiSecurityMode::Wpa2Personal,
+            security: StaSecurityPolicy::Wpa2Personal,
         }
     }
 
@@ -75,7 +75,7 @@ impl StaJoinStation {
     }
 
     #[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
-    pub const fn with_security(mut self, security: WifiSecurityMode) -> Self {
+    pub const fn with_security(mut self, security: StaSecurityPolicy) -> Self {
         self.security = security;
         self
     }

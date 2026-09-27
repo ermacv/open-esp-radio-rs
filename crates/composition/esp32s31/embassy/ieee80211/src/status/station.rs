@@ -23,12 +23,16 @@ pub enum StationLinkSecurity {
         /// The association protects its robust management frames.
         management_protection: bool,
     },
+    /// SAE authenticated the association; it always protects its management
+    /// frames.
+    Wpa3Personal,
 }
 
 impl StationLinkSecurity {
-    pub const fn new(mode: WifiSecurityMode, management_protection: bool) -> Self {
+    pub const fn new(mode: WifiSecurityMode, management_protection: bool, sae: bool) -> Self {
         match mode {
             WifiSecurityMode::Open => Self::Open,
+            WifiSecurityMode::Wpa2Personal if sae => Self::Wpa3Personal,
             WifiSecurityMode::Wpa2Personal => Self::Wpa2Personal {
                 management_protection,
             },

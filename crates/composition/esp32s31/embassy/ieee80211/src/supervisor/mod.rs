@@ -144,6 +144,7 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_esp32s31_ieee80211_sta::{
     attempt::{
         StaAttemptObserver, StaAttemptSecurity, StaAttemptStage, StaAttemptStation, StaIdentity,
+        StaPersonalCredentials,
     },
     control_tx::{ControlTransmitter, WifiTxResources},
     hardware::channel::ScanPhy,

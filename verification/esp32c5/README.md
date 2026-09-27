@@ -13,5 +13,8 @@ revision pinned for the [ESP32-S31](../esp32s31/README.md), so both chips are
 compared against the same vendor release. The Controller archive is the
 `esp32c5-bt-lib` submodule of that ESP-IDF revision. The ROM ELFs of chip
 revisions v0.x (`rom-rev0`) and v1.0 (`rom-rev100`) are pinned separately.
+The ESP-IDF files are the IEEE 802.15.4 driver sources and the ESP32-C5
+register, SoC and LL headers they include, the counterparts of the ESP32-S31
+pin.
 
 No scenario, probe or production crate uses these artifacts yet.

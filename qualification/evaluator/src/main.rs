@@ -12,7 +12,7 @@ use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs as tracked shards bound to their firmware and observer sources.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ...] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, as tracked shards bound to their firmware and observer sources.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -55,6 +55,8 @@ struct Arguments {
     /// `hil-evidence`: the HIL target whose programs name the run and
     /// evidence directories, instead of one `--manifest`.
     hil_target: Option<String>,
+    /// `hil-evidence --run`: record only these runs' observations.
+    runs: Vec<String>,
 }
 
 fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<PathBuf> {
@@ -87,6 +89,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut capability = None;
     let mut details = false;
     let mut hil_target = None;
+    let mut runs = Vec::new();
     while index < arguments.len() {
         match arguments[index].as_str() {
             "--details" => {
@@ -105,6 +108,17 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                 if capability.replace(value).is_some() {
                     return Err("duplicate --capability".into());
                 }
+            }
+            "--run" => {
+                let value = arguments
+                    .get(index + 1)
+                    .ok_or("--run requires a run ID")?
+                    .clone();
+                index += 2;
+                if command != Command::HilEvidence {
+                    return Err("--run is accepted by hil-evidence".into());
+                }
+                runs.push(value);
             }
             "--hil-target" => {
                 let value = arguments
@@ -188,6 +202,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         capability,
         details,
         hil_target,
+        runs,
     })
 }
 
@@ -244,7 +259,11 @@ fn execute(arguments: Arguments) -> Result<()> {
     }
     if let Some(target) = &arguments.hil_target {
         let manifest = model::hil_program(&arguments.root, target)?;
-        return record_hil_evidence(&arguments.root.join(manifest), &arguments.root);
+        return record_hil_evidence(
+            &arguments.root.join(manifest),
+            &arguments.root,
+            &arguments.runs,
+        );
     }
     let manifest = arguments.manifest.as_ref().ok_or("missing --manifest")?;
     let manifest_path = if manifest.is_absolute() {
@@ -253,7 +272,7 @@ fn execute(arguments: Arguments) -> Result<()> {
         arguments.root.join(manifest)
     };
     if arguments.command == Command::HilEvidence {
-        return record_hil_evidence(&manifest_path, &arguments.root);
+        return record_hil_evidence(&manifest_path, &arguments.root, &arguments.runs);
     }
     if arguments.command == Command::CatalogCheck {
         let catalog = CatalogView::load_for_program(&arguments.root, &manifest_path)?;
@@ -309,8 +328,17 @@ fn execute(arguments: Arguments) -> Result<()> {
     Ok(())
 }
 
-fn record_hil_evidence(manifest: &std::path::Path, root: &std::path::Path) -> Result<()> {
-    let recorded = Qualification::record_hil_evidence(manifest, root)?;
+fn record_hil_evidence(
+    manifest: &std::path::Path,
+    root: &std::path::Path,
+    runs: &[String],
+) -> Result<()> {
+    let runs = (!runs.is_empty()).then(|| {
+        runs.iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>()
+    });
+    let recorded = Qualification::record_hil_evidence(manifest, root, runs.as_ref())?;
     println!("HIL-EVIDENCE\tshards={}", recorded.len());
     for scenario in recorded {
         println!("HIL-SHARD\t{scenario}");

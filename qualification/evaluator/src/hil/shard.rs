@@ -80,6 +80,78 @@ fn digest(root: &Path, path: &Path) -> Result<String> {
     }
 }
 
+/// The repository files a run's source snapshot archived, with their bytes.
+struct Snapshot(BTreeMap<PathBuf, Vec<u8>>);
+
+impl Snapshot {
+    /// The snapshot `run` archived; `None` for a bundle recorded before
+    /// source snapshots.
+    fn load(run: &Path) -> Result<Option<Self>> {
+        let archive = run.join("source/snapshot/sources.tar");
+        if !archive.is_file() {
+            return Ok(None);
+        }
+        let mut files = BTreeMap::new();
+        let mut archive = tar::Archive::new(fs::File::open(&archive)?);
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            if !entry.header().entry_type().is_file() {
+                continue;
+            }
+            let path = entry.path()?.into_owned();
+            let Ok(relative) = path.strip_prefix("repository") else {
+                continue;
+            };
+            let relative = relative.to_owned();
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes)?;
+            files.insert(relative, bytes);
+        }
+        Ok(Some(Self(files)))
+    }
+
+    fn is_file(&self, path: &Path) -> bool {
+        self.0.contains_key(path)
+    }
+
+    /// The digest [`digest`] computes in a checkout holding exactly these
+    /// files: a file's SHA-256, or [`digest_directory`] over a directory.
+    fn digest(&self, path: &Path) -> Result<String> {
+        use sha2::{Digest as _, Sha256};
+        if let Some(bytes) = self.0.get(path) {
+            return Ok(format!("{:x}", Sha256::digest(bytes)));
+        }
+        let mut hash = Sha256::new();
+        let mut any = false;
+        for (file, bytes) in self.0.range(path.to_path_buf()..) {
+            let Ok(relative) = file.strip_prefix(path) else {
+                break;
+            };
+            let skipped_directory = relative
+                .parent()
+                .into_iter()
+                .flat_map(Path::components)
+                .any(|component| {
+                    let name = component.as_os_str().to_string_lossy();
+                    name == "target" || name.starts_with('.')
+                });
+            if skipped_directory || file.to_string_lossy().ends_with(".md") {
+                continue;
+            }
+            any = true;
+            let name = file.to_string_lossy();
+            hash.update((name.len() as u64).to_le_bytes());
+            hash.update(name.as_bytes());
+            hash.update((bytes.len() as u64).to_le_bytes());
+            hash.update(bytes);
+        }
+        if !any {
+            return Err(format!("source {} is not in the run's snapshot", path.display()).into());
+        }
+        Ok(format!("{:x}", hash.finalize()))
+    }
+}
+
 fn current(root: &Path, sources: &[SourceDigest]) -> bool {
     !sources.is_empty()
         && sources
@@ -235,12 +307,17 @@ fn observation_sources(
     let (Some(run), Some(subject)) = (&observation.run_directory, &observation.subject) else {
         return Ok(None);
     };
+    let snapshot = Snapshot::load(run)?;
+    let exists = |path: &Path| match &snapshot {
+        Some(snapshot) => snapshot.is_file(path),
+        None => root.join(path).is_file(),
+    };
     recorded_sources(
-        root,
         run,
         &subject.firmware,
         subject.observer.as_deref(),
         &|provenance| image_packages(root, provenance),
+        &exists,
     )
 }
 
@@ -331,13 +408,13 @@ fn image_packages(root: &Path, provenance: &Value) -> Result<Option<BTreeSet<Pat
 
 /// Cargo configuration files the builds of the firmware workspaces discover
 /// by walking up from each workspace directory.
-fn cargo_configuration(root: &Path) -> BTreeSet<PathBuf> {
+fn cargo_configuration(exists: &dyn Fn(&Path) -> bool) -> BTreeSet<PathBuf> {
     let mut files = BTreeSet::new();
     for workspace in FIRMWARE_WORKSPACES {
         for directory in Path::new(workspace).ancestors().skip(1) {
             for name in [".cargo/config.toml", ".cargo/config"] {
                 let path = directory.join(name);
-                if root.join(&path).is_file() {
+                if exists(&path) {
                     files.insert(path);
                 }
             }
@@ -347,11 +424,11 @@ fn cargo_configuration(root: &Path) -> BTreeSet<PathBuf> {
 }
 
 fn recorded_sources(
-    root: &Path,
     run: &Path,
     images: &[subject::FirmwareIdentity],
     observer: Option<&Value>,
     packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>,
+    exists: &dyn Fn(&Path) -> bool,
 ) -> Result<Option<Vec<PathBuf>>> {
     if images.is_empty() {
         return Ok(None);
@@ -401,24 +478,28 @@ fn recorded_sources(
     let observers = observer.into_iter().collect::<Vec<_>>();
     paths.extend(observer_directories(&observers)?);
     paths.extend(BUILD_FILES.iter().map(PathBuf::from));
-    paths.extend(cargo_configuration(root));
+    paths.extend(cargo_configuration(exists));
     paths.remove(Path::new(""));
     Ok(Some(paths.into_iter().collect()))
 }
 
 /// Record the latest qualifying observation of every scenario of `index` in
 /// `directory`, bound to the digests of the sources its bundle records its
-/// firmware was built from, else to `sources`. Returns the scenarios
-/// recorded.
+/// firmware was built from, else to `sources`. With `runs`, only observations
+/// of those runs are recorded, so only the shards of scenarios they observed
+/// change. A run that archived its source snapshot binds the digests of the
+/// sources as that snapshot holds them, so one run records the same bytes
+/// from any checkout. Returns the scenarios recorded.
 pub(crate) fn distill(
     root: &Path,
     index: &HilEvidenceIndex,
     directory: &Path,
     target: &str,
     sources: &[PathBuf],
+    runs: Option<&BTreeSet<String>>,
 ) -> Result<Vec<String>> {
     let mut known = BTreeMap::<PathBuf, String>::new();
-    let mut digests = |paths: &[PathBuf]| -> Result<Vec<SourceDigest>> {
+    let mut checkout_digests = |paths: &[PathBuf]| -> Result<Vec<SourceDigest>> {
         paths
             .iter()
             .map(|path| {
@@ -447,6 +528,7 @@ pub(crate) fn distill(
                     && o.exclusions.is_empty()
                     && o.outcome == Outcome::Passed
                     && o.run_directory.is_some()
+                    && runs.is_none_or(|runs| runs.contains(&o.run_id))
             })
             .collect::<Vec<_>>();
         qualifying.sort_by_key(|o| std::cmp::Reverse(o.started_unix_millis));
@@ -501,9 +583,21 @@ pub(crate) fn distill(
             completion_seal: seal.clone(),
             subject: subject.clone(),
             procedure,
-            sources: match observation_sources(root, observation)? {
-                Some(recorded) => digests(&recorded)?,
-                None => digests(sources)?,
+            sources: {
+                let paths = observation_sources(root, observation)?;
+                let paths = paths.as_deref().unwrap_or(sources);
+                match Snapshot::load(run)? {
+                    Some(snapshot) => paths
+                        .iter()
+                        .map(|path| {
+                            Ok(SourceDigest {
+                                sha256: snapshot.digest(path)?,
+                                path: path.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                    None => checkout_digests(paths)?,
+                }
             },
         };
         if let Some(observer) = &subject.observer {
@@ -598,12 +692,13 @@ mod tests {
             "hil/host/runner/Cargo.toml": {}
         }}}});
         let radio = |_: &Value| Ok(Some(BTreeSet::from([PathBuf::from("crates/radio")])));
+        let exists = |path: &Path| root.join(path).is_file();
         let sources = recorded_sources(
-            &root,
             &run,
             &[image("correctness", false)],
             Some(&observer),
             &radio,
+            &exists,
         )
         .unwrap()
         .unwrap();
@@ -632,7 +727,7 @@ mod tests {
         let recorded =
             |images: &[subject::FirmwareIdentity],
              packages: &dyn Fn(&Value) -> Result<Option<BTreeSet<PathBuf>>>| {
-                recorded_sources(&root, &run, images, None, packages).unwrap()
+                recorded_sources(&run, images, None, packages, &exists).unwrap()
             };
         assert!(recorded(&[image("correctness", false)], &more).is_none());
         // A replay or an image without recorded inputs keeps the broad set.
@@ -641,7 +736,7 @@ mod tests {
         assert!(recorded(&[], &radio).is_none());
         inputs("performance", json!(["../outside.rs"]));
         assert!(
-            recorded_sources(&root, &run, &[image("performance", false)], None, &radio).is_err()
+            recorded_sources(&run, &[image("performance", false)], None, &radio, &exists).is_err()
         );
         fs::remove_dir_all(root).unwrap();
     }

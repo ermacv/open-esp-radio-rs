@@ -644,6 +644,7 @@ fn a_recorded_shard_qualifies_while_its_sources_are_unchanged() {
         evidence,
         "esp32s31",
         &[PathBuf::from("firmware")],
+        None,
     )
     .unwrap();
     assert_eq!(recorded, ["station-reconnect"]);
@@ -796,5 +797,133 @@ fn a_referenced_observer_build_evaluates_like_an_embedded_one() {
     assert!(evaluate().is_err(), "a missing build");
     fs::write(&build, stored).unwrap();
     assert_eq!(evaluate().unwrap(), embedded);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A run that archived its source snapshot records the same shard from any
+/// checkout, bound to the snapshot's sources; recording one run leaves the
+/// shards of scenarios only other runs observed untouched.
+#[test]
+fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
+    let root = std::env::temp_dir().join(format!(
+        "open-radio-qualification-hil-scoped-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        fs::remove_dir_all(&root).unwrap();
+    }
+    let observe = |id: &str, scenario: &str, started: u64| {
+        let run = root.join("runs").join(id);
+        fs::create_dir_all(&run).unwrap();
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schema": 2, "run_id": id, "target": "esp32s31", "state": "completed",
+                "started_unix_millis": started, "finished_unix_millis": started + 100,
+                "duration_millis": 100,
+                "repository": {"commit": "abc123", "dirty": false, "workspace_sha256": "00".repeat(32)}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            run.join("suite.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schema": 2, "run_id": id, "target": "esp32s31", "outcome": "passed",
+                "started_unix_millis": started, "finished_unix_millis": started + 100,
+                "duration_millis": 100,
+                "counts": {"scenarios": 1, "passed": 1, "failed": 0, "broken": 0, "skipped": 0,
+                    "blocked": 0, "interrupted": 0},
+                "scenarios": [{
+                    "schema": 2, "scenario": scenario, "outcome": "passed",
+                    "required_repetitions": 1,
+                    "repetitions": [{"schema": 2, "repetition": 1, "outcome": "passed", "failure": null}],
+                    "failure": null,
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        add_current_build(&root, &run);
+        // The run's snapshot holds its own firmware source.
+        let snapshot = run.join("source/snapshot");
+        fs::create_dir_all(&snapshot).unwrap();
+        let mut archive =
+            tar::Builder::new(fs::File::create(snapshot.join("sources.tar")).unwrap());
+        let bytes = format!("{id} source");
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive
+            .append_data(
+                &mut header,
+                "repository/firmware/src/lib.rs",
+                bytes.as_bytes(),
+            )
+            .unwrap();
+        archive.finish().unwrap();
+        drop(archive);
+        seal(&run);
+    };
+    observe("run-1", "station-reconnect", 100);
+    observe("run-2", "station-roam", 200);
+    fs::create_dir_all(root.join("firmware/src")).unwrap();
+    let (runs, evidence) = (Path::new("runs"), Path::new("evidence"));
+    let repository = RepositoryState {
+        commit: "abc123".to_owned(),
+        dirty: false,
+    };
+    let record = |run: &str| {
+        let only = BTreeSet::from([run.to_owned()]);
+        let index = HilEvidenceIndex::load_selected(
+            &root,
+            runs,
+            evidence,
+            "esp32s31",
+            &repository,
+            Some(&only),
+        )
+        .unwrap();
+        shard::distill(
+            &root,
+            &index,
+            evidence,
+            "esp32s31",
+            &[PathBuf::from("firmware")],
+            Some(&only),
+        )
+        .unwrap()
+    };
+    let shard = |scenario: &str| fs::read(root.join(format!("evidence/{scenario}.json"))).ok();
+
+    fs::write(root.join("firmware/src/lib.rs"), "checkout one").unwrap();
+    assert_eq!(record("run-2"), ["station-roam"]);
+    let roam = shard("station-roam").unwrap();
+    assert_eq!(record("run-1"), ["station-reconnect"]);
+    let first = shard("station-reconnect").unwrap();
+    assert_eq!(
+        shard("station-roam").unwrap(),
+        roam,
+        "another run's shard is untouched"
+    );
+
+    // Another checkout content records the same bytes: the snapshot binds.
+    fs::write(root.join("firmware/src/lib.rs"), "checkout two").unwrap();
+    assert_eq!(record("run-1"), ["station-reconnect"]);
+    assert_eq!(shard("station-reconnect").unwrap(), first);
+    let recorded: serde_json::Value = serde_json::from_slice(&first).unwrap();
+    let snapshot_digest = {
+        let name = "firmware/src/lib.rs";
+        let bytes = b"run-1 source";
+        let mut hash = Sha256::new();
+        hash.update((name.len() as u64).to_le_bytes());
+        hash.update(name.as_bytes());
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+        format!("{:x}", hash.finalize())
+    };
+    assert_eq!(recorded["sources"][0]["path"], "firmware");
+    assert_eq!(recorded["sources"][0]["sha256"], snapshot_digest);
     fs::remove_dir_all(root).unwrap();
 }

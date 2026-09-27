@@ -372,7 +372,19 @@ impl HilEvidenceIndex {
         target: &str,
         repository: &RepositoryState,
     ) -> Result<Self> {
-        let mut index = Self::load_runs(root, runs, target, repository)?;
+        Self::load_selected(root, runs, evidence, target, repository, None)
+    }
+
+    /// [`Self::load`] reading only the run bundles named in `only`, when set.
+    pub(crate) fn load_selected(
+        root: &Path,
+        runs: &Path,
+        evidence: &Path,
+        target: &str,
+        repository: &RepositoryState,
+        only: Option<&BTreeSet<String>>,
+    ) -> Result<Self> {
+        let mut index = Self::load_runs(root, runs, target, repository, only)?;
         for (shard, current) in shard::load(root, evidence, target)? {
             index.summary.shards += 1;
             if !current {
@@ -397,6 +409,7 @@ impl HilEvidenceIndex {
         runs: &Path,
         target: &str,
         repository: &RepositoryState,
+        only: Option<&BTreeSet<String>>,
     ) -> Result<Self> {
         let current_observer = observer::Current::load(root);
         // The checkout's run directory, which `cargo hil` links to the store
@@ -426,6 +439,14 @@ impl HilEvidenceIndex {
             }
             for entry in fs::read_dir(directory)? {
                 let entry = entry?;
+                if only.is_some_and(|only| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .is_none_or(|name| !only.contains(name))
+                }) {
+                    continue;
+                }
                 if names.insert(entry.file_name()) {
                     entries.push(entry);
                 }

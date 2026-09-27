@@ -247,8 +247,13 @@ impl Qualification {
     }
 
     /// Record the program's qualifying HIL observations as tracked shards.
-    pub(crate) fn record_hil_evidence(path: &Path, root: &Path) -> Result<Vec<String>> {
-        ManifestDocument::load_and_validate(path, root)?.record_hil_evidence(root)
+    /// Record the qualifying observations of `runs`, or of every run.
+    pub(crate) fn record_hil_evidence(
+        path: &Path,
+        root: &Path,
+        runs: Option<&BTreeSet<String>>,
+    ) -> Result<Vec<String>> {
+        ManifestDocument::load_and_validate(path, root)?.record_hil_evidence(root, runs)
     }
 
     pub(crate) fn is_ready(&self, id: &str) -> bool {
@@ -567,7 +572,11 @@ impl ValidatedProgram {
 
     /// Record the qualifying HIL observations of this program's runs as
     /// tracked shards bound to their sources; returns the scenarios recorded.
-    fn record_hil_evidence(self, root: &Path) -> Result<Vec<String>> {
+    fn record_hil_evidence(
+        self,
+        root: &Path,
+        runs: Option<&BTreeSet<String>>,
+    ) -> Result<Vec<String>> {
         let document = self.document;
         let hil_target = slug(&document.hil.target, "HIL target")?;
         let evidence = document
@@ -576,11 +585,17 @@ impl ValidatedProgram {
             .as_deref()
             .ok_or("the program's [hil] section names no evidence directory")?;
         let repository = RepositoryState::read(root)?;
-        let index =
-            HilEvidenceIndex::load(root, &document.hil.runs, evidence, &hil_target, &repository)?;
+        let index = HilEvidenceIndex::load_selected(
+            root,
+            &document.hil.runs,
+            evidence,
+            &hil_target,
+            &repository,
+            runs,
+        )?;
         let sources =
             crate::hil::shard::tracked_sources(root, &crate::hil::shard::observers(&index))?;
-        crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources)
+        crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources, runs)
     }
 
     fn evaluate(self, root: &Path) -> Result<Qualification> {

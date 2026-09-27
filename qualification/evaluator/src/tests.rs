@@ -94,6 +94,7 @@ runs = "missing-runs"
             capability: None,
             details: false,
             hil_target: None,
+            runs: Vec::new(),
         })
     }
 }

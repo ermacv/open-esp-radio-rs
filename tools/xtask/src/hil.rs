@@ -105,19 +105,24 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     }
     // Cleanup scopes in the runner have 30-second budgets and may unwind
     // multiple owned fixtures. This is a shutdown allowance, never a run timeout.
-    let invoked_millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_millis() as u64;
+    // The runner names every run it creates here, so exactly this
+    // invocation's runs are recorded.
+    let run_receipt = tempfile::NamedTempFile::new()?;
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         ctx.command(&runner)
             .args(args)
             .envs(options.environment(ctx))
-            .env("OER_OBSERVER_RECEIPT", &receipt_path),
+            .env("OER_OBSERVER_RECEIPT", &receipt_path)
+            .env(RUN_RECEIPT_ENV, run_receipt.path()),
         std::time::Duration::from_secs(300),
     )?;
     let status = child.wait_forwarding_cancellation()?;
     if produces_runs(args) {
-        let created = runs_created_since(ctx, invoked_millis)?;
+        let run_ids = std::fs::read_to_string(run_receipt.path())?
+            .lines()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let created = runs_dirty(&run_ids)?;
         match evidence_skip_reason(
             record_forced,
             args.iter().any(|arg| {
@@ -126,7 +131,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             }),
             &created,
         ) {
-            None => record_evidence(ctx, &receipt_path)?,
+            None => record_evidence(ctx, &receipt_path, &run_ids)?,
             Some(reason) => eprintln!(
                 "hil: HIL evidence not recorded: {reason}; pass {RECORD_EVIDENCE} to record it"
             ),
@@ -1201,37 +1206,23 @@ const HIL_TARGET: &str = "esp32s31";
 /// Forces recording HIL evidence after a run that would otherwise skip it.
 const RECORD_EVIDENCE: &str = "--record-evidence";
 
-/// Whether each run this checkout's runner started at or after
-/// `since_millis` was built from a dirty tree.
-fn runs_created_since(ctx: &Context, since_millis: u64) -> Result<Vec<bool>> {
+/// The runner's run receipt variable; see oer-hil-runner-core.
+const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
+
+/// Whether each of `run_ids` was built from a dirty tree; a run whose
+/// manifest cannot be read counts as dirty.
+fn runs_dirty(run_ids: &[String]) -> Result<Vec<bool>> {
     let store = crate::hil_store::shared_runs(HIL_TARGET)?;
-    let checkout = ctx.root.join("target");
-    let mut created = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&store) else {
-        return Ok(created);
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(started) = name.split('-').next().and_then(|m| m.parse::<u64>().ok()) else {
-            continue;
-        };
-        if started < since_millis {
-            continue;
-        }
-        let Some(manifest) = std::fs::read(entry.path().join("manifest.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        else {
-            continue;
-        };
-        let ours = manifest["invocation"][0]
-            .as_str()
-            .is_some_and(|runner| std::path::Path::new(runner).starts_with(&checkout));
-        if ours {
-            created.push(manifest["repository"]["dirty"].as_bool().unwrap_or(true));
-        }
-    }
-    Ok(created)
+    Ok(run_ids
+        .iter()
+        .map(|id| {
+            std::fs::read(store.join(id).join("manifest.json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                .and_then(|manifest| manifest["repository"]["dirty"].as_bool())
+                .unwrap_or(true)
+        })
+        .collect())
 }
 
 /// Why a finished invocation records no evidence: it created no run, a run
@@ -1266,7 +1257,7 @@ fn produces_runs(args: &[OsString]) -> bool {
 /// Record the observations that qualify on this checkout as tracked HIL
 /// evidence shards, with the observer receipt the runs were produced under.
 /// Failed scenarios record nothing, so this also runs after a failing suite.
-fn record_evidence(ctx: &Context, receipt: &std::path::Path) -> Result<()> {
+fn record_evidence(ctx: &Context, receipt: &std::path::Path, run_ids: &[String]) -> Result<()> {
     // Every checkout's runs share one store, so recording evidence reads all
     // of them. One recording at a time on the host, each in a memory-capped
     // scope, keeps simultaneous runs of several agents from exhausting it.
@@ -1304,6 +1295,7 @@ fn record_evidence(ctx: &Context, receipt: &std::path::Path) -> Result<()> {
     };
     let status = command
         .args(["qualification", "hil-evidence", "--hil-target", HIL_TARGET])
+        .args(run_ids.iter().flat_map(|id| ["--run", id.as_str()]))
         .env("OER_OBSERVER_RECEIPT", receipt)
         .status()?;
     if !status.success() {

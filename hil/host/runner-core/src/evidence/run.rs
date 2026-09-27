@@ -153,6 +153,7 @@ impl RunSession {
             firmware: Vec::new(),
         };
         atomic_json(&directory.join("manifest.json"), &manifest)?;
+        record_created_run(&manifest.run_id)?;
         let mut session = Self {
             repository_root: root.to_owned(),
             target_directory,
@@ -381,6 +382,21 @@ fn runner_build() -> Result<RunnerBuild> {
         .get()
         .copied()
         .ok_or_else(|| "runner build identity is not registered".into())
+}
+
+/// Names the file the invoking tool reads back the IDs of the runs this
+/// runner process created from, one per line.
+pub const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
+
+/// Append `run_id` to the invoking tool's run receipt, when it asked for one.
+fn record_created_run(run_id: &str) -> Result<()> {
+    let Some(path) = std::env::var_os(RUN_RECEIPT_ENV) else {
+        return Ok(());
+    };
+    use std::io::Write as _;
+    let mut receipt = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(receipt, "{run_id}")?;
+    Ok(())
 }
 
 /// The directory holding the observer builds of the runs in `runs`: the

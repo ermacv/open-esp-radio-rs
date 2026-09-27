@@ -21,6 +21,7 @@ mod class;
 pub mod mono;
 mod reproducibility;
 pub mod snapshot;
+pub mod source_inputs;
 pub mod stack;
 pub use class::ImageClass;
 
@@ -406,6 +407,8 @@ pub struct Artifacts {
     pub effective_embedded_lock: PathBuf,
     pub effective_bootstrap_lock: PathBuf,
     pub application_image: PathBuf,
+    /// `source-inputs.json`: the repository files the image was built from.
+    pub source_inputs: Option<PathBuf>,
     /// Host tools that produced this build, recorded in its provenance.
     pub environment: crate::evidence::build::BuildEnvironment,
 }
@@ -657,6 +660,19 @@ fn build_resolved(
         .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
     fs::copy(runtime_lock.path(), &effective_embedded_lock)?;
     fs::copy(bootstrap_lock.path(), &effective_bootstrap_lock)?;
+    let source_inputs = source_inputs::write(
+        &output,
+        &source_inputs::collect(
+            root,
+            &[
+                (&runtime_target.join(TARGET).join("release"), RUNTIME_BIN),
+                (
+                    &bootstrap_target.join(TARGET).join("release"),
+                    BOOTSTRAP_BIN,
+                ),
+            ],
+        )?,
+    )?;
 
     eprintln!("runtime_crc32={crc:08x}");
     eprintln!("placement_audit=PASS");
@@ -671,6 +687,7 @@ fn build_resolved(
         effective_embedded_lock,
         effective_bootstrap_lock,
         application_image,
+        source_inputs: Some(source_inputs),
         environment: crate::evidence::build::BuildEnvironment::capture(),
     })
 }

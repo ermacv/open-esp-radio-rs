@@ -218,6 +218,7 @@ source-paths = ["phy.rs"]
         bootstrap_elf: output.join("bootstrap.elf"),
         effective_embedded_lock: root.join("hil/targets/esp32s31/Cargo.lock"),
         effective_bootstrap_lock: root.join("target/bootstrap.lock"),
+        source_inputs: None,
         environment: crate::evidence::build::BuildEnvironment::synthetic(),
     };
     let directory = root.join("target/hil/esp32s31/runs/observed-a");

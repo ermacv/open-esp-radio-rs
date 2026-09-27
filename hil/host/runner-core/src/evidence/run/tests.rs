@@ -865,6 +865,7 @@ fn test_artifacts(
         effective_embedded_lock: lock.to_path_buf(),
         effective_bootstrap_lock: lock.to_path_buf(),
         application_image: application.to_path_buf(),
+        source_inputs: None,
         environment: crate::evidence::build::BuildEnvironment::synthetic(),
     }
 }

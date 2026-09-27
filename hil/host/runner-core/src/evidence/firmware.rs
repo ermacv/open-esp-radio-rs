@@ -85,6 +85,15 @@ pub(super) fn archive(
             &archived,
         ));
     }
+    if let Some(inputs) = &artifacts.source_inputs {
+        build::archive_content_addressed(
+            inputs,
+            &context
+                .directory
+                .join(firmware_directory.join("source-inputs.json")),
+            context.target_directory,
+        )?;
+    }
     let subjects = vec![
         BuildSubject {
             role: BuildSubjectRole::Application,

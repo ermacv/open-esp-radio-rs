@@ -216,18 +216,6 @@ pub enum Ieee802154RuntimeError {
     NotInstalled,
     /// The portable state machine rejected the command.
     Rejected(CommandError),
-    /// The command needs RF, which the composition closed while the radio
-    /// slept; it must open RF first.
-    RfClosed,
-}
-
-/// Why RF admission could not close.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154RfCloseError {
-    /// No radio is installed.
-    NotInstalled,
-    /// The radio is not resting asleep.
-    Awake,
 }
 
 /// The engine and the hardware it drives: the HAL `Ieee802154MacOwners`,
@@ -242,8 +230,6 @@ pub struct Ieee802154RuntimeParts<'storage, H> {
 struct Installed<'storage, H> {
     radio: Ieee802154Radio<'storage>,
     hardware: H,
-    /// The composition closed RF: commands that need it are refused.
-    rf_closed: bool,
 }
 
 /// Why the runtime could not pause.
@@ -379,7 +365,6 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
             *installed = Some(Installed {
                 radio: Ieee802154Radio::new(parts.engine, platform),
                 hardware: parts.hardware,
-                rf_closed: false,
             });
             Ok(())
         };
@@ -619,22 +604,11 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         &self,
         command: RadioCommand<'_>,
     ) -> Result<AcceptedCommand, Ieee802154RuntimeError> {
-        let needs_rf = matches!(
-            command,
-            RadioCommand::Receive { .. }
-                | RadioCommand::ScheduledReceive(_)
-                | RadioCommand::Transmit(_)
-                | RadioCommand::EnergyScan(_)
-                | RadioCommand::ClearChannelAssessment { .. }
-        );
         let submitted = self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let installed = installed
                 .as_mut()
                 .ok_or(Ieee802154RuntimeError::NotInstalled)?;
-            if needs_rf && installed.rf_closed {
-                return Err(Ieee802154RuntimeError::RfClosed);
-            }
             let mut sink = QueueSink {
                 events: &self.events,
                 lost: &self.lost,
@@ -647,55 +621,6 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         let (accepted, backoff) = submitted?;
         self.start_backoff(backoff);
         accepted.map_err(Ieee802154RuntimeError::Rejected)
-    }
-
-    /// Refuse commands that need RF, before the composition closes RF for
-    /// a sleeping radio (ESP-IDF's `ieee802154_sleep` with
-    /// `IEEE802154_RF_DISABLE`).
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed, or it is not resting asleep; admission stays
-    /// open.
-    pub fn close_rf_admission(&self) -> Result<(), Ieee802154RfCloseError> {
-        self.installed.lock(|installed| {
-            let mut installed = installed.borrow_mut();
-            let installed = installed
-                .as_mut()
-                .ok_or(Ieee802154RfCloseError::NotInstalled)?;
-            match installed.radio.state() {
-                RadioState::Resting(RestingState::Sleeping) | RadioState::Disabled => {
-                    installed.rf_closed = true;
-                    Ok(())
-                }
-                _ => Err(Ieee802154RfCloseError::Awake),
-            }
-        })
-    }
-
-    /// Admit commands that need RF again, after the composition opened RF
-    /// (`IEEE802154_RF_ENABLE`).
-    pub fn open_rf_admission(&self) {
-        self.installed.lock(|installed| {
-            if let Some(installed) = installed.borrow_mut().as_mut() {
-                installed.rf_closed = false;
-            }
-        });
-    }
-
-    /// Whether commands that need RF are refused.
-    ///
-    /// # Errors
-    ///
-    /// No radio is installed.
-    pub fn rf_closed(&self) -> Result<bool, Ieee802154RuntimeError> {
-        self.installed.lock(|installed| {
-            installed
-                .borrow()
-                .as_ref()
-                .map(|installed| installed.rf_closed)
-                .ok_or(Ieee802154RuntimeError::NotInstalled)
-        })
     }
 
     /// The portable state.

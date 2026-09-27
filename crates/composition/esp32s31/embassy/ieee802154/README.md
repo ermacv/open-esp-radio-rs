@@ -163,22 +163,13 @@ run the radio system's coexistence schedule, as its Wi-Fi composition does.
 `disable_wifi_coexistence` leaves it again, and `stop` refuses while it
 takes part, since leaving can fail after it changed the coexistence state.
 
-RF stays open for the client's lifetime by default
-(`Ieee802154RfPolicy::AlwaysOn`), as in ESP-IDF builds without tickless idle
-and modem retention. Under `Ieee802154RfPolicy::CloseWhenAsleep` the client
-closes RF whenever its radio rests asleep and opens it before the next
-receive, transmission, energy scan or CCA, as ESP-IDF's `ieee802154_sleep`
-and operation starts do with `esp_phy_disable` and `esp_phy_enable`: it
-leaves the shared PHY's RF clients while BTBB stays taken, RF closes after
-the last client, and waking restores the calibration without running it
-again. Both go through the radio system's `RadioGuard::suspend_ieee802154`
-and `RadioGuard::resume_ieee802154`, as `start` and `stop` join and leave
-the shared PHY through `RadioGuard::join_ieee802154`,
-`RadioGuard::leave_ieee802154` and `RadioGuard::leave_suspended_ieee802154`. Commands then go through `Ieee802154System::submit`, which opens RF
-first, and events through `Ieee802154System::next_event`, which closes RF
-before waiting when an event left the radio asleep; the runtime refuses
-commands that need RF while it is closed. Tracking due at the wake runs
-within the client's quiescence, as at start.
+RF stays open for the client's lifetime, as in ESP-IDF builds without
+tickless idle and modem retention, where `IEEE802154_RF_ENABLE` and
+`IEEE802154_RF_DISABLE` are empty: ESP-IDF closes RF for a sleeping radio
+only together with the REGDMA retention of the PHY, which this port does
+not implement. The radio's sleep state is kept by the MAC alone. `stop` leaves the shared PHY and
+closes RF after the last client, and `start` wakes it, as
+`esp_ieee802154_disable` and `esp_ieee802154_enable` do.
 
 ## Limits
 

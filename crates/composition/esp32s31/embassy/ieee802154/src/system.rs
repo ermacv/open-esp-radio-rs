@@ -26,8 +26,7 @@ use oer_esp32s31_ieee802154_esp_hal::{
     random,
 };
 use oer_esp32s31_ieee802154_runtime::{
-    Ieee802154EventsLost, Ieee802154Platform, Ieee802154RadioEvent, Ieee802154Runtime,
-    Ieee802154RuntimeError, Ieee802154RuntimeParts,
+    Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
 use oer_esp32s31_phy::{
     ConcurrentPhyTrackingError, ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver,
@@ -36,19 +35,14 @@ use oer_esp32s31_phy::{
         evaluate_periodic_tracking,
     },
     ieee802154_client::{
-        Ieee802154PhyClientError, Ieee802154PhyMembership, Ieee802154PhySuspended,
-        RegisteredIeee802154Operational, RegisteredIeee802154OperationalRoute,
-        RegisteredIeee802154SuspendedRoute, leave_ieee802154,
+        Ieee802154PhyClientError, Ieee802154PhyMembership, RegisteredIeee802154Operational,
+        RegisteredIeee802154OperationalRoute, leave_ieee802154,
     },
     maintain_concurrent_phy,
     state::client::PhyModemClient,
 };
 use oer_esp32s31_phy_runtime::EmbassyPhyTime;
-use oer_esp32s31_radio_runtime::{
-    Ieee802154JoinError, Ieee802154WakeError, Ieee802154WakeFailure, RadioGuard, RadioPhyError,
-    RadioSystem,
-};
-use oer_ieee802154::{AcceptedCommand, RadioCommand};
+use oer_esp32s31_radio_runtime::{Ieee802154JoinError, RadioGuard, RadioPhyError, RadioSystem};
 use static_cell::ConstStaticCell;
 
 use crate::maintenance::{
@@ -178,7 +172,6 @@ enum FailStopOwner {
     Powered(Ieee802154Powered),
     Clocked(Ieee802154Clocked),
     Joined(Ieee802154Clocked, Ieee802154PhyMembership),
-    Suspended(Ieee802154Clocked, Ieee802154PhySuspended),
     Installed(RegisteredIeee802154Operational, Ieee802154Engine<'static>),
 }
 
@@ -222,83 +215,13 @@ pub struct Ieee802154StopFailure {
     pub owner: Result<Ieee802154System, Ieee802154FailStop>,
 }
 
-/// Whether the client closes RF while its radio sleeps.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Ieee802154RfPolicy {
-    /// RF stays open for the client's lifetime, as in ESP-IDF builds
-    /// without tickless idle and modem retention, where
-    /// `IEEE802154_RF_ENABLE` and `IEEE802154_RF_DISABLE` are empty.
-    #[default]
-    AlwaysOn,
-    /// RF closes while the radio rests asleep and opens before the next
-    /// operation that needs it, as `ieee802154_sleep` and the operation
-    /// starts do with tickless idle and modem retention
-    /// (`esp_phy_disable` / `esp_phy_enable` of `PHY_MODEM_IEEE802154`).
-    /// Commands then go through [`Ieee802154System::submit`] and events
-    /// through [`Ieee802154System::next_event`].
-    CloseWhenAsleep,
-}
-
-/// Why RF could not close or open.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154RfError {
-    /// IEEE 802.15.4 could not leave or rejoin the shared PHY clients.
-    PhyClient(Ieee802154PhyClientError),
-    /// Shared RF could not close after the last client slept.
-    Close(ConcurrentRfError),
-    /// Closed shared RF could not be woken.
-    Wake(RadioPhyError),
-    /// Tracking due at the wake failed.
-    Maintenance(Ieee802154MaintenanceError),
-}
-
-/// Why a command through [`Ieee802154System::submit`] did not run.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154SubmitError {
-    /// RF could not open for the command, or close after it.
-    Rf(Ieee802154RfError),
-    /// The runtime refused the command.
-    Runtime(Ieee802154RuntimeError),
-}
-
-/// Why [`Ieee802154System::next_event`] returned no event.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154EventError {
-    /// RF could not close for the sleeping radio; no event was taken.
-    Rf(Ieee802154RfError),
-    /// The event queue overflowed before the events after it.
-    Lost(Ieee802154EventsLost),
-}
-
-/// The client's shared-PHY membership.
-enum Route {
-    /// RF is open for the client.
-    Awake(RegisteredIeee802154OperationalRoute),
-    /// The client left the RF clients while its radio sleeps; BTBB stays.
-    Asleep(RegisteredIeee802154SuspendedRoute),
-}
-
-/// Whether a command needs open RF (`IEEE802154_RF_ENABLE` starts it).
-const fn needs_rf(command: &RadioCommand<'_>) -> bool {
-    matches!(
-        command,
-        RadioCommand::Receive { .. }
-            | RadioCommand::ScheduledReceive(_)
-            | RadioCommand::Transmit(_)
-            | RadioCommand::EnergyScan(_)
-            | RadioCommand::ClearChannelAssessment { .. }
-    )
-}
-
 /// The running IEEE 802.15.4 client.
 ///
 /// The MAC owners and the engine live in the runtime; this value keeps the
 /// PHY membership and the bound CPU route until [`Self::stop`].
 #[must_use = "the running IEEE 802.15.4 client must be stopped"]
 pub struct Ieee802154System {
-    /// `None` only inside a membership change.
-    route: Option<Route>,
-    rf_policy: Ieee802154RfPolicy,
+    route: RegisteredIeee802154OperationalRoute,
     /// Bound except while PHY maintenance holds the MAC paused, or after a
     /// failed rebind.
     bound: Option<BoundEspHalIeee802154InterruptRoute>,
@@ -540,8 +463,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         Priority::Priority1,
     )) {
         Ok(bound) => Ok(Ieee802154System {
-            route: Some(Route::Awake(route)),
-            rf_policy: Ieee802154RfPolicy::AlwaysOn,
+            route,
             bound: Some(bound),
             coex_config: Ieee802154CoexConfig::VENDOR,
             wifi_coexistence: false,
@@ -597,153 +519,6 @@ impl Ieee802154System {
     /// The runtime that accepts commands and yields events.
     pub fn runtime(&self) -> &'static Ieee802154SystemRuntime {
         &RUNTIME
-    }
-
-    /// The RF policy.
-    pub const fn rf_policy(&self) -> Ieee802154RfPolicy {
-        self.rf_policy
-    }
-
-    /// Choose the RF policy. Leaving [`Ieee802154RfPolicy::CloseWhenAsleep`]
-    /// takes effect at the next command that needs RF.
-    pub fn set_rf_policy(&mut self, policy: Ieee802154RfPolicy) {
-        self.rf_policy = policy;
-    }
-
-    /// Whether RF is open for the client.
-    pub const fn rf_open(&self) -> bool {
-        matches!(self.route, Some(Route::Awake(_)))
-    }
-
-    /// `IEEE802154_RF_DISABLE` of `ieee802154_sleep`: under
-    /// [`Ieee802154RfPolicy::CloseWhenAsleep`], when the radio rests asleep,
-    /// refuse commands that need RF, leave the RF clients (BTBB stays) and
-    /// close RF after the last client. Returns whether the client left.
-    ///
-    /// # Errors
-    ///
-    /// The client could not leave, and RF stays open for it; or RF could not
-    /// close, and the client sleeps with RF still open.
-    pub async fn sleep_rf_if_idle<P, C: PlatformClockProvider>(
-        &mut self,
-        radio: &RadioSystem<P, C>,
-    ) -> Result<bool, Ieee802154RfError> {
-        if self.rf_policy != Ieee802154RfPolicy::CloseWhenAsleep
-            || !self.rf_open()
-            || RUNTIME.close_rf_admission().is_err()
-        {
-            return Ok(false);
-        }
-        let mut guard = radio.lock().await;
-        let Some(Route::Awake(route)) = self.route.take() else {
-            unreachable!("RF was open under the admission");
-        };
-        let suspended = {
-            let suspended = core::pin::pin!(guard.suspend_ieee802154(route));
-            suspended.await
-        };
-        match suspended {
-            Ok(asleep) => {
-                self.route = Some(Route::Asleep(asleep.route));
-                asleep.rf_closed.map_err(Ieee802154RfError::Close)?;
-                Ok(true)
-            }
-            Err(failure) => {
-                let error = failure.error();
-                self.route = Some(Route::Awake(failure.into_route()));
-                RUNTIME.open_rf_admission();
-                Err(Ieee802154RfError::PhyClient(error))
-            }
-        }
-    }
-
-    /// `IEEE802154_RF_ENABLE`: wake closed RF, rejoin the RF clients, track
-    /// the shared PHY if the rejoin found it due, and admit commands that
-    /// need RF again. Nothing happens while RF is open.
-    ///
-    /// # Errors
-    ///
-    /// RF could not wake, the client could not rejoin, or the due tracking
-    /// failed; the client stays asleep in the first two cases.
-    pub async fn wake_rf<P, C: PlatformClockProvider>(
-        &mut self,
-        radio: &RadioSystem<P, C>,
-    ) -> Result<(), Ieee802154RfError> {
-        if !matches!(self.route, Some(Route::Asleep(_))) {
-            return Ok(());
-        }
-        let mut guard = radio.lock().await;
-        let Some(Route::Asleep(route)) = self.route.take() else {
-            unreachable!("the client was asleep");
-        };
-        let resumed = {
-            let resumed = core::pin::pin!(guard.resume_ieee802154(route));
-            resumed.await
-        };
-        let acquired = match resumed {
-            Ok((awake, acquired)) => {
-                self.route = Some(Route::Awake(awake));
-                acquired
-            }
-            Err(Ieee802154WakeFailure { error, route }) => {
-                self.route = Some(Route::Asleep(route));
-                return Err(match error {
-                    Ieee802154WakeError::Phy(error) => Ieee802154RfError::Wake(error),
-                    Ieee802154WakeError::Client(error) => Ieee802154RfError::PhyClient(error),
-                });
-            }
-        };
-        RUNTIME.open_rf_admission();
-        if acquired == ConcurrentAcquire::TrackingDue {
-            // The rejoined client tracks before it transmits, as at start.
-            let tracked = core::pin::pin!(self.track_quiescent(&mut guard));
-            tracked.await.map_err(Ieee802154RfError::Maintenance)?;
-        }
-        Ok(())
-    }
-
-    /// Admit and start one portable command, opening RF first when it needs
-    /// RF and closing it after a command that leaves the radio asleep.
-    ///
-    /// # Errors
-    ///
-    /// RF could not open or close, or the runtime refused the command.
-    pub async fn submit<P, C: PlatformClockProvider>(
-        &mut self,
-        radio: &RadioSystem<P, C>,
-        command: RadioCommand<'_>,
-    ) -> Result<AcceptedCommand, Ieee802154SubmitError> {
-        if needs_rf(&command) {
-            let woken = core::pin::pin!(self.wake_rf(radio));
-            woken.await.map_err(Ieee802154SubmitError::Rf)?;
-        }
-        let accepted = RUNTIME
-            .submit(command)
-            .map_err(Ieee802154SubmitError::Runtime)?;
-        let slept = core::pin::pin!(self.sleep_rf_if_idle(radio));
-        slept.await.map_err(Ieee802154SubmitError::Rf)?;
-        Ok(accepted)
-    }
-
-    /// Wait for the next event, first closing RF if an earlier event left
-    /// the radio asleep; the runtime's CSMA-CA and retry timers run in the
-    /// wait.
-    ///
-    /// # Errors
-    ///
-    /// RF could not close, before any event was taken, or events were lost.
-    pub async fn next_event<P, C: PlatformClockProvider>(
-        &mut self,
-        radio: &RadioSystem<P, C>,
-    ) -> Result<Ieee802154RadioEvent, Ieee802154EventError> {
-        {
-            let slept = core::pin::pin!(self.sleep_rf_if_idle(radio));
-            slept.await.map_err(Ieee802154EventError::Rf)?;
-        }
-        RUNTIME
-            .next_event()
-            .await
-            .map_err(Ieee802154EventError::Lost)
     }
 
     /// Read the arbiter's coexistence table again and publish the scene
@@ -836,10 +611,6 @@ impl Ieee802154System {
         &mut self,
         radio: &RadioSystem<P, C>,
     ) -> Result<Ieee802154PhyMaintenance, Ieee802154MaintenanceError> {
-        // A sleeping client is no RF client: it has nothing to maintain.
-        if matches!(self.route, Some(Route::Asleep(_))) {
-            return Ok(Ieee802154PhyMaintenance::NotDue);
-        }
         let mut guard = radio.lock().await;
         if guard.lease().attachment().maintenance_policy() == MaintenancePolicy::Vendor {
             return match guard.track().await {
@@ -994,7 +765,6 @@ impl Ieee802154System {
     ) -> Result<Ieee802154Parked, Ieee802154StopFailure> {
         let Self {
             route,
-            rf_policy,
             bound,
             coex_config,
             wifi_coexistence,
@@ -1004,7 +774,6 @@ impl Ieee802154System {
                 error: Ieee802154StopError::WifiCoexistenceEnabled,
                 owner: Ok(Self {
                     route,
-                    rf_policy,
                     bound,
                     coex_config,
                     wifi_coexistence,
@@ -1018,7 +787,6 @@ impl Ieee802154System {
                 error: Ieee802154StopError::Route(error),
                 owner: Ok(Self {
                     route,
-                    rf_policy,
                     bound: Some(bound),
                     coex_config,
                     wifi_coexistence,
@@ -1031,68 +799,31 @@ impl Ieee802154System {
         let engine = parts.engine;
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);
-        let (mut guard, clocked, left) = match route.expect("a running system has a route") {
-            Route::Awake(route) => {
-                let (foundation, membership) = match route.into_foundation(task, interrupts) {
-                    Ok(parts) => parts,
-                    Err(failure) => {
-                        let error = Ieee802154StopError::Foundation(failure.failure().error());
-                        let (failure, membership) = failure.into_parts();
-                        return Err(stop_fail_stop(
-                            error,
-                            FailStopOwner::Joined(failure.into_reset().into_clocked(), membership),
-                        ));
-                    }
-                };
-                let clocked = foundation.into_clocked();
-                let mut guard = radio.lock().await;
-                let left = {
-                    let left = core::pin::pin!(guard.leave_ieee802154(&clocked, membership));
-                    left.await
-                };
-                match left {
-                    Ok(left) => (guard, clocked, left),
-                    Err(failure) => {
-                        let error = Ieee802154StopError::PhyClient(failure.error());
-                        return Err(stop_fail_stop(
-                            error,
-                            FailStopOwner::Joined(clocked, failure.into_membership()),
-                        ));
-                    }
-                }
+        let (foundation, membership) = match route.into_foundation(task, interrupts) {
+            Ok(parts) => parts,
+            Err(failure) => {
+                let error = Ieee802154StopError::Foundation(failure.failure().error());
+                let (failure, membership) = failure.into_parts();
+                return Err(stop_fail_stop(
+                    error,
+                    FailStopOwner::Joined(failure.into_reset().into_clocked(), membership),
+                ));
             }
-            Route::Asleep(route) => {
-                let (foundation, suspended) = match route.into_foundation(task, interrupts) {
-                    Ok(parts) => parts,
-                    Err(failure) => {
-                        let error = Ieee802154StopError::Foundation(failure.failure().error());
-                        let (failure, suspended) = failure.into_parts();
-                        return Err(stop_fail_stop(
-                            error,
-                            FailStopOwner::Suspended(
-                                failure.into_reset().into_clocked(),
-                                suspended,
-                            ),
-                        ));
-                    }
-                };
-                let clocked = foundation.into_clocked();
-                let mut guard = radio.lock().await;
-                let left = {
-                    let left =
-                        core::pin::pin!(guard.leave_suspended_ieee802154(&clocked, suspended));
-                    left.await
-                };
-                match left {
-                    Ok(left) => (guard, clocked, left),
-                    Err(failure) => {
-                        let error = Ieee802154StopError::PhyClient(failure.error());
-                        return Err(stop_fail_stop(
-                            error,
-                            FailStopOwner::Suspended(clocked, failure.into_suspended()),
-                        ));
-                    }
-                }
+        };
+        let clocked = foundation.into_clocked();
+        let mut guard = radio.lock().await;
+        let left = {
+            let left = core::pin::pin!(guard.leave_ieee802154(&clocked, membership));
+            left.await
+        };
+        let left = match left {
+            Ok(left) => left,
+            Err(failure) => {
+                let error = Ieee802154StopError::PhyClient(failure.error());
+                return Err(stop_fail_stop(
+                    error,
+                    FailStopOwner::Joined(clocked, failure.into_membership()),
+                ));
             }
         };
         // RF closed after the last client; it was already closed, or stays

@@ -46,14 +46,14 @@ inputs. The table below records only the distilled control and MMIO facts.
 | `r_sym_bt_6lAYUFKOuBLyOZ6Kvsv5` / `r_sym_bt_Ak3CRkSbyZRhUlneqclG` / `r_sym_bt_DOVkQWJHjeuid8jcS9Bq` | 24 / 24 / 16 bytes | Enable, disable and W1C the exact dynamic images `0x1820_0000` and `0x0000_0008`. |
 | `r_sym_bt_37HcX0qW6j1XVtKakUIG` / `r_sym_bt_zczKhmPr5kLPCXpBc7GE` | 80 / 92 bytes | Decode `SCHEDULER_STATE`; the boolean consumed by deferred-work construction is exactly bit 31 AND bit 29. |
 | `r_sym_bt_iFvwGI2tL5M1WM3fIkHq` | 12 bytes | Instruction-identical to same-chip named `r_btdm_sched_get_current_link_index`: one `SCHEDULER_STATE` read returns exactly the zero-based hardware-list index in bits 23:20. |
-| `r_sym_bt_iEsFo1nbR5S71P2lMKhY` / `r_sym_bt_gs5GeSH15pdzrMDbb7oK` | 90 / 78 bytes | Build one static deferred event, optionally set its one-bit argument, and optionally publish the decoded state through selector 4. |
+| `r_sym_bt_iEsFo1nbR5S71P2lMKhY` / `r_sym_bt_gs5GeSH15pdzrMDbb7oK` | 90 / 78 bytes | Build one static deferred event, optionally set its one-bit argument, and optionally publish the decoded state through entry three of `_btdm_sched_linear_broker_ram`. |
 | `r_sym_bt_uNi9OHmE7XdXfGqTelU5` | 106 bytes | Same-chip named `r_btdm_recycle_in_task`: consume and clear the marker, drain scheduler work, then dispatch entry two of the linker-assembled `_btdm_sched_linear_broker_flash` table with argument zero; this is a drain event, not one callback per hardware edge. |
 | `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` / `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | 334 / 562 bytes (10c5077) | Insert a scheduler item through its `+0x54` intrusive link into the manager-root completion queue; task-side removal/reordering calls the insertion path. This proves a software producer, not a hardware completion FIFO. |
 | `r_sym_bt_WHYoiw8ufY0AEM2KSRK1` | 122 bytes (10c5077) | Same-chip named `r_btdm_sched_pop_executed_sch`: on every worker pop attempt, copy the low halfword from `0x2010_125c` to a zero-high image at `0x2010_1260`, merge the pending finished-list mask, synchronously dispatch it through entry five of the scheduler flash broker table when nonzero and then attempt a software completed-list pop. |
 | `brk_sym_sched_MzeSZzbQ4ZKhWW6Wu5jV` / `r_sym_bt_M9nG353V0svWrv1l1zGw` | 458 / 324 bytes (10c5077) | Same-chip named `r_sched_txn_onSchedHwListDone` and `r_btdm_sched_pick_finished_items`: walk set finished-list bits, unlink matching scheduler items from the hardware-linked list and append them to the software completed queue through `item+0x54`. The first is the BLE subscriber of scheduler flash broker entry five; the BR/EDR subscriber of the same entry is the unobfuscated `btdm_common_sched_bredr_on_sched_hw_list_done`. |
 | `r_sym_bt_QsLKLOCC2pct4rL8uFBN` | 130 bytes | Same-chip named `r_btdm_recycle_process_dequeued_sch`: clear the dequeued link image, recover its link-state pointer and invoke the item-specific recycle callback stored at `item+0x58`. |
-| `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` / `r_sym_ble_T40PqM3CeultOGiVkAp0` | 136 / 186 bytes | Default manager-0 selector-6 consumer and its scheduler action. Selector 6 walks active BLE scheduler transactions/list entries and asserts on an inconsistent `item+0x38` state. |
-| `r_sym_ble_zrorswmoCrQoX5oTeECu` / `r_sym_ble_3wftOXafF5ZkxLriL8L3` / `r_sym_ble_q4hMJ7XLGGCzxwmAKSge` | 62 / 188 / 102 bytes | Default manager-0 selector-4 consumer. It checks BLE scheduler/current-item state and, for a false publication when the predicate holds, retries a scheduler operation while it returns `-2`, increasing the delay in steps of 100. |
+| `brk_sym_sched_hOsJ4rGq1XjiY7GjHycG` | 176 bytes (10c5077) | Subscriber of entry five of the linker-assembled `_btdm_sched_linear_broker_ram` table, which `r_btdm_sched_check_remaining_entries` (`r_sym_bt_JlzTzVlQIZe4wkwwENZs`) dispatches; it checks the active BLE scheduler entries and asserts on an inconsistent one. |
+| `brk_sym_scan_tdX6OLWyRKYxelkB8vZ1` | 10c5077 | Subscriber of entry three of `_btdm_sched_linear_broker_ram`, which `r_btdm_recycle_in_isr` (`r_sym_bt_iEsFo1nbR5S71P2lMKhY`) dispatches. It calls `r_sym_ble_Cnmfhv0PX8NAIxKVSVUs` and `r_ble_lll_scan_chk_resume` (`r_sym_ble_jQKuzvSTa70k58IPazik`), which retries the scanner restart while it returns `-2`, increasing the delay in steps of 100. |
 | `r_sym_nrtIsr_kgxM2CJfVperrlVjmB4B` | 70 bytes (10c5077) | NRT ISR: raw sample at `0x2010_1340/1348`, shared W1C acknowledgement, then entry zero of the linker-assembled `_nrtIsr_linear_broker_flash` table with the two-word snapshot. No pinned archive member subscribes to that table, so the dispatch has no callback. |
 
 ## Exact primary suffix
@@ -80,9 +80,9 @@ live owner must retain it, skip ordinary LL work and enter
 fail-stop/quiesce. Rust does not reproduce the vendor assert routine in
 hard-interrupt context.
 
-Only after that prefix does the reference handler dispatch selector 0 with the
-two-word snapshot, execute the following dynamic branch, then dispatch selector
-1 with the same snapshot.
+Only after that prefix does the reference handler dispatch entry zero of
+`_btdm_hal_linear_broker_ram` with the two-word snapshot, execute the following
+dynamic branch, then dispatch entry one with the same snapshot.
 
 Dynamic classification is positional because Link-Layer names are not yet
 proven:
@@ -109,8 +109,9 @@ takes a diagnostic BUSY sample: it writes the complete selector image `0x38` to
 `DIAGNOSTIC_SELECT` at `0x2010_11e8`, reads `DIAGNOSTIC_VALUE` at
 `0x2010_11ec` until two consecutive complete reads are equal and tests bit 7.
 When that bit is clear it writes zero to `SCHEDULER_REFERENCE` at
-`0x2010_1078` and dispatches selector 6. The
-default BLE selector-6 consumer immediately performs a scheduler
+`0x2010_1078` and calls `r_btdm_sched_check_remaining_entries`, which
+dispatches entry five of `_btdm_sched_linear_broker_ram`. Its BLE subscriber
+`brk_sym_sched_hOsJ4rGq1XjiY7GjHycG` immediately performs a scheduler
 transaction/list consistency action. The typed classifier therefore returns
 `ClearReferenceAndContinue`. The callback has no MMIO or hardware mutation: it
 walks and asserts over the vendor's private intrusive transaction nodes. The
@@ -119,9 +120,10 @@ affine, so reproducing that vendor callback would
 add an artificial runtime ABI rather than a hardware invariant. Any
 dynamic branch then makes a later, independent `SCHEDULER_STATE` read. The
 derived reference state is `bit31 && bit29`. Deferred work is marked only when
-the first work input and that derived state are both true. Selector 4 receives
-the same derived state when the table requests state publication; the default
-BLE consumer uses both its presence and boolean payload to decide whether to
+the first work input and that derived state are both true. Entry three of
+`_btdm_sched_linear_broker_ram`, dispatched by `r_btdm_recycle_in_isr`,
+receives the same derived state when the table requests state publication; its
+BLE subscriber uses both its presence and boolean payload to decide whether to
 retry scheduler work.
 
 The reviewed current-link leaf proves that bits 23:20 of this same register
@@ -132,7 +134,7 @@ list at that temporal point; it does not identify an affine scheduler item,
 imply that the list is finished or authorize descriptor reclamation.
 
 The two reads cannot be folded into one observation: the reference clear and
-selector-6 software path occur between their positions. The Rust classifier
+entry-five software path occur between their positions. The Rust classifier
 therefore uses distinct reference-gate and work-observation types.
 
 Each primary service publishes one classified scheduler wake into a single
@@ -192,16 +194,21 @@ index and every finished-list bit use the same `0..16` hardware-list domain.
 A finished bit identifies a list, while the current index identifies the
 active list at a distinct temporal point; neither selects an affine item.
 
-Complete default BLE registration review found exactly three manager-0
-consumers. `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` owns selector 6,
-`r_sym_ble_zrorswmoCrQoX5oTeECu` owns selector 4, and
-`r_sym_ble_xwc69LJVHnjhZA8uSJnQ` handles selectors 0 and `0x8000_0000` while
-ignoring 4 and 6. Thus selectors 4 and 6 are replaceable software ABI, but
-their applicable effects are not optional. Exact role comparison with the
-named C61 body `r_ble_lll_scan_chk_resume` classifies the 102-byte S31
-`r_sym_ble_q4hMJ7XLGGCzxwmAKSge` retry body as scanner-role resume. An open
-DTM-only scheduler therefore has no selector-4 successor at all; a later scan
-ULL owner must provide the typed collision/resume policy. Selector 6 remains
+The pinned archive has no run-time registration: every consumer subscribes to
+an entry of `_btdm_sched_linear_broker_ram` through its `.subinfo`
+descriptor. Entry three, dispatched from `r_btdm_recycle_in_isr`, reaches
+the scanner resume `brk_sym_scan_tdX6OLWyRKYxelkB8vZ1`; entry five, dispatched
+from `r_btdm_sched_check_remaining_entries`, reaches
+`brk_sym_sched_hOsJ4rGq1XjiY7GjHycG`. Entries one and two, dispatched from the
+scheduler run body and `r_btdm_sched_stop`, reach the scanner subscribers
+`brk_sym_scan_b8ogEC3hTjGmqL5oRuyw` and `brk_sym_scan_fd4yzdFac8vdFTlQ4BPA`;
+entry zero, dispatched from `r_btdm_sched_actual_start_time_get`, reaches
+`brk_sym_sched_PNMeumLUZPcz8o4UrTLi` and an ISO subscriber. These entries are
+replaceable software ABI, but their applicable effects are not optional. The
+C61-named `r_ble_lll_scan_chk_resume` classifies the 102-byte pinned
+`r_sym_ble_jQKuzvSTa70k58IPazik` as scanner-role resume. An open DTM-only
+scheduler therefore needs no scanner-resume subscriber; a later scan ULL owner
+must provide the typed collision/resume policy. The entry-five check remains
 evidence about the vendor's active-transaction container, but has no runtime
 successor in the open scheduler: the corresponding list consistency is
 structural in its affine owners. The current wake cell retains

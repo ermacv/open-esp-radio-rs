@@ -8,11 +8,15 @@ must lower.
 
 ## Authenticated connection contracts
 
-The current `libble_app.a` connection functions are identified below by their
-symbol names.
+The connection functions of the pinned
+[`esp32s31-bt-lib@10c5077`](https://github.com/espressif/esp32s31-bt-lib/tree/10c507788e9da0993709cf82e405c896561172d8)
+`libble_app.a` are identified below by their symbol names; role names come
+from the reviewed lineage in
+[`verification/esp32s31/facts/names/`](../../../verification/esp32s31/facts/names/)
+or, where it names no body, from the pinned call graph.
 
-`r_sym_ble_2ZQ4FJGb6hQUDPQ9jp4a`, reviewed as
-`ble_lll_conn_reset_link_state`, proves two direct semantic transfers from the
+`r_sym_ble_bgOSnaHsEjrTC0mkupqH`, the lineage's
+`r_ble_lll_conn_reset_link_state`, proves two direct semantic transfers from the
 connection state into the private `0x84`-byte link state:
 
 | Semantic value | Connection state | Link state | Reviewed transform |
@@ -86,10 +90,9 @@ the resulting absolute first window beside the still-unsubmitted connection
 event and identity-prepared SRAM graph. Cancellation returns both the pristine
 graph and event counter zero; there is no `now()` input on this path.
 
-Exact normalized-body correspondence between the current obfuscated archive
-and the older named same-chip archive identifies
-`r_sym_ble_DCD5eVhcHQ9ueSpewKn1` as `ble_lll_conn_peripheral_new`. Its current
-ESP32-S31 body proves that the first event additionally depends on all of the
+The lineage identifies `r_sym_ble_tPr7egUaNHmqfcieCA5O` as
+`r_ble_lll_conn_slave_new`, the peripheral's first event. Its pinned body
+proves that the first event additionally depends on all of the
 following:
 
 - a live controller-time observation used with the connection interval to
@@ -135,10 +138,11 @@ pass the reservation's actual timing-policy lead after sequence authorization;
 the memory codec installs those hardware inputs without resampling time.
 
 The connection allocator also retains the common allocation bits installed by
-`61.o:r_sym_ble_UCGCRefyBslibNM003px`. Current
-`51.o:r_sym_ble_O0vMjkEidHi2LMntMUtT` preserves them while linking the item,
-then applies the connection-specific mask to the common flags at `+0x1c`.
-Its call to `51.o:r_sym_ble_Usz94okxdD4AJlhlWrI6` initializes the two five-bit
+the common scheduler-item allocator `r_sym_memMgmt_DJqpkHU8oAe5YxcQ1aHk`. The
+pinned connection allocator `r_sym_ble_fhQDfdlA6MRu4nAdDQN0` preserves them
+while linking the item, then applies the connection-specific mask to the
+common flags at `+0x1c`. Its call to `r_ble_lll_conn_coex_pti_init`
+(`r_sym_coexConn_BqYvJSQvD3IUJJyL5jD8`) initializes the two five-bit
 radio-request priorities at `+0x24`; advertising has a different, four-lane
 producer. With another radio on the antenna the open radio applies the
 vendor's dynamic priority control: `coexConn.c.o_1.o`
@@ -168,10 +172,10 @@ pool is an open ownership choice, not proof of equivalence to the vendor's
 persistent global buffer rotation; the shared hardware cursor contract is
 described in [the RX-list reference](bluetooth-passive-scanning.md).
 
-The priority is not an application-supplied integer. The retained
-current options object and the older named options object are byte-identical:
-the first-event transform maps its priority input to 13 and its common-radio
-policy input to 3. These scalars are reviewed chip policy inside the backend.
+The priority is not an application-supplied integer. The first-event transform
+maps its priority input to 13 and its common-radio policy input to 3; this was
+reviewed on the earlier `7f20740` archive and is not yet re-established on the
+pinned body. These scalars are reviewed chip policy inside the backend.
 The channel-frequency mapping is the ordinary LE data-channel ordering around
 the three primary advertising-channel positions; the portable LL still sees
 only a validated data-channel index. Likewise, signed dBm, interval and a
@@ -179,7 +183,8 @@ non-empty wrapping window are the only dynamic inputs visible above the memory
 crate. Masks, shifts, rounded-power values and SRAM offsets do not leave that
 codec.
 
-The current and named older S31 `ble_ll_conn_created` bodies additionally prove
+The `ble_ll_conn_created` bodies of the earlier `7f20740` archive and the
+named S31 archive, not yet re-established on the pinned body, additionally show
 that the first scheduler reservation does not end at the upper edge of the
 transmit window. For LE 1M it retains another 5,154 microseconds of event time
 and a one-unit boundary guard. The source-owned backend preserves that
@@ -200,8 +205,9 @@ transmit window fits its short descriptor form, whose encoding is private
 to `PeripheralConnectionReceiveWait`. No upper layer accepts the
 duration/configuration word.
 
-The event remains deliberately CPU-owned. Complete current and named
-same-chip direction-finding bodies prove that ordinary advertising, sync and
+The event remains deliberately CPU-owned. The direction-finding bodies of the
+earlier `7f20740` archive and the named same-chip archive, not yet
+re-established on the pinned body, show that ordinary advertising, sync and
 connection link states all retain one controller-global `0x20`-byte
 environment even when IQ sampling is disabled. The open driver claims and
 initializes that separate static workspace before MMIO, publishes its disabled
@@ -216,8 +222,8 @@ fresh Controller-time sample and writes the requested window into the private
 descriptor; the executor rejects an overlapping window instead of displacing
 it, so the descriptor always carries the window the Link Layer core planned.
 
-Exact correspondence also identifies the current allocation suffix with the
-named same-chip `ble_lll_conn_slave_new`. The connection link state's selected
+The allocation suffix of the pinned `r_ble_lll_conn_slave_new` behaves as
+follows. The connection link state's selected
 scheduler head is the item at the private free-list head. Allocation reads that
 item's compressed predecessor, advances the private head to the predecessor,
 detaches the selected item and passes only that item to the common scheduler;
@@ -235,8 +241,8 @@ then copies every contiguous completed RX PDU, reports the captured anchor and
 the peer's acknowledgement, and preserves the live connection link state for
 the next event.
 
-The same exact correspondence identifies
-`r_sym_ble_1KGaCqPI03xSu9c6Rh0G` as `ble_lll_conn_update_link_state`. Together
+The lineage identifies `r_sym_ble_mLYtT1I4BQmunJL36NqV` as
+`r_ble_lll_conn_update_link_state`, which reads and writes this word. Together
 with the default and custom aborted-opcode writers, its complete body identifies
 the word at `BTMAC_BLE_PHY_INIT + 0x4ac` with a narrower reviewed
 contract. Bit 0 selects the custom aborted-opcode path. Link-state refresh
@@ -262,14 +268,15 @@ portable Link Layer.
 
 ## Completion recycle and recurring-event facts
 
-Current-to-named correspondence also identifies the complete connection-event
-suffix:
+The pinned call graph identifies the complete connection-event suffix:
 
-- `r_sym_ble_vssfeWXnPIcnyOfdsX00` is the current
-  `ble_lll_conn_recycle_sch_item`;
-- `r_sym_ble_Dugdawung2wRHuTkJeRz` is the current
+- `r_sym_ble_eDUBAKBNjv0YRQI9tlHA`, the recycle callback the connection
+  allocator installs, is `ble_lll_conn_recycle_sch_item`;
+- `r_sym_ble_AFktzwzXYWsJzbJozyXH`, reached from it and from
+  `r_ble_lll_conn_event_delete_and_reschedule`, is
   `ble_lll_conn_sched_next_anchor`;
-- `r_sym_ble_bp2AWMfX9zEpJsmzOTUB` is the current
+- `r_sym_ble_rsCCyH2B22gdYkN4LOOJ`, its callee that refreshes the link state
+  and inserts through `r_sched_txn_insertOne`, is
   `ble_lll_conn_reschedule_event`.
 
 The scheduler-item status is not a success/error boolean. Zero takes one quiet
@@ -298,20 +305,24 @@ Recurring events use a different profile from the first event:
 - missed intervals advance the proposed event counter by `skipped + 1`, while
   admission retries remain provisional until one candidate commits.
 
-The complete named bodies make the software-widening arithmetic exact rather
-than heuristic. `ble_lll_conn_move_to_next_event` calls
-`ble_ll_utils_calc_window_widening` with the proposed anchor, the last actual
+The pinned bodies make the software-widening arithmetic exact rather than
+heuristic. The move body `r_sym_ble_JqbtnypGd2wyQym9wmK4`
+(`ble_lll_conn_move_to_next_event`, reached from the next-anchor body) calls
+the widening helper `r_sym_ble_W6sXwmh4TbZnhptZU0wo` with the proposed anchor, the last actual
 anchor and the two SCA indexes. That helper converts the positive elapsed time
 to microseconds, truncates it to whole milliseconds, multiplies it by the sum
 of the two worst-case PPM table entries, and divides by 1,000 again. Both
 divisions are unsigned truncation, so the controller uses floor rather than a
-conservative ceiling. The move body then adds private-options byte `+0x26`;
-the byte-identical current and named default options objects contain 63 there.
+conservative ceiling. The move body then adds byte `+0x26` of the public
+Controller configuration that `r_sdkconfig_get_opts` returns,
+`esp_bt_ctrl_le_config_t::ble_ll_jitter_usecs`, 16 microseconds by default
+(`BLE_LL_JITTER_USECS_N`).
 
-The software branch of named `ble_lll_conn_reschedule_event` subtracts the
-preparation lead, private-options byte `+0x20`, the current widening and one
-CPU-time boundary tick from the proposed anchor. The reviewed default at
-`+0x20` is 10 and S31 CPU-time conversion is identity, so that boundary tick
+The software branch of `ble_lll_conn_reschedule_event` subtracts the
+preparation lead, byte `+0x22` of the private options, the current widening
+and one CPU-time boundary tick from the proposed anchor. The private options
+are the `0x48`-byte default `sym_controller_jqcSm1kAtUzAMoyGlaKq` copied by
+`r_priv_sdk_config_options_init`; its byte at `+0x22` is 10 and S31 CPU-time conversion is identity, so that boundary tick
 is one microsecond. Its receive-wait duration is the same 10-microsecond fixed
 guard plus accumulated anchor uncertainty, twice the current widening and
 `os_cputime_ticks_to_usecs(2)`, which is two microseconds on S31. This is

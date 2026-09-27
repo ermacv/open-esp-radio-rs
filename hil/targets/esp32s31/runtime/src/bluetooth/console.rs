@@ -115,6 +115,11 @@ pub(super) async fn run(
                 Command::GetCapabilities => Event::Hello(Console::capabilities(profile)),
                 Command::GetBootStatus => Event::BootStatus(crate::system::boot_evidence()),
                 Command::QueryLinkHealth => console.health(),
+                // Only CPU0 runs in the Bluetooth images.
+                Command::QueryInterruptStackUsage => Event::InterruptStackUsage {
+                    cpu0: crate::stack_evidence::current_irq_snapshot(),
+                    cpu1: None,
+                },
                 command => profile.command(command).await,
             },
         };

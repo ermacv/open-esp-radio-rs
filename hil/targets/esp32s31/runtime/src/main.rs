@@ -111,7 +111,7 @@ mod gdma_mem2mem_probe;
 mod memory_benchmark;
 #[cfg(feature = "open-radio-hil")]
 mod phy_fault;
-#[cfg(feature = "open-radio-hil")]
+#[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 mod stack_evidence;
 #[cfg(any(
     feature = "system-watchdog",

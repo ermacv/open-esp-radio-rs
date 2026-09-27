@@ -64,6 +64,9 @@ void app_main(void)
     wifi_init_config_t wifi = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    /* Production has no modem sleep and keeps RF open; the vendor default
+     * power save would close RF before the registers are read. */
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
     printf(REPORT_PREFIX "-end\n");
     fflush(stdout);

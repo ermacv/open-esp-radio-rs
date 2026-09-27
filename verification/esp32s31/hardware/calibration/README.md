@@ -78,10 +78,11 @@ It records:
 
 ## Limitations
 
-The two sides reach different lifecycle points: the vendor firmware only
-enables the PHY, while the production image has also brought Wi-Fi up, so
-registers of the MAC clocks, AGC status and runtime counters differ by
-lifecycle rather than calibration until they are reviewed.
+Both sides are read at the same lifecycle point: the vendor firmware starts
+its Wi-Fi client without a connection and with power save off, since
+production has no modem sleep and keeps RF open after its role-neutral
+Wi-Fi bring-up. Production's missing modem sleep is a behavior difference
+outside this calibration comparison.
 
 
 The relation covers these parts of the committed calibration, in the order

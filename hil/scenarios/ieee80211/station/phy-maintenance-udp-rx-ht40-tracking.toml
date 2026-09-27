@@ -3,7 +3,7 @@ id = "phy-maintenance-udp-rx-ht40-tracking"
 description = "HT40 UDP host-to-station throughput with the shared PHY's periodic tracking running under the vendor admission: one arm of the PHY maintenance experiment on one firmware"
 repetitions = 3
 transfer = "identical-image"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "phy-maintenance", "air-exclusive"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "phy-maintenance", "air-strict"]
 
 [wifi]
 image = "correctness"

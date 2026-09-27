@@ -2,6 +2,24 @@ schema = 2
 crate-name = "oer_esp32c5_pac_raw"
 
 [[registers]]
+address = 1610670080
+width = 32
+access = "read-write"
+identity = "APB_SARADC_RADIO.CTRL"
+peripheral = "APB_SARADC_RADIO"
+peripheral-type = "ApbSaradcRadio"
+peripheral-module = "apb_saradc_radio"
+scope = []
+register-method = "ctrl"
+
+[[registers.fields]]
+svd-name = "SARADC2_PWDET_DRV"
+method = "saradc2_pwdet_drv"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 1610678320
 width = 32
 access = "read-write"
@@ -41,6 +59,153 @@ bit-width = 23
 access = "read-write"
 
 [[registers]]
+address = 1611269120
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FE_CLOCK_GATE"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "fe_clock_gate"
+
+[[registers.fields]]
+svd-name = "STATE"
+method = "state"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611269128
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.TABLE_MEMORY_INDEX_SOURCE"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "table_memory_index_source"
+
+[[registers.fields]]
+svd-name = "BASE_INDEX"
+method = "base_index"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 1611269132
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FRONT_END_AND_TONE_STOP_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "front_end_and_tone_stop_control"
+
+[[registers.fields]]
+svd-name = "FRONT_END_INIT_ENABLE_UNKNOWN"
+method = "front_end_init_enable_unknown"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611269172
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.RX_DCO_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "rx_dco_control"
+
+[[registers.fields]]
+svd-name = "CALIBRATION_CONTROL_UNKNOWN"
+method = "calibration_control_unknown"
+bit-offset = 22
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 1611269176
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "iq_correction_control"
+
+[[registers.fields]]
+svd-name = "RX_IQ_CORRECTION_MODE_LOW"
+method = "rx_iq_correction_mode_low"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_IQ_CORRECTION_MODE_HIGH"
+method = "rx_iq_correction_mode_high"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FRONT_END_INIT_HIGH_UNKNOWN"
+method = "front_end_init_high_unknown"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611269180
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.RX_IQ_SCALE"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "rx_iq_scale"
+
+[[registers.fields]]
+svd-name = "SCALE_LOW_UNKNOWN"
+method = "scale_low_unknown"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SCALE_HIGH_UNKNOWN"
+method = "scale_high_unknown"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 1611269188
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FRONT_END_CLEAR_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "front_end_clear_control"
+
+[[registers.fields]]
+svd-name = "INIT_CLEAR_FIRST_UNKNOWN"
+method = "init_clear_first_unknown"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 1611269192
 width = 32
 access = "read-write"
@@ -77,6 +242,275 @@ svd-name = "DAC_RATE_HIGH_UNKNOWN"
 method = "dac_rate_high_unknown"
 bit-offset = 3
 bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611270144
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FE_BB_CLOCK_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "fe_bb_clock_control"
+
+[[registers.fields]]
+svd-name = "FE_BB_ENABLE_UNKNOWN"
+method = "fe_bb_enable_unknown"
+bit-offset = 0
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 1611270152
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "power_detector_control"
+
+[[registers.fields]]
+svd-name = "CALIBRATION_FIELD_UNKNOWN"
+method = "calibration_field_unknown"
+bit-offset = 4
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INITIALIZATION_MODE_UNKNOWN"
+method = "initialization_mode_unknown"
+bit-offset = 20
+bit-width = 3
+access = "read-write"
+
+[[registers]]
+address = 1611270156
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "power_detector_sar_control_status"
+
+[[registers.fields]]
+svd-name = "SAR_CONFIG_CLEAR_UNKNOWN"
+method = "sar_config_clear_unknown"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SAR_MODE_UNKNOWN"
+method = "sar_mode_unknown"
+bit-offset = 12
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 1611270160
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_810"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "power_detector_word_810"
+
+[[registers.fields]]
+svd-name = "STATE"
+method = "state"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611270164
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_814"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "power_detector_word_814"
+
+[[registers.fields]]
+svd-name = "STATE"
+method = "state"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611270168
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_REFERENCE"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "power_detector_reference"
+
+[[registers.fields]]
+svd-name = "STATE"
+method = "state"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611270256
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.TX_PA_CONTROL_1"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "tx_pa_control_1"
+
+[[registers.fields]]
+svd-name = "PA_ON_BT_DELAY"
+method = "pa_on_bt_delay"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 1611270280
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "front_end_init_0888"
+
+[[registers.fields]]
+svd-name = "IQ_SWAP_UNKNOWN"
+method = "iq_swap_unknown"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611270292
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0894"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "front_end_init_0894"
+
+[[registers.fields]]
+svd-name = "FE_INIT_ENABLE_UNKNOWN"
+method = "fe_init_enable_unknown"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611271172
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.DAC_SCALE"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "dac_scale"
+
+[[registers.fields]]
+svd-name = "SCALE_LOW_UNKNOWN"
+method = "scale_low_unknown"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SCALE_HIGH_UNKNOWN"
+method = "scale_high_unknown"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 1611271176
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "front_end_init_0c08"
+
+[[registers.fields]]
+svd-name = "INIT_FIRST_UNKNOWN"
+method = "init_first_unknown"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_SECOND_UNKNOWN"
+method = "init_second_unknown"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611271180
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_AUX"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "iq_correction_aux"
+
+[[registers.fields]]
+svd-name = "TX_IQ_CORRECTION_MODE_LOW"
+method = "tx_iq_correction_mode_low"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_IQ_CORRECTION_MODE_HIGH"
+method = "tx_iq_correction_mode_high"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611271200
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C20"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "front_end_init_0c20"
+
+[[registers.fields]]
+svd-name = "INIT_LOW_UNKNOWN"
+method = "init_low_unknown"
+bit-offset = 0
+bit-width = 8
 access = "read-write"
 
 [[registers]]
@@ -1697,6 +2131,24 @@ bit-width = 1
 access = "write-only"
 
 [[registers]]
+address = 1611299968
+width = 32
+access = "read-write"
+identity = "PHY_BASEBAND_CONFIG.BB_CLOCK_GATE"
+peripheral = "PHY_BASEBAND_CONFIG"
+peripheral-type = "PhyBasebandConfig"
+peripheral-module = "phy_baseband_config"
+scope = []
+register-method = "bb_clock_gate"
+
+[[registers.fields]]
+svd-name = "STATE"
+method = "state"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
 address = 1611302912
 width = 32
 access = "read-only"
@@ -2086,6 +2538,38 @@ bit-width = 1
 access = "read-write"
 
 [[registers]]
+address = 1611331608
+width = 32
+access = "read-write"
+identity = "I2C_ANA_MST.ANA_CONF0"
+peripheral = "I2C_ANA_MST"
+peripheral-type = "I2cAnaMst"
+peripheral-module = "i2c_ana_mst"
+scope = []
+register-method = "ana_conf0"
+
+[[registers.fields]]
+svd-name = "BBPLL_CAL_MODE"
+method = "bbpll_cal_mode"
+bit-offset = 2
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PHY_REGISTER_ENABLE"
+method = "phy_register_enable"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PHY_REGISTER_MODE"
+method = "phy_register_mode"
+bit-offset = 9
+bit-width = 2
+access = "read-write"
+
+[[registers]]
 address = 1611331612
 width = 32
 access = "read-write"
@@ -2293,4 +2777,22 @@ svd-name = "XPD_PLL_I2C"
 method = "xpd_pll_i2c"
 bit-offset = 31
 bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611337812
+width = 32
+access = "read-write"
+identity = "LP_AON_RADIO.SAR_CCT"
+peripheral = "LP_AON_RADIO"
+peripheral-type = "LpAonRadio"
+peripheral-module = "lp_aon_radio"
+scope = []
+register-method = "sar_cct"
+
+[[registers.fields]]
+svd-name = "SAR2_PWDET_CCT"
+method = "sar2_pwdet_cct"
+bit-offset = 29
+bit-width = 3
 access = "read-write"

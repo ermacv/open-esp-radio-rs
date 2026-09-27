@@ -39,3 +39,345 @@ name = "DAC_RATE_HIGH_UNKNOWN"
 description = "Bit 3, cleared by phy_dac_rate_set."
 bitOffset = 3
 bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FE_CLOCK_GATE"
+description = "Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7."
+addressOffset = 0x400
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "STATE"
+description = "Complete front-end clock-gate image; individual gate meanings are unknown."
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "TABLE_MEMORY_INDEX_SOURCE"
+description = "Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4."
+addressOffset = 0x408
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "BASE_INDEX"
+description = "Base index byte."
+bitOffset = 24
+bitWidth = 8
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FRONT_END_AND_TONE_STOP_CONTROL"
+description = "Word whose bit 2 phy_fe_reg_init sets."
+addressOffset = 0x40c
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "FRONT_END_INIT_ENABLE_UNKNOWN"
+description = "Front-end initialization enable; meaning unknown."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "RX_DCO_CONTROL"
+description = "Word whose bits 23:22 phy_iq_swap_set clears."
+addressOffset = 0x434
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "CALIBRATION_CONTROL_UNKNOWN"
+description = "Two-bit calibration control; meaning unknown."
+bitOffset = 22
+bitWidth = 2
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "IQ_CORRECTION_CONTROL"
+description = "Word whose bits 31:29 phy_fe_reg_init sets."
+addressOffset = 0x438
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "RX_IQ_CORRECTION_MODE_LOW"
+description = "RX IQ correction mode, low bit."
+bitOffset = 29
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RX_IQ_CORRECTION_MODE_HIGH"
+description = "RX IQ correction mode, high bit."
+bitOffset = 30
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "FRONT_END_INIT_HIGH_UNKNOWN"
+description = "Front-end initialization bit; meaning unknown."
+bitOffset = 31
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "RX_IQ_SCALE"
+description = "Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces."
+addressOffset = 0x43c
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "SCALE_LOW_UNKNOWN"
+description = "Low RX IQ scale byte."
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "SCALE_HIGH_UNKNOWN"
+description = "High RX IQ scale byte."
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FRONT_END_CLEAR_CONTROL"
+description = "Word whose bit 8 phy_fe_reg_init clears."
+addressOffset = 0x444
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_FIRST_UNKNOWN"
+description = "Front-end initialization clear bit; meaning unknown."
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FE_BB_CLOCK_CONTROL"
+description = "Word whose bits 1:0 phy_open_fe_bb_clk sets."
+addressOffset = 0x800
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "FE_BB_ENABLE_UNKNOWN"
+description = "Two-bit front-end and baseband clock enable; individual meanings unknown."
+bitOffset = 0
+bitWidth = 2
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "POWER_DETECTOR_CONTROL"
+description = "Power-detector control word."
+addressOffset = 0x808
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "CALIBRATION_FIELD_UNKNOWN"
+description = "Byte phy_pwdet_reg_init replaces with 0x50."
+bitOffset = 4
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "INITIALIZATION_MODE_UNKNOWN"
+description = "Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."
+bitOffset = 20
+bitWidth = 3
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "POWER_DETECTOR_SAR_CONTROL_STATUS"
+description = "Power-detector SAR control word."
+addressOffset = 0x80c
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "SAR_CONFIG_CLEAR_UNKNOWN"
+description = "Bit phy_pwdet_sar2_init clears."
+bitOffset = 9
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "SAR_MODE_UNKNOWN"
+description = "Two bits phy_pwdet_sar2_init sets."
+bitOffset = 12
+bitWidth = 2
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "POWER_DETECTOR_WORD_810"
+description = "Word phy_pwdet_reg_init writes 0x0F0F0FFF."
+addressOffset = 0x810
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "STATE"
+description = "Complete image; meaning unknown."
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "POWER_DETECTOR_WORD_814"
+description = "Word phy_pwdet_reg_init writes 0x00FF0F64."
+addressOffset = 0x814
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "STATE"
+description = "Complete image; meaning unknown."
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "POWER_DETECTOR_REFERENCE"
+description = "Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA."
+addressOffset = 0x818
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "STATE"
+description = "Complete image; the low halfword is the power-detector reference code."
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "TX_PA_CONTROL_1"
+description = "Word whose bits 15:8 phy_fe_reg_init replaces with 0x96."
+addressOffset = 0x870
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "PA_ON_BT_DELAY"
+description = "PA-on delay byte."
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FRONT_END_INIT_0888"
+description = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise."
+addressOffset = 0x888
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "IQ_SWAP_UNKNOWN"
+description = "IQ-swap-dependent bit; meaning unknown."
+bitOffset = 29
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FRONT_END_INIT_0894"
+description = "Word whose bit 22 phy_fe_reg_init sets."
+addressOffset = 0x894
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "FE_INIT_ENABLE_UNKNOWN"
+description = "Front-end initialization enable; meaning unknown."
+bitOffset = 22
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "DAC_SCALE"
+description = "Word whose bits 23:16 and then 15:8 phy_dac_scale_set replaces with 0xFF or 0."
+addressOffset = 0xc04
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "SCALE_LOW_UNKNOWN"
+description = "Second DAC scale byte."
+bitOffset = 8
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "SCALE_HIGH_UNKNOWN"
+description = "First DAC scale byte."
+bitOffset = 16
+bitWidth = 8
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FRONT_END_INIT_0C08"
+description = "Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise."
+addressOffset = 0xc08
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_FIRST_UNKNOWN"
+description = "First bit; meaning unknown."
+bitOffset = 25
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_SECOND_UNKNOWN"
+description = "Second bit; meaning unknown."
+bitOffset = 26
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "IQ_CORRECTION_AUX"
+description = "Word whose bits 14:13 phy_fe_reg_init sets."
+addressOffset = 0xc0c
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "TX_IQ_CORRECTION_MODE_LOW"
+description = "TX IQ correction mode, low bit."
+bitOffset = 13
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TX_IQ_CORRECTION_MODE_HIGH"
+description = "TX IQ correction mode, high bit."
+bitOffset = 14
+bitWidth = 1
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "FRONT_END_INIT_0C20"
+description = "Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."
+addressOffset = 0xc20
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "INIT_LOW_UNKNOWN"
+description = "Low byte; meaning unknown."
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "BB_CLOCK_GATE"
+description = "Baseband clock-gate word; phy_open_fe_bb_clk writes all ones."
+addressOffset = 0x7c80
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "STATE"
+description = "Complete baseband clock-gate image; individual gate meanings are unknown."
+bitOffset = 0
+bitWidth = 32

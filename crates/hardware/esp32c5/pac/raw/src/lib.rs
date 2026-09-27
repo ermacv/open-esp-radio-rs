@@ -5351,7 +5351,8 @@ pub mod i2c_ana_mst {
     pub struct RegisterBlock {
         i2c0_ctrl: I2c0Ctrl,
         i2c1_ctrl: I2c1Ctrl,
-        _reserved2: [u8; 0x14],
+        _reserved2: [u8; 0x10],
+        ana_conf0: AnaConf0,
         ana_conf1: AnaConf1,
         ana_conf2: AnaConf2,
         i2c0_ctrl1: I2c0Ctrl1,
@@ -5368,6 +5369,11 @@ pub mod i2c_ana_mst {
         #[inline(always)]
         pub const fn i2c1_ctrl(&self) -> &I2c1Ctrl {
             &self.i2c1_ctrl
+        }
+        #[doc = "0x18 - Analog I2C master control used by PHY register mode and BBPLL calibration."]
+        #[inline(always)]
+        pub const fn ana_conf0(&self) -> &AnaConf0 {
+            &self.ana_conf0
         }
         #[doc = "0x1c - Analog block read-mask word, published complete before every read."]
         #[inline(always)]
@@ -5933,6 +5939,77 @@ pub mod i2c_ana_mst {
             const RESET_VALUE: u32 = 0x42;
         }
     }
+    #[doc = "ANA_CONF0 (rw) register accessor: Analog I2C master control used by PHY register mode and BBPLL calibration.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf0::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ana_conf0`] module"]
+    #[doc(alias = "ANA_CONF0")]
+    pub type AnaConf0 = crate::Reg<ana_conf0::AnaConf0Spec>;
+    #[doc = "Analog I2C master control used by PHY register mode and BBPLL calibration."]
+    pub mod ana_conf0 {
+        #[doc = "Register `ANA_CONF0` reader"]
+        pub type R = crate::R<AnaConf0Spec>;
+        #[doc = "Register `ANA_CONF0` writer"]
+        pub type W = crate::W<AnaConf0Spec>;
+        #[doc = "Field `BBPLL_CAL_MODE` reader - Two-bit BBPLL calibration mode."]
+        pub type BbpllCalModeR = crate::FieldReader;
+        #[doc = "Field `BBPLL_CAL_MODE` writer - Two-bit BBPLL calibration mode."]
+        pub type BbpllCalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `PHY_REGISTER_ENABLE` reader - PHY register access enable."]
+        pub type PhyRegisterEnableR = crate::BitReader;
+        #[doc = "Field `PHY_REGISTER_ENABLE` writer - PHY register access enable."]
+        pub type PhyRegisterEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `PHY_REGISTER_MODE` reader - Two-bit PHY register mode."]
+        pub type PhyRegisterModeR = crate::FieldReader;
+        #[doc = "Field `PHY_REGISTER_MODE` writer - Two-bit PHY register mode."]
+        pub type PhyRegisterModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 2:3 - Two-bit BBPLL calibration mode."]
+            #[inline(always)]
+            pub fn bbpll_cal_mode(&self) -> BbpllCalModeR {
+                BbpllCalModeR::new(((self.bits >> 2) & 3) as u8)
+            }
+            #[doc = "Bit 6 - PHY register access enable."]
+            #[inline(always)]
+            pub fn phy_register_enable(&self) -> PhyRegisterEnableR {
+                PhyRegisterEnableR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bits 9:10 - Two-bit PHY register mode."]
+            #[inline(always)]
+            pub fn phy_register_mode(&self) -> PhyRegisterModeR {
+                PhyRegisterModeR::new(((self.bits >> 9) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 2:3 - Two-bit BBPLL calibration mode."]
+            #[inline(always)]
+            pub fn bbpll_cal_mode(&mut self) -> BbpllCalModeW<'_, AnaConf0Spec> {
+                BbpllCalModeW::new(self, 2)
+            }
+            #[doc = "Bit 6 - PHY register access enable."]
+            #[inline(always)]
+            pub fn phy_register_enable(&mut self) -> PhyRegisterEnableW<'_, AnaConf0Spec> {
+                PhyRegisterEnableW::new(self, 6)
+            }
+            #[doc = "Bits 9:10 - Two-bit PHY register mode."]
+            #[inline(always)]
+            pub fn phy_register_mode(&mut self) -> PhyRegisterModeW<'_, AnaConf0Spec> {
+                PhyRegisterModeW::new(self, 9)
+            }
+        }
+        #[doc = "Analog I2C master control used by PHY register mode and BBPLL calibration.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AnaConf0Spec;
+        impl crate::RegisterSpec for AnaConf0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ana_conf0::R`](R) reader structure"]
+        impl crate::Readable for AnaConf0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`ana_conf0::W`](W) writer structure"]
+        impl crate::Writable for AnaConf0Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets ANA_CONF0 to value 0xe408"]
+        impl crate::Resettable for AnaConf0Spec {
+            const RESET_VALUE: u32 = 0xe408;
+        }
+    }
 }
 #[doc = "ESP32-C5 PMU fields that the PHY drives: the analog I2C power and reset controls of the RF blocks and the immediate BB I2C power tie. Other fields remain absent and are preserved by every field transaction."]
 pub type PmuRadio = crate::Periph<pmu_radio::RegisterBlock, 0x600b_0000>;
@@ -6172,14 +6249,151 @@ pub mod phy_baseband_config {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        _reserved0: [u8; 0x0448],
+        _reserved0: [u8; 0x0400],
+        fe_clock_gate: FeClockGate,
+        _reserved1: [u8; 0x04],
+        table_memory_index_source: TableMemoryIndexSource,
+        front_end_and_tone_stop_control: FrontEndAndToneStopControl,
+        _reserved3: [u8; 0x24],
+        rx_dco_control: RxDcoControl,
+        iq_correction_control: IqCorrectionControl,
+        rx_iq_scale: RxIqScale,
+        _reserved6: [u8; 0x04],
+        front_end_clear_control: FrontEndClearControl,
         adc_rate_and_front_end_control: AdcRateAndFrontEndControl,
+        _reserved8: [u8; 0x03b4],
+        fe_bb_clock_control: FeBbClockControl,
+        _reserved9: [u8; 0x04],
+        power_detector_control: PowerDetectorControl,
+        power_detector_sar_control_status: PowerDetectorSarControlStatus,
+        power_detector_word_810: PowerDetectorWord810,
+        power_detector_word_814: PowerDetectorWord814,
+        power_detector_reference: PowerDetectorReference,
+        _reserved14: [u8; 0x54],
+        tx_pa_control_1: TxPaControl1,
+        _reserved15: [u8; 0x14],
+        front_end_init_0888: FrontEndInit0888,
+        _reserved16: [u8; 0x08],
+        front_end_init_0894: FrontEndInit0894,
+        _reserved17: [u8; 0x036c],
+        dac_scale: DacScale,
+        front_end_init_0c08: FrontEndInit0c08,
+        iq_correction_aux: IqCorrectionAux,
+        _reserved20: [u8; 0x10],
+        front_end_init_0c20: FrontEndInit0c20,
+        _reserved21: [u8; 0x705c],
+        bb_clock_gate: BbClockGate,
     }
     impl RegisterBlock {
+        #[doc = "0x400 - Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7."]
+        #[inline(always)]
+        pub const fn fe_clock_gate(&self) -> &FeClockGate {
+            &self.fe_clock_gate
+        }
+        #[doc = "0x408 - Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4."]
+        #[inline(always)]
+        pub const fn table_memory_index_source(&self) -> &TableMemoryIndexSource {
+            &self.table_memory_index_source
+        }
+        #[doc = "0x40c - Word whose bit 2 phy_fe_reg_init sets."]
+        #[inline(always)]
+        pub const fn front_end_and_tone_stop_control(&self) -> &FrontEndAndToneStopControl {
+            &self.front_end_and_tone_stop_control
+        }
+        #[doc = "0x434 - Word whose bits 23:22 phy_iq_swap_set clears."]
+        #[inline(always)]
+        pub const fn rx_dco_control(&self) -> &RxDcoControl {
+            &self.rx_dco_control
+        }
+        #[doc = "0x438 - Word whose bits 31:29 phy_fe_reg_init sets."]
+        #[inline(always)]
+        pub const fn iq_correction_control(&self) -> &IqCorrectionControl {
+            &self.iq_correction_control
+        }
+        #[doc = "0x43c - Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces."]
+        #[inline(always)]
+        pub const fn rx_iq_scale(&self) -> &RxIqScale {
+            &self.rx_iq_scale
+        }
+        #[doc = "0x444 - Word whose bit 8 phy_fe_reg_init clears."]
+        #[inline(always)]
+        pub const fn front_end_clear_control(&self) -> &FrontEndClearControl {
+            &self.front_end_clear_control
+        }
         #[doc = "0x448 - Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears."]
         #[inline(always)]
         pub const fn adc_rate_and_front_end_control(&self) -> &AdcRateAndFrontEndControl {
             &self.adc_rate_and_front_end_control
+        }
+        #[doc = "0x800 - Word whose bits 1:0 phy_open_fe_bb_clk sets."]
+        #[inline(always)]
+        pub const fn fe_bb_clock_control(&self) -> &FeBbClockControl {
+            &self.fe_bb_clock_control
+        }
+        #[doc = "0x808 - Power-detector control word."]
+        #[inline(always)]
+        pub const fn power_detector_control(&self) -> &PowerDetectorControl {
+            &self.power_detector_control
+        }
+        #[doc = "0x80c - Power-detector SAR control word."]
+        #[inline(always)]
+        pub const fn power_detector_sar_control_status(&self) -> &PowerDetectorSarControlStatus {
+            &self.power_detector_sar_control_status
+        }
+        #[doc = "0x810 - Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
+        #[inline(always)]
+        pub const fn power_detector_word_810(&self) -> &PowerDetectorWord810 {
+            &self.power_detector_word_810
+        }
+        #[doc = "0x814 - Word phy_pwdet_reg_init writes 0x00FF0F64."]
+        #[inline(always)]
+        pub const fn power_detector_word_814(&self) -> &PowerDetectorWord814 {
+            &self.power_detector_word_814
+        }
+        #[doc = "0x818 - Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA."]
+        #[inline(always)]
+        pub const fn power_detector_reference(&self) -> &PowerDetectorReference {
+            &self.power_detector_reference
+        }
+        #[doc = "0x870 - Word whose bits 15:8 phy_fe_reg_init replaces with 0x96."]
+        #[inline(always)]
+        pub const fn tx_pa_control_1(&self) -> &TxPaControl1 {
+            &self.tx_pa_control_1
+        }
+        #[doc = "0x888 - Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise."]
+        #[inline(always)]
+        pub const fn front_end_init_0888(&self) -> &FrontEndInit0888 {
+            &self.front_end_init_0888
+        }
+        #[doc = "0x894 - Word whose bit 22 phy_fe_reg_init sets."]
+        #[inline(always)]
+        pub const fn front_end_init_0894(&self) -> &FrontEndInit0894 {
+            &self.front_end_init_0894
+        }
+        #[doc = "0xc04 - Word whose bits 23:16 and then 15:8 phy_dac_scale_set replaces with 0xFF or 0."]
+        #[inline(always)]
+        pub const fn dac_scale(&self) -> &DacScale {
+            &self.dac_scale
+        }
+        #[doc = "0xc08 - Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise."]
+        #[inline(always)]
+        pub const fn front_end_init_0c08(&self) -> &FrontEndInit0c08 {
+            &self.front_end_init_0c08
+        }
+        #[doc = "0xc0c - Word whose bits 14:13 phy_fe_reg_init sets."]
+        #[inline(always)]
+        pub const fn iq_correction_aux(&self) -> &IqCorrectionAux {
+            &self.iq_correction_aux
+        }
+        #[doc = "0xc20 - Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
+        #[inline(always)]
+        pub const fn front_end_init_0c20(&self) -> &FrontEndInit0c20 {
+            &self.front_end_init_0c20
+        }
+        #[doc = "0x7c80 - Baseband clock-gate word; phy_open_fe_bb_clk writes all ones."]
+        #[inline(always)]
+        pub const fn bb_clock_gate(&self) -> &BbClockGate {
+            &self.bb_clock_gate
         }
     }
     #[doc = "ADC_RATE_AND_FRONT_END_CONTROL (rw) register accessor: Word whose bits 1:0 phy_adc_rate_set replaces with its rate bit and whose bits 3:2 phy_dac_rate_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`adc_rate_and_front_end_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`adc_rate_and_front_end_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@adc_rate_and_front_end_control`] module"]
@@ -6272,6 +6486,1094 @@ pub mod phy_baseband_config {
             type Safety = crate::Unsafe;
         }
     }
+    #[doc = "FE_CLOCK_GATE (rw) register accessor: Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_clock_gate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_clock_gate`] module"]
+    #[doc(alias = "FE_CLOCK_GATE")]
+    pub type FeClockGate = crate::Reg<fe_clock_gate::FeClockGateSpec>;
+    #[doc = "Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7."]
+    pub mod fe_clock_gate {
+        #[doc = "Register `FE_CLOCK_GATE` reader"]
+        pub type R = crate::R<FeClockGateSpec>;
+        #[doc = "Register `FE_CLOCK_GATE` writer"]
+        pub type W = crate::W<FeClockGateSpec>;
+        #[doc = "Field `STATE` reader - Complete front-end clock-gate image; individual gate meanings are unknown."]
+        pub type StateR = crate::FieldReader<u32>;
+        #[doc = "Field `STATE` writer - Complete front-end clock-gate image; individual gate meanings are unknown."]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete front-end clock-gate image; individual gate meanings are unknown."]
+            #[inline(always)]
+            pub fn state(&self) -> StateR {
+                StateR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Complete front-end clock-gate image; individual gate meanings are unknown."]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, FeClockGateSpec> {
+                StateW::new(self, 0)
+            }
+        }
+        #[doc = "Front-end clock-gate word; phy_open_fe_bb_clk writes 0x1E7.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_clock_gate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FeClockGateSpec;
+        impl crate::RegisterSpec for FeClockGateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`fe_clock_gate::R`](R) reader structure"]
+        impl crate::Readable for FeClockGateSpec {}
+        #[doc = "`write(|w| ..)` method takes [`fe_clock_gate::W`](W) writer structure"]
+        impl crate::Writable for FeClockGateSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TABLE_MEMORY_INDEX_SOURCE (rw) register accessor: Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@table_memory_index_source`] module"]
+    #[doc(alias = "TABLE_MEMORY_INDEX_SOURCE")]
+    pub type TableMemoryIndexSource =
+        crate::Reg<table_memory_index_source::TableMemoryIndexSourceSpec>;
+    #[doc = "Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4."]
+    pub mod table_memory_index_source {
+        #[doc = "Register `TABLE_MEMORY_INDEX_SOURCE` reader"]
+        pub type R = crate::R<TableMemoryIndexSourceSpec>;
+        #[doc = "Register `TABLE_MEMORY_INDEX_SOURCE` writer"]
+        pub type W = crate::W<TableMemoryIndexSourceSpec>;
+        #[doc = "Field `BASE_INDEX` reader - Base index byte."]
+        pub type BaseIndexR = crate::FieldReader;
+        #[doc = "Field `BASE_INDEX` writer - Base index byte."]
+        pub type BaseIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 24:31 - Base index byte."]
+            #[inline(always)]
+            pub fn base_index(&self) -> BaseIndexR {
+                BaseIndexR::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 24:31 - Base index byte."]
+            #[inline(always)]
+            pub fn base_index(&mut self) -> BaseIndexW<'_, TableMemoryIndexSourceSpec> {
+                BaseIndexW::new(self, 24)
+            }
+        }
+        #[doc = "Word whose bits 31:24 phy_fe_reg_init replaces with 0xB4.\n\nYou can [`read`](crate::Reg::read) this register and get [`table_memory_index_source::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`table_memory_index_source::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TableMemoryIndexSourceSpec;
+        impl crate::RegisterSpec for TableMemoryIndexSourceSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`table_memory_index_source::R`](R) reader structure"]
+        impl crate::Readable for TableMemoryIndexSourceSpec {}
+        #[doc = "`write(|w| ..)` method takes [`table_memory_index_source::W`](W) writer structure"]
+        impl crate::Writable for TableMemoryIndexSourceSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_AND_TONE_STOP_CONTROL (rw) register accessor: Word whose bit 2 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_and_tone_stop_control`] module"]
+    #[doc(alias = "FRONT_END_AND_TONE_STOP_CONTROL")]
+    pub type FrontEndAndToneStopControl =
+        crate::Reg<front_end_and_tone_stop_control::FrontEndAndToneStopControlSpec>;
+    #[doc = "Word whose bit 2 phy_fe_reg_init sets."]
+    pub mod front_end_and_tone_stop_control {
+        #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` reader"]
+        pub type R = crate::R<FrontEndAndToneStopControlSpec>;
+        #[doc = "Register `FRONT_END_AND_TONE_STOP_CONTROL` writer"]
+        pub type W = crate::W<FrontEndAndToneStopControlSpec>;
+        #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` reader - Front-end initialization enable; meaning unknown."]
+        pub type FrontEndInitEnableUnknownR = crate::BitReader;
+        #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` writer - Front-end initialization enable; meaning unknown."]
+        pub type FrontEndInitEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 2 - Front-end initialization enable; meaning unknown."]
+            #[inline(always)]
+            pub fn front_end_init_enable_unknown(&self) -> FrontEndInitEnableUnknownR {
+                FrontEndInitEnableUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 2 - Front-end initialization enable; meaning unknown."]
+            #[inline(always)]
+            pub fn front_end_init_enable_unknown(
+                &mut self,
+            ) -> FrontEndInitEnableUnknownW<'_, FrontEndAndToneStopControlSpec> {
+                FrontEndInitEnableUnknownW::new(self, 2)
+            }
+        }
+        #[doc = "Word whose bit 2 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_and_tone_stop_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_and_tone_stop_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndAndToneStopControlSpec;
+        impl crate::RegisterSpec for FrontEndAndToneStopControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_and_tone_stop_control::R`](R) reader structure"]
+        impl crate::Readable for FrontEndAndToneStopControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_and_tone_stop_control::W`](W) writer structure"]
+        impl crate::Writable for FrontEndAndToneStopControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_DCO_CONTROL (rw) register accessor: Word whose bits 23:22 phy_iq_swap_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_dco_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_dco_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_dco_control`] module"]
+    #[doc(alias = "RX_DCO_CONTROL")]
+    pub type RxDcoControl = crate::Reg<rx_dco_control::RxDcoControlSpec>;
+    #[doc = "Word whose bits 23:22 phy_iq_swap_set clears."]
+    pub mod rx_dco_control {
+        #[doc = "Register `RX_DCO_CONTROL` reader"]
+        pub type R = crate::R<RxDcoControlSpec>;
+        #[doc = "Register `RX_DCO_CONTROL` writer"]
+        pub type W = crate::W<RxDcoControlSpec>;
+        #[doc = "Field `CALIBRATION_CONTROL_UNKNOWN` reader - Two-bit calibration control; meaning unknown."]
+        pub type CalibrationControlUnknownR = crate::FieldReader;
+        #[doc = "Field `CALIBRATION_CONTROL_UNKNOWN` writer - Two-bit calibration control; meaning unknown."]
+        pub type CalibrationControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 22:23 - Two-bit calibration control; meaning unknown."]
+            #[inline(always)]
+            pub fn calibration_control_unknown(&self) -> CalibrationControlUnknownR {
+                CalibrationControlUnknownR::new(((self.bits >> 22) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 22:23 - Two-bit calibration control; meaning unknown."]
+            #[inline(always)]
+            pub fn calibration_control_unknown(
+                &mut self,
+            ) -> CalibrationControlUnknownW<'_, RxDcoControlSpec> {
+                CalibrationControlUnknownW::new(self, 22)
+            }
+        }
+        #[doc = "Word whose bits 23:22 phy_iq_swap_set clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_dco_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_dco_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxDcoControlSpec;
+        impl crate::RegisterSpec for RxDcoControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_dco_control::R`](R) reader structure"]
+        impl crate::Readable for RxDcoControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_dco_control::W`](W) writer structure"]
+        impl crate::Writable for RxDcoControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "IQ_CORRECTION_CONTROL (rw) register accessor: Word whose bits 31:29 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iq_correction_control`] module"]
+    #[doc(alias = "IQ_CORRECTION_CONTROL")]
+    pub type IqCorrectionControl = crate::Reg<iq_correction_control::IqCorrectionControlSpec>;
+    #[doc = "Word whose bits 31:29 phy_fe_reg_init sets."]
+    pub mod iq_correction_control {
+        #[doc = "Register `IQ_CORRECTION_CONTROL` reader"]
+        pub type R = crate::R<IqCorrectionControlSpec>;
+        #[doc = "Register `IQ_CORRECTION_CONTROL` writer"]
+        pub type W = crate::W<IqCorrectionControlSpec>;
+        #[doc = "Field `RX_IQ_CORRECTION_MODE_LOW` reader - RX IQ correction mode, low bit."]
+        pub type RxIqCorrectionModeLowR = crate::BitReader;
+        #[doc = "Field `RX_IQ_CORRECTION_MODE_LOW` writer - RX IQ correction mode, low bit."]
+        pub type RxIqCorrectionModeLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_IQ_CORRECTION_MODE_HIGH` reader - RX IQ correction mode, high bit."]
+        pub type RxIqCorrectionModeHighR = crate::BitReader;
+        #[doc = "Field `RX_IQ_CORRECTION_MODE_HIGH` writer - RX IQ correction mode, high bit."]
+        pub type RxIqCorrectionModeHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FRONT_END_INIT_HIGH_UNKNOWN` reader - Front-end initialization bit; meaning unknown."]
+        pub type FrontEndInitHighUnknownR = crate::BitReader;
+        #[doc = "Field `FRONT_END_INIT_HIGH_UNKNOWN` writer - Front-end initialization bit; meaning unknown."]
+        pub type FrontEndInitHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 29 - RX IQ correction mode, low bit."]
+            #[inline(always)]
+            pub fn rx_iq_correction_mode_low(&self) -> RxIqCorrectionModeLowR {
+                RxIqCorrectionModeLowR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30 - RX IQ correction mode, high bit."]
+            #[inline(always)]
+            pub fn rx_iq_correction_mode_high(&self) -> RxIqCorrectionModeHighR {
+                RxIqCorrectionModeHighR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Front-end initialization bit; meaning unknown."]
+            #[inline(always)]
+            pub fn front_end_init_high_unknown(&self) -> FrontEndInitHighUnknownR {
+                FrontEndInitHighUnknownR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 29 - RX IQ correction mode, low bit."]
+            #[inline(always)]
+            pub fn rx_iq_correction_mode_low(
+                &mut self,
+            ) -> RxIqCorrectionModeLowW<'_, IqCorrectionControlSpec> {
+                RxIqCorrectionModeLowW::new(self, 29)
+            }
+            #[doc = "Bit 30 - RX IQ correction mode, high bit."]
+            #[inline(always)]
+            pub fn rx_iq_correction_mode_high(
+                &mut self,
+            ) -> RxIqCorrectionModeHighW<'_, IqCorrectionControlSpec> {
+                RxIqCorrectionModeHighW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Front-end initialization bit; meaning unknown."]
+            #[inline(always)]
+            pub fn front_end_init_high_unknown(
+                &mut self,
+            ) -> FrontEndInitHighUnknownW<'_, IqCorrectionControlSpec> {
+                FrontEndInitHighUnknownW::new(self, 31)
+            }
+        }
+        #[doc = "Word whose bits 31:29 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct IqCorrectionControlSpec;
+        impl crate::RegisterSpec for IqCorrectionControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`iq_correction_control::R`](R) reader structure"]
+        impl crate::Readable for IqCorrectionControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`iq_correction_control::W`](W) writer structure"]
+        impl crate::Writable for IqCorrectionControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_IQ_SCALE (rw) register accessor: Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_iq_scale::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_iq_scale::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_iq_scale`] module"]
+    #[doc(alias = "RX_IQ_SCALE")]
+    pub type RxIqScale = crate::Reg<rx_iq_scale::RxIqScaleSpec>;
+    #[doc = "Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces."]
+    pub mod rx_iq_scale {
+        #[doc = "Register `RX_IQ_SCALE` reader"]
+        pub type R = crate::R<RxIqScaleSpec>;
+        #[doc = "Register `RX_IQ_SCALE` writer"]
+        pub type W = crate::W<RxIqScaleSpec>;
+        #[doc = "Field `SCALE_LOW_UNKNOWN` reader - Low RX IQ scale byte."]
+        pub type ScaleLowUnknownR = crate::FieldReader;
+        #[doc = "Field `SCALE_LOW_UNKNOWN` writer - Low RX IQ scale byte."]
+        pub type ScaleLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `SCALE_HIGH_UNKNOWN` reader - High RX IQ scale byte."]
+        pub type ScaleHighUnknownR = crate::FieldReader;
+        #[doc = "Field `SCALE_HIGH_UNKNOWN` writer - High RX IQ scale byte."]
+        pub type ScaleHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:7 - Low RX IQ scale byte."]
+            #[inline(always)]
+            pub fn scale_low_unknown(&self) -> ScaleLowUnknownR {
+                ScaleLowUnknownR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15 - High RX IQ scale byte."]
+            #[inline(always)]
+            pub fn scale_high_unknown(&self) -> ScaleHighUnknownR {
+                ScaleHighUnknownR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7 - Low RX IQ scale byte."]
+            #[inline(always)]
+            pub fn scale_low_unknown(&mut self) -> ScaleLowUnknownW<'_, RxIqScaleSpec> {
+                ScaleLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 8:15 - High RX IQ scale byte."]
+            #[inline(always)]
+            pub fn scale_high_unknown(&mut self) -> ScaleHighUnknownW<'_, RxIqScaleSpec> {
+                ScaleHighUnknownW::new(self, 8)
+            }
+        }
+        #[doc = "Word whose bits 15:8 and 7:0 phy_fe_reg_init clears and phy_rxiq_scale_set replaces.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_iq_scale::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_iq_scale::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxIqScaleSpec;
+        impl crate::RegisterSpec for RxIqScaleSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_iq_scale::R`](R) reader structure"]
+        impl crate::Readable for RxIqScaleSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_iq_scale::W`](W) writer structure"]
+        impl crate::Writable for RxIqScaleSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_CLEAR_CONTROL (rw) register accessor: Word whose bit 8 phy_fe_reg_init clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_clear_control`] module"]
+    #[doc(alias = "FRONT_END_CLEAR_CONTROL")]
+    pub type FrontEndClearControl = crate::Reg<front_end_clear_control::FrontEndClearControlSpec>;
+    #[doc = "Word whose bit 8 phy_fe_reg_init clears."]
+    pub mod front_end_clear_control {
+        #[doc = "Register `FRONT_END_CLEAR_CONTROL` reader"]
+        pub type R = crate::R<FrontEndClearControlSpec>;
+        #[doc = "Register `FRONT_END_CLEAR_CONTROL` writer"]
+        pub type W = crate::W<FrontEndClearControlSpec>;
+        #[doc = "Field `INIT_CLEAR_FIRST_UNKNOWN` reader - Front-end initialization clear bit; meaning unknown."]
+        pub type InitClearFirstUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_CLEAR_FIRST_UNKNOWN` writer - Front-end initialization clear bit; meaning unknown."]
+        pub type InitClearFirstUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 8 - Front-end initialization clear bit; meaning unknown."]
+            #[inline(always)]
+            pub fn init_clear_first_unknown(&self) -> InitClearFirstUnknownR {
+                InitClearFirstUnknownR::new(((self.bits >> 8) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 8 - Front-end initialization clear bit; meaning unknown."]
+            #[inline(always)]
+            pub fn init_clear_first_unknown(
+                &mut self,
+            ) -> InitClearFirstUnknownW<'_, FrontEndClearControlSpec> {
+                InitClearFirstUnknownW::new(self, 8)
+            }
+        }
+        #[doc = "Word whose bit 8 phy_fe_reg_init clears.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_clear_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_clear_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndClearControlSpec;
+        impl crate::RegisterSpec for FrontEndClearControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_clear_control::R`](R) reader structure"]
+        impl crate::Readable for FrontEndClearControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_clear_control::W`](W) writer structure"]
+        impl crate::Writable for FrontEndClearControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FE_BB_CLOCK_CONTROL (rw) register accessor: Word whose bits 1:0 phy_open_fe_bb_clk sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_bb_clock_control`] module"]
+    #[doc(alias = "FE_BB_CLOCK_CONTROL")]
+    pub type FeBbClockControl = crate::Reg<fe_bb_clock_control::FeBbClockControlSpec>;
+    #[doc = "Word whose bits 1:0 phy_open_fe_bb_clk sets."]
+    pub mod fe_bb_clock_control {
+        #[doc = "Register `FE_BB_CLOCK_CONTROL` reader"]
+        pub type R = crate::R<FeBbClockControlSpec>;
+        #[doc = "Register `FE_BB_CLOCK_CONTROL` writer"]
+        pub type W = crate::W<FeBbClockControlSpec>;
+        #[doc = "Field `FE_BB_ENABLE_UNKNOWN` reader - Two-bit front-end and baseband clock enable; individual meanings unknown."]
+        pub type FeBbEnableUnknownR = crate::FieldReader;
+        #[doc = "Field `FE_BB_ENABLE_UNKNOWN` writer - Two-bit front-end and baseband clock enable; individual meanings unknown."]
+        pub type FeBbEnableUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:1 - Two-bit front-end and baseband clock enable; individual meanings unknown."]
+            #[inline(always)]
+            pub fn fe_bb_enable_unknown(&self) -> FeBbEnableUnknownR {
+                FeBbEnableUnknownR::new((self.bits & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:1 - Two-bit front-end and baseband clock enable; individual meanings unknown."]
+            #[inline(always)]
+            pub fn fe_bb_enable_unknown(&mut self) -> FeBbEnableUnknownW<'_, FeBbClockControlSpec> {
+                FeBbEnableUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "Word whose bits 1:0 phy_open_fe_bb_clk sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FeBbClockControlSpec;
+        impl crate::RegisterSpec for FeBbClockControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`fe_bb_clock_control::R`](R) reader structure"]
+        impl crate::Readable for FeBbClockControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`fe_bb_clock_control::W`](W) writer structure"]
+        impl crate::Writable for FeBbClockControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "POWER_DETECTOR_CONTROL (rw) register accessor: Power-detector control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_control`] module"]
+    #[doc(alias = "POWER_DETECTOR_CONTROL")]
+    pub type PowerDetectorControl = crate::Reg<power_detector_control::PowerDetectorControlSpec>;
+    #[doc = "Power-detector control word."]
+    pub mod power_detector_control {
+        #[doc = "Register `POWER_DETECTOR_CONTROL` reader"]
+        pub type R = crate::R<PowerDetectorControlSpec>;
+        #[doc = "Register `POWER_DETECTOR_CONTROL` writer"]
+        pub type W = crate::W<PowerDetectorControlSpec>;
+        #[doc = "Field `CALIBRATION_FIELD_UNKNOWN` reader - Byte phy_pwdet_reg_init replaces with 0x50."]
+        pub type CalibrationFieldUnknownR = crate::FieldReader;
+        #[doc = "Field `CALIBRATION_FIELD_UNKNOWN` writer - Byte phy_pwdet_reg_init replaces with 0x50."]
+        pub type CalibrationFieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `INITIALIZATION_MODE_UNKNOWN` reader - Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+        pub type InitializationModeUnknownR = crate::FieldReader;
+        #[doc = "Field `INITIALIZATION_MODE_UNKNOWN` writer - Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+        pub type InitializationModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        impl R {
+            #[doc = "Bits 4:11 - Byte phy_pwdet_reg_init replaces with 0x50."]
+            #[inline(always)]
+            pub fn calibration_field_unknown(&self) -> CalibrationFieldUnknownR {
+                CalibrationFieldUnknownR::new(((self.bits >> 4) & 0xff) as u8)
+            }
+            #[doc = "Bits 20:22 - Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+            #[inline(always)]
+            pub fn initialization_mode_unknown(&self) -> InitializationModeUnknownR {
+                InitializationModeUnknownR::new(((self.bits >> 20) & 7) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 4:11 - Byte phy_pwdet_reg_init replaces with 0x50."]
+            #[inline(always)]
+            pub fn calibration_field_unknown(
+                &mut self,
+            ) -> CalibrationFieldUnknownW<'_, PowerDetectorControlSpec> {
+                CalibrationFieldUnknownW::new(self, 4)
+            }
+            #[doc = "Bits 20:22 - Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."]
+            #[inline(always)]
+            pub fn initialization_mode_unknown(
+                &mut self,
+            ) -> InitializationModeUnknownW<'_, PowerDetectorControlSpec> {
+                InitializationModeUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "Power-detector control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorControlSpec;
+        impl crate::RegisterSpec for PowerDetectorControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_control::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`power_detector_control::W`](W) writer structure"]
+        impl crate::Writable for PowerDetectorControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "POWER_DETECTOR_SAR_CONTROL_STATUS (rw) register accessor: Power-detector SAR control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_control_status::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_sar_control_status::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_sar_control_status`] module"]
+    #[doc(alias = "POWER_DETECTOR_SAR_CONTROL_STATUS")]
+    pub type PowerDetectorSarControlStatus =
+        crate::Reg<power_detector_sar_control_status::PowerDetectorSarControlStatusSpec>;
+    #[doc = "Power-detector SAR control word."]
+    pub mod power_detector_sar_control_status {
+        #[doc = "Register `POWER_DETECTOR_SAR_CONTROL_STATUS` reader"]
+        pub type R = crate::R<PowerDetectorSarControlStatusSpec>;
+        #[doc = "Register `POWER_DETECTOR_SAR_CONTROL_STATUS` writer"]
+        pub type W = crate::W<PowerDetectorSarControlStatusSpec>;
+        #[doc = "Field `SAR_CONFIG_CLEAR_UNKNOWN` reader - Bit phy_pwdet_sar2_init clears."]
+        pub type SarConfigClearUnknownR = crate::BitReader;
+        #[doc = "Field `SAR_CONFIG_CLEAR_UNKNOWN` writer - Bit phy_pwdet_sar2_init clears."]
+        pub type SarConfigClearUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SAR_MODE_UNKNOWN` reader - Two bits phy_pwdet_sar2_init sets."]
+        pub type SarModeUnknownR = crate::FieldReader;
+        #[doc = "Field `SAR_MODE_UNKNOWN` writer - Two bits phy_pwdet_sar2_init sets."]
+        pub type SarModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bit 9 - Bit phy_pwdet_sar2_init clears."]
+            #[inline(always)]
+            pub fn sar_config_clear_unknown(&self) -> SarConfigClearUnknownR {
+                SarConfigClearUnknownR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bits 12:13 - Two bits phy_pwdet_sar2_init sets."]
+            #[inline(always)]
+            pub fn sar_mode_unknown(&self) -> SarModeUnknownR {
+                SarModeUnknownR::new(((self.bits >> 12) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bit 9 - Bit phy_pwdet_sar2_init clears."]
+            #[inline(always)]
+            pub fn sar_config_clear_unknown(
+                &mut self,
+            ) -> SarConfigClearUnknownW<'_, PowerDetectorSarControlStatusSpec> {
+                SarConfigClearUnknownW::new(self, 9)
+            }
+            #[doc = "Bits 12:13 - Two bits phy_pwdet_sar2_init sets."]
+            #[inline(always)]
+            pub fn sar_mode_unknown(
+                &mut self,
+            ) -> SarModeUnknownW<'_, PowerDetectorSarControlStatusSpec> {
+                SarModeUnknownW::new(self, 12)
+            }
+        }
+        #[doc = "Power-detector SAR control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_sar_control_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_sar_control_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorSarControlStatusSpec;
+        impl crate::RegisterSpec for PowerDetectorSarControlStatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_sar_control_status::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorSarControlStatusSpec {}
+        #[doc = "`write(|w| ..)` method takes [`power_detector_sar_control_status::W`](W) writer structure"]
+        impl crate::Writable for PowerDetectorSarControlStatusSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "POWER_DETECTOR_WORD_810 (rw) register accessor: Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_810::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_810::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_word_810`] module"]
+    #[doc(alias = "POWER_DETECTOR_WORD_810")]
+    pub type PowerDetectorWord810 = crate::Reg<power_detector_word_810::PowerDetectorWord810Spec>;
+    #[doc = "Word phy_pwdet_reg_init writes 0x0F0F0FFF."]
+    pub mod power_detector_word_810 {
+        #[doc = "Register `POWER_DETECTOR_WORD_810` reader"]
+        pub type R = crate::R<PowerDetectorWord810Spec>;
+        #[doc = "Register `POWER_DETECTOR_WORD_810` writer"]
+        pub type W = crate::W<PowerDetectorWord810Spec>;
+        #[doc = "Field `STATE` reader - Complete image; meaning unknown."]
+        pub type StateR = crate::FieldReader<u32>;
+        #[doc = "Field `STATE` writer - Complete image; meaning unknown."]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete image; meaning unknown."]
+            #[inline(always)]
+            pub fn state(&self) -> StateR {
+                StateR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Complete image; meaning unknown."]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, PowerDetectorWord810Spec> {
+                StateW::new(self, 0)
+            }
+        }
+        #[doc = "Word phy_pwdet_reg_init writes 0x0F0F0FFF.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_810::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_810::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorWord810Spec;
+        impl crate::RegisterSpec for PowerDetectorWord810Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_word_810::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorWord810Spec {}
+        #[doc = "`write(|w| ..)` method takes [`power_detector_word_810::W`](W) writer structure"]
+        impl crate::Writable for PowerDetectorWord810Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "POWER_DETECTOR_WORD_814 (rw) register accessor: Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_814::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_814::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_word_814`] module"]
+    #[doc(alias = "POWER_DETECTOR_WORD_814")]
+    pub type PowerDetectorWord814 = crate::Reg<power_detector_word_814::PowerDetectorWord814Spec>;
+    #[doc = "Word phy_pwdet_reg_init writes 0x00FF0F64."]
+    pub mod power_detector_word_814 {
+        #[doc = "Register `POWER_DETECTOR_WORD_814` reader"]
+        pub type R = crate::R<PowerDetectorWord814Spec>;
+        #[doc = "Register `POWER_DETECTOR_WORD_814` writer"]
+        pub type W = crate::W<PowerDetectorWord814Spec>;
+        #[doc = "Field `STATE` reader - Complete image; meaning unknown."]
+        pub type StateR = crate::FieldReader<u32>;
+        #[doc = "Field `STATE` writer - Complete image; meaning unknown."]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete image; meaning unknown."]
+            #[inline(always)]
+            pub fn state(&self) -> StateR {
+                StateR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Complete image; meaning unknown."]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, PowerDetectorWord814Spec> {
+                StateW::new(self, 0)
+            }
+        }
+        #[doc = "Word phy_pwdet_reg_init writes 0x00FF0F64.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_word_814::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_word_814::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorWord814Spec;
+        impl crate::RegisterSpec for PowerDetectorWord814Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_word_814::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorWord814Spec {}
+        #[doc = "`write(|w| ..)` method takes [`power_detector_word_814::W`](W) writer structure"]
+        impl crate::Writable for PowerDetectorWord814Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "POWER_DETECTOR_REFERENCE (rw) register accessor: Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_reference::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_reference::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_reference`] module"]
+    #[doc(alias = "POWER_DETECTOR_REFERENCE")]
+    pub type PowerDetectorReference =
+        crate::Reg<power_detector_reference::PowerDetectorReferenceSpec>;
+    #[doc = "Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA."]
+    pub mod power_detector_reference {
+        #[doc = "Register `POWER_DETECTOR_REFERENCE` reader"]
+        pub type R = crate::R<PowerDetectorReferenceSpec>;
+        #[doc = "Register `POWER_DETECTOR_REFERENCE` writer"]
+        pub type W = crate::W<PowerDetectorReferenceSpec>;
+        #[doc = "Field `STATE` reader - Complete image; the low halfword is the power-detector reference code."]
+        pub type StateR = crate::FieldReader<u32>;
+        #[doc = "Field `STATE` writer - Complete image; the low halfword is the power-detector reference code."]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete image; the low halfword is the power-detector reference code."]
+            #[inline(always)]
+            pub fn state(&self) -> StateR {
+                StateR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Complete image; the low halfword is the power-detector reference code."]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, PowerDetectorReferenceSpec> {
+                StateW::new(self, 0)
+            }
+        }
+        #[doc = "Word phy_pwdet_reg_init and phy_pwdet_sar2_init write 0xAAAA.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_detector_reference::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_reference::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PowerDetectorReferenceSpec;
+        impl crate::RegisterSpec for PowerDetectorReferenceSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`power_detector_reference::R`](R) reader structure"]
+        impl crate::Readable for PowerDetectorReferenceSpec {}
+        #[doc = "`write(|w| ..)` method takes [`power_detector_reference::W`](W) writer structure"]
+        impl crate::Writable for PowerDetectorReferenceSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TX_PA_CONTROL_1 (rw) register accessor: Word whose bits 15:8 phy_fe_reg_init replaces with 0x96.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_control_1`] module"]
+    #[doc(alias = "TX_PA_CONTROL_1")]
+    pub type TxPaControl1 = crate::Reg<tx_pa_control_1::TxPaControl1Spec>;
+    #[doc = "Word whose bits 15:8 phy_fe_reg_init replaces with 0x96."]
+    pub mod tx_pa_control_1 {
+        #[doc = "Register `TX_PA_CONTROL_1` reader"]
+        pub type R = crate::R<TxPaControl1Spec>;
+        #[doc = "Register `TX_PA_CONTROL_1` writer"]
+        pub type W = crate::W<TxPaControl1Spec>;
+        #[doc = "Field `PA_ON_BT_DELAY` reader - PA-on delay byte."]
+        pub type PaOnBtDelayR = crate::FieldReader;
+        #[doc = "Field `PA_ON_BT_DELAY` writer - PA-on delay byte."]
+        pub type PaOnBtDelayW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 8:15 - PA-on delay byte."]
+            #[inline(always)]
+            pub fn pa_on_bt_delay(&self) -> PaOnBtDelayR {
+                PaOnBtDelayR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 8:15 - PA-on delay byte."]
+            #[inline(always)]
+            pub fn pa_on_bt_delay(&mut self) -> PaOnBtDelayW<'_, TxPaControl1Spec> {
+                PaOnBtDelayW::new(self, 8)
+            }
+        }
+        #[doc = "Word whose bits 15:8 phy_fe_reg_init replaces with 0x96.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_pa_control_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_control_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxPaControl1Spec;
+        impl crate::RegisterSpec for TxPaControl1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tx_pa_control_1::R`](R) reader structure"]
+        impl crate::Readable for TxPaControl1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`tx_pa_control_1::W`](W) writer structure"]
+        impl crate::Writable for TxPaControl1Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_INIT_0888 (rw) register accessor: Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0888`] module"]
+    #[doc(alias = "FRONT_END_INIT_0888")]
+    pub type FrontEndInit0888 = crate::Reg<front_end_init_0888::FrontEndInit0888Spec>;
+    #[doc = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise."]
+    pub mod front_end_init_0888 {
+        #[doc = "Register `FRONT_END_INIT_0888` reader"]
+        pub type R = crate::R<FrontEndInit0888Spec>;
+        #[doc = "Register `FRONT_END_INIT_0888` writer"]
+        pub type W = crate::W<FrontEndInit0888Spec>;
+        #[doc = "Field `IQ_SWAP_UNKNOWN` reader - IQ-swap-dependent bit; meaning unknown."]
+        pub type IqSwapUnknownR = crate::BitReader;
+        #[doc = "Field `IQ_SWAP_UNKNOWN` writer - IQ-swap-dependent bit; meaning unknown."]
+        pub type IqSwapUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 29 - IQ-swap-dependent bit; meaning unknown."]
+            #[inline(always)]
+            pub fn iq_swap_unknown(&self) -> IqSwapUnknownR {
+                IqSwapUnknownR::new(((self.bits >> 29) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 29 - IQ-swap-dependent bit; meaning unknown."]
+            #[inline(always)]
+            pub fn iq_swap_unknown(&mut self) -> IqSwapUnknownW<'_, FrontEndInit0888Spec> {
+                IqSwapUnknownW::new(self, 29)
+            }
+        }
+        #[doc = "Word whose bit 29 phy_fe_reg_init sets when phy_param byte 0x2A is set and clears otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0888::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0888::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndInit0888Spec;
+        impl crate::RegisterSpec for FrontEndInit0888Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_init_0888::R`](R) reader structure"]
+        impl crate::Readable for FrontEndInit0888Spec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_init_0888::W`](W) writer structure"]
+        impl crate::Writable for FrontEndInit0888Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_INIT_0894 (rw) register accessor: Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0894::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0894::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0894`] module"]
+    #[doc(alias = "FRONT_END_INIT_0894")]
+    pub type FrontEndInit0894 = crate::Reg<front_end_init_0894::FrontEndInit0894Spec>;
+    #[doc = "Word whose bit 22 phy_fe_reg_init sets."]
+    pub mod front_end_init_0894 {
+        #[doc = "Register `FRONT_END_INIT_0894` reader"]
+        pub type R = crate::R<FrontEndInit0894Spec>;
+        #[doc = "Register `FRONT_END_INIT_0894` writer"]
+        pub type W = crate::W<FrontEndInit0894Spec>;
+        #[doc = "Field `FE_INIT_ENABLE_UNKNOWN` reader - Front-end initialization enable; meaning unknown."]
+        pub type FeInitEnableUnknownR = crate::BitReader;
+        #[doc = "Field `FE_INIT_ENABLE_UNKNOWN` writer - Front-end initialization enable; meaning unknown."]
+        pub type FeInitEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 22 - Front-end initialization enable; meaning unknown."]
+            #[inline(always)]
+            pub fn fe_init_enable_unknown(&self) -> FeInitEnableUnknownR {
+                FeInitEnableUnknownR::new(((self.bits >> 22) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 22 - Front-end initialization enable; meaning unknown."]
+            #[inline(always)]
+            pub fn fe_init_enable_unknown(
+                &mut self,
+            ) -> FeInitEnableUnknownW<'_, FrontEndInit0894Spec> {
+                FeInitEnableUnknownW::new(self, 22)
+            }
+        }
+        #[doc = "Word whose bit 22 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0894::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0894::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndInit0894Spec;
+        impl crate::RegisterSpec for FrontEndInit0894Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_init_0894::R`](R) reader structure"]
+        impl crate::Readable for FrontEndInit0894Spec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_init_0894::W`](W) writer structure"]
+        impl crate::Writable for FrontEndInit0894Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DAC_SCALE (rw) register accessor: Word whose bits 23:16 and then 15:8 phy_dac_scale_set replaces with 0xFF or 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`dac_scale::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dac_scale::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@dac_scale`] module"]
+    #[doc(alias = "DAC_SCALE")]
+    pub type DacScale = crate::Reg<dac_scale::DacScaleSpec>;
+    #[doc = "Word whose bits 23:16 and then 15:8 phy_dac_scale_set replaces with 0xFF or 0."]
+    pub mod dac_scale {
+        #[doc = "Register `DAC_SCALE` reader"]
+        pub type R = crate::R<DacScaleSpec>;
+        #[doc = "Register `DAC_SCALE` writer"]
+        pub type W = crate::W<DacScaleSpec>;
+        #[doc = "Field `SCALE_LOW_UNKNOWN` reader - Second DAC scale byte."]
+        pub type ScaleLowUnknownR = crate::FieldReader;
+        #[doc = "Field `SCALE_LOW_UNKNOWN` writer - Second DAC scale byte."]
+        pub type ScaleLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `SCALE_HIGH_UNKNOWN` reader - First DAC scale byte."]
+        pub type ScaleHighUnknownR = crate::FieldReader;
+        #[doc = "Field `SCALE_HIGH_UNKNOWN` writer - First DAC scale byte."]
+        pub type ScaleHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 8:15 - Second DAC scale byte."]
+            #[inline(always)]
+            pub fn scale_low_unknown(&self) -> ScaleLowUnknownR {
+                ScaleLowUnknownR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:23 - First DAC scale byte."]
+            #[inline(always)]
+            pub fn scale_high_unknown(&self) -> ScaleHighUnknownR {
+                ScaleHighUnknownR::new(((self.bits >> 16) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 8:15 - Second DAC scale byte."]
+            #[inline(always)]
+            pub fn scale_low_unknown(&mut self) -> ScaleLowUnknownW<'_, DacScaleSpec> {
+                ScaleLowUnknownW::new(self, 8)
+            }
+            #[doc = "Bits 16:23 - First DAC scale byte."]
+            #[inline(always)]
+            pub fn scale_high_unknown(&mut self) -> ScaleHighUnknownW<'_, DacScaleSpec> {
+                ScaleHighUnknownW::new(self, 16)
+            }
+        }
+        #[doc = "Word whose bits 23:16 and then 15:8 phy_dac_scale_set replaces with 0xFF or 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`dac_scale::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dac_scale::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DacScaleSpec;
+        impl crate::RegisterSpec for DacScaleSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`dac_scale::R`](R) reader structure"]
+        impl crate::Readable for DacScaleSpec {}
+        #[doc = "`write(|w| ..)` method takes [`dac_scale::W`](W) writer structure"]
+        impl crate::Writable for DacScaleSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_INIT_0C08 (rw) register accessor: Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c08`] module"]
+    #[doc(alias = "FRONT_END_INIT_0C08")]
+    pub type FrontEndInit0c08 = crate::Reg<front_end_init_0c08::FrontEndInit0c08Spec>;
+    #[doc = "Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise."]
+    pub mod front_end_init_0c08 {
+        #[doc = "Register `FRONT_END_INIT_0C08` reader"]
+        pub type R = crate::R<FrontEndInit0c08Spec>;
+        #[doc = "Register `FRONT_END_INIT_0C08` writer"]
+        pub type W = crate::W<FrontEndInit0c08Spec>;
+        #[doc = "Field `INIT_FIRST_UNKNOWN` reader - First bit; meaning unknown."]
+        pub type InitFirstUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_FIRST_UNKNOWN` writer - First bit; meaning unknown."]
+        pub type InitFirstUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_SECOND_UNKNOWN` reader - Second bit; meaning unknown."]
+        pub type InitSecondUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_SECOND_UNKNOWN` writer - Second bit; meaning unknown."]
+        pub type InitSecondUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 25 - First bit; meaning unknown."]
+            #[inline(always)]
+            pub fn init_first_unknown(&self) -> InitFirstUnknownR {
+                InitFirstUnknownR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Second bit; meaning unknown."]
+            #[inline(always)]
+            pub fn init_second_unknown(&self) -> InitSecondUnknownR {
+                InitSecondUnknownR::new(((self.bits >> 26) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 25 - First bit; meaning unknown."]
+            #[inline(always)]
+            pub fn init_first_unknown(&mut self) -> InitFirstUnknownW<'_, FrontEndInit0c08Spec> {
+                InitFirstUnknownW::new(self, 25)
+            }
+            #[doc = "Bit 26 - Second bit; meaning unknown."]
+            #[inline(always)]
+            pub fn init_second_unknown(&mut self) -> InitSecondUnknownW<'_, FrontEndInit0c08Spec> {
+                InitSecondUnknownW::new(self, 26)
+            }
+        }
+        #[doc = "Word whose bit 25 phy_iq_swap_set clears when phy_param byte 0x2A is set, and whose bits 26:25 it sets otherwise.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c08::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c08::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndInit0c08Spec;
+        impl crate::RegisterSpec for FrontEndInit0c08Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_init_0c08::R`](R) reader structure"]
+        impl crate::Readable for FrontEndInit0c08Spec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c08::W`](W) writer structure"]
+        impl crate::Writable for FrontEndInit0c08Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "IQ_CORRECTION_AUX (rw) register accessor: Word whose bits 14:13 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@iq_correction_aux`] module"]
+    #[doc(alias = "IQ_CORRECTION_AUX")]
+    pub type IqCorrectionAux = crate::Reg<iq_correction_aux::IqCorrectionAuxSpec>;
+    #[doc = "Word whose bits 14:13 phy_fe_reg_init sets."]
+    pub mod iq_correction_aux {
+        #[doc = "Register `IQ_CORRECTION_AUX` reader"]
+        pub type R = crate::R<IqCorrectionAuxSpec>;
+        #[doc = "Register `IQ_CORRECTION_AUX` writer"]
+        pub type W = crate::W<IqCorrectionAuxSpec>;
+        #[doc = "Field `TX_IQ_CORRECTION_MODE_LOW` reader - TX IQ correction mode, low bit."]
+        pub type TxIqCorrectionModeLowR = crate::BitReader;
+        #[doc = "Field `TX_IQ_CORRECTION_MODE_LOW` writer - TX IQ correction mode, low bit."]
+        pub type TxIqCorrectionModeLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_IQ_CORRECTION_MODE_HIGH` reader - TX IQ correction mode, high bit."]
+        pub type TxIqCorrectionModeHighR = crate::BitReader;
+        #[doc = "Field `TX_IQ_CORRECTION_MODE_HIGH` writer - TX IQ correction mode, high bit."]
+        pub type TxIqCorrectionModeHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 13 - TX IQ correction mode, low bit."]
+            #[inline(always)]
+            pub fn tx_iq_correction_mode_low(&self) -> TxIqCorrectionModeLowR {
+                TxIqCorrectionModeLowR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14 - TX IQ correction mode, high bit."]
+            #[inline(always)]
+            pub fn tx_iq_correction_mode_high(&self) -> TxIqCorrectionModeHighR {
+                TxIqCorrectionModeHighR::new(((self.bits >> 14) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 13 - TX IQ correction mode, low bit."]
+            #[inline(always)]
+            pub fn tx_iq_correction_mode_low(
+                &mut self,
+            ) -> TxIqCorrectionModeLowW<'_, IqCorrectionAuxSpec> {
+                TxIqCorrectionModeLowW::new(self, 13)
+            }
+            #[doc = "Bit 14 - TX IQ correction mode, high bit."]
+            #[inline(always)]
+            pub fn tx_iq_correction_mode_high(
+                &mut self,
+            ) -> TxIqCorrectionModeHighW<'_, IqCorrectionAuxSpec> {
+                TxIqCorrectionModeHighW::new(self, 14)
+            }
+        }
+        #[doc = "Word whose bits 14:13 phy_fe_reg_init sets.\n\nYou can [`read`](crate::Reg::read) this register and get [`iq_correction_aux::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`iq_correction_aux::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct IqCorrectionAuxSpec;
+        impl crate::RegisterSpec for IqCorrectionAuxSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`iq_correction_aux::R`](R) reader structure"]
+        impl crate::Readable for IqCorrectionAuxSpec {}
+        #[doc = "`write(|w| ..)` method takes [`iq_correction_aux::W`](W) writer structure"]
+        impl crate::Writable for IqCorrectionAuxSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "FRONT_END_INIT_0C20 (rw) register accessor: Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@front_end_init_0c20`] module"]
+    #[doc(alias = "FRONT_END_INIT_0C20")]
+    pub type FrontEndInit0c20 = crate::Reg<front_end_init_0c20::FrontEndInit0c20Spec>;
+    #[doc = "Word whose bits 7:0 phy_fe_reg_init replaces with 0x57."]
+    pub mod front_end_init_0c20 {
+        #[doc = "Register `FRONT_END_INIT_0C20` reader"]
+        pub type R = crate::R<FrontEndInit0c20Spec>;
+        #[doc = "Register `FRONT_END_INIT_0C20` writer"]
+        pub type W = crate::W<FrontEndInit0c20Spec>;
+        #[doc = "Field `INIT_LOW_UNKNOWN` reader - Low byte; meaning unknown."]
+        pub type InitLowUnknownR = crate::FieldReader;
+        #[doc = "Field `INIT_LOW_UNKNOWN` writer - Low byte; meaning unknown."]
+        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:7 - Low byte; meaning unknown."]
+            #[inline(always)]
+            pub fn init_low_unknown(&self) -> InitLowUnknownR {
+                InitLowUnknownR::new((self.bits & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7 - Low byte; meaning unknown."]
+            #[inline(always)]
+            pub fn init_low_unknown(&mut self) -> InitLowUnknownW<'_, FrontEndInit0c20Spec> {
+                InitLowUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "Word whose bits 7:0 phy_fe_reg_init replaces with 0x57.\n\nYou can [`read`](crate::Reg::read) this register and get [`front_end_init_0c20::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`front_end_init_0c20::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct FrontEndInit0c20Spec;
+        impl crate::RegisterSpec for FrontEndInit0c20Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`front_end_init_0c20::R`](R) reader structure"]
+        impl crate::Readable for FrontEndInit0c20Spec {}
+        #[doc = "`write(|w| ..)` method takes [`front_end_init_0c20::W`](W) writer structure"]
+        impl crate::Writable for FrontEndInit0c20Spec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BB_CLOCK_GATE (rw) register accessor: Baseband clock-gate word; phy_open_fe_bb_clk writes all ones.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_clock_gate::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bb_clock_gate`] module"]
+    #[doc(alias = "BB_CLOCK_GATE")]
+    pub type BbClockGate = crate::Reg<bb_clock_gate::BbClockGateSpec>;
+    #[doc = "Baseband clock-gate word; phy_open_fe_bb_clk writes all ones."]
+    pub mod bb_clock_gate {
+        #[doc = "Register `BB_CLOCK_GATE` reader"]
+        pub type R = crate::R<BbClockGateSpec>;
+        #[doc = "Register `BB_CLOCK_GATE` writer"]
+        pub type W = crate::W<BbClockGateSpec>;
+        #[doc = "Field `STATE` reader - Complete baseband clock-gate image; individual gate meanings are unknown."]
+        pub type StateR = crate::FieldReader<u32>;
+        #[doc = "Field `STATE` writer - Complete baseband clock-gate image; individual gate meanings are unknown."]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete baseband clock-gate image; individual gate meanings are unknown."]
+            #[inline(always)]
+            pub fn state(&self) -> StateR {
+                StateR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Complete baseband clock-gate image; individual gate meanings are unknown."]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, BbClockGateSpec> {
+                StateW::new(self, 0)
+            }
+        }
+        #[doc = "Baseband clock-gate word; phy_open_fe_bb_clk writes all ones.\n\nYou can [`read`](crate::Reg::read) this register and get [`bb_clock_gate::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BbClockGateSpec;
+        impl crate::RegisterSpec for BbClockGateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bb_clock_gate::R`](R) reader structure"]
+        impl crate::Readable for BbClockGateSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bb_clock_gate::W`](W) writer structure"]
+        impl crate::Writable for BbClockGateSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "ESP32-C5 LP_AON field the PHY's power-detector SAR initialization drives. Other fields remain absent and are preserved by every field transaction."]
+pub type LpAonRadio = crate::Periph<lp_aon_radio::RegisterBlock, 0x600b_1000>;
+impl core::fmt::Debug for LpAonRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("LpAonRadio").finish()
+    }
+}
+#[doc = "ESP32-C5 LP_AON field the PHY's power-detector SAR initialization drives. Other fields remain absent and are preserved by every field transaction."]
+pub mod lp_aon_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x54],
+        sar_cct: SarCct,
+    }
+    impl RegisterBlock {
+        #[doc = "0x54 - SAR control word."]
+        #[inline(always)]
+        pub const fn sar_cct(&self) -> &SarCct {
+            &self.sar_cct
+        }
+    }
+    #[doc = "SAR_CCT (rw) register accessor: SAR control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`sar_cct::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sar_cct::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sar_cct`] module"]
+    #[doc(alias = "SAR_CCT")]
+    pub type SarCct = crate::Reg<sar_cct::SarCctSpec>;
+    #[doc = "SAR control word."]
+    pub mod sar_cct {
+        #[doc = "Register `SAR_CCT` reader"]
+        pub type R = crate::R<SarCctSpec>;
+        #[doc = "Register `SAR_CCT` writer"]
+        pub type W = crate::W<SarCctSpec>;
+        #[doc = "Field `SAR2_PWDET_CCT` reader - Three-bit SAR2 power-detector capacitor code."]
+        pub type Sar2PwdetCctR = crate::FieldReader;
+        #[doc = "Field `SAR2_PWDET_CCT` writer - Three-bit SAR2 power-detector capacitor code."]
+        pub type Sar2PwdetCctW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        impl R {
+            #[doc = "Bits 29:31 - Three-bit SAR2 power-detector capacitor code."]
+            #[inline(always)]
+            pub fn sar2_pwdet_cct(&self) -> Sar2PwdetCctR {
+                Sar2PwdetCctR::new(((self.bits >> 29) & 7) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 29:31 - Three-bit SAR2 power-detector capacitor code."]
+            #[inline(always)]
+            pub fn sar2_pwdet_cct(&mut self) -> Sar2PwdetCctW<'_, SarCctSpec> {
+                Sar2PwdetCctW::new(self, 29)
+            }
+        }
+        #[doc = "SAR control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`sar_cct::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sar_cct::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SarCctSpec;
+        impl crate::RegisterSpec for SarCctSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`sar_cct::R`](R) reader structure"]
+        impl crate::Readable for SarCctSpec {}
+        #[doc = "`write(|w| ..)` method takes [`sar_cct::W`](W) writer structure"]
+        impl crate::Writable for SarCctSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "ESP32-C5 APB_SARADC field the PHY's power-detector initialization drives. Other fields remain absent and are preserved by every field transaction."]
+pub type ApbSaradcRadio = crate::Periph<apb_saradc_radio::RegisterBlock, 0x6000_e000>;
+impl core::fmt::Debug for ApbSaradcRadio {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ApbSaradcRadio").finish()
+    }
+}
+#[doc = "ESP32-C5 APB_SARADC field the PHY's power-detector initialization drives. Other fields remain absent and are preserved by every field transaction."]
+pub mod apb_saradc_radio {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        ctrl: Ctrl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - SAR ADC control word."]
+        #[inline(always)]
+        pub const fn ctrl(&self) -> &Ctrl {
+            &self.ctrl
+        }
+    }
+    #[doc = "CTRL (rw) register accessor: SAR ADC control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ctrl`] module"]
+    #[doc(alias = "CTRL")]
+    pub type Ctrl = crate::Reg<ctrl::CtrlSpec>;
+    #[doc = "SAR ADC control word."]
+    pub mod ctrl {
+        #[doc = "Register `CTRL` reader"]
+        pub type R = crate::R<CtrlSpec>;
+        #[doc = "Register `CTRL` writer"]
+        pub type W = crate::W<CtrlSpec>;
+        #[doc = "Field `SARADC2_PWDET_DRV` reader - Drive SAR ADC2 from the power detector."]
+        pub type Saradc2PwdetDrvR = crate::BitReader;
+        #[doc = "Field `SARADC2_PWDET_DRV` writer - Drive SAR ADC2 from the power detector."]
+        pub type Saradc2PwdetDrvW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 29 - Drive SAR ADC2 from the power detector."]
+            #[inline(always)]
+            pub fn saradc2_pwdet_drv(&self) -> Saradc2PwdetDrvR {
+                Saradc2PwdetDrvR::new(((self.bits >> 29) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 29 - Drive SAR ADC2 from the power detector."]
+            #[inline(always)]
+            pub fn saradc2_pwdet_drv(&mut self) -> Saradc2PwdetDrvW<'_, CtrlSpec> {
+                Saradc2PwdetDrvW::new(self, 29)
+            }
+        }
+        #[doc = "SAR ADC control word.\n\nYou can [`read`](crate::Reg::read) this register and get [`ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CtrlSpec;
+        impl crate::RegisterSpec for CtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ctrl::R`](R) reader structure"]
+        impl crate::Readable for CtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`ctrl::W`](W) writer structure"]
+        impl crate::Writable for CtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CTRL to value 0x4003_8240"]
+        impl crate::Resettable for CtrlSpec {
+            const RESET_VALUE: u32 = 0x4003_8240;
+        }
+    }
 }
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
@@ -6294,6 +7596,10 @@ pub struct Peripherals {
     pub pmu_radio: PmuRadio,
     #[doc = "PHY_BASEBAND_CONFIG"]
     pub phy_baseband_config: PhyBasebandConfig,
+    #[doc = "LP_AON_RADIO"]
+    pub lp_aon_radio: LpAonRadio,
+    #[doc = "APB_SARADC_RADIO"]
+    pub apb_saradc_radio: ApbSaradcRadio,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -6324,6 +7630,8 @@ impl Peripherals {
             i2c_ana_mst: unsafe { I2cAnaMst::steal() },
             pmu_radio: unsafe { PmuRadio::steal() },
             phy_baseband_config: unsafe { PhyBasebandConfig::steal() },
+            lp_aon_radio: unsafe { LpAonRadio::steal() },
+            apb_saradc_radio: unsafe { ApbSaradcRadio::steal() },
         }
     }
 }
@@ -6357,6 +7665,8 @@ pub mod peripheral_ownership {
     pub struct PhyRadioPeripherals {
         pub pmu_radio: crate::PmuRadio,
         pub phy_baseband_config: crate::PhyBasebandConfig,
+        pub lp_aon_radio: crate::LpAonRadio,
+        pub apb_saradc_radio: crate::ApbSaradcRadio,
     }
 
     /// Complete target-reviewed ownership decomposition.
@@ -6385,6 +7695,8 @@ pub mod peripheral_ownership {
             i2c_ana_mst,
             pmu_radio,
             phy_baseband_config,
+            lp_aon_radio,
+            apb_saradc_radio,
         } = peripherals;
         PeripheralPartitions {
             ieee802154: Ieee802154Peripherals {
@@ -6400,6 +7712,8 @@ pub mod peripheral_ownership {
             phy_radio: PhyRadioPeripherals {
                 pmu_radio,
                 phy_baseband_config,
+                lp_aon_radio,
+                apb_saradc_radio,
             },
         }
     }
@@ -6718,6 +8032,71 @@ pub mod fixed_register_image {
             registers
                 .enhanced_ack_notify()
                 .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x000001e7` to `PHY_BASEBAND_CONFIG`.`FE_CLOCK_GATE`.
+    #[inline]
+    pub fn open_phy_front_end_clock_gate(registers: &crate::PhyBasebandConfig) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .fe_clock_gate()
+                .write_with_zero(|writer| writer.bits(0x000001e7));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xffffffff` to `PHY_BASEBAND_CONFIG`.`BB_CLOCK_GATE`.
+    #[inline]
+    pub fn open_phy_baseband_clock_gate(registers: &crate::PhyBasebandConfig) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .bb_clock_gate()
+                .write_with_zero(|writer| writer.bits(0xffffffff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0f0f0fff` to `PHY_BASEBAND_CONFIG`.`POWER_DETECTOR_WORD_810`.
+    #[inline]
+    pub fn set_phy_power_detector_word_810(registers: &crate::PhyBasebandConfig) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .power_detector_word_810()
+                .write_with_zero(|writer| writer.bits(0x0f0f0fff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00ff0f64` to `PHY_BASEBAND_CONFIG`.`POWER_DETECTOR_WORD_814`.
+    #[inline]
+    pub fn set_phy_power_detector_word_814(registers: &crate::PhyBasebandConfig) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .power_detector_word_814()
+                .write_with_zero(|writer| writer.bits(0x00ff0f64));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0000aaaa` to `PHY_BASEBAND_CONFIG`.`POWER_DETECTOR_REFERENCE`.
+    #[inline]
+    pub fn set_phy_power_detector_reference(registers: &crate::PhyBasebandConfig) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .power_detector_reference()
+                .write_with_zero(|writer| writer.bits(0x0000aaaa));
         }
     }
 }
@@ -7206,6 +8585,154 @@ pub mod field_or_modify {
                 .bit(reader.xpd_ckgen5g().bit() || (input & 0x00000001) != 0)
         });
     }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FE_BB_CLOCK_CONTROL fields `[FE_BB_ENABLE_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn open_phy_fe_bb_clock(registers: &crate::PhyBasebandConfig) {
+        registers.fe_bb_clock_control().modify(|reader, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .fe_bb_enable_unknown()
+                    .bits(reader.fe_bb_enable_unknown().bits() | (input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// OR one reviewed logical image into I2C_ANA_MST.ANA_CONF0 fields `[PHY_REGISTER_ENABLE]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_phy_i2c_master_registers(registers: &crate::I2cAnaMst) {
+        registers.ana_conf0().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .phy_register_enable()
+                .bit(reader.phy_register_enable().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08 fields `[INIT_FIRST_UNKNOWN, INIT_SECOND_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn set_phy_front_end_init_0c08(registers: &crate::PhyBasebandConfig) {
+        registers.front_end_init_0c08().modify(|reader, writer| {
+            let input = 0x06000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .init_first_unknown()
+                .bit(reader.init_first_unknown().bit() || ((input >> 25) & 0x00000001) != 0)
+                .init_second_unknown()
+                .bit(reader.init_second_unknown().bit() || ((input >> 26) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_INIT_0894 fields `[FE_INIT_ENABLE_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_phy_front_end_0894(registers: &crate::PhyBasebandConfig) {
+        registers.front_end_init_0894().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .fe_init_enable_unknown()
+                .bit(reader.fe_init_enable_unknown().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_AND_TONE_STOP_CONTROL fields `[FRONT_END_INIT_ENABLE_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_phy_front_end_init(registers: &crate::PhyBasebandConfig) {
+        registers
+            .front_end_and_tone_stop_control()
+            .modify(|reader, writer| {
+                let input = 0x00000001_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .front_end_init_enable_unknown()
+                    .bit(reader.front_end_init_enable_unknown().bit() || (input & 0x00000001) != 0)
+            });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL fields `[RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH, FRONT_END_INIT_HIGH_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn set_phy_rx_iq_correction_modes(registers: &crate::PhyBasebandConfig) {
+        registers.iq_correction_control().modify(|reader, writer| {
+            let input = 0xe0000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_iq_correction_mode_low()
+                .bit(reader.rx_iq_correction_mode_low().bit() || ((input >> 29) & 0x00000001) != 0)
+                .rx_iq_correction_mode_high()
+                .bit(reader.rx_iq_correction_mode_high().bit() || ((input >> 30) & 0x00000001) != 0)
+                .front_end_init_high_unknown()
+                .bit(
+                    reader.front_end_init_high_unknown().bit() || ((input >> 31) & 0x00000001) != 0,
+                )
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.IQ_CORRECTION_AUX fields `[TX_IQ_CORRECTION_MODE_LOW, TX_IQ_CORRECTION_MODE_HIGH]` while preserving the fresh register observation.
+    #[inline]
+    pub fn set_phy_tx_iq_correction_modes(registers: &crate::PhyBasebandConfig) {
+        registers.iq_correction_aux().modify(|reader, writer| {
+            let input = 0x00006000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_iq_correction_mode_low()
+                .bit(reader.tx_iq_correction_mode_low().bit() || ((input >> 13) & 0x00000001) != 0)
+                .tx_iq_correction_mode_high()
+                .bit(reader.tx_iq_correction_mode_high().bit() || ((input >> 14) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888 fields `[IQ_SWAP_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn set_phy_front_end_iq_swap(registers: &crate::PhyBasebandConfig) {
+        registers.front_end_init_0888().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .iq_swap_unknown()
+                .bit(reader.iq_swap_unknown().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into APB_SARADC_RADIO.CTRL fields `[SARADC2_PWDET_DRV]` while preserving the fresh register observation.
+    #[inline]
+    pub fn drive_saradc2_from_power_detector(registers: &crate::ApbSaradcRadio) {
+        registers.ctrl().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .saradc2_pwdet_drv()
+                .bit(reader.saradc2_pwdet_drv().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[SAR_MODE_UNKNOWN]` while preserving the fresh register observation.
+    #[inline]
+    pub fn set_phy_power_detector_sar_mode(registers: &crate::PhyBasebandConfig) {
+        registers
+            .power_detector_sar_control_status()
+            .modify(|reader, writer| {
+                let input = 0x00003000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .sar_mode_unknown()
+                        .bits(reader.sar_mode_unknown().bits() | ((input >> 12) & 0x00000003) as u8)
+                }
+            });
+    }
 }
 
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
@@ -7448,6 +8975,194 @@ pub mod field_replace_modify {
                 // SAFETY: generator validation proves every logical input projection
                 // fits its named SVD field; no whole-register image crosses this API.
                 writer.dac_rate_low_unknown().bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields `[PHY_REGISTER_MODE]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_master_register_mode(registers: &crate::I2cAnaMst) {
+        registers.ana_conf0().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.phy_register_mode().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08 fields `[INIT_FIRST_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_front_end_init_0c08_first(registers: &crate::PhyBasebandConfig) {
+        registers.front_end_init_0c08().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.init_first_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_DCO_CONTROL fields `[CALIBRATION_CONTROL_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_rx_dco_calibration_control(registers: &crate::PhyBasebandConfig) {
+        registers.rx_dco_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_control_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_CLEAR_CONTROL fields `[INIT_CLEAR_FIRST_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_front_end_clear_first(registers: &crate::PhyBasebandConfig) {
+        registers.front_end_clear_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .init_clear_first_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.TABLE_MEMORY_INDEX_SOURCE fields `[BASE_INDEX]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_table_memory_base_index(registers: &crate::PhyBasebandConfig) {
+        registers.table_memory_index_source().modify(|_, writer| {
+            let input = 0x000000b4_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.base_index().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_IQ_SCALE fields `[SCALE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_rx_iq_scale_high(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.rx_iq_scale().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scale_high_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.RX_IQ_SCALE fields `[SCALE_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_rx_iq_scale_low(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.rx_iq_scale().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scale_low_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888 fields `[IQ_SWAP_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_front_end_iq_swap(registers: &crate::PhyBasebandConfig) {
+        registers.front_end_init_0888().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.iq_swap_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C20 fields `[INIT_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_front_end_init_0c20(registers: &crate::PhyBasebandConfig) {
+        registers.front_end_init_0c20().modify(|_, writer| {
+            let input = 0x00000057_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_low_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.TX_PA_CONTROL_1 fields `[PA_ON_BT_DELAY]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_pa_on_bt_delay(registers: &crate::PhyBasebandConfig) {
+        registers.tx_pa_control_1().modify(|_, writer| {
+            let input = 0x00000096_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.pa_on_bt_delay().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL fields `[CALIBRATION_FIELD_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_power_detector_calibration_field(registers: &crate::PhyBasebandConfig) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000050_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_field_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL fields `[INITIALIZATION_MODE_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_power_detector_mode(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.power_detector_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .initialization_mode_unknown()
+                    .bits((input & 0x00000007) as u8)
+            }
+        });
+    }
+
+    /// Replace LP_AON_RADIO.SAR_CCT fields `[SAR2_PWDET_CCT]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_sar2_power_detector_capacitor(registers: &crate::LpAonRadio, input: u32) {
+        registers.sar_cct().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sar2_pwdet_cct().bits((input & 0x00000007) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.DAC_SCALE fields `[SCALE_HIGH_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_dac_scale_high(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.dac_scale().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scale_high_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.DAC_SCALE fields `[SCALE_LOW_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_dac_scale_low(registers: &crate::PhyBasebandConfig, input: u32) {
+        registers.dac_scale().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scale_low_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS fields `[SAR_CONFIG_CLEAR_UNKNOWN]` from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_power_detector_sar_config(registers: &crate::PhyBasebandConfig) {
+        registers
+            .power_detector_sar_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .sar_config_clear_unknown()
+                    .bit((input & 0x00000001) != 0)
             });
     }
 }

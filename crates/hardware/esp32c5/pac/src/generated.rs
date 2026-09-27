@@ -113,6 +113,74 @@ impl PhyRateBit {
     }
 }
 
+/// RX IQ scale byte phy_rxiq_scale_set selects by phy_param byte 0x28A.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyRxIqScale {
+    /// No scaling.
+    Zero = 0x00000000,
+    /// The byte -6.
+    MinusSix = 0x000000fa,
+}
+
+impl PhyRxIqScale {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Power-detector initialization modes.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyPowerDetectorMode {
+    /// phy_pwdet_reg_init.
+    RegisterInitialization = 0x00000002,
+    /// phy_pwdet_sar2_init.
+    Sar2Initialization = 0x00000006,
+}
+
+impl PhyPowerDetectorMode {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// SAR2 power-detector capacitor codes the PHY selects.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhySar2PowerDetectorCapacitor {
+    /// phy_pwdet_sar2_init without IQ swap.
+    Two = 0x00000002,
+    /// phy_pwdet_reg_init, and phy_pwdet_sar2_init with IQ swap.
+    Four = 0x00000004,
+}
+
+impl PhySar2PowerDetectorCapacitor {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// DAC scale byte phy_dac_scale_set selects.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyDacScale {
+    /// Argument zero.
+    Zero = 0x00000000,
+    /// Nonzero argument.
+    Full = 0x000000ff,
+}
+
+impl PhyDacScale {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Sixteen-bit energy-detection duration subset accepted by the reviewed public IEEE 802.15.4 common LL setter; physical units remain outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154EdDurationUnits(u32);
@@ -427,6 +495,66 @@ pub(crate) fn power_5g_clock_generator(registers: &crate::svd::PmuRadio) {
     crate::svd::field_or_modify::power_5g_clock_generator(registers);
 }
 
+/// Typed bridge for the reviewed `open_phy_fe_bb_clock` fixed field-OR transaction.
+#[inline]
+pub(crate) fn open_phy_fe_bb_clock(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::open_phy_fe_bb_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_i2c_master_registers` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_phy_i2c_master_registers(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_or_modify::enable_phy_i2c_master_registers(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_front_end_init_0c08` fixed field-OR transaction.
+#[inline]
+pub(crate) fn set_phy_front_end_init_0c08(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::set_phy_front_end_init_0c08(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_front_end_0894` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_phy_front_end_0894(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::enable_phy_front_end_0894(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_front_end_init` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_phy_front_end_init(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::enable_phy_front_end_init(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_rx_iq_correction_modes` fixed field-OR transaction.
+#[inline]
+pub(crate) fn set_phy_rx_iq_correction_modes(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::set_phy_rx_iq_correction_modes(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_tx_iq_correction_modes` fixed field-OR transaction.
+#[inline]
+pub(crate) fn set_phy_tx_iq_correction_modes(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::set_phy_tx_iq_correction_modes(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_front_end_iq_swap` fixed field-OR transaction.
+#[inline]
+pub(crate) fn set_phy_front_end_iq_swap(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::set_phy_front_end_iq_swap(registers);
+}
+
+/// Typed bridge for the reviewed `drive_saradc2_from_power_detector` fixed field-OR transaction.
+#[inline]
+pub(crate) fn drive_saradc2_from_power_detector(registers: &crate::svd::ApbSaradcRadio) {
+    crate::svd::field_or_modify::drive_saradc2_from_power_detector(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_power_detector_sar_mode` fixed field-OR transaction.
+#[inline]
+pub(crate) fn set_phy_power_detector_sar_mode(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_or_modify::set_phy_power_detector_sar_mode(registers);
+}
+
 /// Typed bridge for the reviewed `set_ieee802154_apb_clock` field-replacement transaction.
 #[inline]
 pub(crate) fn set_ieee802154_apb_clock(
@@ -608,4 +736,115 @@ pub(crate) fn clear_phy_dac_rate_high(registers: &crate::svd::PhyBasebandConfig)
 #[inline]
 pub(crate) fn clear_phy_dac_rate_low(registers: &crate::svd::PhyBasebandConfig) {
     crate::svd::field_replace_modify::clear_phy_dac_rate_low(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_master_register_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_master_register_mode(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::set_phy_i2c_master_register_mode(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_front_end_init_0c08_first` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_front_end_init_0c08_first(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_front_end_init_0c08_first(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_rx_dco_calibration_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_rx_dco_calibration_control(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_rx_dco_calibration_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_front_end_clear_first` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_front_end_clear_first(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_front_end_clear_first(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_table_memory_base_index` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_table_memory_base_index(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::set_phy_table_memory_base_index(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_rx_iq_scale_high` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_rx_iq_scale_high(
+    registers: &crate::svd::PhyBasebandConfig,
+    value: PhyRxIqScale,
+) {
+    crate::svd::field_replace_modify::set_phy_rx_iq_scale_high(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_phy_rx_iq_scale_low` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_rx_iq_scale_low(
+    registers: &crate::svd::PhyBasebandConfig,
+    value: PhyRxIqScale,
+) {
+    crate::svd::field_replace_modify::set_phy_rx_iq_scale_low(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `clear_phy_front_end_iq_swap` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_front_end_iq_swap(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_front_end_iq_swap(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_front_end_init_0c20` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_front_end_init_0c20(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::set_phy_front_end_init_0c20(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_pa_on_bt_delay` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_pa_on_bt_delay(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::set_phy_pa_on_bt_delay(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_power_detector_calibration_field` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_power_detector_calibration_field(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::set_phy_power_detector_calibration_field(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_power_detector_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_power_detector_mode(
+    registers: &crate::svd::PhyBasebandConfig,
+    value: PhyPowerDetectorMode,
+) {
+    crate::svd::field_replace_modify::set_phy_power_detector_mode(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_sar2_power_detector_capacitor` field-replacement transaction.
+#[inline]
+pub(crate) fn set_sar2_power_detector_capacitor(
+    registers: &crate::svd::LpAonRadio,
+    value: PhySar2PowerDetectorCapacitor,
+) {
+    crate::svd::field_replace_modify::set_sar2_power_detector_capacitor(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_phy_dac_scale_high` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_dac_scale_high(
+    registers: &crate::svd::PhyBasebandConfig,
+    value: PhyDacScale,
+) {
+    crate::svd::field_replace_modify::set_phy_dac_scale_high(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_phy_dac_scale_low` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_dac_scale_low(registers: &crate::svd::PhyBasebandConfig, value: PhyDacScale) {
+    crate::svd::field_replace_modify::set_phy_dac_scale_low(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `clear_phy_power_detector_sar_config` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_power_detector_sar_config(registers: &crate::svd::PhyBasebandConfig) {
+    crate::svd::field_replace_modify::clear_phy_power_detector_sar_config(registers);
 }

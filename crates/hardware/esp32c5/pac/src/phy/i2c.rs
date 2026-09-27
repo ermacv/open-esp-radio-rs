@@ -398,6 +398,15 @@ impl PhyI2cRegisters {
         crate::generated::set_phy_i2c_hardware_host_scl_pulse_duration(self.master(), pulse);
     }
 
+    /// `phy_i2cmst_reg_init`: select PHY register mode two and enable PHY
+    /// register access in the master control word.
+    ///
+    /// SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES_2`.
+    pub fn initialize_master_registers(&mut self) {
+        crate::generated::set_phy_i2c_master_register_mode(self.master());
+        crate::generated::enable_phy_i2c_master_registers(self.master());
+    }
+
     /// Whether a host is executing a command.
     pub fn is_busy(&self, host: PhyI2cHost) -> bool {
         match host {

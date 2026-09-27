@@ -1,0 +1,21 @@
+schema = 2
+
+[[peripherals]]
+name = "APB_SARADC_RADIO"
+description = """ESP32-C5 APB_SARADC field the PHY's power-detector initialization drives. Other fields remain absent and are preserved by every field transaction."""
+baseAddress = 0x6000E000
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "CTRL"
+description = "SAR ADC control word."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+resetValue = 0x40038240
+
+[[peripherals.registers.register.fields]]
+name = "SARADC2_PWDET_DRV"
+description = "Drive SAR ADC2 from the power detector."
+bitOffset = 29
+bitWidth = 1

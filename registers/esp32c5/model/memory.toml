@@ -85,3 +85,187 @@ kind = "mmio"
 start = 0x600A0448
 end-exclusive = 0x600A044C
 permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0400"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0400
+end-exclusive = 0x600a0404
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0408"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0408
+end-exclusive = 0x600a040c
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-040c"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a040c
+end-exclusive = 0x600a0410
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0434"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0434
+end-exclusive = 0x600a0438
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0438"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0438
+end-exclusive = 0x600a043c
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-043c"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a043c
+end-exclusive = 0x600a0440
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0444"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0444
+end-exclusive = 0x600a0448
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0800"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0800
+end-exclusive = 0x600a0804
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0808"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0808
+end-exclusive = 0x600a080c
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-080c"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a080c
+end-exclusive = 0x600a0810
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0810"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0810
+end-exclusive = 0x600a0814
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0814"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0814
+end-exclusive = 0x600a0818
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0818"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0818
+end-exclusive = 0x600a081c
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0870"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0870
+end-exclusive = 0x600a0874
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0888"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0888
+end-exclusive = 0x600a088c
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0894"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0894
+end-exclusive = 0x600a0898
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0c04"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0c04
+end-exclusive = 0x600a0c08
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0c08"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0c08
+end-exclusive = 0x600a0c0c
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0c0c"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0c0c
+end-exclusive = 0x600a0c10
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-0c20"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a0c20
+end-exclusive = 0x600a0c24
+permissions = "rw"
+
+[[regions]]
+name = "phy-baseband-7c80"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600a7c80
+end-exclusive = 0x600a7c84
+permissions = "rw"
+
+[[regions]]
+name = "lp-aon-sar-cct"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600b1054
+end-exclusive = 0x600b1058
+permissions = "rw"
+
+[[regions]]
+name = "apb-saradc-ctrl"
+address-space = "cpu"
+kind = "mmio"
+start = 0x6000e000
+end-exclusive = 0x6000e004
+permissions = "rw"

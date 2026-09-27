@@ -120,9 +120,57 @@ code = "0c726d5124b6fd66df24a7088ce3b876de712b1c0d69bb07bfb6e692c4727713"
 
 [[function]]
 artifact = "libphy"
+member = "phy_init.o"
+symbol = "phy_open_fe_bb_clk"
+code = "fab1c9455506bde48c54eca8cb1d784d7de48627d553033aff338775082d528e"
+
+[[function]]
+artifact = "libphy"
+member = "phy_pwdet.o"
+symbol = "phy_pwdet_reg_init"
+code = "35ad309432cef34ce20bc2049d3a74997513f26fe065b8a525548bcdd3e12653"
+
+[[function]]
+artifact = "libphy"
+member = "phy_pwdet.o"
+symbol = "phy_pwdet_sar2_init"
+code = "1da1a1cd882464447f9ab9249f8100f7fcd04b72b664658f35b7525697b76a64"
+
+[[function]]
+artifact = "libphy"
+member = "phy_reg.o"
+symbol = "phy_dac_scale_set"
+code = "a120d75bfb9b76fb5f91dcac9ba224cdf26c5654d19178b031aaac19bd28b1df"
+
+[[function]]
+artifact = "libphy"
+member = "phy_reg.o"
+symbol = "phy_fe_reg_init"
+code = "cf8b7b67e3ebc085c69f532e876d9b7d35f5bfa3179449e06b5a84d4bc099027"
+
+[[function]]
+artifact = "libphy"
+member = "phy_reg.o"
+symbol = "phy_i2cmst_reg_init"
+code = "396a2eed71f25e7ff7fc46be7b115c0720091f30c248007313c42da6efc4937c"
+
+[[function]]
+artifact = "libphy"
+member = "phy_reg.o"
+symbol = "phy_iq_swap_set"
+code = "6d31253a3e9eac1e8940616f6db38100cf1ebceb9361fd2d379e5ada248aea1a"
+
+[[function]]
+artifact = "libphy"
 member = "phy_reg.o"
 symbol = "phy_open_i2c_xpd"
 code = "bb02de3a8e1910cd3a0b6c8162090778d98a13ee115e7a5bb4acab88b6b1c46b"
+
+[[function]]
+artifact = "libphy"
+member = "phy_reg.o"
+symbol = "phy_rxiq_scale_set"
+code = "6464c666c1b45881d92bbdff06791706f88aa5efcac76ea57f28e1ecc872288f"
 
 [[function]]
 artifact = "rom-rev0"
@@ -153,6 +201,12 @@ artifact = "rom-rev0"
 member = ""
 symbol = "phy_dac_rate_set"
 code = "92902f65cc22e1bd06155779f214120644b54be52518332d544819ff4accf4b4"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_fe_reg_init"
+code = "045eba6fa8391e498810812518a0f95befaaef0dcfb5aa98f3cdd1468b925de4"
 
 [[function]]
 artifact = "rom-rev0"
@@ -193,8 +247,32 @@ code = "c84930cfda0cf9316280d21e7751630108c6e9bce5b0a4851e25a7dbeedaf1b9"
 [[function]]
 artifact = "rom-rev0"
 member = ""
+symbol = "phy_i2cmst_reg_init"
+code = "396a2eed71f25e7ff7fc46be7b115c0720091f30c248007313c42da6efc4937c"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_open_fe_bb_clk"
+code = "fab1c9455506bde48c54eca8cb1d784d7de48627d553033aff338775082d528e"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
 symbol = "phy_open_i2c_xpd"
 code = "c17a99f062607089d6697f4a425e4e2cfc94ebfaf9c1aa4caae27ab7f1f8c493"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_pwdet_reg_init"
+code = "35ad309432cef34ce20bc2049d3a74997513f26fe065b8a525548bcdd3e12653"
+
+[[function]]
+artifact = "rom-rev0"
+member = ""
+symbol = "phy_pwdet_sar2_init"
+code = "70a7b28d3aecf2ca68b1de5e8f1c172e1b538ca61bc391c95fb2d74f3d324cf7"
 
 [[function]]
 artifact = "rom-rev100"
@@ -225,6 +303,12 @@ artifact = "rom-rev100"
 member = ""
 symbol = "phy_dac_rate_set"
 code = "92902f65cc22e1bd06155779f214120644b54be52518332d544819ff4accf4b4"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_fe_reg_init"
+code = "1bb6db70af94fc1ee29220bc22aacecad2a295114a06132e8407713cf459947d"
 
 [[function]]
 artifact = "rom-rev100"
@@ -265,5 +349,29 @@ code = "c84930cfda0cf9316280d21e7751630108c6e9bce5b0a4851e25a7dbeedaf1b9"
 [[function]]
 artifact = "rom-rev100"
 member = ""
+symbol = "phy_i2cmst_reg_init"
+code = "396a2eed71f25e7ff7fc46be7b115c0720091f30c248007313c42da6efc4937c"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_open_fe_bb_clk"
+code = "fab1c9455506bde48c54eca8cb1d784d7de48627d553033aff338775082d528e"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
 symbol = "phy_open_i2c_xpd"
 code = "c17a99f062607089d6697f4a425e4e2cfc94ebfaf9c1aa4caae27ab7f1f8c493"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_pwdet_reg_init"
+code = "35ad309432cef34ce20bc2049d3a74997513f26fe065b8a525548bcdd3e12653"
+
+[[function]]
+artifact = "rom-rev100"
+member = ""
+symbol = "phy_pwdet_sar2_init"
+code = "70a7b28d3aecf2ca68b1de5e8f1c172e1b538ca61bc391c95fb2d74f3d324cf7"

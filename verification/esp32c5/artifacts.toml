@@ -437,3 +437,15 @@ id = "esp-idf/components/soc/esp32c5/register/soc/pmu_struct.h"
 source = "esp-idf"
 path = "components/soc/esp32c5/register/soc/pmu_struct.h"
 sha256 = "8c2182865c43655273217ba788e4e6465a914906d5347f2ac0075e0ad17b5c9a"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/register/soc/lp_aon_reg.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/register/soc/lp_aon_reg.h"
+sha256 = "ec5f3bc1bf5ef9160bdca40c7e2575e2c992a8ca6ce45d7dc9dc94a0ec69a081"
+
+[[artifact]]
+id = "esp-idf/components/soc/esp32c5/register/soc/apb_saradc_reg.h"
+source = "esp-idf"
+path = "components/soc/esp32c5/register/soc/apb_saradc_reg.h"
+sha256 = "4d82b7207af0bd4b448a1d964de996cbbd77cd211daa1c055beb76f79bc9059b"

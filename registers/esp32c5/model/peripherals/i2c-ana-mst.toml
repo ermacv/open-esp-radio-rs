@@ -265,3 +265,30 @@ bitWidth = 5
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0
 maximum = 0x1F
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "ANA_CONF0"
+description = "Analog I2C master control used by PHY register mode and BBPLL calibration."
+addressOffset = 0x18
+size = 32
+access = "read-write"
+resetValue = 0xe408
+
+[[peripherals.registers.register.fields]]
+name = "BBPLL_CAL_MODE"
+description = "Two-bit BBPLL calibration mode."
+bitOffset = 2
+bitWidth = 2
+
+[[peripherals.registers.register.fields]]
+name = "PHY_REGISTER_ENABLE"
+description = "PHY register access enable."
+bitOffset = 6
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "PHY_REGISTER_MODE"
+description = "Two-bit PHY register mode."
+bitOffset = 9
+bitWidth = 2

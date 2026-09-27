@@ -33,7 +33,7 @@ peripherals = ["I2C_ANA_MST"]
 name = "PhyRadioPeripherals"
 member = "phy_radio"
 description = "PMU analog I2C power controls and PHY baseband configuration words driven by the PHY."
-peripherals = ["PMU_RADIO", "PHY_BASEBAND_CONFIG"]
+peripherals = ["PMU_RADIO", "PHY_BASEBAND_CONFIG", "LP_AON_RADIO", "APB_SARADC_RADIO"]
 
 [[w1c-register-snapshots]]
 name = "ieee802154_event_status"
@@ -885,3 +885,382 @@ name = "Set"
 value = 1
 description = "The rate bit is set."
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
+
+[[fixed-register-images]]
+name = "open_phy_front_end_clock_gate"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FE_CLOCK_GATE"
+value = 0x1e7
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "open_phy_fe_bb_clock"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FE_BB_CLOCK_CONTROL"
+value = 0x3
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "FE_BB_ENABLE_UNKNOWN"
+source-bit-offset = 0
+
+[[fixed-register-images]]
+name = "open_phy_baseband_clock_gate"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "BB_CLOCK_GATE"
+value = 0xffffffff
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_master_register_mode"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF0"
+fields = [{ field = "PHY_REGISTER_MODE", source-bit-offset = 0 }]
+value = 0x2
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "enable_phy_i2c_master_registers"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF0"
+value = 0x1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "PHY_REGISTER_ENABLE"
+source-bit-offset = 0
+
+[[field-replace-modifies]]
+name = "clear_phy_front_end_init_0c08_first"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_INIT_0C08"
+fields = [{ field = "INIT_FIRST_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "set_phy_front_end_init_0c08"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_INIT_0C08"
+value = 0x6000000
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "INIT_FIRST_UNKNOWN"
+source-bit-offset = 25
+
+[[field-or-modifies.fields]]
+field = "INIT_SECOND_UNKNOWN"
+source-bit-offset = 26
+
+[[field-replace-modifies]]
+name = "clear_phy_rx_dco_calibration_control"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_DCO_CONTROL"
+fields = [{ field = "CALIBRATION_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "enable_phy_front_end_0894"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_INIT_0894"
+value = 0x1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "FE_INIT_ENABLE_UNKNOWN"
+source-bit-offset = 0
+
+[[field-replace-modifies]]
+name = "clear_phy_front_end_clear_first"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_CLEAR_CONTROL"
+fields = [{ field = "INIT_CLEAR_FIRST_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_table_memory_base_index"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "TABLE_MEMORY_INDEX_SOURCE"
+fields = [{ field = "BASE_INDEX", source-bit-offset = 0 }]
+value = 0xb4
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "enable_phy_front_end_init"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_AND_TONE_STOP_CONTROL"
+value = 0x1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "FRONT_END_INIT_ENABLE_UNKNOWN"
+source-bit-offset = 0
+
+[[field-or-modifies]]
+name = "set_phy_rx_iq_correction_modes"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "IQ_CORRECTION_CONTROL"
+value = 0xe0000000
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "RX_IQ_CORRECTION_MODE_LOW"
+source-bit-offset = 29
+
+[[field-or-modifies.fields]]
+field = "RX_IQ_CORRECTION_MODE_HIGH"
+source-bit-offset = 30
+
+[[field-or-modifies.fields]]
+field = "FRONT_END_INIT_HIGH_UNKNOWN"
+source-bit-offset = 31
+
+[[field-or-modifies]]
+name = "set_phy_tx_iq_correction_modes"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "IQ_CORRECTION_AUX"
+value = 0x6000
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "TX_IQ_CORRECTION_MODE_LOW"
+source-bit-offset = 13
+
+[[field-or-modifies.fields]]
+field = "TX_IQ_CORRECTION_MODE_HIGH"
+source-bit-offset = 14
+
+[[field-replace-modifies]]
+name = "set_phy_rx_iq_scale_high"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_IQ_SCALE"
+fields = [{ field = "SCALE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyRxIqScale"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_rx_iq_scale_low"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "RX_IQ_SCALE"
+fields = [{ field = "SCALE_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyRxIqScale"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "set_phy_front_end_iq_swap"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_INIT_0888"
+value = 0x1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "IQ_SWAP_UNKNOWN"
+source-bit-offset = 0
+
+[[field-replace-modifies]]
+name = "clear_phy_front_end_iq_swap"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_INIT_0888"
+fields = [{ field = "IQ_SWAP_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_front_end_init_0c20"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "FRONT_END_INIT_0C20"
+fields = [{ field = "INIT_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x57
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_pa_on_bt_delay"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "TX_PA_CONTROL_1"
+fields = [{ field = "PA_ON_BT_DELAY", source-bit-offset = 0 }]
+value = 0x96
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[fixed-register-images]]
+name = "set_phy_power_detector_word_810"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "POWER_DETECTOR_WORD_810"
+value = 0x0f0f0fff
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[fixed-register-images]]
+name = "set_phy_power_detector_word_814"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "POWER_DETECTOR_WORD_814"
+value = 0xff0f64
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_power_detector_calibration_field"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "CALIBRATION_FIELD_UNKNOWN", source-bit-offset = 0 }]
+value = 0x50
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[fixed-register-images]]
+name = "set_phy_power_detector_reference"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "POWER_DETECTOR_REFERENCE"
+value = 0xaaaa
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_power_detector_mode"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "INITIALIZATION_MODE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyPowerDetectorMode"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "drive_saradc2_from_power_detector"
+peripheral = "APB_SARADC_RADIO"
+register = "CTRL"
+value = 0x1
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "SARADC2_PWDET_DRV"
+source-bit-offset = 0
+
+[[field-replace-modifies]]
+name = "set_sar2_power_detector_capacitor"
+peripheral = "LP_AON_RADIO"
+register = "SAR_CCT"
+fields = [{ field = "SAR2_PWDET_CCT", source-bit-offset = 0 }]
+domain = "PhySar2PowerDetectorCapacitor"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_dac_scale_high"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "DAC_SCALE"
+fields = [{ field = "SCALE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyDacScale"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-replace-modifies]]
+name = "set_phy_dac_scale_low"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "DAC_SCALE"
+fields = [{ field = "SCALE_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyDacScale"
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies]]
+name = "set_phy_power_detector_sar_mode"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "POWER_DETECTOR_SAR_CONTROL_STATUS"
+value = 0x3000
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[field-or-modifies.fields]]
+field = "SAR_MODE_UNKNOWN"
+source-bit-offset = 12
+
+[[field-replace-modifies]]
+name = "clear_phy_power_detector_sar_config"
+peripheral = "PHY_BASEBAND_CONFIG"
+register = "POWER_DETECTOR_SAR_CONTROL_STATUS"
+fields = [{ field = "SAR_CONFIG_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0
+exposure = "facade"
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains]]
+name = "PhyRxIqScale"
+description = "RX IQ scale byte phy_rxiq_scale_set selects by phy_param byte 0x28A."
+
+[[enum-domains.values]]
+name = "Zero"
+value = 0x0
+description = "No scaling."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains.values]]
+name = "MinusSix"
+value = 0xfa
+description = "The byte -6."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains]]
+name = "PhyPowerDetectorMode"
+description = "Power-detector initialization modes."
+
+[[enum-domains.values]]
+name = "RegisterInitialization"
+value = 0x2
+description = "phy_pwdet_reg_init."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains.values]]
+name = "Sar2Initialization"
+value = 0x6
+description = "phy_pwdet_sar2_init."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains]]
+name = "PhySar2PowerDetectorCapacitor"
+description = "SAR2 power-detector capacitor codes the PHY selects."
+
+[[enum-domains.values]]
+name = "Two"
+value = 0x2
+description = "phy_pwdet_sar2_init without IQ swap."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains.values]]
+name = "Four"
+value = 0x4
+description = "phy_pwdet_reg_init, and phy_pwdet_sar2_init with IQ swap."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains]]
+name = "PhyDacScale"
+description = "DAC scale byte phy_dac_scale_set selects."
+
+[[enum-domains.values]]
+name = "Zero"
+value = 0x0
+description = "Argument zero."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
+
+[[enum-domains.values]]
+name = "Full"
+value = 0xff
+description = "Nonzero argument."
+sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]

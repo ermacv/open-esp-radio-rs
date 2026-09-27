@@ -10,6 +10,8 @@ fragments = [
     "peripherals/i2c-ana-mst.toml",
     "peripherals/pmu-radio.toml",
     "peripherals/phy-baseband-config.toml",
+    "peripherals/lp-aon-radio.toml",
+    "peripherals/apb-saradc-radio.toml",
 ]
 
 [device]

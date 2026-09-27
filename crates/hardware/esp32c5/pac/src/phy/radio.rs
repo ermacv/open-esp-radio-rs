@@ -3,12 +3,18 @@
 //! SOURCE: reviewed evidence `C5_BLOB_LIBPHY_RF_INIT_LEAVES` (ESP32-C5
 //! `libphy.a[phy_reg.o]::phy_open_i2c_xpd`,
 //! `libphy.a[phy_i2c.o]::{phy_dac_rate_set, phy_adc_rate_set}`) with the
-//! PMU fields of `ESP_IDF_4D59230D_C5_PMU`.
+//! PMU fields of `ESP_IDF_4D59230D_C5_PMU`, and `C5_BLOB_LIBPHY_RF_INIT_LEAVES_2`
+//! (`phy_open_fe_bb_clk`, `phy_iq_swap_set`, `phy_fe_reg_init`,
+//! `phy_pwdet_reg_init`, `phy_dac_scale_set`, `phy_rxiq_scale_set`,
+//! `phy_pwdet_sar2_init`) with `ESP_IDF_4D59230D_C5_LP_AON_SARADC`.
 
 #![forbid(unsafe_code)]
 
 use crate::{
-    generated::{self, PhyRateBit},
+    generated::{
+        self, PhyDacScale, PhyPowerDetectorMode, PhyRateBit, PhyRxIqScale,
+        PhySar2PowerDetectorCapacitor,
+    },
     svd,
 };
 
@@ -70,5 +76,105 @@ impl PhyRadioRegisters {
     pub fn clear_dac_rate_bits(&mut self) {
         generated::clear_phy_dac_rate_high(self.baseband());
         generated::clear_phy_dac_rate_low(self.baseband());
+    }
+
+    /// `phy_open_fe_bb_clk`: open the front-end clock gate, the front-end
+    /// and baseband clock enables and the baseband clock gate.
+    pub fn open_front_end_baseband_clocks(&mut self) {
+        svd::fixed_register_image::open_phy_front_end_clock_gate(self.baseband());
+        generated::open_phy_fe_bb_clock(self.baseband());
+        svd::fixed_register_image::open_phy_baseband_clock_gate(self.baseband());
+    }
+
+    /// `phy_iq_swap_set`, with `iq_swap` the phy_param byte 0x2A being set.
+    pub fn set_iq_swap(&mut self, iq_swap: bool) {
+        if iq_swap {
+            generated::clear_phy_front_end_init_0c08_first(self.baseband());
+        } else {
+            generated::set_phy_front_end_init_0c08(self.baseband());
+        }
+        generated::clear_phy_rx_dco_calibration_control(self.baseband());
+    }
+
+    /// `phy_fe_reg_init`, with `iq_swap` the phy_param byte 0x2A being set
+    /// and `rx_iq_scale` the phy_param byte 0x28A.
+    pub fn initialize_front_end(&mut self, iq_swap: bool, rx_iq_scale: u8) {
+        let baseband = self.baseband();
+        generated::enable_phy_front_end_0894(baseband);
+        generated::clear_phy_front_end_clear_first(baseband);
+        generated::set_phy_table_memory_base_index(baseband);
+        generated::enable_phy_front_end_init(baseband);
+        generated::set_phy_rx_iq_correction_modes(baseband);
+        generated::set_phy_tx_iq_correction_modes(baseband);
+        generated::set_phy_rx_iq_scale_high(baseband, PhyRxIqScale::Zero);
+        generated::set_phy_rx_iq_scale_low(baseband, PhyRxIqScale::Zero);
+        if iq_swap {
+            generated::set_phy_front_end_iq_swap(baseband);
+        } else {
+            generated::clear_phy_front_end_iq_swap(baseband);
+        }
+        generated::set_phy_front_end_init_0c20(baseband);
+        generated::set_phy_pa_on_bt_delay(baseband);
+        self.initialize_power_detector();
+        self.set_dac_scale(true);
+        self.set_rx_iq_scale(rx_iq_scale);
+    }
+
+    /// `phy_pwdet_reg_init`.
+    pub fn initialize_power_detector(&mut self) {
+        let baseband = self.baseband();
+        svd::fixed_register_image::set_phy_power_detector_word_810(baseband);
+        svd::fixed_register_image::set_phy_power_detector_word_814(baseband);
+        generated::set_phy_power_detector_calibration_field(baseband);
+        svd::fixed_register_image::set_phy_power_detector_reference(baseband);
+        generated::set_phy_power_detector_mode(
+            baseband,
+            PhyPowerDetectorMode::RegisterInitialization,
+        );
+        generated::drive_saradc2_from_power_detector(&self.peripherals.apb_saradc_radio);
+        generated::set_sar2_power_detector_capacitor(
+            &self.peripherals.lp_aon_radio,
+            PhySar2PowerDetectorCapacitor::Four,
+        );
+    }
+
+    /// `phy_dac_scale_set(full)`.
+    pub fn set_dac_scale(&mut self, full: bool) {
+        let scale = if full {
+            PhyDacScale::Full
+        } else {
+            PhyDacScale::Zero
+        };
+        generated::set_phy_dac_scale_high(self.baseband(), scale);
+        generated::set_phy_dac_scale_low(self.baseband(), scale);
+    }
+
+    /// `phy_rxiq_scale_set`, with `selection` the phy_param byte 0x28A.
+    pub fn set_rx_iq_scale(&mut self, selection: u8) {
+        let (high, low) = match selection {
+            1 => (PhyRxIqScale::MinusSix, PhyRxIqScale::Zero),
+            2 => (PhyRxIqScale::Zero, PhyRxIqScale::MinusSix),
+            _ => (PhyRxIqScale::Zero, PhyRxIqScale::Zero),
+        };
+        generated::set_phy_rx_iq_scale_high(self.baseband(), high);
+        generated::set_phy_rx_iq_scale_low(self.baseband(), low);
+    }
+
+    /// `phy_pwdet_sar2_init`, with `iq_swap` the phy_param byte 0x2A being
+    /// set.
+    pub fn initialize_power_detector_sar2(&mut self, iq_swap: bool) {
+        let baseband = self.baseband();
+        generated::set_phy_power_detector_sar_mode(baseband);
+        generated::clear_phy_power_detector_sar_config(baseband);
+        svd::fixed_register_image::set_phy_power_detector_reference(baseband);
+        generated::set_phy_power_detector_mode(baseband, PhyPowerDetectorMode::Sar2Initialization);
+        generated::set_sar2_power_detector_capacitor(
+            &self.peripherals.lp_aon_radio,
+            if iq_swap {
+                PhySar2PowerDetectorCapacitor::Four
+            } else {
+                PhySar2PowerDetectorCapacitor::Two
+            },
+        );
     }
 }

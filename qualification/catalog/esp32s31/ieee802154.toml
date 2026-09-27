@@ -544,7 +544,7 @@ section = "ieee802154-filtering-addressing-and-mac-automation"
 title = "Source Matching table"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The protocol pending table owns add, clear and reset of short and extended addresses for interface zero; multi-PAN tables are absent."
+scope-and-limitations = "The protocol pending table owns add, clear and reset of short and extended addresses for interface zero, and the portable contract configures it and the pending mode (`SOURCE_MATCH`), refusing a source a full half has no room for. The OpenThread adapter applies OpenThread's table entry by entry, as ESP-IDF's port does. Multi-PAN tables are absent."
 
 [[items]]
 id = "ieee802154-timing-mac-timers-clock-match"

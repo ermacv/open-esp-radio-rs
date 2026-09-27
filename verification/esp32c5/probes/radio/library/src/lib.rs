@@ -500,3 +500,43 @@ oer_probe_macros::probe! {
         0
     }
 }
+
+oer_probe_macros::probe! {
+    /// `phy_bbpll_cal(start)`.
+    pub fn open_phy_i2c_trace_phy_bbpll_cal(start: u32) -> u32 {
+        let RadioPartitions { mut phy_i2c, .. } = RadioPartitions::for_validation();
+        phy_i2c.calibrate_bbpll(start != 0);
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_bbpll_recal()`.
+    pub fn open_phy_i2c_trace_phy_bbpll_recal() -> u32 {
+        let RadioPartitions { mut phy_i2c, .. } = RadioPartitions::for_validation();
+        phy_i2c.recalibrate_bbpll();
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_rxevm_init_cfg(enable, second, third)` for seven-bit parameters.
+    pub fn open_phy_i2c_trace_phy_rxevm_init_cfg(enable: u32, second: u32, third: u32) -> u32 {
+        let (Some(second), Some(third)) = (
+            oer_esp32c5_pac::PhyRxEvmParameter::new(second),
+            oer_esp32c5_pac::PhyRxEvmParameter::new(third),
+        ) else {
+            return INVALID_ARGUMENT;
+        };
+        with_radio(|radio| radio.initialize_rx_evm(enable != 0, second, third));
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// `phy_rxevm_reset_mem()`.
+    pub fn open_phy_i2c_trace_phy_rxevm_reset_mem() -> u32 {
+        with_radio(|radio| radio.reset_rx_evm_memory());
+        0
+    }
+}

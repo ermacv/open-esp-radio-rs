@@ -1363,6 +1363,47 @@ fn expect_tsens_read_init(_: &[u32], observed: &Observed) -> std::result::Result
 const TSENS_ON: &[u32] = &[0, 1];
 const TSENS_MODES: &[u32] = &[0, 1];
 
+fn bbpll_cal_ops(start: bool) -> Vec<Op> {
+    vec![Op::Rmw(I2C_ANA_CONF0, 0xc, if start { 0x8 } else { 0x4 })]
+}
+fn rxevm_reset_ops() -> Vec<Op> {
+    vec![
+        Op::Rmw(BB + 0x7a34, 0, 0x2),
+        Op::Rmw(BB + 0x7a34, 0x2, 0),
+        Op::Rmw(BB + 0x7c50, 0, 0x100),
+        Op::Rmw(BB + 0x7c50, 0x100, 0),
+    ]
+}
+fn rxevm_init_ops(words: &[u32]) -> Vec<Op> {
+    let (enable, second, third) = (words[0], words[1], words[2]);
+    let mut ops = vec![
+        Op::Rmw(BB + 0x7a38, 0x7c, 0x60),
+        Op::Rmw(BB + 0x7a38, 0x1fc0_0000, third << 22),
+        Op::Rmw(BB + 0x7a38, 0x3f_8000, second << 15),
+        Op::Rmw(BB + 0x7a34, 0x7, if enable != 0 { 5 } else { 0 }),
+        Op::Rmw(BB + 0x7920, 0xf000, 0),
+    ];
+    ops.extend(rxevm_reset_ops());
+    ops
+}
+fn expect_bbpll_cal(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &bbpll_cal_ops(words[0] != 0))
+}
+fn expect_bbpll_recal(_: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    let mut ops = bbpll_cal_ops(true);
+    ops.extend(bbpll_cal_ops(false));
+    check_ops(observed, &ops)
+}
+fn expect_rxevm_init(words: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &rxevm_init_ops(words))
+}
+fn expect_rxevm_reset(_: &[u32], observed: &Observed) -> std::result::Result<(), String> {
+    check_ops(observed, &rxevm_reset_ops())
+}
+const BBPLL_STARTS: &[u32] = &[0, 1, 2];
+const RX_EVM_ENABLES: &[u32] = &[0, 1];
+const RX_EVM_PARAMETERS: &[u32] = &[0, 0x46, 0x7f];
+
 const LEAVES: &[Leaf] = &[
     expected(
         leaf(
@@ -1886,6 +1927,70 @@ const LEAVES: &[Leaf] = &[
             OUTSIDE_STATES,
         ),
         expect_tsens_read_init,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_bbpll_cal",
+                    "open_phy_i2c_trace_phy_bbpll_cal",
+                    &[("start", Domain::Words(BBPLL_STARTS))],
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_bbpll_cal,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_bbpll_recal",
+                    "open_phy_i2c_trace_phy_bbpll_recal",
+                    NO_ARGUMENT,
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_bbpll_recal,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_rxevm_init_cfg",
+                    "open_phy_i2c_trace_phy_rxevm_init_cfg",
+                    &[
+                        ("enable", Domain::Words(RX_EVM_ENABLES)),
+                        ("second", Domain::Words(RX_EVM_PARAMETERS)),
+                        ("third", Domain::Words(RX_EVM_PARAMETERS)),
+                    ],
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_rxevm_init,
+    ),
+    expected(
+        stated(
+            objects(
+                leaf(
+                    "phy_rxevm_reset_mem",
+                    "open_phy_i2c_trace_phy_rxevm_reset_mem",
+                    NO_ARGUMENT,
+                    false,
+                ),
+                register_abi,
+            ),
+            OUTSIDE_STATES,
+        ),
+        expect_rxevm_reset,
     ),
 ];
 

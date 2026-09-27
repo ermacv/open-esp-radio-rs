@@ -8,7 +8,7 @@ pub const OTA_SELECTOR_OFFSET: u32 = 0xd000;
 pub const OTA_0_OFFSET: u32 = 0x1_0000;
 /// Size of `ota_0` in `platform/esp32s31/partitions/applications.csv`, the
 /// partition every application image is encoded for.
-pub const OTA_0_BYTES: u32 = 0x40_0000;
+pub const OTA_0_BYTES: u32 = 0x70_0000;
 /// Share of `ota_0` from which image encoding warns that the partition is
 /// nearly full, before an image stops fitting.
 pub const OTA_0_WARNING_PERCENT: u64 = 90;
@@ -106,3 +106,70 @@ fn crc32_idf(bytes: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests;
+
+/// One region of a flash write.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlashSegment {
+    pub address: u32,
+    pub data: Vec<u8>,
+    pub description: &'static str,
+}
+
+/// What to do with the chip after the last segment is written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AfterFlash {
+    /// Reset into the written application.
+    HardReset,
+    /// Stay in the ROM bootloader.
+    StayInBootloader,
+}
+
+/// Write every segment through one connection to the ROM stub, in order.
+///
+/// Each separate `espflash write-bin` reconnects, resets into the bootloader
+/// and uploads its stub again, which dominated flashing time while the
+/// written regions are small. A segment whose flash contents already match
+/// is skipped after an MD5 comparison, so an unchanged bootloader or
+/// partition table costs one checksum.
+#[cfg(feature = "device")]
+pub fn write_segments(port: &Path, segments: &[FlashSegment], after: AfterFlash) -> Result<()> {
+    use espflash::{
+        connection::{Connection, ResetAfterOperation, ResetBeforeOperation},
+        flasher::Flasher,
+        image_format::Segment,
+        target::{Chip, DefaultProgressCallback},
+    };
+    use serialport::SerialPortType;
+
+    let port_name = port.to_string_lossy().into_owned();
+    let usb = serialport::available_ports()?
+        .into_iter()
+        .find(|info| {
+            info.port_name == port_name
+                || std::fs::canonicalize(&info.port_name).ok() == std::fs::canonicalize(port).ok()
+        })
+        .and_then(|info| match info.port_type {
+            SerialPortType::UsbPort(usb) => Some(usb),
+            _ => None,
+        })
+        .ok_or_else(|| format!("{port_name} is not an attached USB serial port"))?;
+    let serial = serialport::new(&port_name, 115_200).open_native()?;
+    let connection = Connection::new(
+        serial,
+        usb,
+        match after {
+            AfterFlash::HardReset => ResetAfterOperation::HardReset,
+            AfterFlash::StayInBootloader => ResetAfterOperation::NoReset,
+        },
+        ResetBeforeOperation::DefaultReset,
+        115_200,
+    );
+    let mut flasher = Flasher::connect(connection, true, false, true, Some(Chip::Esp32s31), None)?;
+    let segments = segments
+        .iter()
+        .map(|segment| Segment::new(segment.address, &segment.data))
+        .collect::<Vec<_>>();
+    flasher.write_bins_to_flash(&segments, &mut DefaultProgressCallback)?;
+    flasher.connection().reset_after(true, Chip::Esp32s31)?;
+    Ok(())
+}

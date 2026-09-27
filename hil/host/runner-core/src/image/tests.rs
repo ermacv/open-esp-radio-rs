@@ -1,6 +1,44 @@
 use super::*;
 
 #[test]
+fn gatt_beside_the_performance_wifi_image_is_the_joint_image() {
+    // The features the joint image advertised on hardware.
+    let joint = FeatureCapabilities {
+        bidirectional: true,
+        bluetooth_gatt: true,
+        data_plane_placement: true,
+        psram_task_stack: true,
+        runtime_configuration: true,
+        runtime_initialization: true,
+        rx: true,
+        simultaneous_station_access_point: true,
+        startup_artifact: true,
+        station_epoch_control: true,
+        station_lifecycle_events: true,
+        structured_evidence: true,
+        tcp: true,
+        timebase_probe: true,
+        tx: true,
+        udp: true,
+        udp_multi_flow: true,
+        wifi_access_point: true,
+        wifi_monitor_capture: true,
+        wifi_role_control: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&joint),
+        Some(ImageClass::WifiBleCoex)
+    );
+    // GATT beside a diagnostic Wi-Fi image is no class.
+    let diagnostic = FeatureCapabilities {
+        driver_observation_evidence: true,
+        ..joint
+    };
+    assert_eq!(classify_flashed_capabilities(&diagnostic), None);
+}
+
+#[test]
 fn secure_gatt_never_classifies_as_plaintext_or_diagnostic_host() {
     let features = FeatureCapabilities {
         bluetooth_secure_gatt: true,
@@ -189,7 +227,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 22);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 23);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -197,6 +235,10 @@ fn image_classes_are_stable_and_do_not_use_workload_environment() {
     );
     assert_eq!(crate::image::ImageClass::Performance.id(), "performance");
     assert_eq!(crate::image::ImageClass::Correctness.id(), "correctness");
+    assert_eq!(
+        crate::image::ImageClass::WifiBleCoex.runtime_features(),
+        "wifi-ble-coex,psram-task-stack,code-psram,profile-psram-data"
+    );
     assert_eq!(
         crate::image::ImageClass::Correctness.runtime_features(),
         "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"

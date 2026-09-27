@@ -56,6 +56,14 @@ pub fn classify_flashed_capabilities(
         };
         return (*features == expected).then_some(ImageClass::BluetoothSecureGatt);
     }
+    if features.bluetooth_gatt && features.wifi_role_control {
+        // The joint image is the performance Wi-Fi image with the GATT
+        // application beside it.
+        let mut wifi = *features;
+        wifi.bluetooth_gatt = false;
+        return (classify_flashed_capabilities(&wifi) == Some(ImageClass::Performance))
+            .then_some(ImageClass::WifiBleCoex);
+    }
     if features.bluetooth_gatt {
         let expected = FeatureCapabilities {
             bluetooth_gatt: true,

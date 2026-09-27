@@ -22,7 +22,7 @@ pub use phy::{
     calibration_leaves, calibration_prefix, channel, gain, gain_state, i2c, i2c_transport,
     research, rfpll, rx_gain, tracking, tracking_graph, tx_dc,
 };
-pub use wifi::{mac, retry};
+pub use wifi::{mac, retry, rx_append};
 
 /// The ESP32-S31 facts the scenario engine runs with.
 pub static CHIP: oer_vendor_scenario_engine::Chip = oer_vendor_scenario_engine::Chip {

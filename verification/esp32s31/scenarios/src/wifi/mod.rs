@@ -2,3 +2,4 @@
 //! sequences.
 pub mod mac;
 pub mod retry;
+pub mod rx_append;

@@ -20,6 +20,7 @@ mod calibration_leaves;
 mod calibration_projection;
 mod i2c;
 mod production_trace;
+mod rx_append;
 
 /// Expose externally supplied PHY registers through the HAL shared-PHY port
 /// with a fresh per-call restore slot.

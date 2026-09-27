@@ -11,6 +11,60 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "the OS-adapter critical section `wDev_AppendRxBlocks` enters and leaves \
+            through `g_osi_funcs_p`, answered as quiet calls; production serializes the RX \
+            ring through its single owner",
+        places: &[
+            Place::Range {
+                function: "wDev_AppendRxBlocks",
+                start: 0x7e,
+                end: 0x80,
+            },
+            Place::Range {
+                function: "wDev_AppendRxBlocks",
+                start: 0xb4,
+                end: 0xb6,
+            },
+        ],
+    },
+    Decision {
+        reason: "an append doorbell that never clears: the vendor dumps its list after the \
+            same 0x186a1 polls production bounds `complete_pending_reload` with, which then \
+            reports the walker busy; a hardware fault no comparison case can bound cheaply",
+        places: &[Place::Range {
+            function: "wDev_AppendRxBlocks",
+            start: 0xc2,
+            end: 0xd2,
+        }],
+    },
+    Decision {
+        reason: "RX test statistics: the vendor counts base repairs and unrepairable \
+            cursors through `esp_test_rx_statistics`, which the comparison leaves disabled \
+            and production does not keep",
+        places: &[
+            Place::Range {
+                function: "wDev_AppendRxBlocks",
+                start: 0xfe,
+                end: 0x10a,
+            },
+            Place::Range {
+                function: "wDev_AppendRxBlocks",
+                start: 0x15c,
+                end: 0x16c,
+            },
+        ],
+    },
+    Decision {
+        reason: "an exhausted walker whose LAST has no successor: the vendor counts it and \
+            leaves the base alone, while production treats a LAST outside its accepted list \
+            as corruption and requires a reset (fail-closed by design)",
+        places: &[Place::Range {
+            function: "wDev_AppendRxBlocks",
+            start: 0xf2,
+            end: 0xf4,
+        }],
+    },
+    Decision {
         reason: "the MU-EDCA minimum exponent a success restores for a frame whose descriptor \
             selects MU EDCA: production neither negotiates nor applies the MU-EDCA parameter \
             set (`is_use_muedca` is zero for it) and always restores the ordinary minimum \

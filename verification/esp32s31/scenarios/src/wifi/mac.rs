@@ -43,7 +43,34 @@ pub const CONTRACT_ID: &str = "mac";
 
 /// Link roots of the Wi-Fi rate tables and retry sequences, beyond the
 /// leaves.
-const WIFI_ROOTS: &[&[&str]] = &[&[RateTables::INDEX_CALLER], crate::retry::ROOTS];
+const WIFI_ROOTS: &[&[&str]] = &[
+    &[RateTables::INDEX_CALLER],
+    crate::retry::ROOTS,
+    crate::rx_append::ROOTS,
+];
+
+/// Evidence claims of the retry sequences and the RX append.
+const WIFI_CLAIMS: &[(&str, &str, &str)] = &concat_claims::<
+    { crate::retry::CLAIMS.len() + crate::rx_append::CLAIMS.len() },
+>(crate::retry::CLAIMS, crate::rx_append::CLAIMS);
+
+/// `first` followed by `second`, in a constant.
+const fn concat_claims<const N: usize>(
+    first: &[(&'static str, &'static str, &'static str)],
+    second: &[(&'static str, &'static str, &'static str)],
+) -> [(&'static str, &'static str, &'static str); N] {
+    let mut claims = [("", "", ""); N];
+    let mut index = 0;
+    while index < N {
+        claims[index] = if index < first.len() {
+            first[index]
+        } else {
+            second[index - first.len()]
+        };
+        index += 1;
+    }
+    claims
+}
 
 /// The Wi-Fi MAC suite over `libpp.a` and `libnet80211.a`, with the rate
 /// tables and retry sequences.
@@ -57,7 +84,7 @@ pub const WIFI_MAC: Suite = Suite {
     absent: ABSENT,
     roots: WIFI_ROOTS,
     prepare: Some(wifi_prepare),
-    claims: crate::retry::CLAIMS,
+    claims: WIFI_CLAIMS,
 };
 
 /// The vendor rate tables the Wi-Fi builders and retry sequences read,

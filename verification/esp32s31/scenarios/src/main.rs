@@ -8,7 +8,7 @@ use oer_esp32s31_vendor_scenarios::{
     harness::{Budget, Result},
     harness_edges, i2c, i2c_transport, mac, observation,
     phy::PhyOptions,
-    research, retry, rfpll, rx_gain, session, state, tracking, tx_dc,
+    research, retry, rfpll, rx_append, rx_gain, session, state, tracking, tx_dc,
 };
 use std::{
     path::{Path, PathBuf},
@@ -574,6 +574,7 @@ fn wifi_mac(
     let mut ctx = mac::Mac::new(&options)?;
     mac::exercise(&mut ctx)?;
     retry::exercise(&mut ctx)?;
+    rx_append::exercise(&mut ctx)?;
     let claims = ctx.session.claims(
         "wifi-mac",
         &ctx.roots,

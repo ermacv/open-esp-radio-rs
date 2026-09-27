@@ -1787,6 +1787,10 @@ pub async fn run(
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
     spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task must allocate once"));
     #[cfg(feature = "wifi-ble-coex")]
+    spawner.spawn(
+        crate::hang_sentinel::heartbeat_task().expect("hang sentinel heartbeat must allocate once"),
+    );
+    #[cfg(feature = "wifi-ble-coex")]
     crate::bluetooth::shared::start(
         spawner,
         radio,

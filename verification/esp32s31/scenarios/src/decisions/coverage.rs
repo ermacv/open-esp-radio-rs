@@ -11,6 +11,25 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "diagnostic output of `mac_tx_set_plcp0` that publishes no register: the \
+            protection-threshold log of a non-HE descriptor with threshold fields, and the \
+            PPDU dump (`dbg_read_tx_ppdu`, which only reads and prints) of a descriptor and \
+            frame header both flagged with bit 24; both return into the compared publication",
+        places: &[
+            Place::Range {
+                function: "mac_tx_set_plcp0",
+                start: 0x80,
+                end: 0x10c,
+            },
+            Place::Range {
+                function: "mac_tx_set_plcp0",
+                start: 0x13a,
+                end: 0x21a,
+            },
+            Place::Function("dbg_read_tx_ppdu"),
+        ],
+    },
+    Decision {
         reason: "diagnostic logging of `hal_mac_tx_set_ppdu` and `mac_tx_set_hesig` that \
             publishes no register: an unexpected rate context, a misaligned frame buffer, an \
             entry class other than one and an aggregation flag without several descriptors; \

@@ -1033,7 +1033,7 @@ mod tests {
             .acquire(&oer_hil_arbiter::Request {
                 owner: "test".into(),
                 work: "sleep".into(),
-                budget: Some(std::time::Duration::from_secs(1)),
+                budget: Some(std::time::Duration::from_secs(3)),
                 short: false,
                 scenarios: Vec::new(),
                 claims: Vec::new(),
@@ -1106,6 +1106,16 @@ mod tests {
             .env(oer_hil_arbiter::DIRECTORY_ENV, directory.path())
             .spawn()
             .unwrap();
+        // The helper is another process; under load it may take a while to
+        // queue, and preemption needs a waiter.
+        let queued = std::time::Instant::now();
+        while arbiter.status().unwrap().queue.is_empty() {
+            assert!(
+                queued.elapsed() < std::time::Duration::from_secs(60),
+                "the helper never queued"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
         let started = std::time::Instant::now();
         let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
             Command::new("sleep").arg("60"),
@@ -1115,7 +1125,8 @@ mod tests {
         let (code, succeeded) = supervise(&grant, &mut child).unwrap();
         assert!(!succeeded);
         assert_eq!(code, std::process::ExitCode::from(PREEMPTED_EXIT));
-        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        // Preempted at its budget, well before twice the budget.
+        assert!(started.elapsed() < std::time::Duration::from_secs(6));
         drop(grant);
         assert!(waiter.wait().unwrap().success());
         assert_eq!(

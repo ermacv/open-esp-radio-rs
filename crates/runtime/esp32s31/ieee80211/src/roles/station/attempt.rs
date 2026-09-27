@@ -23,7 +23,9 @@ use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
 use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
 
-use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::{
+    coex::WifiCoexActivity, cooperative_hardware::CooperativeRadioHardware,
+};
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::CcmpKeyHardware,

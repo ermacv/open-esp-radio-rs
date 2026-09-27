@@ -524,6 +524,17 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
             let (wifi, resources) = frontier.into_parts();
             let (released, rf) = {
                 let mut guard = self.radio.lock().await;
+                // The vendor `wifi_hw_stop` disables coexistence before the
+                // PHY; a timer that cannot be withdrawn stops the radio.
+                if let Err(error) = guard.disable_coex() {
+                    let fault = ProductionRadioLifecycleFault::CoexDisable {
+                        _error: error,
+                        _resources: resources,
+                    };
+                    enforce_lifecycle(&fault, true);
+                    crate::WatchdogConfig::complete(protection);
+                    return Err(RADIO_LIFECYCLE_FAULT.init(fault));
+                }
                 let (lease, _, clocks) = guard.parts();
                 let released = match wifi.release(lease, clocks) {
                     Ok(released) => released,

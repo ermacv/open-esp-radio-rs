@@ -33,10 +33,13 @@ where
         &'a mut self,
         hardware: &'a mut CooperativeRadioHardware<'arena>,
         channel: u8,
-    ) -> Result<(), Self::Error> {
+        requested_dwell_millis: u16,
+    ) -> Result<u16, Self::Error> {
+        let dwell_millis = self.enter_scan_channel(requested_dwell_millis).await;
         let access = hardware.register_access();
         self.switch_published_channel(u16::from(channel), 0, access)
-            .await
+            .await?;
+        Ok(dwell_millis)
     }
 }
 
@@ -52,8 +55,11 @@ where
         &'a mut self,
         hardware: &'a mut RadioRuntimeOwner,
         channel: u8,
-    ) -> Result<(), Self::Error> {
-        RadioChannel::switch_channel(self, u16::from(channel), 0, hardware).await
+        requested_dwell_millis: u16,
+    ) -> Result<u16, Self::Error> {
+        let dwell_millis = self.enter_scan_channel(requested_dwell_millis).await;
+        RadioChannel::switch_channel(self, u16::from(channel), 0, hardware).await?;
+        Ok(dwell_millis)
     }
 }
 

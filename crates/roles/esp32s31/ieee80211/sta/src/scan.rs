@@ -80,10 +80,14 @@ pub trait StaScanPort {
 
     fn begin_scan(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_;
 
+    /// Switch to the channel and return how many dwell ticks to spend on
+    /// it. The port may shorten or lengthen `requested_dwell_ticks`, as the
+    /// vendor scan does while another radio shares the air.
     fn switch_channel(
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + '_;
+        requested_dwell_ticks: u16,
+    ) -> impl Future<Output = Result<u16, Self::Error>> + '_;
 
     fn start_receive(
         &mut self,
@@ -165,12 +169,18 @@ where
         mut owner: Self::Owner,
         context: StaScanChannelContext<Self::Channel>,
     ) -> StaScanStepOutcome<Self::Owner, Self::Error> {
-        if let Err(error) = owner.switch_channel(context).await {
-            return StaScanStepOutcome::Failed {
-                owner,
-                error: StaScanError::ChannelSwitch(error),
-            };
-        }
+        let dwell_ticks = match owner
+            .switch_channel(context, self.config.dwell_ticks())
+            .await
+        {
+            Ok(dwell_ticks) => dwell_ticks,
+            Err(error) => {
+                return StaScanStepOutcome::Failed {
+                    owner,
+                    error: StaScanError::ChannelSwitch(error),
+                };
+            }
+        };
         if let Err(error) = owner.start_receive(context).await {
             return StaScanStepOutcome::Failed {
                 owner,
@@ -183,7 +193,7 @@ where
             Err(error) => Some(StaScanError::ActiveProbe(error)),
         };
         if transaction_failure.is_none() {
-            for _ in 0..self.config.dwell_ticks() {
+            for _ in 0..dwell_ticks {
                 if let Err(error) = owner.observe_receive(context) {
                     transaction_failure = Some(StaScanError::ReceiveObserve(error));
                     break;

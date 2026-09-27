@@ -40,11 +40,15 @@ use oer_ieee80211_sta::scan::StaScanChannelContext;
 pub trait ScanPhyPort<H> {
     type Error;
 
+    /// Switch to `channel` and return its dwell in milliseconds, which may
+    /// differ from `requested_dwell_millis` while another radio shares the
+    /// air.
     fn switch_channel<'a>(
         &'a mut self,
         hardware: &'a mut H,
         channel: u8,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a;
+        requested_dwell_millis: u16,
+    ) -> impl Future<Output = Result<u16, Self::Error>> + 'a;
 }
 
 /// RX-ring capability retained across every finite running-scan channel.

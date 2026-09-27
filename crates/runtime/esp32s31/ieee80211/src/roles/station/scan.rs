@@ -20,6 +20,8 @@ use oer_esp32s31_radio_runtime::RadioSystem;
 
 use crate::roles::radio_channel::RadioChannel;
 
+use oer_esp32s31_ieee80211::coex::WifiCoexActivity;
+
 use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
 use oer_esp32s31_ieee80211_mac::{
@@ -552,6 +554,12 @@ where
         } => (owner, StationScanDecision::InvalidPlan { error, progress }),
     };
     let parts = owner.into_parts();
+    // A station scans only while unassociated, so the vendor `scan_op_end`
+    // publishes an idle Wi-Fi when the scan ends.
+    parts
+        .phy
+        .publish_coex_activity(WifiCoexActivity::Idle)
+        .await;
     let phy_observer = parts.phy.into_observer();
     let (control, transmit) = parts.tx.into_parts();
     StationScanOutcome {

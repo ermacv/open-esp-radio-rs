@@ -66,9 +66,10 @@ impl ScanPhyPort<Hardware> for Phy {
         &'a mut self,
         hardware: &'a mut Hardware,
         channel: u8,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        requested_dwell_millis: u16,
+    ) -> impl Future<Output = Result<u16, Self::Error>> + 'a {
         hardware.actions.push(Action::Switch(channel));
-        ready(Ok(()))
+        ready(Ok(requested_dwell_millis))
     }
 }
 

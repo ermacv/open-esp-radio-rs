@@ -55,6 +55,7 @@ oer-embassy-net-owned = { path = "../../../../adapters/embassy-net/owned", optio
 oer-embassy-net-upstream = { path = "../../../../adapters/embassy-net/upstream", optional = true }
 oer-esp32s31-ieee80211-runtime = { path = "../../../../runtime/esp32s31/ieee80211", default-features = false }
 oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
+oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex" }
 oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
 oer-esp32s31-ieee80211-embassy-net-upstream = { path = "../../../../adapters/embassy-net/esp32s31/ieee80211-upstream", optional = true }
 oer-ieee80211-runtime = { path = "../../../../runtime/ieee80211" }

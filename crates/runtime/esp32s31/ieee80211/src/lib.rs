@@ -10,6 +10,8 @@
 #[cfg(test)]
 extern crate std;
 
+#[cfg(target_arch = "riscv32")]
+pub mod coex;
 pub mod datapath;
 pub mod diagnostics;
 pub mod roles;

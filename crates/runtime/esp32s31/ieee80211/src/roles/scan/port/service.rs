@@ -38,11 +38,17 @@ where
     fn switch_channel(
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
+        requested_dwell_ticks: u16,
+    ) -> impl Future<Output = Result<u16, Self::Error>> + '_ {
+        // One production dwell tick is one millisecond.
         async move {
             self.radio
                 .phy
-                .switch_channel(&mut self.radio.hardware, context.channel)
+                .switch_channel(
+                    &mut self.radio.hardware,
+                    context.channel,
+                    requested_dwell_ticks,
+                )
                 .await
                 .map_err(ScanPortError::ChannelSwitch)
         }

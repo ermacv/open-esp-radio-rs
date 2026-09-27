@@ -22,6 +22,7 @@
 //! owner; no HIL protocol, telemetry or benchmark configuration is linked.
 
 use core::{future::Future, marker::PhantomData, pin::Pin};
+use oer_esp32s31_coex::CoexError;
 
 use crate::{
     composition::{
@@ -521,6 +522,7 @@ enum JoinFailure {
     },
     Start {
         _failure: RadioStartFailure<EspHalWifiPlatform>,
+        _coex: Result<(), CoexError>,
     },
 }
 
@@ -540,6 +542,10 @@ enum ProductionRadioLifecycleFault {
         _error: ConcurrentRfError,
         _partition: WifiPartition,
         _platform: EspHalWifiPlatform,
+        _resources: ProductionRadioResources,
+    },
+    CoexDisable {
+        _error: CoexError,
         _resources: ProductionRadioResources,
     },
 }
@@ -582,13 +588,26 @@ struct ProductionWifiEpochRunner {
 pub struct SystemRunner {
     supervisor: RadioSupervisorTask<'static, CriticalSectionRawMutex, ProductionWifiEpochRunner>,
     connected_datapath: &'static station::ConnectedDatapathMailbox,
+    radio: &'static SharedRadio,
 }
 
 impl SystemRunner {
+    /// Run the Wi-Fi supervisor, with Wi-Fi's coexistence start callback as
+    /// its own task.
     pub async fn run(self, spawner: Spawner) -> ! {
         self.connected_datapath.bind(spawner);
+        spawner.spawn(
+            wifi_coex_start_task(self.radio)
+                .expect("the Wi-Fi coexistence start task is spawned once"),
+        );
         await_stack_boundary!(self.supervisor.run())
     }
+}
+
+/// Wi-Fi's coexistence start callback for the lifetime of the radio.
+#[embassy_executor::task]
+async fn wifi_coex_start_task(radio: &'static SharedRadio) {
+    oer_esp32s31_ieee80211_runtime::coex::run_wifi_coex_start(radio).await
 }
 
 enum ProductionStationReclaimFault<'security> {
@@ -1070,6 +1089,7 @@ pub async fn new(
         runner: SystemRunner {
             supervisor,
             connected_datapath,
+            radio,
         },
     })
 }
@@ -1105,6 +1125,8 @@ async fn join_shared_radio(
             return Err(failure);
         }
     };
+    // The vendor `wifi_hw_start` enables coexistence right after the PHY.
+    guard.enable_coex();
     let (lease, radio_platform, clocks) = guard.parts();
     let mut clock = EmbassyPhyTime;
     match await_stack_boundary!(start_esp32s31_radio::<_, _, EmbassyPhyTime, _>(
@@ -1120,7 +1142,10 @@ async fn join_shared_radio(
         Ok(wifi) => Ok((phy, wifi)),
         Err(failure) => {
             let ambiguous = failure.phy_hardware_ambiguous();
-            let failure = JoinFailure::Start { _failure: failure };
+            let failure = JoinFailure::Start {
+                _failure: failure,
+                _coex: guard.disable_coex(),
+            };
             crate::lifecycle_policy::enforce(
                 &failure,
                 SharedPhyFailStop::from_ambiguous_lifecycle(ambiguous),

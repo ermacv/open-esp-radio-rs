@@ -27,6 +27,7 @@ struct Owner {
     fail: Option<Action>,
     probe_fallback: bool,
     candidate: Option<u8>,
+    dwell_ticks: Option<u16>,
 }
 
 impl Owner {
@@ -37,6 +38,7 @@ impl Owner {
             fail: None,
             probe_fallback: false,
             candidate: Some(11),
+            dwell_ticks: None,
         }
     }
 
@@ -62,8 +64,13 @@ impl StaScanPort for Owner {
     fn switch_channel(
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        ready(self.record(Action::Switch(context.channel)))
+        requested_dwell_ticks: u16,
+    ) -> impl Future<Output = Result<u16, Self::Error>> + '_ {
+        let dwell_ticks = self.dwell_ticks.unwrap_or(requested_dwell_ticks);
+        ready(
+            self.record(Action::Switch(context.channel))
+                .map(|()| dwell_ticks),
+        )
     }
 
     fn start_receive(
@@ -165,6 +172,29 @@ fn two_channels_preserve_the_complete_transaction_order() {
 }
 
 #[test]
+fn the_port_chooses_each_channel_dwell() {
+    let mut owner = Owner::new(3);
+    owner.dwell_ticks = Some(1);
+    let mut service = StaCandidateScanService::new(backend());
+    let StaCandidateScanExit::Selected { owner, .. } = block_on(service.run(owner, &[6])) else {
+        panic!("scan must select the planned candidate")
+    };
+    assert_eq!(
+        owner.actions,
+        [
+            Action::Begin,
+            Action::Switch(6),
+            Action::Start(6),
+            Action::Probe(6),
+            Action::Observe(6),
+            Action::Wait,
+            Action::Stop(6),
+            Action::Select,
+        ]
+    );
+}
+
+#[test]
 fn passive_probe_fallback_does_not_abort_the_receive_dwell() {
     let mut owner = Owner::new(7);
     owner.probe_fallback = true;
@@ -248,8 +278,9 @@ fn stop_failure_takes_precedence_over_an_earlier_dwell_failure() {
         fn switch_channel(
             &mut self,
             context: StaScanChannelContext<Self::Channel>,
-        ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-            self.0.switch_channel(context)
+            requested_dwell_ticks: u16,
+        ) -> impl Future<Output = Result<u16, Self::Error>> + '_ {
+            self.0.switch_channel(context, requested_dwell_ticks)
         }
 
         fn start_receive(

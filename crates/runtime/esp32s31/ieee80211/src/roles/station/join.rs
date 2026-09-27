@@ -17,6 +17,7 @@ use crate::{
 };
 
 use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
+use oer_esp32s31_ieee80211::coex::WifiCoexActivity;
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
 use oer_esp32s31_radio_runtime::RadioSystem;
 
@@ -241,6 +242,9 @@ where
             let StaAttemptRadio {
                 channel, receive, ..
             } = radio;
+            // A failed attempt returns the station to the vendor `init`
+            // state, which publishes an idle Wi-Fi.
+            channel.publish_coex_activity(WifiCoexActivity::Idle).await;
             let _ = channel.into_observer();
             StationJoinOutcome::Failed {
                 returned: StationJoinReturned {

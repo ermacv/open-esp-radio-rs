@@ -124,6 +124,12 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
+        owner
+            .channel
+            .publish_coex_activity(WifiCoexActivity::Connecting {
+                reconnecting: false,
+            })
+            .await;
         let receive = owner.receive.take().ok_or_else(|| {
             StaAttemptStepError::terminal(StaAttemptTargetError::State(
                 StaAttemptStateError::MissingReceive,
@@ -170,6 +176,12 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
+        owner
+            .channel
+            .publish_coex_activity(WifiCoexActivity::Connecting {
+                reconnecting: false,
+            })
+            .await;
         let receive = owner.receive.take().ok_or_else(|| {
             StaAttemptStepError::terminal(StaAttemptTargetError::State(
                 StaAttemptStateError::MissingReceive,
@@ -257,6 +269,12 @@ where
                 StaAttemptStateError::MissingConnectedPeer,
             )));
         }
+        owner
+            .channel
+            .publish_coex_activity(WifiCoexActivity::Connecting {
+                reconnecting: false,
+            })
+            .await;
         let selected_rsn = select_wpa2_psk_rsn(&owner.station.access_point).map_err(|error| {
             StaAttemptStepError::terminal(StaAttemptTargetError::Security(error))
         })?;
@@ -411,7 +429,22 @@ where
                     StaFailureDisposition::Terminal,
                     StaAttemptTargetError::State(error),
                 )),
-                None => Ok(StaAttemptConnected::new(owner)),
+                None => {
+                    // The vendor completes a connection by publishing idle
+                    // and restarting the phases, then starts power
+                    // management with the connected status.
+                    owner
+                        .channel
+                        .publish_coex_activity(WifiCoexActivity::Idle)
+                        .await;
+                    owner
+                        .channel
+                        .publish_coex_activity(WifiCoexActivity::Connected {
+                            beacon_interval_tu: owner.station.access_point.beacon_interval_tu,
+                        })
+                        .await;
+                    Ok(StaAttemptConnected::new(owner))
+                }
             }
         }
     }

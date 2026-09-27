@@ -225,6 +225,12 @@ fn object_functions(member: &str, data: &[u8], out: &mut Vec<Function>) -> Resul
     Ok(())
 }
 
+/// Whether `bytes` are an archive or an ELF object, the artifacts that hold
+/// vendor functions; pinned source files are not.
+pub fn is_binary(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"!<arch>\n") || bytes.starts_with(b"\x7fELF")
+}
+
 /// Every defined function of an archive's ELF members, or of one ELF.
 pub fn functions(bytes: &[u8]) -> Result<Vec<Function>> {
     let mut out = vec![];

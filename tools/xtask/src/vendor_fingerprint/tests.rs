@@ -55,3 +55,10 @@ fn similarity_counts_common_instructions() {
     assert_eq!(similarity(&[1, 2, 3, 4], &[1, 9, 3, 4]), 0.75);
     assert_eq!(similarity(&[1, 2], &[3, 4]), 0.0);
 }
+
+#[test]
+fn only_archives_and_elf_objects_hold_functions() {
+    assert!(is_binary(b"!<arch>\nmember"));
+    assert!(is_binary(b"\x7fELF\x01\x01"));
+    assert!(!is_binary(b"#include <stdint.h>\n"));
+}

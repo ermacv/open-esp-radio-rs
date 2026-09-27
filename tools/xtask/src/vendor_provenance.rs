@@ -189,7 +189,12 @@ fn pinned_functions(
         if artifact.local {
             continue;
         }
-        let functions = crate::vendor_diff::read(&artifact.path)?;
+        let bytes = std::fs::read(&artifact.path)
+            .map_err(|e| format!("{}: {e}", artifact.path.display()))?;
+        if !crate::vendor_fingerprint::is_binary(&bytes) {
+            continue;
+        }
+        let functions = crate::vendor_fingerprint::functions(&bytes)?;
         out.insert(artifact.id, (artifact.path, functions));
     }
     Ok(out)

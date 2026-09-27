@@ -1,7 +1,8 @@
 //! Compile the pinned public ESP-IDF IEEE 802.15.4 driver for the host.
 //!
-//! Every vendor file is read from `OER_ESP_IDF_DIR` and must match the SHA-256
-//! recorded in `vendor-sources.toml`. The build generates a recording
+//! Every vendor file is read from the sources `cargo xtask vendor-fetch`
+//! fetched, or from the checkout `OER_ESP_IDF_DIR` names, and must match the
+//! SHA-256 pinned in the repository's `artifacts.toml`. The build generates a recording
 //! replacement for every `ieee802154_ll_*` accessor declared by the real
 //! common LL header, so the compiled driver keeps its own control flow while
 //! each register-layer call reaches the Rust recorder.
@@ -28,42 +29,60 @@ const INCLUDE_DIRS: &[&str] = &[
     "components/esp_coex/include",
 ];
 
+/// The repository's pinned-artifact manifest and the source whose artifacts
+/// this stand compiles.
+const ARTIFACTS: &str = "../../artifacts.toml";
+const IDF_SOURCE: &str = "esp-idf";
+/// Directory `cargo xtask vendor-fetch` fills with the pinned sources,
+/// relative to the repository root, followed by the revision.
+const FETCHED: &str = "target/vendor/esp-idf";
+/// Translation units compiled only with a Cargo feature.
+const FEATURE_UNITS: &[(&str, &str)] = &[(
+    "components/ieee802154/esp_ieee802154_multipan.c",
+    "multipan",
+)];
+
 struct Source {
     path: String,
     requires: Option<String>,
     sha256: String,
 }
 
-/// Read the `[[source]]` entries of the ledger. The ledger is a flat list of
-/// `path`/`sha256` pairs, optionally with the Cargo feature (`requires`) that
-/// compiles a translation unit; any other key is rejected rather than ignored.
+/// The pinned revision and files of the ESP-IDF source in the manifest.
 fn ledger(text: &str) -> (String, Vec<Source>) {
-    let mut revision = None;
-    let mut sources = Vec::new();
-    let mut path = None;
-    let mut requires = None;
-    for line in text.lines().map(str::trim) {
-        if line.is_empty() || line.starts_with('#') || line == "[[source]]" {
-            continue;
-        }
-        let (key, value) = line
-            .split_once('=')
-            .unwrap_or_else(|| panic!("malformed ledger line: {line}"));
-        let value = value.trim().trim_matches('"').to_owned();
-        match key.trim() {
-            "revision" => revision = Some(value),
-            "path" => path = Some(value),
-            "requires" => requires = Some(value),
-            "sha256" => sources.push(Source {
-                path: path.take().expect("sha256 must follow its path"),
-                requires: requires.take(),
-                sha256: value,
-            }),
-            other => panic!("unknown ledger key: {other}"),
-        }
-    }
-    assert!(path.is_none(), "ledger path without sha256");
-    (revision.expect("ledger revision"), sources)
+    let manifest: toml::Table = toml::from_str(text).expect("artifact manifest");
+    let tables = |key: &str| -> Vec<toml::Table> {
+        manifest[key]
+            .as_array()
+            .expect("manifest arrays")
+            .iter()
+            .map(|v| v.as_table().expect("manifest tables").clone())
+            .collect()
+    };
+    let field = |table: &toml::Table, key: &str| -> String {
+        table[key].as_str().expect("string field").to_owned()
+    };
+    let revision = tables("source")
+        .into_iter()
+        .find(|s| field(s, "id") == IDF_SOURCE)
+        .map(|s| field(&s, "revision"))
+        .expect("the manifest pins the ESP-IDF source");
+    let sources = tables("artifact")
+        .into_iter()
+        .filter(|a| field(a, "source") == IDF_SOURCE)
+        .map(|a| {
+            let path = field(&a, "path");
+            Source {
+                requires: FEATURE_UNITS
+                    .iter()
+                    .find(|(unit, _)| *unit == path)
+                    .map(|(_, feature)| (*feature).to_owned()),
+                sha256: field(&a, "sha256"),
+                path,
+            }
+        })
+        .collect();
+    (revision, sources)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -211,19 +230,14 @@ fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     println!("cargo::rerun-if-env-changed={SOURCE_ENV}");
-    println!("cargo::rerun-if-changed=vendor-sources.toml");
+    println!("cargo::rerun-if-changed={ARTIFACTS}");
     println!("cargo::rerun-if-changed=shim");
 
+    let (revision, sources) = ledger(&fs::read_to_string(manifest.join(ARTIFACTS)).unwrap());
+    // The fetched pinned sources, or an ESP-IDF checkout named explicitly.
     let idf = env::var_os(SOURCE_ENV)
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            panic!(
-                "{SOURCE_ENV} must name an ESP-IDF checkout at the ledger revision; \
-             see verification/esp32s31/host/ieee802154/README.md"
-            )
-        });
-    let (revision, sources) =
-        ledger(&fs::read_to_string(manifest.join("vendor-sources.toml")).unwrap());
+        .unwrap_or_else(|| manifest.join("../../../..").join(FETCHED).join(&revision));
     for source in &sources {
         let path = idf.join(&source.path);
         println!("cargo::rerun-if-changed={}", path.display());

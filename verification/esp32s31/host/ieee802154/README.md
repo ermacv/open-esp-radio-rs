@@ -9,7 +9,7 @@ sources and their production owners.
 
 ## What is compiled and what is recorded
 
-[`vendor-sources.toml`](vendor-sources.toml) lists every translation unit and
+The repository's [`artifacts.toml`](../../artifacts.toml) pins every translation unit and
 every ESP-IDF header the build uses, with its SHA-256 at the pinned revision.
 [`build.rs`](build.rs) refuses to build unless each file matches. The driver
 sources are compiled unmodified with the Kconfig defaults in
@@ -32,25 +32,19 @@ abort reasons and received frames are explicit scenario steps.
 
 ## Obtaining the sources
 
-Fetch the pinned revision into an ignored directory and point
-`OER_ESP_IDF_DIR` at it:
-
 ```console
-git init target/esp-idf && cd target/esp-idf
-git remote add origin https://github.com/espressif/esp-idf.git
-git sparse-checkout set components/ieee802154 components/esp_hal_ieee802154 \
-    components/esp_coex/include components/soc/esp32s31/include \
-    components/soc/esp32s31/register
-git fetch --depth 1 --filter=blob:none origin 7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe
-git checkout FETCH_HEAD
+cargo xtask vendor-fetch esp32s31
 ```
 
-The stand needs a host C compiler.
+downloads every pinned ESP-IDF file of source `esp-idf` into
+`target/vendor/esp-idf/<revision>/`, which keeps the checkout's relative
+layout, and verifies it. The build reads that directory; `OER_ESP_IDF_DIR`
+may name a full checkout at the pinned revision instead. Either way every
+file must match its pinned SHA-256. The stand needs a host C compiler.
 
 ## Running
 
 ```console
-export OER_ESP_IDF_DIR=$PWD/target/esp-idf
 cargo test --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml
 cargo run --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml -- list
 cargo run --manifest-path verification/esp32s31/host/ieee802154/Cargo.toml -- run transmit-with-ack

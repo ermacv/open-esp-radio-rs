@@ -227,7 +227,9 @@ pub fn run(
             .filter_map(|a| {
                 let name = a.path.file_name()?.to_owned();
                 let old = baseline.join(name);
-                old.is_file().then_some((a.id, old, a.path))
+                let binary = std::fs::read(&a.path)
+                    .is_ok_and(|bytes| crate::vendor_fingerprint::is_binary(&bytes));
+                (binary && old.is_file()).then_some((a.id, old, a.path))
             })
             .collect(),
         _ => return Err("pass --old and --new, or --baseline".into()),

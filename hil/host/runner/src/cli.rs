@@ -105,6 +105,12 @@ pub(crate) enum CliCommand {
             conflicts_with = "firmware_from"
         )]
         network: hil_core::image::Integration,
+        /// Shell command run after the scenarios while the run still holds
+        /// its stand lease, for example to read the board's reset reason.
+        /// It may use the boards' ports directly; nested `cargo hil` commands
+        /// join the lease. Its exit status does not change the run's outcome.
+        #[arg(long, value_name = "COMMAND")]
+        then: Option<String>,
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     RunAll {

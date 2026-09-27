@@ -38,6 +38,8 @@ pub(crate) enum SuiteSelection<'a> {
 pub(crate) struct Invocation {
     pub(crate) arguments: Vec<OsString>,
     pub(crate) snapshot: Option<hil_core::image::snapshot::Snapshot>,
+    /// Shell command run after the scenarios within the run's lease.
+    pub(crate) then: Option<String>,
 }
 
 pub(crate) fn run_all(
@@ -86,8 +88,9 @@ pub(crate) fn run_one(
     catalog: &Catalog,
     selected: &Scenario,
     firmware: RunFirmware,
-    invocation: Invocation,
+    mut invocation: Invocation,
 ) -> Result<()> {
+    let then = invocation.then.take();
     let selected_entries = [selected];
     let mut session = start_run(
         root,
@@ -114,7 +117,9 @@ pub(crate) fn run_one(
             lease: Some(lease),
             flashed: None,
         };
-        execute_one(&mut session, &mut operations, selected)?
+        let results = execute_one(&mut session, &mut operations, selected)?;
+        operations.run_then(then.as_deref(), &mut session)?;
+        results
     };
     finish_run(session, results)
 }
@@ -127,8 +132,9 @@ pub(crate) fn run_many(
     catalog: &Catalog,
     selected: &[&Scenario],
     firmware: RunFirmware,
-    invocation: Invocation,
+    mut invocation: Invocation,
 ) -> Result<()> {
+    let then = invocation.then.take();
     let mut session = start_run(
         root,
         lab,
@@ -152,7 +158,9 @@ pub(crate) fn run_many(
             lease: Some(lease),
             flashed: None,
         };
-        execute_selected(&mut session, &mut operations, selected)?
+        let results = execute_selected(&mut session, &mut operations, selected)?;
+        operations.run_then(then.as_deref(), &mut session)?;
+        results
     };
     finish_run(session, results)
 }
@@ -411,6 +419,30 @@ impl SuiteEffects for LiveSuite<'_> {
 }
 
 impl LiveSuite<'_> {
+    /// Run `command` with `sh -c` while the lease is held, with the lease's
+    /// environment so nested `cargo hil` commands join it, and the run's
+    /// directory in `OER_HIL_RUN_DIRECTORY`. Its exit status is reported and
+    /// recorded as an event; it never changes the run's outcome.
+    fn run_then(&self, command: Option<&str>, session: &mut RunSession) -> Result<()> {
+        let Some(command) = command else {
+            return Ok(());
+        };
+        let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
+        session.record_event("then-started", None, None, None)?;
+        eprintln!("hil: running `{command}` within the run's lease");
+        let status =
+            then_command(self.root, command, lease.environment(), session.directory()).status();
+        let kind = match &status {
+            Ok(status) if status.success() => "then-succeeded",
+            _ => "then-failed",
+        };
+        match status {
+            Ok(status) => eprintln!("hil: `{command}` exited with {status}"),
+            Err(error) => eprintln!("hil: cannot start `{command}`: {error}"),
+        }
+        session.record_event(kind, None, None, None)
+    }
+
     /// Flash the catalog's peer image when another consumer's image is on
     /// the peer board. The flash joins this run's lease, which holds the
     /// peer board, and is journaled like any catalog flash.
@@ -441,6 +473,23 @@ impl LiveSuite<'_> {
         oer_process::run(&mut command)?;
         Ok(())
     }
+}
+
+/// `sh -c command` in `root` with the lease's `environment` and the run's
+/// `directory` in `OER_HIL_RUN_DIRECTORY`.
+fn then_command(
+    root: &Path,
+    command: &str,
+    environment: Vec<(&'static str, String)>,
+    directory: &Path,
+) -> std::process::Command {
+    let mut child = std::process::Command::new("sh");
+    child
+        .args(["-c", command])
+        .current_dir(root)
+        .envs(environment)
+        .env("OER_HIL_RUN_DIRECTORY", directory);
+    child
 }
 
 fn execute_selected(

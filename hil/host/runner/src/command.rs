@@ -148,6 +148,7 @@ pub(crate) fn run() -> Result<()> {
                 orchestration::Invocation {
                     arguments: invocation,
                     snapshot: Some(snapshot),
+                    then: None,
                 },
             )
         }
@@ -271,6 +272,7 @@ pub(crate) fn run() -> Result<()> {
             ap_scheduler,
             firmware_from,
             network,
+            then,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let mut selected = orchestration::named_scenarios(&catalog, &scenarios)?;
@@ -303,6 +305,7 @@ pub(crate) fn run() -> Result<()> {
             let invocation = orchestration::Invocation {
                 arguments: invocation,
                 snapshot,
+                then,
             };
             // Orchestration builds the images, then leases the stand and
             // the fixture software.
@@ -342,6 +345,7 @@ pub(crate) fn run() -> Result<()> {
                 orchestration::Invocation {
                     arguments: invocation,
                     snapshot: Some(snapshot),
+                    then: None,
                 },
             )
         }

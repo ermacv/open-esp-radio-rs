@@ -442,3 +442,22 @@ fn a_series_yields_and_an_air_measurement_claims_the_air_exclusively() {
         hil_core::lab::lock::AirMode::Exclusive
     );
 }
+
+#[test]
+fn the_then_command_joins_the_lease_and_names_the_run() {
+    let directory = tempfile::tempdir().unwrap();
+    let run = directory.path().join("runs/1-a");
+    let output = then_command(
+        directory.path(),
+        "printf '%s %s' \"$OER_HIL_LEASE\" \"$OER_HIL_RUN_DIRECTORY\"; exit 3",
+        vec![("OER_HIL_LEASE", String::from("token"))],
+        &run,
+    )
+    .output()
+    .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        format!("token {}", run.display())
+    );
+}

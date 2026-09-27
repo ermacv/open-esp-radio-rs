@@ -132,6 +132,18 @@ queue with expected starts, every board's port and last flash, the newest runs
 of the shared store and recent leases with their outcomes. It only reads the
 arbiter's state and run manifests; Ctrl+C stops it.
 
+`run --then 'COMMAND'` runs a shell command after the scenarios while the run
+still holds its lease, so nobody flashes the board in between: read the reset
+reason or RTC memory after a failure, or attach OpenOCD. The command may use
+the boards' ports directly, nested `cargo hil` commands join the lease, and
+`OER_HIL_RUN_DIRECTORY` names the run bundle. Its exit status is reported and
+recorded as a `then-succeeded` or `then-failed` event, never as the run's
+outcome.
+
+```console
+cargo hil --budget 10m run wifi-station-wpa3-restart --then 'python tools/read-rtc.py /dev/ttyACM0'
+```
+
 `run` accepts several scenarios: it builds every needed image class before
 queueing and executes all scenarios in one run bundle under one lease, in the
 given order within each image class. With `--firmware-from` every named

@@ -192,6 +192,13 @@ fn a_board_is_refused_only_when_its_newest_flash_is_another_image() {
         .to_string();
     assert!(error.contains("`ble-peer` flashed by bluetooth"), "{error}");
     assert!(error.ends_with("reflash"), "{error}");
+    // What a run restores before a scenario that needs the peer image.
+    assert_eq!(other_image(None, "peer"), None);
+    assert_eq!(other_image(Some(&flash("peer")), "peer"), None);
+    assert_eq!(
+        other_image(Some(&flash("ble-peer")), "peer").as_deref(),
+        Some("ble-peer")
+    );
 }
 
 #[test]

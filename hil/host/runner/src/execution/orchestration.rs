@@ -316,6 +316,15 @@ impl SuiteEffects for LiveSuite<'_> {
     }
 
     fn preflight(&mut self, scenario: &Scenario) -> Option<Failure> {
+        if let Err(error) = self.restore_peer(scenario) {
+            return Some(Failure::new(
+                FailureKind::Precondition,
+                format!(
+                    "cannot restore `{}` on the 802.15.4 peer: {error}",
+                    hil_ieee802154::peer::PEER_IMAGE
+                ),
+            ));
+        }
         preflight::scenario_failure(self.lab, scenario)
     }
 
@@ -398,6 +407,39 @@ impl SuiteEffects for LiveSuite<'_> {
             }
             _ => self.prepare_image(class, session),
         }
+    }
+}
+
+impl LiveSuite<'_> {
+    /// Flash the catalog's peer image when another consumer's image is on
+    /// the peer board. The flash joins this run's lease, which holds the
+    /// peer board, and is journaled like any catalog flash.
+    fn restore_peer(&self, scenario: &Scenario) -> Result<()> {
+        use hil_ieee802154::peer::PEER_IMAGE;
+        let Some(peer) = self
+            .lab
+            .ieee802154_peer
+            .as_ref()
+            .filter(|_| scenario.plan().requirements.ieee802154_peer)
+        else {
+            return Ok(());
+        };
+        let Some(found) = hil_core::lab::lock::other_board_image(&peer.serial, PEER_IMAGE)? else {
+            return Ok(());
+        };
+        let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
+        let board = hil_core::lab::lock::board_identity(&peer.serial);
+        eprintln!(
+            "hil: the 802.15.4 peer carries `{found}`; flashing `{PEER_IMAGE}` from the catalog"
+        );
+        let mut command =
+            std::process::Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+        command
+            .current_dir(self.root)
+            .args(["hil", "firmware", "flash", PEER_IMAGE, "--board", &board])
+            .envs(lease.environment());
+        oer_process::run(&mut command)?;
+        Ok(())
     }
 }
 

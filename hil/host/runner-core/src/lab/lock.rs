@@ -102,6 +102,13 @@ impl FixtureLock {
         Ok(owner)
     }
 
+    /// Environment that lets a child command join this lease.
+    pub fn environment(&self) -> Vec<(&'static str, String)> {
+        self.grant
+            .as_ref()
+            .map_or_else(Vec::new, oer_hil_arbiter::Grant::environment)
+    }
+
     /// Whether the stand asks this over-budget lease to yield to waiting
     /// requests at its next boundary.
     pub fn yield_requested(&self) -> bool {
@@ -291,6 +298,30 @@ pub fn record_board(port: &Path, kind: oer_hil_arbiter::BoardEventKind) {
     }
 }
 
+/// The image journaled last on the board at `port` when it is not
+/// `expected`. A board without a journaled flash or identity has none; the
+/// consumer's own handshake decides.
+pub fn other_board_image(port: &Path, expected: &str) -> Result<Option<String>> {
+    let Some(mac) = oer_hil_arbiter::port_mac(port) else {
+        return Ok(None);
+    };
+    Ok(other_image(
+        oer_hil_arbiter::Arbiter::open()?
+            .latest_flash(&mac)?
+            .as_ref(),
+        expected,
+    ))
+}
+
+fn other_image(latest: Option<&oer_hil_arbiter::BoardEvent>, expected: &str) -> Option<String> {
+    match latest.map(|event| &event.kind) {
+        Some(oer_hil_arbiter::BoardEventKind::Flashed { image, .. }) if image != expected => {
+            Some(image.clone())
+        }
+        _ => None,
+    }
+}
+
 /// Refuse a board whose newest journaled flash is not `expected`. A board
 /// without a journaled flash passes; the consumer's own handshake decides.
 pub fn require_board_image(port: &Path, expected: &str, reflash: &str) -> Result<()> {
@@ -313,16 +344,12 @@ fn board_image_matches(
     expected: &str,
     reflash: &str,
 ) -> Result<()> {
-    match latest.map(|event| (event, &event.kind)) {
-        Some((event, oer_hil_arbiter::BoardEventKind::Flashed { image, .. }))
-            if image != expected =>
-        {
-            Err(format!(
-                "board {label} carries `{image}` flashed by {}, not `{expected}`; {reflash}",
-                event.owner
-            )
-            .into())
-        }
+    match (latest, other_image(latest, expected)) {
+        (Some(event), Some(image)) => Err(format!(
+            "board {label} carries `{image}` flashed by {}, not `{expected}`; {reflash}",
+            event.owner
+        )
+        .into()),
         _ => Ok(()),
     }
 }

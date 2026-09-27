@@ -23,10 +23,13 @@ reproducible build.
 
 Name the peer's board or serial port in the `[ieee802154_peer]` table of the
 lab configuration. The board is shared with other consumers. Before an
-IEEE 802.15.4 peer scenario the runner reads the board journal and blocks the
-scenario when the board's newest recorded flash is another image, naming who
-flashed it. A board without a recorded flash is accepted; the peer's `@READY`
-handshake then decides.
+IEEE 802.15.4 peer scenario `cargo hil run` reads the board journal; when
+the board's newest recorded flash is another image, it flashes this image from
+the catalog within the run's lease, which holds the peer board, and journals
+it. The first such flash on a host builds the image against the shared ESP-IDF
+cache inside the lease. `doctor` and `fixture check` do not flash: they report
+the other image and who flashed it. A board without a recorded flash is
+accepted; the peer's `@READY` handshake then decides.
 
 ## Line protocol
 

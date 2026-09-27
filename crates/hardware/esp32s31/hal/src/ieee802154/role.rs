@@ -661,21 +661,6 @@ impl Ieee802154Clocked {
         unsafe { lease.btbb_acquire(&self.inner.backend().task, gain_parameter) }
     }
 
-    /// Apply the IEEE 802.15.4 shared transmit-on delay override.
-    ///
-    /// ESP-IDF's `ieee802154_mac_init` writes it after `esp_btbb_enable`; the
-    /// last write wins and no release restores it.
-    ///
-    /// # Errors
-    ///
-    /// IEEE 802.15.4 does not hold BTBB.
-    pub fn override_tx_on_delay<T>(
-        &self,
-        lease: &mut SharedRadioLease<'_, T>,
-    ) -> Result<(), BtbbError> {
-        lease.override_ieee802154_tx_on_delay(&self.inner.backend().task)
-    }
-
     /// Leave the shared BTBB baseband. This performs no register access.
     ///
     /// # Errors

@@ -62,10 +62,6 @@ fn the_btbb_steps_require_the_ieee802154_reference() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
     assert_eq!(
-        clocked.override_tx_on_delay(&mut lease),
-        Err(BtbbError::NotAcquired)
-    );
-    assert_eq!(
         clocked.release_btbb(&mut lease),
         Err(BtbbError::NotAcquired)
     );

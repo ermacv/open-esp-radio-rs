@@ -157,8 +157,8 @@ order:
    effect is four preserving MAC field writes, in order `TXON_DELAY = 45`,
    `RXON_DELAY = 50`, `TXRX_SWITCH_DELAY = 117` and `TXOFF_DELAY = 5`, which
    the open MAC foundation writes and reads back. It does not touch the
-   shared baseband; the arbiter's `join_ieee802154` still overrides the
-   shared auxiliary transmit-on delay, a write the pinned body does not make.
+   shared baseband, whose auxiliary transmit-on delay keeps the BTBB
+   initialization value.
 9. Clear the software RX-buffer queue and set the software state to idle.
 10. Allocate the IRQ and initialize sleep/retention support.
 

@@ -74,10 +74,12 @@ pub enum Ieee802154PhyClientError {
 }
 
 /// Enter IEEE 802.15.4 into the shared PHY domain and the shared BTBB
-/// baseband, then apply its transmit-on delay.
+/// baseband.
 ///
 /// This is `esp_phy_enable(PHY_MODEM_IEEE802154)` followed by
-/// `esp_btbb_enable` and the shared part of `ieee802154_txon_delay_set`. The
+/// `esp_btbb_enable`; the pinned `ieee802154_txon_delay_set` writes only the
+/// MAC's own delays, so the shared transmit-on delay keeps the value of the
+/// BTBB initialization. The
 /// returned [`ConcurrentAcquire::TrackingDue`] means the domain must run its
 /// tracking before the MAC may use RF.
 ///
@@ -128,9 +130,6 @@ pub fn join_ieee802154(
         let _ = release_client(lease, PhyModemClient::Ieee802154);
         return Err(Ieee802154PhyClientError::Btbb(error));
     }
-    clocked
-        .override_tx_on_delay(lease)
-        .map_err(Ieee802154PhyClientError::Btbb)?;
     Ok((Ieee802154PhyMembership { _private: () }, acquired))
 }
 

@@ -221,16 +221,6 @@ description = "Reviewed fourth hardware selector accepted by the complete EDCA a
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 
 [[enum-domains]]
-name = "Ieee802154SharedTxOnDelayOverride"
-description = "The sole aligned shared-baseband field image accepted after the common BTBB initializer when entering the pinned IEEE 802.15.4 lifecycle."
-
-[[enum-domains.values]]
-name = "Delay50"
-value = 0x01400000
-description = "Argument 50 encoded by the complete shared setter as ((50 - 10) << 3) = 0x140, then aligned to AUXILIARY_TX_ON_DELAY bits 16:26."
-sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT", "ESP_RADIO_7F914782_S31_IEEE802154_INIT"]
-
-[[enum-domains]]
 name = "ModemPowerTickTarget"
 description = "The sole fixed-crystal modem-power tick target accepted by the ESP32-S31 common-PHY prelude."
 
@@ -3106,17 +3096,6 @@ input-mask = 0x000000ff
 set-mask = 0x00000000
 exposure = "facade"
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
-
-[[masked-register-modifies]]
-name = "override_ieee802154_shared_tx_on_delay"
-peripheral = "SHARED_BASEBAND_TX_TIMING"
-register = "AUXILIARY_TX_ON_DELAY"
-domain = "Ieee802154SharedTxOnDelayOverride"
-preserve-mask = 0xf800ffff
-input-mask = 0x07ff0000
-set-mask = 0x00000000
-exposure = "facade"
-sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT", "ESP_RADIO_7F914782_S31_IEEE802154_INIT"]
 
 [[masked-register-modifies]]
 name = "set_ieee802154_tx_on_delay"

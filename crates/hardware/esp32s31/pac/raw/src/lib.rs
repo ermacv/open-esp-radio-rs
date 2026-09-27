@@ -63992,20 +63992,6 @@ pub mod masked_register_modify {
         });
     }
 
-    /// Preserve mask 0xf800ffff, accept input mask 0x07ff0000, and set 0x00000000 in SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY.
-    #[inline]
-    pub fn override_ieee802154_shared_tx_on_delay(
-        registers: &crate::SharedBasebandTxTiming,
-        input: u32,
-    ) {
-        registers.auxiliary_tx_on_delay().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf800ffff) | (input & 0x07ff0000);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
     /// Preserve mask 0xfffffc00, accept input mask 0x000003ff, and set 0x00000000 in IEEE802154_MAC.TXON_DELAY.
     #[inline]
     pub fn set_ieee802154_tx_on_delay(registers: &crate::Ieee802154Mac, input: u32) {

@@ -664,28 +664,6 @@ impl<T> SharedRadioLease<'_, T> {
         Ok(())
     }
 
-    /// Apply the IEEE 802.15.4 value of the shared TX-on delay.
-    ///
-    /// ESP-IDF writes it at IEEE 802.15.4 MAC initialization, after
-    /// `esp_btbb_enable`; the last write wins and no release restores the
-    /// Bluetooth value. The device fence follows with the caller's MAC timing.
-    ///
-    /// # Errors
-    ///
-    /// IEEE 802.15.4 does not hold BTBB, so the BTBB initialization that this
-    /// override must follow may not have run.
-    pub fn override_ieee802154_tx_on_delay(
-        &mut self,
-        _owner: &Ieee802154TaskRegisters,
-    ) -> Result<(), BtbbError> {
-        let state = self.state_mut();
-        if state.btbb_clients & client_bit(RadioClient::Ieee802154) == 0 {
-            return Err(BtbbError::NotAcquired);
-        }
-        state.registers.override_ieee802154_shared_tx_on_delay();
-        Ok(())
-    }
-
     /// Borrow the shared PHY registers with the route restore state, for a
     /// protocol capability that also borrows its own registers.
     pub(crate) fn phy_parts_mut(

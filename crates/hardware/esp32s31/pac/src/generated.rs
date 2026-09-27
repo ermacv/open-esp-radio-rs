@@ -58,21 +58,6 @@ impl MacInterface {
     }
 }
 
-/// The sole aligned shared-baseband field image accepted after the common BTBB initializer when entering the pinned IEEE 802.15.4 lifecycle.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154SharedTxOnDelayOverride {
-    /// Argument 50 encoded by the complete shared setter as ((50 - 10) << 3) = 0x140, then aligned to AUXILIARY_TX_ON_DELAY bits 16:26.
-    Delay50 = 0x01400000,
-}
-
-impl Ieee802154SharedTxOnDelayOverride {
-    /// Numeric image for diagnostics and the private raw-PAC bridge.
-    pub const fn bits(self) -> u32 {
-        self as u32
-    }
-}
-
 /// The sole fixed-crystal modem-power tick target accepted by the ESP32-S31 common-PHY prelude.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -3024,18 +3009,6 @@ pub(crate) fn set_ieee802154_tx_power_code(
     value: Ieee802154TxPowerCode,
 ) {
     crate::svd::masked_register_modify::set_ieee802154_tx_power_code(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `override_ieee802154_shared_tx_on_delay` masked transaction.
-#[inline]
-pub(crate) fn override_ieee802154_shared_tx_on_delay(
-    registers: &crate::svd::SharedBasebandTxTiming,
-    value: Ieee802154SharedTxOnDelayOverride,
-) {
-    crate::svd::masked_register_modify::override_ieee802154_shared_tx_on_delay(
-        registers,
-        value.bits(),
-    );
 }
 
 /// Typed bridge for the reviewed `set_ieee802154_tx_on_delay` masked transaction.

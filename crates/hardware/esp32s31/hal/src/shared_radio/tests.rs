@@ -134,10 +134,6 @@ fn btbb_joins_an_initialized_baseband_without_register_access() {
     #[allow(unsafe_code)]
     let unregistered = unsafe { lease.btbb_acquire(&bluetooth, 0) };
     assert_eq!(unregistered, Err(BtbbError::Unregistered));
-    assert_eq!(
-        lease.override_ieee802154_tx_on_delay(&ieee802154),
-        Err(BtbbError::NotAcquired)
-    );
     assert_eq!(lease.btbb_release(&bluetooth), Err(BtbbError::NotAcquired));
     let _epoch = lease.phy_hal().begin_registration_epoch();
     drop(lease);

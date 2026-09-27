@@ -1398,7 +1398,11 @@ fn platform_boot_evidence_round_trips_without_a_radio_command() {
             2,
             0,
             3,
-            Event::BootStatus(crate::BootEvidence { reset_reason }),
+            Event::BootStatus(crate::BootEvidence {
+                reset_reason,
+                raw_reset_reason: 3,
+                post_mortem: None,
+            }),
         );
         let mut encoder = FrameEncoder::new();
         let mut decoder = FrameDecoder::new();
@@ -1801,4 +1805,71 @@ fn ieee802154_route_probe_messages_at_their_bounds_fit_and_round_trip() {
             final_events: Ieee802154ObservedEventState::UnexpectedNamed,
         }),
     ));
+}
+
+/// The largest post-mortem summary and a full checkpoint page fit one frame.
+#[test]
+fn the_largest_post_mortem_fits_a_frame() {
+    use crate::{
+        BootEvidence, Checkpoint, Fault, HangFault, HartState, POST_MORTEM_CHECKPOINT_PAGE,
+        PanicFault, PostMortemCheckpoints, PostMortemSummary, ResetReason,
+    };
+    let text = |bytes: usize| "x".repeat(bytes);
+    let hart = HartState {
+        responded: true,
+        mepc: u32::MAX,
+        ra: u32::MAX,
+        sp: u32::MAX,
+        mcause: u32::MAX,
+        mstatus: u32::MAX,
+    };
+    let faults = [
+        Fault::Hang(HangFault {
+            detected_uptime_ms: u32::MAX,
+            stalled_executors: u8::MAX,
+            harts: [hart; 2],
+            samples: [u32::MAX; 16],
+        }),
+        Fault::Panic(PanicFault {
+            file: text(48).as_str().try_into().unwrap(),
+            line: u32::MAX,
+            message: text(96).as_str().try_into().unwrap(),
+        }),
+    ];
+    let mut encoder = FrameEncoder::new();
+    for fault in faults {
+        let boot = Event::BootStatus(BootEvidence {
+            reset_reason: ResetReason::CpuLockup,
+            raw_reset_reason: u8::MAX,
+            post_mortem: Some(PostMortemSummary {
+                boot_count: u32::MAX,
+                checkpoints: u8::MAX,
+                fault: Some(fault),
+            }),
+        });
+        encoder
+            .encode(&Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, boot))
+            .unwrap();
+    }
+    let mut checkpoints = heapless::Vec::new();
+    for _ in 0..POST_MORTEM_CHECKPOINT_PAGE {
+        checkpoints
+            .push(Checkpoint {
+                name: text(crate::CHECKPOINT_NAME_BYTES)
+                    .as_str()
+                    .try_into()
+                    .unwrap(),
+                arg: u32::MAX,
+                uptime_ms: u32::MAX,
+                hart: u8::MAX,
+            })
+            .unwrap();
+    }
+    let page = Event::PostMortemCheckpoints(PostMortemCheckpoints {
+        first: u8::MAX,
+        checkpoints,
+    });
+    encoder
+        .encode(&Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, page))
+        .unwrap();
 }

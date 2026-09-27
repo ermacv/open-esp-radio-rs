@@ -123,6 +123,9 @@ async fn run(
             Ok(()) => match command.body {
                 Command::GetCapabilities => Event::Hello(Console::capabilities()),
                 Command::GetBootStatus => Event::BootStatus(super::boot_evidence()),
+                Command::GetPostMortemCheckpoints { first } => {
+                    Event::PostMortemCheckpoints(super::post_mortem_checkpoints(first))
+                }
                 Command::QueryLinkHealth => console.health(),
                 Command::SystemWatchdogTest(mode) => {
                     let budget =

@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 186;
+pub const PROTOCOL_VERSION: u16 = 187;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -505,6 +505,10 @@ pub enum Command {
     SystemWatchdogTest(crate::WatchdogTestMode),
     /// Query the current platform boot without changing any radio state.
     GetBootStatus,
+    /// Page through the previous boot's post-mortem checkpoints from `first`.
+    GetPostMortemCheckpoints {
+        first: u8,
+    },
     PhyFault(crate::PhyFaultCommand),
     /// Suspend, resume or report the shared PHY's periodic tracking timer.
     PhyTracking(crate::PhyTrackingCommand),
@@ -1099,6 +1103,7 @@ pub enum Event {
     /// The explicit test budget is armed (or completed for `Complete`).
     SystemWatchdogTest(crate::WatchdogTestMode),
     BootStatus(crate::BootEvidence),
+    PostMortemCheckpoints(crate::PostMortemCheckpoints),
     PhyFault(crate::PhyFaultEvidence),
     PhyTracking(crate::PhyTrackingEvidence),
     BluetoothPeripheral(crate::BluetoothPeripheralEvidence),

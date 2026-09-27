@@ -15,7 +15,11 @@ pub use bluetooth_secure_gatt::{
     BluetoothNumericChallenge, BluetoothNumericDecision, BluetoothSecureGattEvidence,
 };
 mod system;
-pub use system::{BootEvidence, ResetReason, WatchdogTestMode};
+pub use system::{
+    BootEvidence, CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HartState,
+    POST_MORTEM_CHECKPOINT_PAGE, POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints,
+    PostMortemSummary, ResetReason, WatchdogTestMode,
+};
 mod phy_fault;
 mod phy_register_image;
 pub use phy_fault::{

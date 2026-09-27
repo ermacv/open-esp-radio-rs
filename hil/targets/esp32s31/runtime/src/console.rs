@@ -1192,6 +1192,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
+                    Command::GetPostMortemCheckpoints { first } => {
+                        let response = if session_id == 0 {
+                            Event::PostMortemCheckpoints(crate::system::post_mortem_checkpoints(
+                                first,
+                            ))
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
                     Command::QueryStackUsage | Command::QueryInterruptStackUsage => {
                         let response = if initialized
                             && state == SessionState::Idle

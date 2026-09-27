@@ -151,7 +151,16 @@ fn image_matches(expected: Reset, features: oer_hil_protocol::FeatureCapabilitie
         Reset::MainWatchdog1 => {
             features.bluetooth_watchdog_reset && !features.bluetooth_phy_maintenance
         }
-        Reset::Other => false,
+        // Only the two resets the deadline images provoke select an image.
+        Reset::Other
+        | Reset::PowerOn
+        | Reset::Brownout
+        | Reset::MainWatchdog0
+        | Reset::RtcWatchdog
+        | Reset::SuperWatchdog
+        | Reset::UsbSerialJtag
+        | Reset::Jtag
+        | Reset::CpuLockup => false,
     }
 }
 

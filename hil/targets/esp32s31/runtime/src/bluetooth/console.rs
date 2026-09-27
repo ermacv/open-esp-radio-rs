@@ -114,6 +114,9 @@ pub(super) async fn run(
             Ok(()) => match command.body {
                 Command::GetCapabilities => Event::Hello(Console::capabilities(profile)),
                 Command::GetBootStatus => Event::BootStatus(crate::system::boot_evidence()),
+                Command::GetPostMortemCheckpoints { first } => {
+                    Event::PostMortemCheckpoints(crate::system::post_mortem_checkpoints(first))
+                }
                 Command::QueryLinkHealth => console.health(),
                 // Only CPU0 runs in the Bluetooth images.
                 Command::QueryInterruptStackUsage => Event::InterruptStackUsage {

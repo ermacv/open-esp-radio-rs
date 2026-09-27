@@ -11,10 +11,10 @@ use super::{
     BluetoothTxPowerControlRegister, BluetoothTxPowerControlRestoreError,
     BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAddress,
     PhyI2cCommandMemoryInputs, PhyI2cConfigurationAccess, PhyI2cConfigurationAction,
-    PhyI2cConfigurationError, PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
-    PhyI2cConfigurationTransaction, PhyI2cHost, PhyI2cInitializationStageOneInputs,
-    PhyI2cInitializationStageTwoError, PhyI2cParallelAccess, PhyI2cParallelWrite,
-    configure_initialization_stage_two_with,
+    PhyI2cConfigurationCommand, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
+    PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction, PhyI2cHost,
+    PhyI2cInitializationStageOneInputs, PhyI2cInitializationStageTwoError, PhyI2cParallelAccess,
+    PhyI2cParallelWrite, configure_initialization_stage_two_with,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -223,28 +223,37 @@ struct FakeConfigurationI2c {
     accepted_commands: u8,
     busy_starts: u8,
     pending_observations: u8,
+    /// The address of the command in flight; completion edges must observe
+    /// the same block's host.
+    started: core::cell::Cell<Option<PhyI2cAddress>>,
+    /// Every observed address, in order.
+    observed: core::cell::RefCell<std::vec::Vec<PhyI2cAddress>>,
 }
 
 impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
-    fn start_read(&mut self, _address: PhyI2cAddress) -> Result<(), ()> {
+    fn start_read(&mut self, address: PhyI2cAddress) -> Result<(), ()> {
         if self.busy_starts != 0 {
             self.busy_starts -= 1;
             return Err(());
         }
         self.accepted_commands += 1;
+        self.started.set(Some(address));
         Ok(())
     }
 
-    fn start_write(&mut self, _address: PhyI2cAddress, _value: u8) -> Result<(), ()> {
+    fn start_write(&mut self, address: PhyI2cAddress, _value: u8) -> Result<(), ()> {
         if self.busy_starts != 0 {
             self.busy_starts -= 1;
             return Err(());
         }
         self.accepted_commands += 1;
+        self.started.set(Some(address));
         Ok(())
     }
 
-    fn observe_read(&self) -> Result<u8, ()> {
+    fn observe_read(&self, address: PhyI2cAddress) -> Result<u8, ()> {
+        assert_eq!(self.started.get(), Some(address));
+        self.observed.borrow_mut().push(address);
         if self.pending_observations == 0 {
             Ok(0xa0)
         } else {
@@ -252,7 +261,9 @@ impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
         }
     }
 
-    fn observe_write(&self) -> Result<(), ()> {
+    fn observe_write(&self, address: PhyI2cAddress) -> Result<(), ()> {
+        assert_eq!(self.started.get(), Some(address));
+        self.observed.borrow_mut().push(address);
         if self.pending_observations == 0 {
             Ok(())
         } else {
@@ -280,6 +291,33 @@ fn drive_configuration(
         }
     }
     panic!("PHY-I2C configuration exceeded its finite plan")
+}
+
+/// A configuration command completes on its own block's host: the SAR2
+/// initialization of the host-zero block and the RC settings of a host-one
+/// block observe the addresses they started, read and write alike.
+#[test]
+fn configuration_commands_observe_their_own_block() {
+    for operation in [
+        PhyI2cConfigurationOperation::Sar2Initialization,
+        PhyI2cConfigurationOperation::RcCalibrationSettings,
+    ] {
+        let mut access = FakeConfigurationI2c::default();
+        let mut transaction = PhyI2cConfigurationTransaction::new(operation);
+        drive_configuration(&mut transaction, &mut access);
+        assert_eq!(transaction.action(), PhyI2cConfigurationAction::Complete);
+        let expected: std::vec::Vec<_> = (0..operation.command_count())
+            .filter_map(|index| operation.command(index))
+            .flat_map(|command| match command {
+                PhyI2cConfigurationCommand::Modify(..) => {
+                    [Some(command.address()), Some(command.address())]
+                }
+                _ => [Some(command.address()), None],
+            })
+            .flatten()
+            .collect();
+        assert_eq!(*access.observed.borrow(), expected);
+    }
 }
 
 #[test]

@@ -114,8 +114,8 @@ enum PhyI2cConfigurationPhase {
 trait PhyI2cConfigurationAccess {
     fn start_read(&mut self, address: PhyI2cAddress) -> Result<(), ()>;
     fn start_write(&mut self, address: PhyI2cAddress, value: u8) -> Result<(), ()>;
-    fn observe_read(&self) -> Result<u8, ()>;
-    fn observe_write(&self) -> Result<(), ()>;
+    fn observe_read(&self, address: PhyI2cAddress) -> Result<u8, ()>;
+    fn observe_write(&self, address: PhyI2cAddress) -> Result<(), ()>;
 }
 
 /// Non-cloneable owner of one complete recovered PHY-I²C write plan.
@@ -207,31 +207,37 @@ impl PhyI2cConfigurationTransaction {
             PhyI2cConfigurationPhase::Start => {
                 return Err(PhyI2cConfigurationError::WrongAction);
             }
-            PhyI2cConfigurationPhase::AwaitRead => {
-                let current = match access.observe_read() {
-                    Ok(value) => value,
-                    Err(()) => return Ok(PhyI2cConfigurationObservation::StillPending),
-                };
-                match self.operation.command(self.command_index) {
-                    Some(PhyI2cConfigurationCommand::Modify(field, value)) => {
-                        self.pending_write = Some(field.replace(current, value));
-                        self.phase = PhyI2cConfigurationPhase::Start;
-                    }
-                    Some(PhyI2cConfigurationCommand::Read(_)) => {
-                        self.command_index += 1;
-                        self.phase = if self.command_index == self.operation.command_count() {
-                            PhyI2cConfigurationPhase::Complete
-                        } else {
-                            PhyI2cConfigurationPhase::Start
-                        };
-                    }
-                    _ => return Err(PhyI2cConfigurationError::WrongAction),
-                }
-                return Ok(PhyI2cConfigurationObservation::EdgeConsumed);
-            }
-            PhyI2cConfigurationPhase::AwaitWrite => {}
+            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {}
         }
-        if access.observe_write().is_err() {
+        let command = self
+            .operation
+            .command(self.command_index)
+            .ok_or(PhyI2cConfigurationError::WrongAction)?;
+        if self.phase == PhyI2cConfigurationPhase::AwaitRead {
+            let current = match access.observe_read(command.address()) {
+                Ok(value) => value,
+                Err(()) => return Ok(PhyI2cConfigurationObservation::StillPending),
+            };
+            match command {
+                PhyI2cConfigurationCommand::Modify(field, value) => {
+                    self.pending_write = Some(field.replace(current, value));
+                    self.phase = PhyI2cConfigurationPhase::Start;
+                }
+                PhyI2cConfigurationCommand::Read(_) => {
+                    self.command_index += 1;
+                    self.phase = if self.command_index == self.operation.command_count() {
+                        PhyI2cConfigurationPhase::Complete
+                    } else {
+                        PhyI2cConfigurationPhase::Start
+                    };
+                }
+                PhyI2cConfigurationCommand::Write(..) => {
+                    return Err(PhyI2cConfigurationError::WrongAction);
+                }
+            }
+            return Ok(PhyI2cConfigurationObservation::EdgeConsumed);
+        }
+        if access.observe_write(command.address()).is_err() {
             return Ok(PhyI2cConfigurationObservation::StillPending);
         }
         self.pending_write = None;
@@ -630,24 +636,27 @@ impl PhyI2cParallelAccess for RadioPhyRegisters {
     }
 }
 
+/// Configuration commands address their block's own host with its read
+/// mask, as the ROM `phy_i2c_writeReg`, `phy_i2c_readReg` and their masked
+/// forms do through `phy_chip_i2c_readReg_org`.
 impl PhyI2cConfigurationAccess for RadioPhyRegisters {
     fn start_read(&mut self, address: PhyI2cAddress) -> Result<(), ()> {
-        self.start_phy_i2c_configuration_read(address)
+        self.try_start_phy_i2c_read(address)
             .map_err(|PhyI2cAccessError::Busy| ())
     }
 
     fn start_write(&mut self, address: PhyI2cAddress, value: u8) -> Result<(), ()> {
-        self.start_phy_i2c_configuration_write(address, value)
+        self.try_start_phy_i2c_write(address, value)
             .map_err(|PhyI2cAccessError::Busy| ())
     }
 
-    fn observe_read(&self) -> Result<u8, ()> {
-        self.finish_phy_i2c_host_read(PhyI2cHost::Host1)
+    fn observe_read(&self, address: PhyI2cAddress) -> Result<u8, ()> {
+        self.try_finish_phy_i2c_read(address)
             .map_err(|PhyI2cAccessError::Busy| ())
     }
 
-    fn observe_write(&self) -> Result<(), ()> {
-        self.finish_phy_i2c_host_write(PhyI2cHost::Host1)
+    fn observe_write(&self, address: PhyI2cAddress) -> Result<(), ()> {
+        self.try_finish_phy_i2c_write(address)
             .map_err(|PhyI2cAccessError::Busy| ())
     }
 }

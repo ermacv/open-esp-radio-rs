@@ -682,45 +682,6 @@ impl RadioPhyRegisters {
         self.publish_phy_i2c_command(PhyI2cHost::Host1, block, register, value, true);
     }
 
-    /// Start one configuration read on the radio host without a read mask.
-    pub fn start_phy_i2c_configuration_read(
-        &mut self,
-        address: PhyI2cAddress,
-    ) -> Result<(), PhyI2cAccessError> {
-        self.configure_phy_i2c_host_map();
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            return Err(PhyI2cAccessError::Busy);
-        }
-        self.publish_phy_i2c_command(
-            PhyI2cHost::Host1,
-            address.block.code,
-            address.register,
-            0,
-            false,
-        );
-        Ok(())
-    }
-
-    /// Start one configuration write on the radio host.
-    pub fn start_phy_i2c_configuration_write(
-        &mut self,
-        address: PhyI2cAddress,
-        value: u8,
-    ) -> Result<(), PhyI2cAccessError> {
-        self.configure_phy_i2c_host_map();
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            return Err(PhyI2cAccessError::Busy);
-        }
-        self.publish_phy_i2c_command(
-            PhyI2cHost::Host1,
-            address.block.code,
-            address.register,
-            value,
-            true,
-        );
-        Ok(())
-    }
-
     /// Start one Bluetooth TX-power control read with its block read mask.
     pub fn start_bluetooth_tx_power_control_read(
         &mut self,

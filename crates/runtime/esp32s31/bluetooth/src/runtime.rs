@@ -5,7 +5,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_futures::select::select;
 use embassy_sync::{blocking_mutex::raw::RawMutex, channel::Channel, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Timer};
-use oer_bluetooth_radio::{RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError};
+use oer_bluetooth_radio::{
+    RadioActivity, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+};
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
     controller_time::{
@@ -194,6 +196,7 @@ pub struct BluetoothRuntime<
     outcomes: Channel<M, BluetoothOutcome, EVENTS>,
     lost: AtomicBool,
     work: Signal<M, ()>,
+    activity: Signal<M, RadioActivity>,
 }
 
 impl<
@@ -258,6 +261,7 @@ impl<
             outcomes: Channel::new(),
             lost: AtomicBool::new(false),
             work: Signal::new(),
+            activity: Signal::new(),
         }
     }
 
@@ -395,6 +399,23 @@ impl<
             return Err(BluetoothOutcomesLost);
         }
         Ok(self.outcomes.receive().await)
+    }
+
+    /// Publish the roles the Controller has active. Only the latest summary
+    /// is kept for [`Self::next_activity`].
+    pub fn publish_activity(&self, activity: RadioActivity) {
+        self.activity.signal(activity);
+    }
+
+    /// Forget an unread summary; the next epoch starts with no role active.
+    pub fn clear_activity(&self) {
+        self.activity.reset();
+    }
+
+    /// Wait for the next change of the active roles; a burst of changes
+    /// yields only the latest.
+    pub async fn next_activity(&self) -> RadioActivity {
+        self.activity.wait().await
     }
 
     /// Drive the radio until a hardware fault stops it.

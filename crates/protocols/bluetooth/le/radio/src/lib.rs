@@ -20,12 +20,14 @@
 #[cfg(test)]
 extern crate std;
 
+mod activity;
 mod channel;
 mod outcome;
 mod pdu;
 mod request;
 mod time;
 
+pub use activity::RadioActivity;
 pub use channel::{
     AdvertisingChannel, AdvertisingChannels, ChannelError, DataChannel, TestChannel,
 };

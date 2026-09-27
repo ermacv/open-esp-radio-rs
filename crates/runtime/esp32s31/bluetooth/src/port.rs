@@ -1,7 +1,9 @@
 //! The runtime as the radio port of the portable Controller service loop.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_bluetooth_radio::{RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError};
+use oer_bluetooth_radio::{
+    RadioActivity, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+};
 use oer_bluetooth_runtime::{LeRadioPort, OutcomesLost};
 
 use crate::{BluetoothOutcome, BluetoothRadioHardware, BluetoothRuntime, BluetoothRuntimeError};
@@ -58,5 +60,10 @@ impl<
 
     fn view(outcome: &BluetoothOutcome) -> RadioOutcome<'_> {
         outcome.portable()
+    }
+
+    async fn activity(&self, activity: RadioActivity) -> Result<(), BluetoothRuntimeError> {
+        self.publish_activity(activity);
+        Ok(())
     }
 }

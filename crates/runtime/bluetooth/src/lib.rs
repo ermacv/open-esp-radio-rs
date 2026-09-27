@@ -9,7 +9,9 @@
 //! queued packets, takes the next Host command when the core is ready for
 //! one, submits the core's radio requests one at a time and feeds every
 //! radio outcome back. A refused request is retried after
-//! [`REFUSED_RETRY_DELAY`] or the next outcome or command.
+//! [`REFUSED_RETRY_DELAY`] or the next outcome or command. Whenever the
+//! core's [`RadioActivity`] changes, the loop reports it to the port before
+//! doing anything else.
 //!
 //! The loop owns no memory of its own beyond one command buffer and spawns
 //! nothing; the caller polls it on a task of its choice. It ends when the
@@ -28,7 +30,7 @@ use embassy_time::{Duration, Instant, Timer};
 use oer_bluetooth_controller::LeController;
 use oer_bluetooth_hci::{HciChannelError, HostToControllerFrame, InProcessHciControllerTransport};
 use oer_bluetooth_radio::{
-    RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
+    RadioActivity, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 /// Delay before asking the core again after the radio refused a request.
@@ -60,6 +62,11 @@ pub trait LeRadioPort {
 
     /// The portable view of an owned outcome.
     fn view(outcome: &Self::Outcome) -> RadioOutcome<'_>;
+
+    /// The roles active now. The loop reports every change, starting from
+    /// [`RadioActivity::IDLE`], so a radio that shares the antenna can
+    /// publish them to its coexistence arbiter.
+    fn activity(&self, activity: RadioActivity) -> impl Future<Output = Result<(), Self::Error>>;
 }
 
 /// Why [`serve`] ended.
@@ -121,6 +128,10 @@ impl LeRadioPort for NoRadio {
     fn view(outcome: &Never) -> RadioOutcome<'_> {
         match *outcome {}
     }
+
+    async fn activity(&self, _: RadioActivity) -> Result<(), Never> {
+        Ok(())
+    }
 }
 
 /// Serve the Host through `transport` with `core` over `radio` until the
@@ -143,7 +154,17 @@ where
 {
     let mut buffer = [0; PACKET];
     let mut retry_at: Option<Instant> = None;
+    let mut reported = RadioActivity::IDLE;
     loop {
+        // Report a change of the active roles first.
+        let activity = core.activity();
+        if activity != reported {
+            if let Err(error) = radio.activity(activity).await {
+                return ServeExit::Radio(error);
+            }
+            reported = activity;
+        }
+
         // Publish what the core queued.
         while let Some(packet) = core.front() {
             match transport.try_publish(packet.kind(), packet.as_bytes()) {

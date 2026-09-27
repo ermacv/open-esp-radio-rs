@@ -18,8 +18,8 @@ use oer_bluetooth_hci::{
     LeControllerHciEndpoints, LeControllerHciResources,
 };
 use oer_bluetooth_radio::{
-    ConnectionAllowances, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome,
-    RadioRequest, RadioTiming, RequestError,
+    ConnectionAllowances, EventId, EventResult, RadioActivity, RadioDuration, RadioInstant,
+    RadioOutcome, RadioRequest, RadioTiming, RequestError,
 };
 
 use crate::{LeRadioPort, NoRadio, OutcomesLost, ServeExit, serve};
@@ -83,6 +83,7 @@ struct ModelRadio {
     requests: RefCell<Vec<Recorded>>,
     outcomes: Channel<NoopRawMutex, Result<EventId, OutcomesLost>, 4>,
     refuse: RefCell<bool>,
+    activity: RefCell<Vec<RadioActivity>>,
 }
 
 impl ModelRadio {
@@ -91,6 +92,7 @@ impl ModelRadio {
             requests: RefCell::new(Vec::new()),
             outcomes: Channel::new(),
             refuse: RefCell::new(false),
+            activity: RefCell::new(Vec::new()),
         }
     }
 
@@ -157,6 +159,11 @@ impl LeRadioPort for ModelRadio {
             id: *id,
             result: EventResult::NotExecuted,
         }
+    }
+
+    async fn activity(&self, activity: RadioActivity) -> Result<(), ()> {
+        self.activity.borrow_mut().push(activity);
+        Ok(())
     }
 }
 
@@ -268,6 +275,44 @@ fn host_data_without_a_connection_does_not_block_commands() {
         .unwrap();
         host.write(&LeRand::new()).await.unwrap();
         assert_eq!(status(&host).await, 0x01);
+        controller.close();
+    }));
+    assert_eq!(exit, ServeExit::Closed);
+}
+
+#[test]
+fn advertising_enable_and_disable_report_the_active_roles() {
+    let mut resources = resources();
+    let LeControllerHciEndpoints { host, controller } = resources.split();
+    let mut core = LeController::<'_, 12>::new(controller_config(), None);
+    let radio = ModelRadio::new();
+    let advertising = RadioActivity {
+        advertising: true,
+        ..RadioActivity::IDLE
+    };
+    let (exit, ()) = block_on(join(serve(&controller, &mut core, &radio), async {
+        host.write(&Reset::new()).await.unwrap();
+        status(&host).await;
+        host.write(&nonconnectable()).await.unwrap();
+        status(&host).await;
+        // Nothing active: nothing reported.
+        assert!(radio.activity.borrow().is_empty());
+        host.write(&LeSetAdvEnable::new(true)).await.unwrap();
+        assert_eq!(status(&host).await, 0x00);
+        radio.until(1).await;
+        assert_eq!(*radio.activity.borrow(), [advertising]);
+
+        // The disable cancels the event in flight and completes once it
+        // has ended; advertising stays active until then.
+        host.write(&LeSetAdvEnable::new(false)).await.unwrap();
+        while !radio.requests.borrow().contains(&Recorded::Other) {
+            embassy_futures::yield_now().await;
+        }
+        assert_eq!(*radio.activity.borrow(), [advertising]);
+        let last = *radio.advertised().last().expect("an event was requested");
+        radio.outcomes.send(Ok(last)).await;
+        assert_eq!(status(&host).await, 0x00);
+        assert_eq!(*radio.activity.borrow(), [advertising, RadioActivity::IDLE]);
         controller.close();
     }));
     assert_eq!(exit, ServeExit::Closed);

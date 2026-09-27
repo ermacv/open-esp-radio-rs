@@ -23,8 +23,8 @@ use oer_bluetooth_hci::{
 };
 use oer_bluetooth_ll::{control::LeVersionInformation, dtm::DTM_MAX_PAYLOAD};
 use oer_bluetooth_radio::{
-    EventId, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming,
-    RequestError,
+    EventId, RadioActivity, RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest,
+    RadioTiming, RequestError,
 };
 
 use crate::{
@@ -808,6 +808,17 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 || self.peripheral.wants_radio(self.has_event_room())
                 || self.advertiser.wants_radio()
                 || self.scanner.wants_radio())
+    }
+
+    /// The roles active now: advertising and scanning while enabled or still
+    /// stopping, a connection until it closes. Direct Test Mode is not a
+    /// role here.
+    pub const fn activity(&self) -> RadioActivity {
+        RadioActivity {
+            advertising: self.advertiser.is_active(),
+            scanning: self.scanner.is_active(),
+            connected: self.peripheral.is_active(),
+        }
     }
 
     /// Whether the output can take everything one connection event produces.

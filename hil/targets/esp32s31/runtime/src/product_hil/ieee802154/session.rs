@@ -247,16 +247,21 @@ async fn serve(session: &mut Session, mut foreground: Option<Foreground<'_>>) ->
                 Err(_) => session.rf.failed = true,
             }
         }
-        let command = match select(
+        let command = match embassy_futures::select::select3(
             receive_ieee802154_session_command(),
             session.runtime.next_event(),
+            embassy_time::Timer::after_millis(100),
         )
         .await
         {
-            Either::First(command) => command,
-            Either::Second(event) => {
+            embassy_futures::select::Either3::First(command) => command,
+            embassy_futures::select::Either3::Second(event) => {
                 // An unsolicited terminal event outside a command is dropped.
                 let _ = session.observe(event);
+                continue;
+            }
+            embassy_futures::select::Either3::Third(()) => {
+                heartbeat();
                 continue;
             }
         };
@@ -568,5 +573,15 @@ async fn serve_session(
         request
     } else {
         core::pin::pin!(serve(session, Some((system, &client.radio)))).await
+    }
+}
+
+fn heartbeat() {
+    unsafe extern "C" {
+        static OER_RESET_TRACE: [core::sync::atomic::AtomicU32; 6];
+    }
+    unsafe {
+        let beats = OER_RESET_TRACE[2].load(core::sync::atomic::Ordering::SeqCst) & 0xffff;
+        OER_RESET_TRACE[2].store(0xbea0_0000 | (beats + 1), core::sync::atomic::Ordering::SeqCst);
     }
 }

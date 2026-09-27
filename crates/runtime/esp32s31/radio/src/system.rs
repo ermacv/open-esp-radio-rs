@@ -1214,7 +1214,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
 }
 
 #[allow(unsafe_code)]
-fn runtime_trace(value: u32) {
+pub fn runtime_trace(value: u32) {
     #[unsafe(link_section = ".rtc_fast.persistent")]
     #[unsafe(no_mangle)]
     static OER_RUNTIME_TRACE: core::sync::atomic::AtomicU32 =

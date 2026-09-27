@@ -337,6 +337,29 @@ directory and the end of `uart.log`. `compare` and `history` use per-scenario
 means of numeric measurements over repetitions. These views never decide
 qualification.
 
+### Performance across commits
+
+A scenario's gated measurements, those with an `at-least` or `at-most`
+threshold such as UDP rates, are its performance figures; the threshold also
+fixes which direction is better.
+
+```console
+cargo hil perf report --since 7d                     # every gated scenario, per commit
+cargo hil perf report udp-tx-ht40-ceiling --measurement host-rate
+cargo hil perf baseline <run-id> --reason "owned-xarxa baseline"
+cargo hil perf check <run-id>                        # exit 1 on a regression
+```
+
+`report` summarizes clean-commit runs per commit as mean ± sample deviation
+over repetitions, marks figures past their gate, and compares each commit with
+the scenario's baseline. A move in the worse direction by more than twice the
+baseline's deviation and 2 % of its mean is `REGRESSED`; the same margin the
+other way is `improved`. `baseline` accepts only a completed run of a clean
+commit and records its network implementation; baselines live in
+`perf-baselines.json` beside the store and are shared by every checkout.
+Summaries of sealed runs are cached in `perf-cache/`, so a report reads each
+bundle once. These views never decide qualification.
+
 After every command that executes scenarios, `cargo hil` applies this rule
 to the shared store, at most once a day, and reports what it deleted.
 `prune` keeps pinned runs, runs cited by committed evidence shards, runs whose

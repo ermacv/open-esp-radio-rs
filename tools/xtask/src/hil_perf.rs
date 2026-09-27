@@ -1,0 +1,640 @@
+//! Performance of gated HIL measurements across commits.
+//!
+//! A scenario's gated measurements (those with an `at-least` or `at-most`
+//! threshold, such as UDP rates) are its performance figures; the threshold
+//! also fixes which direction is better. This module summarizes them per
+//! commit from the shared run store, keeps one reviewed baseline per scenario
+//! and reports a run whose figures moved the wrong way by more than the
+//! baseline's noise. It reads sealed bundles only and never decides
+//! qualification, which remains the evaluator's.
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::{
+    Result,
+    hil_runs::{self, Run},
+};
+
+/// Which way a gated measurement improves.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Better {
+    Higher,
+    Lower,
+}
+
+impl Better {
+    fn from_threshold(threshold: &Value) -> Option<(Self, f64)> {
+        let value = threshold["value"].as_f64()?;
+        match threshold["comparison"].as_str()? {
+            "at-least" | "greater-than" => Some((Self::Higher, value)),
+            "at-most" | "less-than" => Some((Self::Lower, value)),
+            _ => None,
+        }
+    }
+}
+
+/// Repetition values of one gated measurement of one scenario in one run.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Sample {
+    pub scenario: String,
+    pub measurement: String,
+    pub unit: String,
+    pub better: Better,
+    pub threshold: f64,
+    pub values: Vec<f64>,
+}
+
+/// Mean and sample standard deviation.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Spread {
+    pub mean: f64,
+    pub deviation: f64,
+    pub count: usize,
+}
+
+impl Spread {
+    pub fn of(values: &[f64]) -> Option<Self> {
+        if values.is_empty() {
+            return None;
+        }
+        let count = values.len();
+        let mean = values.iter().sum::<f64>() / count as f64;
+        let deviation = if count > 1 {
+            (values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (count - 1) as f64).sqrt()
+        } else {
+            0.0
+        };
+        Some(Self {
+            mean,
+            deviation,
+            count,
+        })
+    }
+}
+
+/// Gated measurements of every scenario of `run`, one sample per
+/// `(scenario, measurement)` with a value in each repetition that has one.
+pub fn samples(run: &Run) -> Vec<Sample> {
+    let mut samples: BTreeMap<(String, String), Sample> = BTreeMap::new();
+    for scenario in &run.scenarios {
+        for measurement in scenario.repetitions.iter().flat_map(|r| &r.measurements) {
+            let (Some(value), Some(threshold)) = (measurement.value, &measurement.threshold) else {
+                continue;
+            };
+            let Some((better, limit)) = Better::from_threshold(threshold) else {
+                continue;
+            };
+            samples
+                .entry((scenario.id.clone(), measurement.name.clone()))
+                .or_insert_with(|| Sample {
+                    scenario: scenario.id.clone(),
+                    measurement: measurement.name.clone(),
+                    unit: measurement.unit.clone(),
+                    better,
+                    threshold: limit,
+                    values: Vec::new(),
+                })
+                .values
+                .push(value);
+        }
+    }
+    samples.into_values().collect()
+}
+
+/// What performance reporting needs of one run, cached per sealed run.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RunSummary {
+    pub version: u32,
+    pub id: String,
+    pub started_millis: u64,
+    pub state: String,
+    pub commit: Option<String>,
+    pub dirty: bool,
+    pub networks: Vec<String>,
+    pub samples: Vec<Sample>,
+}
+
+/// Bumped whenever [`RunSummary`] or [`samples`] changes meaning, so cached
+/// summaries are recomputed.
+const SUMMARY_VERSION: u32 = 1;
+
+pub fn summary(run: &Run) -> RunSummary {
+    RunSummary {
+        version: SUMMARY_VERSION,
+        id: run.id.clone(),
+        started_millis: run.started_millis,
+        state: run.state.clone(),
+        commit: run.commit.clone(),
+        dirty: run.dirty,
+        networks: networks(run),
+        samples: samples(run),
+    }
+}
+
+/// The network implementations recorded in the run's build provenance.
+pub fn networks(run: &Run) -> Vec<String> {
+    let manifest: Option<Value> = fs::read(run.directory.join("manifest.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let mut networks = manifest
+        .iter()
+        .flat_map(|manifest| manifest["firmware"].as_array().into_iter().flatten())
+        .filter_map(|firmware| firmware["build_provenance_path"].as_str())
+        .filter_map(|path| fs::read(run.directory.join(path)).ok())
+        .filter_map(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .filter_map(|provenance| {
+            provenance["parameters"]["network"]
+                .as_str()
+                .map(str::to_owned)
+        })
+        .collect::<Vec<_>>();
+    networks.sort();
+    networks.dedup();
+    networks
+}
+
+/// A reviewed reference for one scenario's gated measurements.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Baseline {
+    pub run: String,
+    pub commit: Option<String>,
+    pub reason: String,
+    pub by: String,
+    pub unix_millis: u64,
+    pub measurements: BTreeMap<String, BaselineMeasurement>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct BaselineMeasurement {
+    pub unit: String,
+    pub better: Better,
+    pub spread: Spread,
+}
+
+/// Baselines by scenario, kept beside the run store so every checkout shares
+/// them.
+pub fn baselines_path(store: &Path) -> PathBuf {
+    store.join("perf-baselines.json")
+}
+
+pub fn load_baselines(store: &Path) -> Result<BTreeMap<String, Baseline>> {
+    match fs::read(baselines_path(store)) {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn save_baselines(store: &Path, baselines: &BTreeMap<String, Baseline>) -> Result<()> {
+    let path = baselines_path(store);
+    let mut file = tempfile::NamedTempFile::new_in(store)?;
+    serde_json::to_writer_pretty(&mut file, baselines)?;
+    file.persist(path)?;
+    Ok(())
+}
+
+/// Make `run` the baseline of each named scenario (all its gated scenarios
+/// when none is named). Only a completed run of a clean commit can be one.
+pub fn set_baseline(
+    store: &Path,
+    run: &RunSummary,
+    scenarios: &[String],
+    reason: &str,
+    by: &str,
+    unix_millis: u64,
+) -> Result<Vec<String>> {
+    if run.dirty || run.commit.is_none() {
+        return Err(format!("run {} was not built from a clean commit", run.id).into());
+    }
+    if run.state != "completed" {
+        return Err(format!("run {} is {}, not completed", run.id, run.state).into());
+    }
+    let mut by_scenario: BTreeMap<String, BTreeMap<String, BaselineMeasurement>> = BTreeMap::new();
+    for sample in run.samples.iter().cloned() {
+        if !scenarios.is_empty() && !scenarios.contains(&sample.scenario) {
+            continue;
+        }
+        if let Some(spread) = Spread::of(&sample.values) {
+            by_scenario.entry(sample.scenario).or_default().insert(
+                sample.measurement,
+                BaselineMeasurement {
+                    unit: sample.unit,
+                    better: sample.better,
+                    spread,
+                },
+            );
+        }
+    }
+    for scenario in scenarios {
+        if !by_scenario.contains_key(scenario) {
+            return Err(format!("run {} has no gated measurement of {scenario}", run.id).into());
+        }
+    }
+    let mut baselines = load_baselines(store)?;
+    for (scenario, measurements) in &by_scenario {
+        baselines.insert(
+            scenario.clone(),
+            Baseline {
+                run: run.id.clone(),
+                commit: run.commit.clone(),
+                reason: reason.to_owned(),
+                by: by.to_owned(),
+                unix_millis,
+                measurements: measurements.clone(),
+            },
+        );
+    }
+    save_baselines(store, &baselines)?;
+    Ok(by_scenario.into_keys().collect())
+}
+
+/// How a measurement compares with its baseline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Change {
+    Improved,
+    Within,
+    Regressed,
+}
+
+/// Relative tolerance below which a change is noise even for a perfectly
+/// repeatable baseline.
+const MINIMUM_TOLERANCE: f64 = 0.02;
+
+/// Compare `current` with `baseline`: a move in the worse direction by more
+/// than twice the baseline's deviation and 2 % of its mean is a regression;
+/// the same margin in the better direction is an improvement.
+pub fn change(baseline: &BaselineMeasurement, current: &Spread) -> Change {
+    let margin =
+        (2.0 * baseline.spread.deviation).max(MINIMUM_TOLERANCE * baseline.spread.mean.abs());
+    let delta = current.mean - baseline.spread.mean;
+    let worse = match baseline.better {
+        Better::Higher => -delta,
+        Better::Lower => delta,
+    };
+    if worse > margin {
+        Change::Regressed
+    } else if -worse > margin {
+        Change::Improved
+    } else {
+        Change::Within
+    }
+}
+
+fn short(commit: &Option<String>) -> String {
+    commit
+        .as_deref()
+        .map_or_else(|| "unknown".to_owned(), |c| c[..c.len().min(9)].to_owned())
+}
+
+/// Display factor and unit for a measured unit and magnitude.
+fn scale(magnitude: f64, unit: &str) -> (f64, String) {
+    match unit {
+        "bits-per-second" => (1e6, "Mbit/s".into()),
+        "microseconds" if magnitude.abs() >= 1000.0 => (1000.0, "ms".into()),
+        _ => (1.0, unit.into()),
+    }
+}
+
+fn format_spread(spread: &Spread, unit: &str) -> String {
+    let (factor, unit) = scale(spread.mean, unit);
+    format!(
+        "{:.2}±{:.2} {unit} (n={})",
+        spread.mean / factor,
+        spread.deviation / factor,
+        spread.count
+    )
+}
+
+/// The values of one gated measurement from every clean run of one commit.
+struct CommitRow {
+    commit: String,
+    runs: String,
+    values: Vec<f64>,
+    sample: Sample,
+}
+
+/// Per-commit summary of the gated measurements of `scenarios` (every gated
+/// scenario when empty) in clean runs, oldest first, with each commit
+/// compared to the scenario's baseline.
+pub fn report(
+    runs: &[RunSummary],
+    scenarios: &[String],
+    measurement: Option<&str>,
+    baselines: &BTreeMap<String, Baseline>,
+) -> String {
+    // (scenario, measurement) -> one row per commit, in first-run order.
+    let mut rows: BTreeMap<(String, String), Vec<CommitRow>> = BTreeMap::new();
+    for run in runs.iter().filter(|run| !run.dirty && run.commit.is_some()) {
+        for sample in run.samples.iter().cloned() {
+            if !scenarios.is_empty() && !scenarios.contains(&sample.scenario) {
+                continue;
+            }
+            if measurement.is_some_and(|filter| !sample.measurement.contains(filter)) {
+                continue;
+            }
+            let commit = short(&run.commit);
+            let entries = rows
+                .entry((sample.scenario.clone(), sample.measurement.clone()))
+                .or_default();
+            match entries.iter_mut().find(|entry| entry.commit == commit) {
+                Some(entry) => {
+                    entry.values.extend(&sample.values);
+                    entry.runs.push(',');
+                    entry.runs.push_str(&run.id);
+                }
+                None => entries.push(CommitRow {
+                    commit,
+                    runs: run.id.clone(),
+                    values: sample.values.clone(),
+                    sample,
+                }),
+            }
+        }
+    }
+    if rows.is_empty() {
+        return "no clean run has a gated measurement of the selection\n".into();
+    }
+    let mut text = String::new();
+    for ((scenario, name), entries) in rows {
+        let first = &entries[0].sample;
+        let direction = match first.better {
+            Better::Higher => "higher is better",
+            Better::Lower => "lower is better",
+        };
+        let (factor, unit) = scale(first.threshold, &first.unit);
+        text.push_str(&format!(
+            "{scenario} {name} — gate {:.2} {unit}, {direction}\n",
+            first.threshold / factor
+        ));
+        let baseline = baselines
+            .get(&scenario)
+            .and_then(|baseline| Some((baseline, baseline.measurements.get(&name)?)));
+        if let Some((baseline, measurement)) = baseline {
+            text.push_str(&format!(
+                "  baseline {} {}: {} — {}\n",
+                short(&baseline.commit),
+                baseline.run,
+                format_spread(&measurement.spread, &measurement.unit),
+                baseline.reason
+            ));
+        } else {
+            text.push_str("  no baseline\n");
+        }
+        for CommitRow {
+            commit,
+            runs: run_ids,
+            values,
+            sample,
+        } in entries
+        {
+            let Some(spread) = Spread::of(&values) else {
+                continue;
+            };
+            let verdict = match baseline.map(|(_, measurement)| change(measurement, &spread)) {
+                Some(Change::Regressed) => "  REGRESSED",
+                Some(Change::Improved) => "  improved",
+                Some(Change::Within) => "  within noise",
+                None => "",
+            };
+            let gate = match sample.better {
+                Better::Higher if spread.mean < sample.threshold => "  below gate",
+                Better::Lower if spread.mean > sample.threshold => "  above gate",
+                _ => "",
+            };
+            text.push_str(&format!(
+                "  {commit:<10} {}{verdict}{gate}  [{run_ids}]\n",
+                format_spread(&spread, &sample.unit)
+            ));
+        }
+    }
+    text
+}
+
+/// Every gated measurement of `run` that regressed against its scenario's
+/// baseline, as report lines; empty when none did.
+pub fn regressions(run: &RunSummary, baselines: &BTreeMap<String, Baseline>) -> Vec<String> {
+    run.samples
+        .iter()
+        .filter_map(|sample| {
+            let baseline = baselines.get(&sample.scenario)?;
+            let reference = baseline.measurements.get(&sample.measurement)?;
+            let spread = Spread::of(&sample.values)?;
+            (change(reference, &spread) == Change::Regressed).then(|| {
+                format!(
+                    "{} {}: {} against baseline {} {}",
+                    sample.scenario,
+                    sample.measurement,
+                    format_spread(&spread, &sample.unit),
+                    format_spread(&reference.spread, &reference.unit),
+                    baseline.run
+                )
+            })
+        })
+        .collect()
+}
+
+/// Summaries of the runs started at or after `since_millis`, oldest first.
+/// Run directories are named by their start time, so older runs are skipped
+/// without reading their bundles; a sealed run's summary is cached in
+/// `cache` and reused, since its bundle can no longer change.
+pub fn summaries_since(
+    directory: &Path,
+    cache: &Path,
+    since_millis: u64,
+) -> Result<Vec<RunSummary>> {
+    let mut found = Vec::new();
+    let Ok(entries) = fs::read_dir(directory) else {
+        return Ok(found);
+    };
+    fs::create_dir_all(cache)?;
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let started = name
+            .split('-')
+            .next()
+            .and_then(|millis| millis.parse::<u64>().ok());
+        if started.is_some_and(|started| started < since_millis) || !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let cached = cache.join(format!("{name}.json"));
+        let reused = fs::read(&cached)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<RunSummary>(&bytes).ok())
+            .filter(|summary| summary.version == SUMMARY_VERSION);
+        let summary = match reused {
+            Some(summary) => summary,
+            None => {
+                let Some(run) = hil_runs::load(&entry.path()) else {
+                    continue;
+                };
+                let computed = summary(&run);
+                // A completed or interrupted bundle is sealed; a running one
+                // can still change.
+                if matches!(computed.state.as_str(), "completed" | "interrupted") {
+                    let mut file = tempfile::NamedTempFile::new_in(cache)?;
+                    serde_json::to_writer(&mut file, &computed)?;
+                    file.persist(&cached)?;
+                }
+                computed
+            }
+        };
+        found.push(summary);
+    }
+    found.sort_by_key(|run| (run.started_millis, run.id.clone()));
+    Ok(found)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hil_runs::{Measurement, Repetition, ScenarioRun};
+
+    fn run(id: &str, commit: &str, dirty: bool, values: &[f64]) -> Run {
+        Run {
+            id: id.into(),
+            directory: PathBuf::from("/nonexistent"),
+            started_millis: 1,
+            state: "completed".into(),
+            outcome: Some("passed".into()),
+            commit: Some(commit.into()),
+            dirty,
+            checkout: None,
+            images: Vec::new(),
+            replayed: Vec::new(),
+            scenarios: vec![ScenarioRun {
+                id: "udp-tx".into(),
+                image: "performance".into(),
+                outcome: "passed".into(),
+                repetitions: values
+                    .iter()
+                    .enumerate()
+                    .map(|(number, value)| Repetition {
+                        number: number as u64 + 1,
+                        outcome: "passed".into(),
+                        failure: None,
+                        measurements: vec![
+                            Measurement {
+                                name: "udp.tx.host-rate".into(),
+                                value: Some(*value),
+                                unit: "bits-per-second".into(),
+                                threshold: Some(
+                                    serde_json::json!({"comparison": "at-least", "value": 100e6}),
+                                ),
+                                verdict: Some("passed".into()),
+                            },
+                            Measurement {
+                                name: "ungated".into(),
+                                value: Some(1.0),
+                                unit: "count".into(),
+                                threshold: None,
+                                verdict: None,
+                            },
+                        ],
+                        directory: None,
+                    })
+                    .collect(),
+            }],
+            observer: None,
+        }
+    }
+
+    #[test]
+    fn only_gated_measurements_are_samples_and_the_gate_sets_the_direction() {
+        let samples = samples(&run("r", "c", false, &[115e6, 116e6]));
+        assert_eq!(summary(&run("r", "c", false, &[1.0])).samples.len(), 1);
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].better, Better::Higher);
+        assert_eq!(samples[0].values, [115e6, 116e6]);
+        assert_eq!(
+            Better::from_threshold(&serde_json::json!({"comparison": "at-most", "value": 3})),
+            Some((Better::Lower, 3.0))
+        );
+    }
+
+    #[test]
+    fn a_change_is_judged_against_the_baseline_noise_in_the_better_direction() {
+        let baseline = BaselineMeasurement {
+            unit: "bits-per-second".into(),
+            better: Better::Higher,
+            spread: Spread::of(&[115e6, 116e6, 117e6]).unwrap(),
+        };
+        let within = Spread::of(&[114e6]).unwrap();
+        let lower = Spread::of(&[105e6]).unwrap();
+        let higher = Spread::of(&[125e6]).unwrap();
+        assert_eq!(change(&baseline, &within), Change::Within);
+        assert_eq!(change(&baseline, &lower), Change::Regressed);
+        assert_eq!(change(&baseline, &higher), Change::Improved);
+        let latency = BaselineMeasurement {
+            better: Better::Lower,
+            ..baseline
+        };
+        assert_eq!(change(&latency, &higher), Change::Regressed);
+        assert_eq!(change(&latency, &lower), Change::Improved);
+    }
+
+    #[test]
+    fn baselines_come_only_from_clean_sealed_runs_and_flag_regressions() {
+        let store = tempfile::tempdir().unwrap();
+        let run = |id, commit, dirty, values: &[f64]| summary(&run(id, commit, dirty, values));
+        let dirty = run("d", "c", true, &[115e6]);
+        assert!(set_baseline(store.path(), &dirty, &[], "r", "me", 0).is_err());
+        let clean = run("b", "c", false, &[115e6, 116e6, 117e6]);
+        assert_eq!(
+            set_baseline(store.path(), &clean, &[], "owned-xarxa", "me", 0).unwrap(),
+            ["udp-tx"]
+        );
+        assert!(set_baseline(store.path(), &clean, &["other".into()], "r", "me", 0).is_err());
+        let baselines = load_baselines(store.path()).unwrap();
+        assert!(regressions(&run("x", "d", false, &[116e6]), &baselines).is_empty());
+        assert_eq!(
+            regressions(&run("y", "e", false, &[100e6]), &baselines).len(),
+            1
+        );
+        let text = report(
+            &[clean.clone(), run("y", "e", false, &[100e6]), dirty],
+            &[],
+            None,
+            &baselines,
+        );
+        assert!(text.contains("REGRESSED"), "{text}");
+        assert!(!text.contains("[d]"), "dirty runs are not reported: {text}");
+    }
+
+    #[test]
+    fn sealed_summaries_are_reused_and_older_runs_are_not_read() {
+        let store = tempfile::tempdir().unwrap();
+        let (runs, cache) = (store.path().join("runs"), store.path().join("cache"));
+        for name in ["1000-old", "3000-new"] {
+            fs::create_dir_all(runs.join(name)).unwrap();
+        }
+        // The new run's bundle is empty: only its cached summary can supply it.
+        fs::create_dir_all(&cache).unwrap();
+        let mut cached = summary(&run("3000-new", "c", false, &[115e6]));
+        cached.started_millis = 3000;
+        fs::write(
+            cache.join("3000-new.json"),
+            serde_json::to_vec(&cached).unwrap(),
+        )
+        .unwrap();
+        let found = summaries_since(&runs, &cache, 2000).unwrap();
+        assert_eq!(found, [cached.clone()]);
+        let stale = RunSummary {
+            version: 0,
+            ..cached
+        };
+        fs::write(
+            cache.join("3000-new.json"),
+            serde_json::to_vec(&stale).unwrap(),
+        )
+        .unwrap();
+        assert!(summaries_since(&runs, &cache, 2000).unwrap().is_empty());
+    }
+}

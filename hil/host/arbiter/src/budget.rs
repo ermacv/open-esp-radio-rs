@@ -104,12 +104,13 @@ pub fn parse_duration(text: &str) -> crate::Result<Duration> {
             continue;
         }
         let unit = match character {
+            'd' => 86_400,
             'h' => 3600,
             'm' => 60,
             's' => 1,
             _ => {
                 return Err(
-                    format!("invalid duration `{text}`; use e.g. 90s, 15m or 1h30m").into(),
+                    format!("invalid duration `{text}`; use e.g. 90s, 15m, 1h30m or 7d").into(),
                 );
             }
         };
@@ -156,7 +157,13 @@ mod tests {
 
     #[test]
     fn durations_round_trip_through_their_display() {
-        for (text, seconds) in [("90s", 90), ("15m", 900), ("1h30m", 5400), ("20", 1200)] {
+        for (text, seconds) in [
+            ("90s", 90),
+            ("15m", 900),
+            ("1h30m", 5400),
+            ("20", 1200),
+            ("7d", 604_800),
+        ] {
             assert_eq!(parse_duration(text).unwrap(), Duration::from_secs(seconds));
         }
         for text in ["", "m", "10x", "0s", "5m3"] {

@@ -77,6 +77,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             return crate::hil_flash::run(ctx, request, &args[1..]);
         }
         Some("runs") => return runs(ctx, &options, &args[1..]),
+        Some("perf") => return perf(ctx, &options, &args[1..]),
         _ => {}
     }
     let (runner, receipt_path) = prepare(ctx)?;
@@ -119,6 +120,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
 /// Stand commands handled here, printed before the runner's own help.
 const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
+  cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
   cargo hil queue [--json]            holders, queue with expected starts, boards, recent leases
   cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1
   cargo hil lease [OPTIONS] -- CMD    run CMD under one lease; nested cargo hil joins it
@@ -562,6 +564,108 @@ fn board(
 
 /// `cargo hil runs list|why|compare|history|pin|unpin|prune` over the shared
 /// run store.
+/// `cargo hil perf`: gated measurements across commits and their baselines.
+fn perf(
+    ctx: &Context,
+    options: &LeaseOptions,
+    args: &[OsString],
+) -> Result<std::process::ExitCode> {
+    use crate::hil_perf;
+    use clap::Parser as _;
+    #[derive(clap::Parser)]
+    #[command(name = "cargo hil perf", no_binary_name = true)]
+    enum PerfCli {
+        /// Gated measurements of clean runs per commit, against each
+        /// scenario's baseline.
+        Report {
+            /// Scenario IDs; every scenario with a gated measurement when omitted.
+            scenarios: Vec<String>,
+            /// Only measurements whose name contains this text.
+            #[arg(long)]
+            measurement: Option<String>,
+            /// Only runs this recent, e.g. 7d.
+            #[arg(long, value_parser = parse_budget, default_value = "14d")]
+            since: std::time::Duration,
+        },
+        /// Make a clean sealed run the baseline of its scenarios.
+        Baseline {
+            run: String,
+            /// Scenarios to set; all gated scenarios of the run when omitted.
+            #[arg(long = "scenario")]
+            scenarios: Vec<String>,
+            #[arg(long)]
+            reason: String,
+        },
+        /// Fail when a run's gated measurements regressed against the
+        /// baselines.
+        Check { run: String },
+    }
+    let store = crate::hil_store::shared_runs(HIL_TARGET)?
+        .parent()
+        .ok_or("the run store has no parent")?
+        .to_owned();
+    let directory = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as u64;
+    let find = |id: &str| -> Result<hil_perf::RunSummary> {
+        crate::hil_runs::load(&directory.join(id))
+            .map(|run| hil_perf::summary(&run))
+            .ok_or_else(|| format!("no run {id} in {}", directory.display()).into())
+    };
+    let baselines = hil_perf::load_baselines(&store)?;
+    match PerfCli::try_parse_from(args)? {
+        PerfCli::Report {
+            scenarios,
+            measurement,
+            since,
+        } => {
+            let runs = hil_perf::summaries_since(
+                &directory,
+                &store.join("perf-cache"),
+                now.saturating_sub(since.as_millis() as u64),
+            )?;
+            print!(
+                "{}",
+                hil_perf::report(&runs, &scenarios, measurement.as_deref(), &baselines)
+            );
+        }
+        PerfCli::Baseline {
+            run,
+            scenarios,
+            reason,
+        } => {
+            let run = find(&run)?;
+            let reason = if run.networks.is_empty() {
+                reason
+            } else {
+                format!("{reason} [network {}]", run.networks.join(","))
+            };
+            let set = hil_perf::set_baseline(
+                &store,
+                &run,
+                &scenarios,
+                &reason,
+                &options.owner(ctx),
+                now,
+            )?;
+            println!("baseline {} for {}", run.id, set.join(", "));
+        }
+        PerfCli::Check { run } => {
+            let regressions = hil_perf::regressions(&find(&run)?, &baselines);
+            if regressions.is_empty() {
+                println!("no gated measurement of {run} regressed against its baseline");
+            } else {
+                for line in &regressions {
+                    println!("REGRESSED {line}");
+                }
+                return Ok(std::process::ExitCode::FAILURE);
+            }
+        }
+    }
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
 fn runs(
     ctx: &Context,
     options: &LeaseOptions,

@@ -321,7 +321,7 @@ pub fn set_txrx_pti<Ll: Ieee802154LowLevel + ?Sized>(
 
 /// A four-bit shared-table priority in the MAC's five-bit PTI field, written
 /// unchanged as libcoexist writes it.
-fn mac_pti(pti: CoexPti) -> PacPti {
+pub(crate) fn mac_pti(pti: CoexPti) -> PacPti {
     PacPti::new(pti.value()).expect("a four-bit priority fits the five-bit field")
 }
 

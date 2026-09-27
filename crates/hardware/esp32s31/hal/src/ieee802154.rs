@@ -26,6 +26,11 @@ pub use oer_esp32s31_pac::Ieee802154MultipanIndex;
 #[doc(hidden)]
 pub use role::{Ieee802154EdEventProbeFinished, Ieee802154EventStatusProbeFinished};
 
+/// Validation entries of the IEEE 802.15.4 coexistence and BTBB writes.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub use validation::coex_trace;
+
 pub use lifecycle::{
     IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
     Ieee802154FoundationCheckpoint, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,

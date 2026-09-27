@@ -3464,6 +3464,7 @@ dependencies = [
  "fs2",
  "libc",
  "object 0.39.1",
+ "oer-chip-profile",
  "oer-esp32s31-firmware",
  "oer-hil-arbiter",
  "oer-hil-schema",

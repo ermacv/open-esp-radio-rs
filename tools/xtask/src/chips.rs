@@ -1,30 +1,22 @@
 //! The chips with a vendor verification project.
 //!
-//! A chip is supported when `verification/<chip>/artifacts.toml` exists. Its
-//! verification files live at fixed paths below that directory, so no task
-//! keeps its own list of chips.
+//! The supported chips are those with a profile
+//! ([`oer_chip_profile::Profile`]); a chip has a vendor verification project
+//! when `verification/<chip>/artifacts.toml` also exists. Its verification
+//! files live at fixed paths below that directory, so no task keeps its own
+//! list of chips.
 use crate::Result;
 use std::path::Path;
 
 /// Directory of every chip's verification project, relative to the root.
 const VERIFICATION: &str = "verification";
 
-/// The pin every supported chip has.
+/// The pin every verification project has.
 const ARTIFACTS: &str = "artifacts.toml";
 
-/// Every chip with a verification project, sorted.
+/// Every supported chip, sorted: the chips with a profile.
 pub fn supported(root: &Path) -> Result<Vec<String>> {
-    let mut chips = vec![];
-    for entry in std::fs::read_dir(root.join(VERIFICATION))? {
-        let path = entry?.path();
-        if path.join(ARTIFACTS).is_file()
-            && let Some(name) = path.file_name().and_then(|n| n.to_str())
-        {
-            chips.push(name.to_owned());
-        }
-    }
-    chips.sort();
-    Ok(chips)
+    oer_chip_profile::supported(root)
 }
 
 /// One supported chip.
@@ -32,16 +24,18 @@ pub fn supported(root: &Path) -> Result<Vec<String>> {
 pub struct Chip(String);
 
 impl Chip {
-    /// `name`, when it has a verification project; otherwise an error that
-    /// lists the supported chips.
+    /// `name`, when it is supported and has a verification project;
+    /// otherwise an error that lists the supported chips or names the
+    /// missing project.
     pub fn new(root: &Path, name: &str) -> Result<Self> {
-        let supported = supported(root)?;
-        if supported.iter().any(|chip| chip == name) {
-            Ok(Self(name.to_owned()))
+        let profile = oer_chip_profile::Profile::load(root, name)?;
+        let chip = Self(profile.id);
+        if root.join(chip.artifacts()).is_file() {
+            Ok(chip)
         } else {
             Err(format!(
-                "no verification project for chip {name}; supported chips: {}",
-                supported.join(", ")
+                "chip {name} has no vendor verification project ({})",
+                chip.artifacts()
             )
             .into())
         }
@@ -104,6 +98,7 @@ mod tests {
         assert!(supported.contains(&"esp32s31".to_owned()));
         assert!(supported.contains(&"esp32c5".to_owned()));
         let error = Chip::new(&root(), "esp32").unwrap_err().to_string();
+        assert!(error.contains("unsupported chip `esp32`"), "{error}");
         assert!(error.contains("esp32c5, esp32s31"), "{error}");
     }
 

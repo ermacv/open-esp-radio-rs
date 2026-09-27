@@ -34,8 +34,9 @@ use oer_ieee80211_mac::{
     management_protection::is_robust_action_category,
     security::WifiSecurityMode,
     station::{
-        StaActionFrame, StaDataFrame, StaProtectedActionFrame, StaProtectedDataFrame,
-        StaProtectedEthernetFrame, StaTxSequenceCounters, StationFrameError,
+        StaDataFrame, StaManagementFrame, StaManagementSubtype, StaProtectedDataFrame,
+        StaProtectedEthernetFrame, StaProtectedManagementFrame, StaTxSequenceCounters,
+        StationFrameError,
     },
     station_power_save::{StaNullDataFrame, StaPowerManagement},
 };
@@ -759,13 +760,50 @@ where
         body: &[u8],
         config: ActionTxConfig,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
-        if self.ordinary.active() {
-            return Err(SingleMpduTxError::Busy);
-        }
         let protected = self.config.management_protection
             && body
                 .first()
                 .is_some_and(|category| is_robust_action_category(*category));
+        self.start_management(
+            hardware,
+            StaManagementSubtype::Action,
+            body,
+            protected,
+            config,
+        )
+    }
+
+    /// Encode and publish the Deauthentication of a station leaving its
+    /// access point, with `reason_code`.
+    ///
+    /// A Deauthentication is a robust management frame: under management
+    /// frame protection it leaves CCMP-protected under the pairwise key, as
+    /// the vendor's `ieee80211_send_mgmt` protects it.
+    pub fn start_deauthentication<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        reason_code: u16,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        self.start_management(
+            hardware,
+            StaManagementSubtype::Deauthentication,
+            &reason_code.to_le_bytes(),
+            self.config.management_protection,
+            ActionTxConfig::VENDOR_MANAGEMENT,
+        )
+    }
+
+    fn start_management<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        subtype: StaManagementSubtype,
+        body: &[u8],
+        protected: bool,
+        config: ActionTxConfig,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        if self.ordinary.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
         let (frame_length, hardware_mic_length, hardware_key_selector) = if protected {
             let ConnectedTxSecurity::Wpa2Personal(key) = &mut self.security else {
                 return Err(SingleMpduTxError::SecurityModeMismatch);
@@ -773,7 +811,8 @@ where
             let ccmp_header = key.next_tx_ccmp_header()?;
             let sequence_number = self.sequences.take_non_qos();
             let buffer = self.ordinary.buffer_mut()?;
-            let frame_length = StaProtectedActionFrame {
+            let frame_length = StaProtectedManagementFrame {
+                subtype,
                 source: self.config.station_address,
                 bssid: self.config.bssid,
                 sequence_number,
@@ -786,7 +825,8 @@ where
         } else {
             let sequence_number = self.sequences.take_non_qos();
             let buffer = self.ordinary.buffer_mut()?;
-            let frame_length = StaActionFrame {
+            let frame_length = StaManagementFrame {
+                subtype,
                 source: self.config.station_address,
                 bssid: self.config.bssid,
                 sequence_number,

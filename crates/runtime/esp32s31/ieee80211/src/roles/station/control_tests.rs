@@ -1820,6 +1820,71 @@ fn frames_wait_until_the_agent_performed_the_commands_before_them() {
 }
 
 #[test]
+fn a_controlled_stop_wakes_and_sends_one_leaving_deauthentication() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (_publisher, receiver) = resources.split();
+    let link = StationPowerLink::<NoopRawMutex>::new();
+    let mut control = ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut performed = std::vec::Vec::new();
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
+    );
+    assert!(control.leave_pending());
+
+    assert_eq!(
+        service(
+            &mut control,
+            &mut hardware,
+            &mut tx,
+            DatapathControlContext::STOPPING
+        ),
+        DatapathControlProgress::TxPending
+    );
+    // The station woke before its Deauthentication left.
+    assert!(!control.power_management().is_started());
+    assert!(!hardware.tx_blocked);
+    // An unacknowledged Deauthentication is not retried.
+    finish_tx(&mut hardware, &mut tx, 1);
+    assert_eq!(
+        service(
+            &mut control,
+            &mut hardware,
+            &mut tx,
+            DatapathControlContext::STOPPING
+        ),
+        DatapathControlProgress::More
+    );
+    assert!(!control.leave_pending());
+    assert_eq!(
+        service(
+            &mut control,
+            &mut hardware,
+            &mut tx,
+            DatapathControlContext::STOPPING
+        ),
+        DatapathControlProgress::Idle
+    );
+    control.shutdown(&mut hardware, &mut tx).unwrap();
+}
+
+#[test]
 fn shutdown_stops_power_management_and_hands_the_releases_to_the_agent() {
     let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
     let (_publisher, receiver) = resources.split();

@@ -589,6 +589,44 @@ fn a_robust_action_leaves_protected_under_management_frame_protection() {
 }
 
 #[test]
+fn a_leaving_deauthentication_is_protected_only_under_management_frame_protection() {
+    for protection in [false, true] {
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+        let mut hardware = Hardware {
+            prepare: true,
+            ..Hardware::default()
+        };
+        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        tx.config.management_protection = protection;
+        assert_eq!(
+            tx.start_deauthentication(&mut hardware, 3),
+            Ok(WifiTxProgress::Pending)
+        );
+        let (_, program) = hardware.legacy.expect("legacy queue image");
+        let crypto = if protection { 8 + 8 } else { 0 };
+        assert_eq!(program.signal(), 24 + crypto + 2 + 4);
+        hardware.completion = Some(completion(0));
+        assert_eq!(
+            tx.service(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
+                },
+            ),
+            Ok(WifiTxProgress::Complete)
+        );
+        let bytes = tx.ordinary.slot.as_mut().buffer_mut().unwrap();
+        let frame_control = if protection { 0x40 } else { 0 };
+        assert_eq!(
+            &bytes[TX_METADATA_SIZE..TX_METADATA_SIZE + 2],
+            &[0xc0, frame_control]
+        );
+        let reason = TX_METADATA_SIZE + 24 + if protection { 8 } else { 0 };
+        assert_eq!(&bytes[reason..reason + 2], &3_u16.to_le_bytes());
+    }
+}
+
+#[test]
 fn a_public_action_stays_plaintext_under_management_frame_protection() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {

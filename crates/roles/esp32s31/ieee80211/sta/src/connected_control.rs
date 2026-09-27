@@ -116,6 +116,10 @@ impl From<StaDisconnect> for ConnectedDisconnectReason {
     }
 }
 
+/// Reason code of the Deauthentication a leaving station sends
+/// (IEEE 802.11 reason 3, the station is leaving).
+const DEAUTHENTICATION_REASON_LEAVING: u16 = 3;
+
 /// Control frame currently owning the shared ordinary TX transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedControlTxKind {
@@ -132,6 +136,7 @@ pub enum ConnectedControlTxKind {
         kind: IndividualTwtTxKind,
     },
     SaQuery,
+    Deauthentication,
 }
 
 /// Association-scoped observable outcome of the portable TWT requester.
@@ -261,6 +266,7 @@ enum ControlInFlight {
     PowerManagement(StaPowerManagement),
     IndividualTwt(IndividualTwtTransmission),
     SaQuery,
+    Deauthentication,
 }
 
 impl ControlInFlight {
@@ -277,6 +283,7 @@ impl ControlInFlight {
                 kind: transmission.kind,
             },
             Self::SaQuery => ConnectedControlTxKind::SaQuery,
+            Self::Deauthentication => ConnectedControlTxKind::Deauthentication,
         }
     }
 }
@@ -321,6 +328,13 @@ pub trait ConnectedControlTx {
         hardware: &mut H,
         body: &[u8],
         config: ActionTxConfig,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
+
+    /// Publish the Deauthentication of the leaving station.
+    fn start_deauthentication<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        reason_code: u16,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
     fn start_beacon_probe<H: TxHardware>(
@@ -407,6 +421,15 @@ where
         config: ActionTxConfig,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         SingleMpduTx::start_action(self, hardware, body, config)
+            .map(|_| DatapathControlProgress::TxPending)
+    }
+
+    fn start_deauthentication<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        reason_code: u16,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
+        SingleMpduTx::start_deauthentication(self, hardware, reason_code)
             .map(|_| DatapathControlProgress::TxPending)
     }
 
@@ -572,6 +595,8 @@ pub struct ConnectedControlCore {
     /// association protects its management frames.
     sa_query_random: Option<fn() -> u32>,
     sa_query: StationSaQuery,
+    /// The leaving station published its Deauthentication.
+    left: bool,
     observations: ConnectedControlObservations,
 }
 
@@ -593,6 +618,7 @@ impl ConnectedControlCore {
             individual_twt_kick: false,
             sa_query_random: None,
             sa_query: StationSaQuery::new(),
+            left: false,
             observations: ConnectedControlObservations::default(),
         }
     }
@@ -763,6 +789,12 @@ impl ConnectedControlCore {
         self.in_flight.is_some()
     }
 
+    /// Whether a controlled stop must still send the leaving station's
+    /// Deauthentication before the epoch ends.
+    pub const fn leave_pending(&self) -> bool {
+        !self.left
+    }
+
     pub fn has_immediate_work(&self, control_event_pending: bool) -> bool {
         let transmit_work = self.individual_twt_kick
             || self.initial_tx_block_ack.into_iter().any(|pending| pending);
@@ -826,7 +858,9 @@ impl ConnectedControlCore {
                     self.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_agreement(tid, None);
                 }
-                ControlInFlight::BeaconProbe | ControlInFlight::SaQuery => {}
+                ControlInFlight::BeaconProbe
+                | ControlInFlight::SaQuery
+                | ControlInFlight::Deauthentication => {}
                 ControlInFlight::PowerManagement(_) => {}
                 ControlInFlight::IndividualTwt(transmission) => {
                     self.individual_twt
@@ -948,7 +982,9 @@ impl ConnectedControlCore {
                         self.initial_tx_block_ack[index] = true;
                     }
                 }
-                ControlInFlight::BeaconProbe | ControlInFlight::SaQuery => {}
+                ControlInFlight::BeaconProbe
+                | ControlInFlight::SaQuery
+                | ControlInFlight::Deauthentication => {}
                 ControlInFlight::PowerManagement(advertised) => {
                     let traffic = self.power_traffic(context, control_event_pending);
                     let clock = power_clock(tx);
@@ -984,6 +1020,10 @@ impl ConnectedControlCore {
                 }
             }
             return Ok(DatapathControlProgress::More);
+        }
+
+        if context.stop_pending {
+            return self.leave(hardware, tx);
         }
 
         if let Some(progress) = self.service_power(hardware, tx, context, control_event_pending)? {
@@ -1738,6 +1778,39 @@ impl ConnectedControlCore {
             return Err(error.into());
         }
         self.in_flight = Some(ControlInFlight::RxAddba(activation));
+        Ok(DatapathControlProgress::TxPending)
+    }
+
+    /// Leave the access point on a controlled stop: wake the station and send
+    /// one Deauthentication with reason 3 (the station is leaving), then let
+    /// the epoch end whatever its transmission outcome.
+    ///
+    /// SOURCE: complete pinned `libnet80211.a[ieee80211_ioctl.o]::
+    /// ieee80211_sta_disconnect`, which calls `pm_wake_up` before
+    /// `ieee80211_sta_new_state(ic, IEEE80211_S_INIT, 0)`, and the RUN to
+    /// INIT branch of `[ieee80211_sta.o]::ieee80211_sta_new_state`, which
+    /// sends the Deauthentication (`ieee80211_send_mgmt` subtype `0xc0`,
+    /// reason 3) without retrying it.
+    fn leave<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        if self.left {
+            return Ok(DatapathControlProgress::Idle);
+        }
+        let mut actions = PmActions::new();
+        let coex = self.power.coex_view();
+        self.power.engine.stop(coex, &mut actions);
+        self.apply_power_actions(hardware, tx, actions)?;
+        self.clear_power_inputs();
+        tx.start_deauthentication(hardware, DEAUTHENTICATION_REASON_LEAVING)?;
+        self.left = true;
+        self.in_flight = Some(ControlInFlight::Deauthentication);
         Ok(DatapathControlProgress::TxPending)
     }
 

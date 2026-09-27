@@ -418,6 +418,11 @@ pub trait DatapathPairedControlService<H, PhysicalTx, FirstTx, SecondTx> {
         true
     }
 
+    /// Whether a controlled stop must run control before [`Self::stop`].
+    fn required_before_stop(&self, _first_tx: &FirstTx, _second_tx: &SecondTx) -> bool {
+        false
+    }
+
     fn stop(
         &mut self,
         hardware: &mut H,
@@ -789,6 +794,11 @@ where
     fn control_ready(&self, now_micros: u64) -> bool {
         self.control
             .ready(&self.first_tx, &self.second_tx, now_micros)
+    }
+
+    fn control_required_before_stop(&self) -> bool {
+        self.control
+            .required_before_stop(&self.first_tx, &self.second_tx)
     }
 
     fn active_tx_interface(&self) -> Option<NetworkInterfaceId> {

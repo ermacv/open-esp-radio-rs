@@ -31,6 +31,10 @@ impl StaApStationControlRole<(), ()> for Station {
     fn station_control_ready(&self, _now_micros: u64) -> bool {
         false
     }
+
+    fn station_required_before_stop(&self) -> bool {
+        false
+    }
 }
 
 struct AccessPoint {

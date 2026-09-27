@@ -51,6 +51,20 @@ impl<
         Ok(DatapathControlProgress::TxPending)
     }
 
+    fn start_deauthentication<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        reason_code: u16,
+    ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
+        if self.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        self.ordinary
+            .start_deauthentication(hardware, reason_code)?;
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(DatapathControlProgress::TxPending)
+    }
+
     fn start_power_management_null<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,

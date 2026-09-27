@@ -33,6 +33,10 @@ pub trait StaApStationControlRole<H, PhysicalTx> {
 
     fn station_control_ready(&self, now_micros: u64) -> bool;
 
+    /// Whether a controlled stop must still run station control, for the
+    /// leaving station's Deauthentication.
+    fn station_required_before_stop(&self) -> bool;
+
     /// Wait for role-local work without borrowing the shared physical TX.
     /// Holding that owner across a sleep would prevent the AP beacon timer
     /// from beginning its own finite transaction.
@@ -138,6 +142,24 @@ where
     ) -> impl Future<Output = Result<DatapathPairedControlProgress<Self::Exit>, Self::Error>> + 'a
     {
         async move {
+            // A controlled stop gives the station its leaving turn first; the
+            // access point's own stop runs after it.
+            if context.stop_pending && station.station_required_before_stop() {
+                return match station
+                    .service_station_control(hardware, physical_tx, context, false)
+                    .await
+                    .map_err(StaApControlError::Station)?
+                {
+                    DatapathControlProgress::Idle => Ok(DatapathPairedControlProgress::Idle),
+                    DatapathControlProgress::More => Ok(DatapathPairedControlProgress::More),
+                    DatapathControlProgress::TxPending => Ok(
+                        DatapathPairedControlProgress::TxPending(DatapathPairRole::First),
+                    ),
+                    DatapathControlProgress::Exit(exit) => Ok(DatapathPairedControlProgress::Exit(
+                        StaApControlExit::Station(exit),
+                    )),
+                };
+            }
             let now = Instant::now().as_micros();
             if retained_tx == Some(DatapathPairRole::Second) {
                 let progress = access_point
@@ -210,6 +232,10 @@ where
     fn ready(&self, station: &Station, _access_point: &AccessPoint, now_micros: u64) -> bool {
         station.station_control_ready(now_micros)
             || now_micros >= self.next_access_point_deadline_micros
+    }
+
+    fn required_before_stop(&self, station: &Station, _access_point: &AccessPoint) -> bool {
+        station.station_required_before_stop()
     }
 
     fn stop(

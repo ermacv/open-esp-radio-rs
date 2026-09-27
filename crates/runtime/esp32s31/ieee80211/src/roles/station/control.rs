@@ -495,6 +495,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         })
     }
 
+    /// Whether a controlled stop must still run control: a transmission
+    /// completes, or the leaving station's Deauthentication is unsent.
+    pub const fn leave_pending(&self) -> bool {
+        self.core.tx_in_flight() || self.core.leave_pending()
+    }
+
     pub fn has_immediate_work(&self) -> bool {
         self.deferred_control_event.is_some()
             || self.receiver.overflowed()
@@ -729,6 +735,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             return self.service_core_step(hardware, tx, None, queued_control_pending, context);
         }
 
+        // A controlled stop sends the leaving station's Deauthentication
+        // before the epoch ends; queued RX work no longer matters.
+        if context.stop_pending {
+            return self.service_core_step(hardware, tx, None, false, context);
+        }
+
         if self.receiver.overflowed() {
             return Ok(DatapathControlProgress::Exit(
                 ConnectedDisconnectReason::ControlMailboxOverflow,
@@ -848,6 +860,10 @@ where
 
     fn admits_network_tx(&self) -> bool {
         self.admits_frames()
+    }
+
+    fn required_before_stop(&self) -> bool {
+        self.leave_pending()
     }
 
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a {

@@ -919,6 +919,10 @@ where
                 .is_some_and(|deadline| deadline <= now_micros)
     }
 
+    fn station_required_before_stop(&self) -> bool {
+        self.control().leave_pending()
+    }
+
     fn wait_station_control_ready(&mut self) -> impl Future<Output = ()> + '_ {
         self.control_mut().wait_ready_without_tx()
     }

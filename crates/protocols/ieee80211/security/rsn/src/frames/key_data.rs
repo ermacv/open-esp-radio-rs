@@ -88,14 +88,19 @@ pub struct RsnPlainKeyData<const N: usize = RSN_PLAIN_KEY_DATA_CAPACITY> {
 }
 
 impl<const N: usize> RsnPlainKeyData<N> {
-    pub fn build<const R: usize>(
-        rsn_ie: &OwnedRsnIe<R>,
+    /// Message 3's key data: the authenticator's RSN element and RSNXE
+    /// exactly as it advertises them, the GTK KDE and, when management
+    /// frames are protected, the IGTK KDE, padded as IEEE 802.11 12.7.2
+    /// requires.
+    pub fn build(
+        authenticator_elements: &[u8],
         gtk: &RsnGtk,
+        igtk: Option<&RsnIgtk>,
     ) -> Result<Self, RsnFrameError> {
-        let rsn = rsn_ie.as_bytes();
-        let unpadded_len = rsn
+        let igtk_len = if igtk.is_some() { IGTK_KDE_LEN } else { 0 };
+        let unpadded_len = authenticator_elements
             .len()
-            .checked_add(24)
+            .checked_add(24 + igtk_len)
             .ok_or(RsnFrameError::CapacityExceeded)?;
         let padding = if unpadded_len < 16 {
             16 - unpadded_len
@@ -110,8 +115,9 @@ impl<const N: usize> RsnPlainKeyData<N> {
         }
 
         let mut bytes = [0; N];
-        bytes[..rsn.len()].copy_from_slice(rsn);
-        let kde = &mut bytes[rsn.len()..unpadded_len];
+        let elements_end = authenticator_elements.len();
+        bytes[..elements_end].copy_from_slice(authenticator_elements);
+        let kde = &mut bytes[elements_end..elements_end + 24];
         kde[0] = VENDOR_ELEMENT_ID;
         kde[1] = 22;
         kde[2..5].copy_from_slice(&RSN_OUI);
@@ -119,6 +125,16 @@ impl<const N: usize> RsnPlainKeyData<N> {
         kde[6] = gtk.key_id | u8::from(gtk.transmit) << 2;
         kde[7] = 0;
         kde[8..24].copy_from_slice(gtk.key());
+        if let Some(igtk) = igtk {
+            let kde = &mut bytes[elements_end + 24..unpadded_len];
+            kde[0] = VENDOR_ELEMENT_ID;
+            kde[1] = (IGTK_KDE_LEN - 2) as u8;
+            kde[2..5].copy_from_slice(&RSN_OUI);
+            kde[5] = IGTK_KDE_TYPE;
+            kde[6..8].copy_from_slice(&u16::from(igtk.key_id()).to_le_bytes());
+            kde[8..8 + RSN_IPN_LEN].copy_from_slice(&igtk.packet_number());
+            kde[8 + RSN_IPN_LEN..].copy_from_slice(igtk.key());
+        }
         if padding != 0 {
             bytes[unpadded_len] = VENDOR_ELEMENT_ID;
         }

@@ -128,7 +128,7 @@ fn completed_connected() -> (RsnConnectedSupplicant, crate::OwnedEapolFrame<512>
     block_on(supplicant.on_frame(owned(&message1), &pmk, &mut aes)).unwrap();
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
-    let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&expected_ptk, [7, 6, 5, 4, 3, 2, 1, 0], plain.as_bytes());
     let duplicate = message3.clone();
     let RsnStaSupplicantAction::InstallKeys(request) =
@@ -174,7 +174,7 @@ fn resolves_m1_through_typed_install_and_authenticated_m4() {
 
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
-    let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let rsc = [7, 6, 5, 4, 3, 2, 1, 0];
     let message3 = encrypted_message3(&expected_ptk, rsc, plain.as_bytes());
     let RsnStaSupplicantAction::InstallKeys(request) =
@@ -221,7 +221,7 @@ fn invalid_message3_mic_is_ignored_and_valid_retry_can_install() {
     block_on(supplicant.on_frame(owned(&message1), &pmk, &mut aes)).unwrap();
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
     let gtk = RsnGtk::new(1, false, [9; 16]).unwrap();
-    let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let message3 = encrypted_message3(&expected_ptk, [0; 8], plain.as_bytes());
     let mut bytes = [0; 512];
     let len = message3.as_bytes().len();

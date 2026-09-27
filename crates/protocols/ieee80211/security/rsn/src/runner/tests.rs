@@ -85,7 +85,7 @@ impl Backend {
         );
         let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
         let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
-        let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+        let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
         let frame = RsnTxFrame::<512>::message3(
             crate::Akm::Psk,
             LOCAL,

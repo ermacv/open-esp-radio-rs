@@ -35,7 +35,7 @@ fn contiguous_association_security_ies_retain_exact_rsn_and_rsnxe() {
 fn gtk_key_data_round_trips_with_key_wrap_padding() {
     let rsn = rsn_ie();
     let gtk = RsnGtk::new(2, false, [0x5a; 16]).unwrap();
-    let data = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let data = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     assert_eq!(data.as_bytes().len() % 8, 0);
     let parsed = parse_gtk_key_data(data.as_bytes(), rsn.as_bytes(), &[], false)
         .map(|keys| keys.gtk)
@@ -43,6 +43,25 @@ fn gtk_key_data_round_trips_with_key_wrap_padding() {
     assert_eq!(parsed.key_id(), 2);
     assert!(!parsed.transmit());
     assert_eq!(parsed.key(), &[0x5a; 16]);
+}
+
+#[test]
+fn protected_key_data_carries_the_rsnxe_and_an_igtk_the_station_reads() {
+    let rsn = rsn_ie();
+    let rsnxe = [RSNXE_ELEMENT_ID, 1, 0x20];
+    let mut elements = [0_u8; 25];
+    elements[..22].copy_from_slice(rsn.as_bytes());
+    elements[22..].copy_from_slice(&rsnxe);
+    let gtk = RsnGtk::new(1, false, [0x5a; 16]).unwrap();
+    let igtk = RsnIgtk::new(4, [1, 0, 0, 0, 0, 0], [0x6b; 16]).unwrap();
+    let data = RsnPlainKeyData::<96>::build(&elements, &gtk, Some(&igtk)).unwrap();
+    assert_eq!(data.as_bytes().len() % 8, 0);
+    let keys = parse_gtk_key_data(data.as_bytes(), rsn.as_bytes(), &rsnxe, true).unwrap();
+    assert_eq!(keys.gtk.key(), &[0x5a; 16]);
+    let parsed = keys.igtk.unwrap();
+    assert_eq!(parsed.key_id(), 4);
+    assert_eq!(parsed.packet_number(), [1, 0, 0, 0, 0, 0]);
+    assert_eq!(parsed.key(), &[0x6b; 16]);
 }
 
 #[test]
@@ -104,7 +123,7 @@ fn state_actions_are_bound_to_role_peer_and_nonce_context() {
 fn parser_rejects_changed_rsn_ie_and_duplicate_gtk() {
     let rsn = rsn_ie();
     let gtk = RsnGtk::new(1, false, [7; 16]).unwrap();
-    let data = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let data = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let mut other = [0; 22];
     other[0] = RSN_ELEMENT_ID;
     other[1] = 20;
@@ -132,7 +151,7 @@ fn parser_rejects_changed_rsn_ie_and_duplicate_gtk() {
 fn parser_validates_authenticator_rsnxe_without_ignoring_unknown_elements() {
     let rsn = rsn_ie();
     let gtk = RsnGtk::new(1, false, [7; 16]).unwrap();
-    let data = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
+    let data = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let rsnxe = [RSNXE_ELEMENT_ID, 2, 0x20, 0x00];
     let mut with_rsnxe = [0; 64];
     let source = data.as_bytes();
@@ -185,7 +204,7 @@ fn igtk_kde(key_id: u16) -> [u8; 30] {
 fn protected_management_requires_exactly_one_igtk_beside_the_gtk() {
     let gtk = RsnGtk::new(1, false, [0x55; 16]).unwrap();
     let rsn = rsn_ie();
-    let data = RsnPlainKeyData::<96>::build(&rsn, &gtk).unwrap();
+    let data = RsnPlainKeyData::<96>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let mut with_igtk = std::vec::Vec::from(&data.as_bytes()[..rsn.as_bytes().len() + 24]);
     with_igtk.extend_from_slice(&igtk_kde(4));
 

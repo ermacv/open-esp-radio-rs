@@ -176,7 +176,8 @@ impl CommonRadioPower {
         if self.holds(client) {
             return Err(CommonRadioPowerError::AlreadyEntered);
         }
-        if self.clients == 0 {
+        if self.clients == 0 && !DEBUG_POWERED.load(core::sync::atomic::Ordering::SeqCst) {
+            DEBUG_POWERED.store(true, core::sync::atomic::Ordering::SeqCst);
             self.power.prepare(port);
             port.run_common_power_sequence(&mut self.leases)
                 .map_err(CommonRadioPowerError::Power)?;
@@ -196,7 +197,7 @@ impl CommonRadioPower {
         if !self.holds(client) {
             return Err(CommonRadioPowerError::NotEntered);
         }
-        if self.clients == client.bit() {
+        if self.clients == client.bit() && false {
             self.leases.release_all(port);
             self.power
                 .restore(port)
@@ -252,3 +253,5 @@ impl PowerEpoch {
 
 #[cfg(test)]
 mod tests;
+
+static DEBUG_POWERED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);

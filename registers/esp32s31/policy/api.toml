@@ -863,6 +863,7 @@ name = "PhyI2cField"
 module = "phy_i2c_fields"
 description = "Reviewed named fields in the eight-bit PHY analog-I2C register space. Generated accessors exclusively own sampled-byte masks and shifts."
 value-bits = 8
+register-image = true
 
 [[indirect-register-field-domains.fields]]
 name = "RFPLL_CAPACITOR_HIGH"
@@ -1277,6 +1278,105 @@ register = 0x1f
 bit-offset = 0
 bit-width = 6
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[indirect-register-field-domains.fields]]
+name = "XTAL_DUTY_SEED"
+description = "Crystal duty-calibration seed byte."
+bank = 0x61
+register = 0x09
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_XTAL_DUTY_CAL"]
+
+[[indirect-register-field-domains.fields]]
+name = "XTAL_DUTY_CANDIDATE"
+description = "Crystal duty-calibration candidate byte the search publishes."
+bank = 0x61
+register = 0x0a
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_XTAL_DUTY_CAL"]
+
+[[indirect-register-field-domains.fields]]
+name = "RFPLL_CAPACITOR_LOW"
+description = "Low RFPLL capacitor-selection byte."
+bank = 0x62
+register = 0x01
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_RFPLL_CHANNEL"]
+
+[[indirect-register-field-domains.fields]]
+name = "RFPLL_CALIBRATED_CAPACITOR_LOW"
+description = "Low byte of the calibrated RFPLL capacitor value."
+bank = 0x62
+register = 0x05
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_RFPLL_CHANNEL"]
+
+[[indirect-register-field-domains.fields]]
+name = "RFPLL_SDM_MOST_SIGNIFICANT_BYTE"
+description = "Most significant RFPLL sigma-delta byte."
+bank = 0x63
+register = 0x03
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_RFPLL_CHANNEL"]
+
+[[indirect-register-field-domains.fields]]
+name = "RFPLL_SDM_UPPER_MIDDLE_BYTE"
+description = "Upper middle RFPLL sigma-delta byte."
+bank = 0x63
+register = 0x04
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_RFPLL_CHANNEL"]
+
+[[indirect-register-field-domains.fields]]
+name = "RFPLL_SDM_LOWER_MIDDLE_BYTE"
+description = "Lower middle RFPLL sigma-delta byte."
+bank = 0x63
+register = 0x05
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_RFPLL_CHANNEL"]
+
+[[indirect-register-field-domains.fields]]
+name = "TX_CAPACITOR_BANKS"
+description = "TX capacitor-bank byte the command memory initializes and TX calibration publishes."
+bank = 0x6b
+register = 0x02
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_I2C"]
+
+[[indirect-register-field-domains.fields]]
+name = "RF_CLOSE_CONTROL"
+description = "Analog close image written by complete phy_xpd_rf_new."
+bank = 0x67
+register = 0x02
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_XPD_RF_NEW_20260907"]
+
+[[indirect-register-field-domains.fields]]
+name = "RF_CLOSE_RETENTION_ZERO"
+description = "First retained-close analog image written by complete phy_close_rf."
+bank = 0x6a
+register = 0x00
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_CLOSE_RF_20260907"]
+
+[[indirect-register-field-domains.fields]]
+name = "RF_CLOSE_RETENTION_ONE"
+description = "Second retained-close analog image written by complete phy_close_rf."
+bank = 0x6a
+register = 0x01
+bit-offset = 0
+bit-width = 8
+sources = ["BLOB_LIBPHY_PHY_CLOSE_RF_20260907"]
 
 [[flag-domains]]
 name = "MacInterruptMask"

@@ -469,6 +469,21 @@ impl PacApiPack {
                 ));
             }
             output.push_str("}\n\n");
+            if domain.register_image {
+                let registers = domain.image_registers();
+                output.push_str(&format!(
+                    "/// Distinct registers of the `{}` domain, ascending by bank and\n\
+                     /// register: the order of its register image.\n\
+                     pub(crate) const {}_IMAGE: [(u8, u8); {}] = [\n",
+                    domain.name,
+                    domain.module.to_uppercase(),
+                    registers.len(),
+                ));
+                for (bank, register) in registers {
+                    output.push_str(&format!("    (0x{bank:02x}, 0x{register:02x}),\n"));
+                }
+                output.push_str("];\n\n");
+            }
         }
         output
     }

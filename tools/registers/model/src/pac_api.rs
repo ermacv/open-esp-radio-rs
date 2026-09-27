@@ -224,7 +224,25 @@ pub struct IndirectRegisterFieldDomain {
     pub module: String,
     pub description: String,
     pub value_bits: u8,
+    /// Generate the domain's register image: its distinct registers in
+    /// [`IndirectRegisterFieldDomain::image_registers`] order, for reading the
+    /// reviewed indirect state back without naming a register outside the PAC.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub register_image: bool,
     pub fields: Vec<IndirectRegisterField>,
+}
+
+impl IndirectRegisterFieldDomain {
+    /// The distinct `(bank, register)` pairs the domain's fields occupy,
+    /// ascending: the order of its register image.
+    pub fn image_registers(&self) -> Vec<(u8, u8)> {
+        self.fields
+            .iter()
+            .map(|field| (field.bank, field.register))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1802,6 +1820,7 @@ pub(crate) mod tests {
                 module: "analog_fields".to_owned(),
                 description: "Reviewed fields on an indirect analog bus.".to_owned(),
                 value_bits: 8,
+                register_image: false,
                 fields: vec![IndirectRegisterField {
                     name: "GAIN".to_owned(),
                     description: "Analog gain field.".to_owned(),
@@ -1835,6 +1854,32 @@ pub(crate) mod tests {
             pack.indirect_register_field_domains.clone();
         colliding_pack.indirect_register_field_domains[0].fields[0].bit_width = 3;
         assert!(colliding_pack.validate().is_err());
+    }
+
+    #[test]
+    fn an_indirect_register_image_lists_each_occupied_register_once_in_order() {
+        let field = |name: &str, bank, register, bit_offset| IndirectRegisterField {
+            name: name.to_owned(),
+            description: "Analog field.".to_owned(),
+            bank,
+            register,
+            bit_offset,
+            bit_width: 1,
+            sources: vec!["VENDOR_ANALOG".to_owned()],
+        };
+        let domain = IndirectRegisterFieldDomain {
+            name: "AnalogField".to_owned(),
+            module: "analog_fields".to_owned(),
+            description: "Reviewed fields on an indirect analog bus.".to_owned(),
+            value_bits: 8,
+            register_image: true,
+            fields: vec![
+                field("HIGH", 0x67, 3, 7),
+                field("OTHER", 0x61, 9, 0),
+                field("LOW", 0x67, 3, 0),
+            ],
+        };
+        assert_eq!(domain.image_registers(), [(0x61, 9), (0x67, 3)]);
     }
 
     #[test]

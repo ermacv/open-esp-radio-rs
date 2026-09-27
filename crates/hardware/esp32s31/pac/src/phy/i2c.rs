@@ -87,6 +87,20 @@ pub enum PhyI2cAccessError {
 }
 
 impl PhyI2cAddress {
+    /// Registers of the analog register image: every register a reviewed
+    /// `PhyI2cField` occupies, once, in the order the published register
+    /// model defines (`register-image` of the PAC API policy).
+    pub const IMAGE_LEN: usize = crate::generated::PHY_I2C_FIELDS_IMAGE.len();
+
+    /// Register `index` of the analog register image; `None` past its end.
+    pub const fn image(index: usize) -> Option<Self> {
+        if index >= Self::IMAGE_LEN {
+            return None;
+        }
+        let (block, register) = crate::generated::PHY_I2C_FIELDS_IMAGE[index];
+        Some(Self::recovered(block, register))
+    }
+
     const fn recovered(block: u8, register: u8) -> Self {
         Self {
             block: PhyI2cBlock::recovered(block),
@@ -108,20 +122,30 @@ pub mod analog_registers {
 
     pub use crate::generated::phy_i2c_fields::*;
 
-    pub const XTAL_DUTY_SEED: PhyI2cAddress = PhyI2cAddress::recovered(0x61, 0x09);
-    pub const XTAL_DUTY_CANDIDATE: PhyI2cAddress = PhyI2cAddress::recovered(0x61, 0x0a);
-    pub const RFPLL_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::recovered(0x62, 0x01);
-    pub const RFPLL_CALIBRATED_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::recovered(0x62, 0x05);
-    pub const RFPLL_SDM_MOST_SIGNIFICANT_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x03);
-    pub const RFPLL_SDM_UPPER_MIDDLE_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x04);
-    pub const RFPLL_SDM_LOWER_MIDDLE_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x05);
-    pub const TX_CAPACITOR_BANKS: PhyI2cAddress = PhyI2cAddress::recovered(0x6b, 0x02);
-    /// Analog close image written by complete `phy_xpd_rf_new`.
-    pub const RF_CLOSE_CONTROL: PhyI2cAddress = PhyI2cAddress::recovered(0x67, 0x02);
-    /// First retained-close analog image written by complete `phy_close_rf`.
-    pub const RF_CLOSE_RETENTION_ZERO: PhyI2cAddress = PhyI2cAddress::recovered(0x6a, 0x00);
-    /// Second retained-close analog image written by complete `phy_close_rf`.
-    pub const RF_CLOSE_RETENTION_ONE: PhyI2cAddress = PhyI2cAddress::recovered(0x6a, 0x01);
+    // Whole-byte registers keep their address identity; their reviewed
+    // geometry is the generated whole-byte field of the same name.
+    pub const XTAL_DUTY_SEED: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::XTAL_DUTY_SEED.address();
+    pub const XTAL_DUTY_CANDIDATE: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::XTAL_DUTY_CANDIDATE.address();
+    pub const RFPLL_CAPACITOR_LOW: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RFPLL_CAPACITOR_LOW.address();
+    pub const RFPLL_CALIBRATED_CAPACITOR_LOW: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RFPLL_CALIBRATED_CAPACITOR_LOW.address();
+    pub const RFPLL_SDM_MOST_SIGNIFICANT_BYTE: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RFPLL_SDM_MOST_SIGNIFICANT_BYTE.address();
+    pub const RFPLL_SDM_UPPER_MIDDLE_BYTE: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RFPLL_SDM_UPPER_MIDDLE_BYTE.address();
+    pub const RFPLL_SDM_LOWER_MIDDLE_BYTE: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RFPLL_SDM_LOWER_MIDDLE_BYTE.address();
+    pub const TX_CAPACITOR_BANKS: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::TX_CAPACITOR_BANKS.address();
+    pub const RF_CLOSE_CONTROL: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RF_CLOSE_CONTROL.address();
+    pub const RF_CLOSE_RETENTION_ZERO: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RF_CLOSE_RETENTION_ZERO.address();
+    pub const RF_CLOSE_RETENTION_ONE: PhyI2cAddress =
+        crate::generated::phy_i2c_fields::RF_CLOSE_RETENTION_ONE.address();
 }
 
 const PHY_I2C_COMMAND_MEMORY_ENTRY_COUNT: usize = 45;
@@ -859,6 +883,29 @@ impl RadioPhyRegisters {
                 value,
             );
             index += 1;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PhyI2cAddress, analog_registers};
+
+    #[test]
+    fn the_analog_image_reads_each_reviewed_register_once() {
+        let image: [PhyI2cAddress; PhyI2cAddress::IMAGE_LEN] =
+            core::array::from_fn(|index| PhyI2cAddress::image(index).unwrap());
+        assert_eq!(PhyI2cAddress::image(PhyI2cAddress::IMAGE_LEN), None);
+        for (index, address) in image.iter().enumerate() {
+            assert!(!image[..index].contains(address));
+        }
+        for address in [
+            analog_registers::XTAL_DUTY_CANDIDATE,
+            analog_registers::TX_CAPACITOR_BANKS,
+            analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS.address(),
+            analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.address(),
+        ] {
+            assert_eq!(image.iter().filter(|&&a| a == address).count(), 1);
         }
     }
 }

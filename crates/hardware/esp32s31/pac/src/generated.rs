@@ -2836,7 +2836,78 @@ pub mod phy_i2c_fields {
         PhyI2cField::generated(0x67, 0x1e, 0x40, 6);
     /// Six-bit field in the second high Bluetooth transmit-power analog register.
     pub const BLUETOOTH_TX_POWER_HIGH_1: PhyI2cField = PhyI2cField::generated(0x67, 0x1f, 0x3f, 0);
+    /// Crystal duty-calibration seed byte.
+    pub const XTAL_DUTY_SEED: PhyI2cField = PhyI2cField::generated(0x61, 0x09, 0xff, 0);
+    /// Crystal duty-calibration candidate byte the search publishes.
+    pub const XTAL_DUTY_CANDIDATE: PhyI2cField = PhyI2cField::generated(0x61, 0x0a, 0xff, 0);
+    /// Low RFPLL capacitor-selection byte.
+    pub const RFPLL_CAPACITOR_LOW: PhyI2cField = PhyI2cField::generated(0x62, 0x01, 0xff, 0);
+    /// Low byte of the calibrated RFPLL capacitor value.
+    pub const RFPLL_CALIBRATED_CAPACITOR_LOW: PhyI2cField =
+        PhyI2cField::generated(0x62, 0x05, 0xff, 0);
+    /// Most significant RFPLL sigma-delta byte.
+    pub const RFPLL_SDM_MOST_SIGNIFICANT_BYTE: PhyI2cField =
+        PhyI2cField::generated(0x63, 0x03, 0xff, 0);
+    /// Upper middle RFPLL sigma-delta byte.
+    pub const RFPLL_SDM_UPPER_MIDDLE_BYTE: PhyI2cField =
+        PhyI2cField::generated(0x63, 0x04, 0xff, 0);
+    /// Lower middle RFPLL sigma-delta byte.
+    pub const RFPLL_SDM_LOWER_MIDDLE_BYTE: PhyI2cField =
+        PhyI2cField::generated(0x63, 0x05, 0xff, 0);
+    /// TX capacitor-bank byte the command memory initializes and TX calibration publishes.
+    pub const TX_CAPACITOR_BANKS: PhyI2cField = PhyI2cField::generated(0x6b, 0x02, 0xff, 0);
+    /// Analog close image written by complete phy_xpd_rf_new.
+    pub const RF_CLOSE_CONTROL: PhyI2cField = PhyI2cField::generated(0x67, 0x02, 0xff, 0);
+    /// First retained-close analog image written by complete phy_close_rf.
+    pub const RF_CLOSE_RETENTION_ZERO: PhyI2cField = PhyI2cField::generated(0x6a, 0x00, 0xff, 0);
+    /// Second retained-close analog image written by complete phy_close_rf.
+    pub const RF_CLOSE_RETENTION_ONE: PhyI2cField = PhyI2cField::generated(0x6a, 0x01, 0xff, 0);
 }
+
+/// Distinct registers of the `PhyI2cField` domain, ascending by bank and
+/// register: the order of its register image.
+pub(crate) const PHY_I2C_FIELDS_IMAGE: [(u8, u8); 40] = [
+    (0x61, 0x07),
+    (0x61, 0x08),
+    (0x61, 0x09),
+    (0x61, 0x0a),
+    (0x62, 0x00),
+    (0x62, 0x01),
+    (0x62, 0x02),
+    (0x62, 0x04),
+    (0x62, 0x05),
+    (0x62, 0x07),
+    (0x62, 0x0b),
+    (0x62, 0x0c),
+    (0x62, 0x0e),
+    (0x62, 0x0f),
+    (0x62, 0x11),
+    (0x62, 0x12),
+    (0x62, 0x13),
+    (0x62, 0x14),
+    (0x63, 0x00),
+    (0x63, 0x03),
+    (0x63, 0x04),
+    (0x63, 0x05),
+    (0x63, 0x06),
+    (0x66, 0x04),
+    (0x67, 0x00),
+    (0x67, 0x02),
+    (0x67, 0x03),
+    (0x67, 0x1e),
+    (0x67, 0x1f),
+    (0x69, 0x04),
+    (0x69, 0x06),
+    (0x6a, 0x00),
+    (0x6a, 0x01),
+    (0x6b, 0x02),
+    (0x6b, 0x03),
+    (0x6b, 0x07),
+    (0x6b, 0x0f),
+    (0x6b, 0x11),
+    (0x6b, 0x13),
+    (0x6b, 0x14),
+];
 
 /// Typed bridge for the reviewed `mac_interrupt_clear` complete-register transaction.
 #[inline]

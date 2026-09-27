@@ -23,7 +23,7 @@ pub use phy_fault::{
     PhyTrackingEvidence,
 };
 pub use phy_register_image::{
-    PHY_REGISTER_IMAGE_WORDS, PhyRegisterImageRequest, PhyRegisterImageWords,
+    PHY_REGISTER_IMAGE_WORDS, PhyAnalogImageBytes, PhyRegisterImageRequest, PhyRegisterImageWords,
 };
 mod framing;
 #[cfg(feature = "async-io")]

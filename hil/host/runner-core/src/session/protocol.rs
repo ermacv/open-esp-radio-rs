@@ -296,6 +296,24 @@ impl SerialCapture {
         }
     }
 
+    /// Read a window of the target's analog image.
+    pub fn read_phy_analog_image(
+        &self,
+        request: oer_hil_protocol::PhyRegisterImageRequest,
+        timeout: Duration,
+    ) -> Result<oer_hil_protocol::PhyAnalogImageBytes> {
+        match self
+            .send_command(0, Command::PhyAnalogImage(request), timeout)?
+            .body
+        {
+            Event::PhyAnalogImage(bytes) => Ok(bytes),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected an analog image read: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid analog image response".into()),
+        }
+    }
+
     pub fn query_operation_status(&self, timeout: Duration) -> Result<OperationStatus> {
         match self.send_command(0, Command::GetStatus, timeout)?.body {
             Event::OperationStatus(status) => Ok(status),

@@ -110,7 +110,7 @@ pub struct FeatureCapabilities {
     /// Destructive checkpoints in actual PHY maintenance; diagnostic only.
     #[serde(default)]
     pub phy_fault_injection: bool,
-    /// Read-only windows of the radio-PHY register image.
+    /// Windows of the radio-PHY register image and of the analog image.
     #[serde(default)]
     pub phy_register_image: bool,
     pub bluetooth_dtm: bool,
@@ -586,6 +586,8 @@ pub enum Command {
     RestartRadio,
     /// Read a window of the radio-PHY register image without effect.
     PhyRegisterImage(crate::PhyRegisterImageRequest),
+    /// Read a window of the analog image: one analog-I2C read per register.
+    PhyAnalogImage(crate::PhyRegisterImageRequest),
 }
 
 impl WireBody for Command {
@@ -1175,6 +1177,8 @@ pub enum Event {
     WifiRadioRestarted(WifiRadioRestartEvidence),
     /// Correlated response to [`Command::PhyRegisterImage`].
     PhyRegisterImage(crate::PhyRegisterImageWords),
+    /// Correlated response to [`Command::PhyAnalogImage`].
+    PhyAnalogImage(crate::PhyAnalogImageBytes),
 }
 
 impl WireBody for Event {

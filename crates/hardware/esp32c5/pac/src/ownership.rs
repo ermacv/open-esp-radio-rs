@@ -20,6 +20,21 @@ pub struct Ieee802154Partition {
     etm: crate::modem::etm::Ieee802154EtmChannels,
 }
 
+/// Opaque Wi-Fi MAC register partition.
+///
+/// No driver owns it yet: it only reserves the reviewed Wi-Fi MAC register
+/// views so that no other partition can reach them.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct WifiMacPartition(#[allow(dead_code)] svd::peripheral_ownership::WifiMacPeripherals);
+
+/// Opaque Wi-Fi MAC and power interrupt bank partition.
+///
+/// No driver owns it yet: it only reserves the two interrupt banks.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct WifiInterruptPartition(
+    #[allow(dead_code)] svd::peripheral_ownership::WifiInterruptPeripherals,
+);
+
 /// Every reviewed ESP32-C5 radio register partition.
 ///
 /// This is the sole production acquisition point.
@@ -37,6 +52,8 @@ pub struct RadioPartitions {
     pub modem_clock: crate::modem::clock::ModemClockRegisters,
     pub phy_i2c: crate::phy::i2c::PhyI2cRegisters,
     pub phy_radio: crate::phy::radio::PhyRadioRegisters,
+    pub wifi_mac: WifiMacPartition,
+    pub wifi_interrupts: WifiInterruptPartition,
 }
 
 impl RadioPartitions {
@@ -53,6 +70,8 @@ impl RadioPartitions {
             modem_clock,
             phy_i2c,
             phy_radio,
+            wifi_mac,
+            wifi_interrupts,
         } = svd::peripheral_ownership::partition(peripherals);
         Self {
             ieee802154: Ieee802154Partition {
@@ -62,6 +81,8 @@ impl RadioPartitions {
             modem_clock: crate::modem::clock::ModemClockRegisters::new(modem_clock),
             phy_i2c: crate::phy::i2c::PhyI2cRegisters::new(phy_i2c),
             phy_radio: crate::phy::radio::PhyRadioRegisters::new(phy_radio),
+            wifi_mac: WifiMacPartition(wifi_mac),
+            wifi_interrupts: WifiInterruptPartition(wifi_interrupts),
         }
     }
 

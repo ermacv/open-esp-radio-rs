@@ -8,8 +8,9 @@
   <description>ESP32-C5 modem/radio registers owned by the radio drivers. This first stage
     publishes the IEEE 802.15.4 MAC aperture, its interrupt route and
     the modem ETM channels it programs, and the modem clock gates and
-    resets of its vendor clock devices, and the analog register I2C master
-    the PHY drives. Unknown fields are omitted.</description>
+    resets of its vendor clock devices, the analog register I2C master
+    the PHY drives, and Wi-Fi MAC register views derived from the reviewed
+    ESP32-S31 model. Unknown fields are omitted.</description>
   <licenseText>MIT OR Apache-2.0</licenseText>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
@@ -2854,6 +2855,1556 @@ documentation establishes their electrical meaning.</description>
               <description>Low byte; meaning unknown.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_AUX_TSF_CONTROL</name>
+      <description>SoftAP, NAN and broadcast-TWT TSF control words. Complete public leaves prove their addresses and exact enable/mode masks; unrelated bits and hardware transition rules remain unnamed.</description>
+      <baseAddress>0x600AD860</baseAddress>
+      <registers>
+        <register>
+          <name>SOFTAP_CONTROL</name>
+          <description>Complete hal_disable_softap_tsf clears bits 31:30. Generic TSF enable/disable leaves independently identify bit 31 as the domain enable; bit 30 remains unknown.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>HIGH_CONTROL_UNKNOWN</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_ENABLE</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>NAN_CONTROL</name>
+          <description>Complete NAN enable/disable leaves use the same two-stage gate and mode transaction as station TSF at this distinct word.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TSF_MODE</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>TSF_ENABLE_LOW</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_ENABLE_HIGH</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>BTWT_CONTROL</name>
+          <description>Complete hal_enable_sta_btwt_tsf enables or disables the broadcast-TWT TSF domain using the same gate and mode masks as station TSF.</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TSF_MODE</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>TSF_ENABLE_LOW</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_ENABLE_HIGH</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_BSSID_POLICY</name>
+      <description>Per-interface BSSID address and policy words used by scan and associated-STA receive filtering.</description>
+      <baseAddress>0x600A4000</baseAddress>
+      <registers>
+        <register>
+          <dim>4</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-3</dimIndex>
+          <name>BSSID_LOW%s</name>
+          <description>BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>4</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-3</dimIndex>
+          <name>BSSID_HIGH%s</name>
+          <description>Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BSSID_HIGH</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>ASSOCIATION_ID</name>
+              <description>Eleven-bit AID printed by dbg_read_rx_misc.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>11</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>2047</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>MINIMUM_MPDU_START_SPACING</name>
+              <description>Three-bit MMSS value printed by dbg_read_rx_misc.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>INTERFACE_IS_SOFT_AP</name>
+              <description>Cleared for interface zero by the associated-STA policy-five transaction.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ADDRESS_CHECK_ENABLE</name>
+              <description>MACBSSID_EN: hal_mac_set_bssid clears this bit before changing the address and sets it after publication; the reachable associated-STA policy branch also sets it.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_INTERFACE_ADDRESS</name>
+      <description>Four interface-address pairs consumed by MAC receive filtering.</description>
+      <baseAddress>0x600A405C</baseAddress>
+      <registers>
+        <register>
+          <dim>4</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-3</dimIndex>
+          <name>ADDRESS_LOW%s</name>
+          <description>Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>4</dim>
+          <dimIncrement>0x8</dimIncrement>
+          <dimIndex>0-3</dimIndex>
+          <name>ADDRESS_HIGH%s</name>
+          <description>Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BYTES_4_5</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>RX_POLICY_ENABLE</name>
+              <description>Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>POLICY_HIGH_UNKNOWN</name>
+              <bitOffset>17</bitOffset>
+              <bitWidth>15</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_INTERRUPT</name>
+      <description>Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture.
+        The two complete hal_mac leaves independently prove the status and
+        clear addresses. The recovered common FIQ and cold initializer prove
+        the event-bit mapping and mask transaction used by the open ISR.</description>
+      <baseAddress>0x600A4C40</baseAddress>
+      <registers>
+        <register>
+          <name>ENABLE</name>
+          <description>Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>UNKNOWN_0_4</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>5</bitWidth>
+            </field>
+            <field>
+              <name>RX_ASSOCIATED_AUXILIARY_5</name>
+              <description>Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_6_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_COMPLETE</name>
+              <description>Enable for the TX-complete event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BSS_COLOR_COLLISION</name>
+              <description>Enable for the HE BSS-color collision event.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_9_10</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>WATCHDOG</name>
+              <description>Enable for the MAC watchdog event.</description>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_12_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_13_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_SUCCESS</name>
+              <description>Enable for successful receive completion.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STA_BEACON_FILTER</name>
+              <description>Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_16_18</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
+            <field>
+              <name>TX_TIMEOUT</name>
+              <description>Enable for the hardware TX queue timeout/abort event.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_20</name>
+              <description>Interrupt-enable bit whose event identity remains unknown.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_21_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_22</name>
+              <description>Interrupt-enable bit whose event identity remains unknown.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_23_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_ASSOCIATED_AUXILIARY_24</name>
+              <description>Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_25_26</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_27_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_28_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_29_31</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RAW</name>
+          <description>Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>EVENTS</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>STATUS</name>
+          <description>Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>UNKNOWN_0_4</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>5</bitWidth>
+            </field>
+            <field>
+              <name>RX_ASSOCIATED_AUXILIARY_5</name>
+              <description>Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_6_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_COMPLETE</name>
+              <description>At least one hardware TX queue completed.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BSS_COLOR_COLLISION</name>
+              <description>HE BSS-color collision event.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_9_10</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>WATCHDOG</name>
+              <description>MAC watchdog event cleared by the complete dedicated leaf.</description>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_12_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_13_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_SUCCESS</name>
+              <description>Successfully received frame is ready for the RX completion path.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STA_BEACON_FILTER</name>
+              <description>Masked station beacon-filter event. The paired ENABLE field identity is recovered from the complete disable leaf; no task-side dispatch is claimed here.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_16_18</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
+            <field>
+              <name>TX_TIMEOUT</name>
+              <description>Hardware TX queue timeout/abort event.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_20</name>
+              <description>Masked event bit whose identity remains unknown.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_21_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_22</name>
+              <description>Masked event bit whose identity remains unknown.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_23_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_ASSOCIATED_AUXILIARY_24</name>
+              <description>Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_25_26</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_27_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_28_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_29_31</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CLEAR</name>
+          <description>Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields>
+            <field>
+              <name>EVENTS</name>
+              <description>Ones acknowledge the corresponding event bits.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_POWER_INTERRUPT</name>
+      <description>WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction. Complete TSF timer enable/disable leaves update the timer interrupt masks in ENABLE and clear stale events through CLEAR.</description>
+      <baseAddress>0x600AD8B0</baseAddress>
+      <registers>
+        <register>
+          <name>ENABLE</name>
+          <description>WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TBTT_3</name>
+              <description>Enable the TSF-3 TBTT event.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Enable the TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Enable the TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Enable the TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Enable the guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Enable the guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Enable the guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Enable the guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Enable bits whose event identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>16777215</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RAW</name>
+          <description>WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>TBTT_3</name>
+              <description>Raw TSF-3 TBTT event.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Raw TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Raw TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Raw TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Raw guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Raw guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Raw guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Raw guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Raw event bits whose identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>STATUS</name>
+          <description>Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>TBTT_3</name>
+              <description>Masked TSF-3 TBTT event.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Masked TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Masked TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Masked TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Masked guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Masked guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Masked guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Masked guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CLEAR</name>
+          <description>Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4.</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields>
+            <field>
+              <name>TBTT_3</name>
+              <description>Acknowledge the TSF-3 TBTT event.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_2</name>
+              <description>Acknowledge the TSF-2 TBTT event.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_1</name>
+              <description>Acknowledge the TSF-1 TBTT event.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TBTT_0</name>
+              <description>Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Acknowledge the guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Acknowledge the guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Acknowledge the guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Acknowledge the guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Acknowledge event bits whose identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>16777215</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_RTC_TIMER_UPDATE</name>
+      <description>Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value.</description>
+      <baseAddress>0x600AD830</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x600ad858.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>STA_TSF_WAKEUP_ENABLE</name>
+              <description>hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RTC_UPDATE_ENABLE_UNKNOWN</name>
+              <description>Set when the leaf's enable argument is nonzero.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SOC_WAKEUP_CLEAR</name>
+          <description>Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BEACON_FILTER_FORCE_SYNC_LIMIT</name>
+              <description>The dedicated setter replaces bits 9:0.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>10</bitWidth>
+            </field>
+            <field>
+              <name>BEACON_FILTER_FORCE_SYNC_ENABLE</name>
+              <description>Dedicated enable/disable leaves set or clear bit 10.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BEACON_FILTER_FORCE_DUMP_LIMIT</name>
+              <description>The dedicated setter replaces bits 17:11.</description>
+              <bitOffset>11</bitOffset>
+              <bitWidth>7</bitWidth>
+            </field>
+            <field>
+              <name>BEACON_FILTER_FORCE_DUMP_ENABLE</name>
+              <description>Dedicated enable/disable leaves set or clear bit 21.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLEAR_BEACON_SLEEP_COUNTER</name>
+              <description>Dedicated clear leaf sets bit 28.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLEAR_BEACON_MISS_COUNTER</name>
+              <description>Dedicated clear leaf sets bit 29.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLEAR_REQUEST</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLEAR_BEACON_INFO</name>
+              <description>Dedicated clear leaf sets bit 31.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_SLEEP_LIMIT_CONTROL</name>
+          <description>Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>BEACON_MISS_LIMIT</name>
+              <description>Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>BEACON_MISS_LIMIT_WAKEUP_ENABLE</name>
+              <description>Dedicated enable/disable leaves set or clear bit four.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MODEM_STATE_SLEEP_LIMIT</name>
+              <description>Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>10</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1023</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE</name>
+              <description>Dedicated enable/disable leaves set or clear bit fifteen.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>STA_LIGHT_SLEEP_WAKE_AHEAD</name>
+          <description>Complete hal_set_sta_light_sleep_wake_ahead_time replaces the high sixteen bits. Complete hal_set_sta_tbtt independently publishes its fifth argument to the same field.</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TIME</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>TBTT_RF_CONTROL_WAIT_CYCLES</name>
+          <description>Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.</description>
+          <addressOffset>0x14</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>WAIT_CYCLES</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>24</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RX_BEACON_TIME_LOW</name>
+          <description>Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.</description>
+          <addressOffset>0x24</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>STA_TSF_CONTROL</name>
+          <description>Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.</description>
+          <addressOffset>0x28</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>STA_TBTT_AHEAD_TIME</name>
+              <description>hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>STA_TSF_MODE</name>
+              <description>hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>StaTsfMode</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>DISABLED</name>
+                  <value>0</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>ENABLED</name>
+                  <value>1</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>MODEM_STATE_WAKEUP_PROTECT_ENABLE</name>
+              <description>pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STA_TBTT_ENABLE</name>
+              <description>hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit.</description>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STA_TSF_ENABLE_LOW</name>
+              <description>hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STA_TSF_WAKEUP_ENABLE</name>
+              <description>hal_set_sta_tsf_wakeup sets or clears this bit together with WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.STA_TSF_WAKEUP_ENABLE.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STA_TSF_ENABLE_HIGH</name>
+              <description>hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>STA_TBTT_INTERVAL</name>
+          <description>Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.</description>
+          <addressOffset>0x2C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>INTERVAL_TSF_BITS_35_10</name>
+              <description>The TBTT interval in station TSF units of 1024 µs.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>26</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>67108863</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SLOW_CLOCK_CALIBRATION</name>
+          <description>Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.</description>
+          <addressOffset>0x48</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>18</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>262143</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_STA_BEACON_FILTER</name>
+      <description>Station beacon-filter control word recovered from the complete enable and disable leaves. The three low bits are toggled together; individual hardware meanings remain unknown.</description>
+      <baseAddress>0x600A42B4</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>hal_enable_sta_beacon_filter sets bits 2:0 after enabling the matching interrupt; hal_disable_sta_beacon_filter clears them before disabling that interrupt.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ENABLES_UNKNOWN</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_STA_TSF_LOAD</name>
+      <description>Shared station TSF load and coherent snapshot transaction.</description>
+      <baseAddress>0x600AD814</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <description>Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>SNAPSHOT_STATION_TSF</name>
+              <description>Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOAD_STATION_TSF</name>
+              <description>Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOAD_SOFTAP_TSF</name>
+              <description>SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOAD_STATION_TBTT_TARGET</name>
+              <description>Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>VALUE_LOW</name>
+          <description>Low 32 bits written first by complete hal_set_sta_tsf.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>VALUE_HIGH</name>
+          <description>High 32 bits written second by complete hal_set_sta_tsf.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SNAPSHOT_LOW</name>
+          <description>Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>SNAPSHOT_HIGH</name>
+          <description>Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>TSF_DEVIATION_CONTROL</name>
+          <description>Complete ROM leaves independently replace the TSF deviation value and set two synchronization controls; omitted bits remain semantically unknown.</description>
+          <addressOffset>0x14</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>DEVIATION</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+            </field>
+            <field>
+              <name>RX_BEACON_ABORT_SYNC_ENABLE</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>DEVIATION_SYNC_ENABLE</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>WIFI_MAC_TX_COMMON</name>
+      <description>Shared Wi-Fi CCA, timeout and completion state used by MAC transmit queues and the PHY-owned Wi-Fi CCA gate.</description>
+      <baseAddress>0x600A4C5C</baseAddress>
+      <registers>
+        <register>
+          <name>CCA_CONTROL</name>
+          <description>Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>CONTROL_LOW_UNKNOWN</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>28</bitWidth>
+            </field>
+            <field>
+              <name>PHY_AUX_FORCE</name>
+              <description>Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>FORCE</name>
+              <description>Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>QUEUE_STATE_CLEAR</name>
+          <description>Queue collision/timeout state acknowledgement.</description>
+          <addressOffset>0x50</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields>
+            <field>
+              <name>COLLISION_QUEUE_0</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOW_STATE_UNKNOWN</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_0</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_1</name>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_2</name>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_3</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_STATE_UNKNOWN</name>
+              <bitOffset>20</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>QUEUE_STATE</name>
+          <description>Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.</description>
+          <addressOffset>0x54</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>COLLISION_QUEUE_0</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOW_STATE_UNKNOWN</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_0</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_1</name>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_2</name>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_3</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MIDDLE_STATE_UNKNOWN</name>
+              <bitOffset>20</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_QUEUE_0</name>
+              <description>Queue zero is participating in the hardware Trigger-based transmit flow.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_QUEUE_1</name>
+              <bitOffset>25</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_QUEUE_2</name>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_QUEUE_3</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_HIGH_UNKNOWN</name>
+              <description>The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>COMPLETE_CLEAR</name>
+          <description>Preserved-image acknowledgement for ordinary queue completion bits.</description>
+          <addressOffset>0x58</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
+          <fields>
+            <field>
+              <name>QUEUE_0</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_STATE_UNKNOWN</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>28</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>268435455</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>COMPLETE_STATE</name>
+          <description>Low four bits report completed ordinary queues 0..3.</description>
+          <addressOffset>0x5C</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>QUEUE_0</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

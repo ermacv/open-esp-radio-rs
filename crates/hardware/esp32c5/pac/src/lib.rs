@@ -56,7 +56,7 @@ pub use modem::clock::{Ieee802154ResetObservation, ModemClockDevice, ModemClockR
 pub use modem::etm::Ieee802154EtmChannels;
 pub use ownership::{
     Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154Partition,
-    Ieee802154TaskRegisters, RadioPartitions,
+    Ieee802154TaskRegisters, RadioPartitions, WifiInterruptPartition, WifiMacPartition,
 };
 pub use phy::i2c::{
     PHY_I2C_INITIALIZATION_PAIR_COUNT, PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock,

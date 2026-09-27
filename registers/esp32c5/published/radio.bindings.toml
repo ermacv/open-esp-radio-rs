@@ -2242,6 +2242,1176 @@ bit-width = 1
 access = "write-only"
 
 [[registers]]
+address = 1611284480
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_LOW0"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_low"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284484
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH0"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_high"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "BSSID_HIGH"
+method = "bssid_high"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ASSOCIATION_ID"
+method = "association_id"
+bit-offset = 16
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MINIMUM_MPDU_START_SPACING"
+method = "minimum_mpdu_start_spacing"
+bit-offset = 27
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INTERFACE_IS_SOFT_AP"
+method = "interface_is_soft_ap"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADDRESS_CHECK_ENABLE"
+method = "address_check_enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611284488
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_LOW1"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_low"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284492
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH1"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_high"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "BSSID_HIGH"
+method = "bssid_high"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ASSOCIATION_ID"
+method = "association_id"
+bit-offset = 16
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MINIMUM_MPDU_START_SPACING"
+method = "minimum_mpdu_start_spacing"
+bit-offset = 27
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INTERFACE_IS_SOFT_AP"
+method = "interface_is_soft_ap"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADDRESS_CHECK_ENABLE"
+method = "address_check_enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611284496
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_LOW2"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_low"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284500
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH2"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_high"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "BSSID_HIGH"
+method = "bssid_high"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ASSOCIATION_ID"
+method = "association_id"
+bit-offset = 16
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MINIMUM_MPDU_START_SPACING"
+method = "minimum_mpdu_start_spacing"
+bit-offset = 27
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INTERFACE_IS_SOFT_AP"
+method = "interface_is_soft_ap"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADDRESS_CHECK_ENABLE"
+method = "address_check_enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611284504
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_LOW3"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_low"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284508
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH3"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+peripheral-type = "WifiMacBssidPolicy"
+peripheral-module = "wifi_mac_bssid_policy"
+scope = []
+register-method = "bssid_high"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "BSSID_HIGH"
+method = "bssid_high"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ASSOCIATION_ID"
+method = "association_id"
+bit-offset = 16
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MINIMUM_MPDU_START_SPACING"
+method = "minimum_mpdu_start_spacing"
+bit-offset = 27
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INTERFACE_IS_SOFT_AP"
+method = "interface_is_soft_ap"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ADDRESS_CHECK_ENABLE"
+method = "address_check_enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611284572
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_LOW0"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_low"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284576
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH0"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_high"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "BYTES_4_5"
+method = "bytes_4_5"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_POLICY_ENABLE"
+method = "rx_policy_enable"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_HIGH_UNKNOWN"
+method = "policy_high_unknown"
+bit-offset = 17
+bit-width = 15
+access = "read-write"
+
+[[registers]]
+address = 1611284580
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_LOW1"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_low"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284584
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH1"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_high"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "BYTES_4_5"
+method = "bytes_4_5"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_POLICY_ENABLE"
+method = "rx_policy_enable"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_HIGH_UNKNOWN"
+method = "policy_high_unknown"
+bit-offset = 17
+bit-width = 15
+access = "read-write"
+
+[[registers]]
+address = 1611284588
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_LOW2"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_low"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284592
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH2"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_high"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "BYTES_4_5"
+method = "bytes_4_5"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_POLICY_ENABLE"
+method = "rx_policy_enable"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_HIGH_UNKNOWN"
+method = "policy_high_unknown"
+bit-offset = 17
+bit-width = 15
+access = "read-write"
+
+[[registers]]
+address = 1611284596
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_LOW3"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_low"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "BYTES_0_3"
+method = "bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611284600
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH3"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+peripheral-type = "WifiMacInterfaceAddress"
+peripheral-module = "wifi_mac_interface_address"
+scope = []
+register-method = "address_high"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "BYTES_4_5"
+method = "bytes_4_5"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_POLICY_ENABLE"
+method = "rx_policy_enable"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_HIGH_UNKNOWN"
+method = "policy_high_unknown"
+bit-offset = 17
+bit-width = 15
+access = "read-write"
+
+[[registers]]
+address = 1611285172
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_STA_BEACON_FILTER.CONTROL"
+peripheral = "WIFI_MAC_STA_BEACON_FILTER"
+peripheral-type = "WifiMacStaBeaconFilter"
+peripheral-module = "wifi_mac_sta_beacon_filter"
+scope = []
+register-method = "control"
+
+[[registers.fields]]
+svd-name = "ENABLES_UNKNOWN"
+method = "enables_unknown"
+bit-offset = 0
+bit-width = 3
+access = "read-write"
+
+[[registers]]
+address = 1611287616
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERRUPT.ENABLE"
+peripheral = "WIFI_MAC_INTERRUPT"
+peripheral-type = "WifiMacInterrupt"
+peripheral-module = "wifi_mac_interrupt"
+scope = []
+register-method = "enable"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_0_4"
+method = "unknown_0_4"
+bit-offset = 0
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_ASSOCIATED_AUXILIARY_5"
+method = "rx_associated_auxiliary_5"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_6_UNKNOWN"
+method = "cold_rx_enable_6_unknown"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_COMPLETE"
+method = "tx_complete"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BSS_COLOR_COLLISION"
+method = "bss_color_collision"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_9_10"
+method = "unknown_9_10"
+bit-offset = 9
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "WATCHDOG"
+method = "watchdog"
+bit-offset = 11
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_12_UNKNOWN"
+method = "cold_rx_enable_12_unknown"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_13_UNKNOWN"
+method = "cold_rx_enable_13_unknown"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_SUCCESS"
+method = "rx_success"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STA_BEACON_FILTER"
+method = "sta_beacon_filter"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_16_18"
+method = "unknown_16_18"
+bit-offset = 16
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_TIMEOUT"
+method = "tx_timeout"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_20"
+method = "unknown_20"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_21_UNKNOWN"
+method = "cold_rx_enable_21_unknown"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_22"
+method = "unknown_22"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_23_UNKNOWN"
+method = "cold_rx_enable_23_unknown"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_ASSOCIATED_AUXILIARY_24"
+method = "rx_associated_auxiliary_24"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_25_26"
+method = "unknown_25_26"
+bit-offset = 25
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_27_UNKNOWN"
+method = "cold_rx_enable_27_unknown"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_28_UNKNOWN"
+method = "cold_rx_enable_28_unknown"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_29_31"
+method = "unknown_29_31"
+bit-offset = 29
+bit-width = 3
+access = "read-write"
+
+[[registers]]
+address = 1611287620
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_INTERRUPT.RAW"
+peripheral = "WIFI_MAC_INTERRUPT"
+peripheral-type = "WifiMacInterrupt"
+peripheral-module = "wifi_mac_interrupt"
+scope = []
+register-method = "raw"
+
+[[registers.fields]]
+svd-name = "EVENTS"
+method = "events"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
+
+[[registers]]
+address = 1611287624
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_INTERRUPT.STATUS"
+peripheral = "WIFI_MAC_INTERRUPT"
+peripheral-type = "WifiMacInterrupt"
+peripheral-module = "wifi_mac_interrupt"
+scope = []
+register-method = "status"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_0_4"
+method = "unknown_0_4"
+bit-offset = 0
+bit-width = 5
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "RX_ASSOCIATED_AUXILIARY_5"
+method = "rx_associated_auxiliary_5"
+bit-offset = 5
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_6_UNKNOWN"
+method = "cold_rx_enable_6_unknown"
+bit-offset = 6
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TX_COMPLETE"
+method = "tx_complete"
+bit-offset = 7
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "BSS_COLOR_COLLISION"
+method = "bss_color_collision"
+bit-offset = 8
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_9_10"
+method = "unknown_9_10"
+bit-offset = 9
+bit-width = 2
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "WATCHDOG"
+method = "watchdog"
+bit-offset = 11
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_12_UNKNOWN"
+method = "cold_rx_enable_12_unknown"
+bit-offset = 12
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_13_UNKNOWN"
+method = "cold_rx_enable_13_unknown"
+bit-offset = 13
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "RX_SUCCESS"
+method = "rx_success"
+bit-offset = 14
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STA_BEACON_FILTER"
+method = "sta_beacon_filter"
+bit-offset = 15
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_16_18"
+method = "unknown_16_18"
+bit-offset = 16
+bit-width = 3
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TX_TIMEOUT"
+method = "tx_timeout"
+bit-offset = 19
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_20"
+method = "unknown_20"
+bit-offset = 20
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_21_UNKNOWN"
+method = "cold_rx_enable_21_unknown"
+bit-offset = 21
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_22"
+method = "unknown_22"
+bit-offset = 22
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_23_UNKNOWN"
+method = "cold_rx_enable_23_unknown"
+bit-offset = 23
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "RX_ASSOCIATED_AUXILIARY_24"
+method = "rx_associated_auxiliary_24"
+bit-offset = 24
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_25_26"
+method = "unknown_25_26"
+bit-offset = 25
+bit-width = 2
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_27_UNKNOWN"
+method = "cold_rx_enable_27_unknown"
+bit-offset = 27
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_28_UNKNOWN"
+method = "cold_rx_enable_28_unknown"
+bit-offset = 28
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_29_31"
+method = "unknown_29_31"
+bit-offset = 29
+bit-width = 3
+access = "read-only"
+
+[[registers]]
+address = 1611287628
+width = 32
+access = "write-only"
+identity = "WIFI_MAC_INTERRUPT.CLEAR"
+peripheral = "WIFI_MAC_INTERRUPT"
+peripheral-type = "WifiMacInterrupt"
+peripheral-module = "wifi_mac_interrupt"
+scope = []
+register-method = "clear"
+
+[[registers.fields]]
+svd-name = "EVENTS"
+method = "events"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 1611287644
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_TX_COMMON.CCA_CONTROL"
+peripheral = "WIFI_MAC_TX_COMMON"
+peripheral-type = "WifiMacTxCommon"
+peripheral-module = "wifi_mac_tx_common"
+scope = []
+register-method = "cca_control"
+
+[[registers.fields]]
+svd-name = "CONTROL_LOW_UNKNOWN"
+method = "control_low_unknown"
+bit-offset = 0
+bit-width = 28
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PHY_AUX_FORCE"
+method = "phy_aux_force"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FORCE"
+method = "force"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 1611287724
+width = 32
+access = "write-only"
+identity = "WIFI_MAC_TX_COMMON.QUEUE_STATE_CLEAR"
+peripheral = "WIFI_MAC_TX_COMMON"
+peripheral-type = "WifiMacTxCommon"
+peripheral-module = "wifi_mac_tx_common"
+scope = []
+register-method = "queue_state_clear"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_0"
+method = "collision_queue_0"
+bit-offset = 0
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_1"
+method = "collision_queue_1"
+bit-offset = 1
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_2"
+method = "collision_queue_2"
+bit-offset = 2
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_3"
+method = "collision_queue_3"
+bit-offset = 3
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "LOW_STATE_UNKNOWN"
+method = "low_state_unknown"
+bit-offset = 4
+bit-width = 12
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_0"
+method = "timeout_queue_0"
+bit-offset = 16
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_1"
+method = "timeout_queue_1"
+bit-offset = 17
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_2"
+method = "timeout_queue_2"
+bit-offset = 18
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_3"
+method = "timeout_queue_3"
+bit-offset = 19
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "HIGH_STATE_UNKNOWN"
+method = "high_state_unknown"
+bit-offset = 20
+bit-width = 12
+access = "write-only"
+
+[[registers]]
+address = 1611287728
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_TX_COMMON.QUEUE_STATE"
+peripheral = "WIFI_MAC_TX_COMMON"
+peripheral-type = "WifiMacTxCommon"
+peripheral-module = "wifi_mac_tx_common"
+scope = []
+register-method = "queue_state"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_0"
+method = "collision_queue_0"
+bit-offset = 0
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_1"
+method = "collision_queue_1"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_2"
+method = "collision_queue_2"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_3"
+method = "collision_queue_3"
+bit-offset = 3
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "LOW_STATE_UNKNOWN"
+method = "low_state_unknown"
+bit-offset = 4
+bit-width = 12
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_0"
+method = "timeout_queue_0"
+bit-offset = 16
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_1"
+method = "timeout_queue_1"
+bit-offset = 17
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_2"
+method = "timeout_queue_2"
+bit-offset = 18
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_3"
+method = "timeout_queue_3"
+bit-offset = 19
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "MIDDLE_STATE_UNKNOWN"
+method = "middle_state_unknown"
+bit-offset = 20
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_QUEUE_0"
+method = "trigger_flow_queue_0"
+bit-offset = 24
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_QUEUE_1"
+method = "trigger_flow_queue_1"
+bit-offset = 25
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_QUEUE_2"
+method = "trigger_flow_queue_2"
+bit-offset = 26
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_QUEUE_3"
+method = "trigger_flow_queue_3"
+bit-offset = 27
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_HIGH_UNKNOWN"
+method = "trigger_flow_high_unknown"
+bit-offset = 28
+bit-width = 4
+access = "read-only"
+
+[[registers]]
+address = 1611287732
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_TX_COMMON.COMPLETE_CLEAR"
+peripheral = "WIFI_MAC_TX_COMMON"
+peripheral-type = "WifiMacTxCommon"
+peripheral-module = "wifi_mac_tx_common"
+scope = []
+register-method = "complete_clear"
+
+[[registers.fields]]
+svd-name = "QUEUE_0"
+method = "queue_0"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "QUEUE_1"
+method = "queue_1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "QUEUE_2"
+method = "queue_2"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "QUEUE_3"
+method = "queue_3"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_STATE_UNKNOWN"
+method = "high_state_unknown"
+bit-offset = 4
+bit-width = 28
+access = "read-write"
+
+[[registers]]
+address = 1611287736
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_TX_COMMON.COMPLETE_STATE"
+peripheral = "WIFI_MAC_TX_COMMON"
+peripheral-type = "WifiMacTxCommon"
+peripheral-module = "wifi_mac_tx_common"
+scope = []
+register-method = "complete_state"
+
+[[registers.fields]]
+svd-name = "QUEUE_0"
+method = "queue_0"
+bit-offset = 0
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "QUEUE_1"
+method = "queue_1"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "QUEUE_2"
+method = "queue_2"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "QUEUE_3"
+method = "queue_3"
+bit-offset = 3
+bit-width = 1
+access = "read-only"
+
+[[registers]]
 address = 1611299104
 width = 32
 access = "read-write"
@@ -2597,6 +3767,815 @@ svd-name = "CLK_BTBB_EN"
 method = "clk_btbb_en"
 bit-offset = 17
 bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323412
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_STA_TSF_LOAD.CONTROL"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral-type = "WifiMacStaTsfLoad"
+peripheral-module = "wifi_mac_sta_tsf_load"
+scope = []
+register-method = "control"
+
+[[registers.fields]]
+svd-name = "SNAPSHOT_STATION_TSF"
+method = "snapshot_station_tsf"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LOAD_STATION_TSF"
+method = "load_station_tsf"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LOAD_SOFTAP_TSF"
+method = "load_softap_tsf"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LOAD_STATION_TBTT_TARGET"
+method = "load_station_tbtt_target"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323416
+width = 32
+access = "write-only"
+identity = "WIFI_MAC_STA_TSF_LOAD.VALUE_LOW"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral-type = "WifiMacStaTsfLoad"
+peripheral-module = "wifi_mac_sta_tsf_load"
+scope = []
+register-method = "value_low"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 1611323420
+width = 32
+access = "write-only"
+identity = "WIFI_MAC_STA_TSF_LOAD.VALUE_HIGH"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral-type = "WifiMacStaTsfLoad"
+peripheral-module = "wifi_mac_sta_tsf_load"
+scope = []
+register-method = "value_high"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 1611323424
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_LOW"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral-type = "WifiMacStaTsfLoad"
+peripheral-module = "wifi_mac_sta_tsf_load"
+scope = []
+register-method = "snapshot_low"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 1611323428
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_HIGH"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral-type = "WifiMacStaTsfLoad"
+peripheral-module = "wifi_mac_sta_tsf_load"
+scope = []
+register-method = "snapshot_high"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
+
+[[registers]]
+address = 1611323432
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral-type = "WifiMacStaTsfLoad"
+peripheral-module = "wifi_mac_sta_tsf_load"
+scope = []
+register-method = "tsf_deviation_control"
+
+[[registers.fields]]
+svd-name = "DEVIATION"
+method = "deviation"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_BEACON_ABORT_SYNC_ENABLE"
+method = "rx_beacon_abort_sync_enable"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DEVIATION_SYNC_ENABLE"
+method = "deviation_sync_enable"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323440
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.CONTROL"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "control"
+
+[[registers.fields]]
+svd-name = "STA_TSF_WAKEUP_ENABLE"
+method = "sta_tsf_wakeup_enable"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTC_UPDATE_ENABLE_UNKNOWN"
+method = "rtc_update_enable_unknown"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323444
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "soc_wakeup_clear"
+
+[[registers.fields]]
+svd-name = "BEACON_FILTER_FORCE_SYNC_LIMIT"
+method = "beacon_filter_force_sync_limit"
+bit-offset = 0
+bit-width = 10
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BEACON_FILTER_FORCE_SYNC_ENABLE"
+method = "beacon_filter_force_sync_enable"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BEACON_FILTER_FORCE_DUMP_LIMIT"
+method = "beacon_filter_force_dump_limit"
+bit-offset = 11
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BEACON_FILTER_FORCE_DUMP_ENABLE"
+method = "beacon_filter_force_dump_enable"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLEAR_BEACON_SLEEP_COUNTER"
+method = "clear_beacon_sleep_counter"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLEAR_BEACON_MISS_COUNTER"
+method = "clear_beacon_miss_counter"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLEAR_REQUEST"
+method = "clear_request"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLEAR_BEACON_INFO"
+method = "clear_beacon_info"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323448
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.MODEM_SLEEP_LIMIT_CONTROL"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "modem_sleep_limit_control"
+
+[[registers.fields]]
+svd-name = "BEACON_MISS_LIMIT"
+method = "beacon_miss_limit"
+bit-offset = 0
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BEACON_MISS_LIMIT_WAKEUP_ENABLE"
+method = "beacon_miss_limit_wakeup_enable"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_STATE_SLEEP_LIMIT"
+method = "modem_state_sleep_limit"
+bit-offset = 5
+bit-width = 10
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE"
+method = "modem_state_sleep_limit_wakeup_enable"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323456
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_LIGHT_SLEEP_WAKE_AHEAD"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "sta_light_sleep_wake_ahead"
+
+[[registers.fields]]
+svd-name = "TIME"
+method = "time"
+bit-offset = 16
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 1611323460
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.TBTT_RF_CONTROL_WAIT_CYCLES"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "tbtt_rf_control_wait_cycles"
+
+[[registers.fields]]
+svd-name = "WAIT_CYCLES"
+method = "wait_cycles"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers]]
+address = 1611323476
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.RX_BEACON_TIME_LOW"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "rx_beacon_time_low"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 1611323480
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "sta_tsf_control"
+
+[[registers.fields]]
+svd-name = "STA_TBTT_AHEAD_TIME"
+method = "sta_tbtt_ahead_time"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STA_TSF_MODE"
+method = "sta_tsf_mode"
+bit-offset = 19
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MODEM_STATE_WAKEUP_PROTECT_ENABLE"
+method = "modem_state_wakeup_protect_enable"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STA_TBTT_ENABLE"
+method = "sta_tbtt_enable"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STA_TSF_ENABLE_LOW"
+method = "sta_tsf_enable_low"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STA_TSF_WAKEUP_ENABLE"
+method = "sta_tsf_wakeup_enable"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STA_TSF_ENABLE_HIGH"
+method = "sta_tsf_enable_high"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323484
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TBTT_INTERVAL"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "sta_tbtt_interval"
+
+[[registers.fields]]
+svd-name = "INTERVAL_TSF_BITS_35_10"
+method = "interval_tsf_bits_35_10"
+bit-offset = 0
+bit-width = 26
+access = "read-write"
+
+[[registers]]
+address = 1611323488
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL"
+peripheral = "WIFI_MAC_AUX_TSF_CONTROL"
+peripheral-type = "WifiMacAuxTsfControl"
+peripheral-module = "wifi_mac_aux_tsf_control"
+scope = []
+register-method = "softap_control"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_UNKNOWN"
+method = "high_control_unknown"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_ENABLE"
+method = "tsf_enable"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323496
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_AUX_TSF_CONTROL.NAN_CONTROL"
+peripheral = "WIFI_MAC_AUX_TSF_CONTROL"
+peripheral-type = "WifiMacAuxTsfControl"
+peripheral-module = "wifi_mac_aux_tsf_control"
+scope = []
+register-method = "nan_control"
+
+[[registers.fields]]
+svd-name = "TSF_MODE"
+method = "tsf_mode"
+bit-offset = 19
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_ENABLE_LOW"
+method = "tsf_enable_low"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_ENABLE_HIGH"
+method = "tsf_enable_high"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323504
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_AUX_TSF_CONTROL.BTWT_CONTROL"
+peripheral = "WIFI_MAC_AUX_TSF_CONTROL"
+peripheral-type = "WifiMacAuxTsfControl"
+peripheral-module = "wifi_mac_aux_tsf_control"
+scope = []
+register-method = "btwt_control"
+
+[[registers.fields]]
+svd-name = "TSF_MODE"
+method = "tsf_mode"
+bit-offset = 19
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_ENABLE_LOW"
+method = "tsf_enable_low"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_ENABLE_HIGH"
+method = "tsf_enable_high"
+bit-offset = 31
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 1611323512
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.SLOW_CLOCK_CALIBRATION"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "slow_clock_calibration"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 18
+access = "read-write"
+
+[[registers]]
+address = 1611323568
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_POWER_INTERRUPT.ENABLE"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+peripheral-type = "WifiMacPowerInterrupt"
+peripheral-module = "wifi_mac_power_interrupt"
+scope = []
+register-method = "enable"
+
+[[registers.fields]]
+svd-name = "TBTT_3"
+method = "tbtt_3"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
+access = "read-write"
+
+[[registers]]
+address = 1611323572
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_POWER_INTERRUPT.RAW"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+peripheral-type = "WifiMacPowerInterrupt"
+peripheral-module = "wifi_mac_power_interrupt"
+scope = []
+register-method = "raw"
+
+[[registers.fields]]
+svd-name = "TBTT_3"
+method = "tbtt_3"
+bit-offset = 0
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
+access = "read-only"
+
+[[registers]]
+address = 1611323576
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_POWER_INTERRUPT.STATUS"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+peripheral-type = "WifiMacPowerInterrupt"
+peripheral-module = "wifi_mac_power_interrupt"
+scope = []
+register-method = "status"
+
+[[registers.fields]]
+svd-name = "TBTT_3"
+method = "tbtt_3"
+bit-offset = 0
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
+access = "read-only"
+
+[[registers]]
+address = 1611323580
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_POWER_INTERRUPT.CLEAR"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+peripheral-type = "WifiMacPowerInterrupt"
+peripheral-module = "wifi_mac_power_interrupt"
+scope = []
+register-method = "clear"
+
+[[registers.fields]]
+svd-name = "TBTT_3"
+method = "tbtt_3"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_2"
+method = "tbtt_2"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_1"
+method = "tbtt_1"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TBTT_0"
+method = "tbtt_0"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
 access = "read-write"
 
 [[registers]]

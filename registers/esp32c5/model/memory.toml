@@ -15,6 +15,22 @@ end-exclusive = 0x600A4000
 permissions = "rw"
 
 [[regions]]
+name = "modem-wifi-mac"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600A4000
+end-exclusive = 0x600A6000
+permissions = "rw"
+
+[[regions]]
+name = "modem-wifi-mac-power"
+address-space = "cpu"
+kind = "mmio"
+start = 0x600AD800
+end-exclusive = 0x600AD900
+permissions = "rw"
+
+[[regions]]
 name = "modem-etm-ieee802154"
 address-space = "cpu"
 kind = "mmio"

@@ -13,6 +13,15 @@ fragments = [
     "peripherals/lp-aon-radio.toml",
     "peripherals/apb-saradc-radio.toml",
     "peripherals/pcr-radio.toml",
+    "peripherals/wifi-mac-aux-tsf-control.toml",
+    "peripherals/wifi-mac-bssid-policy.toml",
+    "peripherals/wifi-mac-interface-address.toml",
+    "peripherals/wifi-mac-interrupt.toml",
+    "peripherals/wifi-mac-power-interrupt.toml",
+    "peripherals/wifi-mac-rtc-timer-update.toml",
+    "peripherals/wifi-mac-sta-beacon-filter.toml",
+    "peripherals/wifi-mac-sta-tsf-load.toml",
+    "peripherals/wifi-mac-tx-common.toml",
 ]
 
 [device]
@@ -22,8 +31,9 @@ description = """
 ESP32-C5 modem/radio registers owned by the radio drivers. This first stage
     publishes the IEEE 802.15.4 MAC aperture, its interrupt route and
     the modem ETM channels it programs, and the modem clock gates and
-    resets of its vendor clock devices, and the analog register I2C master
-    the PHY drives. Unknown fields are omitted."""
+    resets of its vendor clock devices, the analog register I2C master
+    the PHY drives, and Wi-Fi MAC register views derived from the reviewed
+    ESP32-S31 model. Unknown fields are omitted."""
 vendor = "Espressif"
 vendor-id = "ESP"
 series = "ESP32-C5"

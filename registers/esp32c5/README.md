@@ -25,6 +25,20 @@ not from the ESP32-S31 model: the register offsets agree, but the channel and
 power codes, the event set, the PTI fields, the diagnostic counters and the
 transmit-on delays differ.
 
+The Wi-Fi MAC fragments (`model/peripherals/wifi-mac-*.toml`) keep the
+peripheral, register and field names of the ESP32-S31 model. Their addresses
+and reviews are derived from it: each `C5_*` source in
+`evidence/vendor-wifi-libraries.toml` names the ESP32-C5 archive member of
+every function the ESP32-S31 source describes and records that its full body
+is identical to the ESP32-S31 one apart from modem addresses (and, where
+stated, software structure offsets). Modem offsets are equal except where the
+evidence lists a shift; the eight TX queue banks are `0x78` bytes apart
+instead of `0x7C`. Such reviews use `provenance = "derived"` and
+`completeness = "partial"`. Functions whose C5 bodies differ structurally are
+never evidence for these facts, and ESP32-S31 HIL observations are not
+carried over. The fragments publish register views only; no ESP32-C5 driver
+owns them yet.
+
 ```console
 cargo registers validate --manifest registers/esp32c5/publication/registers.toml
 cargo registers generate --check --manifest registers/esp32c5/publication/registers.toml

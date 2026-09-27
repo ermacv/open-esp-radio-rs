@@ -2,6 +2,8 @@
 schema = 1
 owned-ranges = [
     "modem-ieee802154",
+    "modem-wifi-mac",
+    "modem-wifi-mac-power",
     "modem-etm-ieee802154",
     "ieee802154-core0-route",
     "modem-syscon-radio",

@@ -35,6 +35,29 @@ member = "phy_radio"
 description = "PMU analog I2C power controls and PHY baseband configuration words driven by the PHY."
 peripherals = ["PMU_RADIO", "PHY_BASEBAND_CONFIG", "LP_AON_RADIO", "APB_SARADC_RADIO", "PCR_RADIO"]
 
+[[ownership-partitions]]
+name = "WifiMacPeripherals"
+member = "wifi_mac"
+description = "ESP32-C5 Wi-Fi MAC register views owned by the Wi-Fi hardware lifecycle."
+peripherals = [
+    "WIFI_MAC_AUX_TSF_CONTROL",
+    "WIFI_MAC_BSSID_POLICY",
+    "WIFI_MAC_INTERFACE_ADDRESS",
+    "WIFI_MAC_RTC_TIMER_UPDATE",
+    "WIFI_MAC_STA_BEACON_FILTER",
+    "WIFI_MAC_STA_TSF_LOAD",
+    "WIFI_MAC_TX_COMMON",
+]
+
+[[ownership-partitions]]
+name = "WifiInterruptPeripherals"
+member = "wifi_interrupts"
+description = "Wi-Fi interrupt banks transferred from cold setup to the hard interrupt handlers."
+peripherals = [
+    "WIFI_MAC_INTERRUPT",
+    "WIFI_MAC_POWER_INTERRUPT",
+]
+
 [[w1c-register-snapshots]]
 name = "ieee802154_event_status"
 peripheral = "IEEE802154_MAC"

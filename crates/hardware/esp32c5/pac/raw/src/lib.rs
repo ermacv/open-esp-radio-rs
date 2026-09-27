@@ -8115,6 +8115,3288 @@ pub mod pcr_radio {
         }
     }
 }
+#[doc = "SoftAP, NAN and broadcast-TWT TSF control words. Complete public leaves prove their addresses and exact enable/mode masks; unrelated bits and hardware transition rules remain unnamed."]
+pub type WifiMacAuxTsfControl = crate::Periph<wifi_mac_aux_tsf_control::RegisterBlock, 0x600a_d860>;
+impl core::fmt::Debug for WifiMacAuxTsfControl {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacAuxTsfControl").finish()
+    }
+}
+#[doc = "SoftAP, NAN and broadcast-TWT TSF control words. Complete public leaves prove their addresses and exact enable/mode masks; unrelated bits and hardware transition rules remain unnamed."]
+pub mod wifi_mac_aux_tsf_control {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        softap_control: SoftapControl,
+        _reserved1: [u8; 0x04],
+        nan_control: NanControl,
+        _reserved2: [u8; 0x04],
+        btwt_control: BtwtControl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Complete hal_disable_softap_tsf clears bits 31:30. Generic TSF enable/disable leaves independently identify bit 31 as the domain enable; bit 30 remains unknown."]
+        #[inline(always)]
+        pub const fn softap_control(&self) -> &SoftapControl {
+            &self.softap_control
+        }
+        #[doc = "0x08 - Complete NAN enable/disable leaves use the same two-stage gate and mode transaction as station TSF at this distinct word."]
+        #[inline(always)]
+        pub const fn nan_control(&self) -> &NanControl {
+            &self.nan_control
+        }
+        #[doc = "0x10 - Complete hal_enable_sta_btwt_tsf enables or disables the broadcast-TWT TSF domain using the same gate and mode masks as station TSF."]
+        #[inline(always)]
+        pub const fn btwt_control(&self) -> &BtwtControl {
+            &self.btwt_control
+        }
+    }
+    #[doc = "SOFTAP_CONTROL (rw) register accessor: Complete hal_disable_softap_tsf clears bits 31:30. Generic TSF enable/disable leaves independently identify bit 31 as the domain enable; bit 30 remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`softap_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`softap_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@softap_control`] module"]
+    #[doc(alias = "SOFTAP_CONTROL")]
+    pub type SoftapControl = crate::Reg<softap_control::SoftapControlSpec>;
+    #[doc = "Complete hal_disable_softap_tsf clears bits 31:30. Generic TSF enable/disable leaves independently identify bit 31 as the domain enable; bit 30 remains unknown."]
+    pub mod softap_control {
+        #[doc = "Register `SOFTAP_CONTROL` reader"]
+        pub type R = crate::R<SoftapControlSpec>;
+        #[doc = "Register `SOFTAP_CONTROL` writer"]
+        pub type W = crate::W<SoftapControlSpec>;
+        #[doc = "Field `HIGH_CONTROL_UNKNOWN` reader - "]
+        pub type HighControlUnknownR = crate::BitReader;
+        #[doc = "Field `HIGH_CONTROL_UNKNOWN` writer - "]
+        pub type HighControlUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_ENABLE` reader - "]
+        pub type TsfEnableR = crate::BitReader;
+        #[doc = "Field `TSF_ENABLE` writer - "]
+        pub type TsfEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn high_control_unknown(&self) -> HighControlUnknownR {
+                HighControlUnknownR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn tsf_enable(&self) -> TsfEnableR {
+                TsfEnableR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn high_control_unknown(&mut self) -> HighControlUnknownW<'_, SoftapControlSpec> {
+                HighControlUnknownW::new(self, 30)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn tsf_enable(&mut self) -> TsfEnableW<'_, SoftapControlSpec> {
+                TsfEnableW::new(self, 31)
+            }
+        }
+        #[doc = "Complete hal_disable_softap_tsf clears bits 31:30. Generic TSF enable/disable leaves independently identify bit 31 as the domain enable; bit 30 remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`softap_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`softap_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SoftapControlSpec;
+        impl crate::RegisterSpec for SoftapControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`softap_control::R`](R) reader structure"]
+        impl crate::Readable for SoftapControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`softap_control::W`](W) writer structure"]
+        impl crate::Writable for SoftapControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "NAN_CONTROL (rw) register accessor: Complete NAN enable/disable leaves use the same two-stage gate and mode transaction as station TSF at this distinct word.\n\nYou can [`read`](crate::Reg::read) this register and get [`nan_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`nan_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@nan_control`] module"]
+    #[doc(alias = "NAN_CONTROL")]
+    pub type NanControl = crate::Reg<nan_control::NanControlSpec>;
+    #[doc = "Complete NAN enable/disable leaves use the same two-stage gate and mode transaction as station TSF at this distinct word."]
+    pub mod nan_control {
+        #[doc = "Register `NAN_CONTROL` reader"]
+        pub type R = crate::R<NanControlSpec>;
+        #[doc = "Register `NAN_CONTROL` writer"]
+        pub type W = crate::W<NanControlSpec>;
+        #[doc = "Field `TSF_MODE` reader - "]
+        pub type TsfModeR = crate::FieldReader;
+        #[doc = "Field `TSF_MODE` writer - "]
+        pub type TsfModeW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TSF_ENABLE_LOW` reader - "]
+        pub type TsfEnableLowR = crate::BitReader;
+        #[doc = "Field `TSF_ENABLE_LOW` writer - "]
+        pub type TsfEnableLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_ENABLE_HIGH` reader - "]
+        pub type TsfEnableHighR = crate::BitReader;
+        #[doc = "Field `TSF_ENABLE_HIGH` writer - "]
+        pub type TsfEnableHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 19:22"]
+            #[inline(always)]
+            pub fn tsf_mode(&self) -> TsfModeR {
+                TsfModeR::new(((self.bits >> 19) & 0x0f) as u8)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn tsf_enable_low(&self) -> TsfEnableLowR {
+                TsfEnableLowR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn tsf_enable_high(&self) -> TsfEnableHighR {
+                TsfEnableHighR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 19:22"]
+            #[inline(always)]
+            pub fn tsf_mode(&mut self) -> TsfModeW<'_, NanControlSpec> {
+                TsfModeW::new(self, 19)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn tsf_enable_low(&mut self) -> TsfEnableLowW<'_, NanControlSpec> {
+                TsfEnableLowW::new(self, 27)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn tsf_enable_high(&mut self) -> TsfEnableHighW<'_, NanControlSpec> {
+                TsfEnableHighW::new(self, 31)
+            }
+        }
+        #[doc = "Complete NAN enable/disable leaves use the same two-stage gate and mode transaction as station TSF at this distinct word.\n\nYou can [`read`](crate::Reg::read) this register and get [`nan_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`nan_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct NanControlSpec;
+        impl crate::RegisterSpec for NanControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`nan_control::R`](R) reader structure"]
+        impl crate::Readable for NanControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`nan_control::W`](W) writer structure"]
+        impl crate::Writable for NanControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "BTWT_CONTROL (rw) register accessor: Complete hal_enable_sta_btwt_tsf enables or disables the broadcast-TWT TSF domain using the same gate and mode masks as station TSF.\n\nYou can [`read`](crate::Reg::read) this register and get [`btwt_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btwt_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@btwt_control`] module"]
+    #[doc(alias = "BTWT_CONTROL")]
+    pub type BtwtControl = crate::Reg<btwt_control::BtwtControlSpec>;
+    #[doc = "Complete hal_enable_sta_btwt_tsf enables or disables the broadcast-TWT TSF domain using the same gate and mode masks as station TSF."]
+    pub mod btwt_control {
+        #[doc = "Register `BTWT_CONTROL` reader"]
+        pub type R = crate::R<BtwtControlSpec>;
+        #[doc = "Register `BTWT_CONTROL` writer"]
+        pub type W = crate::W<BtwtControlSpec>;
+        #[doc = "Field `TSF_MODE` reader - "]
+        pub type TsfModeR = crate::FieldReader;
+        #[doc = "Field `TSF_MODE` writer - "]
+        pub type TsfModeW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `TSF_ENABLE_LOW` reader - "]
+        pub type TsfEnableLowR = crate::BitReader;
+        #[doc = "Field `TSF_ENABLE_LOW` writer - "]
+        pub type TsfEnableLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_ENABLE_HIGH` reader - "]
+        pub type TsfEnableHighR = crate::BitReader;
+        #[doc = "Field `TSF_ENABLE_HIGH` writer - "]
+        pub type TsfEnableHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 19:22"]
+            #[inline(always)]
+            pub fn tsf_mode(&self) -> TsfModeR {
+                TsfModeR::new(((self.bits >> 19) & 0x0f) as u8)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn tsf_enable_low(&self) -> TsfEnableLowR {
+                TsfEnableLowR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn tsf_enable_high(&self) -> TsfEnableHighR {
+                TsfEnableHighR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 19:22"]
+            #[inline(always)]
+            pub fn tsf_mode(&mut self) -> TsfModeW<'_, BtwtControlSpec> {
+                TsfModeW::new(self, 19)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn tsf_enable_low(&mut self) -> TsfEnableLowW<'_, BtwtControlSpec> {
+                TsfEnableLowW::new(self, 27)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn tsf_enable_high(&mut self) -> TsfEnableHighW<'_, BtwtControlSpec> {
+                TsfEnableHighW::new(self, 31)
+            }
+        }
+        #[doc = "Complete hal_enable_sta_btwt_tsf enables or disables the broadcast-TWT TSF domain using the same gate and mode masks as station TSF.\n\nYou can [`read`](crate::Reg::read) this register and get [`btwt_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`btwt_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtwtControlSpec;
+        impl crate::RegisterSpec for BtwtControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`btwt_control::R`](R) reader structure"]
+        impl crate::Readable for BtwtControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`btwt_control::W`](W) writer structure"]
+        impl crate::Writable for BtwtControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "Per-interface BSSID address and policy words used by scan and associated-STA receive filtering."]
+pub type WifiMacBssidPolicy = crate::Periph<wifi_mac_bssid_policy::RegisterBlock, 0x600a_4000>;
+impl core::fmt::Debug for WifiMacBssidPolicy {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacBssidPolicy").finish()
+    }
+}
+#[doc = "Per-interface BSSID address and policy words used by scan and associated-STA receive filtering."]
+pub mod wifi_mac_bssid_policy {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        bssid_low: (),
+        _reserved1: [u8; 0x04],
+        bssid_high: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x10 - BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store."]
+        #[inline(always)]
+        pub const fn bssid_low(&self, n: usize) -> &BssidLow {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x10 - BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store."]
+        #[inline(always)]
+        pub fn bssid_low_iter(&self) -> impl Iterator<Item = &BssidLow> {
+            (0..4)
+                .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
+        }
+        #[doc = "0x04..0x14 - Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity."]
+        #[inline(always)]
+        pub const fn bssid_high(&self, n: usize) -> &BssidHigh {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x04..0x14 - Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity."]
+        #[inline(always)]
+        pub fn bssid_high_iter(&self) -> impl Iterator<Item = &BssidHigh> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "BSSID_LOW (rw) register accessor: BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`bssid_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bssid_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bssid_low`] module"]
+    #[doc(alias = "BSSID_LOW")]
+    pub type BssidLow = crate::Reg<bssid_low::BssidLowSpec>;
+    #[doc = "BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store."]
+    pub mod bssid_low {
+        #[doc = "Register `BSSID_LOW%s` reader"]
+        pub type R = crate::R<BssidLowSpec>;
+        #[doc = "Register `BSSID_LOW%s` writer"]
+        pub type W = crate::W<BssidLowSpec>;
+        #[doc = "Field `BYTES_0_3` reader - "]
+        pub type Bytes0_3R = crate::FieldReader<u32>;
+        #[doc = "Field `BYTES_0_3` writer - "]
+        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bytes_0_3(&self) -> Bytes0_3R {
+                Bytes0_3R::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bytes_0_3(&mut self) -> Bytes0_3W<'_, BssidLowSpec> {
+                Bytes0_3W::new(self, 0)
+            }
+        }
+        #[doc = "BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`bssid_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bssid_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BssidLowSpec;
+        impl crate::RegisterSpec for BssidLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bssid_low::R`](R) reader structure"]
+        impl crate::Readable for BssidLowSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bssid_low::W`](W) writer structure"]
+        impl crate::Writable for BssidLowSpec {
+            type Safety = crate::Safe;
+        }
+    }
+    #[doc = "BSSID_HIGH (rw) register accessor: Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity.\n\nYou can [`read`](crate::Reg::read) this register and get [`bssid_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bssid_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bssid_high`] module"]
+    #[doc(alias = "BSSID_HIGH")]
+    pub type BssidHigh = crate::Reg<bssid_high::BssidHighSpec>;
+    #[doc = "Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity."]
+    pub mod bssid_high {
+        #[doc = "Register `BSSID_HIGH%s` reader"]
+        pub type R = crate::R<BssidHighSpec>;
+        #[doc = "Register `BSSID_HIGH%s` writer"]
+        pub type W = crate::W<BssidHighSpec>;
+        #[doc = "Field `BSSID_HIGH` reader - "]
+        pub type BssidHighR = crate::FieldReader<u16>;
+        #[doc = "Field `BSSID_HIGH` writer - "]
+        pub type BssidHighW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        #[doc = "Field `ASSOCIATION_ID` reader - Eleven-bit AID printed by dbg_read_rx_misc."]
+        pub type AssociationIdR = crate::FieldReader<u16>;
+        #[doc = "Field `ASSOCIATION_ID` writer - Eleven-bit AID printed by dbg_read_rx_misc."]
+        pub type AssociationIdW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
+        #[doc = "Field `MINIMUM_MPDU_START_SPACING` reader - Three-bit MMSS value printed by dbg_read_rx_misc."]
+        pub type MinimumMpduStartSpacingR = crate::FieldReader;
+        #[doc = "Field `MINIMUM_MPDU_START_SPACING` writer - Three-bit MMSS value printed by dbg_read_rx_misc."]
+        pub type MinimumMpduStartSpacingW<'a, REG> =
+            crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        #[doc = "Field `INTERFACE_IS_SOFT_AP` reader - Cleared for interface zero by the associated-STA policy-five transaction."]
+        pub type InterfaceIsSoftApR = crate::BitReader;
+        #[doc = "Field `INTERFACE_IS_SOFT_AP` writer - Cleared for interface zero by the associated-STA policy-five transaction."]
+        pub type InterfaceIsSoftApW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ADDRESS_CHECK_ENABLE` reader - MACBSSID_EN: hal_mac_set_bssid clears this bit before changing the address and sets it after publication; the reachable associated-STA policy branch also sets it."]
+        pub type AddressCheckEnableR = crate::BitReader;
+        #[doc = "Field `ADDRESS_CHECK_ENABLE` writer - MACBSSID_EN: hal_mac_set_bssid clears this bit before changing the address and sets it after publication; the reachable associated-STA policy branch also sets it."]
+        pub type AddressCheckEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bssid_high(&self) -> BssidHighR {
+                BssidHighR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:26 - Eleven-bit AID printed by dbg_read_rx_misc."]
+            #[inline(always)]
+            pub fn association_id(&self) -> AssociationIdR {
+                AssociationIdR::new(((self.bits >> 16) & 0x07ff) as u16)
+            }
+            #[doc = "Bits 27:29 - Three-bit MMSS value printed by dbg_read_rx_misc."]
+            #[inline(always)]
+            pub fn minimum_mpdu_start_spacing(&self) -> MinimumMpduStartSpacingR {
+                MinimumMpduStartSpacingR::new(((self.bits >> 27) & 7) as u8)
+            }
+            #[doc = "Bit 30 - Cleared for interface zero by the associated-STA policy-five transaction."]
+            #[inline(always)]
+            pub fn interface_is_soft_ap(&self) -> InterfaceIsSoftApR {
+                InterfaceIsSoftApR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - MACBSSID_EN: hal_mac_set_bssid clears this bit before changing the address and sets it after publication; the reachable associated-STA policy branch also sets it."]
+            #[inline(always)]
+            pub fn address_check_enable(&self) -> AddressCheckEnableR {
+                AddressCheckEnableR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bssid_high(&mut self) -> BssidHighW<'_, BssidHighSpec> {
+                BssidHighW::new(self, 0)
+            }
+            #[doc = "Bits 16:26 - Eleven-bit AID printed by dbg_read_rx_misc."]
+            #[inline(always)]
+            pub fn association_id(&mut self) -> AssociationIdW<'_, BssidHighSpec> {
+                AssociationIdW::new(self, 16)
+            }
+            #[doc = "Bits 27:29 - Three-bit MMSS value printed by dbg_read_rx_misc."]
+            #[inline(always)]
+            pub fn minimum_mpdu_start_spacing(
+                &mut self,
+            ) -> MinimumMpduStartSpacingW<'_, BssidHighSpec> {
+                MinimumMpduStartSpacingW::new(self, 27)
+            }
+            #[doc = "Bit 30 - Cleared for interface zero by the associated-STA policy-five transaction."]
+            #[inline(always)]
+            pub fn interface_is_soft_ap(&mut self) -> InterfaceIsSoftApW<'_, BssidHighSpec> {
+                InterfaceIsSoftApW::new(self, 30)
+            }
+            #[doc = "Bit 31 - MACBSSID_EN: hal_mac_set_bssid clears this bit before changing the address and sets it after publication; the reachable associated-STA policy branch also sets it."]
+            #[inline(always)]
+            pub fn address_check_enable(&mut self) -> AddressCheckEnableW<'_, BssidHighSpec> {
+                AddressCheckEnableW::new(self, 31)
+            }
+        }
+        #[doc = "Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity.\n\nYou can [`read`](crate::Reg::read) this register and get [`bssid_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bssid_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BssidHighSpec;
+        impl crate::RegisterSpec for BssidHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bssid_high::R`](R) reader structure"]
+        impl crate::Readable for BssidHighSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bssid_high::W`](W) writer structure"]
+        impl crate::Writable for BssidHighSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "Four interface-address pairs consumed by MAC receive filtering."]
+pub type WifiMacInterfaceAddress =
+    crate::Periph<wifi_mac_interface_address::RegisterBlock, 0x600a_405c>;
+impl core::fmt::Debug for WifiMacInterfaceAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacInterfaceAddress").finish()
+    }
+}
+#[doc = "Four interface-address pairs consumed by MAC receive filtering."]
+pub mod wifi_mac_interface_address {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        address_low: (),
+        _reserved1: [u8; 0x04],
+        address_high: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x10 - Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
+        #[inline(always)]
+        pub const fn address_low(&self, n: usize) -> &AddressLow {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x10 - Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
+        #[inline(always)]
+        pub fn address_low_iter(&self) -> impl Iterator<Item = &AddressLow> {
+            (0..4)
+                .map(move |n| unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() })
+        }
+        #[doc = "0x04..0x14 - Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
+        #[inline(always)]
+        pub const fn address_high(&self, n: usize) -> &AddressHigh {
+            #[allow(clippy::no_effect)]
+            [(); 4][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x04..0x14 - Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
+        #[inline(always)]
+        pub fn address_high_iter(&self) -> impl Iterator<Item = &AddressHigh> {
+            (0..4).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(8 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "ADDRESS_LOW (rw) register accessor: Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_low`] module"]
+    #[doc(alias = "ADDRESS_LOW")]
+    pub type AddressLow = crate::Reg<address_low::AddressLowSpec>;
+    #[doc = "Interface MAC bytes 0..3 in little-endian order, published by the first full-word store."]
+    pub mod address_low {
+        #[doc = "Register `ADDRESS_LOW%s` reader"]
+        pub type R = crate::R<AddressLowSpec>;
+        #[doc = "Register `ADDRESS_LOW%s` writer"]
+        pub type W = crate::W<AddressLowSpec>;
+        #[doc = "Field `BYTES_0_3` reader - "]
+        pub type Bytes0_3R = crate::FieldReader<u32>;
+        #[doc = "Field `BYTES_0_3` writer - "]
+        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bytes_0_3(&self) -> Bytes0_3R {
+                Bytes0_3R::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bytes_0_3(&mut self) -> Bytes0_3W<'_, AddressLowSpec> {
+                Bytes0_3W::new(self, 0)
+            }
+        }
+        #[doc = "Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AddressLowSpec;
+        impl crate::RegisterSpec for AddressLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`address_low::R`](R) reader structure"]
+        impl crate::Readable for AddressLowSpec {}
+        #[doc = "`write(|w| ..)` method takes [`address_low::W`](W) writer structure"]
+        impl crate::Writable for AddressLowSpec {
+            type Safety = crate::Safe;
+        }
+    }
+    #[doc = "ADDRESS_HIGH (rw) register accessor: Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_high`] module"]
+    #[doc(alias = "ADDRESS_HIGH")]
+    pub type AddressHigh = crate::Reg<address_high::AddressHighSpec>;
+    #[doc = "Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16."]
+    pub mod address_high {
+        #[doc = "Register `ADDRESS_HIGH%s` reader"]
+        pub type R = crate::R<AddressHighSpec>;
+        #[doc = "Register `ADDRESS_HIGH%s` writer"]
+        pub type W = crate::W<AddressHighSpec>;
+        #[doc = "Field `BYTES_4_5` reader - "]
+        pub type Bytes4_5R = crate::FieldReader<u16>;
+        #[doc = "Field `BYTES_4_5` writer - "]
+        pub type Bytes4_5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        #[doc = "Field `RX_POLICY_ENABLE` reader - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
+        pub type RxPolicyEnableR = crate::BitReader;
+        #[doc = "Field `RX_POLICY_ENABLE` writer - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
+        pub type RxPolicyEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `POLICY_HIGH_UNKNOWN` reader - "]
+        pub type PolicyHighUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `POLICY_HIGH_UNKNOWN` writer - "]
+        pub type PolicyHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bytes_4_5(&self) -> Bytes4_5R {
+                Bytes4_5R::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bit 16 - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
+            #[inline(always)]
+            pub fn rx_policy_enable(&self) -> RxPolicyEnableR {
+                RxPolicyEnableR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bits 17:31"]
+            #[inline(always)]
+            pub fn policy_high_unknown(&self) -> PolicyHighUnknownR {
+                PolicyHighUnknownR::new(((self.bits >> 17) & 0x7fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn bytes_4_5(&mut self) -> Bytes4_5W<'_, AddressHighSpec> {
+                Bytes4_5W::new(self, 0)
+            }
+            #[doc = "Bit 16 - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
+            #[inline(always)]
+            pub fn rx_policy_enable(&mut self) -> RxPolicyEnableW<'_, AddressHighSpec> {
+                RxPolicyEnableW::new(self, 16)
+            }
+            #[doc = "Bits 17:31"]
+            #[inline(always)]
+            pub fn policy_high_unknown(&mut self) -> PolicyHighUnknownW<'_, AddressHighSpec> {
+                PolicyHighUnknownW::new(self, 17)
+            }
+        }
+        #[doc = "Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AddressHighSpec;
+        impl crate::RegisterSpec for AddressHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`address_high::R`](R) reader structure"]
+        impl crate::Readable for AddressHighSpec {}
+        #[doc = "`write(|w| ..)` method takes [`address_high::W`](W) writer structure"]
+        impl crate::Writable for AddressHighSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+pub type WifiMacInterrupt = crate::Periph<wifi_mac_interrupt::RegisterBlock, 0x600a_4c40>;
+impl core::fmt::Debug for WifiMacInterrupt {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacInterrupt").finish()
+    }
+}
+#[doc = "Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture. The two complete hal_mac leaves independently prove the status and clear addresses. The recovered common FIQ and cold initializer prove the event-bit mapping and mask transaction used by the open ISR."]
+pub mod wifi_mac_interrupt {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        enable: Enable,
+        raw: Raw,
+        status: Status,
+        clear: Clear,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
+        #[inline(always)]
+        pub const fn enable(&self) -> &Enable {
+            &self.enable
+        }
+        #[doc = "0x04 - Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE."]
+        #[inline(always)]
+        pub const fn raw(&self) -> &Raw {
+            &self.raw
+        }
+        #[doc = "0x08 - Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically."]
+        #[inline(always)]
+        pub const fn status(&self) -> &Status {
+            &self.status
+        }
+        #[doc = "0x0c - Full event snapshot written by the complete clear leaf to acknowledge pending MAC events."]
+        #[inline(always)]
+        pub const fn clear(&self) -> &Clear {
+            &self.clear
+        }
+    }
+    #[doc = "ENABLE (rw) register accessor: Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc(alias = "ENABLE")]
+    pub type Enable = crate::Reg<enable::EnableSpec>;
+    #[doc = "Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."]
+    pub mod enable {
+        #[doc = "Register `ENABLE` reader"]
+        pub type R = crate::R<EnableSpec>;
+        #[doc = "Register `ENABLE` writer"]
+        pub type W = crate::W<EnableSpec>;
+        #[doc = "Field `UNKNOWN_0_4` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown0_4R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_0_4` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown0_4W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary5R = crate::BitReader;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` writer - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary5W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_6_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable6UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_6_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable6UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_COMPLETE` reader - Enable for the TX-complete event."]
+        pub type TxCompleteR = crate::BitReader;
+        #[doc = "Field `TX_COMPLETE` writer - Enable for the TX-complete event."]
+        pub type TxCompleteW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BSS_COLOR_COLLISION` reader - Enable for the HE BSS-color collision event."]
+        pub type BssColorCollisionR = crate::BitReader;
+        #[doc = "Field `BSS_COLOR_COLLISION` writer - Enable for the HE BSS-color collision event."]
+        pub type BssColorCollisionW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_9_10` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown9_10R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_9_10` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown9_10W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `WATCHDOG` reader - Enable for the MAC watchdog event."]
+        pub type WatchdogR = crate::BitReader;
+        #[doc = "Field `WATCHDOG` writer - Enable for the MAC watchdog event."]
+        pub type WatchdogW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_12_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable12UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_12_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable12UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_13_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable13UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_13_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable13UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_SUCCESS` reader - Enable for successful receive completion."]
+        pub type RxSuccessR = crate::BitReader;
+        #[doc = "Field `RX_SUCCESS` writer - Enable for successful receive completion."]
+        pub type RxSuccessW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STA_BEACON_FILTER` reader - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+        pub type StaBeaconFilterR = crate::BitReader;
+        #[doc = "Field `STA_BEACON_FILTER` writer - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+        pub type StaBeaconFilterW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_16_18` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown16_18R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_16_18` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown16_18W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `TX_TIMEOUT` reader - Enable for the hardware TX queue timeout/abort event."]
+        pub type TxTimeoutR = crate::BitReader;
+        #[doc = "Field `TX_TIMEOUT` writer - Enable for the hardware TX queue timeout/abort event."]
+        pub type TxTimeoutW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_20` reader - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown20R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_20` writer - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_21_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable21UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_21_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable21UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_22` reader - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown22R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_22` writer - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown22W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_23_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable23UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_23_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable23UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary24R = crate::BitReader;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` writer - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary24W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_25_26` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown25_26R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_25_26` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown25_26W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `COLD_RX_ENABLE_27_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable27UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_27_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable27UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_28_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable28UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_28_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable28UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_29_31` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown29_31R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_29_31` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown29_31W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        impl R {
+            #[doc = "Bits 0:4 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_0_4(&self) -> Unknown0_4R {
+                Unknown0_4R::new((self.bits & 0x1f) as u8)
+            }
+            #[doc = "Bit 5 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_5(&self) -> RxAssociatedAuxiliary5R {
+                RxAssociatedAuxiliary5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_6_unknown(&self) -> ColdRxEnable6UnknownR {
+                ColdRxEnable6UnknownR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Enable for the TX-complete event."]
+            #[inline(always)]
+            pub fn tx_complete(&self) -> TxCompleteR {
+                TxCompleteR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8 - Enable for the HE BSS-color collision event."]
+            #[inline(always)]
+            pub fn bss_color_collision(&self) -> BssColorCollisionR {
+                BssColorCollisionR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bits 9:10 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_9_10(&self) -> Unknown9_10R {
+                Unknown9_10R::new(((self.bits >> 9) & 3) as u8)
+            }
+            #[doc = "Bit 11 - Enable for the MAC watchdog event."]
+            #[inline(always)]
+            pub fn watchdog(&self) -> WatchdogR {
+                WatchdogR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_12_unknown(&self) -> ColdRxEnable12UnknownR {
+                ColdRxEnable12UnknownR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_13_unknown(&self) -> ColdRxEnable13UnknownR {
+                ColdRxEnable13UnknownR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14 - Enable for successful receive completion."]
+            #[inline(always)]
+            pub fn rx_success(&self) -> RxSuccessR {
+                RxSuccessR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15 - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+            #[inline(always)]
+            pub fn sta_beacon_filter(&self) -> StaBeaconFilterR {
+                StaBeaconFilterR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bits 16:18 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_16_18(&self) -> Unknown16_18R {
+                Unknown16_18R::new(((self.bits >> 16) & 7) as u8)
+            }
+            #[doc = "Bit 19 - Enable for the hardware TX queue timeout/abort event."]
+            #[inline(always)]
+            pub fn tx_timeout(&self) -> TxTimeoutR {
+                TxTimeoutR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_20(&self) -> Unknown20R {
+                Unknown20R::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_21_unknown(&self) -> ColdRxEnable21UnknownR {
+                ColdRxEnable21UnknownR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_22(&self) -> Unknown22R {
+                Unknown22R::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_23_unknown(&self) -> ColdRxEnable23UnknownR {
+                ColdRxEnable23UnknownR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_24(&self) -> RxAssociatedAuxiliary24R {
+                RxAssociatedAuxiliary24R::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bits 25:26 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_25_26(&self) -> Unknown25_26R {
+                Unknown25_26R::new(((self.bits >> 25) & 3) as u8)
+            }
+            #[doc = "Bit 27 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_27_unknown(&self) -> ColdRxEnable27UnknownR {
+                ColdRxEnable27UnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_28_unknown(&self) -> ColdRxEnable28UnknownR {
+                ColdRxEnable28UnknownR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bits 29:31 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_29_31(&self) -> Unknown29_31R {
+                Unknown29_31R::new(((self.bits >> 29) & 7) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:4 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_0_4(&mut self) -> Unknown0_4W<'_, EnableSpec> {
+                Unknown0_4W::new(self, 0)
+            }
+            #[doc = "Bit 5 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_5(&mut self) -> RxAssociatedAuxiliary5W<'_, EnableSpec> {
+                RxAssociatedAuxiliary5W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_6_unknown(&mut self) -> ColdRxEnable6UnknownW<'_, EnableSpec> {
+                ColdRxEnable6UnknownW::new(self, 6)
+            }
+            #[doc = "Bit 7 - Enable for the TX-complete event."]
+            #[inline(always)]
+            pub fn tx_complete(&mut self) -> TxCompleteW<'_, EnableSpec> {
+                TxCompleteW::new(self, 7)
+            }
+            #[doc = "Bit 8 - Enable for the HE BSS-color collision event."]
+            #[inline(always)]
+            pub fn bss_color_collision(&mut self) -> BssColorCollisionW<'_, EnableSpec> {
+                BssColorCollisionW::new(self, 8)
+            }
+            #[doc = "Bits 9:10 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_9_10(&mut self) -> Unknown9_10W<'_, EnableSpec> {
+                Unknown9_10W::new(self, 9)
+            }
+            #[doc = "Bit 11 - Enable for the MAC watchdog event."]
+            #[inline(always)]
+            pub fn watchdog(&mut self) -> WatchdogW<'_, EnableSpec> {
+                WatchdogW::new(self, 11)
+            }
+            #[doc = "Bit 12 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_12_unknown(&mut self) -> ColdRxEnable12UnknownW<'_, EnableSpec> {
+                ColdRxEnable12UnknownW::new(self, 12)
+            }
+            #[doc = "Bit 13 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_13_unknown(&mut self) -> ColdRxEnable13UnknownW<'_, EnableSpec> {
+                ColdRxEnable13UnknownW::new(self, 13)
+            }
+            #[doc = "Bit 14 - Enable for successful receive completion."]
+            #[inline(always)]
+            pub fn rx_success(&mut self) -> RxSuccessW<'_, EnableSpec> {
+                RxSuccessW::new(self, 14)
+            }
+            #[doc = "Bit 15 - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+            #[inline(always)]
+            pub fn sta_beacon_filter(&mut self) -> StaBeaconFilterW<'_, EnableSpec> {
+                StaBeaconFilterW::new(self, 15)
+            }
+            #[doc = "Bits 16:18 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_16_18(&mut self) -> Unknown16_18W<'_, EnableSpec> {
+                Unknown16_18W::new(self, 16)
+            }
+            #[doc = "Bit 19 - Enable for the hardware TX queue timeout/abort event."]
+            #[inline(always)]
+            pub fn tx_timeout(&mut self) -> TxTimeoutW<'_, EnableSpec> {
+                TxTimeoutW::new(self, 19)
+            }
+            #[doc = "Bit 20 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_20(&mut self) -> Unknown20W<'_, EnableSpec> {
+                Unknown20W::new(self, 20)
+            }
+            #[doc = "Bit 21 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_21_unknown(&mut self) -> ColdRxEnable21UnknownW<'_, EnableSpec> {
+                ColdRxEnable21UnknownW::new(self, 21)
+            }
+            #[doc = "Bit 22 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_22(&mut self) -> Unknown22W<'_, EnableSpec> {
+                Unknown22W::new(self, 22)
+            }
+            #[doc = "Bit 23 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_23_unknown(&mut self) -> ColdRxEnable23UnknownW<'_, EnableSpec> {
+                ColdRxEnable23UnknownW::new(self, 23)
+            }
+            #[doc = "Bit 24 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_24(
+                &mut self,
+            ) -> RxAssociatedAuxiliary24W<'_, EnableSpec> {
+                RxAssociatedAuxiliary24W::new(self, 24)
+            }
+            #[doc = "Bits 25:26 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_25_26(&mut self) -> Unknown25_26W<'_, EnableSpec> {
+                Unknown25_26W::new(self, 25)
+            }
+            #[doc = "Bit 27 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_27_unknown(&mut self) -> ColdRxEnable27UnknownW<'_, EnableSpec> {
+                ColdRxEnable27UnknownW::new(self, 27)
+            }
+            #[doc = "Bit 28 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_28_unknown(&mut self) -> ColdRxEnable28UnknownW<'_, EnableSpec> {
+                ColdRxEnable28UnknownW::new(self, 28)
+            }
+            #[doc = "Bits 29:31 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_29_31(&mut self) -> Unknown29_31W<'_, EnableSpec> {
+                Unknown29_31W::new(self, 29)
+            }
+        }
+        #[doc = "Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EnableSpec;
+        impl crate::RegisterSpec for EnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable::R`](R) reader structure"]
+        impl crate::Readable for EnableSpec {}
+        #[doc = "`write(|w| ..)` method takes [`enable::W`](W) writer structure"]
+        impl crate::Writable for EnableSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RAW (rw) register accessor: Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`raw::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
+    #[doc(alias = "RAW")]
+    pub type Raw = crate::Reg<raw::RawSpec>;
+    #[doc = "Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE."]
+    pub mod raw {
+        #[doc = "Register `RAW` reader"]
+        pub type R = crate::R<RawSpec>;
+        #[doc = "Register `RAW` writer"]
+        pub type W = crate::W<RawSpec>;
+        #[doc = "Field `EVENTS` reader - "]
+        pub type EventsR = crate::FieldReader<u32>;
+        #[doc = "Field `EVENTS` writer - "]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&self) -> EventsR {
+                EventsR::new(self.bits)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, RawSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`raw::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RawSpec;
+        impl crate::RegisterSpec for RawSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`raw::R`](R) reader structure"]
+        impl crate::Readable for RawSpec {}
+        #[doc = "`write(|w| ..)` method takes [`raw::W`](W) writer structure"]
+        impl crate::Writable for RawSpec {
+            type Safety = crate::Safe;
+        }
+    }
+    #[doc = "STATUS (r) register accessor: Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
+    #[doc(alias = "STATUS")]
+    pub type Status = crate::Reg<status::StatusSpec>;
+    #[doc = "Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically."]
+    pub mod status {
+        #[doc = "Register `STATUS` reader"]
+        pub type R = crate::R<StatusSpec>;
+        #[doc = "Field `UNKNOWN_0_4` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown0_4R = crate::FieldReader;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        pub type RxAssociatedAuxiliary5R = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_6_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable6UnknownR = crate::BitReader;
+        #[doc = "Field `TX_COMPLETE` reader - At least one hardware TX queue completed."]
+        pub type TxCompleteR = crate::BitReader;
+        #[doc = "Field `BSS_COLOR_COLLISION` reader - HE BSS-color collision event."]
+        pub type BssColorCollisionR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_9_10` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown9_10R = crate::FieldReader;
+        #[doc = "Field `WATCHDOG` reader - MAC watchdog event cleared by the complete dedicated leaf."]
+        pub type WatchdogR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_12_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable12UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_13_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable13UnknownR = crate::BitReader;
+        #[doc = "Field `RX_SUCCESS` reader - Successfully received frame is ready for the RX completion path."]
+        pub type RxSuccessR = crate::BitReader;
+        #[doc = "Field `STA_BEACON_FILTER` reader - Masked station beacon-filter event. The paired ENABLE field identity is recovered from the complete disable leaf; no task-side dispatch is claimed here."]
+        pub type StaBeaconFilterR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_16_18` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown16_18R = crate::FieldReader;
+        #[doc = "Field `TX_TIMEOUT` reader - Hardware TX queue timeout/abort event."]
+        pub type TxTimeoutR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_20` reader - Masked event bit whose identity remains unknown."]
+        pub type Unknown20R = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_21_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable21UnknownR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_22` reader - Masked event bit whose identity remains unknown."]
+        pub type Unknown22R = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_23_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable23UnknownR = crate::BitReader;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+        pub type RxAssociatedAuxiliary24R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_25_26` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown25_26R = crate::FieldReader;
+        #[doc = "Field `COLD_RX_ENABLE_27_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable27UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_28_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable28UnknownR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_29_31` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown29_31R = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:4 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_0_4(&self) -> Unknown0_4R {
+                Unknown0_4R::new((self.bits & 0x1f) as u8)
+            }
+            #[doc = "Bit 5 - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_5(&self) -> RxAssociatedAuxiliary5R {
+                RxAssociatedAuxiliary5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_6_unknown(&self) -> ColdRxEnable6UnknownR {
+                ColdRxEnable6UnknownR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - At least one hardware TX queue completed."]
+            #[inline(always)]
+            pub fn tx_complete(&self) -> TxCompleteR {
+                TxCompleteR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8 - HE BSS-color collision event."]
+            #[inline(always)]
+            pub fn bss_color_collision(&self) -> BssColorCollisionR {
+                BssColorCollisionR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bits 9:10 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_9_10(&self) -> Unknown9_10R {
+                Unknown9_10R::new(((self.bits >> 9) & 3) as u8)
+            }
+            #[doc = "Bit 11 - MAC watchdog event cleared by the complete dedicated leaf."]
+            #[inline(always)]
+            pub fn watchdog(&self) -> WatchdogR {
+                WatchdogR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_12_unknown(&self) -> ColdRxEnable12UnknownR {
+                ColdRxEnable12UnknownR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_13_unknown(&self) -> ColdRxEnable13UnknownR {
+                ColdRxEnable13UnknownR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14 - Successfully received frame is ready for the RX completion path."]
+            #[inline(always)]
+            pub fn rx_success(&self) -> RxSuccessR {
+                RxSuccessR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15 - Masked station beacon-filter event. The paired ENABLE field identity is recovered from the complete disable leaf; no task-side dispatch is claimed here."]
+            #[inline(always)]
+            pub fn sta_beacon_filter(&self) -> StaBeaconFilterR {
+                StaBeaconFilterR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bits 16:18 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_16_18(&self) -> Unknown16_18R {
+                Unknown16_18R::new(((self.bits >> 16) & 7) as u8)
+            }
+            #[doc = "Bit 19 - Hardware TX queue timeout/abort event."]
+            #[inline(always)]
+            pub fn tx_timeout(&self) -> TxTimeoutR {
+                TxTimeoutR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20 - Masked event bit whose identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_20(&self) -> Unknown20R {
+                Unknown20R::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_21_unknown(&self) -> ColdRxEnable21UnknownR {
+                ColdRxEnable21UnknownR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Masked event bit whose identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_22(&self) -> Unknown22R {
+                Unknown22R::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_23_unknown(&self) -> ColdRxEnable23UnknownR {
+                ColdRxEnable23UnknownR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_24(&self) -> RxAssociatedAuxiliary24R {
+                RxAssociatedAuxiliary24R::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bits 25:26 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_25_26(&self) -> Unknown25_26R {
+                Unknown25_26R::new(((self.bits >> 25) & 3) as u8)
+            }
+            #[doc = "Bit 27 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_27_unknown(&self) -> ColdRxEnable27UnknownR {
+                ColdRxEnable27UnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_28_unknown(&self) -> ColdRxEnable28UnknownR {
+                ColdRxEnable28UnknownR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bits 29:31 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_29_31(&self) -> Unknown29_31R {
+                Unknown29_31R::new(((self.bits >> 29) & 7) as u8)
+            }
+        }
+        #[doc = "Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StatusSpec;
+        impl crate::RegisterSpec for StatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`status::R`](R) reader structure"]
+        impl crate::Readable for StatusSpec {}
+    }
+    #[doc = "CLEAR (w) register accessor: Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clear`] module"]
+    #[doc(alias = "CLEAR")]
+    pub type Clear = crate::Reg<clear::ClearSpec>;
+    #[doc = "Full event snapshot written by the complete clear leaf to acknowledge pending MAC events."]
+    pub mod clear {
+        #[doc = "Register `CLEAR` writer"]
+        pub type W = crate::W<ClearSpec>;
+        #[doc = "Field `EVENTS` writer - Ones acknowledge the corresponding event bits."]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl W {
+            #[doc = "Bits 0:31 - Ones acknowledge the corresponding event bits."]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, ClearSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClearSpec;
+        impl crate::RegisterSpec for ClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
+        impl crate::Writable for ClearSpec {
+            type Safety = crate::Safe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
+        }
+    }
+}
+#[doc = "WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction. Complete TSF timer enable/disable leaves update the timer interrupt masks in ENABLE and clear stale events through CLEAR."]
+pub type WifiMacPowerInterrupt =
+    crate::Periph<wifi_mac_power_interrupt::RegisterBlock, 0x600a_d8b0>;
+impl core::fmt::Debug for WifiMacPowerInterrupt {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacPowerInterrupt").finish()
+    }
+}
+#[doc = "WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction. Complete TSF timer enable/disable leaves update the timer interrupt masks in ENABLE and clear stale events through CLEAR."]
+pub mod wifi_mac_power_interrupt {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        enable: Enable,
+        raw: Raw,
+        status: Status,
+        clear: Clear,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0."]
+        #[inline(always)]
+        pub const fn enable(&self) -> &Enable {
+            &self.enable
+        }
+        #[doc = "0x04 - WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR."]
+        #[inline(always)]
+        pub const fn raw(&self) -> &Raw {
+            &self.raw
+        }
+        #[doc = "0x08 - Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves."]
+        #[inline(always)]
+        pub const fn status(&self) -> &Status {
+            &self.status
+        }
+        #[doc = "0x0c - Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
+        #[inline(always)]
+        pub const fn clear(&self) -> &Clear {
+            &self.clear
+        }
+    }
+    #[doc = "ENABLE (rw) register accessor: WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc(alias = "ENABLE")]
+    pub type Enable = crate::Reg<enable::EnableSpec>;
+    #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0."]
+    pub mod enable {
+        #[doc = "Register `ENABLE` reader"]
+        pub type R = crate::R<EnableSpec>;
+        #[doc = "Register `ENABLE` writer"]
+        pub type W = crate::W<EnableSpec>;
+        #[doc = "Field `TBTT_3` reader - Enable the TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_3` writer - Enable the TSF-3 TBTT event."]
+        pub type Tbtt3W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TBTT_2` reader - Enable the TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_2` writer - Enable the TSF-2 TBTT event."]
+        pub type Tbtt2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TBTT_1` reader - Enable the TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_1` writer - Enable the TSF-1 TBTT event."]
+        pub type Tbtt1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TBTT_0` reader - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
+        #[doc = "Field `TBTT_0` writer - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_TIMER_3` reader - Enable the guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_3` writer - Enable the guarded TSF timer-three event."]
+        pub type TsfTimer3W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_TIMER_2` reader - Enable the guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` writer - Enable the guarded TSF timer-two event."]
+        pub type TsfTimer2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_TIMER_1` reader - Enable the guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` writer - Enable the guarded TSF timer-one event."]
+        pub type TsfTimer1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_TIMER_0` reader - Enable the guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` writer - Enable the guarded TSF timer-zero event."]
+        pub type TsfTimer0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_8_31` reader - Enable bits whose event identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN_8_31` writer - Enable bits whose event identities remain unknown."]
+        pub type Unknown8_31W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bit 0 - Enable the TSF-3 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Enable the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Enable the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Enable the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Enable the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Enable the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Enable the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Enable the TSF-3 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_3(&mut self) -> Tbtt3W<'_, EnableSpec> {
+                Tbtt3W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Enable the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&mut self) -> Tbtt2W<'_, EnableSpec> {
+                Tbtt2W::new(self, 1)
+            }
+            #[doc = "Bit 2 - Enable the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&mut self) -> Tbtt1W<'_, EnableSpec> {
+                Tbtt1W::new(self, 2)
+            }
+            #[doc = "Bit 3 - Enable the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&mut self) -> Tbtt0W<'_, EnableSpec> {
+                Tbtt0W::new(self, 3)
+            }
+            #[doc = "Bit 4 - Enable the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&mut self) -> TsfTimer3W<'_, EnableSpec> {
+                TsfTimer3W::new(self, 4)
+            }
+            #[doc = "Bit 5 - Enable the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&mut self) -> TsfTimer2W<'_, EnableSpec> {
+                TsfTimer2W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Enable the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&mut self) -> TsfTimer1W<'_, EnableSpec> {
+                TsfTimer1W::new(self, 6)
+            }
+            #[doc = "Bit 7 - Enable the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&mut self) -> TsfTimer0W<'_, EnableSpec> {
+                TsfTimer0W::new(self, 7)
+            }
+            #[doc = "Bits 8:31 - Enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&mut self) -> Unknown8_31W<'_, EnableSpec> {
+                Unknown8_31W::new(self, 8)
+            }
+        }
+        #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4, and complete TBTT interrupt leaves bits 3 through 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EnableSpec;
+        impl crate::RegisterSpec for EnableSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable::R`](R) reader structure"]
+        impl crate::Readable for EnableSpec {}
+        #[doc = "`write(|w| ..)` method takes [`enable::W`](W) writer structure"]
+        impl crate::Writable for EnableSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RAW (r) register accessor: WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
+    #[doc(alias = "RAW")]
+    pub type Raw = crate::Reg<raw::RawSpec>;
+    #[doc = "WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR."]
+    pub mod raw {
+        #[doc = "Register `RAW` reader"]
+        pub type R = crate::R<RawSpec>;
+        #[doc = "Field `TBTT_3` reader - Raw TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_2` reader - Raw TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_1` reader - Raw TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_0` reader - Raw TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_3` reader - Raw guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` reader - Raw guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` reader - Raw guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` reader - Raw guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_8_31` reader - Raw event bits whose identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bit 0 - Raw TSF-3 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Raw TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Raw TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Raw TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Raw guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Raw guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Raw guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Raw guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Raw event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        #[doc = "WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RawSpec;
+        impl crate::RegisterSpec for RawSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`raw::R`](R) reader structure"]
+        impl crate::Readable for RawSpec {}
+    }
+    #[doc = "STATUS (r) register accessor: Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
+    #[doc(alias = "STATUS")]
+    pub type Status = crate::Reg<status::StatusSpec>;
+    #[doc = "Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves."]
+    pub mod status {
+        #[doc = "Register `STATUS` reader"]
+        pub type R = crate::R<StatusSpec>;
+        #[doc = "Field `TBTT_3` reader - Masked TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_2` reader - Masked TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_1` reader - Masked TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_0` reader - Masked TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_3` reader - Masked guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` reader - Masked guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` reader - Masked guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` reader - Masked guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_8_31` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bit 0 - Masked TSF-3 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Masked TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Masked TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Masked TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Masked guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Masked guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Masked guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Masked guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        #[doc = "Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StatusSpec;
+        impl crate::RegisterSpec for StatusSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`status::R`](R) reader structure"]
+        impl crate::Readable for StatusSpec {}
+    }
+    #[doc = "CLEAR (rw) register accessor: Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clear`] module"]
+    #[doc(alias = "CLEAR")]
+    pub type Clear = crate::Reg<clear::ClearSpec>;
+    #[doc = "Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
+    pub mod clear {
+        #[doc = "Register `CLEAR` reader"]
+        pub type R = crate::R<ClearSpec>;
+        #[doc = "Register `CLEAR` writer"]
+        pub type W = crate::W<ClearSpec>;
+        #[doc = "Field `TBTT_3` reader - Acknowledge the TSF-3 TBTT event."]
+        pub type Tbtt3R = crate::BitReader;
+        #[doc = "Field `TBTT_3` writer - Acknowledge the TSF-3 TBTT event."]
+        pub type Tbtt3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TBTT_2` reader - Acknowledge the TSF-2 TBTT event."]
+        pub type Tbtt2R = crate::BitReader;
+        #[doc = "Field `TBTT_2` writer - Acknowledge the TSF-2 TBTT event."]
+        pub type Tbtt2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TBTT_1` reader - Acknowledge the TSF-1 TBTT event."]
+        pub type Tbtt1R = crate::BitReader;
+        #[doc = "Field `TBTT_1` writer - Acknowledge the TSF-1 TBTT event."]
+        pub type Tbtt1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TBTT_0` reader - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0R = crate::BitReader;
+        #[doc = "Field `TBTT_0` writer - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+        pub type Tbtt0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TSF_TIMER_3` reader - Acknowledge the guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_3` writer - Acknowledge the guarded TSF timer-three event."]
+        pub type TsfTimer3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TSF_TIMER_2` reader - Acknowledge the guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` writer - Acknowledge the guarded TSF timer-two event."]
+        pub type TsfTimer2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TSF_TIMER_1` reader - Acknowledge the guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` writer - Acknowledge the guarded TSF timer-one event."]
+        pub type TsfTimer1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TSF_TIMER_0` reader - Acknowledge the guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` writer - Acknowledge the guarded TSF timer-zero event."]
+        pub type TsfTimer0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNKNOWN_8_31` reader - Acknowledge event bits whose identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN_8_31` writer - Acknowledge event bits whose identities remain unknown."]
+        pub type Unknown8_31W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bit 0 - Acknowledge the TSF-3 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_3(&self) -> Tbtt3R {
+                Tbtt3R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Acknowledge the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&self) -> Tbtt2R {
+                Tbtt2R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Acknowledge the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&self) -> Tbtt1R {
+                Tbtt1R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&self) -> Tbtt0R {
+                Tbtt0R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Acknowledge the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Acknowledge the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Acknowledge the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Acknowledge the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Acknowledge event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Acknowledge the TSF-3 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_3(&mut self) -> Tbtt3W<'_, ClearSpec> {
+                Tbtt3W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Acknowledge the TSF-2 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_2(&mut self) -> Tbtt2W<'_, ClearSpec> {
+                Tbtt2W::new(self, 1)
+            }
+            #[doc = "Bit 2 - Acknowledge the TSF-1 TBTT event."]
+            #[inline(always)]
+            pub fn tbtt_1(&mut self) -> Tbtt1W<'_, ClearSpec> {
+                Tbtt1W::new(self, 2)
+            }
+            #[doc = "Bit 3 - Acknowledge the TSF-0 TBTT event. TSF 0 is the station TSF."]
+            #[inline(always)]
+            pub fn tbtt_0(&mut self) -> Tbtt0W<'_, ClearSpec> {
+                Tbtt0W::new(self, 3)
+            }
+            #[doc = "Bit 4 - Acknowledge the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&mut self) -> TsfTimer3W<'_, ClearSpec> {
+                TsfTimer3W::new(self, 4)
+            }
+            #[doc = "Bit 5 - Acknowledge the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&mut self) -> TsfTimer2W<'_, ClearSpec> {
+                TsfTimer2W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Acknowledge the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&mut self) -> TsfTimer1W<'_, ClearSpec> {
+                TsfTimer1W::new(self, 6)
+            }
+            #[doc = "Bit 7 - Acknowledge the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&mut self) -> TsfTimer0W<'_, ClearSpec> {
+                TsfTimer0W::new(self, 7)
+            }
+            #[doc = "Bits 8:31 - Acknowledge event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&mut self) -> Unknown8_31W<'_, ClearSpec> {
+                Unknown8_31W::new(self, 8)
+            }
+        }
+        #[doc = "Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClearSpec;
+        impl crate::RegisterSpec for ClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clear::R`](R) reader structure"]
+        impl crate::Readable for ClearSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
+        impl crate::Writable for ClearSpec {
+            type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
+        }
+    }
+}
+#[doc = "Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value."]
+pub type WifiMacRtcTimerUpdate =
+    crate::Periph<wifi_mac_rtc_timer_update::RegisterBlock, 0x600a_d830>;
+impl core::fmt::Debug for WifiMacRtcTimerUpdate {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacRtcTimerUpdate").finish()
+    }
+}
+#[doc = "Complete enabled path of hal_timer_update_by_rtc, reached from complete hal_init with enable one and the OS-adapter slow-clock calibration value."]
+pub mod wifi_mac_rtc_timer_update {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+        soc_wakeup_clear: SocWakeupClear,
+        modem_sleep_limit_control: ModemSleepLimitControl,
+        _reserved3: [u8; 0x04],
+        sta_light_sleep_wake_ahead: StaLightSleepWakeAhead,
+        tbtt_rf_control_wait_cycles: TbttRfControlWaitCycles,
+        _reserved5: [u8; 0x0c],
+        rx_beacon_time_low: RxBeaconTimeLow,
+        sta_tsf_control: StaTsfControl,
+        sta_tbtt_interval: StaTbttInterval,
+        _reserved8: [u8; 0x18],
+        slow_clock_calibration: SlowClockCalibration,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x600ad858."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+        #[doc = "0x04 - Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
+        #[inline(always)]
+        pub const fn soc_wakeup_clear(&self) -> &SocWakeupClear {
+            &self.soc_wakeup_clear
+        }
+        #[doc = "0x08 - Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown."]
+        #[inline(always)]
+        pub const fn modem_sleep_limit_control(&self) -> &ModemSleepLimitControl {
+            &self.modem_sleep_limit_control
+        }
+        #[doc = "0x10 - Complete hal_set_sta_light_sleep_wake_ahead_time replaces the high sixteen bits. Complete hal_set_sta_tbtt independently publishes its fifth argument to the same field."]
+        #[inline(always)]
+        pub const fn sta_light_sleep_wake_ahead(&self) -> &StaLightSleepWakeAhead {
+            &self.sta_light_sleep_wake_ahead
+        }
+        #[doc = "0x14 - Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
+        #[inline(always)]
+        pub const fn tbtt_rf_control_wait_cycles(&self) -> &TbttRfControlWaitCycles {
+            &self.tbtt_rf_control_wait_cycles
+        }
+        #[doc = "0x24 - Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
+        #[inline(always)]
+        pub const fn rx_beacon_time_low(&self) -> &RxBeaconTimeLow {
+            &self.rx_beacon_time_low
+        }
+        #[doc = "0x28 - Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."]
+        #[inline(always)]
+        pub const fn sta_tsf_control(&self) -> &StaTsfControl {
+            &self.sta_tsf_control
+        }
+        #[doc = "0x2c - Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
+        #[inline(always)]
+        pub const fn sta_tbtt_interval(&self) -> &StaTbttInterval {
+            &self.sta_tbtt_interval
+        }
+        #[doc = "0x48 - Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get."]
+        #[inline(always)]
+        pub const fn slow_clock_calibration(&self) -> &SlowClockCalibration {
+            &self.slow_clock_calibration
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x600ad858.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x600ad858."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `STA_TSF_WAKEUP_ENABLE` reader - hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
+        pub type StaTsfWakeupEnableR = crate::BitReader;
+        #[doc = "Field `STA_TSF_WAKEUP_ENABLE` writer - hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
+        pub type StaTsfWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RTC_UPDATE_ENABLE_UNKNOWN` reader - Set when the leaf's enable argument is nonzero."]
+        pub type RtcUpdateEnableUnknownR = crate::BitReader;
+        #[doc = "Field `RTC_UPDATE_ENABLE_UNKNOWN` writer - Set when the leaf's enable argument is nonzero."]
+        pub type RtcUpdateEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 21 - hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
+            #[inline(always)]
+            pub fn sta_tsf_wakeup_enable(&self) -> StaTsfWakeupEnableR {
+                StaTsfWakeupEnableR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 27 - Set when the leaf's enable argument is nonzero."]
+            #[inline(always)]
+            pub fn rtc_update_enable_unknown(&self) -> RtcUpdateEnableUnknownR {
+                RtcUpdateEnableUnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 21 - hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
+            #[inline(always)]
+            pub fn sta_tsf_wakeup_enable(&mut self) -> StaTsfWakeupEnableW<'_, ControlSpec> {
+                StaTsfWakeupEnableW::new(self, 21)
+            }
+            #[doc = "Bit 27 - Set when the leaf's enable argument is nonzero."]
+            #[inline(always)]
+            pub fn rtc_update_enable_unknown(
+                &mut self,
+            ) -> RtcUpdateEnableUnknownW<'_, ControlSpec> {
+                RtcUpdateEnableUnknownW::new(self, 27)
+            }
+        }
+        #[doc = "Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x600ad858.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "SOC_WAKEUP_CLEAR (rw) register accessor: Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@soc_wakeup_clear`] module"]
+    #[doc(alias = "SOC_WAKEUP_CLEAR")]
+    pub type SocWakeupClear = crate::Reg<soc_wakeup_clear::SocWakeupClearSpec>;
+    #[doc = "Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred."]
+    pub mod soc_wakeup_clear {
+        #[doc = "Register `SOC_WAKEUP_CLEAR` reader"]
+        pub type R = crate::R<SocWakeupClearSpec>;
+        #[doc = "Register `SOC_WAKEUP_CLEAR` writer"]
+        pub type W = crate::W<SocWakeupClearSpec>;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_LIMIT` reader - The dedicated setter replaces bits 9:0."]
+        pub type BeaconFilterForceSyncLimitR = crate::FieldReader<u16>;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_LIMIT` writer - The dedicated setter replaces bits 9:0."]
+        pub type BeaconFilterForceSyncLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_ENABLE` reader - Dedicated enable/disable leaves set or clear bit 10."]
+        pub type BeaconFilterForceSyncEnableR = crate::BitReader;
+        #[doc = "Field `BEACON_FILTER_FORCE_SYNC_ENABLE` writer - Dedicated enable/disable leaves set or clear bit 10."]
+        pub type BeaconFilterForceSyncEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_LIMIT` reader - The dedicated setter replaces bits 17:11."]
+        pub type BeaconFilterForceDumpLimitR = crate::FieldReader;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_LIMIT` writer - The dedicated setter replaces bits 17:11."]
+        pub type BeaconFilterForceDumpLimitW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_ENABLE` reader - Dedicated enable/disable leaves set or clear bit 21."]
+        pub type BeaconFilterForceDumpEnableR = crate::BitReader;
+        #[doc = "Field `BEACON_FILTER_FORCE_DUMP_ENABLE` writer - Dedicated enable/disable leaves set or clear bit 21."]
+        pub type BeaconFilterForceDumpEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_BEACON_SLEEP_COUNTER` reader - Dedicated clear leaf sets bit 28."]
+        pub type ClearBeaconSleepCounterR = crate::BitReader;
+        #[doc = "Field `CLEAR_BEACON_SLEEP_COUNTER` writer - Dedicated clear leaf sets bit 28."]
+        pub type ClearBeaconSleepCounterW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_BEACON_MISS_COUNTER` reader - Dedicated clear leaf sets bit 29."]
+        pub type ClearBeaconMissCounterR = crate::BitReader;
+        #[doc = "Field `CLEAR_BEACON_MISS_COUNTER` writer - Dedicated clear leaf sets bit 29."]
+        pub type ClearBeaconMissCounterW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_REQUEST` reader - "]
+        pub type ClearRequestR = crate::BitReader;
+        #[doc = "Field `CLEAR_REQUEST` writer - "]
+        pub type ClearRequestW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLEAR_BEACON_INFO` reader - Dedicated clear leaf sets bit 31."]
+        pub type ClearBeaconInfoR = crate::BitReader;
+        #[doc = "Field `CLEAR_BEACON_INFO` writer - Dedicated clear leaf sets bit 31."]
+        pub type ClearBeaconInfoW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:9 - The dedicated setter replaces bits 9:0."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_limit(&self) -> BeaconFilterForceSyncLimitR {
+                BeaconFilterForceSyncLimitR::new((self.bits & 0x03ff) as u16)
+            }
+            #[doc = "Bit 10 - Dedicated enable/disable leaves set or clear bit 10."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_enable(&self) -> BeaconFilterForceSyncEnableR {
+                BeaconFilterForceSyncEnableR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bits 11:17 - The dedicated setter replaces bits 17:11."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_limit(&self) -> BeaconFilterForceDumpLimitR {
+                BeaconFilterForceDumpLimitR::new(((self.bits >> 11) & 0x7f) as u8)
+            }
+            #[doc = "Bit 21 - Dedicated enable/disable leaves set or clear bit 21."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_enable(&self) -> BeaconFilterForceDumpEnableR {
+                BeaconFilterForceDumpEnableR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Dedicated clear leaf sets bit 28."]
+            #[inline(always)]
+            pub fn clear_beacon_sleep_counter(&self) -> ClearBeaconSleepCounterR {
+                ClearBeaconSleepCounterR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Dedicated clear leaf sets bit 29."]
+            #[inline(always)]
+            pub fn clear_beacon_miss_counter(&self) -> ClearBeaconMissCounterR {
+                ClearBeaconMissCounterR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn clear_request(&self) -> ClearRequestR {
+                ClearRequestR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Dedicated clear leaf sets bit 31."]
+            #[inline(always)]
+            pub fn clear_beacon_info(&self) -> ClearBeaconInfoR {
+                ClearBeaconInfoR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:9 - The dedicated setter replaces bits 9:0."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_limit(
+                &mut self,
+            ) -> BeaconFilterForceSyncLimitW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceSyncLimitW::new(self, 0)
+            }
+            #[doc = "Bit 10 - Dedicated enable/disable leaves set or clear bit 10."]
+            #[inline(always)]
+            pub fn beacon_filter_force_sync_enable(
+                &mut self,
+            ) -> BeaconFilterForceSyncEnableW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceSyncEnableW::new(self, 10)
+            }
+            #[doc = "Bits 11:17 - The dedicated setter replaces bits 17:11."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_limit(
+                &mut self,
+            ) -> BeaconFilterForceDumpLimitW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceDumpLimitW::new(self, 11)
+            }
+            #[doc = "Bit 21 - Dedicated enable/disable leaves set or clear bit 21."]
+            #[inline(always)]
+            pub fn beacon_filter_force_dump_enable(
+                &mut self,
+            ) -> BeaconFilterForceDumpEnableW<'_, SocWakeupClearSpec> {
+                BeaconFilterForceDumpEnableW::new(self, 21)
+            }
+            #[doc = "Bit 28 - Dedicated clear leaf sets bit 28."]
+            #[inline(always)]
+            pub fn clear_beacon_sleep_counter(
+                &mut self,
+            ) -> ClearBeaconSleepCounterW<'_, SocWakeupClearSpec> {
+                ClearBeaconSleepCounterW::new(self, 28)
+            }
+            #[doc = "Bit 29 - Dedicated clear leaf sets bit 29."]
+            #[inline(always)]
+            pub fn clear_beacon_miss_counter(
+                &mut self,
+            ) -> ClearBeaconMissCounterW<'_, SocWakeupClearSpec> {
+                ClearBeaconMissCounterW::new(self, 29)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn clear_request(&mut self) -> ClearRequestW<'_, SocWakeupClearSpec> {
+                ClearRequestW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Dedicated clear leaf sets bit 31."]
+            #[inline(always)]
+            pub fn clear_beacon_info(&mut self) -> ClearBeaconInfoW<'_, SocWakeupClearSpec> {
+                ClearBeaconInfoW::new(self, 31)
+            }
+        }
+        #[doc = "Complete hal_tsf_clear_soc_wakeup_request sets bit 30. Complete modem-power leaves independently expose status bits and clear pulses in this shared word; hardware transition behavior is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`soc_wakeup_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`soc_wakeup_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SocWakeupClearSpec;
+        impl crate::RegisterSpec for SocWakeupClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`soc_wakeup_clear::R`](R) reader structure"]
+        impl crate::Readable for SocWakeupClearSpec {}
+        #[doc = "`write(|w| ..)` method takes [`soc_wakeup_clear::W`](W) writer structure"]
+        impl crate::Writable for SocWakeupClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "MODEM_SLEEP_LIMIT_CONTROL (rw) register accessor: Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_sleep_limit_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_sleep_limit_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_sleep_limit_control`] module"]
+    #[doc(alias = "MODEM_SLEEP_LIMIT_CONTROL")]
+    pub type ModemSleepLimitControl =
+        crate::Reg<modem_sleep_limit_control::ModemSleepLimitControlSpec>;
+    #[doc = "Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown."]
+    pub mod modem_sleep_limit_control {
+        #[doc = "Register `MODEM_SLEEP_LIMIT_CONTROL` reader"]
+        pub type R = crate::R<ModemSleepLimitControlSpec>;
+        #[doc = "Register `MODEM_SLEEP_LIMIT_CONTROL` writer"]
+        pub type W = crate::W<ModemSleepLimitControlSpec>;
+        #[doc = "Field `BEACON_MISS_LIMIT` reader - Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        pub type BeaconMissLimitR = crate::FieldReader;
+        #[doc = "Field `BEACON_MISS_LIMIT` writer - Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+        pub type BeaconMissLimitW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` reader - Dedicated enable/disable leaves set or clear bit four."]
+        pub type BeaconMissLimitWakeupEnableR = crate::BitReader;
+        #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` writer - Dedicated enable/disable leaves set or clear bit four."]
+        pub type BeaconMissLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` reader - Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        pub type ModemStateSleepLimitR = crate::FieldReader<u16>;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` writer - Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+        pub type ModemStateSleepLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` reader - Dedicated enable/disable leaves set or clear bit fifteen."]
+        pub type ModemStateSleepLimitWakeupEnableR = crate::BitReader;
+        #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` writer - Dedicated enable/disable leaves set or clear bit fifteen."]
+        pub type ModemStateSleepLimitWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:3 - Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[inline(always)]
+            pub fn beacon_miss_limit(&self) -> BeaconMissLimitR {
+                BeaconMissLimitR::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 4 - Dedicated enable/disable leaves set or clear bit four."]
+            #[inline(always)]
+            pub fn beacon_miss_limit_wakeup_enable(&self) -> BeaconMissLimitWakeupEnableR {
+                BeaconMissLimitWakeupEnableR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bits 5:14 - Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit(&self) -> ModemStateSleepLimitR {
+                ModemStateSleepLimitR::new(((self.bits >> 5) & 0x03ff) as u16)
+            }
+            #[doc = "Bit 15 - Dedicated enable/disable leaves set or clear bit fifteen."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit_wakeup_enable(
+                &self,
+            ) -> ModemStateSleepLimitWakeupEnableR {
+                ModemStateSleepLimitWakeupEnableR::new(((self.bits >> 15) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:3 - Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
+            #[inline(always)]
+            pub fn beacon_miss_limit(
+                &mut self,
+            ) -> BeaconMissLimitW<'_, ModemSleepLimitControlSpec> {
+                BeaconMissLimitW::new(self, 0)
+            }
+            #[doc = "Bit 4 - Dedicated enable/disable leaves set or clear bit four."]
+            #[inline(always)]
+            pub fn beacon_miss_limit_wakeup_enable(
+                &mut self,
+            ) -> BeaconMissLimitWakeupEnableW<'_, ModemSleepLimitControlSpec> {
+                BeaconMissLimitWakeupEnableW::new(self, 4)
+            }
+            #[doc = "Bits 5:14 - Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit(
+                &mut self,
+            ) -> ModemStateSleepLimitW<'_, ModemSleepLimitControlSpec> {
+                ModemStateSleepLimitW::new(self, 5)
+            }
+            #[doc = "Bit 15 - Dedicated enable/disable leaves set or clear bit fifteen."]
+            #[inline(always)]
+            pub fn modem_state_sleep_limit_wakeup_enable(
+                &mut self,
+            ) -> ModemStateSleepLimitWakeupEnableW<'_, ModemSleepLimitControlSpec> {
+                ModemStateSleepLimitWakeupEnableW::new(self, 15)
+            }
+        }
+        #[doc = "Complete no-call setters prove two bounded modem counters and their independent limit-exceeded wake gates. Units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_sleep_limit_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_sleep_limit_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ModemSleepLimitControlSpec;
+        impl crate::RegisterSpec for ModemSleepLimitControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`modem_sleep_limit_control::R`](R) reader structure"]
+        impl crate::Readable for ModemSleepLimitControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`modem_sleep_limit_control::W`](W) writer structure"]
+        impl crate::Writable for ModemSleepLimitControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "STA_LIGHT_SLEEP_WAKE_AHEAD (rw) register accessor: Complete hal_set_sta_light_sleep_wake_ahead_time replaces the high sixteen bits. Complete hal_set_sta_tbtt independently publishes its fifth argument to the same field.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_light_sleep_wake_ahead::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_light_sleep_wake_ahead::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_light_sleep_wake_ahead`] module"]
+    #[doc(alias = "STA_LIGHT_SLEEP_WAKE_AHEAD")]
+    pub type StaLightSleepWakeAhead =
+        crate::Reg<sta_light_sleep_wake_ahead::StaLightSleepWakeAheadSpec>;
+    #[doc = "Complete hal_set_sta_light_sleep_wake_ahead_time replaces the high sixteen bits. Complete hal_set_sta_tbtt independently publishes its fifth argument to the same field."]
+    pub mod sta_light_sleep_wake_ahead {
+        #[doc = "Register `STA_LIGHT_SLEEP_WAKE_AHEAD` reader"]
+        pub type R = crate::R<StaLightSleepWakeAheadSpec>;
+        #[doc = "Register `STA_LIGHT_SLEEP_WAKE_AHEAD` writer"]
+        pub type W = crate::W<StaLightSleepWakeAheadSpec>;
+        #[doc = "Field `TIME` reader - "]
+        pub type TimeR = crate::FieldReader<u16>;
+        #[doc = "Field `TIME` writer - "]
+        pub type TimeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        impl R {
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn time(&self) -> TimeR {
+                TimeR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 16:31"]
+            #[inline(always)]
+            pub fn time(&mut self) -> TimeW<'_, StaLightSleepWakeAheadSpec> {
+                TimeW::new(self, 16)
+            }
+        }
+        #[doc = "Complete hal_set_sta_light_sleep_wake_ahead_time replaces the high sixteen bits. Complete hal_set_sta_tbtt independently publishes its fifth argument to the same field.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_light_sleep_wake_ahead::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_light_sleep_wake_ahead::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StaLightSleepWakeAheadSpec;
+        impl crate::RegisterSpec for StaLightSleepWakeAheadSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`sta_light_sleep_wake_ahead::R`](R) reader structure"]
+        impl crate::Readable for StaLightSleepWakeAheadSpec {}
+        #[doc = "`write(|w| ..)` method takes [`sta_light_sleep_wake_ahead::W`](W) writer structure"]
+        impl crate::Writable for StaLightSleepWakeAheadSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TBTT_RF_CONTROL_WAIT_CYCLES (rw) register accessor: Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tbtt_rf_control_wait_cycles`] module"]
+    #[doc(alias = "TBTT_RF_CONTROL_WAIT_CYCLES")]
+    pub type TbttRfControlWaitCycles =
+        crate::Reg<tbtt_rf_control_wait_cycles::TbttRfControlWaitCyclesSpec>;
+    #[doc = "Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."]
+    pub mod tbtt_rf_control_wait_cycles {
+        #[doc = "Register `TBTT_RF_CONTROL_WAIT_CYCLES` reader"]
+        pub type R = crate::R<TbttRfControlWaitCyclesSpec>;
+        #[doc = "Register `TBTT_RF_CONTROL_WAIT_CYCLES` writer"]
+        pub type W = crate::W<TbttRfControlWaitCyclesSpec>;
+        #[doc = "Field `WAIT_CYCLES` reader - "]
+        pub type WaitCyclesR = crate::FieldReader<u32>;
+        #[doc = "Field `WAIT_CYCLES` writer - "]
+        pub type WaitCyclesW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        impl R {
+            #[doc = "Bits 0:23"]
+            #[inline(always)]
+            pub fn wait_cycles(&self) -> WaitCyclesR {
+                WaitCyclesR::new(self.bits & 0x00ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:23"]
+            #[inline(always)]
+            pub fn wait_cycles(&mut self) -> WaitCyclesW<'_, TbttRfControlWaitCyclesSpec> {
+                WaitCyclesW::new(self, 0)
+            }
+        }
+        #[doc = "Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tbtt_rf_control_wait_cycles::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tbtt_rf_control_wait_cycles::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TbttRfControlWaitCyclesSpec;
+        impl crate::RegisterSpec for TbttRfControlWaitCyclesSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tbtt_rf_control_wait_cycles::R`](R) reader structure"]
+        impl crate::Readable for TbttRfControlWaitCyclesSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tbtt_rf_control_wait_cycles::W`](W) writer structure"]
+        impl crate::Writable for TbttRfControlWaitCyclesSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "RX_BEACON_TIME_LOW (rw) register accessor: Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_low`] module"]
+    #[doc(alias = "RX_BEACON_TIME_LOW")]
+    pub type RxBeaconTimeLow = crate::Reg<rx_beacon_time_low::RxBeaconTimeLowSpec>;
+    #[doc = "Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."]
+    pub mod rx_beacon_time_low {
+        #[doc = "Register `RX_BEACON_TIME_LOW` reader"]
+        pub type R = crate::R<RxBeaconTimeLowSpec>;
+        #[doc = "Register `RX_BEACON_TIME_LOW` writer"]
+        pub type W = crate::W<RxBeaconTimeLowSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u16>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new((self.bits & 0xffff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, RxBeaconTimeLowSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxBeaconTimeLowSpec;
+        impl crate::RegisterSpec for RxBeaconTimeLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rx_beacon_time_low::R`](R) reader structure"]
+        impl crate::Readable for RxBeaconTimeLowSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_beacon_time_low::W`](W) writer structure"]
+        impl crate::Writable for RxBeaconTimeLowSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "STA_TSF_CONTROL (rw) register accessor: Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tsf_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tsf_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tsf_control`] module"]
+    #[doc(alias = "STA_TSF_CONTROL")]
+    pub type StaTsfControl = crate::Reg<sta_tsf_control::StaTsfControlSpec>;
+    #[doc = "Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves."]
+    pub mod sta_tsf_control {
+        #[doc = "Register `STA_TSF_CONTROL` reader"]
+        pub type R = crate::R<StaTsfControlSpec>;
+        #[doc = "Register `STA_TSF_CONTROL` writer"]
+        pub type W = crate::W<StaTsfControlSpec>;
+        #[doc = "Field `STA_TBTT_AHEAD_TIME` reader - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+        pub type StaTbttAheadTimeR = crate::FieldReader<u16>;
+        #[doc = "Field `STA_TBTT_AHEAD_TIME` writer - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+        pub type StaTbttAheadTimeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        #[doc = "hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum StaTsfMode {
+            #[doc = "0: `0`"]
+            Disabled = 0,
+            #[doc = "1: `1`"]
+            Enabled = 1,
+        }
+        impl From<StaTsfMode> for u8 {
+            #[inline(always)]
+            fn from(variant: StaTsfMode) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for StaTsfMode {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for StaTsfMode {}
+        #[doc = "Field `STA_TSF_MODE` reader - hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
+        pub type StaTsfModeR = crate::FieldReader<StaTsfMode>;
+        impl StaTsfModeR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<StaTsfMode> {
+                match self.bits {
+                    0 => Some(StaTsfMode::Disabled),
+                    1 => Some(StaTsfMode::Enabled),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == StaTsfMode::Disabled
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == StaTsfMode::Enabled
+            }
+        }
+        #[doc = "Field `STA_TSF_MODE` writer - hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
+        pub type StaTsfModeW<'a, REG> = crate::FieldWriter<'a, REG, 4, StaTsfMode>;
+        impl<'a, REG> StaTsfModeW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(StaTsfMode::Disabled)
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(StaTsfMode::Enabled)
+            }
+        }
+        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` reader - pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+        pub type ModemStateWakeupProtectEnableR = crate::BitReader;
+        #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` writer - pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+        pub type ModemStateWakeupProtectEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STA_TBTT_ENABLE` reader - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+        pub type StaTbttEnableR = crate::BitReader;
+        #[doc = "Field `STA_TBTT_ENABLE` writer - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+        pub type StaTbttEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STA_TSF_ENABLE_LOW` reader - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+        pub type StaTsfEnableLowR = crate::BitReader;
+        #[doc = "Field `STA_TSF_ENABLE_LOW` writer - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+        pub type StaTsfEnableLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STA_TSF_WAKEUP_ENABLE` reader - hal_set_sta_tsf_wakeup sets or clears this bit together with WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.STA_TSF_WAKEUP_ENABLE."]
+        pub type StaTsfWakeupEnableR = crate::BitReader;
+        #[doc = "Field `STA_TSF_WAKEUP_ENABLE` writer - hal_set_sta_tsf_wakeup sets or clears this bit together with WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.STA_TSF_WAKEUP_ENABLE."]
+        pub type StaTsfWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STA_TSF_ENABLE_HIGH` reader - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+        pub type StaTsfEnableHighR = crate::BitReader;
+        #[doc = "Field `STA_TSF_ENABLE_HIGH` writer - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+        pub type StaTsfEnableHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:15 - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+            #[inline(always)]
+            pub fn sta_tbtt_ahead_time(&self) -> StaTbttAheadTimeR {
+                StaTbttAheadTimeR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 19:22 - hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
+            #[inline(always)]
+            pub fn sta_tsf_mode(&self) -> StaTsfModeR {
+                StaTsfModeR::new(((self.bits >> 19) & 0x0f) as u8)
+            }
+            #[doc = "Bit 24 - pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+            #[inline(always)]
+            pub fn modem_state_wakeup_protect_enable(&self) -> ModemStateWakeupProtectEnableR {
+                ModemStateWakeupProtectEnableR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 26 - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+            #[inline(always)]
+            pub fn sta_tbtt_enable(&self) -> StaTbttEnableR {
+                StaTbttEnableR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27 - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+            #[inline(always)]
+            pub fn sta_tsf_enable_low(&self) -> StaTsfEnableLowR {
+                StaTsfEnableLowR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 29 - hal_set_sta_tsf_wakeup sets or clears this bit together with WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.STA_TSF_WAKEUP_ENABLE."]
+            #[inline(always)]
+            pub fn sta_tsf_wakeup_enable(&self) -> StaTsfWakeupEnableR {
+                StaTsfWakeupEnableR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 31 - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+            #[inline(always)]
+            pub fn sta_tsf_enable_high(&self) -> StaTsfEnableHighR {
+                StaTsfEnableHighR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15 - hal_set_sta_tbtt_ahead_time and the index-0 TBTT early-time leaf replace bits 15:0 with their argument's low sixteen bits. The hardware unit remains unnamed."]
+            #[inline(always)]
+            pub fn sta_tbtt_ahead_time(&mut self) -> StaTbttAheadTimeW<'_, StaTsfControlSpec> {
+                StaTbttAheadTimeW::new(self, 0)
+            }
+            #[doc = "Bits 19:22 - hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
+            #[inline(always)]
+            pub fn sta_tsf_mode(&mut self) -> StaTsfModeW<'_, StaTsfControlSpec> {
+                StaTsfModeW::new(self, 19)
+            }
+            #[doc = "Bit 24 - pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
+            #[inline(always)]
+            pub fn modem_state_wakeup_protect_enable(
+                &mut self,
+            ) -> ModemStateWakeupProtectEnableW<'_, StaTsfControlSpec> {
+                ModemStateWakeupProtectEnableW::new(self, 24)
+            }
+            #[doc = "Bit 26 - hal_enable_sta_tbtt sets bit 26 and hal_disable_sta_tbtt clears only this bit."]
+            #[inline(always)]
+            pub fn sta_tbtt_enable(&mut self) -> StaTbttEnableW<'_, StaTsfControlSpec> {
+                StaTbttEnableW::new(self, 26)
+            }
+            #[doc = "Bit 27 - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+            #[inline(always)]
+            pub fn sta_tsf_enable_low(&mut self) -> StaTsfEnableLowW<'_, StaTsfControlSpec> {
+                StaTsfEnableLowW::new(self, 27)
+            }
+            #[doc = "Bit 29 - hal_set_sta_tsf_wakeup sets or clears this bit together with WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.STA_TSF_WAKEUP_ENABLE."]
+            #[inline(always)]
+            pub fn sta_tsf_wakeup_enable(&mut self) -> StaTsfWakeupEnableW<'_, StaTsfControlSpec> {
+                StaTsfWakeupEnableW::new(self, 29)
+            }
+            #[doc = "Bit 31 - hal_enable_sta_tsf sets this bit and hal_disable_sta_tsf clears it."]
+            #[inline(always)]
+            pub fn sta_tsf_enable_high(&mut self) -> StaTsfEnableHighW<'_, StaTsfControlSpec> {
+                StaTsfEnableHighW::new(self, 31)
+            }
+        }
+        #[doc = "Shared STA TSF scheduler, TBTT and modem-state wakeup control word used by hal_enable_sta_tsf, hal_disable_sta_tsf, hal_enable_sta_tbtt, hal_disable_sta_tbtt, hal_set_sta_tbtt_ahead_time, hal_set_sta_tsf_wakeup, and the wakeup-protect enable/disable leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tsf_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tsf_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StaTsfControlSpec;
+        impl crate::RegisterSpec for StaTsfControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`sta_tsf_control::R`](R) reader structure"]
+        impl crate::Readable for StaTsfControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`sta_tsf_control::W`](W) writer structure"]
+        impl crate::Writable for StaTsfControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "STA_TBTT_INTERVAL (rw) register accessor: Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@sta_tbtt_interval`] module"]
+    #[doc(alias = "STA_TBTT_INTERVAL")]
+    pub type StaTbttInterval = crate::Reg<sta_tbtt_interval::StaTbttIntervalSpec>;
+    #[doc = "Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten."]
+    pub mod sta_tbtt_interval {
+        #[doc = "Register `STA_TBTT_INTERVAL` reader"]
+        pub type R = crate::R<StaTbttIntervalSpec>;
+        #[doc = "Register `STA_TBTT_INTERVAL` writer"]
+        pub type W = crate::W<StaTbttIntervalSpec>;
+        #[doc = "Field `INTERVAL_TSF_BITS_35_10` reader - The TBTT interval in station TSF units of 1024 µs."]
+        pub type IntervalTsfBits35_10R = crate::FieldReader<u32>;
+        #[doc = "Field `INTERVAL_TSF_BITS_35_10` writer - The TBTT interval in station TSF units of 1024 µs."]
+        pub type IntervalTsfBits35_10W<'a, REG> = crate::FieldWriter<'a, REG, 26, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:25 - The TBTT interval in station TSF units of 1024 µs."]
+            #[inline(always)]
+            pub fn interval_tsf_bits_35_10(&self) -> IntervalTsfBits35_10R {
+                IntervalTsfBits35_10R::new(self.bits & 0x03ff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:25 - The TBTT interval in station TSF units of 1024 µs."]
+            #[inline(always)]
+            pub fn interval_tsf_bits_35_10(
+                &mut self,
+            ) -> IntervalTsfBits35_10W<'_, StaTbttIntervalSpec> {
+                IntervalTsfBits35_10W::new(self, 0)
+            }
+        }
+        #[doc = "Complete hal_set_sta_tbtt_interval replaces bits 25:0 with its 32-bit argument shifted right by ten and preserves bits 31:26. Complete hal_set_sta_tbtt performs the same update from its third argument, and tsf_hal_get_tbtt_interval reads the interval back as this field shifted left by ten.\n\nYou can [`read`](crate::Reg::read) this register and get [`sta_tbtt_interval::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`sta_tbtt_interval::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct StaTbttIntervalSpec;
+        impl crate::RegisterSpec for StaTbttIntervalSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`sta_tbtt_interval::R`](R) reader structure"]
+        impl crate::Readable for StaTbttIntervalSpec {}
+        #[doc = "`write(|w| ..)` method takes [`sta_tbtt_interval::W`](W) writer structure"]
+        impl crate::Writable for StaTbttIntervalSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "SLOW_CLOCK_CALIBRATION (rw) register accessor: Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.\n\nYou can [`read`](crate::Reg::read) this register and get [`slow_clock_calibration::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`slow_clock_calibration::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@slow_clock_calibration`] module"]
+    #[doc(alias = "SLOW_CLOCK_CALIBRATION")]
+    pub type SlowClockCalibration = crate::Reg<slow_clock_calibration::SlowClockCalibrationSpec>;
+    #[doc = "Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get."]
+    pub mod slow_clock_calibration {
+        #[doc = "Register `SLOW_CLOCK_CALIBRATION` reader"]
+        pub type R = crate::R<SlowClockCalibrationSpec>;
+        #[doc = "Register `SLOW_CLOCK_CALIBRATION` writer"]
+        pub type W = crate::W<SlowClockCalibrationSpec>;
+        #[doc = "Field `VALUE` reader - Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
+        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `VALUE` writer - Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 18, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:17 - Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits & 0x0003_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:17 - Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, SlowClockCalibrationSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.\n\nYou can [`read`](crate::Reg::read) this register and get [`slow_clock_calibration::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`slow_clock_calibration::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SlowClockCalibrationSpec;
+        impl crate::RegisterSpec for SlowClockCalibrationSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`slow_clock_calibration::R`](R) reader structure"]
+        impl crate::Readable for SlowClockCalibrationSpec {}
+        #[doc = "`write(|w| ..)` method takes [`slow_clock_calibration::W`](W) writer structure"]
+        impl crate::Writable for SlowClockCalibrationSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "Station beacon-filter control word recovered from the complete enable and disable leaves. The three low bits are toggled together; individual hardware meanings remain unknown."]
+pub type WifiMacStaBeaconFilter =
+    crate::Periph<wifi_mac_sta_beacon_filter::RegisterBlock, 0x600a_42b4>;
+impl core::fmt::Debug for WifiMacStaBeaconFilter {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacStaBeaconFilter").finish()
+    }
+}
+#[doc = "Station beacon-filter control word recovered from the complete enable and disable leaves. The three low bits are toggled together; individual hardware meanings remain unknown."]
+pub mod wifi_mac_sta_beacon_filter {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - hal_enable_sta_beacon_filter sets bits 2:0 after enabling the matching interrupt; hal_disable_sta_beacon_filter clears them before disabling that interrupt."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: hal_enable_sta_beacon_filter sets bits 2:0 after enabling the matching interrupt; hal_disable_sta_beacon_filter clears them before disabling that interrupt.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "hal_enable_sta_beacon_filter sets bits 2:0 after enabling the matching interrupt; hal_disable_sta_beacon_filter clears them before disabling that interrupt."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `ENABLES_UNKNOWN` reader - "]
+        pub type EnablesUnknownR = crate::FieldReader;
+        #[doc = "Field `ENABLES_UNKNOWN` writer - "]
+        pub type EnablesUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:2"]
+            #[inline(always)]
+            pub fn enables_unknown(&self) -> EnablesUnknownR {
+                EnablesUnknownR::new((self.bits & 7) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:2"]
+            #[inline(always)]
+            pub fn enables_unknown(&mut self) -> EnablesUnknownW<'_, ControlSpec> {
+                EnablesUnknownW::new(self, 0)
+            }
+        }
+        #[doc = "hal_enable_sta_beacon_filter sets bits 2:0 after enabling the matching interrupt; hal_disable_sta_beacon_filter clears them before disabling that interrupt.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "Shared station TSF load and coherent snapshot transaction."]
+pub type WifiMacStaTsfLoad = crate::Periph<wifi_mac_sta_tsf_load::RegisterBlock, 0x600a_d814>;
+impl core::fmt::Debug for WifiMacStaTsfLoad {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacStaTsfLoad").finish()
+    }
+}
+#[doc = "Shared station TSF load and coherent snapshot transaction."]
+pub mod wifi_mac_sta_tsf_load {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        control: Control,
+        value_low: ValueLow,
+        value_high: ValueHigh,
+        snapshot_low: SnapshotLow,
+        snapshot_high: SnapshotHigh,
+        tsf_deviation_control: TsfDeviationControl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+        #[inline(always)]
+        pub const fn control(&self) -> &Control {
+            &self.control
+        }
+        #[doc = "0x04 - Low 32 bits written first by complete hal_set_sta_tsf."]
+        #[inline(always)]
+        pub const fn value_low(&self) -> &ValueLow {
+            &self.value_low
+        }
+        #[doc = "0x08 - High 32 bits written second by complete hal_set_sta_tsf."]
+        #[inline(always)]
+        pub const fn value_high(&self) -> &ValueHigh {
+            &self.value_high
+        }
+        #[doc = "0x0c - Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[inline(always)]
+        pub const fn snapshot_low(&self) -> &SnapshotLow {
+            &self.snapshot_low
+        }
+        #[doc = "0x10 - Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+        #[inline(always)]
+        pub const fn snapshot_high(&self) -> &SnapshotHigh {
+            &self.snapshot_high
+        }
+        #[doc = "0x14 - Complete ROM leaves independently replace the TSF deviation value and set two synchronization controls; omitted bits remain semantically unknown."]
+        #[inline(always)]
+        pub const fn tsf_deviation_control(&self) -> &TsfDeviationControl {
+            &self.tsf_deviation_control
+        }
+    }
+    #[doc = "CONTROL (rw) register accessor: Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc(alias = "CONTROL")]
+    pub type Control = crate::Reg<control::ControlSpec>;
+    #[doc = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+    pub mod control {
+        #[doc = "Register `CONTROL` reader"]
+        pub type R = crate::R<ControlSpec>;
+        #[doc = "Register `CONTROL` writer"]
+        pub type W = crate::W<ControlSpec>;
+        #[doc = "Field `SNAPSHOT_STATION_TSF` reader - Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        pub type SnapshotStationTsfR = crate::BitReader;
+        #[doc = "Field `SNAPSHOT_STATION_TSF` writer - Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+        pub type SnapshotStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOAD_STATION_TSF` reader - Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+        pub type LoadStationTsfR = crate::BitReader;
+        #[doc = "Field `LOAD_STATION_TSF` writer - Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+        pub type LoadStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOAD_SOFTAP_TSF` reader - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+        pub type LoadSoftapTsfR = crate::BitReader;
+        #[doc = "Field `LOAD_SOFTAP_TSF` writer - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+        pub type LoadSoftapTsfW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOAD_STATION_TBTT_TARGET` reader - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+        pub type LoadStationTbttTargetR = crate::BitReader;
+        #[doc = "Field `LOAD_STATION_TBTT_TARGET` writer - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+        pub type LoadStationTbttTargetW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[inline(always)]
+            pub fn snapshot_station_tsf(&self) -> SnapshotStationTsfR {
+                SnapshotStationTsfR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 4 - Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+            #[inline(always)]
+            pub fn load_station_tsf(&self) -> LoadStationTsfR {
+                LoadStationTsfR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+            #[inline(always)]
+            pub fn load_softap_tsf(&self) -> LoadSoftapTsfR {
+                LoadSoftapTsfR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 8 - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+            #[inline(always)]
+            pub fn load_station_tbtt_target(&self) -> LoadStationTbttTargetR {
+                LoadStationTbttTargetR::new(((self.bits >> 8) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
+            #[inline(always)]
+            pub fn snapshot_station_tsf(&mut self) -> SnapshotStationTsfW<'_, ControlSpec> {
+                SnapshotStationTsfW::new(self, 0)
+            }
+            #[doc = "Bit 4 - Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
+            #[inline(always)]
+            pub fn load_station_tsf(&mut self) -> LoadStationTsfW<'_, ControlSpec> {
+                LoadStationTsfW::new(self, 4)
+            }
+            #[doc = "Bit 5 - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+            #[inline(always)]
+            pub fn load_softap_tsf(&mut self) -> LoadSoftapTsfW<'_, ControlSpec> {
+                LoadSoftapTsfW::new(self, 5)
+            }
+            #[doc = "Bit 8 - Complete hal_set_sta_tbtt and the index-0 TBTT start-time leaf set this bit after writing the station TBTT target."]
+            #[inline(always)]
+            pub fn load_station_tbtt_target(&mut self) -> LoadStationTbttTargetW<'_, ControlSpec> {
+                LoadStationTbttTargetW::new(self, 8)
+            }
+        }
+        #[doc = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ControlSpec;
+        impl crate::RegisterSpec for ControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`control::R`](R) reader structure"]
+        impl crate::Readable for ControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`control::W`](W) writer structure"]
+        impl crate::Writable for ControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "VALUE_LOW (w) register accessor: Low 32 bits written first by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_low::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_low`] module"]
+    #[doc(alias = "VALUE_LOW")]
+    pub type ValueLow = crate::Reg<value_low::ValueLowSpec>;
+    #[doc = "Low 32 bits written first by complete hal_set_sta_tsf."]
+    pub mod value_low {
+        #[doc = "Register `VALUE_LOW` writer"]
+        pub type W = crate::W<ValueLowSpec>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, ValueLowSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "Low 32 bits written first by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_low::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueLowSpec;
+        impl crate::RegisterSpec for ValueLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`value_low::W`](W) writer structure"]
+        impl crate::Writable for ValueLowSpec {
+            type Safety = crate::Safe;
+        }
+    }
+    #[doc = "VALUE_HIGH (w) register accessor: High 32 bits written second by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_high::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_high`] module"]
+    #[doc(alias = "VALUE_HIGH")]
+    pub type ValueHigh = crate::Reg<value_high::ValueHighSpec>;
+    #[doc = "High 32 bits written second by complete hal_set_sta_tsf."]
+    pub mod value_high {
+        #[doc = "Register `VALUE_HIGH` writer"]
+        pub type W = crate::W<ValueHighSpec>;
+        #[doc = "Field `VALUE` writer - "]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&mut self) -> ValueW<'_, ValueHighSpec> {
+                ValueW::new(self, 0)
+            }
+        }
+        #[doc = "High 32 bits written second by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_high::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ValueHighSpec;
+        impl crate::RegisterSpec for ValueHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`value_high::W`](W) writer structure"]
+        impl crate::Writable for ValueHighSpec {
+            type Safety = crate::Safe;
+        }
+    }
+    #[doc = "SNAPSHOT_LOW (r) register accessor: Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
+    #[doc(alias = "SNAPSHOT_LOW")]
+    pub type SnapshotLow = crate::Reg<snapshot_low::SnapshotLowSpec>;
+    #[doc = "Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf."]
+    pub mod snapshot_low {
+        #[doc = "Register `SNAPSHOT_LOW` reader"]
+        pub type R = crate::R<SnapshotLowSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SnapshotLowSpec;
+        impl crate::RegisterSpec for SnapshotLowSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`snapshot_low::R`](R) reader structure"]
+        impl crate::Readable for SnapshotLowSpec {}
+    }
+    #[doc = "SNAPSHOT_HIGH (r) register accessor: Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_high`] module"]
+    #[doc(alias = "SNAPSHOT_HIGH")]
+    pub type SnapshotHigh = crate::Reg<snapshot_high::SnapshotHighSpec>;
+    #[doc = "Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf."]
+    pub mod snapshot_high {
+        #[doc = "Register `SNAPSHOT_HIGH` reader"]
+        pub type R = crate::R<SnapshotHighSpec>;
+        #[doc = "Field `VALUE` reader - "]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
+            }
+        }
+        #[doc = "Coherently latched high 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SnapshotHighSpec;
+        impl crate::RegisterSpec for SnapshotHighSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`snapshot_high::R`](R) reader structure"]
+        impl crate::Readable for SnapshotHighSpec {}
+    }
+    #[doc = "TSF_DEVIATION_CONTROL (rw) register accessor: Complete ROM leaves independently replace the TSF deviation value and set two synchronization controls; omitted bits remain semantically unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsf_deviation_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsf_deviation_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tsf_deviation_control`] module"]
+    #[doc(alias = "TSF_DEVIATION_CONTROL")]
+    pub type TsfDeviationControl = crate::Reg<tsf_deviation_control::TsfDeviationControlSpec>;
+    #[doc = "Complete ROM leaves independently replace the TSF deviation value and set two synchronization controls; omitted bits remain semantically unknown."]
+    pub mod tsf_deviation_control {
+        #[doc = "Register `TSF_DEVIATION_CONTROL` reader"]
+        pub type R = crate::R<TsfDeviationControlSpec>;
+        #[doc = "Register `TSF_DEVIATION_CONTROL` writer"]
+        pub type W = crate::W<TsfDeviationControlSpec>;
+        #[doc = "Field `DEVIATION` reader - "]
+        pub type DeviationR = crate::FieldReader<u16>;
+        #[doc = "Field `DEVIATION` writer - "]
+        pub type DeviationW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        #[doc = "Field `RX_BEACON_ABORT_SYNC_ENABLE` reader - "]
+        pub type RxBeaconAbortSyncEnableR = crate::BitReader;
+        #[doc = "Field `RX_BEACON_ABORT_SYNC_ENABLE` writer - "]
+        pub type RxBeaconAbortSyncEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `DEVIATION_SYNC_ENABLE` reader - "]
+        pub type DeviationSyncEnableR = crate::BitReader;
+        #[doc = "Field `DEVIATION_SYNC_ENABLE` writer - "]
+        pub type DeviationSyncEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn deviation(&self) -> DeviationR {
+                DeviationR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn rx_beacon_abort_sync_enable(&self) -> RxBeaconAbortSyncEnableR {
+                RxBeaconAbortSyncEnableR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn deviation_sync_enable(&self) -> DeviationSyncEnableR {
+                DeviationSyncEnableR::new(((self.bits >> 19) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15"]
+            #[inline(always)]
+            pub fn deviation(&mut self) -> DeviationW<'_, TsfDeviationControlSpec> {
+                DeviationW::new(self, 0)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn rx_beacon_abort_sync_enable(
+                &mut self,
+            ) -> RxBeaconAbortSyncEnableW<'_, TsfDeviationControlSpec> {
+                RxBeaconAbortSyncEnableW::new(self, 16)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn deviation_sync_enable(
+                &mut self,
+            ) -> DeviationSyncEnableW<'_, TsfDeviationControlSpec> {
+                DeviationSyncEnableW::new(self, 19)
+            }
+        }
+        #[doc = "Complete ROM leaves independently replace the TSF deviation value and set two synchronization controls; omitted bits remain semantically unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tsf_deviation_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tsf_deviation_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TsfDeviationControlSpec;
+        impl crate::RegisterSpec for TsfDeviationControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`tsf_deviation_control::R`](R) reader structure"]
+        impl crate::Readable for TsfDeviationControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`tsf_deviation_control::W`](W) writer structure"]
+        impl crate::Writable for TsfDeviationControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
+#[doc = "Shared Wi-Fi CCA, timeout and completion state used by MAC transmit queues and the PHY-owned Wi-Fi CCA gate."]
+pub type WifiMacTxCommon = crate::Periph<wifi_mac_tx_common::RegisterBlock, 0x600a_4c5c>;
+impl core::fmt::Debug for WifiMacTxCommon {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("WifiMacTxCommon").finish()
+    }
+}
+#[doc = "Shared Wi-Fi CCA, timeout and completion state used by MAC transmit queues and the PHY-owned Wi-Fi CCA gate."]
+pub mod wifi_mac_tx_common {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        cca_control: CcaControl,
+        _reserved1: [u8; 0x4c],
+        queue_state_clear: QueueStateClear,
+        queue_state: QueueState,
+        complete_clear: CompleteClear,
+        complete_state: CompleteState,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads."]
+        #[inline(always)]
+        pub const fn cca_control(&self) -> &CcaControl {
+            &self.cca_control
+        }
+        #[doc = "0x50 - Queue collision/timeout state acknowledgement."]
+        #[inline(always)]
+        pub const fn queue_state_clear(&self) -> &QueueStateClear {
+            &self.queue_state_clear
+        }
+        #[doc = "0x54 - Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero."]
+        #[inline(always)]
+        pub const fn queue_state(&self) -> &QueueState {
+            &self.queue_state
+        }
+        #[doc = "0x58 - Preserved-image acknowledgement for ordinary queue completion bits."]
+        #[inline(always)]
+        pub const fn complete_clear(&self) -> &CompleteClear {
+            &self.complete_clear
+        }
+        #[doc = "0x5c - Low four bits report completed ordinary queues 0..3."]
+        #[inline(always)]
+        pub const fn complete_state(&self) -> &CompleteState {
+            &self.complete_state
+        }
+    }
+    #[doc = "CCA_CONTROL (rw) register accessor: Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_control`] module"]
+    #[doc(alias = "CCA_CONTROL")]
+    pub type CcaControl = crate::Reg<cca_control::CcaControlSpec>;
+    #[doc = "Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads."]
+    pub mod cca_control {
+        #[doc = "Register `CCA_CONTROL` reader"]
+        pub type R = crate::R<CcaControlSpec>;
+        #[doc = "Register `CCA_CONTROL` writer"]
+        pub type W = crate::W<CcaControlSpec>;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` reader - "]
+        pub type ControlLowUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `CONTROL_LOW_UNKNOWN` writer - "]
+        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32>;
+        #[doc = "Field `PHY_AUX_FORCE` reader - Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+        pub type PhyAuxForceR = crate::FieldReader;
+        #[doc = "Field `PHY_AUX_FORCE` writer - Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+        pub type PhyAuxForceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `FORCE` reader - Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+        pub type ForceR = crate::FieldReader;
+        #[doc = "Field `FORCE` writer - Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+        pub type ForceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:27"]
+            #[inline(always)]
+            pub fn control_low_unknown(&self) -> ControlLowUnknownR {
+                ControlLowUnknownR::new(self.bits & 0x0fff_ffff)
+            }
+            #[doc = "Bits 28:29 - Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+            #[inline(always)]
+            pub fn phy_aux_force(&self) -> PhyAuxForceR {
+                PhyAuxForceR::new(((self.bits >> 28) & 3) as u8)
+            }
+            #[doc = "Bits 30:31 - Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+            #[inline(always)]
+            pub fn force(&self) -> ForceR {
+                ForceR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:27"]
+            #[inline(always)]
+            pub fn control_low_unknown(&mut self) -> ControlLowUnknownW<'_, CcaControlSpec> {
+                ControlLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 28:29 - Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
+            #[inline(always)]
+            pub fn phy_aux_force(&mut self) -> PhyAuxForceW<'_, CcaControlSpec> {
+                PhyAuxForceW::new(self, 28)
+            }
+            #[doc = "Bits 30:31 - Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
+            #[inline(always)]
+            pub fn force(&mut self) -> ForceW<'_, CcaControlSpec> {
+                ForceW::new(self, 30)
+            }
+        }
+        #[doc = "Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CcaControlSpec;
+        impl crate::RegisterSpec for CcaControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cca_control::R`](R) reader structure"]
+        impl crate::Readable for CcaControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`cca_control::W`](W) writer structure"]
+        impl crate::Writable for CcaControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "QUEUE_STATE_CLEAR (w) register accessor: Queue collision/timeout state acknowledgement.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_state_clear::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state_clear`] module"]
+    #[doc(alias = "QUEUE_STATE_CLEAR")]
+    pub type QueueStateClear = crate::Reg<queue_state_clear::QueueStateClearSpec>;
+    #[doc = "Queue collision/timeout state acknowledgement."]
+    pub mod queue_state_clear {
+        #[doc = "Register `QUEUE_STATE_CLEAR` writer"]
+        pub type W = crate::W<QueueStateClearSpec>;
+        #[doc = "Field `COLLISION_QUEUE_0` writer - "]
+        pub type CollisionQueue0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `COLLISION_QUEUE_1` writer - "]
+        pub type CollisionQueue1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `COLLISION_QUEUE_2` writer - "]
+        pub type CollisionQueue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `COLLISION_QUEUE_3` writer - "]
+        pub type CollisionQueue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `LOW_STATE_UNKNOWN` writer - "]
+        pub type LowStateUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `TIMEOUT_QUEUE_0` writer - "]
+        pub type TimeoutQueue0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMEOUT_QUEUE_1` writer - "]
+        pub type TimeoutQueue1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMEOUT_QUEUE_2` writer - "]
+        pub type TimeoutQueue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMEOUT_QUEUE_3` writer - "]
+        pub type TimeoutQueue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `HIGH_STATE_UNKNOWN` writer - "]
+        pub type HighStateUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn collision_queue_0(&mut self) -> CollisionQueue0W<'_, QueueStateClearSpec> {
+                CollisionQueue0W::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn collision_queue_1(&mut self) -> CollisionQueue1W<'_, QueueStateClearSpec> {
+                CollisionQueue1W::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn collision_queue_2(&mut self) -> CollisionQueue2W<'_, QueueStateClearSpec> {
+                CollisionQueue2W::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn collision_queue_3(&mut self) -> CollisionQueue3W<'_, QueueStateClearSpec> {
+                CollisionQueue3W::new(self, 3)
+            }
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn low_state_unknown(&mut self) -> LowStateUnknownW<'_, QueueStateClearSpec> {
+                LowStateUnknownW::new(self, 4)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn timeout_queue_0(&mut self) -> TimeoutQueue0W<'_, QueueStateClearSpec> {
+                TimeoutQueue0W::new(self, 16)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn timeout_queue_1(&mut self) -> TimeoutQueue1W<'_, QueueStateClearSpec> {
+                TimeoutQueue1W::new(self, 17)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn timeout_queue_2(&mut self) -> TimeoutQueue2W<'_, QueueStateClearSpec> {
+                TimeoutQueue2W::new(self, 18)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn timeout_queue_3(&mut self) -> TimeoutQueue3W<'_, QueueStateClearSpec> {
+                TimeoutQueue3W::new(self, 19)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn high_state_unknown(&mut self) -> HighStateUnknownW<'_, QueueStateClearSpec> {
+                HighStateUnknownW::new(self, 20)
+            }
+        }
+        #[doc = "Queue collision/timeout state acknowledgement.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_state_clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct QueueStateClearSpec;
+        impl crate::RegisterSpec for QueueStateClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`queue_state_clear::W`](W) writer structure"]
+        impl crate::Writable for QueueStateClearSpec {
+            type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
+        }
+    }
+    #[doc = "QUEUE_STATE (r) register accessor: Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state`] module"]
+    #[doc(alias = "QUEUE_STATE")]
+    pub type QueueState = crate::Reg<queue_state::QueueStateSpec>;
+    #[doc = "Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero."]
+    pub mod queue_state {
+        #[doc = "Register `QUEUE_STATE` reader"]
+        pub type R = crate::R<QueueStateSpec>;
+        #[doc = "Field `COLLISION_QUEUE_0` reader - "]
+        pub type CollisionQueue0R = crate::BitReader;
+        #[doc = "Field `COLLISION_QUEUE_1` reader - "]
+        pub type CollisionQueue1R = crate::BitReader;
+        #[doc = "Field `COLLISION_QUEUE_2` reader - "]
+        pub type CollisionQueue2R = crate::BitReader;
+        #[doc = "Field `COLLISION_QUEUE_3` reader - "]
+        pub type CollisionQueue3R = crate::BitReader;
+        #[doc = "Field `LOW_STATE_UNKNOWN` reader - "]
+        pub type LowStateUnknownR = crate::FieldReader<u16>;
+        #[doc = "Field `TIMEOUT_QUEUE_0` reader - "]
+        pub type TimeoutQueue0R = crate::BitReader;
+        #[doc = "Field `TIMEOUT_QUEUE_1` reader - "]
+        pub type TimeoutQueue1R = crate::BitReader;
+        #[doc = "Field `TIMEOUT_QUEUE_2` reader - "]
+        pub type TimeoutQueue2R = crate::BitReader;
+        #[doc = "Field `TIMEOUT_QUEUE_3` reader - "]
+        pub type TimeoutQueue3R = crate::BitReader;
+        #[doc = "Field `MIDDLE_STATE_UNKNOWN` reader - "]
+        pub type MiddleStateUnknownR = crate::FieldReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_0` reader - Queue zero is participating in the hardware Trigger-based transmit flow."]
+        pub type TriggerFlowQueue0R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_1` reader - "]
+        pub type TriggerFlowQueue1R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_2` reader - "]
+        pub type TriggerFlowQueue2R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_3` reader - "]
+        pub type TriggerFlowQueue3R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_HIGH_UNKNOWN` reader - The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."]
+        pub type TriggerFlowHighUnknownR = crate::FieldReader;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn collision_queue_0(&self) -> CollisionQueue0R {
+                CollisionQueue0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn collision_queue_1(&self) -> CollisionQueue1R {
+                CollisionQueue1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn collision_queue_2(&self) -> CollisionQueue2R {
+                CollisionQueue2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn collision_queue_3(&self) -> CollisionQueue3R {
+                CollisionQueue3R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn low_state_unknown(&self) -> LowStateUnknownR {
+                LowStateUnknownR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn timeout_queue_0(&self) -> TimeoutQueue0R {
+                TimeoutQueue0R::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn timeout_queue_1(&self) -> TimeoutQueue1R {
+                TimeoutQueue1R::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn timeout_queue_2(&self) -> TimeoutQueue2R {
+                TimeoutQueue2R::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn timeout_queue_3(&self) -> TimeoutQueue3R {
+                TimeoutQueue3R::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bits 20:23"]
+            #[inline(always)]
+            pub fn middle_state_unknown(&self) -> MiddleStateUnknownR {
+                MiddleStateUnknownR::new(((self.bits >> 20) & 0x0f) as u8)
+            }
+            #[doc = "Bit 24 - Queue zero is participating in the hardware Trigger-based transmit flow."]
+            #[inline(always)]
+            pub fn trigger_flow_queue_0(&self) -> TriggerFlowQueue0R {
+                TriggerFlowQueue0R::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn trigger_flow_queue_1(&self) -> TriggerFlowQueue1R {
+                TriggerFlowQueue1R::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn trigger_flow_queue_2(&self) -> TriggerFlowQueue2R {
+                TriggerFlowQueue2R::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn trigger_flow_queue_3(&self) -> TriggerFlowQueue3R {
+                TriggerFlowQueue3R::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bits 28:31 - The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."]
+            #[inline(always)]
+            pub fn trigger_flow_high_unknown(&self) -> TriggerFlowHighUnknownR {
+                TriggerFlowHighUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        #[doc = "Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct QueueStateSpec;
+        impl crate::RegisterSpec for QueueStateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`queue_state::R`](R) reader structure"]
+        impl crate::Readable for QueueStateSpec {}
+    }
+    #[doc = "COMPLETE_CLEAR (rw) register accessor: Preserved-image acknowledgement for ordinary queue completion bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`complete_clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@complete_clear`] module"]
+    #[doc(alias = "COMPLETE_CLEAR")]
+    pub type CompleteClear = crate::Reg<complete_clear::CompleteClearSpec>;
+    #[doc = "Preserved-image acknowledgement for ordinary queue completion bits."]
+    pub mod complete_clear {
+        #[doc = "Register `COMPLETE_CLEAR` reader"]
+        pub type R = crate::R<CompleteClearSpec>;
+        #[doc = "Register `COMPLETE_CLEAR` writer"]
+        pub type W = crate::W<CompleteClearSpec>;
+        #[doc = "Field `QUEUE_0` reader - "]
+        pub type Queue0R = crate::BitReader;
+        #[doc = "Field `QUEUE_0` writer - "]
+        pub type Queue0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `QUEUE_1` reader - "]
+        pub type Queue1R = crate::BitReader;
+        #[doc = "Field `QUEUE_1` writer - "]
+        pub type Queue1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `QUEUE_2` reader - "]
+        pub type Queue2R = crate::BitReader;
+        #[doc = "Field `QUEUE_2` writer - "]
+        pub type Queue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `QUEUE_3` reader - "]
+        pub type Queue3R = crate::BitReader;
+        #[doc = "Field `QUEUE_3` writer - "]
+        pub type Queue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `HIGH_STATE_UNKNOWN` reader - "]
+        pub type HighStateUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_STATE_UNKNOWN` writer - "]
+        pub type HighStateUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn queue_0(&self) -> Queue0R {
+                Queue0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn queue_1(&self) -> Queue1R {
+                Queue1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn queue_2(&self) -> Queue2R {
+                Queue2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn queue_3(&self) -> Queue3R {
+                Queue3R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn high_state_unknown(&self) -> HighStateUnknownR {
+                HighStateUnknownR::new((self.bits >> 4) & 0x0fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn queue_0(&mut self) -> Queue0W<'_, CompleteClearSpec> {
+                Queue0W::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn queue_1(&mut self) -> Queue1W<'_, CompleteClearSpec> {
+                Queue1W::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn queue_2(&mut self) -> Queue2W<'_, CompleteClearSpec> {
+                Queue2W::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn queue_3(&mut self) -> Queue3W<'_, CompleteClearSpec> {
+                Queue3W::new(self, 3)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn high_state_unknown(&mut self) -> HighStateUnknownW<'_, CompleteClearSpec> {
+                HighStateUnknownW::new(self, 4)
+            }
+        }
+        #[doc = "Preserved-image acknowledgement for ordinary queue completion bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`complete_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CompleteClearSpec;
+        impl crate::RegisterSpec for CompleteClearSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`complete_clear::R`](R) reader structure"]
+        impl crate::Readable for CompleteClearSpec {}
+        #[doc = "`write(|w| ..)` method takes [`complete_clear::W`](W) writer structure"]
+        impl crate::Writable for CompleteClearSpec {
+            type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
+        }
+    }
+    #[doc = "COMPLETE_STATE (r) register accessor: Low four bits report completed ordinary queues 0..3.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@complete_state`] module"]
+    #[doc(alias = "COMPLETE_STATE")]
+    pub type CompleteState = crate::Reg<complete_state::CompleteStateSpec>;
+    #[doc = "Low four bits report completed ordinary queues 0..3."]
+    pub mod complete_state {
+        #[doc = "Register `COMPLETE_STATE` reader"]
+        pub type R = crate::R<CompleteStateSpec>;
+        #[doc = "Field `QUEUE_0` reader - "]
+        pub type Queue0R = crate::BitReader;
+        #[doc = "Field `QUEUE_1` reader - "]
+        pub type Queue1R = crate::BitReader;
+        #[doc = "Field `QUEUE_2` reader - "]
+        pub type Queue2R = crate::BitReader;
+        #[doc = "Field `QUEUE_3` reader - "]
+        pub type Queue3R = crate::BitReader;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn queue_0(&self) -> Queue0R {
+                Queue0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn queue_1(&self) -> Queue1R {
+                Queue1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn queue_2(&self) -> Queue2R {
+                Queue2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn queue_3(&self) -> Queue3R {
+                Queue3R::new(((self.bits >> 3) & 1) != 0)
+            }
+        }
+        #[doc = "Low four bits report completed ordinary queues 0..3.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CompleteStateSpec;
+        impl crate::RegisterSpec for CompleteStateSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`complete_state::R`](R) reader structure"]
+        impl crate::Readable for CompleteStateSpec {}
+    }
+}
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
@@ -8142,6 +11424,24 @@ pub struct Peripherals {
     pub apb_saradc_radio: ApbSaradcRadio,
     #[doc = "PCR_RADIO"]
     pub pcr_radio: PcrRadio,
+    #[doc = "WIFI_MAC_AUX_TSF_CONTROL"]
+    pub wifi_mac_aux_tsf_control: WifiMacAuxTsfControl,
+    #[doc = "WIFI_MAC_BSSID_POLICY"]
+    pub wifi_mac_bssid_policy: WifiMacBssidPolicy,
+    #[doc = "WIFI_MAC_INTERFACE_ADDRESS"]
+    pub wifi_mac_interface_address: WifiMacInterfaceAddress,
+    #[doc = "WIFI_MAC_INTERRUPT"]
+    pub wifi_mac_interrupt: WifiMacInterrupt,
+    #[doc = "WIFI_MAC_POWER_INTERRUPT"]
+    pub wifi_mac_power_interrupt: WifiMacPowerInterrupt,
+    #[doc = "WIFI_MAC_RTC_TIMER_UPDATE"]
+    pub wifi_mac_rtc_timer_update: WifiMacRtcTimerUpdate,
+    #[doc = "WIFI_MAC_STA_BEACON_FILTER"]
+    pub wifi_mac_sta_beacon_filter: WifiMacStaBeaconFilter,
+    #[doc = "WIFI_MAC_STA_TSF_LOAD"]
+    pub wifi_mac_sta_tsf_load: WifiMacStaTsfLoad,
+    #[doc = "WIFI_MAC_TX_COMMON"]
+    pub wifi_mac_tx_common: WifiMacTxCommon,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -8175,6 +11475,15 @@ impl Peripherals {
             lp_aon_radio: unsafe { LpAonRadio::steal() },
             apb_saradc_radio: unsafe { ApbSaradcRadio::steal() },
             pcr_radio: unsafe { PcrRadio::steal() },
+            wifi_mac_aux_tsf_control: unsafe { WifiMacAuxTsfControl::steal() },
+            wifi_mac_bssid_policy: unsafe { WifiMacBssidPolicy::steal() },
+            wifi_mac_interface_address: unsafe { WifiMacInterfaceAddress::steal() },
+            wifi_mac_interrupt: unsafe { WifiMacInterrupt::steal() },
+            wifi_mac_power_interrupt: unsafe { WifiMacPowerInterrupt::steal() },
+            wifi_mac_rtc_timer_update: unsafe { WifiMacRtcTimerUpdate::steal() },
+            wifi_mac_sta_beacon_filter: unsafe { WifiMacStaBeaconFilter::steal() },
+            wifi_mac_sta_tsf_load: unsafe { WifiMacStaTsfLoad::steal() },
+            wifi_mac_tx_common: unsafe { WifiMacTxCommon::steal() },
         }
     }
 }
@@ -8213,6 +11522,23 @@ pub mod peripheral_ownership {
         pub pcr_radio: crate::PcrRadio,
     }
 
+    /// ESP32-C5 Wi-Fi MAC register views owned by the Wi-Fi hardware lifecycle.
+    pub struct WifiMacPeripherals {
+        pub wifi_mac_aux_tsf_control: crate::WifiMacAuxTsfControl,
+        pub wifi_mac_bssid_policy: crate::WifiMacBssidPolicy,
+        pub wifi_mac_interface_address: crate::WifiMacInterfaceAddress,
+        pub wifi_mac_rtc_timer_update: crate::WifiMacRtcTimerUpdate,
+        pub wifi_mac_sta_beacon_filter: crate::WifiMacStaBeaconFilter,
+        pub wifi_mac_sta_tsf_load: crate::WifiMacStaTsfLoad,
+        pub wifi_mac_tx_common: crate::WifiMacTxCommon,
+    }
+
+    /// Wi-Fi interrupt banks transferred from cold setup to the hard interrupt handlers.
+    pub struct WifiInterruptPeripherals {
+        pub wifi_mac_interrupt: crate::WifiMacInterrupt,
+        pub wifi_mac_power_interrupt: crate::WifiMacPowerInterrupt,
+    }
+
     /// Complete target-reviewed ownership decomposition.
     pub struct PeripheralPartitions {
         /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
@@ -8225,6 +11551,10 @@ pub mod peripheral_ownership {
         pub phy_i2c: PhyI2cPeripherals,
         /// PMU analog I2C power controls and PHY baseband configuration words driven by the PHY.
         pub phy_radio: PhyRadioPeripherals,
+        /// ESP32-C5 Wi-Fi MAC register views owned by the Wi-Fi hardware lifecycle.
+        pub wifi_mac: WifiMacPeripherals,
+        /// Wi-Fi interrupt banks transferred from cold setup to the hard interrupt handlers.
+        pub wifi_interrupts: WifiInterruptPeripherals,
     }
 
     /// Consume the singleton and apply the exhaustive target-owned partition.
@@ -8242,6 +11572,15 @@ pub mod peripheral_ownership {
             lp_aon_radio,
             apb_saradc_radio,
             pcr_radio,
+            wifi_mac_aux_tsf_control,
+            wifi_mac_bssid_policy,
+            wifi_mac_interface_address,
+            wifi_mac_interrupt,
+            wifi_mac_power_interrupt,
+            wifi_mac_rtc_timer_update,
+            wifi_mac_sta_beacon_filter,
+            wifi_mac_sta_tsf_load,
+            wifi_mac_tx_common,
         } = peripherals;
         PeripheralPartitions {
             ieee802154: Ieee802154Peripherals {
@@ -8260,6 +11599,19 @@ pub mod peripheral_ownership {
                 lp_aon_radio,
                 apb_saradc_radio,
                 pcr_radio,
+            },
+            wifi_mac: WifiMacPeripherals {
+                wifi_mac_aux_tsf_control,
+                wifi_mac_bssid_policy,
+                wifi_mac_interface_address,
+                wifi_mac_rtc_timer_update,
+                wifi_mac_sta_beacon_filter,
+                wifi_mac_sta_tsf_load,
+                wifi_mac_tx_common,
+            },
+            wifi_interrupts: WifiInterruptPeripherals {
+                wifi_mac_interrupt,
+                wifi_mac_power_interrupt,
             },
         }
     }

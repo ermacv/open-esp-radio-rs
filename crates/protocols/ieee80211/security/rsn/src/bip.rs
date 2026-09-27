@@ -113,6 +113,54 @@ impl BipReceiver {
     }
 }
 
+/// The transmit state of one IGTK: its key and the next IPN.
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct BipTransmitter {
+    key_id: u8,
+    key: [u8; RSN_IGTK_LEN],
+    /// The IPN of the next protected frame, as a 48-bit integer.
+    next_packet_number: u64,
+}
+
+impl BipTransmitter {
+    /// Start with an IGTK after the IPN its KDE announces: a receiver accepts
+    /// only IPNs beyond it.
+    pub fn new(igtk: &RsnIgtk) -> Self {
+        Self {
+            key_id: igtk.key_id(),
+            key: *igtk.key(),
+            next_packet_number: packet_number(igtk.packet_number()) + 1,
+        }
+    }
+
+    /// Protect one group-addressed robust management frame in place: `frame`
+    /// holds the header and body, and `MANAGEMENT_MIC_ELEMENT_LEN` spare
+    /// octets after them receive the Management MIC element. Returns the
+    /// protected frame's length, or `None` when the spare octets are missing.
+    pub fn protect(&mut self, frame: &mut [u8], length: usize) -> Option<usize> {
+        let protected = length.checked_add(MANAGEMENT_MIC_ELEMENT_LEN)?;
+        if length < MANAGEMENT_HEADER_LEN || frame.len() < protected {
+            return None;
+        }
+        let ipn = self.next_packet_number.to_le_bytes();
+        self.next_packet_number += 1;
+        let mme = &mut frame[length..protected];
+        mme[0] = MANAGEMENT_MIC_ELEMENT_ID;
+        mme[1] = MANAGEMENT_MIC_BODY_LEN as u8;
+        mme[2..4].copy_from_slice(&u16::from(self.key_id).to_le_bytes());
+        mme[4..4 + RSN_IPN_LEN].copy_from_slice(&ipn[..RSN_IPN_LEN]);
+        mme[4 + RSN_IPN_LEN..].fill(0);
+        let mut mac =
+            Cmac::<Aes128>::new_from_slice(&self.key).expect("a 16-byte IGTK is an AES-128 key");
+        mac.update(&[frame[0], frame[1] & !AAD_MASKED_FLAGS]);
+        mac.update(&frame[4..MANAGEMENT_HEADER_LEN - 2]);
+        mac.update(&frame[MANAGEMENT_HEADER_LEN..protected]);
+        let tag = mac.finalize().into_bytes();
+        frame[protected - BIP_MIC_LEN..protected].copy_from_slice(&tag[..BIP_MIC_LEN]);
+        Some(protected)
+    }
+}
+
 /// A little-endian six-byte IPN as an integer.
 fn packet_number(bytes: [u8; RSN_IPN_LEN]) -> u64 {
     let mut value = [0; 8];

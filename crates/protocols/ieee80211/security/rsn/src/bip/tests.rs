@@ -77,3 +77,23 @@ fn a_repeated_igtk_keeps_its_replay_state_and_a_new_one_resets_it() {
     bip.rekey(&RsnIgtk::new(5, [2, 0, 0, 0, 0, 0], [0x11; 16]).unwrap());
     assert_eq!(bip.key_id(), 5);
 }
+
+#[test]
+fn a_transmitter_reproduces_the_independent_mic_and_advances_its_ipn() {
+    let igtk = RsnIgtk::new(4, [8, 0, 0, 0, 0, 0], [0x77; 16]).unwrap();
+    let mut transmitter = BipTransmitter::new(&igtk);
+    let expected = deauthentication(MIC, 9);
+    let mut frame = [0_u8; 26 + MANAGEMENT_MIC_ELEMENT_LEN];
+    frame[..26].copy_from_slice(&expected[..26]);
+    assert_eq!(transmitter.protect(&mut frame, 26), Some(expected.len()));
+    assert_eq!(frame[..], expected[..]);
+
+    let mut receiver = BipReceiver::new(&igtk);
+    assert_eq!(receiver.verify(&frame), Ok(()));
+    let mut next = [0_u8; 26 + MANAGEMENT_MIC_ELEMENT_LEN];
+    next[..26].copy_from_slice(&expected[..26]);
+    transmitter.protect(&mut next, 26).unwrap();
+    assert_eq!(next[30], 10);
+    assert_eq!(receiver.verify(&next), Ok(()));
+    assert_eq!(transmitter.protect(&mut next[..30], 26), None);
+}

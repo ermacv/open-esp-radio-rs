@@ -31,9 +31,9 @@ pub use maintenance::{
 // the `oer` facade) alone.
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_hal::{ieee802154::ll::Ieee802154MacOwners, root::RadioHardware};
-pub use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
+pub use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
 
 /// The shared ESP32-S31 radio IEEE 802.15.4 joins: the arbiter with the
 /// esp-hal platform and clock sources. The application creates it once and

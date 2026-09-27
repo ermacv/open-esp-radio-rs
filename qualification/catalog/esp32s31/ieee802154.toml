@@ -180,7 +180,6 @@ hil-requirements = [
   { scenario = "ieee802154-route-probe", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "vendor", id = "active-route-and-concurrent-acknowledgement-proof-missing" },
   { axis = "async", id = "bounded-async-evidence-missing" },
 ]
 

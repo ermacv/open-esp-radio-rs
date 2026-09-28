@@ -1128,7 +1128,7 @@ impl LeafRun {
                     let mut setup = vec![];
                     for (index, (address, bytes)) in image.iter().enumerate() {
                         let length = bytes.len() as u32;
-                        let mut phase = case(
+                        let mut phase = crate::harness::setup(
                             format!("{name}-image-{index}"),
                             direct(
                                 memcpy,
@@ -1137,19 +1137,18 @@ impl LeafRun {
                                 vec![],
                                 vec![],
                             ),
-                            Some(direct(
+                            direct(
                                 memcpy,
                                 &[IMAGE_SOURCE, IMAGE_SOURCE, 0],
                                 vec![],
                                 vec![],
                                 vec![],
-                            )),
+                            ),
                             if index == 0 {
                                 SessionReset::Cold
                             } else {
                                 SessionReset::Warm
                             },
-                            false,
                         );
                         phase.stack_fill = Some(fill);
                         setup.push(phase);

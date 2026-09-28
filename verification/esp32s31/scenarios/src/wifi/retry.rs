@@ -340,12 +340,11 @@ fn sequence(
     ]);
     reset.arguments.resize(8, Some(0));
     let mut rows = vec![(
-        case(
+        crate::harness::setup(
             format!("retry-{}-init-q{queue}-{long}-{fill:02x}", completion.label),
             init,
-            Some(reset),
+            reset,
             SessionReset::Cold,
-            false,
         ),
         Phase::Setup,
     )];
@@ -366,7 +365,7 @@ fn sequence(
     for (index, (address, bytes)) in patches.iter().enumerate() {
         let length = bytes.len() as u32;
         rows.push((
-            case(
+            crate::harness::setup(
                 format!(
                     "retry-{}-patch-q{queue}-{long}-{index}-{fill:02x}",
                     completion.label
@@ -378,9 +377,8 @@ fn sequence(
                     vec![],
                     vec![],
                 ),
-                Some(direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![])),
+                direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![]),
                 SessionReset::Warm,
-                false,
             ),
             Phase::Setup,
         ));
@@ -436,7 +434,7 @@ fn sequence(
             let bytes = flags.to_le_bytes();
             let length = bytes.len() as u32;
             rows.push((
-                case(
+                crate::harness::setup(
                     format!(
                         "retry-{}-flags-q{queue}-{long}-{flags:x}-{fill:02x}",
                         completion.label
@@ -448,9 +446,8 @@ fn sequence(
                         vec![],
                         vec![],
                     ),
-                    Some(direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![])),
+                    direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![]),
                     SessionReset::Warm,
-                    false,
                 ),
                 Phase::Setup,
             ));

@@ -220,22 +220,6 @@ fn quiet(name: &str, address: u32, boundary: CallBoundary) -> CallDeclaration {
     }
 }
 
-/// A setup row's relation: it prepares state for the compared append and
-/// compares only delays, which neither side performs, so its own effects,
-/// such as the arena's atomic fences, stay uncompared.
-fn setup(mut row: ExecutionCase) -> ExecutionCase {
-    let relation = row.relation.as_mut().expect("a paired row");
-    relation.events = blobray_domain::EventChannels {
-        timeline: Default::default(),
-        mmio_read: false,
-        mmio_write: false,
-        fence: false,
-        delay: true,
-    };
-    relation.memory = vec![];
-    row
-}
-
 /// The production arena, from its layout entry.
 fn layout(ctx: &mut Mac) -> Result<Layout> {
     let memcpy = memcpy(ctx)?;
@@ -252,13 +236,7 @@ fn layout(ctx: &mut Mac) -> Result<Layout> {
     )?);
     production.arguments.resize(8, Some(0));
     let vendor = direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![]);
-    let mut row = setup(case(
-        "rx-append-layout",
-        vendor,
-        Some(production),
-        SessionReset::Cold,
-        false,
-    ));
+    let mut row = crate::harness::setup("rx-append-layout", vendor, production, SessionReset::Cold);
     row.stack_fill = Some(LEAF_FILLS[0]);
     let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
     let records = ctx
@@ -615,13 +593,7 @@ fn case_rows(
     let memcpy = memcpy(ctx)?;
     let label = format!("rx-append-{unit}-{}-{fill:02x}", cursor.label);
     let noop = || direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![]);
-    let cold = setup(case(
-        format!("{label}-cold"),
-        noop(),
-        Some(noop()),
-        SessionReset::Cold,
-        false,
-    ));
+    let cold = crate::harness::setup(format!("{label}-cold"), noop(), noop(), SessionReset::Cold);
     let head = layout.descriptor(0);
     let old_tail = layout.descriptor(layout.buffers.len() - 1);
     let list_head = if cursor.empty { 0 } else { head };
@@ -637,7 +609,7 @@ fn case_rows(
     let mut rows = vec![cold];
     for (index, (address, bytes)) in patches.iter().enumerate() {
         let length = bytes.len() as u32;
-        let row = setup(case(
+        let row = crate::harness::setup(
             format!("{label}-patch-{index}"),
             direct(
                 memcpy,
@@ -646,10 +618,9 @@ fn case_rows(
                 vec![],
                 vec![],
             ),
-            Some(noop()),
+            noop(),
             SessionReset::Warm,
-            false,
-        ));
+        );
         rows.push(row);
     }
     let named = |name: String, address: u32, length: u32| blobray_domain::MemorySelection {

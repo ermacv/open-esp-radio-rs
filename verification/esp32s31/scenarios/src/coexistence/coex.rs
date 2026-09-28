@@ -441,12 +441,11 @@ impl Coex {
             vec![],
             vec![],
         );
-        Ok(case(
+        Ok(crate::harness::setup(
             "coex-setup",
             vendor,
-            Some(production),
+            production,
             SessionReset::Cold,
-            false,
         ))
     }
 
@@ -470,12 +469,11 @@ impl Coex {
             vec![],
         );
         let production = direct(memcpy, &[ENV_SOURCE, ENV_SOURCE, 0], vec![], vec![], vec![]);
-        Ok(case(
+        Ok(crate::harness::setup(
             format!("{name}-patch"),
             vendor,
-            Some(production),
+            production,
             SessionReset::Warm,
-            false,
         ))
     }
 

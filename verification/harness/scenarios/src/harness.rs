@@ -576,6 +576,24 @@ pub fn relation(memory: bool) -> ComparisonRelation {
     }
 }
 
+/// A setup case: both sides run to prepare the state later cases compare,
+/// and nothing of it is compared, observed or claimed.
+pub fn setup(
+    name: impl Into<String>,
+    vendor: Invocation,
+    replacement: Invocation,
+    reset: SessionReset,
+) -> ExecutionCase {
+    ExecutionCase {
+        name: name.into(),
+        reset,
+        stack_fill: None,
+        relation: None,
+        vendor,
+        replacement: Some(replacement),
+    }
+}
+
 pub fn case(
     name: impl Into<String>,
     vendor: Invocation,

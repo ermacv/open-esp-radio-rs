@@ -108,6 +108,10 @@ enum Task {
         /// `--rebuild`.
         #[arg(long, requires = "rebuild")]
         baseline: Option<PathBuf>,
+        /// Print each accepted function's annotated pinned code before
+        /// recording it.
+        #[arg(long, requires = "accept")]
+        show: bool,
     },
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
@@ -313,7 +317,8 @@ fn run() -> Result<std::process::ExitCode> {
             accept,
             rebuild,
             baseline,
-        } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline),
+            show,
+        } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline, show),
         Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Compare { compare } => {
             let review = |aliases: Vec<String>,

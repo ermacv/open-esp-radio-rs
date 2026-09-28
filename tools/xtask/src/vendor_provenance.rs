@@ -593,15 +593,18 @@ fn survey_count(ctx: &Context, chip: &str) -> Result<usize> {
 }
 
 /// Record reviewed fingerprints. `accept` names the functions whose pinned
-/// code was reviewed; `rebuild` recomputes the whole registry from the
-/// current citations, taking fingerprints from the namesake files in
-/// `baseline` (the revision the facts were observed in) where present.
+/// code was reviewed, and each prints how its fingerprint moves; with
+/// `show`, its annotated pinned code is printed first. `rebuild` recomputes
+/// the whole registry from the current citations, taking fingerprints from
+/// the namesake files in `baseline` (the revision the facts were observed
+/// in) where present.
 pub fn update(
     ctx: &Context,
     chip: &str,
     accept: &[String],
     rebuild: bool,
     baseline: Option<PathBuf>,
+    show: bool,
 ) -> Result<()> {
     let survey = survey(ctx, chip)?;
     let decisions_of = |name: &str| -> Vec<String> {
@@ -682,7 +685,8 @@ pub fn update(
         let selected = |e: &Entry| {
             e.symbol == symbol && place.is_none_or(|(a, m)| e.artifact == a && e.member == m)
         };
-        let registered = entries.iter().any(selected);
+        let previous: Vec<Entry> = entries.iter().filter(|e| selected(e)).cloned().collect();
+        let registered = !previous.is_empty();
         entries.retain(|e| !selected(e));
         let current: Vec<Entry> = current_entries(symbol)
             .into_iter()
@@ -697,7 +701,15 @@ pub fn update(
             }
             println!("{accepted}: no pinned definition; its registration is removed");
         }
+        if show
+            && !current.is_empty()
+            && crate::vendor_scenario::run(ctx, chip, &["show".into(), symbol.into()])?
+                != std::process::ExitCode::SUCCESS
+        {
+            return Err(format!("{accepted}: showing its pinned code failed").into());
+        }
         for entry in &current {
+            println!("{}", fingerprint_move(entry, &previous));
             if !entry.decisions.is_empty() {
                 println!(
                     "{symbol}: accepted with the exclusions of {}",
@@ -714,6 +726,19 @@ pub fn update(
     )?;
     println!("{} registered functions", entries.len());
     Ok(())
+}
+
+/// How accepting `entry` moves its registered fingerprint, one line.
+fn fingerprint_move(entry: &Entry, previous: &[Entry]) -> String {
+    let name = format!("{}[{}]::{}", entry.artifact, entry.member, entry.symbol);
+    match previous
+        .iter()
+        .find(|e| e.artifact == entry.artifact && e.member == entry.member)
+    {
+        None => format!("{name}: newly registered at {}", entry.code),
+        Some(old) if old.code == entry.code => format!("{name}: unchanged at {}", entry.code),
+        Some(old) => format!("{name}: {} -> {}", old.code, entry.code),
+    }
 }
 
 /// The function an `--accept` argument names: a bare symbol, or the

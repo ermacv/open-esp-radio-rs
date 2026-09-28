@@ -251,3 +251,26 @@ fn accepted_functions_take_the_printed_form() {
         (Some(("rom", "")), "sta_reset_beacon_timeout")
     );
 }
+
+#[test]
+fn accepting_reports_how_the_fingerprint_moves() {
+    let entry = |code: &str| Entry {
+        artifact: "libpp".into(),
+        member: "pp.o".into(),
+        symbol: "ppTxPkt".into(),
+        code: code.into(),
+        decisions: vec![],
+    };
+    assert_eq!(
+        fingerprint_move(&entry("b"), &[]),
+        "libpp[pp.o]::ppTxPkt: newly registered at b"
+    );
+    assert_eq!(
+        fingerprint_move(&entry("b"), &[entry("b")]),
+        "libpp[pp.o]::ppTxPkt: unchanged at b"
+    );
+    assert_eq!(
+        fingerprint_move(&entry("b"), &[entry("a")]),
+        "libpp[pp.o]::ppTxPkt: a -> b"
+    );
+}

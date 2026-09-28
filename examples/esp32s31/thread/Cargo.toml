@@ -11,9 +11,9 @@ oer-esp32s31-platform-runtime = { path = "../../../platform/esp32s31/runtime", f
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
-esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["esp32s31", "rt", "unstable"] }
-esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "a228e85823b40e79c3a4e93fe006bed6c99dd2b8", default-features = false, features = ["auto", "esp32s31", "log-04"] }
+esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "6336b453391a62f44cca1ffde0763d10ae50c668", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "6336b453391a62f44cca1ffde0763d10ae50c668", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "6336b453391a62f44cca1ffde0763d10ae50c668", default-features = false, features = ["auto", "esp32s31", "log-04"] }
 heapless = "0.9.3"
 log = "0.4"
 oer = { package = "open-esp-radio", path = "../../../crates/oer", default-features = false, features = ["openthread"] }

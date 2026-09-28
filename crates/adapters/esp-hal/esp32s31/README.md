@@ -35,6 +35,10 @@ mechanisms. The shared board profile in `platform/esp32s31`
 chooses memory sizes and timings; the platform bootstrap owns relocation and the
 transition to the separately linked runtime. HAL PSRAM adoption records an
 existing mapping without resetting the device or remapping live memory.
+`esp_hal::interrupt::interrupted_context()` returns the return address and stack
+pointer of the code the running interrupt handler preempted, from the trap frame
+the vector stub passes to the dispatcher; the HIL hang watchdog reports both
+harts' stalled context with it.
 S31 Ethernet is enabled explicitly through HAL's `__ethernet` feature, so a
 radio-only or compatibility-network build does not acquire its network-driver
 dependencies. The Ethernet implementation remains available in the fork.

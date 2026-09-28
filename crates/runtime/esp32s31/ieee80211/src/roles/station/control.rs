@@ -679,6 +679,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
+        if matches!(event, Some(ConnectedRxControlEvent::Beacon(_))) {
+            super::beacon_path::record_consumed();
+        }
         let mut reorder = EmbassyReorderSink {
             sender: self.rx_reorder_commands.as_ref(),
         };

@@ -7,6 +7,7 @@
 #[cfg(target_arch = "riscv32")]
 pub mod attempt;
 mod backend;
+pub mod beacon_path;
 mod command;
 mod composer;
 pub mod connected;

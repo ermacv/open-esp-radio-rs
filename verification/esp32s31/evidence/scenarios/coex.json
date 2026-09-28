@@ -1,17 +1,17 @@
 {
-  "schema": 9,
+  "schema": 10,
   "command": "vendor-scenario",
   "target": "esp32s31",
   "scenario": "coex",
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "ff2137d3c7ea7bb3ebad126f03b93329bfcd64754d0a7858b1448789597de8d6"
+    "input-2": "15aa3c4238bf1a84ff82ee45959b9f37718de2cd03e537c06a98f3ba8b8e6063"
   },
   "sources": [
     {
       "path": "crates/adapters/embassy-net/owned/Cargo.toml",
-      "sha256": "bb2f30e805c3065fba37545a8c7cc034eb4646afdedbcf1a39e696208f170f50"
+      "sha256": "3158d0eff7e04e948d5f99d5ea267a0fb4701fa761fb12a442f2fce10ed66bc7"
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/radio/Cargo.toml",
@@ -135,7 +135,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/Cargo.toml",
-      "sha256": "e341a8a5c1440dce0e305618ff26f8329d96e091b2a49d6cd43dd233c5dc2841"
+      "sha256": "01d2db470c2088cdb41170c476b4e67d54f2744929626a0f7693cf53d491250f"
     },
     {
       "path": "crates/runtime/esp32s31/phy/Cargo.toml",
@@ -975,7 +975,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "01b0e562a1b0ba22337f832b898df9e4bf8903f03aabe78e9abc3d5c845de030"
+      "sha256": "25c165101a588ac4cc078d0fe9cd01de7dce597e705560d66f956ec677c3fb4d"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -1019,7 +1019,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/coexistence/coex.rs",
-      "sha256": "b2a088d3dc6b4369514eac0c305b728f2061a1d8c18d5bdbe7a7df940b8354ea"
+      "sha256": "9f7b6c8956018c863886904c444d4eada7a9573e5da5e393dc11b32c18e2d207"
     },
     {
       "path": "verification/esp32s31/scenarios/src/coexistence/coex_hw.rs",
@@ -1030,12 +1030,8 @@
       "sha256": "1bf508421e96373e5f1f092adf2dfa79e756e539e10b515fe92ffd731f7a8bee"
     },
     {
-      "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "98e637b61cdf5ba95a9b66edb5dd3c33f919e26b2cc46711793effce3981fc90"
-    },
-    {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",
-      "sha256": "c07b32d5ac0d83cc50ddd3e10997d9a99948b48799fc3c716381128685719aba"
+      "sha256": "03035d121fa3af02e0b5a9025b009a657a4c711b305e876b50c1bd3972a9d009"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/observation.rs",
@@ -1063,11 +1059,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/lib.rs",
-      "sha256": "1bdfdf04a2fc3354b88917b8d5b621531aa0941365e53771c0f45b391c3a738f"
+      "sha256": "5ed3a96c376e77d60919c646c2392017065594ad1dcaae972942b329cce49b56"
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "e34bfec29db6792e01cfdf185977cd01ac97f2429ffdf60d5352de795eb8f40f"
+      "sha256": "2b33a2a31fef335dd022b33793ef5ac23dc4a7a14fe339a4812ce8e0bb1c6a9e"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1131,7 +1127,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
-      "sha256": "3d069c8e823288b34249e3a75632b43dff67ff2fb2fd099ad2dadcf3fde1b725"
+      "sha256": "6ac42376dac7c5329fa47e74845c0be79339ebbfd110170662d005a8e00a7b33"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
@@ -1183,11 +1179,11 @@
     },
     {
       "path": "verification/harness/scenarios/src/chip.rs",
-      "sha256": "314f83582f849e73a9678f6afae7462cad96ee46f31cc5db22871ddf495df5bc"
+      "sha256": "cd49f4a43e0bb989b45e15708b457e01d0a2e7db671674ae9f6ca1a643c1a5c6"
     },
     {
       "path": "verification/harness/scenarios/src/coverage.rs",
-      "sha256": "239996a44220d330d3855f62f9c92ef29d15b3eacbdcd8485df072d36a2defa9"
+      "sha256": "73e2d45b3ce9f91b254516fa786eb3c2fc3accc36aea44a5cecf408169f9cf9f"
     },
     {
       "path": "verification/harness/scenarios/src/dependencies.rs",
@@ -1199,7 +1195,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/evidence.rs",
-      "sha256": "8521b490cc5d1c896ff59aec76614757016d75a6aa1e5c78ce84f00bebdbcde1"
+      "sha256": "279ec2f88cc5dae12138104421eeac6a8cde1646d8bbb7670bfe7b4d2fb12f83"
     },
     {
       "path": "verification/harness/scenarios/src/failure.rs",
@@ -1207,7 +1203,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
-      "sha256": "0e21a53cd1b00e7ac16ce6feada139ac95ff9ab8e5780221d62e91e3eaba0459"
+      "sha256": "943560ef60558e213df035b01df026bdcc2185f6cdb3090334137fa591cbd1cb"
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",
@@ -1247,7 +1243,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "5551d55c37e8ecf0acc3c3ae331693651cde8ed72146c84bf034343b4c951ef4"
+      "sha256": "212ec618692fdf77e4101c69e995a8128652897d595d998abf1bb6da50b7c927"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1255,7 +1251,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/shard.rs",
-      "sha256": "1ea23075c19c59e02e8047459252e4334f4cd5277c46fd9a359ec909c0e5ddce"
+      "sha256": "6663393cb7d60115ea789aec3064c694485a18175e2d688c6ad22c453eac7769"
     },
     {
       "path": "verification/harness/scenarios/src/state.rs",
@@ -1263,20 +1259,24 @@
     },
     {
       "path": "verification/harness/scenarios/src/triage.rs",
-      "sha256": "2255b63b6aabbeec8aee6181548f3d355c1420ed0c6dc2d03310ce05cb7f6d5a"
+      "sha256": "19f5ae0de4ff2f577be618d9a4d773e272285871c0832c78111f03a475fcecea"
     },
     {
       "path": "verification/schema",
-      "sha256": "0d0f7eea6b4efe7d2198b416d773a3c6e8fa66007bf9a7e21b99e0c18cb7ffd1"
+      "sha256": "217312ccbe1a503d0d7effd8c4997081e299b99010f4bc7896ccf41c5e5eafd2"
     },
     {
       "path": "verification/schema/scenario-evidence.rs",
-      "sha256": "15f14f341e33a38a44760e7e5b60f513782bd8ecfbb4101b5aa14b102a4d3e96"
+      "sha256": "027b868892844990f048fa900493c1f8320c9b0fa80da36eb2219c6d597aaf58"
     }
   ],
   "dependence": {
     "read-data": "783e55ca27b7d32d45e81ba64925ea465cc54f8fc3c2f238c9fbb46bdce29629",
-    "fallback": null
+    "fallback": null,
+    "coverage-decisions": {
+      "path": "verification/esp32s31/decisions/coverage.toml",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
   },
   "entries": [
     {

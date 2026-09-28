@@ -1,5 +1,5 @@
 {
-  "schema": 9,
+  "schema": 10,
   "command": "vendor-scenario",
   "target": "esp32c5",
   "scenario": "phy-i2c",
@@ -926,12 +926,8 @@
       "sha256": "efa44e4a03b694deffe3d66802f4ee9ddc50fed8844ec999a5f36c1c0de79e48"
     },
     {
-      "path": "verification/esp32c5/scenarios/src/decisions/coverage.rs",
-      "sha256": "fbbd7ebefb41697b4e950cb55e684ec1e6f7df4343e74036960c8acb4ad98643"
-    },
-    {
       "path": "verification/esp32c5/scenarios/src/decisions/mod.rs",
-      "sha256": "c07b32d5ac0d83cc50ddd3e10997d9a99948b48799fc3c716381128685719aba"
+      "sha256": "d4149a50a8b8f4417f04682acd5a3752721d5b6865b5bec76f804a88cbcfd8df"
     },
     {
       "path": "verification/esp32c5/scenarios/src/decisions/observation.rs",
@@ -943,11 +939,11 @@
     },
     {
       "path": "verification/esp32c5/scenarios/src/lib.rs",
-      "sha256": "a20299a76e2267ec4878edb57b62ea2cc4a52e9a8ead6a313ba1fd7afebfe613"
+      "sha256": "cd90ed13aa9d8b0c852e8f89f2d19dd2feae129d18eadd681eb6d5f0dbc00317"
     },
     {
       "path": "verification/esp32c5/scenarios/src/main.rs",
-      "sha256": "681fa28c57a31ba6c32aa3db2fabd591292c9bd6bc2c68d585c6e9633f91289c"
+      "sha256": "0a6cd0349a16bf47764739c449a0deb674df09cee362a6f40fe4ff0d6f13c641"
     },
     {
       "path": "verification/esp32c5/scenarios/src/phy_i2c.rs",
@@ -987,11 +983,11 @@
     },
     {
       "path": "verification/harness/scenarios/src/chip.rs",
-      "sha256": "314f83582f849e73a9678f6afae7462cad96ee46f31cc5db22871ddf495df5bc"
+      "sha256": "cd49f4a43e0bb989b45e15708b457e01d0a2e7db671674ae9f6ca1a643c1a5c6"
     },
     {
       "path": "verification/harness/scenarios/src/coverage.rs",
-      "sha256": "239996a44220d330d3855f62f9c92ef29d15b3eacbdcd8485df072d36a2defa9"
+      "sha256": "73e2d45b3ce9f91b254516fa786eb3c2fc3accc36aea44a5cecf408169f9cf9f"
     },
     {
       "path": "verification/harness/scenarios/src/dependencies.rs",
@@ -1003,7 +999,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/evidence.rs",
-      "sha256": "8521b490cc5d1c896ff59aec76614757016d75a6aa1e5c78ce84f00bebdbcde1"
+      "sha256": "279ec2f88cc5dae12138104421eeac6a8cde1646d8bbb7670bfe7b4d2fb12f83"
     },
     {
       "path": "verification/harness/scenarios/src/failure.rs",
@@ -1011,7 +1007,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
-      "sha256": "0e21a53cd1b00e7ac16ce6feada139ac95ff9ab8e5780221d62e91e3eaba0459"
+      "sha256": "943560ef60558e213df035b01df026bdcc2185f6cdb3090334137fa591cbd1cb"
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",
@@ -1051,7 +1047,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "5551d55c37e8ecf0acc3c3ae331693651cde8ed72146c84bf034343b4c951ef4"
+      "sha256": "212ec618692fdf77e4101c69e995a8128652897d595d998abf1bb6da50b7c927"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1059,7 +1055,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/shard.rs",
-      "sha256": "1ea23075c19c59e02e8047459252e4334f4cd5277c46fd9a359ec909c0e5ddce"
+      "sha256": "6663393cb7d60115ea789aec3064c694485a18175e2d688c6ad22c453eac7769"
     },
     {
       "path": "verification/harness/scenarios/src/state.rs",
@@ -1067,20 +1063,24 @@
     },
     {
       "path": "verification/harness/scenarios/src/triage.rs",
-      "sha256": "2255b63b6aabbeec8aee6181548f3d355c1420ed0c6dc2d03310ce05cb7f6d5a"
+      "sha256": "19f5ae0de4ff2f577be618d9a4d773e272285871c0832c78111f03a475fcecea"
     },
     {
       "path": "verification/schema",
-      "sha256": "0d0f7eea6b4efe7d2198b416d773a3c6e8fa66007bf9a7e21b99e0c18cb7ffd1"
+      "sha256": "217312ccbe1a503d0d7effd8c4997081e299b99010f4bc7896ccf41c5e5eafd2"
     },
     {
       "path": "verification/schema/scenario-evidence.rs",
-      "sha256": "15f14f341e33a38a44760e7e5b60f513782bd8ecfbb4101b5aa14b102a4d3e96"
+      "sha256": "027b868892844990f048fa900493c1f8320c9b0fa80da36eb2219c6d597aaf58"
     }
   ],
   "dependence": {
     "read-data": "414cb03b80a417f613d484960c622c253d2c897aaa9d02e14e97f0067cb129b2",
-    "fallback": null
+    "fallback": null,
+    "coverage-decisions": {
+      "path": "verification/esp32c5/decisions/coverage.toml",
+      "sha256": "96e88c12a17e87edb93c9bc0265ce5d2865f79299da4d84bb4b7db3d9d3bbdc8"
+    }
   },
   "entries": [
     {

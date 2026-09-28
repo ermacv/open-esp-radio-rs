@@ -1,5 +1,5 @@
 {
-  "schema": 9,
+  "schema": 10,
   "command": "vendor-scenario",
   "target": "esp32s31",
   "scenario": "ieee802154-host",
@@ -41,15 +41,15 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "b57723b50dd8e60766035925ec0738f863e5194ec949b879a65fa54c7b1869bf"
+      "sha256": "8f5936e366d8c528c91f3e24fad29a0c0020a672f4887c5266c791fef2e0cdf0"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "6ea4e50a297bba4b5e8ebb1a7d363d3aba754de7f7d0bb47446b24968a613316"
+      "sha256": "f1737543f97fec174ba67b27ebf96dd7462eb6b2ba10d138192e365181394a6a"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "7f90c24a4bb16ad3e86c6682271fd9296f14ba56fb8fcfffdc94194c4437a28b"
+      "sha256": "62ee64e146eef64f324fbb7653e19b01e0400d803c89763bbf2171e060c16a0e"
     },
     {
       "path": "crates/hardware/ieee80211/pac",
@@ -69,7 +69,7 @@
     },
     {
       "path": "crates/memory",
-      "sha256": "7a365308d70124337653db5cf1d44cd33af8e46524fac4ce72facbf58c0ba2ce"
+      "sha256": "b59c04e566c7625ae8999ea08393ed7ffca6508cfa4ae0fbe504451c20b6c2b8"
     },
     {
       "path": "crates/protocols/ieee802154",
@@ -81,7 +81,7 @@
     },
     {
       "path": "verification/schema",
-      "sha256": "0d0f7eea6b4efe7d2198b416d773a3c6e8fa66007bf9a7e21b99e0c18cb7ffd1"
+      "sha256": "217312ccbe1a503d0d7effd8c4997081e299b99010f4bc7896ccf41c5e5eafd2"
     }
   ],
   "dependence": {

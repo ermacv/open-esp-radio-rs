@@ -11,6 +11,14 @@ choose a conservative interpretation, older behavior, approximation or omission
 as a fallback. Existing explicit user decisions remain authoritative and must
 not be requested again.
 
+## Agent Sessions
+
+Stay available to the user and to other agents while work runs. Run every
+shell command with `run_in_background: true` and act on its completion
+notification; do not wait for a build, test, check or HIL run in the
+foreground, and do not poll it with foreground `sleep` loops. Keep answering
+messages while background work runs.
+
 ## Project Structure & Module Organization
 
 This Rust 2024 workspace separates shipping code from evidence and tooling:

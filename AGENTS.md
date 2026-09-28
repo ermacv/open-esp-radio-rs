@@ -21,7 +21,9 @@ messages while background work runs. Never wait for or signal processes by
 name (`pgrep -f`, `pkill -f` and the like): the pattern also matches the
 waiting shell's own command line. Order dependent steps in one sequential
 command or wait on a PID (`wait`, `tail --pid`); `cargo hil run` already
-queues behind other holders in the arbiter.
+queues behind other holders in the arbiter and waits while its boards or the
+stand are out of service. To wait for the stand itself, run `cargo hil wait
+--service [BOARD...]` in the background; never wait for a chat message.
 
 ## Project Structure & Module Organization
 

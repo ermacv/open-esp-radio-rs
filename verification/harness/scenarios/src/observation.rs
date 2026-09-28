@@ -40,6 +40,15 @@ fn decision_path(file: &str) -> PathBuf {
     }
 }
 
+/// Every place of `decisions` with its repository path, resolved once.
+fn places(decisions: &[Decision]) -> Vec<(PathBuf, (&'static str, &'static str))> {
+    decisions
+        .iter()
+        .flat_map(|d| d.places)
+        .map(|place| (decision_path(place.0), *place))
+        .collect()
+}
+
 /// Repository root: this package lives three directories below it.
 pub fn root() -> Result<PathBuf> {
     Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -86,7 +95,9 @@ impl Lines {
 
 /// Maps probe instructions to production hardware source lines.
 pub struct LineMap {
-    lines: BTreeMap<u32, Vec<SourceLine>>,
+    /// Every located line once, in order; instructions name them by index.
+    table: Vec<SourceLine>,
+    lines: BTreeMap<u32, Vec<u32>>,
 }
 
 impl LineMap {
@@ -132,7 +143,28 @@ impl LineMap {
             }
             lines.insert(*pc, located);
         }
-        Ok(Self { lines })
+        Ok(Self::from_lines(lines))
+    }
+
+    fn from_lines(located: BTreeMap<u32, Vec<SourceLine>>) -> Self {
+        let table: Vec<SourceLine> = located
+            .values()
+            .flatten()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let lines = located
+            .into_iter()
+            .map(|(pc, lines)| {
+                let indices = lines
+                    .iter()
+                    .map(|line| table.binary_search(line).unwrap() as u32)
+                    .collect();
+                (pc, indices)
+            })
+            .collect();
+        Self { table, lines }
     }
 
     /// Lines of `executed` instructions, observed when any of `observed` is.
@@ -140,22 +172,39 @@ impl LineMap {
         &self,
         instructions: &blobray_application::in_process::ObservedInstructions,
     ) -> Lines {
-        let mut result = Lines::default();
+        // Mark line indices first, so each line is cloned once per set.
+        let mut marks = vec![[false; 4]; self.table.len()];
         for pc in &instructions.executed {
-            for line in self.lines.get(pc).into_iter().flatten() {
-                result.executed.insert(line.clone());
-                for (set, lines) in [
-                    (&instructions.observed, &mut result.observed),
-                    (&instructions.effect, &mut result.effect),
-                    (&instructions.state, &mut result.state),
-                ] {
-                    if set.contains(pc) {
-                        lines.insert(line.clone());
-                    }
+            let Some(indices) = self.lines.get(pc) else {
+                continue;
+            };
+            let flags = [
+                true,
+                instructions.observed.contains(pc),
+                instructions.effect.contains(pc),
+                instructions.state.contains(pc),
+            ];
+            for index in indices {
+                for (mark, flag) in marks[*index as usize].iter_mut().zip(flags) {
+                    *mark |= flag;
                 }
             }
         }
-        result
+        // The table is ordered, so each set is built from a sorted sequence.
+        let set = |kind: usize| -> BTreeSet<SourceLine> {
+            marks
+                .iter()
+                .zip(&self.table)
+                .filter(|(marks, _)| marks[kind])
+                .map(|(_, line)| line.clone())
+                .collect()
+        };
+        Lines {
+            executed: set(0),
+            observed: set(1),
+            effect: set(2),
+            state: set(3),
+        }
     }
 }
 
@@ -187,15 +236,15 @@ impl Sources {
         decisions: &[Decision],
         unobserved: &BTreeSet<SourceLine>,
     ) -> Result<(BTreeSet<SourceLine>, BTreeSet<SourceLine>)> {
+        let places = places(decisions);
         let mut reviewed = BTreeSet::new();
         let mut untriaged = BTreeSet::new();
         for line in unobserved {
             let text = self.text(root, line)?;
-            if decisions.iter().any(|d| {
-                d.places
-                    .iter()
-                    .any(|(file, source)| line.0 == decision_path(file) && text == *source)
-            }) {
+            if places
+                .iter()
+                .any(|(path, (_, source))| line.0 == *path && text == *source)
+            {
                 reviewed.insert(line.clone());
             } else {
                 untriaged.insert(line.clone());
@@ -211,14 +260,13 @@ impl Sources {
         decisions: &[Decision],
         unobserved: &BTreeSet<SourceLine>,
     ) -> Result<()> {
+        let places = places(decisions);
         let mut matched = BTreeSet::new();
         for line in unobserved {
-            let text = self.text(root, line)?.to_owned();
-            for decision in decisions {
-                for place in decision.places {
-                    if line.0 == decision_path(place.0) && text == place.1 {
-                        matched.insert(*place);
-                    }
+            let text = self.text(root, line)?;
+            for (path, place) in &places {
+                if line.0 == *path && text == place.1 {
+                    matched.insert(*place);
                 }
             }
         }
@@ -307,9 +355,10 @@ mod tests {
 
     #[test]
     fn a_line_is_observed_when_any_of_its_instructions_is() {
-        let map = LineMap {
-            lines: BTreeMap::from([(0x10, vec![line(2)]), (0x14, vec![line(2), line(3)])]),
-        };
+        let map = LineMap::from_lines(BTreeMap::from([
+            (0x10, vec![line(2)]),
+            (0x14, vec![line(2), line(3)]),
+        ]));
         let lines = map.lines(&blobray_application::in_process::ObservedInstructions {
             executed: BTreeSet::from([0x10, 0x14]),
             observed: BTreeSet::from([0x10]),

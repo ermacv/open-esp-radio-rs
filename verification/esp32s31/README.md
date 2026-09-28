@@ -510,7 +510,16 @@ untriaged in the evidence index. Decisions currently exclude vendor runtime
 helpers (diagnostic formatting, compiler arithmetic and copy helpers, prologue
 millicode) as whole functions. A decision on a closure function that is fully
 covered fails its scenario. Untriaged locations are pending work: each becomes a
-follow-up case or a reviewed decision.
+follow-up case or a reviewed decision. A whole-function decision whose function
+only produces diagnostic output uses `Place::Diagnostic`.
+
+A run with untriaged locations writes `untriaged-<scenario>.txt` beside its
+results: each location's instructions, decoded and lifted by Blobray's RISC-V
+decoder, with constants folded and addresses and bit masks named by the
+published register bindings, the definitions of the registers its instruction
+reads, and a candidate mark on a block that only calls `Place::Diagnostic`
+functions and stores nothing outside the stack. The report proposes; the
+decision stays reviewed.
 
 ## Observation decisions
 

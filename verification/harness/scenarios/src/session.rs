@@ -1123,7 +1123,14 @@ impl Session {
                 .inputs
                 .get(crate::chip().rom_input as usize)
                 .map_or(&[][..], Vec::as_slice);
-            let code = crate::triage::Code::of(&[&image, rom]);
+            let registers = crate::registers::Registers::load(
+                &crate::observation::root()?.join(crate::chip().registers),
+            )?;
+            let code = crate::triage::Code::of(
+                &[&image, rom],
+                registers,
+                crate::coverage::diagnostic(decisions),
+            );
             // The locations the evidence index lists: those no closure reached.
             let listed =
                 crate::coverage::uncovered_everywhere(&observed.closures, untriaged.clone());

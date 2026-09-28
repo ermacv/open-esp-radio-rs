@@ -38,6 +38,7 @@ pub static CHIP: oer_vendor_scenario_engine::Chip = oer_vendor_scenario_engine::
     state: decisions::state::DECISIONS,
     phy: Some(&layout::PHY_LAYOUT),
     isa: oer_vendor_scenario_engine::Isa::Rv32imafcZbaZbbZbsZcbZcmp,
+    registers: "registers/esp32s31/published/radio.bindings.toml",
 };
 
 /// Run the scenario engine for the ESP32-S31.

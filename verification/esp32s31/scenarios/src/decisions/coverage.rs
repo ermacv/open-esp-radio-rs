@@ -476,9 +476,9 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         reason: "vendor diagnostic formatting; production emits no vendor console output",
         places: &[
-            Place::Function("wifi_log"),
-            Place::Function("ets_printf"),
-            Place::Function("ets_vprintf"),
+            Place::Diagnostic("wifi_log"),
+            Place::Diagnostic("ets_printf"),
+            Place::Diagnostic("ets_vprintf"),
             Place::Function("_cvt"),
             Place::Function("strlen"),
         ],

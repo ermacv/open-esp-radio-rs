@@ -84,6 +84,7 @@ pub static CHIP: Chip = Chip {
     state: decisions::state::DECISIONS,
     phy: Some(&PHY_LAYOUT),
     isa: Isa::Rv32imac,
+    registers: "registers/esp32c5/published/radio.bindings.toml",
 };
 
 /// Run the scenario engine for the ESP32-C5.

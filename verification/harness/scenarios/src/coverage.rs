@@ -15,6 +15,10 @@ pub enum Place {
     /// Every uncovered location of the vendor function. Applies to a scenario
     /// only when the function is in one of its closures.
     Function(&'static str),
+    /// Every uncovered location of a vendor function that only produces
+    /// diagnostic output. The triage report proposes a block whose calls
+    /// all reach such functions as a diagnostic-only candidate.
+    Diagnostic(&'static str),
     /// Uncovered locations of the vendor function at offsets from `start`
     /// up to `end`: one path of a function whose other paths are compared.
     Range {
@@ -27,13 +31,15 @@ pub enum Place {
 impl Place {
     fn function(&self) -> &'static str {
         match self {
-            Place::Function(name) | Place::Range { function: name, .. } => name,
+            Place::Function(name)
+            | Place::Diagnostic(name)
+            | Place::Range { function: name, .. } => name,
         }
     }
 
     fn excludes(&self, location: &Location) -> bool {
         match self {
-            Place::Function(name) => location.function == *name,
+            Place::Function(name) | Place::Diagnostic(name) => location.function == *name,
             Place::Range {
                 function,
                 start,
@@ -47,6 +53,18 @@ impl Place {
 pub struct Decision {
     pub reason: &'static str,
     pub places: &'static [Place],
+}
+
+/// Functions `decisions` review as diagnostic output.
+pub fn diagnostic(decisions: &[Decision]) -> BTreeSet<String> {
+    decisions
+        .iter()
+        .flat_map(|d| d.places)
+        .filter_map(|place| match place {
+            Place::Diagnostic(name) => Some((*name).to_owned()),
+            Place::Function(_) | Place::Range { .. } => None,
+        })
+        .collect()
 }
 
 /// Uncovered locations of one scenario's claimed closures, and the functions

@@ -35,6 +35,9 @@ pub struct Chip {
     pub phy: Option<&'static crate::phy::PhyLayout>,
     /// The instruction set both implementations run under.
     pub isa: Isa,
+    /// The published register bindings the triage report names addresses
+    /// and fields with, relative to the repository root.
+    pub registers: &'static str,
 }
 
 /// The instruction set a chip's code is built for. The executor stops a
@@ -102,6 +105,7 @@ pub(crate) static TEST: Chip = Chip {
     state: &[],
     phy: Some(&TEST_PHY),
     isa: Isa::Rv32imac,
+    registers: "registers/test/published/radio.bindings.toml",
 };
 
 /// The test chip's PHY layout: distinct transport and scratch addresses.

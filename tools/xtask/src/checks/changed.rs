@@ -39,6 +39,9 @@ pub struct Plan {
     /// A manifest, lockfile or network owner changed: the network adapter
     /// dependency boundaries may have moved.
     pub network: bool,
+    /// A register model, its policy or the register tool changed: the
+    /// published SVD, bindings and PAC must still be what the model yields.
+    pub registers: bool,
     /// A Cargo manifest or lockfile changed.
     pub metadata: bool,
     /// Code, register models, vendor docs or provenance facts changed: vendor
@@ -101,6 +104,9 @@ pub fn plan(
         }
         if path.starts_with("platform") {
             plan.platform_link = true;
+        }
+        if path.starts_with("registers") || path.starts_with("tools/registers") {
+            plan.registers = true;
         }
         if name == "Cargo.toml"
             || name == "Cargo.lock"
@@ -300,6 +306,23 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     }
     if plan.network {
         super::network::run(ctx)?;
+    }
+    if plan.registers {
+        for entry in std::fs::read_dir(ctx.root.join("registers"))? {
+            let manifest = entry?.path().join("publication/registers.toml");
+            if !manifest.is_file() {
+                continue;
+            }
+            for arguments in [&["validate"][..], &["generate", "--check"]] {
+                process::run(
+                    ctx.cargo()
+                        .arg("registers")
+                        .args(arguments)
+                        .arg("--manifest")
+                        .arg(&manifest),
+                )?;
+            }
+        }
     }
     if plan.platform_link {
         println!("check changed: linking the station example for the platform change");
@@ -511,6 +534,9 @@ mod tests {
         assert!(run(&["crates/adapters/embassy-net/owned/Cargo.toml"]).network);
         assert!(run(&["crates/network/interface/src/lib.rs"]).network);
         assert!(!run(&["docs/guide.md"]).network);
+        assert!(run(&["registers/esp32s31/model/wifi.toml"]).registers);
+        assert!(run(&["tools/registers/model/src/lib.rs"]).registers);
+        assert!(!run(&["docs/guide.md"]).registers);
         assert!(!run(&["docs/guide.md"]).platform_link);
         assert!(
             run(&["qualification/evaluator/src/main.rs"])

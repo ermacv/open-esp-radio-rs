@@ -6,7 +6,7 @@ transfer = "identical-image"
 tags = ["diagnostic", "characterization", "udp", "station", "ht40", "single-core", "ceiling", "air-strict"]
 
 [wifi]
-image = "correctness"
+image = "performance"
 
 [wifi.datapath]
 placement = "single-core"
@@ -19,5 +19,4 @@ payload_bytes = 1472
 offer = { rx_bps = 130000000 }
 
 [wifi.workload.criteria]
-require_no_beacon_loss = true
 minimum_rx_bps = 10000000

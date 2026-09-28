@@ -4320,6 +4320,12 @@ code = "687b6998b90a614951a37cfd2dd890a119c6743139085e5ba1156e5f71b86bd1"
 [[function]]
 artifact = "libpp"
 member = "pp_he.o"
+symbol = "ppHEAMPDU2Normal"
+code = "04fc2185ec2ea484416d3b50bbb23086aa1d50e9f8d9c7da814e9f14a1d0dd1d"
+
+[[function]]
+artifact = "libpp"
+member = "pp_he.o"
 symbol = "ppSelectTxFormat"
 code = "8a80b2fec22586d3e39180ec8e8f3356656bf38227c79f206e0fb5486694886c"
 
@@ -4502,8 +4508,20 @@ code = "b1cae6c8b0caf134b046cb5914760a5fb13d8938ce46c44092de1ac5c5de005e"
 [[function]]
 artifact = "libpp"
 member = "trc.o"
+symbol = "trc_isTxAmpduOperational"
+code = "9ee1c1f056bf7daa35ce19c5637dd190eac83e26d8de4edef3c5753ef3f97402"
+
+[[function]]
+artifact = "libpp"
+member = "trc.o"
 symbol = "trc_set_bf_report_rate"
 code = "d553a697bc3647209b03a133425af8893b0680f34c0c57dbb64b7160687899ea"
+
+[[function]]
+artifact = "libpp"
+member = "trc.o"
+symbol = "trc_tid_isTxAmpduOperational"
+code = "4e549d60c4e236b88fe9d2b88190e584829a7332b5587d7f2e7a3457556bf010"
 
 [[function]]
 artifact = "libpp"
@@ -6219,6 +6237,12 @@ decisions = ["coverage.rs"]
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "ppHEAMPDU2Normal"
+code = "07d45271bd75958e1cb83692bc0b53c325418fdccc2b0a237768b2ea173252fa"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "ppProcessLifeTime"
 code = "6a7319903f4b1d3efe58413aca9408cc0b6f2de2167c8c1836c479844c0a7667"
 decisions = ["coverage.rs"]
@@ -6403,8 +6427,20 @@ code = "45423a64cf186a0ddf3b72ec66a2eb7948a98c8cda107d13dffe3129ff310493"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "trc_isTxAmpduOperational"
+code = "9ee1c1f056bf7daa35ce19c5637dd190eac83e26d8de4edef3c5753ef3f97402"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "trc_set_bf_report_rate"
 code = "9f8d93dd0ba3dfec92260a4e2ba6a767f19760ec7485591ff9d8427a96ba8616"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "trc_tid_isTxAmpduOperational"
+code = "4e549d60c4e236b88fe9d2b88190e584829a7332b5587d7f2e7a3457556bf010"
 
 [[function]]
 artifact = "rom"

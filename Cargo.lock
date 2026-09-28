@@ -372,7 +372,7 @@ dependencies = [
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "futures-intrusive",
- "heapless 0.9.3",
+ "heapless 0.8.0",
 ]
 
 [[package]]
@@ -3535,7 +3535,7 @@ dependencies = [
 [[package]]
 name = "openthread-radio"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/openthread?rev=7bae20d812340dd1e987dd9a2ad92a879a9ed0da#7bae20d812340dd1e987dd9a2ad92a879a9ed0da"
+source = "git+https://github.com/ermacv/openthread?rev=13538da6b576ed8f1316adbad2196c06e4cf7c99#13538da6b576ed8f1316adbad2196c06e4cf7c99"
 dependencies = [
  "bitflags 2.13.1",
  "embassy-time",

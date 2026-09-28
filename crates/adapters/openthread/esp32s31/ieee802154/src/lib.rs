@@ -7,7 +7,7 @@
 //!
 //! It builds on `openthread-radio`, the C-free trait crate of the
 //! repository's fork of that crate (<https://github.com/ermacv/openthread>,
-//! branch `oer/radio-security`), whose trait also carries OpenThread's MAC
+//! branch `oer/main`), whose trait also carries OpenThread's MAC
 //! keys, frame counter and per-frame transmit information. The radio reports
 //! the capabilities ESP-IDF's OpenThread port reports: hardware acknowledgement with its timeout, address filtering,
 //! promiscuous mode, source matching for frame pending, energy scan,

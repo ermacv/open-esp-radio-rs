@@ -7,9 +7,12 @@ the composed client.
 
 It depends on `openthread-radio`, the trait crate of the repository's fork
 of that crate,
-[`ermacv/openthread`](https://github.com/ermacv/openthread/tree/oer/radio-security)
-at a pinned revision on branch `oer/radio-security`, based on the 0.4.0
-release; the fork's `openthread` crate at the same revision re-exports the
+[`ermacv/openthread`](https://github.com/ermacv/openthread/tree/oer/main)
+at a pinned revision of its working branch `oer/main`, which merges upstream
+`esp-rs/openthread` `main` every one to two weeks, keeps every pinned
+revision under a `pin/<sha>` tag and records what each merge took in
+[`UPSTREAM.md`](https://github.com/ermacv/openthread/blob/oer/main/UPSTREAM.md);
+the fork's `openthread` crate at the same revision re-exports the
 trait for the application. The fork extends the trait with what OpenThread hands a radio that
 claims `OT_RADIO_CAPS_TRANSMIT_SEC` and reads back from it: the MAC keys and
 frame counter (`set_mac_keys`, `set_mac_frame_counter`), each frame's

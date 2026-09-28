@@ -216,7 +216,7 @@ pack and evidence catalogs explicitly. It does not select private vendor
 binaries. Full vendor investigations add their own artifact context. These
 compositions have separate validation requirements.
 
-`verification/projects` holds each chip's typed comparison scenarios,
+`verification/<chip>/` holds each chip's typed comparison scenarios,
 compiled probes and native evidence index. Generic Blobray crates do not depend
 on a chip project; the scenarios depend on Blobray.
 

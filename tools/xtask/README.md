@@ -26,6 +26,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check architecture` | Run Clippy on minimum/default and supported feature profiles, applying each crate's lint policy; reject Wi-Fi packages in Bluetooth facade profiles; check layer/chip boundaries, isolated facade consumers, public type identities and composition contracts; crate-root unsafe attributes match the reviewed audited list and direct PAC dependencies the reviewed consumer list |
 | `cargo xtask check network` | Resolve isolated network consumers and audit their dependency boundaries; CI compiles the profiles |
 | `cargo xtask check docs` | Check owned Markdown local links and check/render the static qualification catalogs and programs; API documentation is `cargo xtask doc` |
+| `cargo xtask check capabilities [--changed FILE ...]` | Check the `// CAPABILITY: <id>` code anchors against every qualification catalog ([rules](../../qualification/README.md#code-anchors)) and list the entries anchored in the changed files |
 | `cargo xtask doc` | Build API documentation as docs.rs would: one `cargo doc --no-deps` per `[package.metadata.docs.rs]` target with `RUSTDOCFLAGS=-D warnings`, then `cargo test --doc --workspace` |
 | `cargo xtask check phy --chip CHIP` | Build the PHY library for the chip target and audit its artifact and dependency graph |
 | `cargo xtask check images` | Build both final performance/correctness HIL application images and run their target audits |

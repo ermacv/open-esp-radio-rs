@@ -28,6 +28,20 @@ fn markdown_parser_checks_references_paths_anchors_and_source_lines() {
     assert!(check_markdown(&context, std::slice::from_ref(&index)).is_err());
     fs::write(&index, "[anchor](target%20file.md#absent)\n").unwrap();
     assert!(check_markdown(&context, std::slice::from_ref(&index)).is_err());
+    fs::write(repository.path().join("docs/plain.md"), "# Plain\n").unwrap();
+    fs::write(
+        &index,
+        "`docs/{index,plain}.md` and `docs/index.md:3` exist; `docs/<page>.md` is a placeholder\n",
+    )
+    .unwrap();
+    let summary = check_markdown(&context, std::slice::from_ref(&index)).unwrap();
+    assert_eq!(summary.code_paths, 3);
+    fs::write(&index, "`docs/{index,moved}.md` and `src/lib.rs`\n").unwrap();
+    let error = check_markdown(&context, std::slice::from_ref(&index))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("names missing docs/moved.md"), "{error}");
+    assert!(!error.contains("src/lib.rs"), "{error}");
     fs::write(&index, "[undefined][nowhere]\n").unwrap();
     let error = check_markdown(&context, std::slice::from_ref(&index))
         .unwrap_err()

@@ -27,7 +27,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     documents.extend(run_catalogs(ctx, &output, &groups)?);
     let links = check_markdown(ctx, &documents)?;
     println!(
-        "docs static passed: catalogs={} programs={} documents={} local-links={} anchors={} external-not-checked={}",
+        "docs static passed: catalogs={} programs={} documents={} local-links={} code-paths={} anchors={} external-not-checked={}",
         groups
             .iter()
             .map(|group| group.catalogs.len())
@@ -38,10 +38,33 @@ pub fn run(ctx: &Context) -> Result<()> {
             .sum::<usize>(),
         links.documents,
         links.local_links,
+        links.code_paths,
         links.anchors,
         links.external_not_checked,
     );
     Ok(())
+}
+
+/// Check every catalog entry's code anchors (see the qualification
+/// evaluator's `catalog anchors`) against all catalogs at once, since an
+/// anchor may name an entry of any of them. `changed` files, relative to the
+/// root, list the entries whose anchored code an edit touched.
+pub fn capabilities(ctx: &Context, changed: &[PathBuf]) -> Result<()> {
+    let binary = qualification_binary(ctx)?;
+    let mut arguments = vec![OsString::from("catalog"), OsString::from("anchors")];
+    for group in catalog_groups(ctx)? {
+        for catalog in group.catalogs {
+            arguments.push("--catalog".into());
+            arguments.push(catalog.into_os_string());
+        }
+    }
+    for path in changed {
+        arguments.push("--changed".into());
+        arguments.push(path.clone().into_os_string());
+    }
+    let mut command = ctx.command(&binary);
+    command.args(arguments).arg("--root").arg(&ctx.root);
+    process::run(&mut command)
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +77,8 @@ struct CatalogGroup {
 #[derive(Debug)]
 struct LinkSummary {
     documents: usize,
+    /// Repository paths named in inline code, all present.
+    code_paths: usize,
     local_links: usize,
     external_not_checked: usize,
     anchors: usize,

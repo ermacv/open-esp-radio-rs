@@ -15,6 +15,8 @@ struct ParsedMarkdown {
     anchors: BTreeSet<String>,
     links: Vec<String>,
     undefined_references: Vec<String>,
+    /// Inline code spans; code blocks are examples, not references.
+    code_spans: Vec<String>,
 }
 
 fn parse_markdown(text: &str) -> ParsedMarkdown {
@@ -32,6 +34,7 @@ fn parse_markdown(text: &str) -> ParsedMarkdown {
     let mut anchors = BTreeSet::new();
     let mut duplicate_headings = BTreeMap::<String, usize>::new();
     let mut links = Vec::new();
+    let mut code_spans = Vec::new();
     let mut heading: Option<(Option<String>, String)> = None;
     for event in parser {
         match event {
@@ -51,10 +54,16 @@ fn parse_markdown(text: &str) -> ParsedMarkdown {
                     anchors.insert(anchor);
                 }
             }
-            Event::Text(text) | Event::Code(text) => {
+            Event::Text(text) => {
                 if let Some((_, heading)) = &mut heading {
                     heading.push_str(&text);
                 }
+            }
+            Event::Code(text) => {
+                if let Some((_, heading)) = &mut heading {
+                    heading.push_str(&text);
+                }
+                code_spans.push(text.to_string());
             }
             Event::Start(Tag::Link { dest_url, .. })
             | Event::Start(Tag::Image { dest_url, .. }) => links.push(dest_url.to_string()),
@@ -68,7 +77,69 @@ fn parse_markdown(text: &str) -> ParsedMarkdown {
         anchors,
         links,
         undefined_references,
+        code_spans,
     }
+}
+
+/// The repository paths an inline code span names: spans rooted at a
+/// top-level repository directory, with `{a,b}` alternatives expanded, a
+/// trailing `:line` or `#anchor` dropped. Spans with placeholders, globs or
+/// spaces are prose, not references.
+fn code_span_paths(span: &str, top_level: &BTreeSet<String>) -> Vec<String> {
+    let span = span.trim().trim_end_matches(['.', ',', ';', ':']);
+    let rooted = span
+        .split_once('/')
+        .is_some_and(|(first, _)| top_level.contains(first));
+    if !rooted
+        || span.contains(char::is_whitespace)
+        || span.contains(['<', '>', '*', '$', '?'])
+        || span.contains("...")
+    {
+        return Vec::new();
+    }
+    expand_braces(span)
+        .into_iter()
+        .map(|path| {
+            let path = path.split('#').next().unwrap_or_default();
+            path.split(':').next().unwrap_or_default().to_owned()
+        })
+        .collect()
+}
+
+fn expand_braces(text: &str) -> Vec<String> {
+    let Some(open) = text.find('{') else {
+        return vec![text.to_owned()];
+    };
+    let Some(close) = text[open..].find('}').map(|offset| open + offset) else {
+        return vec![text.to_owned()];
+    };
+    text[open + 1..close]
+        .split(',')
+        .flat_map(|choice| {
+            expand_braces(&format!("{}{choice}{}", &text[..open], &text[close + 1..]))
+        })
+        .collect()
+}
+
+/// Whether `directory` holds a file anywhere below it; a tree of empty
+/// directories is no repository content.
+fn holds_file(directory: &Path) -> bool {
+    fs::read_dir(directory).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_type()
+                .is_ok_and(|kind| !kind.is_dir() || holds_file(&entry.path()))
+        })
+    })
+}
+
+/// Whether Git ignores `path`, as for a documented local configuration file.
+fn ignored(root: &Path, path: &str) -> bool {
+    std::process::Command::new("git")
+        .current_dir(root)
+        .args(["check-ignore", "--quiet", "--no-index", path])
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn heading_slug(text: &str) -> String {
@@ -192,6 +263,42 @@ pub(super) fn check_markdown(ctx: &Context, initial: &[PathBuf]) -> Result<LinkS
         documents.insert(path, parsed);
     }
 
+    let top_level = fs::read_dir(&root)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().into_string().ok()?;
+            (entry.file_type().ok()?.is_dir()
+                && name != "target"
+                && name != ".git"
+                && holds_file(&entry.path()))
+            .then_some(name)
+        })
+        .collect::<BTreeSet<_>>();
+    let mut code_paths = 0;
+    let mut stale = Vec::new();
+    for (document, parsed) in &documents {
+        for span in &parsed.code_spans {
+            for path in code_span_paths(span, &top_level) {
+                code_paths += 1;
+                if !root.join(&path).exists() && !ignored(&root, &path) {
+                    stale.push(format!(
+                        "{}: `{span}` names missing {path}",
+                        document.strip_prefix(&root)?.display()
+                    ));
+                }
+            }
+        }
+    }
+    if !stale.is_empty() {
+        stale.sort();
+        stale.dedup();
+        return Err(format!(
+            "Markdown names repository paths that do not exist:\n{}",
+            stale.join("\n")
+        )
+        .into());
+    }
+
     let mut local_links = 0;
     let mut external_not_checked = 0;
     for (document, parsed) in &documents {
@@ -223,6 +330,7 @@ pub(super) fn check_markdown(ctx: &Context, initial: &[PathBuf]) -> Result<LinkS
     }
     Ok(LinkSummary {
         documents: documents.len(),
+        code_paths,
         local_links,
         external_not_checked,
         anchors: documents

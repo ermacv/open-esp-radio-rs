@@ -20,8 +20,8 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   backends live under `crates/hardware/esp32s31/`; executor-free chip role
   compositions (Wi-Fi STA/AP, the Bluetooth LE Controller) live under `crates/roles/esp32s31/`. Executor and board bindings
   live in `crates/adapters/` and `crates/composition/`. Stable-memory contracts
-  live in `crates/memory/`; network values live in `crates/network/interface/`
-  and stack adapters in `crates/adapters/{embassy-net,xarxa}/`.
+  live in `crates/memory/` and the typed diagnostic trace in `crates/trace/`; network values live in `crates/network/interface/`
+  and the owned-xarxa stack adapter in `crates/adapters/embassy-net/owned/`.
   `experiments/network-engine/` owns the experimental network engine; its tests
   may compose production owners, and no production package depends on it.
   Concrete Wi-Fi and Bluetooth

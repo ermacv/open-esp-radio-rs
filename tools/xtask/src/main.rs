@@ -181,6 +181,12 @@ enum Check {
     Network,
     /// Check local Markdown links and the static qualification catalogs.
     Docs,
+    /// Check the `// CAPABILITY: <id>` anchors in code against every catalog
+    /// entry, and list the entries anchored in the given changed files.
+    Capabilities {
+        #[arg(long)]
+        changed: Vec<std::path::PathBuf>,
+    },
     /// Build the PHY library for the chip target and audit its artifact and graph.
     Phy {
         #[arg(long)]
@@ -354,6 +360,7 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Architecture => checks::architecture::run(&ctx),
             Check::Network => checks::network::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),
+            Check::Capabilities { changed } => checks::docs::capabilities(&ctx, &changed),
             Check::Phy { chip } => checks::phy::run(&ctx, &chip),
             Check::Images => checks::images::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),

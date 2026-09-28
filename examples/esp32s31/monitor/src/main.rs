@@ -6,13 +6,12 @@ use esp_backtrace as _;
 
 use esp_hal::{
     clock::CpuClock,
-    efuse::{self, InterfaceMacAddress},
     interrupt::software::SoftwareInterrupt,
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
 
-use oer::wifi::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
+use oer::wifi::{MonitorRequest, WifiChannel, WifiMonitorConfig};
 
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 
@@ -79,11 +78,6 @@ async fn monitor_task(
     trng: Trng,
     watchdog: &'static DeadlineWatchdog,
 ) {
-    let mut station = [0; 6];
-    station.copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
-    let mut access_point = [0; 6];
-    access_point
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
     // Board-selected engineering limits, not qualified timing bounds.
     use core::num::NonZeroU32;
     static WATCHDOG_CONFIG: StaticCell<WatchdogConfig> = StaticCell::new();
@@ -92,12 +86,11 @@ async fn monitor_task(
         DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap()),
         DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
     ));
-    let config = RadioConfig::new(
+    let config = RadioConfig::from_efuse(
         watchdog,
-        WifiMacAddress::new(station).expect("station MAC must be unicast"),
-        WifiMacAddress::new(access_point).expect("AP MAC must be unicast"),
         WifiChannel::mhz20(1).expect("initial channel is valid"),
-    );
+    )
+    .expect("the eFuse holds unicast interface addresses");
     let (radio, partitions) = shared_radio::start(spawner, radio_platform, RadioStart::new())
         .expect("the shared radio starts once");
     let ConcurrentPartitions {

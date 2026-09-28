@@ -8,15 +8,13 @@ use esp_backtrace as _;
 
 use esp_hal::{
     clock::CpuClock,
-    efuse::{self, InterfaceMacAddress},
     interrupt::software::SoftwareInterrupt,
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
 };
 
 use oer::wifi::{
-    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, Pmk, WifiChannel,
-    WifiMacAddress, WifiSsid,
+    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, Pmk, WifiChannel, WifiSsid,
 };
 
 use oer_esp32s31_example_access_point::{dhcp, network, services};
@@ -95,15 +93,6 @@ async fn access_point_task(
     trng: Trng,
     watchdog: &'static DeadlineWatchdog,
 ) {
-    let mut station_address = [0; 6];
-    station_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
-    let mut access_point_address = [0; 6];
-    access_point_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
-    let station_mac = WifiMacAddress::new(station_address).expect("valid station MAC in eFuse");
-    let access_point_mac =
-        WifiMacAddress::new(access_point_address).expect("valid AP MAC in eFuse");
     let ssid = WifiSsid::new(AP_SSID.as_bytes()).expect("AP SSID must be valid");
     let pmk = Pmk::derive(AP_PASSPHRASE.as_bytes(), ssid.as_bytes())
         .expect("AP passphrase must be valid WPA2-Personal input");
@@ -122,12 +111,13 @@ async fn access_point_task(
         DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap()),
         DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
     ));
-    let config = RadioConfig::new(
+    let config = RadioConfig::from_efuse(
         watchdog,
-        station_mac,
-        access_point_mac,
         WifiChannel::mhz20(AP_CHANNEL).expect("initial channel must be valid"),
-    );
+    )
+    .expect("the eFuse holds unicast interface addresses");
+    // The network stack's random seed, taken before Wi-Fi owns the TRNG.
+    let seed = (u64::from(trng.random()) << 32) | u64::from(trng.random());
     let (radio, partitions) = shared_radio::start(spawner, radio_platform, RadioStart::new())
         .expect("the shared radio starts once");
     let ConcurrentPartitions {
@@ -154,16 +144,6 @@ async fn access_point_task(
         station_status: _,
         mut access_point_status,
     } = wifi.into_parts();
-    let seed = u64::from_le_bytes([
-        access_point_address[0],
-        access_point_address[1],
-        access_point_address[2],
-        access_point_address[3],
-        access_point_address[4],
-        access_point_address[5],
-        0xa5,
-        0x31,
-    ]);
     integration::await_stack_boundary!(network::run(
         access_point_device,
         seed,

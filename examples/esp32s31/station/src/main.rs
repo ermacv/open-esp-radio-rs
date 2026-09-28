@@ -16,7 +16,6 @@ use esp_backtrace as _;
 
 use esp_hal::{
     clock::CpuClock,
-    efuse::{self, InterfaceMacAddress},
     interrupt::software::SoftwareInterrupt,
     rng::{Trng, TrngSource},
     timer::{OneShotTimer, timg::TimerGroup},
@@ -24,7 +23,7 @@ use esp_hal::{
 
 use oer::wifi::{
     Preference, StaReconnectPolicy, StationRequest, StationScanChannels, StationScanPolicy,
-    StationSecurity, WifiChannel, WifiMacAddress, WifiScanRequest, WifiSsid,
+    StationSecurity, WifiChannel, WifiScanRequest, WifiSsid,
 };
 
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
@@ -105,16 +104,6 @@ async fn station_task(
     trng: Trng,
     watchdog: &'static DeadlineWatchdog,
 ) {
-    let mut station_address = [0; 6];
-    station_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
-    let mut access_point_address = [0; 6];
-    access_point_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
-    let station_mac = WifiMacAddress::new(station_address)
-        .expect("ESP32-S31 eFuse must contain a unicast station address");
-    let access_point_mac = WifiMacAddress::new(access_point_address)
-        .expect("ESP32-S31 eFuse must contain a unicast access-point address");
     let ssid = WifiSsid::new(STA_SSID.as_bytes()).expect("station SSID must be valid");
     let security = StationSecurity::wpa2_personal(STA_PASSPHRASE.as_bytes(), ssid.as_bytes())
         .expect("station credentials must be valid");
@@ -137,12 +126,13 @@ async fn station_task(
         DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap()),
         DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
     ));
-    let config = RadioConfig::new(
+    let config = RadioConfig::from_efuse(
         watchdog,
-        station_mac,
-        access_point_mac,
         WifiChannel::mhz20(1).expect("initial channel is valid"),
-    );
+    )
+    .expect("the eFuse holds unicast interface addresses");
+    // The network stack's random seed, taken before Wi-Fi owns the TRNG.
+    let network_seed = (u64::from(trng.random()) << 32) | u64::from(trng.random());
     let (radio, partitions) = shared_radio::start(spawner, radio_platform, RadioStart::new())
         .expect("the shared radio starts once");
     let ConcurrentPartitions {
@@ -169,19 +159,7 @@ async fn station_task(
         station_status: _,
         access_point_status: _,
     } = wifi.into_parts();
-    let network = network::run(
-        station_device,
-        u64::from_le_bytes([
-            station_address[0],
-            station_address[1],
-            station_address[2],
-            station_address[3],
-            station_address[4],
-            station_address[5],
-            0xa5,
-            0x31,
-        ]),
-    );
+    let network = network::run(station_device, network_seed);
     let application = async move {
         let completed = wifi
             .scan(WifiScanRequest::new(

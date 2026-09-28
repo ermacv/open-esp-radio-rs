@@ -207,9 +207,10 @@ Stand commands (shared by every checkout of this user):
       [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
   cargo hil devices [--json]          boards: name, chip, port, health, last firmware
-  cargo hil devices set MAC [--chip CHIP] [--name NAME]
+  cargo hil devices set MAC [--chip CHIP] [--name NAME] [--reset-uart SERIAL --en LINE --boot LINE]
+  cargo hil devices reset BOARD [--download]   reset through the registered reset path
   cargo hil [--owner NAME] devices maintenance BOARD --reason TEXT   only NAME may claim BOARD until release
-  cargo hil devices release BOARD
+  cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
   cargo hil runs list [--scenario S] [--outcome O] [--commit C] [--image I] [--since 3d]
   cargo hil runs why RUN              why a run did not pass: failure, missed criteria, log tail
   cargo hil runs wait RUN|--latest    follow a run to its end; exit 0 passed, 1 failed, 2 interrupted
@@ -1699,8 +1700,9 @@ enum DevicesCommand {
     Release {
         #[arg(value_name = "NAME|MAC")]
         board: String,
-        /// What you did to a quarantined board: pressed its reset button
-        /// or power-cycled it. It returns only if it then boots.
+        /// What returns a quarantined board: a person pressed its reset
+        /// button or power-cycled it, or its ROM answers the stand's own
+        /// reset. It returns only if it then boots.
         #[arg(long, value_enum)]
         confirm: Option<ConfirmArg>,
     },

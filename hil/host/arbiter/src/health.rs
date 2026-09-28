@@ -2,11 +2,14 @@
 //!
 //! Health combines what the stand knows without touching the board: whether
 //! it is attached, out of service or quarantined, and how often the stand had
-//! to recover it within [`crate::maintenance::FLAKY_WINDOW`].
+//! to recover it within [`RECOVERY_WINDOW`].
 
 use serde::Serialize;
 
 use crate::{BoardEvent, BoardEventKind, Maintenance, maintenance::ServiceKind};
+
+/// The window over which a board's recoveries count towards its health.
+pub const RECOVERY_WINDOW: std::time::Duration = std::time::Duration::from_secs(3600);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -63,7 +66,7 @@ pub(crate) fn of(
     events: &[BoardEvent],
     now_unix: u64,
 ) -> Health {
-    let since = now_unix.saturating_sub(crate::maintenance::FLAKY_WINDOW.as_secs());
+    let since = now_unix.saturating_sub(RECOVERY_WINDOW.as_secs());
     let recoveries = events
         .iter()
         .filter(|event| event.device.as_deref() == Some(mac))

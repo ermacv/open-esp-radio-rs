@@ -3,9 +3,9 @@
 //! A board under maintenance serves only the owner who took it out: every
 //! other request that claims it, or the whole stand, is refused with the
 //! reason instead of queueing. A quarantined board serves nobody: the runner
-//! quarantines a board that stays unreachable after automatic recovery, or
-//! that needed hardware-level recovery too often, and only a person who
-//! reset or power-cycled it returns it, after it answers again. Maintenance never stops a lease already held;
+//! quarantines a board that no script can bring back to a flashable state,
+//! and only a person who reset or power-cycled it returns it, after it
+//! answers again. Maintenance never stops a lease already held;
 //! it keeps later ones away. The state is `maintenance.json` beside the
 //! queue, so every checkout of the host user sees it.
 
@@ -19,9 +19,6 @@ const SCHEMA: u32 = 1;
 
 /// The owner of every quarantine: no request is ever made by it.
 pub const QUARANTINE_OWNER: &str = "quarantine";
-/// Hardware-level recoveries within [`FLAKY_WINDOW`] that quarantine a board.
-pub const FLAKY_RECOVERIES: usize = 3;
-pub const FLAKY_WINDOW: std::time::Duration = std::time::Duration::from_secs(3600);
 
 /// Why a board is out of service.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -40,8 +37,8 @@ pub enum ServiceKind {
 pub enum QuarantineTrigger {
     /// It stayed unreachable after every automatic recovery step.
     Unreachable,
-    /// It needed hardware-level recovery [`FLAKY_RECOVERIES`] times within
-    /// [`FLAKY_WINDOW`].
+    /// An older runner's quarantine of a board it recovered often; no build
+    /// sets it now, since a board the stand recovers needs no person.
     Flaky,
 }
 
@@ -178,24 +175,6 @@ impl Arbiter {
         )?;
         self.clear_maintenance(mac)?;
         Ok(answer)
-    }
-
-    /// Hardware-level recoveries of the board with `mac` within
-    /// [`FLAKY_WINDOW`].
-    pub fn recent_hardware_recoveries(&self, mac: &str) -> crate::Result<usize> {
-        let since = crate::unix_now().saturating_sub(FLAKY_WINDOW.as_secs());
-        Ok(self
-            .board_events()?
-            .iter()
-            .filter(|event| {
-                event.device.as_deref() == Some(mac)
-                    && event.unix >= since
-                    && matches!(
-                        event.kind,
-                        crate::BoardEventKind::Recovered { hardware: true, .. }
-                    )
-            })
-            .count())
     }
 
     /// Return the board with `mac` to service; whether it was out of service.
@@ -359,28 +338,6 @@ mod tests {
             serde_json::to_value(Confirmation::RomAnswers).unwrap(),
             "rom-answers"
         );
-    }
-
-    #[test]
-    fn only_hardware_recoveries_count_towards_flaky() {
-        let directory = tempfile::tempdir().unwrap();
-        let arbiter = Arbiter::at(directory.path()).unwrap();
-        for hardware in [true, false, true] {
-            arbiter
-                .record_board_by(
-                    String::from("runner"),
-                    Some(String::from("AA")),
-                    crate::BoardEventKind::Recovered {
-                        step: crate::RecoveryStep::EnReset,
-                        hardware,
-                        reset_line: None,
-                        origin: String::from("run"),
-                    },
-                )
-                .unwrap();
-        }
-        assert_eq!(arbiter.recent_hardware_recoveries("AA").unwrap(), 2);
-        assert_eq!(arbiter.recent_hardware_recoveries("BB").unwrap(), 0);
     }
 
     #[test]

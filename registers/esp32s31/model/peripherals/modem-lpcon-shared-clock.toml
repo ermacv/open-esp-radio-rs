@@ -91,6 +91,63 @@ maximum = 4095
 
 [[peripherals.registers]]
 [peripherals.registers.register]
+name = "WIFI_LP_CLK_CONF"
+description = "Wi-Fi power-domain low-power source selector and twelve-bit divider."
+addressOffset = 0x0C
+size = 32
+access = "read-write"
+resetValue = 0x00000000
+
+[[peripherals.registers.register.fields]]
+name = "CLK_WIFIPWR_LP_SEL_OSC_SLOW"
+description = "Select the slow oscillator."
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_WIFIPWR_LP_SEL_OSC_FAST"
+description = "Select the fast oscillator."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_WIFIPWR_LP_SEL_XTAL"
+description = "Select the main crystal clock."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_WIFIPWR_LP_SEL_XTAL32K"
+description = "Select the modem 32 kHz clock chosen by MODEM_32K_CLK_CONF."
+bitOffset = 3
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLK_WIFIPWR_LP_DIV_NUM"
+description = "Twelve-bit Wi-Fi power-domain low-power divider image."
+bitOffset = 4
+bitWidth = 12
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 4095
+
+[[peripherals.registers]]
+[peripherals.registers.register]
+name = "MODEM_32K_CLK_CONF"
+description = "Source of the modem 32 kHz clock selected by the low-power XTAL32K selectors."
+addressOffset = 0x14
+size = 32
+access = "read-write"
+resetValue = 0x00000000
+
+[[peripherals.registers.register.fields]]
+name = "CLK_MODEM_32K_SEL"
+description = "Modem 32 kHz source: zero is the 32 kHz crystal, one the RC32K oscillator and two the external 32 kHz clock."
+bitOffset = 0
+bitWidth = 2
+
+[[peripherals.registers]]
+[peripherals.registers.register]
 name = "CLK_CONF"
 description = "Shared MODEM_LPCON clock gates used by radio lifecycles."
 addressOffset = 0x18
@@ -212,3 +269,17 @@ sources = ["S31_MODEM_LPCON_STRUCT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "MODEM_LPCON_SHARED_CLOCK.WIFI_LP_CLK_CONF"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "MODEM_LPCON_SHARED_CLOCK.MODEM_32K_CLK_CONF"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

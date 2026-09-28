@@ -6369,6 +6369,114 @@ domain = "ModemLowPowerClockDivider"
 exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_7B9CC1AC_S31_MODEM_LPCON_LL"]
 
+[[field-replace-modifies]]
+name = "deselect_wifi_low_power_clock_slow_oscillator"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_LP_SEL_OSC_SLOW", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "deselect_wifi_low_power_clock_fast_oscillator"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_LP_SEL_OSC_FAST", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "deselect_wifi_low_power_clock_crystal_32khz"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_LP_SEL_XTAL32K", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "deselect_wifi_low_power_clock_crystal"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_LP_SEL_XTAL", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "select_wifi_low_power_clock_slow_oscillator"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_LP_SEL_OSC_SLOW", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "select_wifi_low_power_clock_crystal_32khz"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_LP_SEL_XTAL32K", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "select_modem_32khz_clock_crystal"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "MODEM_32K_CLK_CONF"
+fields = [{ field = "CLK_MODEM_32K_SEL", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "enable_wifi_power_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-replace-modifies]]
+name = "set_wifi_low_power_clock_divider"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [{ field = "CLK_WIFIPWR_LP_DIV_NUM", source-bit-offset = 0 }]
+domain = "ModemLowPowerClockDivider"
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-snapshot-reads]]
+name = "observe_wifi_low_power_clock_configuration"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "WIFI_LP_CLK_CONF"
+fields = [
+    "CLK_WIFIPWR_LP_SEL_OSC_SLOW",
+    "CLK_WIFIPWR_LP_SEL_OSC_FAST",
+    "CLK_WIFIPWR_LP_SEL_XTAL",
+    "CLK_WIFIPWR_LP_SEL_XTAL32K",
+    "CLK_WIFIPWR_LP_DIV_NUM",
+]
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
+
+[[field-reads]]
+name = "read_wifi_power_clock_enable"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+field = "CLK_WIFIPWR_EN"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-reads]]
+name = "read_rtc_slow_clock_source"
+peripheral = "LP_AON_CLKRST"
+register = "ROOT_CLK_CONF"
+field = "SLOW_CLK_SEL"
+sources = ["ESP_IDF_4D59230D_S31_RTC_SLOW_CLOCK_SOURCE"]
+
 [[bounded-domains]]
 name = "PhyRxDcoCalibrationControl"
 description = "Two-bit RX-DCO calibration control field retained and restored by complete calibration bodies."

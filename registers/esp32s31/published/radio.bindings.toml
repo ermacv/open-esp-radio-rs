@@ -42220,6 +42220,70 @@ bit-width = 12
 access = "read-write"
 
 [[registers]]
+address = 537980940
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.WIFI_LP_CLK_CONF"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "wifi_lp_clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIPWR_LP_SEL_OSC_SLOW"
+method = "clk_wifipwr_lp_sel_osc_slow"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIPWR_LP_SEL_OSC_FAST"
+method = "clk_wifipwr_lp_sel_osc_fast"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIPWR_LP_SEL_XTAL"
+method = "clk_wifipwr_lp_sel_xtal"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIPWR_LP_SEL_XTAL32K"
+method = "clk_wifipwr_lp_sel_xtal32k"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIPWR_LP_DIV_NUM"
+method = "clk_wifipwr_lp_div_num"
+bit-offset = 4
+bit-width = 12
+access = "read-write"
+
+[[registers]]
+address = 537980948
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.MODEM_32K_CLK_CONF"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "modem_32k_clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_MODEM_32K_SEL"
+method = "clk_modem_32k_sel"
+bit-offset = 0
+bit-width = 2
+access = "read-write"
+
+[[registers]]
 address = 537980952
 width = 32
 access = "read-write"
@@ -45180,6 +45244,24 @@ svd-name = "MODEM_XTAL_CLK_EN"
 method = "modem_xtal_clk_en"
 bit-offset = 5
 bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 544215040
+width = 32
+access = "read-write"
+identity = "LP_AON_CLKRST.ROOT_CLK_CONF"
+peripheral = "LP_AON_CLKRST"
+peripheral-type = "LpAonClkrst"
+peripheral-module = "lp_aon_clkrst"
+scope = []
+register-method = "root_clk_conf"
+
+[[registers.fields]]
+svd-name = "SLOW_CLK_SEL"
+method = "slow_clk_sel"
+bit-offset = 23
+bit-width = 3
 access = "read-write"
 
 [[registers]]

@@ -6139,6 +6139,68 @@
           </fields>
         </register>
         <register>
+          <name>WIFI_LP_CLK_CONF</name>
+          <description>Wi-Fi power-domain low-power source selector and twelve-bit divider.</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_WIFIPWR_LP_SEL_OSC_SLOW</name>
+              <description>Select the slow oscillator.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_WIFIPWR_LP_SEL_OSC_FAST</name>
+              <description>Select the fast oscillator.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_WIFIPWR_LP_SEL_XTAL</name>
+              <description>Select the main crystal clock.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_WIFIPWR_LP_SEL_XTAL32K</name>
+              <description>Select the modem 32 kHz clock chosen by MODEM_32K_CLK_CONF.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_WIFIPWR_LP_DIV_NUM</name>
+              <description>Twelve-bit Wi-Fi power-domain low-power divider image.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>12</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4095</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>MODEM_32K_CLK_CONF</name>
+          <description>Source of the modem 32 kHz clock selected by the low-power XTAL32K selectors.</description>
+          <addressOffset>0x14</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_MODEM_32K_SEL</name>
+              <description>Modem 32 kHz source: zero is the 32 kHz crystal, one the RC32K oscillator and two the external 32 kHz clock.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
           <name>CLK_CONF</name>
           <description>Shared MODEM_LPCON clock gates used by radio lifecycles.</description>
           <addressOffset>0x18</addressOffset>
@@ -6260,6 +6322,22 @@
       <description>Low-power always-on clock/reset registers reached by the reviewed PHY power-detector lifecycle.</description>
       <baseAddress>0x20701000</baseAddress>
       <registers>
+        <register>
+          <name>ROOT_CLK_CONF</name>
+          <description>Low-power root clock configuration. Only the RTC slow-clock source selector is published.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>SLOW_CLK_SEL</name>
+              <description>RTC slow-clock source: zero is the RC slow oscillator and one the 32 kHz crystal; other values are invalid.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
+          </fields>
+        </register>
         <register>
           <name>RTC_SAR2_PWDET_CCT</name>
           <description>SAR2 power-detector circuit mode. Only encodings two and four are published by reviewed complete ROM bodies.</description>

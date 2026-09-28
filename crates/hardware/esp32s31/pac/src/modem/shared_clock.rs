@@ -49,7 +49,91 @@ pub struct BluetoothLowPowerClockObservation {
     pub timer_enabled: bool,
 }
 
+/// RTC slow-clock source decoded from `LP_AON_CLKRST.ROOT_CLK_CONF`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RtcSlowClockSource {
+    SlowOscillator,
+    Crystal32Khz,
+    /// A selector value the vendor reports as invalid.
+    Invalid(u8),
+}
+
+/// Wi-Fi power-domain low-power clock source selected at system start.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiLowPowerClockSource {
+    SlowOscillator,
+    Crystal32Khz,
+}
+
+/// Semantic Wi-Fi low-power-clock observation without register authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiLowPowerClockObservation {
+    /// The single selected source, or `None` unless exactly one of the two
+    /// sources production selects is set.
+    pub source: Option<WifiLowPowerClockSource>,
+    pub divider: u16,
+    pub power_clock_enabled: bool,
+}
+
 impl RadioPhyRegisters {
+    /// The RTC slow-clock source, as `clk_ll_rtc_slow_get_src` reads it.
+    #[doc(hidden)]
+    pub fn rtc_slow_clock_source(&self) -> RtcSlowClockSource {
+        match crate::svd::field_read::read_rtc_slow_clock_source(&self.peripherals.lp_aon_clkrst) {
+            0 => RtcSlowClockSource::SlowOscillator,
+            1 => RtcSlowClockSource::Crystal32Khz,
+            other => RtcSlowClockSource::Invalid(other),
+        }
+    }
+
+    /// Select the Wi-Fi power-domain low-power clock with divider zero and
+    /// enable the Wi-Fi power clock.
+    ///
+    /// This is `modem_clock_select_lp_clock_source(PERIPH_WIFI_MODULE, src,
+    /// 0)` as run by `esp_perip_clk_init`: every source is deselected in the
+    /// slow-oscillator, fast-oscillator, 32-kHz crystal, main-crystal order,
+    /// the one source is selected (the 32-kHz crystal also selects the
+    /// crystal as the modem 32-kHz source), the divider is written and the
+    /// Wi-Fi power clock gate is set. Each is its own field write.
+    #[doc(hidden)]
+    pub fn select_wifi_low_power_clock(&mut self, source: WifiLowPowerClockSource) {
+        let registers = &self.peripherals.modem_lpcon_shared_clock;
+        crate::generated::deselect_wifi_low_power_clock_slow_oscillator(registers);
+        crate::generated::deselect_wifi_low_power_clock_fast_oscillator(registers);
+        crate::generated::deselect_wifi_low_power_clock_crystal_32khz(registers);
+        crate::generated::deselect_wifi_low_power_clock_crystal(registers);
+        match source {
+            WifiLowPowerClockSource::SlowOscillator => {
+                crate::generated::select_wifi_low_power_clock_slow_oscillator(registers);
+            }
+            WifiLowPowerClockSource::Crystal32Khz => {
+                crate::generated::select_wifi_low_power_clock_crystal_32khz(registers);
+                crate::generated::select_modem_32khz_clock_crystal(registers);
+            }
+        }
+        crate::generated::set_wifi_low_power_clock_divider(
+            registers,
+            ModemLowPowerClockDivider::new(0).expect("zero is a valid low-power divider"),
+        );
+        crate::generated::enable_wifi_power_clock(registers);
+    }
+
+    #[doc(hidden)]
+    pub fn wifi_low_power_clock_observation(&self) -> WifiLowPowerClockObservation {
+        let registers = &self.peripherals.modem_lpcon_shared_clock;
+        let (slow, fast, crystal, crystal_32khz, divider) =
+            crate::svd::field_snapshot_read::observe_wifi_low_power_clock_configuration(registers);
+        WifiLowPowerClockObservation {
+            source: match (slow, fast, crystal, crystal_32khz) {
+                (true, false, false, false) => Some(WifiLowPowerClockSource::SlowOscillator),
+                (false, false, false, true) => Some(WifiLowPowerClockSource::Crystal32Khz),
+                _ => None,
+            },
+            divider,
+            power_clock_enabled: crate::svd::field_read::read_wifi_power_clock_enable(registers),
+        }
+    }
+
     #[doc(hidden)]
     pub fn prepare_shared_modem_clock_map(&mut self) {
         // This is the vendor's monotonic global ICG-map initialization, not

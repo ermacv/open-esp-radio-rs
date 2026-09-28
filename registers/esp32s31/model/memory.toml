@@ -63,10 +63,26 @@ end-exclusive = 0x2010F00C
 permissions = "rw"
 
 [[regions]]
-name = "modem-lpcon-platform-between-shared-clock-selectors-and-gates"
+name = "modem-lpcon-wifi-lp-clock"
 address-space = "cpu"
 kind = "mmio"
 start = 0x2010F00C
+end-exclusive = 0x2010F010
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-platform-between-wifi-lp-clock-and-modem-32k"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F010
+end-exclusive = 0x2010F014
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-modem-32k-clock"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F014
 end-exclusive = 0x2010F018
 permissions = "rw"
 
@@ -255,10 +271,26 @@ end-exclusive = 0x20600000
 permissions = "rw"
 
 [[regions]]
-name = "lp-system-before-aon-phy-aux"
+name = "lp-system-before-aon-root-clock"
 address-space = "cpu"
 kind = "mmio"
 start = 0x20700000
+end-exclusive = 0x20701000
+permissions = "rw"
+
+[[regions]]
+name = "lp-aon-root-clock"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20701000
+end-exclusive = 0x20701004
+permissions = "rw"
+
+[[regions]]
+name = "lp-aon-between-root-clock-and-phy-aux"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20701004
 end-exclusive = 0x20701068
 permissions = "rw"
 

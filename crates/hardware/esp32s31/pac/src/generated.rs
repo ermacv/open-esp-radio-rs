@@ -5703,6 +5703,73 @@ pub(crate) fn set_bluetooth_low_power_timer_divider(
     crate::svd::field_replace_modify::set_bluetooth_low_power_timer_divider(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `deselect_wifi_low_power_clock_slow_oscillator` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_wifi_low_power_clock_slow_oscillator(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::deselect_wifi_low_power_clock_slow_oscillator(registers);
+}
+
+/// Typed bridge for the reviewed `deselect_wifi_low_power_clock_fast_oscillator` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_wifi_low_power_clock_fast_oscillator(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::deselect_wifi_low_power_clock_fast_oscillator(registers);
+}
+
+/// Typed bridge for the reviewed `deselect_wifi_low_power_clock_crystal_32khz` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_wifi_low_power_clock_crystal_32khz(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::deselect_wifi_low_power_clock_crystal_32khz(registers);
+}
+
+/// Typed bridge for the reviewed `deselect_wifi_low_power_clock_crystal` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn deselect_wifi_low_power_clock_crystal(registers: &crate::svd::ModemLpconSharedClock) {
+    crate::svd::field_replace_modify::deselect_wifi_low_power_clock_crystal(registers);
+}
+
+/// Typed bridge for the reviewed `select_wifi_low_power_clock_slow_oscillator` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn select_wifi_low_power_clock_slow_oscillator(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::select_wifi_low_power_clock_slow_oscillator(registers);
+}
+
+/// Typed bridge for the reviewed `select_wifi_low_power_clock_crystal_32khz` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn select_wifi_low_power_clock_crystal_32khz(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::select_wifi_low_power_clock_crystal_32khz(registers);
+}
+
+/// Typed bridge for the reviewed `select_modem_32khz_clock_crystal` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn select_modem_32khz_clock_crystal(registers: &crate::svd::ModemLpconSharedClock) {
+    crate::svd::field_replace_modify::select_modem_32khz_clock_crystal(registers);
+}
+
+/// Typed bridge for the reviewed `enable_wifi_power_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_wifi_power_clock(registers: &crate::svd::ModemLpconSharedClock) {
+    crate::svd::field_replace_modify::enable_wifi_power_clock(registers);
+}
+
+/// Typed bridge for the reviewed `set_wifi_low_power_clock_divider` field-replacement transaction.
+#[inline]
+pub(crate) fn set_wifi_low_power_clock_divider(
+    registers: &crate::svd::ModemLpconSharedClock,
+    value: ModemLowPowerClockDivider,
+) {
+    crate::svd::field_replace_modify::set_wifi_low_power_clock_divider(registers, value.get());
+}
+
 /// Typed bridge for the reviewed `clear_phy_rx_dco_calibration_control` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_phy_rx_dco_calibration_control(registers: &crate::svd::PhyRxDcoOracle) {

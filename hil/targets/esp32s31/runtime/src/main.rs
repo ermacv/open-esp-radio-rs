@@ -348,6 +348,7 @@ extern "C" fn runtime_main() -> ! {
         feature = "bluetooth-radio"
     ))]
     system::postmortem::begin();
+    debug_record_reset_reason();
     // The bootstrap configured PSRAM before entering this separately linked
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
     // across that ELF boundary, so stage two explicitly adopts the live
@@ -811,4 +812,18 @@ fn halt() -> ! {
     loop {
         unsafe { asm!("wfi", options(nomem, nostack)) };
     }
+}
+
+/// Debug: the reset reason of each of the last sixteen boots.
+#[allow(unsafe_code, reason = "debug record in retained memory")]
+fn debug_record_reset_reason() {
+    use core::sync::atomic::{AtomicU32, Ordering::SeqCst};
+    #[allow(unsafe_code, reason = "debug record in retained memory")]
+    #[unsafe(link_section = ".rtc_fast.persistent")]
+    #[unsafe(no_mangle)]
+    static OER_RESET_RING: [AtomicU32; 17] = [const { AtomicU32::new(0) }; 17];
+    let index = OER_RESET_RING[16].load(SeqCst) % 16;
+    let reason = esp_hal::system::reset_reason().map_or(0xff, |reason| reason as u32);
+    OER_RESET_RING[index as usize].store(0xe000_0000 | reason, SeqCst);
+    OER_RESET_RING[16].store(index + 1, SeqCst);
 }

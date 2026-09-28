@@ -17,7 +17,10 @@ spawns the two tasks the radio needs for its whole lifetime:
   default `Tracking::FailStop` a failed tick stops the program, because the
   PHY state after it is not known. `Tracking::Caller` leaves tracking to the
   caller, for example a HIL task that suspends it during a measurement;
-- the coexistence schedule's phase timer.
+- the coexistence schedule's phase timer. With the default
+  `Schedule::Spawned` it runs for the radio's lifetime; `Schedule::Caller`
+  leaves it to the caller, for example a HIL session that runs it only while
+  it takes part in coexistence.
 
 `RadioStart::with_calibration_cache` replays a retained calibration at the
 first PHY registration instead of calibrating. The returned

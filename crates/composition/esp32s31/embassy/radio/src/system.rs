@@ -21,18 +21,33 @@ pub enum Tracking {
     Caller,
 }
 
+/// Who runs the radio's coexistence schedule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Schedule {
+    /// A task of this crate, for the radio's lifetime, as the vendor's
+    /// coexistence module runs it once `esp_coex` is up.
+    Spawned,
+    /// The caller runs it over the returned radio, for example only while a
+    /// session takes part in coexistence
+    /// (`RadioSystem::run_coex_schedule_until`). Until it does, no phase
+    /// advances and no radio is notified.
+    Caller,
+}
+
 /// How [`start`] brings the radio up.
 pub struct RadioStart {
     tracking: Tracking,
+    schedule: Schedule,
     calibration: Option<PhyCalibrationCache>,
 }
 
 impl RadioStart {
-    /// Fail-stop tracking by this crate and a full calibration at the first
-    /// PHY registration.
+    /// Fail-stop tracking and the coexistence schedule by this crate, and a
+    /// full calibration at the first PHY registration.
     pub const fn new() -> Self {
         Self {
             tracking: Tracking::FailStop,
+            schedule: Schedule::Spawned,
             calibration: None,
         }
     }
@@ -45,6 +60,11 @@ impl RadioStart {
 
     pub const fn with_tracking(mut self, tracking: Tracking) -> Self {
         self.tracking = tracking;
+        self
+    }
+
+    pub const fn with_schedule(mut self, schedule: Schedule) -> Self {
+        self.schedule = schedule;
         self
     }
 }
@@ -71,9 +91,9 @@ impl From<SpawnError> for RadioStartError {
 }
 
 /// Create the shared radio over `platform`, keep it in static storage and
-/// spawn its coexistence schedule and, with [`Tracking::FailStop`], its PHY
-/// tracking. Returns the radio and the protocol partitions to hand to each
-/// composition.
+/// spawn, with [`Schedule::Spawned`], its coexistence schedule and, with
+/// [`Tracking::FailStop`], its PHY tracking. Returns the radio and the
+/// protocol partitions to hand to each composition.
 ///
 /// # Errors
 ///
@@ -96,7 +116,9 @@ pub fn start(
     let radio: &'static SharedRadio = RADIO
         .try_init(radio)
         .ok_or(RadioStartError::AlreadyStarted)?;
-    spawner.spawn(coexistence_schedule(radio)?);
+    if options.schedule == Schedule::Spawned {
+        spawner.spawn(coexistence_schedule(radio)?);
+    }
     if options.tracking == Tracking::FailStop {
         spawner.spawn(phy_tracking(radio)?);
     }

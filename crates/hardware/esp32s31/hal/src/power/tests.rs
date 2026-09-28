@@ -6,6 +6,7 @@ use super::{PowerCheckpoint, PowerEntry, PowerError, PowerSequenceBackend, execu
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
+    SelectWifiLowPowerClock,
     ResetWifi(bool),
     SelectHpActiveIcg,
     ApplyModemIcg,
@@ -127,6 +128,12 @@ impl PowerSequenceBackend for FakeShared {
         self.prepare_calls += 1;
     }
 
+    fn select_wifi_low_power_clock(&mut self) {
+        self.operations
+            .borrow_mut()
+            .push(Operation::SelectWifiLowPowerClock);
+    }
+
     fn retain_phy_i2c_master_clock(&mut self) {
         self.operations.borrow_mut().push(Operation::RetainI2cClock);
         self.retain_calls += 1;
@@ -148,6 +155,7 @@ fn exact_semantic_sequence_is_finite_and_ordered() {
     assert_eq!(
         operations.borrow().as_slice(),
         [
+            Operation::SelectWifiLowPowerClock,
             Operation::ResetWifi(true),
             Operation::ResetWifi(false),
             Operation::SelectHpActiveIcg,
@@ -255,6 +263,7 @@ fn repeated_power_up_leaves_out_only_the_wifi_mac_reset_pulse() {
     assert_eq!(execute_owned(&mut shared, PowerEntry::Repeated), Ok(()));
     let operations = operations.borrow();
     assert!(!operations.contains(&Operation::ResetWifi(true)));
+    assert!(!operations.contains(&Operation::SelectWifiLowPowerClock));
     assert_eq!(
         operations.as_slice().first(),
         Some(&Operation::SelectHpActiveIcg)

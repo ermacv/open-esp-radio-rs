@@ -7,7 +7,7 @@
 
 use oer_esp32s31_pac::{
     ModemSysconPowerObservation, PlatformClockPowerObservation, RadioPhyRegisters,
-    SharedModemClockObservation,
+    RtcSlowClockSource, SharedModemClockObservation, WifiLowPowerClockSource,
 };
 
 use crate::clock::SharedClockLeases;
@@ -26,6 +26,9 @@ pub(crate) trait PowerSequenceBackend {
     fn select_phy_i2c_160mhz_source(&mut self);
     fn modem_syscon_power_observation(&self) -> oer_esp32s31_pac::ModemSysconPowerObservation;
     fn prepare_shared_modem_clock_map(&mut self);
+    /// Select the Wi-Fi power-domain low-power clock from the RTC slow-clock
+    /// source and enable the Wi-Fi power clock.
+    fn select_wifi_low_power_clock(&mut self);
     fn retain_phy_i2c_master_clock(&mut self);
     fn shared_modem_clock_observation(&self) -> oer_esp32s31_pac::SharedModemClockObservation;
 }
@@ -75,6 +78,18 @@ impl PowerSequenceBackend for RoutePower<'_> {
     }
     fn prepare_shared_modem_clock_map(&mut self) {
         self.phy.prepare_shared_modem_clock_map();
+    }
+    fn select_wifi_low_power_clock(&mut self) {
+        // SOURCE: ESP-IDF 4d59230d `esp_perip_clk_init` selects XTAL32K
+        // only when the RTC slow clock runs from the 32 kHz crystal and
+        // RC_SLOW otherwise, including an invalid selector.
+        let source = match self.phy.rtc_slow_clock_source() {
+            RtcSlowClockSource::Crystal32Khz => WifiLowPowerClockSource::Crystal32Khz,
+            RtcSlowClockSource::SlowOscillator | RtcSlowClockSource::Invalid(_) => {
+                WifiLowPowerClockSource::SlowOscillator
+            }
+        };
+        self.phy.select_wifi_low_power_clock(source);
     }
     fn retain_phy_i2c_master_clock(&mut self) {
         self.leases.retain_phy_i2c(self.phy);
@@ -160,6 +175,9 @@ pub(crate) fn execute_owned(
     // stays: ESP-IDF's modem clock repeats it on every Wi-Fi baseband clock
     // enable.
     if entry == PowerEntry::FirstSinceBoot {
+        // ESP-IDF selects the Wi-Fi low-power clock once, first in
+        // `esp_perip_clk_init` at CPU start, and never deselects it.
+        registers.select_wifi_low_power_clock();
         registers.set_wifi_baseband_and_mac_reset(true);
         registers.set_wifi_baseband_and_mac_reset(false);
     }

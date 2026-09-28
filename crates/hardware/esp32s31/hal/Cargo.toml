@@ -11,8 +11,13 @@ description = "Ownership and async HAL boundaries for the ESP32-S31 radio"
 validation-probes = ["oer-esp32s31-pac/validation-probes"]
 # A register model of the LL backend for host tests of the engine's users.
 ll-model = []
+# Record the IEEE 802.15.4 MAC power sequence at each transmission start
+# into `oer-trace`.
+ieee802154-trace = ["dep:oer-ieee802154-trace", "dep:oer-trace", "oer-trace/record"]
 
 [dependencies]
+oer-ieee802154-trace = { path = "../../ieee802154/trace", optional = true }
+oer-trace = { path = "../../../trace", optional = true }
 oer-radio-analog = { path = "../../radio/analog" }
 oer-memory = { path = "../../../memory" }
 oer-esp32s31-pac = { path = "../pac" }

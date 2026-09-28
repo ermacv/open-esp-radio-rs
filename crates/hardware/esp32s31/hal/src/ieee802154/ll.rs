@@ -288,6 +288,38 @@ impl Ieee802154MacOwners {
     pub fn power_sequence(&mut self) -> super::Ieee802154PowerSequence {
         self.task.lease().power_sequence()
     }
+
+    /// Record the power-sequencing words as a transmission is started or
+    /// scheduled, while their trace channel is enabled. The reads are
+    /// integer-only, as the interrupt handler may start the transmission.
+    #[cfg(feature = "ieee802154-trace")]
+    fn trace_power_sequence(&mut self) {
+        use oer_ieee802154_trace::{DcdcControl, PowerSequence};
+        if !oer_trace::enabled(<PowerSequence as oer_trace::Event>::CHANNEL) {
+            return;
+        }
+        let sequence = self.power_sequence();
+        oer_trace::emit(&PowerSequence {
+            pa_on: sequence.pa_on_delay(),
+            tx_on: sequence.tx_on_delay(),
+            tx_enable_stop: sequence.tx_enable_stop_delay(),
+            tx_off: sequence.tx_off_delay(),
+            rx_on: sequence.rx_on_delay(),
+            txrx_switch: sequence.txrx_switch_delay(),
+            continuous_rx: sequence.continuous_rx_delay(),
+        });
+        oer_trace::emit(&DcdcControl {
+            pre_raise: sequence.dcdc_pre_raise_delay(),
+            drop: sequence.dcdc_drop_delay(),
+            enabled: sequence.dcdc_control_enabled(),
+            raise_for_tx: sequence.dcdc_raise_for_tx(),
+            reserved_set: DcdcControl::reserved_set_of(sequence.vendor_reserved_bits()),
+        });
+    }
+
+    #[cfg(not(feature = "ieee802154-trace"))]
+    #[inline(always)]
+    fn trace_power_sequence(&mut self) {}
 }
 
 impl Ieee802154RecentRssi for Ieee802154MacOwners {
@@ -302,6 +334,12 @@ impl Ieee802154RecentRssi for Ieee802154MacOwners {
 
 impl Ieee802154LowLevel for Ieee802154MacOwners {
     fn set_command(&mut self, command: Ieee802154LlCommand) {
+        if matches!(
+            command,
+            Ieee802154LlCommand::TxStart | Ieee802154LlCommand::CcaTxStart
+        ) {
+            self.trace_power_sequence();
+        }
         self.task
             .lease()
             .request_mac_command(command_into_pac(command));
@@ -614,6 +652,12 @@ impl Ieee802154LowLevel for Ieee802154MacOwners {
     }
 
     fn set_etm_route(&mut self, route: Ieee802154EtmRoute) {
+        if matches!(
+            route,
+            Ieee802154EtmRoute::Timer0ToTxStart | Ieee802154EtmRoute::Timer0ToCcaTx
+        ) {
+            self.trace_power_sequence();
+        }
         self.task.lease().set_etm_route(etm_route_into_pac(route));
     }
 }

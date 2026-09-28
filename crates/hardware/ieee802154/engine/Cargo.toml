@@ -11,9 +11,13 @@ description = "Chip-neutral IEEE 802.15.4 MAC driver engine ported from the publ
 # The register model of the low-level interface, for host tests of crates
 # that drive the engine.
 model = []
+# Record the engine's trace points into `oer-trace`.
+trace = ["oer-trace/record"]
 
 [dependencies]
 oer-ieee802154 = { path = "../../../protocols/ieee802154" }
+oer-ieee802154-trace = { path = "../trace" }
+oer-trace = { path = "../../../trace" }
 
 [lints]
 workspace = true

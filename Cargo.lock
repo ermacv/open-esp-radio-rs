@@ -2572,9 +2572,11 @@ dependencies = [
  "critical-section",
  "oer-esp32s31-pac",
  "oer-ieee802154-engine",
+ "oer-ieee802154-trace",
  "oer-memory",
  "oer-radio-analog",
  "oer-radio-clock",
+ "oer-trace",
 ]
 
 [[package]]
@@ -2788,6 +2790,8 @@ dependencies = [
  "oer-esp32s31-ieee802154-radio",
  "oer-ieee802154",
  "oer-ieee802154-engine",
+ "oer-ieee802154-trace",
+ "oer-trace",
 ]
 
 [[package]]
@@ -3251,11 +3255,20 @@ name = "oer-ieee802154-engine"
 version = "0.1.0"
 dependencies = [
  "oer-ieee802154",
+ "oer-ieee802154-trace",
+ "oer-trace",
 ]
 
 [[package]]
 name = "oer-ieee802154-pac"
 version = "0.1.0"
+
+[[package]]
+name = "oer-ieee802154-trace"
+version = "0.1.0"
+dependencies = [
+ "oer-trace",
+]
 
 [[package]]
 name = "oer-memory"

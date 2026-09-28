@@ -1291,3 +1291,5 @@ fn vendor_priorities() -> Ieee802154CoexPriorities {
     let pti = |value| CoexPti::new(value).expect("four-bit priority");
     Ieee802154CoexPriorities::new(pti(1), pti(3), pti(8), pti(8))
 }
+
+mod trace;

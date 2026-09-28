@@ -21,6 +21,8 @@
 #[cfg(test)]
 extern crate std;
 
+mod trace;
+
 use core::{
     cell::{Cell, RefCell},
     sync::atomic::{AtomicBool, Ordering},
@@ -50,6 +52,7 @@ use oer_ieee802154_engine::{
     ll::{Ieee802154LowLevel, Ieee802154RecentRssi},
     types::Ieee802154MultipanIndex,
 };
+use oer_ieee802154_trace::{Lease, PauseRefusal};
 
 pub use oer_esp32s31_ieee802154_radio::{
     IEEE802154_ENH_ACK_PROBING_CAPACITY, IEEE802154_ENHANCED_ACK_IE_CAPACITY,
@@ -284,6 +287,16 @@ impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, 
             .try_send(Ieee802154RadioEvent::copy(event))
             .is_err()
         {
+            if let RadioEvent::Received(frame) = event {
+                trace::emit(|| oer_ieee802154_trace::RxOutcome {
+                    // The PHR length counts the two FCS bytes the portable
+                    // frame leaves out.
+                    length: frame.frame.bytes().len() as u8 + 2,
+                    result: oer_ieee802154_trace::RxResult::Dropped(
+                        oer_ieee802154_trace::RxDrop::QueueFull,
+                    ),
+                });
+            }
             self.lost.store(true, Ordering::Release);
         }
     }
@@ -429,6 +442,24 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         reason = "the no-alloc runtime moves the paused owners by value"
     )]
     pub fn pause(&self) -> Result<Ieee802154RuntimePaused<'storage, H>, Ieee802154PauseError> {
+        let result = self.pause_locked();
+        trace::emit(|| match &result {
+            Ok(paused) => Lease::Paused {
+                receiving: paused.receiving.map(oer_ieee802154::Channel::get),
+            },
+            Err(Ieee802154PauseError::NotInstalled) => {
+                Lease::PauseRefused(PauseRefusal::NotInstalled)
+            }
+            Err(Ieee802154PauseError::Busy) => Lease::PauseRefused(PauseRefusal::Busy),
+        });
+        result
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc runtime moves the paused owners by value"
+    )]
+    fn pause_locked(&self) -> Result<Ieee802154RuntimePaused<'storage, H>, Ieee802154PauseError> {
         self.installed.lock(|installed| {
             let mut installed = installed.borrow_mut();
             let receiving = match installed
@@ -480,6 +511,23 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         reason = "the no-alloc runtime returns the paused owners by value"
     )]
     pub fn resume(
+        &self,
+        paused: Ieee802154RuntimePaused<'storage, H>,
+    ) -> Result<(), Ieee802154RuntimePaused<'storage, H>> {
+        let receiving = paused.receiving.map(oer_ieee802154::Channel::get);
+        let result = self.resume_locked(paused);
+        trace::emit(|| match &result {
+            Ok(()) => Lease::Resumed { receiving },
+            Err(_) => Lease::ResumeRefused,
+        });
+        result
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc runtime returns the paused owners by value"
+    )]
+    fn resume_locked(
         &self,
         paused: Ieee802154RuntimePaused<'storage, H>,
     ) -> Result<(), Ieee802154RuntimePaused<'storage, H>> {

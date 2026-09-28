@@ -34,6 +34,7 @@ use oer_ieee802154::{FrameAddress, FrameType, FrameVersion, PendingTable, PhrFra
 
 mod buffers;
 mod statistics;
+mod trace;
 
 pub use buffers::{FRAME_SIZE, Ieee802154EngineBuffers, RX_BUFFER_COUNT};
 pub use statistics::{
@@ -42,6 +43,17 @@ pub use statistics::{
 };
 
 use buffers::DmaFrame;
+use oer_ieee802154_trace::{
+    RxDrop, RxOutcome, RxResult, TimerId, TimerOp, TxFailure, TxOutcome, TxResult,
+};
+
+/// The trace record of a transmission's end.
+fn tx_outcome(frame: &[u8; FRAME_SIZE], result: TxResult) -> TxOutcome {
+    TxOutcome {
+        length: frame[0] & 0x7f,
+        result,
+    }
+}
 
 /// Pending-table entries per address kind (`CONFIG_IEEE802154_PENDING_TABLE_SIZE`).
 pub const PENDING_TABLE_SIZE: usize = 20;
@@ -692,14 +704,25 @@ impl<'storage> Ieee802154Engine<'storage> {
         self.buffers.frame_at(address).map(|frame| frame.read())
     }
 
+    fn set_state(&mut self, to: Ieee802154State) {
+        let from = self.state;
+        self.state = to;
+        if from != to {
+            trace::emit(|| oer_ieee802154_trace::StateChange {
+                from: trace::state(from),
+                to: trace::state(to),
+            });
+        }
+    }
+
     /// `ieee802154_enable` after the modem clock is enabled.
     pub fn enable(&mut self) {
-        self.state = Ieee802154State::Idle;
+        self.set_state(Ieee802154State::Idle);
     }
 
     /// `ieee802154_disable` after the modem clock is disabled.
     pub fn disable(&mut self) {
-        self.state = Ieee802154State::Disable;
+        self.set_state(Ieee802154State::Disable);
     }
 
     /// `ieee802154_mac_init` after the MAC reset: reinitialize the PIB,
@@ -714,7 +737,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         self.clear_txrx_statistics();
         ll::mac_init_registers(ll, &self.coexistence);
         self.rx_buffer_clear();
-        self.state = Ieee802154State::Idle;
+        self.set_state(Ieee802154State::Idle);
     }
 
     /// Collect TX/RX statistics, as the vendor's debug build with
@@ -800,6 +823,7 @@ impl<'storage> Ieee802154Engine<'storage> {
             };
             let mut image = [0; FRAME_SIZE];
             image[..frame.len()].copy_from_slice(frame);
+            trace::emit(|| tx_outcome(&image, TxResult::Failed(trace::tx_failure(error))));
             cx.env.transmit_failed(&image, error);
             ll::sec_clear(cx.ll);
             if let Some(statistics) = self.statistics.as_mut() {
@@ -812,10 +836,10 @@ impl<'storage> Ieee802154Engine<'storage> {
         if cca {
             cx.ll.set_ed_duration(CCA_DETECTION_TIME);
             cx.ll.set_command(Ieee802154LlCommand::CcaTxStart);
-            self.state = Ieee802154State::TxCca;
+            self.set_state(Ieee802154State::TxCca);
         } else {
             cx.ll.set_command(Ieee802154LlCommand::TxStart);
-            self.state = Ieee802154State::Tx;
+            self.set_state(Ieee802154State::Tx);
         }
         Ok(())
     }
@@ -844,11 +868,11 @@ impl<'storage> Ieee802154Engine<'storage> {
         if cca {
             cx.ll.set_ed_duration(CCA_DETECTION_TIME);
         }
-        self.state = if cca {
+        self.set_state(if cca {
             Ieee802154State::TxCca
         } else {
             Ieee802154State::Tx
-        };
+        });
         let (route, rampup) = if cca {
             (
                 Ieee802154EtmRoute::Timer0ToCcaTx,
@@ -899,7 +923,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         self.rx_init(&mut cx);
         ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::RxAt);
         self.set_next_rx_buffer(&mut cx);
-        self.state = Ieee802154State::Rx;
+        self.set_state(Ieee802154State::Rx);
         ll::etm_set_event_task(cx.ll, Ieee802154EtmRoute::Timer1ToRxStart);
         if duration != 0 {
             self.timer1 = Some(TimerAction::StartReceiveAt {
@@ -936,7 +960,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         self.pib.update(cx.ll, self.levels);
         ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::Rx);
         Self::start_ed(&mut cx, duration);
-        self.state = Ieee802154State::Ed;
+        self.set_state(Ieee802154State::Ed);
     }
 
     /// `ieee802154_cca`.
@@ -950,7 +974,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         self.pib.update(cx.ll, self.levels);
         ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::Rx);
         Self::start_ed(&mut cx, CCA_DETECTION_TIME);
-        self.state = Ieee802154State::Cca;
+        self.set_state(Ieee802154State::Cca);
     }
 
     /// `ieee802154_isr`: sample and clear the events, handle them in the
@@ -964,6 +988,23 @@ impl<'storage> Ieee802154Engine<'storage> {
         let observation = cx.ll.events();
         let rx_abort_reason = cx.ll.rx_abort_reason();
         let tx_abort_reason = cx.ll.tx_abort_reason();
+        let state = trace::state(self.state);
+        trace::emit(|| oer_ieee802154_trace::Interrupt {
+            state,
+            events: trace::events(observation),
+        });
+        if observation.contains(Ieee802154Event::RxAbort) {
+            trace::emit(|| oer_ieee802154_trace::Abort {
+                state,
+                reason: trace::rx_abort(rx_abort_reason),
+            });
+        }
+        if observation.contains(Ieee802154Event::TxAbort) {
+            trace::emit(|| oer_ieee802154_trace::Abort {
+                state,
+                reason: trace::tx_abort(tx_abort_reason),
+            });
+        }
         let Ok(mut events) = observation.classification() else {
             panic!("IEEE802154_ASSERT(events == 0): unclassified MAC event");
         };
@@ -1065,13 +1106,23 @@ impl<'storage> Ieee802154Engine<'storage> {
         }
         if events.contains(Ieee802154Event::Timer0Overflow) {
             vendor_assert!(self.state == Ieee802154State::RxAck);
-            if let Some(action) = self.timer0.take() {
+            let action = self.timer0.take();
+            trace::emit(|| oer_ieee802154_trace::Timer {
+                timer: TimerId::Timer0,
+                op: TimerOp::Fired(trace::callback(action)),
+            });
+            if let Some(action) = action {
                 self.run_timer_action(&mut cx, action);
             }
             events = events.difference(Ieee802154Event::Timer0Overflow.mask());
         }
         if events.contains(Ieee802154Event::Timer1Overflow) {
-            if let Some(action) = self.timer1.take() {
+            let action = self.timer1.take();
+            trace::emit(|| oer_ieee802154_trace::Timer {
+                timer: TimerId::Timer1,
+                op: TimerOp::Fired(trace::callback(action)),
+            });
+            if let Some(action) = action {
                 self.run_timer_action(&mut cx, action);
             }
             events = events.difference(Ieee802154Event::Timer1Overflow.mask());
@@ -1104,12 +1155,28 @@ impl<'storage> Ieee802154Engine<'storage> {
         E: Ieee802154Environment + ?Sized,
     {
         if self.rx_index == STUB {
+            trace::emit(|| RxOutcome {
+                length: self.current_rx().read()[0] & 0x7f,
+                result: RxResult::Dropped(RxDrop::RingFull),
+            });
             return;
         }
         let index = usize::from(self.rx_index);
         self.buffers.rx[index].mask_length();
         self.rx_info[index].process = true;
         let frame = self.buffers.rx[index].read();
+        trace::emit(|| {
+            let info = &self.rx_info[index];
+            RxOutcome {
+                length: frame[0],
+                result: RxResult::Delivered {
+                    slot: self.rx_index,
+                    channel: info.channel,
+                    rssi: info.rssi,
+                    lqi: info.lqi,
+                },
+            }
+        });
         cx.env.receive_done(
             Ieee802154RxSlot(self.rx_index),
             &frame,
@@ -1127,13 +1194,16 @@ impl<'storage> Ieee802154Engine<'storage> {
     {
         let frame = self.tx_frame().read();
         if !with_ack {
+            trace::emit(|| tx_outcome(&frame, TxResult::Done { acked: false }));
             cx.env.transmit_done(&frame, None);
             return;
         }
         if self.rx_index == STUB {
+            trace::emit(|| tx_outcome(&frame, TxResult::Failed(TxFailure::NoAck)));
             cx.env.transmit_failed(&frame, Ieee802154TxError::NoAck);
             return;
         }
+        trace::emit(|| tx_outcome(&frame, TxResult::Done { acked: true }));
         let index = usize::from(self.rx_index);
         self.rx_info[index].process = true;
         let ack = self.buffers.rx[index].read();
@@ -1153,6 +1223,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         E: Ieee802154Environment + ?Sized,
     {
         let frame = self.tx_frame().read();
+        trace::emit(|| tx_outcome(&frame, TxResult::Failed(trace::tx_failure(error))));
         cx.env.transmit_failed(&frame, error);
     }
 
@@ -1272,6 +1343,10 @@ impl<'storage> Ieee802154Engine<'storage> {
         E: Ieee802154Environment + ?Sized,
     {
         *self.timer_slot(timer) = None;
+        trace::emit(|| oer_ieee802154_trace::Timer {
+            timer: trace::timer(timer),
+            op: TimerOp::Stopped,
+        });
         cx.ll.stop_timer(timer);
     }
 
@@ -1282,6 +1357,16 @@ impl<'storage> Ieee802154Engine<'storage> {
         E: Ieee802154Environment + ?Sized,
     {
         let now = cx.env.now_micros() as u32;
+        trace::emit(|| oer_ieee802154_trace::Timer {
+            timer: trace::timer(timer),
+            op: TimerOp::Armed {
+                callback: trace::callback(match timer {
+                    Ieee802154Timer::Timer0 => self.timer0,
+                    Ieee802154Timer::Timer1 => self.timer1,
+                }),
+                at: time,
+            },
+        });
         ll::timer_fire_at(cx.ll, timer, time, now);
     }
 
@@ -1365,7 +1450,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         self.set_next_rx_buffer(cx);
         ll::set_txrx_pti(cx.ll, &self.coexistence, Ieee802154CoexScene::Rx);
         cx.ll.set_command(Ieee802154LlCommand::RxStart);
-        self.state = Ieee802154State::Rx;
+        self.set_state(Ieee802154State::Rx);
     }
 
     fn start_ed<L, E>(cx: &mut Cx<'_, L, E>, duration: u16)
@@ -1385,7 +1470,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     {
         if self.state != Ieee802154State::Sleep {
             self.stop_current_operation(cx);
-            self.state = Ieee802154State::Sleep;
+            self.set_state(Ieee802154State::Sleep);
         }
     }
 
@@ -1404,7 +1489,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         if self.pib.rx_when_idle() {
             self.enable_rx(cx);
         } else {
-            self.state = Ieee802154State::Idle;
+            self.set_state(Ieee802154State::Idle);
             self.enter_sleep(cx);
         }
     }
@@ -1534,7 +1619,7 @@ impl<'storage> Ieee802154Engine<'storage> {
         }
         if matches!(self.state, Ieee802154State::Tx | Ieee802154State::TxCca) {
             if frame.ack_required() && cx.ll.rx_auto_ack() {
-                self.state = Ieee802154State::RxAck;
+                self.set_state(Ieee802154State::RxAck);
                 // `receive_ack_timeout_timer_start`.
                 cx.ll.enable_event(Ieee802154Event::Timer0Overflow);
                 let now = cx.env.now_micros() as u32;
@@ -1576,7 +1661,7 @@ impl<'storage> Ieee802154Engine<'storage> {
             && cx.ll.tx_auto_ack()
         {
             self.rx_info[index].pending = self.ack_config_pending_bit(cx, frame);
-            self.state = Ieee802154State::TxAck;
+            self.set_state(Ieee802154State::TxAck);
             self.needs_next_operation = false;
         } else if frame.ack_required()
             && frame.version() == FrameVersion::V2015
@@ -1598,7 +1683,7 @@ impl<'storage> Ieee802154Engine<'storage> {
                 cx.ll.set_tx_address(self.buffers.enhanced_ack.address());
                 self.tx = TxSource::EnhancedAck;
                 cx.ll.notify_enhanced_ack_generated();
-                self.state = Ieee802154State::TxEnhAck;
+                self.set_state(Ieee802154State::TxEnhAck);
                 self.needs_next_operation = false;
             } else {
                 cx.ll.set_command(Ieee802154LlCommand::Stop);

@@ -59,6 +59,7 @@ members = [
     "crates/hardware/ieee802154/engine",
     "crates/hardware/ieee80211/pac/raw",
     "crates/hardware/ieee802154/pac",
+    "crates/hardware/ieee802154/trace",
     "crates/hardware/ieee80211/pac",
     "crates/hardware/radio/analog",
     "crates/hardware/radio/trace",

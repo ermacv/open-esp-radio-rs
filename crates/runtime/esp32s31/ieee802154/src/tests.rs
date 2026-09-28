@@ -638,3 +638,62 @@ fn interface_keys_belong_to_the_interfaces_of_the_installed_radio() {
         Ok(Some(Some(keys)))
     );
 }
+
+/// Pausing and resuming record the lease with the receive channel, and a
+/// received frame the full queue drops is recorded as dropped.
+#[test]
+fn the_lease_and_a_dropped_frame_are_traced() {
+    use oer_ieee802154_trace::{Lease, PauseRefusal, RxDrop, RxOutcome, RxResult};
+    let leases = || -> std::vec::Vec<Lease> {
+        super::trace::take_recorded()
+            .iter()
+            .filter_map(|record| record.decode::<Lease>())
+            .collect()
+    };
+
+    let runtime = enabled::<1>();
+    runtime
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(15),
+        })
+        .unwrap();
+    leases();
+    let paused = runtime.pause().unwrap();
+    runtime
+        .resume(paused)
+        .unwrap_or_else(|_| panic!("the runtime is empty"));
+    assert!(Runtime::<1>::new().pause().is_err());
+    let paused = enabled::<1>().pause().unwrap();
+    assert!(runtime.resume(paused).is_err());
+    assert_eq!(
+        leases(),
+        [
+            Lease::Paused {
+                receiving: Some(15)
+            },
+            Lease::Resumed {
+                receiving: Some(15)
+            },
+            Lease::PauseRefused(PauseRefusal::NotInstalled),
+            Lease::Paused { receiving: None },
+            Lease::ResumeRefused,
+        ]
+    );
+
+    for _ in 0..2 {
+        runtime.model_interrupt(Some(&received_image()), &[Ieee802154Event::RxDone]);
+    }
+    let drops: std::vec::Vec<RxOutcome> = super::trace::take_recorded()
+        .iter()
+        .filter_map(|record| record.decode::<RxOutcome>())
+        .filter(|outcome| matches!(outcome.result, RxResult::Dropped(_)))
+        .collect();
+    assert_eq!(
+        drops,
+        [RxOutcome {
+            length: 12,
+            result: RxResult::Dropped(RxDrop::QueueFull),
+        }]
+    );
+}

@@ -638,3 +638,43 @@ fn the_program_counter_sampler_rides_only_in_the_classes_that_compile_it() {
     // A class that does not compile the sampler never advertises it.
     assert_eq!(classify_flashed_capabilities(&sampling(performance)), None);
 }
+
+#[test]
+fn the_classes_that_sample_the_program_counter_are_those_whose_features_enable_it() {
+    let manifest: toml::Table = toml::from_str(include_str!(
+        "../../../../targets/esp32s31/runtime/Cargo.toml"
+    ))
+    .unwrap();
+    let features = manifest["features"].as_table().unwrap();
+    let enables = |class: ImageClass| {
+        let mut pending = class
+            .runtime_features()
+            .split(',')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(feature) = pending.pop() {
+            if !seen.insert(feature.clone()) {
+                continue;
+            }
+            if let Some(implied) = features.get(&feature).and_then(toml::Value::as_array) {
+                pending.extend(
+                    implied
+                        .iter()
+                        .filter_map(toml::Value::as_str)
+                        .filter(|name| !name.starts_with("dep:") && !name.contains('/'))
+                        .map(str::to_owned),
+                );
+            }
+        }
+        seen.contains("pc-profile")
+    };
+    for class in ImageClass::ALL {
+        assert_eq!(
+            class.samples_program_counter(),
+            enables(class),
+            "{}",
+            class.id()
+        );
+    }
+}

@@ -149,7 +149,10 @@ impl ImageClass {
     /// Whether the image compiles the program-counter sampler
     /// (`pc-profile`), so a scenario can request a profile of it.
     pub const fn samples_program_counter(self) -> bool {
-        matches!(self, Self::DiagnosticTaskResidence)
+        matches!(
+            self,
+            Self::DiagnosticTaskResidence | Self::DiagnosticTxArchitecture
+        )
     }
 
     pub const fn runtime_features(self) -> &'static str {

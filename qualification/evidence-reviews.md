@@ -59,15 +59,10 @@ supply the reviewer's engineering conclusion. Include additional relevant files
 in `inputs` when the required owner paths are insufficient. Update the canonical
 source contracts when their ownership mapping was incomplete.
 
-The report also exposes `property.legacy_sha256` (v1) and
-`property.previous_sha256` (v2), exact fingerprints of the current declaration
-for checking existing records. A matching older record is
-still accepted without changing its review scope. When updating only the
-fingerprint format, first require the stored hash to equal the corresponding older fingerprint, then
-replace it with `sha256`; retain all source, build and failure bindings. An
-already-stale hash cannot be migrated this way. Existing byte bindings retain their original meaning. Reclassifying an input
-requires an explicit reviewed kind and reason; changing the fingerprint alone
-does not narrow those bindings.
+A review binds `property.sha256` exactly: when the declaration's property
+changes, the review reports `property-changed` and must be redone against the
+new fingerprint. Existing byte bindings retain their original meaning.
+Reclassifying an input requires an explicit reviewed kind and reason.
 
 Transfer to a different recorded build requires matching recorded network
 selection, effective runtime features/profile/target, external source identities,
@@ -278,14 +273,5 @@ checks retain their individual sensitivity. This is independent of firmware
 check). Timing-sensitive obligations require matching configuration, including controls and observations
 used to resolve failures; these review tables cannot waive that requirement.
 
-A bundle without this identity remains historical. A review may supply
-`observer-provenance = ["path/to/observer-proof.json"]` at its top level. Each
-proof document names one `observation_id`, its `observer` record in the format
-above, and a nonempty `supporting_evidence` array of `{ "path": "...",
-"sha256": "..." }` records. The proof and every supporting record must appear
-as hashed `kind = "evidence"` inputs in the review. The reviewer must establish
-which executable ran and how its build inputs were established from retained
-execution/build records; copying the firmware snapshot is insufficient. The
-evaluator verifies these bindings and input hashes, not a signed attestation.
-Supply separate proofs for legacy source, control and resolving observations
-when needed. A later runner build never retroactively identifies an old run.
+A bundle without this identity remains historical: no review admits it, and
+a later runner build never retroactively identifies an old run.

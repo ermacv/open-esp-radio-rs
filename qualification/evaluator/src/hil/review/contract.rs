@@ -38,13 +38,6 @@ pub(super) fn read(root: &Path, path: &Path) -> Result<Document> {
     {
         return Err("invalid HIL applicability review identity, rationale or inputs".into());
     }
-    if document
-        .observer_provenance
-        .iter()
-        .any(|p| !safe_relative(p))
-    {
-        return Err("observer provenance must be a contained path".into());
-    }
     if document.source.build_record.is_some() {
         return Err("review source must be an actual observation".into());
     }
@@ -143,26 +136,12 @@ pub(crate) fn property(
         }
     }
     unmapped.sort();
-    let mut identity = serde_json::json!({
+    let identity = serde_json::json!({
         "format":"oer-hil-property-v3", "image_sensitive":image_sensitive(requirement, catalog), "capability":document.id, "scopes":scopes,
         "scenario":requirement.scenario,"checks":requirement.checks,"minimum_repetitions":requirement.minimum_repetitions,
         "procedure":catalog.definitions.get(&requirement.scenario).map(crate::hil::procedure::normalize),
     });
     let bytes = serde_json::to_vec(&identity)?;
-    identity["format"] = serde_json::json!("oer-hil-property-v2");
-    identity["procedure"] = catalog
-        .definitions
-        .get(&requirement.scenario)
-        .map(procedure)
-        .unwrap_or_default();
-    let previous_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&identity)?));
-    identity["format"] = serde_json::json!("oer-hil-property-v1");
-    identity["procedure"] = catalog
-        .definitions
-        .get(&requirement.scenario)
-        .cloned()
-        .unwrap_or_default();
-    let legacy_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&identity)?));
     let current_inputs = owners
         .iter()
         .map(|path| {
@@ -178,8 +157,6 @@ pub(crate) fn property(
     Ok(PropertyBinding {
         current_inputs,
         implicit_build_inputs,
-        legacy_sha256,
-        previous_sha256,
         procedure_sha256: catalog
             .definitions
             .get(&requirement.scenario)
@@ -213,15 +190,4 @@ pub(super) fn image_sensitive(requirement: &HilRequirement, catalog: &ScenarioCa
                     && c.image_sensitive()
             })
         })
-}
-
-/// Only top-level display metadata is excluded. Workload, criteria, evidence,
-/// fixture interventions and unknown future execution fields remain bound.
-fn procedure(definition: &serde_json::Value) -> serde_json::Value {
-    let mut value = definition.clone();
-    if let Some(object) = value.as_object_mut() {
-        object.remove("description");
-        object.remove("tags");
-    }
-    value
 }

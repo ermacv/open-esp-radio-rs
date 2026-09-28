@@ -9,10 +9,7 @@ pub(super) fn assess(
     index: &HilEvidenceIndex,
     catalog: &ScenarioCatalog,
 ) -> Result<&'static str> {
-    if review.property_sha256 != binding.sha256
-        && review.property_sha256 != binding.legacy_sha256
-        && review.property_sha256 != binding.previous_sha256
-    {
+    if review.property_sha256 != binding.sha256 {
         return Ok("property-changed");
     }
     if !binding.unmapped_capabilities.is_empty() {
@@ -71,12 +68,6 @@ pub(super) fn assess(
     if !procedure::matches(source, requirement, catalog)? {
         return Ok("source-procedure-mismatch");
     }
-    let evidence = review
-        .inputs
-        .iter()
-        .filter(|i| i.kind == InputKind::Evidence)
-        .map(|i| (i.path.clone(), i.sha256.clone()))
-        .collect();
     if !index.current_observer.available() {
         return Ok("current-observer-configuration-unavailable");
     }
@@ -107,22 +98,6 @@ pub(super) fn assess(
                     )
                     .unwrap_or(false)
                 }))
-            || review.observer_provenance.iter().any(|path| {
-                observer::reviewed(
-                    root,
-                    &index.current_observer,
-                    observation,
-                    scenario,
-                    path,
-                    &evidence,
-                    if sensitive {
-                        &[]
-                    } else {
-                        &review.observer_configuration
-                    },
-                )
-                .unwrap_or(false)
-            })
     };
     if !observer_matches(source, &review.scenario) {
         return Ok("source-observer-identity-not-established");

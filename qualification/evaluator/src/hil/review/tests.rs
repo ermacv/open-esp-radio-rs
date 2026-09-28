@@ -185,7 +185,6 @@ fn record(fixture: &Fixture, index: &HilEvidenceIndex, catalog: &ScenarioCatalog
         reviewer: "test-reviewer".into(),
         reason: "Reviewed unchanged ATT owner and contract on these two builds".into(),
         source: reference(index, "old"),
-        observer_provenance: vec![],
         observer_configuration: vec![],
         destination: reference(index, "new"),
         inputs: binding.current_inputs,

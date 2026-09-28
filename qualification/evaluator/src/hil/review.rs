@@ -86,9 +86,6 @@ struct Document {
     reviewer: String,
     reason: String,
     source: ObservationRef,
-    /// Explicit proof for an old observation without embedded observer identity.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    observer_provenance: Vec<PathBuf>,
     /// Reviewer-owned acceptance of compiler/profile changes for functional checks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     observer_configuration: Vec<serde_json::Value>,
@@ -103,9 +100,6 @@ struct Document {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct PropertyBinding {
     pub(crate) sha256: String,
-    /// Exact v1 identity for checking existing records before metadata migration.
-    pub(crate) legacy_sha256: String,
-    pub(crate) previous_sha256: String,
     pub(crate) procedure_sha256: Option<String>,
     pub(crate) required_inputs: Vec<PathBuf>,
     pub(crate) implicit_build_inputs: Vec<PathBuf>,

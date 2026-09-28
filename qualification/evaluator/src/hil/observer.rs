@@ -431,63 +431,6 @@ pub(super) fn assess(
     })
 }
 
-/// A legacy observation needs an explicit reviewer-owned execution/build binding.
-/// Its supporting documents must be hashed evidence inputs in the same review.
-pub(super) fn reviewed(
-    root: &Path,
-    current: &Current,
-    observation: &ScenarioEvidence,
-    scenario: &str,
-    path: &Path,
-    evidence: &BTreeMap<PathBuf, String>,
-    configuration_reviews: &[Value],
-) -> Result<bool> {
-    let Some(identity) = subject::file(root, path)? else {
-        return Ok(false);
-    };
-    if evidence.get(path) != Some(&identity.sha256) {
-        return Ok(false);
-    }
-    let document: Value = read_json(&root.join(path))?;
-    if document["observation_id"].as_str() != observation.observation_id(scenario).as_deref() {
-        return Ok(false);
-    }
-    let Some(support) = document["supporting_evidence"]
-        .as_array()
-        .filter(|s| !s.is_empty())
-    else {
-        return Ok(false);
-    };
-    for file in support {
-        let Some(path) = file["path"].as_str() else {
-            return Ok(false);
-        };
-        let Some(identity) = subject::file(root, Path::new(path))? else {
-            return Ok(false);
-        };
-        if evidence.get(Path::new(path)) != Some(&identity.sha256)
-            || Some(identity.sha256.as_str()) != file["sha256"].as_str()
-        {
-            return Ok(false);
-        }
-    }
-    if matches(root, current, observation, Some(&document["observer"]))? {
-        return Ok(true);
-    }
-    for configuration in configuration_reviews {
-        if compatible(
-            root,
-            current,
-            observation,
-            Some(&document["observer"]),
-            Some(configuration),
-        )? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 #[cfg(test)]
 pub(super) use oer_hil_schema::observer::required_configuration;
 

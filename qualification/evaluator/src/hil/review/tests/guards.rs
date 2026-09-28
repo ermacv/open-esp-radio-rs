@@ -321,32 +321,6 @@ fn wifi_review_survives_ble_only_build_and_requires_reassessment_after_phy_chang
 }
 
 #[test]
-fn legacy_property_identity_remains_usable_only_for_its_exact_contract() {
-    let fixture = setup();
-    let mut catalog = ScenarioCatalog::default();
-    let index = fixture.load().unwrap();
-    let mut review = record(&fixture, &index, &catalog);
-    review.property_sha256 = property(
-        &declaration(),
-        &BTreeMap::new(),
-        &requirement(),
-        &catalog,
-        &fixture.0,
-    )
-    .unwrap()
-    .legacy_sha256;
-    save(&fixture, &review);
-    assert_eq!(evaluated(&fixture, &index, &catalog).1[0].status, "applied");
-    catalog
-        .definitions
-        .insert("exchange".into(), json!({"repetitions":2}));
-    assert_eq!(
-        evaluated(&fixture, &index, &catalog).1[0].status,
-        "property-changed"
-    );
-}
-
-#[test]
 fn build_only_destination_admits_existing_observation_without_creating_a_pass() {
     let fixture = setup();
     let catalog = ScenarioCatalog::default();
@@ -570,77 +544,21 @@ fn deadline_and_watchdog_whole_results_require_identical_images() {
 }
 
 #[test]
-fn stale_observer_and_legacy_unknown_observer_need_separate_proof() {
+fn an_observation_without_observer_identity_is_not_admitted() {
     let fixture = setup();
     let catalog = ScenarioCatalog::default();
     let old = fixture.0.join("runs/old");
     let mut manifest: Value = read_json(&old.join("manifest.json")).unwrap();
-    let captured = manifest["runner"]["observer"].take();
+    manifest["runner"]["observer"].take();
     write(&old.join("manifest.json"), &manifest);
     crate::hil::tests::seal(&old);
     let index = fixture.load().unwrap();
-    let mut review = record(&fixture, &index, &catalog);
+    let review = record(&fixture, &index, &catalog);
     save(&fixture, &review);
     assert_eq!(
         evaluated(&fixture, &index, &catalog).1[0].status,
         "source-observer-identity-not-established"
     );
-    // Independent, retained build/execution record with an explicit reviewer
-    // binding to this legacy observation. The firmware snapshot is insufficient.
-    fs::write(
-        fixture.0.join("execution-record.json"),
-        serde_json::to_vec(&captured).unwrap(),
-    )
-    .unwrap();
-    let support_hash = sha256_file(&fixture.0.join("execution-record.json")).unwrap();
-    write(
-        &fixture.0.join("observer-proof.json"),
-        &json!({
-            "observation_id": review.source.id, "observer": captured,
-            "supporting_evidence":[{"path":"execution-record.json","sha256":support_hash}]
-        }),
-    );
-    for path in ["observer-proof.json", "execution-record.json"] {
-        review.inputs.push(InputBinding {
-            kind: InputKind::Evidence,
-            reason: Some(
-                "Retained execution/build provenance, reviewed against this observation".into(),
-            ),
-            path: path.into(),
-            sha256: sha256_file(&fixture.0.join(path)).unwrap(),
-        });
-    }
-    review.observer_provenance = vec!["observer-proof.json".into()];
-    save(&fixture, &review);
-    assert_eq!(evaluated(&fixture, &index, &catalog).1[0].status, "applied");
-    fs::write(
-        fixture.0.join("unrelated-report.rs"),
-        "changed report renderer",
-    )
-    .unwrap();
-    assert_eq!(evaluated(&fixture, &index, &catalog).1[0].status, "applied");
-    let supporting = fs::read(fixture.0.join("execution-record.json")).unwrap();
-    fs::write(
-        fixture.0.join("execution-record.json"),
-        b"changed provenance",
-    )
-    .unwrap();
-    assert_eq!(
-        evaluated(&fixture, &index, &catalog).1[0].status,
-        "source-observer-identity-not-established"
-    );
-    fs::write(fixture.0.join("execution-record.json"), supporting).unwrap();
-    fs::write(fixture.0.join("observer.rs"), "new observer assertion").unwrap();
-    assert_eq!(
-        evaluated(&fixture, &index, &catalog).1[0].status,
-        "source-observer-identity-not-established"
-    );
-    // Even a newly sealed firmware snapshot cannot change the recorded runner.
-    let current = fixture.load().unwrap();
-    assert!(current.scenarios["exchange"].iter().all(|o| {
-        o.exclusions
-            .contains(&decision::Exclusion::ObserverIdentityNotEstablished)
-    }));
 }
 
 #[test]

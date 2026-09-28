@@ -32,7 +32,7 @@ impl RunReport for Reviewer {
                     &observation::root()?.join(oer_vendor_scenario_engine::chip().registers),
                 )?,
                 coverage::diagnostic(untriaged.decisions),
-            );
+            )?;
             let path = triage::write(findings.directory, suite, &code, untriaged.listed)?;
             println!("{suite} untriaged locations: {}", path.display());
             let view = triage::functions(

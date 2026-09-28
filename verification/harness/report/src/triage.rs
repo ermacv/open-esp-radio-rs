@@ -8,11 +8,9 @@
 //! pass over each function folds constants, so the report shows the
 //! addresses, register names and fields an instruction touches. These are
 //! proposals for a reviewer: exclusions stay reviewed decisions.
-use blobray_backend_riscv::RiscvDecoder;
-use blobray_domain::{
-    FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand, SemanticOp,
-};
-use object::{Object, ObjectSymbol, SymbolKind};
+use crate::inspect::{Corpus, STACK, Step, ZERO};
+use blobray_domain::{InstructionFlow, MemoryKind, Operand, SemanticOp};
+use oer_vendor_scenario_engine::harness::Result;
 use oer_vendor_scenario_engine::registers::Registers;
 use oer_vendor_scenario_engine::session::evidence_index::{Location, LocationKind};
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,340 +21,36 @@ const BEFORE: usize = 10;
 const AFTER: usize = 3;
 /// Definitions followed back from a location's operands.
 const DEPTH: usize = 2;
-/// Architectural registers, and the ones a call preserves.
-pub(crate) const REGISTERS: usize = 32;
-pub(crate) const ZERO: u8 = 0;
-const STACK: u8 = 2;
-pub(crate) const CALLEE_SAVED: [u8; 13] = [2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27];
-/// Smallest instruction, the step of the undecodable-bytes fallback.
-pub(crate) const PARCEL: usize = 2;
+/// Origins of the linked production image and the vendor ROM, in the order
+/// [`Code::of`] takes them: an earlier image wins a function name.
+const ORIGINS: [&str; 2] = ["image", "rom"];
 
-/// A register's value where the forward pass knows it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Value {
-    Constant(u32),
-    /// Read from the word at `address`, shifted right by `shift`.
-    Loaded {
-        address: u32,
-        shift: u32,
-    },
-}
+/// One decoded instruction of a function, annotated by the inspection pass.
+pub(crate) type Line = Step;
 
-/// One decoded instruction of a function.
-#[derive(Clone, Debug)]
-pub struct Line {
-    pub offset: u32,
-    pub text: String,
-    op: SemanticOp,
-    flow: InstructionFlow,
-    /// Registers a conditional branch compares.
-    branch: Vec<u8>,
-    /// A call's resolved target.
-    callee: Option<String>,
-}
-
-/// A function's code, by name, from the first ELF that defines it.
+/// The functions of the linked images and the reviewed diagnostic output.
 pub struct Code {
-    functions: BTreeMap<String, (u32, Vec<u8>)>,
-    names: BTreeMap<u32, String>,
-    registers: Registers,
+    corpus: Corpus,
     diagnostic: BTreeSet<String>,
 }
 
 impl Code {
-    /// The code functions of `elfs`, an earlier ELF winning a name; the
+    /// The code functions of `elfs`, the linked image then the ROM; the
     /// chip's published `registers`; the functions reviewed decisions name
     /// as `diagnostic` output.
-    pub fn of(elfs: &[&[u8]], registers: Registers, diagnostic: BTreeSet<String>) -> Self {
-        let mut functions = BTreeMap::new();
-        let mut names = BTreeMap::new();
-        for bytes in elfs {
-            let Ok(file) = object::File::parse(*bytes) else {
-                continue;
-            };
-            for symbol in file.symbols() {
-                let (Ok(name), Some(index)) = (symbol.name(), symbol.section_index()) else {
-                    continue;
-                };
-                if symbol.kind() != SymbolKind::Text || symbol.size() == 0 {
-                    continue;
-                }
-                let Ok(section) = file.section_by_index(index) else {
-                    continue;
-                };
-                let Ok(data) = object::ObjectSection::data(&section) else {
-                    continue;
-                };
-                let start = symbol.address() - object::ObjectSection::address(&section);
-                let Some(code) = data.get(start as usize..(start + symbol.size()) as usize) else {
-                    continue;
-                };
-                let Ok(address) = u32::try_from(symbol.address()) else {
-                    continue;
-                };
-                names.entry(address).or_insert_with(|| name.to_owned());
-                functions
-                    .entry(name.to_owned())
-                    .or_insert_with(|| (address, code.to_vec()));
-            }
-        }
-        Self {
-            functions,
-            names,
-            registers,
+    pub fn of(elfs: &[&[u8]], registers: Registers, diagnostic: BTreeSet<String>) -> Result<Self> {
+        let objects: Vec<(&str, &[u8])> =
+            ORIGINS.iter().copied().zip(elfs.iter().copied()).collect();
+        Ok(Self {
+            corpus: Corpus::of(&objects, registers)?,
             diagnostic,
-        }
+        })
     }
 
-    /// The decoding of `function`, each line annotated with the values the
-    /// forward pass resolves.
-    pub fn lines(&self, function: &str) -> Option<Vec<Line>> {
-        let (entry, bytes) = self.functions.get(function)?;
-        let mut decoded = vec![];
-        let mut offset = 0usize;
-        while offset + PARCEL <= bytes.len() {
-            let rest = &bytes[offset..];
-            let Some(op) = RiscvDecoder.decode(rest) else {
-                decoded.push((offset, PARCEL, None));
-                offset += PARCEL;
-                continue;
-            };
-            let length = usize::from(op.length);
-            decoded.push((offset, length, Some(op)));
-            offset += length;
-        }
-        // Knowledge ends where control can enter from elsewhere.
-        let targets: BTreeSet<usize> = decoded
-            .iter()
-            .filter_map(|(at, _, op)| match op.as_ref()?.flow {
-                InstructionFlow::Branch { displacement }
-                | InstructionFlow::Jump {
-                    displacement,
-                    link: false,
-                } => usize::try_from(*at as i64 + i64::from(displacement)).ok(),
-                _ => None,
-            })
-            .collect();
-        let mut values: [Option<Value>; REGISTERS] = [None; REGISTERS];
-        let mut lines = vec![];
-        for (at, length, op) in decoded {
-            if targets.contains(&at) {
-                values = [None; REGISTERS];
-            }
-            let address = entry + at as u32;
-            let Some(op) = op else {
-                let text = bytes[at..at + length]
-                    .iter()
-                    .rev()
-                    .map(|b| format!("{b:02x}"))
-                    .collect::<String>();
-                values = [None; REGISTERS];
-                lines.push(Line {
-                    offset: at as u32,
-                    text: format!(".half 0x{text}"),
-                    op: SemanticOp::Unsupported,
-                    flow: InstructionFlow::Stop,
-                    branch: vec![],
-                    callee: None,
-                });
-                continue;
-            };
-            let raw = &bytes[at..at + length];
-            let lifted = RiscvDecoder.lift(raw);
-            let branch = RiscvDecoder
-                .branch(raw)
-                .map(|(_, a, b)| {
-                    [a, b]
-                        .into_iter()
-                        .filter_map(|o| match o {
-                            Operand::Register(r) => Some(r),
-                            Operand::Immediate(_) => None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let callee = match op.flow {
-                InstructionFlow::Jump {
-                    displacement,
-                    link: true,
-                } => Some(address.wrapping_add_signed(displacement)),
-                InstructionFlow::Indirect {
-                    base,
-                    offset,
-                    link: true,
-                } => match values[usize::from(base)] {
-                    Some(Value::Constant(value)) => Some(value.wrapping_add_signed(offset)),
-                    _ => None,
-                },
-                _ => None,
-            }
-            .map(|target| {
-                self.names
-                    .get(&target)
-                    .cloned()
-                    .unwrap_or_else(|| format!("{target:#010x}"))
-            });
-            let note = self.step(&mut values, address, lifted, op.flow, callee.is_some());
-            let mut text = op.text;
-            if let Some(callee) = &callee {
-                text = format!("{text}    <{callee}>");
-            }
-            if let Some(note) = note {
-                text = format!("{text}    ; {note}");
-            }
-            lines.push(Line {
-                offset: at as u32,
-                text,
-                op: lifted,
-                flow: op.flow,
-                branch,
-                callee,
-            });
-        }
-        Some(lines)
-    }
-
-    /// Advance `values` over one instruction at `address`; what it resolves.
-    fn step(
-        &self,
-        values: &mut [Option<Value>; REGISTERS],
-        address: u32,
-        op: SemanticOp,
-        flow: InstructionFlow,
-        call: bool,
-    ) -> Option<String> {
-        let read = |values: &[Option<Value>; REGISTERS], operand: Operand| match operand {
-            Operand::Immediate(value) => Some(Value::Constant(value)),
-            Operand::Register(ZERO) => Some(Value::Constant(0)),
-            Operand::Register(r) => values[usize::from(r)],
-        };
-        let mut note = None;
-        let written = match op {
-            SemanticOp::Upper {
-                dest,
-                value,
-                pc_relative,
-            } => {
-                let value = if pc_relative {
-                    address.wrapping_add(value)
-                } else {
-                    value
-                };
-                note = Some(format!("= {}", self.constant(value)));
-                Some((dest, Some(Value::Constant(value))))
-            }
-            SemanticOp::Integer {
-                op,
-                dest,
-                left,
-                right,
-            } => {
-                let result = match (read(values, left), read(values, right)) {
-                    (Some(Value::Constant(a)), Some(Value::Constant(b))) => {
-                        let value = op.evaluate(a, b);
-                        note = Some(format!("= {}", self.constant(value)));
-                        Some(Value::Constant(value))
-                    }
-                    (Some(Value::Loaded { address, shift }), Some(Value::Constant(b))) => {
-                        self.field(op, address, shift, b, &mut note)
-                    }
-                    _ => None,
-                };
-                Some((dest, result))
-            }
-            SemanticOp::Memory {
-                kind,
-                base,
-                displacement,
-                dest,
-                ..
-            } => {
-                let target = match read(values, Operand::Register(base)) {
-                    Some(Value::Constant(base)) if base != 0 || kind != MemoryKind::Load => {
-                        Some(base.wrapping_add_signed(displacement))
-                    }
-                    _ => None,
-                };
-                if let Some(target) = target {
-                    note = Some(format!("[{}]", self.registers.name(target)));
-                }
-                dest.map(|dest| {
-                    let loaded = target.filter(|_| kind == MemoryKind::Load).map(|target| {
-                        let word = target & !3;
-                        Value::Loaded {
-                            address: word,
-                            shift: (target - word) * 8,
-                        }
-                    });
-                    (dest, loaded)
-                })
-            }
-            SemanticOp::Link { dest } => Some((dest, None)),
-            SemanticOp::Unsupported => {
-                *values = [None; REGISTERS];
-                None
-            }
-            SemanticOp::Fence { .. } | SemanticOp::None => None,
-        };
-        if let Some((dest, value)) = written
-            && dest != ZERO
-        {
-            values[usize::from(dest)] = value;
-        }
-        if call {
-            for (register, value) in values.iter_mut().enumerate() {
-                if !CALLEE_SAVED.contains(&(register as u8)) {
-                    *value = None;
-                }
-            }
-        } else if matches!(flow, InstructionFlow::Indirect { link: true, .. }) {
-            *values = [None; REGISTERS];
-        }
-        note
-    }
-
-    /// The value of a register read from `address` after `op` with `operand`,
-    /// naming the bits a mask or bit operation selects.
-    fn field(
-        &self,
-        op: IntegerOp,
-        address: u32,
-        shift: u32,
-        operand: u32,
-        note: &mut Option<String>,
-    ) -> Option<Value> {
-        let bits = |mask: u32| {
-            self.registers
-                .bits(address, mask.checked_shl(shift).unwrap_or(0))
-        };
-        match op {
-            IntegerOp::And | IntegerOp::Or | IntegerOp::Xor | IntegerOp::AndNot => {
-                *note = Some(bits(operand));
-                Some(Value::Loaded { address, shift })
-            }
-            IntegerOp::BitSet | IntegerOp::BitClear | IntegerOp::BitInvert => {
-                *note = Some(bits(1 << (operand % u32::BITS)));
-                Some(Value::Loaded { address, shift })
-            }
-            IntegerOp::BitExtract => {
-                *note = Some(bits(1 << (operand % u32::BITS)));
-                None
-            }
-            IntegerOp::Shr | IntegerOp::Sar => Some(Value::Loaded {
-                address,
-                shift: shift + operand % u32::BITS,
-            }),
-            _ => None,
-        }
-    }
-
-    /// `value`, with the function or register it addresses.
-    fn constant(&self, value: u32) -> String {
-        match (self.names.get(&value), self.registers.at(value)) {
-            (Some(name), _) => format!("{value:#x} <{name}>"),
-            (None, Some(_)) => self.registers.name(value),
-            (None, None) => format!("{value:#x}"),
-        }
+    /// The decoding of `function` from the first image that defines it,
+    /// each line annotated with what the inspection pass resolves.
+    pub(crate) fn lines(&self, function: &str) -> Option<Vec<Line>> {
+        Some(self.corpus.walk(self.corpus.function(function)?))
     }
 
     /// How the straight-line code from `index` ends, when it only calls
@@ -452,7 +146,7 @@ fn operands(line: &Line) -> (Option<u8>, Vec<u8>) {
 }
 
 fn name(register: u8) -> String {
-    const ABI: [&str; REGISTERS] = [
+    const ABI: [&str; 32] = [
         "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2", "a3", "a4",
         "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4",
         "t5", "t6",
@@ -493,7 +187,7 @@ fn definitions(lines: &[Line], index: usize) -> Vec<String> {
             "{} <- +{:#x}: {}",
             name(register),
             lines[at].offset,
-            lines[at].text
+            lines[at].display()
         ));
         if depth + 1 < DEPTH {
             wanted.extend(wanted_of(at, depth + 1));
@@ -564,7 +258,11 @@ pub fn report(code: &Code, untriaged: &BTreeSet<Location>) -> String {
                 .skip(start)
             {
                 let mark = if i == index { ">" } else { " " };
-                text.push_str(&format!("   {mark} +{:04x}  {}\n", line.offset, line.text));
+                text.push_str(&format!(
+                    "   {mark} +{:04x}  {}\n",
+                    line.offset,
+                    line.display()
+                ));
             }
             for definition in definitions(&lines, index) {
                 text.push_str(&format!("      {definition}\n"));
@@ -630,7 +328,7 @@ pub fn functions(
                 "  {:<24} +{:04x}  {}\n",
                 marks.join(", "),
                 line.offset,
-                line.text
+                line.display()
             ));
         }
         for (number, reason) in reasons.iter().enumerate() {
@@ -653,174 +351,4 @@ pub fn write(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `lui a5, 0x20104`; `lw a4, 32(a5)`; `andi a4, a4, 1`;
-    /// `beqz a4, +8`; `jal ra, +8`; `sw a0, 12(sp)`; `ret`; `ret`;
-    /// `sw a0, 0(a5)`; `ret`.
-    const CODE: [u32; 10] = [
-        0x2010_47b7,
-        0x0207_a703,
-        0x0017_7713,
-        0x0007_0463,
-        0x0080_00ef,
-        0x00a1_2623,
-        0x0000_8067,
-        0x0000_8067,
-        0x00a7_a023,
-        0x0000_8067,
-    ];
-
-    fn code(diagnostic: &[&str]) -> Code {
-        let bytes = CODE.iter().flat_map(|w| w.to_le_bytes()).collect();
-        let registers = Registers::parse(
-            "[[registers]]\naddress = 0x20104020\nidentity = \"MAC.TX_CONFIG\"\n\
-             [[registers.fields]]\nsvd-name = \"ENABLE\"\nbit-offset = 0\nbit-width = 1\n",
-        )
-        .unwrap();
-        let mut functions = BTreeMap::new();
-        functions.insert("probe".to_owned(), (0x4000_0000, bytes));
-        let mut names = BTreeMap::new();
-        names.insert(0x4000_0000, "probe".to_owned());
-        names.insert(0x4000_0018, "wifi_log".to_owned());
-        Code {
-            functions,
-            names,
-            registers,
-            diagnostic: diagnostic.iter().map(|d| (*d).to_owned()).collect(),
-        }
-    }
-
-    #[test]
-    fn constants_fold_into_named_registers_and_fields() {
-        let lines = code(&[]).lines("probe").unwrap();
-        assert!(
-            lines[0].text.ends_with("; = 0x20104000"),
-            "{}",
-            lines[0].text
-        );
-        assert!(
-            lines[1].text.ends_with("; [0x20104020 MAC.TX_CONFIG]"),
-            "{}",
-            lines[1].text
-        );
-        assert!(
-            lines[2].text.ends_with("; MAC.TX_CONFIG: ENABLE"),
-            "{}",
-            lines[2].text
-        );
-        let found = definitions(&lines, 3);
-        assert!(found[0].starts_with("a4 <- +0x8: "), "{found:?}");
-        assert!(
-            found.iter().any(|f| f.starts_with("a4 <- +0x4: ")),
-            "{found:?}"
-        );
-    }
-
-    #[test]
-    fn a_block_ends_at_its_first_transfer_other_than_a_call() {
-        let lines = code(&[]).lines("probe").unwrap();
-        // The call at +0x10 continues the block; the return at +0x18 ends it.
-        assert_eq!(block_end(&lines, 4), 6);
-        assert_eq!(block_end(&lines, 0), 3);
-    }
-
-    #[test]
-    fn only_reviewed_diagnostic_calls_make_a_candidate() {
-        let unreviewed = code(&[]);
-        let lines = unreviewed.lines("probe").unwrap();
-        assert_eq!(lines[4].callee.as_deref(), Some("wifi_log"));
-        // A callee no decision names as diagnostic output is never one.
-        assert_eq!(unreviewed.diagnostic_only(&lines, 4), None);
-        let reviewed = code(&["wifi_log"]);
-        let lines = reviewed.lines("probe").unwrap();
-        assert_eq!(reviewed.diagnostic_only(&lines, 4), Some(Ending::Returns));
-        // A store outside the stack is never diagnostic.
-        assert_eq!(reviewed.diagnostic_only(&lines, 8), None);
-        // An assertion logs, then jumps to itself.
-        let line = |op, flow, callee: Option<&str>| Line {
-            offset: 0,
-            text: String::new(),
-            op,
-            flow,
-            branch: vec![],
-            callee: callee.map(str::to_owned),
-        };
-        let call = || {
-            line(
-                SemanticOp::Link { dest: 1 },
-                InstructionFlow::Jump {
-                    displacement: 8,
-                    link: true,
-                },
-                Some("wifi_log"),
-            )
-        };
-        let spin = line(
-            SemanticOp::None,
-            InstructionFlow::Jump {
-                displacement: 0,
-                link: false,
-            },
-            None,
-        );
-        assert_eq!(
-            reviewed.diagnostic_only(&[call(), spin.clone()], 0),
-            Some(Ending::Spins)
-        );
-        // Reading device or object state after the output is behavior.
-        let read = line(
-            SemanticOp::Memory {
-                kind: MemoryKind::Load,
-                base: 10,
-                displacement: 4,
-                width: 4,
-                dest: Some(15),
-                source: None,
-                swap: false,
-                signed: false,
-            },
-            InstructionFlow::Next,
-            None,
-        );
-        assert_eq!(
-            reviewed.diagnostic_only(&[call(), read.clone(), spin.clone()], 0),
-            None
-        );
-        assert_eq!(
-            reviewed.diagnostic_only(&[read, call(), spin], 0),
-            Some(Ending::Spins)
-        );
-    }
-
-    #[test]
-    fn the_function_view_marks_every_location_by_its_triage() {
-        let at = |offset, kind| Location {
-            function: "probe".into(),
-            offset,
-            kind,
-        };
-        let untriaged = BTreeSet::from([at(0xc, LocationKind::Taken)]);
-        let uncovered = BTreeSet::from([
-            at(0xc, LocationKind::Taken),
-            at(0x10, LocationKind::Block),
-            at(0x20, LocationKind::Block),
-        ]);
-        let consequential = BTreeSet::from([at(0x20, LocationKind::Block)]);
-        let view = functions(&code(&[]), &untriaged, &uncovered, &consequential, |l| {
-            (l.offset == 0x10).then_some("reviewed path")
-        });
-        let line = |offset: &str| {
-            view.lines()
-                .find(|l| l.contains(offset))
-                .unwrap()
-                .to_owned()
-        };
-        assert!(line("+000c").contains("U taken"), "{view}");
-        assert!(line("+0010").contains("E1 block"), "{view}");
-        assert!(line("+0020").contains("C block"), "{view}");
-        assert!(!line("+0000").contains("U "), "{view}");
-        assert!(view.contains("E1: reviewed path"), "{view}");
-    }
-}
+mod tests;

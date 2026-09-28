@@ -12,7 +12,6 @@
 //! The pass is intraprocedural and forgets what it knows where control can
 //! enter from elsewhere, so an access through a pointer computed in another
 //! function, or after a join, is not attributed.
-use crate::triage::{CALLEE_SAVED, PARCEL, REGISTERS, ZERO};
 use blobray_backend_riscv::RiscvDecoder;
 use blobray_domain::{
     DecodedOp, FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand,
@@ -39,6 +38,14 @@ const STRING_LIMIT: usize = 160;
 const WORD_BYTES: u8 = 4;
 /// All bits of a word.
 const ALL: u32 = u32::MAX;
+/// Architectural registers, the hard-wired zero, the stack pointer and the
+/// ones a call preserves.
+const REGISTERS: usize = 32;
+pub(crate) const ZERO: u8 = 0;
+pub(crate) const STACK: u8 = 2;
+const CALLEE_SAVED: [u8; 13] = [2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27];
+/// Smallest instruction, the step of the undecodable-bytes fallback.
+const PARCEL: usize = 2;
 /// The return-address register `ra`, through which a function returns.
 const RETURN_ADDRESS: u8 = 1;
 /// The argument registers `a0` to `a7`.
@@ -62,6 +69,9 @@ pub struct Function {
     pub code: Vec<u8>,
     /// Relocations of the function's code, by offset from its entry.
     references: BTreeMap<u32, Reference>,
+    /// Whether the function belongs to a linked image, whose calls name
+    /// their targets by address rather than by relocation.
+    linked: bool,
 }
 
 /// What a relocation at one instruction refers to.
@@ -132,8 +142,9 @@ impl Reference {
 /// The code functions of every pinned artifact of the installed chip.
 pub struct Corpus {
     pub functions: Vec<Function>,
-    /// Function names by origin and address, for calls resolved by address.
-    names: BTreeMap<(String, u32), String>,
+    /// Function names of the linked images by address, for calls resolved
+    /// by address: an image calls into the ROM and back.
+    names: BTreeMap<u32, String>,
     registers: Registers,
     /// Code artifacts the manifest pins but this checkout does not hold.
     pub missing: Vec<String>,
@@ -189,16 +200,44 @@ impl Corpus {
         Ok(corpus)
     }
 
+    /// A corpus of linked functions, for tests: (name, entry, code).
+    #[cfg(test)]
+    pub(crate) fn linked(functions: &[(&str, u32, &[u8])], registers: Registers) -> Self {
+        let mut corpus = Self {
+            functions: vec![],
+            names: BTreeMap::new(),
+            registers,
+            missing: vec![],
+        };
+        for (name, entry, code) in functions {
+            corpus.names.insert(*entry, (*name).to_owned());
+            corpus.functions.push(Function {
+                origin: "image".into(),
+                name: (*name).to_owned(),
+                entry: *entry,
+                code: code.to_vec(),
+                references: BTreeMap::new(),
+                linked: true,
+            });
+        }
+        corpus
+    }
+
+    /// The first definition of `name`, in artifact order.
+    pub(crate) fn function(&self, name: &str) -> Option<&Function> {
+        self.functions.iter().find(|function| function.name == name)
+    }
+
     fn add_artifact(&mut self, id: &str, bytes: &[u8]) -> Result<()> {
         if !bytes.starts_with(ARCHIVE_MAGIC) {
-            self.add_object(id, bytes);
+            self.add_object(id, bytes, true);
             return Ok(());
         }
         let archive = object::read::archive::ArchiveFile::parse(bytes)?;
         for member in archive.members() {
             let member = member?;
             let name = String::from_utf8_lossy(member.name()).into_owned();
-            self.add_object(&format!("{id}[{name}]"), member.data(bytes)?);
+            self.add_object(&format!("{id}[{name}]"), member.data(bytes)?, false);
         }
         Ok(())
     }
@@ -206,7 +245,7 @@ impl Corpus {
     /// Add the text symbols of one ELF object with their relocations; bytes
     /// that are not an ELF object, such as an archive symbol table, add
     /// nothing.
-    fn add_object(&mut self, origin: &str, bytes: &[u8]) {
+    fn add_object(&mut self, origin: &str, bytes: &[u8], linked: bool) {
         let Ok(file) = object::File::parse(bytes) else {
             return;
         };
@@ -275,21 +314,22 @@ impl Corpus {
                 .range((index.0, start)..(index.0, start + symbol.size()))
                 .map(|((_, offset), reference)| ((offset - start) as u32, reference.clone()))
                 .collect();
-            self.names
-                .entry((origin.to_owned(), entry))
-                .or_insert_with(|| name.to_owned());
+            if linked {
+                self.names.entry(entry).or_insert_with(|| name.to_owned());
+            }
             self.functions.push(Function {
                 origin: origin.to_owned(),
                 name: name.to_owned(),
                 entry,
                 code: code.to_vec(),
                 references,
+                linked,
             });
         }
     }
 
     /// The decoded, annotated instructions of `function`.
-    fn walk(&self, function: &Function) -> Vec<Step> {
+    pub(crate) fn walk(&self, function: &Function) -> Vec<Step> {
         let mut decoded = vec![];
         let mut offset = 0usize;
         while offset + PARCEL <= function.code.len() {
@@ -398,6 +438,10 @@ impl Corpus {
                     notes: vec![],
                     access: None,
                     print: None,
+                    op: SemanticOp::Unsupported,
+                    flow: InstructionFlow::Stop,
+                    branch: vec![],
+                    callee: None,
                 },
             );
         };
@@ -414,28 +458,46 @@ impl Corpus {
         );
         // A linked image names its callees by address; an archive member
         // names them through the call's relocation, noted above.
-        if call && reference.is_none_or(|r| !r.is_call()) {
-            let target = match op.flow {
-                InstructionFlow::Jump { displacement, .. } => {
-                    Some(address.wrapping_add_signed(displacement))
-                }
-                InstructionFlow::Indirect { base, offset, .. } => match state.get(base) {
-                    Value::Constant(value) => Some(value.wrapping_add_signed(offset)),
+        let mut callee = None;
+        if call {
+            if let Some(reference) = reference.filter(|r| r.is_call()) {
+                callee = Some(reference.target.clone());
+            } else if function.linked {
+                let target = match op.flow {
+                    InstructionFlow::Jump { displacement, .. } => {
+                        Some(address.wrapping_add_signed(displacement))
+                    }
+                    InstructionFlow::Indirect { base, offset, .. } => match state.get(base) {
+                        Value::Constant(value) => Some(value.wrapping_add_signed(offset)),
+                        _ => None,
+                    },
                     _ => None,
-                },
-                _ => None,
-            };
-            if let Some(name) = target.and_then(|t| self.names.get(&(function.origin.clone(), t))) {
-                notes.push(format!("<{name}>"));
+                };
+                callee = target.map(|target| {
+                    self.names
+                        .get(&target)
+                        .cloned()
+                        .unwrap_or_else(|| format!("{target:#010x}"))
+                });
+                if let Some(name) = &callee {
+                    notes.push(format!("<{name}>"));
+                }
             }
         }
-        let access = state.step(
-            RiscvDecoder.lift(raw),
-            address,
-            reference,
-            &mut notes,
-            &self.registers,
-        );
+        let branch = RiscvDecoder
+            .branch(raw)
+            .map(|(_, a, b)| {
+                [a, b]
+                    .into_iter()
+                    .filter_map(|operand| match operand {
+                        Operand::Register(register) => Some(register),
+                        Operand::Immediate(_) => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let lifted = RiscvDecoder.lift(raw);
+        let access = state.step(lifted, address, reference, &mut notes, &self.registers);
         // A tail call jumps through a register other than the return
         // address and passes its arguments like any call.
         let tail = matches!(
@@ -454,6 +516,10 @@ impl Corpus {
                 notes,
                 access,
                 print,
+                op: lifted,
+                flow: op.flow,
+                branch,
+                callee,
             },
         )
     }
@@ -478,12 +544,30 @@ fn literal(file: &object::File<'_>, section: SectionIndex, address: u64) -> Opti
 }
 
 /// One decoded instruction and what the pass learned from it.
-struct Step {
-    offset: u32,
+pub(crate) struct Step {
+    pub(crate) offset: u32,
     text: String,
     notes: Vec<String>,
     access: Option<Access>,
     print: Option<Print>,
+    /// The lifted instruction and how control leaves it.
+    pub(crate) op: SemanticOp,
+    pub(crate) flow: InstructionFlow,
+    /// Registers a conditional branch compares.
+    pub(crate) branch: Vec<u8>,
+    /// A call's target, by name where a symbol or relocation gives one.
+    pub(crate) callee: Option<String>,
+}
+
+impl Step {
+    /// The instruction with what the pass learned, as `show` prints it.
+    pub(crate) fn display(&self) -> String {
+        if self.notes.is_empty() {
+            self.text.clone()
+        } else {
+            format!("{}    ; {}", self.text, self.notes.join(", "))
+        }
+    }
 }
 
 /// A call whose argument addresses a format string: the format and, for
@@ -823,7 +907,14 @@ impl State {
                         }
                     }
                     Some(_) => UNKNOWN,
-                    None => combine(op, self.operand(left), self.operand(right)),
+                    None => {
+                        if let Some(note) =
+                            selected_bits(op, &self.operand(left), &self.operand(right), registers)
+                        {
+                            notes.push(note);
+                        }
+                        combine(op, self.operand(left), self.operand(right))
+                    }
                 };
                 if let Value::Constant(value) = result
                     && matches!(right, Operand::Immediate(_))
@@ -930,6 +1021,41 @@ impl State {
             SemanticOp::Fence { .. } | SemanticOp::None => None,
         }
     }
+}
+
+/// The register fields a mask or bit operation on a register value
+/// selects, named by the published bindings.
+fn selected_bits(
+    op: IntegerOp,
+    left: &Value,
+    right: &Value,
+    registers: &Registers,
+) -> Option<String> {
+    let (address, shift) = match left {
+        Value::Word {
+            location: Location::Absolute(address),
+            ..
+        } => (*address, 0),
+        Value::Extract {
+            location: Location::Absolute(address),
+            shift,
+            ..
+        } => (*address, *shift),
+        _ => return None,
+    };
+    let Value::Constant(operand) = right else {
+        return None;
+    };
+    let mask = match op {
+        IntegerOp::And | IntegerOp::Or | IntegerOp::Xor | IntegerOp::AndNot => *operand,
+        IntegerOp::BitSet | IntegerOp::BitClear | IntegerOp::BitInvert | IntegerOp::BitExtract => {
+            1 << (operand % u32::BITS)
+        }
+        _ => return None,
+    };
+    let word = address & !(u32::from(WORD_BYTES) - 1);
+    let shift = shift + (address - word) * u8::BITS;
+    Some(registers.bits(word, mask.checked_shl(shift).unwrap_or(0)))
 }
 
 /// The bits a `width`-byte access covers.
@@ -1359,11 +1485,7 @@ pub fn show(corpus: &Corpus, name: &str) -> Option<String> {
             function.code.len()
         );
         for step in corpus.walk(function) {
-            let _ = write!(text, "  +{:04x}  {}", step.offset, step.text);
-            if !step.notes.is_empty() {
-                let _ = write!(text, "    ; {}", step.notes.join(", "));
-            }
-            let _ = writeln!(text);
+            let _ = writeln!(text, "  +{:04x}  {}", step.offset, step.display());
         }
     }
     (!text.is_empty()).then_some(text)

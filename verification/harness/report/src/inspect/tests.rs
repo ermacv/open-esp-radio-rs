@@ -22,6 +22,7 @@ fn corpus(name: &str, code: Vec<u8>) -> Corpus {
             entry: 0,
             code,
             references: BTreeMap::new(),
+            linked: true,
         }],
         names: BTreeMap::new(),
         registers: Registers::default(),

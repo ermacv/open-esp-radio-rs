@@ -1,15 +1,12 @@
 //! Counts of the connected station's beacons from RX dispatch to control.
 //!
-//! A beacon staging delivers is dispatched by the station's RX dispatcher,
-//! then published to the control mailbox, or lost
+//! A beacon that RX dispatches is published to the control mailbox, or lost
 //! to a full mailbox, and control later consumes it. Comparing the three
 //! counts locates where beacons stop under load without an observer on the
 //! datapath: each is one relaxed atomic increment per beacon.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-static DISPATCHED: AtomicU32 = AtomicU32::new(0);
-static DISPATCH_REJECTED: AtomicU32 = AtomicU32::new(0);
 static PUBLISHED: AtomicU32 = AtomicU32::new(0);
 static OVERFLOWED: AtomicU32 = AtomicU32::new(0);
 static CONSUMED: AtomicU32 = AtomicU32::new(0);
@@ -17,10 +14,6 @@ static CONSUMED: AtomicU32 = AtomicU32::new(0);
 /// Beacon counts since boot; they wrap at `u32`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct BeaconPathCounts {
-    /// Beacon frames the connected station's RX dispatcher received.
-    pub dispatched: u32,
-    /// Of those, beacons the dispatcher rejected.
-    pub dispatch_rejected: u32,
     /// Beacons RX dispatch handed to the control mailbox.
     pub published: u32,
     /// Of those, beacons a full mailbox refused.
@@ -33,10 +26,6 @@ impl BeaconPathCounts {
     /// The counts accumulated since `earlier`.
     pub const fn since(self, earlier: Self) -> Self {
         Self {
-            dispatched: self.dispatched.wrapping_sub(earlier.dispatched),
-            dispatch_rejected: self
-                .dispatch_rejected
-                .wrapping_sub(earlier.dispatch_rejected),
             published: self.published.wrapping_sub(earlier.published),
             overflowed: self.overflowed.wrapping_sub(earlier.overflowed),
             consumed: self.consumed.wrapping_sub(earlier.consumed),
@@ -46,18 +35,9 @@ impl BeaconPathCounts {
 
 pub fn beacon_path_counts() -> BeaconPathCounts {
     BeaconPathCounts {
-        dispatched: DISPATCHED.load(Ordering::Relaxed),
-        dispatch_rejected: DISPATCH_REJECTED.load(Ordering::Relaxed),
         published: PUBLISHED.load(Ordering::Relaxed),
         overflowed: OVERFLOWED.load(Ordering::Relaxed),
         consumed: CONSUMED.load(Ordering::Relaxed),
-    }
-}
-
-pub(crate) fn record_dispatched(accepted: bool) {
-    DISPATCHED.fetch_add(1, Ordering::Relaxed);
-    if !accepted {
-        DISPATCH_REJECTED.fetch_add(1, Ordering::Relaxed);
     }
 }
 

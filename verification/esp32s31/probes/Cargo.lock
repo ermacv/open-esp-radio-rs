@@ -1213,6 +1213,7 @@ dependencies = [
  "oer-esp32s31-pac",
  "oer-esp32s31-phy",
  "oer-esp32s31-radio-esp-hal",
+ "oer-ieee80211-mac",
  "oer-ieee80211-softmac",
  "oer-memory",
  "oer-probe-macros",

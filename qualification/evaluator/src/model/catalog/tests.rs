@@ -909,7 +909,10 @@ fn bluetooth_lifecycle_facts_reach_all_views_without_promoting_products() {
     let domains = BTreeSet::from(["bluetooth", "phy", "whole-radio"]);
     for (fact_id, expected) in [
         ("bluetooth-idle-phy-maintenance", SourceStatus::Implemented),
-        ("bluetooth-periodic-phy-maintenance", SourceStatus::Implemented),
+        (
+            "bluetooth-periodic-phy-maintenance",
+            SourceStatus::Implemented,
+        ),
         ("bluetooth-idle-powered-release", SourceStatus::Implemented),
         (
             "bluetooth-same-storage-powered-restart",

@@ -1,18 +1,6 @@
 use super::*;
 
 const COMPLETE: &str = r#"
-schema = 4
-target = "test-radio"
-required-capabilities = ["channel-switch"]
-
-[verification]
-evidence-index = "evidence/vendor.json"
-
-[hil]
-target = "test-radio"
-catalog = "hil/scenarios"
-runs = "target/hil/test-radio/runs"
-
 [[capabilities]]
 id = "channel-switch"
 title = "Channel switch"
@@ -25,10 +13,20 @@ vendor-evidence = [{ suite = "radio", source = "archive", symbol = "set_channel"
 hil-requirements = [{ scenario = "channel-switch", minimum-repetitions = 3 }]
 "#;
 
+/// Capability declarations as a catalog carries them.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Declarations {
+    capabilities: Vec<CapabilityDocument>,
+}
+
+fn declarations(input: &str) -> std::result::Result<Declarations, toml_edit::de::Error> {
+    toml_edit::de::from_str(input)
+}
+
 #[test]
-fn parses_strict_v4_toml() {
-    let manifest: ManifestDocument = toml_edit::de::from_str(COMPLETE).unwrap();
-    assert_eq!(manifest.schema, 4);
+fn parses_a_strict_capability_declaration() {
+    let manifest = declarations(COMPLETE).unwrap();
     assert_eq!(
         manifest.capabilities[0].implementation,
         ImplementationProof::Complete
@@ -55,8 +53,7 @@ limits = "Hardware reachability is unknown"
 source-paths = ["Cargo.toml"]
 "#
     );
-    let manifest: ManifestDocument = toml_edit::de::from_str(&input).unwrap();
-    assert_eq!(manifest.required_capabilities, ["channel-switch"]);
+    let manifest = declarations(&input).unwrap();
     assert_eq!(manifest.capabilities.len(), 1);
     assert_eq!(manifest.capabilities[0].source_contracts.len(), 1);
     assert_eq!(
@@ -68,7 +65,7 @@ source-paths = ["Cargo.toml"]
 #[test]
 fn declarative_axis_status_is_required() {
     let input = COMPLETE.replace("implementation = \"complete\"\n", "");
-    let error = match toml_edit::de::from_str::<ManifestDocument>(&input) {
+    let error = match declarations(&input) {
         Ok(_) => panic!("missing implementation status was accepted"),
         Err(error) => error,
     };
@@ -165,10 +162,7 @@ fn vendor_evidence_must_name_a_declared_root() {
         root: &root,
         scenario_catalog: &scenarios,
     };
-    let mut capability = toml_edit::de::from_str::<ManifestDocument>(COMPLETE)
-        .unwrap()
-        .capabilities
-        .remove(0);
+    let mut capability = declarations(COMPLETE).unwrap().capabilities.remove(0);
     capability.hil_requirements.clear();
     capability.hil_not_applicable = Some("vendor-evidence-fixture".into());
     validate_capability_declaration(&capability, &context).unwrap();

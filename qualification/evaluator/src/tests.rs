@@ -452,7 +452,7 @@ fn manifest_catalog_check_rejects_repeated_invalid_and_incompatible_ids() {
         (
             "\"base\"",
             "",
-            "catalogs and catalog-capabilities must either both be present or both be absent",
+            "catalogs and catalog-capabilities are required",
         ),
     ];
     for (required, selected, expected) in cases {

@@ -37,10 +37,11 @@ pub(crate) struct SourceIdentity {
     pub(crate) sha256: String,
 }
 
+/// The catalog that declares a capability of a program.
 #[derive(Clone, Debug)]
-pub(crate) enum CapabilityOrigin {
-    Program,
-    Catalog { id: String, path: PathBuf },
+pub(crate) struct CapabilityOrigin {
+    pub(crate) id: String,
+    pub(crate) path: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -251,7 +252,7 @@ struct LoadedCatalog {
 
 impl CatalogView {
     pub(crate) fn load(root: &Path, paths: &[PathBuf]) -> Result<Self> {
-        Self::load_with_program(root, paths, None, &BTreeSet::new())
+        Self::load_with_program(root, paths, None)
     }
 
     pub(crate) fn load_for_program(root: &Path, path: &Path) -> Result<Self> {
@@ -266,7 +267,6 @@ impl CatalogView {
         root: &Path,
         paths: &[PathBuf],
         fallback: Option<(&VerificationConfig, &HilConfig)>,
-        allowed_external: &BTreeSet<String>,
     ) -> Result<Self> {
         if paths.is_empty() {
             return Err("no capability catalogs were selected".into());
@@ -525,7 +525,7 @@ impl CatalogView {
                 .into());
             }
         }
-        validate_catalog_dependencies(&view.capabilities, allowed_external)?;
+        validate_catalog_dependencies(&view.capabilities)?;
         if let Some(packages) = packages {
             view.package_directories = packages.directories(
                 view.sections
@@ -558,12 +558,16 @@ impl ManifestDocument {
             )
             .into());
         }
-        if self.required_capabilities_from.is_some()
-            && (!self.required_capabilities.is_empty()
-                || !self.capabilities.is_empty()
-                || self.catalog_capabilities.is_empty())
-        {
-            return Err("catalog-closure requires catalog roots without explicit required IDs or inline capabilities".into());
+        if self.catalogs.is_empty() || self.catalog_capabilities.is_empty() {
+            return Err(
+                "a qualification program selects its capabilities from catalogs: catalogs and catalog-capabilities are required"
+                    .into(),
+            );
+        }
+        if self.required_capabilities_from.is_some() && !self.required_capabilities.is_empty() {
+            return Err(
+                "catalog-closure requires catalog roots without explicit required IDs".into(),
+            );
         }
         self.program_source = Some(SourceIdentity {
             id: self.target.clone(),
@@ -572,49 +576,11 @@ impl ManifestDocument {
             sha256: sha256(program_input.as_bytes()),
         });
         let mut origins = BTreeMap::new();
-        let mut inline_ids = BTreeSet::new();
-        for capability in &self.capabilities {
-            let id = slug(&capability.id, "capability id")?;
-            if !inline_ids.insert(id.clone()) {
-                return Err(format!("qualification manifest repeats capability {id}").into());
-            }
-            if capability.catalog_scope.is_some() {
-                return Err(format!(
-                    "inline capability {id} cannot declare catalog-scope metadata"
-                )
-                .into());
-            }
-            if !capability.source_fact_refs.is_empty() {
-                return Err(format!(
-                    "inline capability {id} cannot reference catalog source facts"
-                )
-                .into());
-            }
-            origins.insert(id, CapabilityOrigin::Program);
-        }
-        if self.catalogs.is_empty() && self.catalog_capabilities.is_empty() {
-            self.capability_origins = origins;
-            return Ok(self);
-        }
-        if self.catalogs.is_empty() || self.catalog_capabilities.is_empty() {
-            return Err(
-                "catalogs and catalog-capabilities must either both be present or both be absent"
-                    .into(),
-            );
-        }
         let view = CatalogView::load_with_program(
             root,
             &self.catalogs,
             Some((&self.verification, &self.hil)),
-            &inline_ids,
         )?;
-        for id in view.capabilities.keys() {
-            if inline_ids.contains(id) {
-                return Err(
-                    format!("capability {id} is declared both inline and in a catalog").into(),
-                );
-            }
-        }
         let mut selected = BTreeSet::new();
         for id in &self.catalog_capabilities {
             let id = slug(id, "catalog capability reference")?;
@@ -642,7 +608,7 @@ impl ManifestDocument {
             let (catalog_id, path) = view.capability_owners[&id].clone();
             origins.insert(
                 id,
-                CapabilityOrigin::Catalog {
+                CapabilityOrigin {
                     id: catalog_id,
                     path,
                 },
@@ -673,12 +639,10 @@ fn resolve_capability(
 
 pub(super) fn validate_catalog_dependencies(
     declarations: &BTreeMap<String, CapabilityDocument>,
-    allowed_external: &BTreeSet<String>,
 ) -> Result<()> {
     fn visit(
         id: &str,
         declarations: &BTreeMap<String, CapabilityDocument>,
-        allowed_external: &BTreeSet<String>,
         active: &mut BTreeSet<String>,
         complete: &mut BTreeSet<String>,
     ) -> Result<()> {
@@ -694,14 +658,8 @@ pub(super) fn validate_catalog_dependencies(
                 return Err(format!("catalog capability {id} depends on itself").into());
             }
             if declarations.contains_key(&dependency) {
-                visit(
-                    &dependency,
-                    declarations,
-                    allowed_external,
-                    active,
-                    complete,
-                )?;
-            } else if !allowed_external.contains(&dependency) {
+                visit(&dependency, declarations, active, complete)?;
+            } else {
                 return Err(
                     format!("catalog capability {id} depends on missing {dependency}").into(),
                 );
@@ -714,13 +672,7 @@ pub(super) fn validate_catalog_dependencies(
     let mut active = BTreeSet::new();
     let mut complete = BTreeSet::new();
     for id in declarations.keys() {
-        visit(
-            id,
-            declarations,
-            allowed_external,
-            &mut active,
-            &mut complete,
-        )?;
+        visit(id, declarations, &mut active, &mut complete)?;
     }
     Ok(())
 }

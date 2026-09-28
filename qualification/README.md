@@ -126,12 +126,12 @@ make any hardware evidence current.
 
 ## Capability catalogs and program resolution
 
-Canonical capability declarations may live below `catalog/`. A qualification
-program names one or more catalog files with `catalogs` and selects stable IDs
-with `catalog-capabilities`. Resolution adds the selected declaration and its
+Capability declarations live below `catalog/`. A qualification program names
+one or more catalog files with `catalogs` and selects stable IDs with
+`catalog-capabilities`; both are required, and a program declares no
+capability itself. Resolution adds the selected declarations and their
 catalog-owned dependency closure to the program before the schema-4 evaluator
-runs. Every program selects its capabilities from catalogs; a capability ID
-cannot be declared both inline and in a loaded catalog.
+runs.
 
 Catalogs declare shared inputs with `imports = ["qualification/catalog/…"]`.
 Paths are relative to the repository root. Imports resolve transitively; a shared
@@ -143,7 +143,7 @@ Importing a catalog does not select all of its capabilities for a product.
 A program normally supplies an exact `required-capabilities` list. Alternatively,
 `required-capabilities-from = "catalog-closure"` explicitly derives the full set
 from `catalog-capabilities` and transitive dependencies. That mode cannot mix
-explicit required IDs or inline capabilities. Missing policy is not permission
+explicit required IDs. Missing policy is not permission
 to derive a set: the existing exact-set checks still apply. Added dependencies
 become mandatory automatically in closure mode and retain all their evidence
 requirements. The evaluator report lists the resolved membership and provenance.

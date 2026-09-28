@@ -297,7 +297,8 @@ struct ManifestDocument {
     catalog_capabilities: Vec<String>,
     verification: VerificationConfig,
     hil: HilConfig,
-    #[serde(default)]
+    /// The selected catalog capabilities and their dependency closure.
+    #[serde(skip)]
     capabilities: Vec<CapabilityDocument>,
     #[serde(skip)]
     program_source: Option<SourceIdentity>,
@@ -507,7 +508,7 @@ impl ManifestDocument {
             )
             .into());
         }
-        catalog::validate_catalog_dependencies(&declarations, &BTreeSet::new())
+        catalog::validate_catalog_dependencies(&declarations)
     }
 }
 

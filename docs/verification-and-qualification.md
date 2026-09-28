@@ -37,8 +37,8 @@ and their catalog-owned dependency closure before the same evaluator applies
 the required-set, dependency, declaration and evidence rules. Programs either
 provide an exact `required-capabilities` list or explicitly select
 `required-capabilities-from = "catalog-closure"`; the latter derives every
-required ID from catalog roots and dependencies and rejects inline or explicit
-required-ID additions. Missing policy does not enable this mode. Catalog structure
+required ID from catalog roots and dependencies and rejects explicit required-ID
+additions. A program declares no capability itself. Missing policy does not enable this mode. Catalog structure
 and generated inventories are not evidence and cannot promote an axis or a
 readiness verdict. Catalog scope metadata records chip, role, PHY, security,
 composition level, activation boundary and limitations separately from those

@@ -42,7 +42,8 @@ security, composition, capability level, activation and limitation scope is
 required for each qualification record. Program resolution includes selected
 catalog dependencies transitively before checking the required set. The explicit
 `required-capabilities-from = "catalog-closure"` policy derives that set from
-catalog roots and rejects mixed explicit IDs or inline declarations. Programs
+catalog roots and rejects mixed explicit IDs. A program declares no capability
+itself; it selects them from catalogs. Programs
 without this policy still require the exact `required-capabilities` list.
 
 Inventory sections, items and references are navigation, not reviewed claims.

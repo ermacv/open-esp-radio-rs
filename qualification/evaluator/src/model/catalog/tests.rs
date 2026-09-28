@@ -146,12 +146,8 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
         "schema = 3\nid = \"test-wifi-phy\"\n{BASE_PHY}{BASE_SCOPE}{WIFI_CHANNEL}{WIFI_SCOPE}{unselected}{BASE_SCOPE}"
     ));
     let canonical_input = catalog_program("catalog/wifi.toml", "wifi-channel");
-    let legacy_input = format!("{PROGRAM_PREFIX}{BASE_PHY}{WIFI_CHANNEL}");
     let canonical = parse(&canonical_input)
         .resolve_catalogs(&root.path, Path::new("canonical.toml"), &canonical_input)
-        .unwrap();
-    let legacy = parse(&legacy_input)
-        .resolve_catalogs(&root.path, Path::new("legacy.toml"), &legacy_input)
         .unwrap();
 
     assert_eq!(canonical.catalog.capabilities.len(), 3);
@@ -178,19 +174,8 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
     );
 
     let mut canonical_documents = canonical.capabilities.clone();
-    let mut legacy_documents = legacy.capabilities;
     canonical_documents.sort_by(|left, right| left.id.cmp(&right.id));
-    legacy_documents.sort_by(|left, right| left.id.cmp(&right.id));
     assert_eq!(canonical_documents.len(), 2);
-    let canonical_without_scope = canonical_documents
-        .iter()
-        .cloned()
-        .map(|mut capability| {
-            capability.catalog_scope = None;
-            capability
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(canonical_without_scope, legacy_documents);
 
     let evidence = native_evidence(&root.path, &[]);
     let scenario_catalog = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
@@ -213,8 +198,6 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             .collect::<BTreeMap<_, _>>()
     };
     let evaluated = evaluate(canonical_documents);
-    let legacy_evaluated = evaluate(legacy_documents);
-    assert_equivalent_proofs(evaluated.clone(), legacy_evaluated);
     validate_dependencies(&evaluated).unwrap();
     assert!(evaluated.values().all(|capability| {
         capability.vendor == VendorProof::Mapped
@@ -393,7 +376,6 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
     root.write_named_catalog("a", &base);
     root.write_named_catalog("b", &wifi);
     let program = parse(PROGRAM_PREFIX);
-    let empty = BTreeSet::new();
     let first = CatalogView::load_with_program(
         &root.path,
         &[
@@ -401,7 +383,6 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
             PathBuf::from("catalog/b.toml"),
         ],
         Some((&program.verification, &program.hil)),
-        &empty,
     )
     .unwrap();
     let second = CatalogView::load_with_program(
@@ -411,7 +392,6 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
             PathBuf::from("catalog/a.toml"),
         ],
         Some((&program.verification, &program.hil)),
-        &empty,
     )
     .unwrap();
     assert_eq!(
@@ -439,7 +419,6 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
             PathBuf::from("catalog/b.toml"),
         ],
         Some((&program.verification, &program.hil)),
-        &empty,
     )
     .unwrap_err()
     .to_string();
@@ -447,7 +426,7 @@ fn multi_catalog_closure_is_order_independent_and_duplicates_fail() {
 }
 
 #[test]
-fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
+fn the_evidence_matrix_decides_readiness_of_catalog_capabilities() {
     let root = TestRoot::new("differential-matrix");
     let base = BASE_PHY
         .replace("vendor-anchors = [\"Cargo.toml\"]", "vendor-roots = [{ source = \"archive\", symbol = \"base_root\" }]\nvendor-evidence = [{ suite = \"base-suite\", source = \"archive\", symbol = \"base_root\" }]")
@@ -456,11 +435,11 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     let wifi = WIFI_CHANNEL
         .replace("vendor-anchors = [\"Cargo.toml\"]", "vendor-roots = [{ source = \"archive\", symbol = \"wifi_root\" }]\nvendor-evidence = [{ suite = \"wifi-suite\", source = \"archive\", symbol = \"wifi_root\" }]")
         .replace("gaps = [{ axis = \"vendor\", id = \"vendor-trace-missing\" }]", "");
-    let inline = parse(&format!("{PROGRAM_PREFIX}{base}{wifi}")).capabilities;
-    let canonical: CatalogDocument = toml_edit::de::from_str(&format!(
+    let catalog: CatalogDocument = toml_edit::de::from_str(&format!(
         "schema = 3\nid = \"matrix\"\n{base}{BASE_SCOPE}{wifi}{WIFI_SCOPE}"
     ))
     .unwrap();
+    let declared = catalog.capabilities;
 
     let scenarios = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
     let base_root = ("base-suite", "archive", "base_root");
@@ -527,7 +506,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     for (name, evidence, hil_entries, clean, ready) in cases {
         let hil = HilEvidenceIndex::synthetic(&hil_entries);
         let context = EvaluationContext {
-            declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
+            declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
             root: &root.path,
             evidence: &evidence,
             scenario_catalog: &scenarios,
@@ -540,9 +519,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
                 .map(|capability| (capability.id.clone(), capability))
                 .collect::<BTreeMap<_, _>>()
         };
-        let inline_result = evaluate(inline.clone());
-        let catalog_result = evaluate(canonical.capabilities.clone());
-        assert_equivalent_proofs(catalog_result.clone(), inline_result.clone());
+        let result = evaluate(declared.clone());
         let qualification = Qualification {
             target: name.to_owned(),
             repository: RepositoryState {
@@ -557,8 +534,8 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
                 hil_catalog: PathBuf::from("scenarios"),
                 hil_runs: PathBuf::from("runs"),
             },
-            capabilities: inline_result,
-            declarations: inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
+            capabilities: result,
+            declarations: declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
             program_source: SourceIdentity {
                 id: name.to_owned(),
                 schema: 4,
@@ -577,13 +554,13 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     let only_wifi_vendor = native_evidence(&root.path, &[wifi_root]);
     let hil = HilEvidenceIndex::synthetic(&[("base-phy", 1), ("wifi-channel", 1)]);
     let context = EvaluationContext {
-        declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
+        declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         evidence: &only_wifi_vendor,
         scenario_catalog: &scenarios,
         hil_index: &hil,
     };
-    let evaluated = inline
+    let evaluated = declared
         .iter()
         .cloned()
         .map(|document| evaluate_capability(document, &context).unwrap())
@@ -606,7 +583,7 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
             hil_runs: PathBuf::from("runs"),
         },
         capabilities: evaluated,
-        declarations: inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
+        declarations: declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         program_source: SourceIdentity {
             id: "test".to_owned(),
             schema: 4,
@@ -622,16 +599,16 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     assert!(!qualification.is_ready("wifi-channel"));
 
     let only_base_vendor = native_evidence(&root.path, &[base_root]);
-    let inline = parse(&format!("{PROGRAM_PREFIX}{base}{wifi}")).capabilities;
     let context = EvaluationContext {
-        declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
+        declarations: &declared.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
         evidence: &only_base_vendor,
         scenario_catalog: &scenarios,
         hil_index: &hil,
     };
-    let evaluated = inline
-        .into_iter()
+    let evaluated = declared
+        .iter()
+        .cloned()
         .map(|document| evaluate_capability(document, &context).unwrap())
         .map(|capability| (capability.id.clone(), capability))
         .collect::<BTreeMap<_, _>>();
@@ -1200,7 +1177,6 @@ fn imported_catalogs_resolve_transitively_once_and_preserve_provenance() {
             &root.path,
             paths,
             Some((&program.verification, &program.hil)),
-            &BTreeSet::new(),
         )
         .unwrap()
     };
@@ -1294,14 +1270,9 @@ fn explicit_catalog_closure_follows_new_dependencies_without_relaxing_exact_prog
             .to_string()
             .contains("without explicit required IDs")
     );
-    let inline = format!("{derived_input}{BASE_PHY}");
-    assert!(
-        load(&inline)
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("inline capabilities")
-    );
+    // A program selects capabilities; it cannot declare one.
+    let declaring = format!("{derived_input}{BASE_PHY}");
+    assert!(toml_edit::de::from_str::<ManifestDocument>(&declaring).is_err());
     let no_policy = exact_input.replace(
         "required-capabilities = [\"base-phy\", \"wifi-channel\"]",
         "",
@@ -1399,20 +1370,4 @@ fn peripheral_products_retain_lifecycle_and_security_without_other_radio_roles()
             "missing {scenario}"
         );
     }
-}
-
-// Catalog forms carry explicit scope metadata absent in legacy inline records.
-// Reviews must bind that metadata, while the unreviewed proof result is unchanged.
-fn assert_equivalent_proofs(
-    mut a: BTreeMap<String, crate::model::Capability>,
-    mut b: BTreeMap<String, crate::model::Capability>,
-) {
-    for map in [&mut a, &mut b] {
-        for capability in map.values_mut() {
-            for decision in &mut capability.hil_decisions {
-                decision.property = None;
-            }
-        }
-    }
-    assert_eq!(a, b);
 }

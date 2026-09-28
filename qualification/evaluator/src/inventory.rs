@@ -374,15 +374,17 @@ fn render_program(qualification: &Qualification, output: &Path, root: &Path) -> 
             (false, false) => format!("dependency of {}", dependents.join(", ")),
             (false, true) => "dependency closure".to_owned(),
         };
-        let origin = match &qualification.capability_origins[&capability.id] {
-            CapabilityOrigin::Program => "inline program".to_owned(),
-            CapabilityOrigin::Catalog { id, path } => {
-                format!("catalog `{id}` (`{}`)", path.display())
-            }
-        };
-        let structured_scope = qualification.catalog_scopes.get(&capability.id).map_or_else(
-            || "inline program declaration".to_owned(),
-            |scope| format!("chip=`{}`, role=`{}`, PHY=`{}`, security=`{}`, composition=`{}`, level=`{}`", scope.chip, scope.role, scope.phy, scope.security.join(","), scope.composition, scope.level.label()),
+        let CapabilityOrigin { id, path } = &qualification.capability_origins[&capability.id];
+        let origin = format!("catalog `{id}` (`{}`)", path.display());
+        let scope = &qualification.catalog_scopes[&capability.id];
+        let structured_scope = format!(
+            "chip=`{}`, role=`{}`, PHY=`{}`, security=`{}`, composition=`{}`, level=`{}`",
+            scope.chip,
+            scope.role,
+            scope.phy,
+            scope.security.join(","),
+            scope.composition,
+            scope.level.label()
         );
         text.push_str(&format!("### {}\n\n**{}**\n\n- Membership: {membership}\n- Declaration: {origin}\n- Dependencies: {}\n- Structured scope: {structured_scope}\n- Axes: implementation=`{}`, host=`{}`, vendor=`{}`, HIL=`{}`, async=`{}`\n- Proof-ready: `{}`\n- Effective ready (including dependencies): `{}`\n- Explicit vendor evidence references: {}\n- Vendor not-applicable reason: {}\n- HIL obligations: {}\n- HIL not-applicable reason: {}\n- Async not-applicable reason: {}\n- Evidence: {}\n- Reasons/gaps: {}\n\n",
             escape_heading(&capability.id), escape_text(&capability.title), code_list(&capability.dependencies), capability.implementation.label(), capability.host.label(), capability.vendor.label(), capability.hil.label(), capability.async_proof.label(), capability.proof_ready(), qualification.is_ready(&capability.id), vendor_evidence_list(&capability.vendor_evidence), optional_reason(capability.vendor_not_applicable.as_deref()), hil_requirement_list(&capability.hil_requirements), optional_reason(capability.hil_not_applicable.as_deref()), optional_reason(capability.async_not_applicable.as_deref()), code_list(&capability.evidence), capability.gaps.iter().map(|gap| format!("`{}:{}`", gap.axis.label(), gap.id)).collect::<Vec<_>>().join(", ")));

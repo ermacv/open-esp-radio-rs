@@ -36,6 +36,9 @@ pub struct Plan {
     /// link one standalone example, since a type-check never runs the
     /// linker scripts' assertions.
     pub platform_link: bool,
+    /// A manifest, lockfile or network owner changed: the network adapter
+    /// dependency boundaries may have moved.
+    pub network: bool,
     /// A Cargo manifest or lockfile changed.
     pub metadata: bool,
     /// Code, register models, vendor docs or provenance facts changed: vendor
@@ -98,6 +101,18 @@ pub fn plan(
         }
         if path.starts_with("platform") {
             plan.platform_link = true;
+        }
+        if name == "Cargo.toml"
+            || name == "Cargo.lock"
+            || [
+                "crates/network",
+                "crates/adapters/embassy-net",
+                "experiments/network-engine",
+            ]
+            .iter()
+            .any(|owner| path.starts_with(owner))
+        {
+            plan.network = true;
         }
         if name == "Cargo.toml" || name == "Cargo.lock" {
             plan.metadata = true;
@@ -282,6 +297,9 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     }
     if plan.phy_graph {
         super::phy::run(ctx, "esp32s31")?;
+    }
+    if plan.network {
+        super::network::run(ctx)?;
     }
     if plan.platform_link {
         println!("check changed: linking the station example for the platform change");
@@ -490,6 +508,9 @@ mod tests {
         let plan = run(&["qualification/catalog/esp32s31/coex.toml"]);
         assert_eq!(plan.capabilities, Some(BTreeSet::new()));
         assert!(run(&["platform/esp32s31/linker/runtime/sections.x"]).platform_link);
+        assert!(run(&["crates/adapters/embassy-net/owned/Cargo.toml"]).network);
+        assert!(run(&["crates/network/interface/src/lib.rs"]).network);
+        assert!(!run(&["docs/guide.md"]).network);
         assert!(!run(&["docs/guide.md"]).platform_link);
         assert!(
             run(&["qualification/evaluator/src/main.rs"])

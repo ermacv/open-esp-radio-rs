@@ -4197,7 +4197,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "c8d2c6a63cdfed68b72e1f4fac761b0365085b471d8276ff8c89725431bda396"
+      "sha256": "98e637b61cdf5ba95a9b66edb5dd3c33f919e26b2cc46711793effce3981fc90"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",
@@ -5695,8 +5695,8 @@
           "total": 94
         },
         "open": 4,
-        "excluded": 16,
-        "untriaged": 91
+        "excluded": 19,
+        "untriaged": 88
       },
       "observation": {
         "executed": 10,
@@ -5729,8 +5729,8 @@
           "total": 150
         },
         "open": 4,
-        "excluded": 16,
-        "untriaged": 159
+        "excluded": 19,
+        "untriaged": 156
       },
       "observation": {
         "executed": 10,
@@ -5763,8 +5763,8 @@
           "total": 1882
         },
         "open": 109,
-        "excluded": 3509,
-        "untriaged": 195
+        "excluded": 3512,
+        "untriaged": 192
       },
       "observation": {
         "executed": 17,
@@ -5901,8 +5901,8 @@
           "total": 88
         },
         "open": 0,
-        "excluded": 2,
-        "untriaged": 88
+        "excluded": 5,
+        "untriaged": 85
       },
       "observation": {
         "executed": 360,
@@ -5935,8 +5935,8 @@
           "total": 152
         },
         "open": 0,
-        "excluded": 2,
-        "untriaged": 128
+        "excluded": 5,
+        "untriaged": 125
       },
       "observation": {
         "executed": 373,
@@ -7022,21 +7022,6 @@
       "function": "rcGetSMPDURate",
       "offset": 62,
       "kind": "block"
-    },
-    {
-      "function": "rcReachRetryLimit",
-      "offset": 10,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcReachRetryLimit",
-      "offset": 12,
-      "kind": "block"
-    },
-    {
-      "function": "rcReachRetryLimit",
-      "offset": 68,
-      "kind": "fallthrough"
     },
     {
       "function": "rcReachRetryLimit",

@@ -1109,7 +1109,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "c8d2c6a63cdfed68b72e1f4fac761b0365085b471d8276ff8c89725431bda396"
+      "sha256": "98e637b61cdf5ba95a9b66edb5dd3c33f919e26b2cc46711793effce3981fc90"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",

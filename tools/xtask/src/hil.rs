@@ -119,6 +119,12 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         None => options,
     };
     let ctx = baseline.as_ref().map_or(ctx, |(baseline, _)| baseline);
+    // The runner and its image builds are the largest writers to the build
+    // disk: sweep stale caches when it runs low, and stop before it is full.
+    if let Err(error) = crate::sweep::automatically(&ctx.root) {
+        eprintln!("hil: the automatic cache sweep failed: {error}");
+    }
+    crate::sweep::ensure_space(&ctx.root)?;
     let (runner, receipt_path) = prepare(ctx)?;
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised

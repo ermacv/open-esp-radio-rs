@@ -26,10 +26,77 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            incremental: Duration::from_secs(3 * 24 * 3600),
-            image_caches: Duration::from_secs(7 * 24 * 3600),
+            incremental: Duration::from_secs(24 * 3600),
+            image_caches: Duration::from_secs(3 * 24 * 3600),
         }
     }
+}
+
+impl Policy {
+    /// When the build disk runs low: caches no build touched for hours.
+    /// Incremental data of every feature set grows by tens of GiB per
+    /// checkout and hour of active work, faster than a daily sweep.
+    pub const PRESSURE: Self = Self {
+        incremental: Duration::from_secs(2 * 3600),
+        image_caches: Duration::from_secs(12 * 3600),
+    };
+}
+
+/// How full the build disk is. A level needs both an absolute and a
+/// relative shortage, so a small file system (a test's temporary root)
+/// with ample room for its size is not reported as full.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Space {
+    Ample,
+    /// Below 200 GiB and a tenth of the disk: [`automatically`] sweeps with
+    /// [`Policy::PRESSURE`] at once instead of waiting for the daily sweep.
+    Low,
+    /// Below 20 GiB and a fiftieth of the disk: [`ensure_space`] refuses to
+    /// start a build.
+    Critical,
+}
+
+impl Space {
+    fn of(available: u64, total: u64) -> Self {
+        if available < 20 << 30 && available < total / 50 {
+            Self::Critical
+        } else if available < 200 << 30 && available < total / 10 {
+            Self::Low
+        } else {
+            Self::Ample
+        }
+    }
+
+    fn measure(root: &Path) -> Result<(Self, u64)> {
+        let available = fs2::available_space(root)?;
+        Ok((Self::of(available, fs2::total_space(root)?), available))
+    }
+}
+
+/// The sweep [`automatically`] runs: `None` when the last one is recent and
+/// space is ample.
+fn automatic_policy(space: Space, recent: bool) -> Option<Policy> {
+    if space != Space::Ample {
+        Some(Policy::PRESSURE)
+    } else if recent {
+        None
+    } else {
+        Some(Policy::default())
+    }
+}
+
+/// Fail before a build when the build disk is nearly full: builds then die
+/// with ENOSPC midway, often in another agent's checkout.
+pub fn ensure_space(root: &Path) -> Result<()> {
+    let (space, available) = Space::measure(root)?;
+    if space == Space::Critical {
+        return Err(format!(
+            "only {:.1} GiB free on the build disk; run `cargo xtask sweep --all-checkouts --apply` or free space first",
+            available as f64 / (1u64 << 30) as f64
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// One removable cache directory.
@@ -197,9 +264,10 @@ fn size(path: &Path) -> u64 {
 /// How often [`automatically`] sweeps every checkout.
 const AUTOMATIC_INTERVAL: Duration = Duration::from_secs(24 * 3600);
 
-/// Sweep every sibling checkout at most once a day for the whole host,
-/// without measuring sizes. Called from routine commands so that no agent has
-/// to remember it; a concurrent sweep holds the marker's lock and this one
+/// Sweep every sibling checkout at most once a day for the whole host, and
+/// at once with [`Policy::PRESSURE`] while the build disk is low, without
+/// measuring sizes. Called from routine commands so that no agent has to
+/// remember it; a concurrent sweep holds the marker's lock and this one
 /// returns.
 pub fn automatically(root: &Path) -> Result<()> {
     let base = std::env::var_os("XDG_CACHE_HOME")
@@ -225,12 +293,13 @@ pub fn automatically(root: &Path) -> Result<()> {
         .is_some_and(|age| {
             age < AUTOMATIC_INTERVAL && fs::metadata(&marker).is_ok_and(|m| m.len() > 0)
         });
-    if recent {
+    let (space, _) = Space::measure(root)?;
+    let Some(policy) = automatic_policy(space, recent) else {
         return Ok(());
-    }
+    };
     let mut removed = 0;
     for checkout in checkouts(root) {
-        for candidate in candidates(&checkout, Policy::default(), now) {
+        for candidate in candidates(&checkout, policy, now) {
             if fs::remove_dir_all(&candidate.path).is_ok() {
                 removed += 1;
             }
@@ -238,7 +307,14 @@ pub fn automatically(root: &Path) -> Result<()> {
     }
     fs::write(&marker, format!("{removed}\n"))?;
     if removed > 0 {
-        eprintln!("sweep: removed {removed} unused build caches across checkouts (daily)");
+        eprintln!(
+            "sweep: removed {removed} unused build caches across checkouts ({})",
+            if space == Space::Ample {
+                "daily"
+            } else {
+                "the build disk is low"
+            }
+        );
     }
     Ok(())
 }
@@ -301,6 +377,41 @@ mod tests {
         let found = candidates(root.path(), Policy::default(), SystemTime::now());
         let paths = found.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
         assert_eq!(paths, [old, dead]);
+    }
+
+    #[test]
+    fn low_space_sweeps_at_once_with_the_pressure_policy() {
+        const GIB: u64 = 1 << 30;
+        let disk = 1900 * GIB;
+        assert_eq!(Space::of(500 * GIB, disk), Space::Ample);
+        assert_eq!(Space::of(150 * GIB, disk), Space::Low);
+        assert_eq!(Space::of(5 * GIB, disk), Space::Critical);
+        // A small file system with room for its size is not full.
+        assert_eq!(Space::of(5 * GIB, 16 * GIB), Space::Ample);
+        assert!(automatic_policy(Space::Ample, true).is_none());
+        assert_eq!(
+            automatic_policy(Space::Ample, false).map(|policy| policy.incremental),
+            Some(Policy::default().incremental)
+        );
+        for (space, recent) in [(Space::Low, true), (Space::Critical, false)] {
+            assert_eq!(
+                automatic_policy(space, recent).map(|policy| policy.incremental),
+                Some(Policy::PRESSURE.incremental)
+            );
+        }
+        let root = tempfile::tempdir().unwrap();
+        let hours_old = root.path().join("target/debug/incremental/crate-hours-old");
+        fs::create_dir_all(&hours_old).unwrap();
+        let time = SystemTime::now() - Duration::from_secs(5 * 3600);
+        fs::File::open(&hours_old)
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
+        assert!(candidates(root.path(), Policy::default(), SystemTime::now()).is_empty());
+        assert_eq!(
+            candidates(root.path(), Policy::PRESSURE, SystemTime::now()).len(),
+            1
+        );
     }
 
     #[test]

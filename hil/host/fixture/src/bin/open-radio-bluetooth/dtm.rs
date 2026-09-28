@@ -3,9 +3,10 @@
 use super::{
     Result,
     hci::Socket,
-    model::{Check, DtmVersion},
+    model::{Check, DtmProfile, DtmVersion},
 };
 use bt_hci::cmd::{
+    controller_baseband::Reset,
     info::ReadLocalSupportedCmds,
     le::{LeReceiverTest, LeReceiverTestV2, LeTestEnd, LeTransmitterTestV2},
 };
@@ -39,12 +40,37 @@ pub(super) fn check(user: &Socket, report: &mut Check) -> Result<()> {
         DtmVersion::V2 if !report.dtm_v2_advertised => {
             return Err("adapter does not advertise DTM v2 RX/TX/Test End".into());
         }
+        DtmVersion::V1 | DtmVersion::V2 => {}
+    }
+    match report.profile {
+        DtmProfile::ReceiveTransmit => {
+            receive(user, report)?;
+            report.rx_packets = Some(user.command(LeTestEnd::new())?);
+            transmit(user, report)
+        }
+        DtmProfile::Transmit => transmit(user, report),
+        DtmProfile::ReceiveSilence => {
+            receive(user, report)?;
+            // The Intel AX211 never completes LE Test End after a receiver
+            // test that heard nothing; Reset ends the test without a count.
+            user.command(Reset::new())?;
+            report.rx_ended_by_reset = true;
+            Ok(())
+        }
+    }
+}
+
+fn receive(user: &Socket, report: &mut Check) -> Result<()> {
+    match report.dtm_version {
         DtmVersion::V1 => user.command(LeReceiverTest::new(0))?,
         DtmVersion::V2 => user.command(LeReceiverTestV2::new(0, 1, 0))?,
     }
     report.rx_started = true;
     oer_process::sleep(Duration::from_millis(100))?;
-    report.rx_packets = Some(user.command(LeTestEnd::new())?);
+    Ok(())
+}
+
+fn transmit(user: &Socket, report: &mut Check) -> Result<()> {
     match report.dtm_version {
         DtmVersion::V1 => user.command(v1::LeTransmitterTestV1::new(
             bt_hci::cmd::le::LeTransmitterTestParams {
@@ -124,7 +150,7 @@ mod tests {
                     &[4, 14, 6, 1, 0x1f, 0x20, 0, 0, 0],
                 );
             });
-            let mut report = Check::new(Adapter(0), version);
+            let mut report = Check::new(Adapter(0), version, DtmProfile::ReceiveTransmit);
             check(&client, &mut report).unwrap();
             worker.join().unwrap();
             assert!(report.rx_started && report.tx_started && report.tx_test_end);
@@ -145,7 +171,7 @@ mod tests {
                 );
                 server
             });
-            let mut report = Check::new(Adapter(0), version);
+            let mut report = Check::new(Adapter(0), version, DtmProfile::ReceiveTransmit);
             assert!(
                 check(&client, &mut report)
                     .unwrap_err()
@@ -174,7 +200,7 @@ mod tests {
             );
             server
         });
-        let mut report = Check::new(Adapter(0), DtmVersion::V1);
+        let mut report = Check::new(Adapter(0), DtmVersion::V1, DtmProfile::ReceiveTransmit);
         assert!(check(&client, &mut report).is_err());
         let server = worker.join().unwrap();
         server.set_nonblocking(true).unwrap();
@@ -183,5 +209,45 @@ mod tests {
             std::io::ErrorKind::WouldBlock
         );
         assert!(!report.rx_started && !report.tx_started);
+    }
+
+    #[test]
+    fn transmit_profile_never_starts_a_receiver() {
+        let (client, server) = pair();
+        let worker = std::thread::spawn(move || {
+            supported(&server, true, true);
+            let tx = [1, 0x34, 0x20, 4, 0, 37, 0, 1];
+            exchange(&server, &tx, &[4, 14, 4, 1, 0x34, 0x20, 0]);
+            exchange(
+                &server,
+                &[1, 0x1f, 0x20, 0],
+                &[4, 14, 6, 1, 0x1f, 0x20, 0, 0, 0],
+            );
+        });
+        let mut report = Check::new(Adapter(0), DtmVersion::V2, DtmProfile::Transmit);
+        check(&client, &mut report).unwrap();
+        worker.join().unwrap();
+        assert!(!report.rx_started && report.tx_started && report.tx_test_end);
+    }
+
+    #[test]
+    fn silent_receiver_ends_with_reset_and_reports_no_count() {
+        let (client, server) = pair();
+        let worker = std::thread::spawn(move || {
+            supported(&server, true, true);
+            exchange(
+                &server,
+                &[1, 0x33, 0x20, 3, 0, 1, 0],
+                &[4, 14, 4, 1, 0x33, 0x20, 0],
+            );
+            // HCI Reset, not LE Test End.
+            exchange(&server, &[1, 3, 0x0c, 0], &[4, 14, 4, 1, 3, 0x0c, 0]);
+        });
+        let mut report = Check::new(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveSilence);
+        check(&client, &mut report).unwrap();
+        worker.join().unwrap();
+        assert!(report.rx_started && report.rx_ended_by_reset);
+        assert_eq!(report.rx_packets, None);
+        assert!(!report.tx_started);
     }
 }

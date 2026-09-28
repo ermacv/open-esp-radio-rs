@@ -72,6 +72,8 @@ enum Command {
         adapter: model::Adapter,
         #[arg(long, value_enum, default_value = "v2")]
         dtm_version: model::DtmVersion,
+        #[arg(long, value_enum, default_value = "receive-transmit")]
+        profile: model::DtmProfile,
     },
     /// Connect to one public LE peer and execute one finite termination mode.
     ConnectReset {
@@ -207,11 +209,12 @@ fn main() {
     let Command::Check {
         adapter,
         dtm_version,
+        profile,
     } = command
     else {
         unreachable!()
     };
-    let mut report = model::Check::new(adapter, dtm_version);
+    let mut report = model::Check::new(adapter, dtm_version, profile);
     let result = (|| -> Result<()> {
         let _signals = oer_process::install_signal_handlers()?;
         #[cfg(target_os = "linux")]
@@ -230,7 +233,7 @@ fn main() {
         eprintln!("cannot write Bluetooth result: {error}");
         std::process::exit(1);
     }
-    if !report.passed(adapter, dtm_version) {
+    if !report.passed(adapter, dtm_version, profile) {
         std::process::exit(1);
     }
 }

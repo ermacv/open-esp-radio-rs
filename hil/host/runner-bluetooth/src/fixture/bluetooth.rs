@@ -6,7 +6,7 @@ pub mod discovery;
 pub use oer_hil_fixture::bluetooth::model;
 pub mod secure_gatt;
 
-use model::{Adapter, Check, DtmVersion};
+use model::{Adapter, Check, DtmProfile, DtmVersion};
 use oer_hil_protocol::BluetoothPeripheralTermination;
 use std::{
     fs,
@@ -26,7 +26,7 @@ pub fn check(root: &Path, adapter: Adapter, dtm_version: DtmVersion) -> crate::R
         ))
         .tempdir_in(directory)?
         .keep();
-    let result = run_profile_in(&output, adapter, dtm_version);
+    let result = run_profile_in(&output, adapter, dtm_version, DtmProfile::ReceiveTransmit);
     crate::emit_json(
         &serde_json::from_slice::<serde_json::Value>(&fs::read(output.join("result.json"))?)?,
         true,
@@ -34,14 +34,15 @@ pub fn check(root: &Path, adapter: Adapter, dtm_version: DtmVersion) -> crate::R
     result.map(|_| ())
 }
 
-pub fn run_in(output: &Path, adapter: Adapter) -> crate::Result<Check> {
-    run_profile_in(output, adapter, DtmVersion::V2)
+pub fn run_in(output: &Path, adapter: Adapter, profile: DtmProfile) -> crate::Result<Check> {
+    run_profile_in(output, adapter, DtmVersion::V2, profile)
 }
 
 fn run_profile_in(
     output: &Path,
     adapter: Adapter,
     dtm_version: DtmVersion,
+    profile: DtmProfile,
 ) -> crate::Result<Check> {
     fs::create_dir_all(output)?;
     let mut command = Command::new("sudo");
@@ -59,6 +60,14 @@ fn run_profile_in(
     if dtm_version == DtmVersion::V1 {
         command.args(["--dtm-version", "v1"]);
     }
+    command.args([
+        "--profile",
+        match profile {
+            DtmProfile::ReceiveTransmit => "receive-transmit",
+            DtmProfile::Transmit => "transmit",
+            DtmProfile::ReceiveSilence => "receive-silence",
+        },
+    ]);
     // The helper has its own bounded operations and receives SIGTERM before
     // escalation. Keep enough grace for Reset, re-registration and restoration.
     let result = (|| -> crate::Result<Check> {
@@ -71,6 +80,7 @@ fn run_profile_in(
             status.success(),
             adapter,
             dtm_version,
+            profile,
             &fs::read(output.join("helper.json"))?,
         )
         .map_err(|error| format!("{error}; evidence: {}", output.display()).into())
@@ -78,10 +88,11 @@ fn run_profile_in(
     let report = fs::read(output.join("helper.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Check>(&bytes).ok())
-        .unwrap_or_else(|| Check::new(adapter, dtm_version));
+        .unwrap_or_else(|| Check::new(adapter, dtm_version, profile));
     let summary = serde_json::json!({
         "schema": 2, "adapter": adapter.to_string(), "output": output,
         "dtm_version": dtm_version,
+        "profile": profile,
         "passed": result.is_ok(), "rf_verified": false,
         "error": result.as_ref().err().map(ToString::to_string),
         "helper": report,
@@ -94,15 +105,17 @@ fn checked_report(
     success: bool,
     adapter: Adapter,
     dtm_version: DtmVersion,
+    profile: DtmProfile,
     bytes: &[u8],
 ) -> crate::Result<Check> {
     let report: Check = serde_json::from_slice(bytes).map_err(|error| {
         format!("Bluetooth helper returned no valid report ({error}); inspect helper.stderr. Install with cargo hil fixture install --provider linux-bluetooth")
     })?;
-    if !success || !report.passed(adapter, dtm_version) {
+    if !success || !report.passed(adapter, dtm_version, profile) {
         return Err(format!(
-            "Bluetooth check failed, incomplete, or profile mismatch (expected {dtm_version:?}, received {:?}): {}",
+            "Bluetooth check failed, incomplete, or profile mismatch (expected {dtm_version:?} {profile:?}, received {:?} {:?}): {}",
             report.dtm_version,
+            report.profile,
             report.errors.join("; ")
         )
         .into());
@@ -422,13 +435,23 @@ mod tests {
     }
     #[test]
     fn absent_or_partial_helper_evidence_cannot_pass() {
-        assert!(checked_report(true, Adapter(0), DtmVersion::V2, b"").is_err());
-        let report = Check::new(Adapter(0), DtmVersion::V2);
         assert!(
             checked_report(
                 true,
                 Adapter(0),
                 DtmVersion::V2,
+                DtmProfile::ReceiveTransmit,
+                b""
+            )
+            .is_err()
+        );
+        let report = Check::new(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit);
+        assert!(
+            checked_report(
+                true,
+                Adapter(0),
+                DtmVersion::V2,
+                DtmProfile::ReceiveTransmit,
                 &serde_json::to_vec(&report).unwrap()
             )
             .is_err()
@@ -448,7 +471,7 @@ mod tests {
 
     #[test]
     fn checked_report_rejects_other_profile_old_schema_and_failed_exit() {
-        let mut report = Check::new(Adapter(0), DtmVersion::V1);
+        let mut report = Check::new(Adapter(0), DtmVersion::V1, DtmProfile::ReceiveTransmit);
         report.address = Some("peer".into());
         report.version = Some("version".into());
         report.initial_powered = Some(false);
@@ -461,9 +484,36 @@ mod tests {
         report.tx_test_end = true;
         report.restored = true;
         let bytes = serde_json::to_vec(&report).unwrap();
-        assert!(checked_report(true, Adapter(0), DtmVersion::V1, &bytes).is_ok());
-        assert!(checked_report(false, Adapter(0), DtmVersion::V1, &bytes).is_err());
-        assert!(checked_report(true, Adapter(0), DtmVersion::V2, &bytes).is_err());
+        assert!(
+            checked_report(
+                true,
+                Adapter(0),
+                DtmVersion::V1,
+                DtmProfile::ReceiveTransmit,
+                &bytes
+            )
+            .is_ok()
+        );
+        assert!(
+            checked_report(
+                false,
+                Adapter(0),
+                DtmVersion::V1,
+                DtmProfile::ReceiveTransmit,
+                &bytes
+            )
+            .is_err()
+        );
+        assert!(
+            checked_report(
+                true,
+                Adapter(0),
+                DtmVersion::V2,
+                DtmProfile::ReceiveTransmit,
+                &bytes
+            )
+            .is_err()
+        );
         let mut old = serde_json::to_value(&report).unwrap();
         old["schema"] = 1.into();
         old.as_object_mut().unwrap().remove("dtm_version");
@@ -473,6 +523,7 @@ mod tests {
                 true,
                 Adapter(0),
                 DtmVersion::V2,
+                DtmProfile::ReceiveTransmit,
                 &serde_json::to_vec(&old).unwrap()
             )
             .is_err()
@@ -480,12 +531,13 @@ mod tests {
     }
     #[test]
     fn helper_failure_exposes_the_controller_error() {
-        let mut report = Check::new(Adapter(0), DtmVersion::V2);
+        let mut report = Check::new(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit);
         report.errors.push("RX rejected: command disallowed".into());
         let error = checked_report(
             false,
             Adapter(0),
             DtmVersion::V2,
+            DtmProfile::ReceiveTransmit,
             &serde_json::to_vec(&report).unwrap(),
         )
         .unwrap_err();

@@ -42,6 +42,21 @@ impl std::fmt::Display for Adapter {
     }
 }
 
+/// What one DTM check exercises on the adapter.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DtmProfile {
+    /// Receive, end with the packet count, then transmit and end.
+    #[default]
+    ReceiveTransmit,
+    /// Transmit and end, for a receiving peer.
+    Transmit,
+    /// Receive while the peer is silent, then end with HCI Reset: some
+    /// adapters never complete LE Test End after a receiver test that heard
+    /// nothing.
+    ReceiveSilence,
+}
+
 /// Explicit command profile; v1 is diagnostic only, never an automatic fallback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -60,10 +75,13 @@ pub struct Check {
     pub initial_powered: Option<bool>,
     pub initial_soft_blocked: Option<bool>,
     pub dtm_version: DtmVersion,
+    pub profile: DtmProfile,
     pub dtm_v1_advertised: bool,
     pub dtm_v2_advertised: bool,
     pub rx_started: bool,
     pub rx_packets: Option<u16>,
+    /// The receiver test ended with HCI Reset, so no count exists.
+    pub rx_ended_by_reset: bool,
     pub tx_started: bool,
     pub tx_test_end: bool,
     pub restored: bool,
@@ -71,19 +89,21 @@ pub struct Check {
 }
 
 impl Check {
-    pub fn new(adapter: Adapter, dtm_version: DtmVersion) -> Self {
+    pub fn new(adapter: Adapter, dtm_version: DtmVersion, profile: DtmProfile) -> Self {
         Self {
-            schema: 2,
+            schema: 3,
             adapter: adapter.to_string(),
             address: None,
             version: None,
             initial_powered: None,
             initial_soft_blocked: None,
             dtm_version,
+            profile,
             dtm_v1_advertised: false,
             dtm_v2_advertised: false,
             rx_started: false,
             rx_packets: None,
+            rx_ended_by_reset: false,
             tx_started: false,
             tx_test_end: false,
             restored: false,
@@ -92,9 +112,26 @@ impl Check {
     }
 
     /// This proves command acceptance only; packet reception needs an RF peer.
-    pub fn passed(&self, adapter: Adapter, dtm_version: DtmVersion) -> bool {
-        self.schema == 2
+    pub fn passed(&self, adapter: Adapter, dtm_version: DtmVersion, profile: DtmProfile) -> bool {
+        let steps = match profile {
+            DtmProfile::ReceiveTransmit => {
+                self.rx_started
+                    && self.rx_packets.is_some()
+                    && !self.rx_ended_by_reset
+                    && self.tx_started
+                    && self.tx_test_end
+            }
+            DtmProfile::Transmit => !self.rx_started && self.tx_started && self.tx_test_end,
+            DtmProfile::ReceiveSilence => {
+                self.rx_started
+                    && self.rx_packets.is_none()
+                    && self.rx_ended_by_reset
+                    && !self.tx_started
+            }
+        };
+        self.schema == 3
             && self.dtm_version == dtm_version
+            && self.profile == profile
             && self.adapter == adapter.to_string()
             && self.address.is_some()
             && self.version.is_some()
@@ -104,10 +141,7 @@ impl Check {
                 DtmVersion::V1 => self.dtm_v1_advertised,
                 DtmVersion::V2 => self.dtm_v2_advertised,
             }
-            && self.rx_started
-            && self.rx_packets.is_some()
-            && self.tx_started
-            && self.tx_test_end
+            && steps
             && self.restored
             && self.errors.is_empty()
     }
@@ -408,9 +442,9 @@ mod tests {
     }
     #[test]
     fn mask_alone_and_incomplete_cleanup_cannot_pass() {
-        let mut report = Check::new(Adapter(0), DtmVersion::V2);
+        let mut report = Check::new(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit);
         report.dtm_v2_advertised = true;
-        assert!(!report.passed(Adapter(0), DtmVersion::V2));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit));
         report.address = Some("test".into());
         report.version = Some("test".into());
         report.initial_powered = Some(false);
@@ -419,23 +453,52 @@ mod tests {
         report.rx_packets = Some(0);
         report.tx_started = true;
         report.tx_test_end = true;
-        assert!(!report.passed(Adapter(0), DtmVersion::V2));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit));
         report.restored = true;
-        assert!(report.passed(Adapter(0), DtmVersion::V2));
-        assert!(!report.passed(Adapter(1), DtmVersion::V2));
+        assert!(report.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit));
+        assert!(!report.passed(Adapter(1), DtmVersion::V2, DtmProfile::ReceiveTransmit));
         report.schema = 1;
-        assert!(!report.passed(Adapter(0), DtmVersion::V2));
-        report.schema = 2;
+        assert!(!report.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit));
+        report.schema = 3;
         report.dtm_v1_advertised = true;
-        assert!(!report.passed(Adapter(0), DtmVersion::V1));
+        assert!(!report.passed(Adapter(0), DtmVersion::V1, DtmProfile::ReceiveTransmit));
         report.dtm_version = DtmVersion::V1;
-        assert!(report.passed(Adapter(0), DtmVersion::V1));
-        assert!(!report.passed(Adapter(0), DtmVersion::V2));
+        assert!(report.passed(Adapter(0), DtmVersion::V1, DtmProfile::ReceiveTransmit));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit));
         report.dtm_v1_advertised = false;
-        assert!(!report.passed(Adapter(0), DtmVersion::V1));
+        assert!(!report.passed(Adapter(0), DtmVersion::V1, DtmProfile::ReceiveTransmit));
         report.dtm_version = DtmVersion::V2;
         report.errors.push("reset failed".into());
-        assert!(!report.passed(Adapter(0), DtmVersion::V2));
+        assert!(!report.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit));
+    }
+
+    #[test]
+    fn each_profile_requires_exactly_its_own_steps() {
+        let base = || {
+            let mut report = Check::new(Adapter(0), DtmVersion::V2, DtmProfile::Transmit);
+            report.address = Some("test".into());
+            report.version = Some("test".into());
+            report.initial_powered = Some(false);
+            report.initial_soft_blocked = Some(true);
+            report.dtm_v2_advertised = true;
+            report.restored = true;
+            report
+        };
+        let mut transmit = base();
+        transmit.tx_started = true;
+        transmit.tx_test_end = true;
+        assert!(transmit.passed(Adapter(0), DtmVersion::V2, DtmProfile::Transmit));
+        assert!(!transmit.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveTransmit));
+
+        let mut silence = base();
+        silence.profile = DtmProfile::ReceiveSilence;
+        silence.rx_started = true;
+        // A silent receiver ended by Reset has no count, and says so.
+        assert!(!silence.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveSilence));
+        silence.rx_ended_by_reset = true;
+        assert!(silence.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveSilence));
+        silence.rx_packets = Some(0);
+        assert!(!silence.passed(Adapter(0), DtmVersion::V2, DtmProfile::ReceiveSilence));
     }
 }
 

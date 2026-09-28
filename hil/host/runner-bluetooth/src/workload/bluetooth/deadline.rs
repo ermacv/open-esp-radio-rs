@@ -25,13 +25,13 @@ pub fn run(output: &Path, context: &Context<'_>, expected_reset: Reset) -> Resul
             // 10 seconds after DTM start. Allow boot initialization for either.
             capture.expect_reboot(Duration::from_secs(7), Duration::from_secs(18))?;
             let started = capture.bluetooth_dtm(operation)?;
-            let before = bluetooth::run_in(&directory.join("peer-before"), adapter);
+            let before = bluetooth::run_in(&directory.join("peer-before"), adapter, bluetooth::model::DtmProfile::ReceiveTransmit);
             // A failed peer observation must not erase independent evidence of
             // the target's autonomous reset. Every failed gate still fails the run.
             let reboot = capture.wait_expected_reboot();
             let after = if reboot.is_ok() {
                 // No DUT HCI command precedes this RF silence observation.
-                bluetooth::run_in(&directory.join("peer-after"), adapter)
+                bluetooth::run_in(&directory.join("peer-after"), adapter, bluetooth::model::DtmProfile::ReceiveTransmit)
             } else {
                 Err("RF silence is unproven without the expected reboot".into())
             };
@@ -127,8 +127,20 @@ fn rf_evidence(
     before: Option<&bluetooth::model::Check>,
     after: Option<&bluetooth::model::Check>,
 ) -> RfEvidence {
-    let before = before.filter(|check| check.passed(adapter, bluetooth::model::DtmVersion::V2));
-    let after = after.filter(|check| check.passed(adapter, bluetooth::model::DtmVersion::V2));
+    let before = before.filter(|check| {
+        check.passed(
+            adapter,
+            bluetooth::model::DtmVersion::V2,
+            bluetooth::model::DtmProfile::ReceiveTransmit,
+        )
+    });
+    let after = after.filter(|check| {
+        check.passed(
+            adapter,
+            bluetooth::model::DtmVersion::V2,
+            bluetooth::model::DtmProfile::ReceiveTransmit,
+        )
+    });
     let peer_identity_verified = before
         .zip(after)
         .is_some_and(|(before, after)| super::same_peer(before, after));
@@ -172,6 +184,7 @@ mod tests {
         let mut check = bluetooth::model::Check::new(
             bluetooth::model::Adapter(0),
             bluetooth::model::DtmVersion::V2,
+            bluetooth::model::DtmProfile::ReceiveTransmit,
         );
         check.address = Some("peer".into());
         check.version = Some("version".into());

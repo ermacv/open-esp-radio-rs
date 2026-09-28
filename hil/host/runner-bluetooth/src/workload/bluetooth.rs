@@ -24,9 +24,19 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// How the adapter's receiver ended while both sides listened.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum PcSilence {
+    /// LE Test End reported this count.
+    Count(u16),
+    /// HCI Reset ended the receiver test, which yields no count.
+    RxEndedByReset,
+}
+
 #[derive(Default, serde::Serialize)]
 struct Counts {
-    pc_silence: Option<u16>,
+    pc_silence: Option<PcSilence>,
     esp_silence: Option<u16>,
     esp_to_pc: Option<u16>,
     pc_to_esp: Option<u16>,
@@ -83,7 +93,11 @@ fn probe(
     }
     capture.bluetooth_dtm(Operation::Reset)?;
     capture.bluetooth_dtm(Operation::Transmit)?;
-    let forward = bluetooth::run_in(&output.join("esp-to-pc"), adapter)?;
+    let forward = bluetooth::run_in(
+        &output.join("esp-to-pc"),
+        adapter,
+        bluetooth::model::DtmProfile::ReceiveTransmit,
+    )?;
     counts.esp_to_pc = forward.rx_packets;
     if end(capture)? != 0 {
         return Err("ESP transmitter returned a receiver count".into());
@@ -109,13 +123,25 @@ fn probe(
         counts.quiet_reset_restarts += 1;
     }
 
-    // The peer helper first receives (ESP is also RX: the PC silence control),
-    // then transmits for 100 ms into the already armed ESP receiver.
+    // The adapter first receives while the ESP also receives (the PC silence
+    // control), then transmits for 100 ms into the still armed ESP receiver.
     capture.bluetooth_dtm(Operation::Receive)?;
-    let reverse = bluetooth::run_in(&output.join("pc-to-esp"), adapter)?;
-    counts.pc_silence = reverse.rx_packets;
+    let silence = bluetooth::run_in(
+        &output.join("pc-silence"),
+        adapter,
+        bluetooth::model::DtmProfile::ReceiveSilence,
+    )?;
+    counts.pc_silence = Some(match silence.rx_packets {
+        Some(count) => PcSilence::Count(count),
+        None => PcSilence::RxEndedByReset,
+    });
+    let reverse = bluetooth::run_in(
+        &output.join("pc-to-esp"),
+        adapter,
+        bluetooth::model::DtmProfile::Transmit,
+    )?;
     counts.pc_to_esp = Some(end(capture)?);
-    if !same_peer(&forward, &reverse) {
+    if !same_peer(&forward, &silence) || !same_peer(&forward, &reverse) {
         return Err("Bluetooth adapter identity changed between directions".into());
     }
     Ok(())
@@ -143,7 +169,13 @@ fn validate(counts: &Counts, minimum: u16, quiet_cycles: Option<u16>) -> Result<
     {
         return Err("DTM quiet Test End/Reset restart controls failed or are incomplete".into());
     }
-    if counts.pc_silence != Some(0) || counts.esp_silence != Some(0) {
+    // An adapter that cannot report a zero-packet count ends its silent
+    // receiver with HCI Reset; that typed outcome still proves a quiet start.
+    let pc_quiet = matches!(
+        counts.pc_silence,
+        Some(PcSilence::Count(0) | PcSilence::RxEndedByReset)
+    );
+    if !pc_quiet || counts.esp_silence != Some(0) {
         return Err("DTM silence controls failed or are incomplete".into());
     }
     if !counts.esp_to_pc.is_some_and(|count| count >= minimum)
@@ -899,10 +931,12 @@ mod tests {
         let mut a = bluetooth::model::Check::new(
             bluetooth::model::Adapter(0),
             bluetooth::model::DtmVersion::V2,
+            bluetooth::model::DtmProfile::ReceiveTransmit,
         );
         let mut b = bluetooth::model::Check::new(
             bluetooth::model::Adapter(0),
             bluetooth::model::DtmVersion::V2,
+            bluetooth::model::DtmProfile::ReceiveTransmit,
         );
         assert!(!same_peer(&a, &b));
         a.address = Some("peer-a".into());
@@ -916,7 +950,7 @@ mod tests {
     #[test]
     fn both_receivers_and_both_silence_controls_are_required() {
         let mut counts = Counts {
-            pc_silence: Some(0),
+            pc_silence: Some(PcSilence::RxEndedByReset),
             esp_silence: Some(0),
             esp_to_pc: Some(87),
             pc_to_esp: Some(42),
@@ -931,11 +965,18 @@ mod tests {
         assert!(validate(&counts, 10, Some(2)).is_err());
         counts.esp_silence = None;
         assert!(validate(&counts, 10, Some(2)).is_err());
+        counts.esp_silence = Some(0);
+        counts.pc_silence = Some(PcSilence::Count(3));
+        assert!(validate(&counts, 10, Some(2)).is_err());
+        counts.pc_silence = Some(PcSilence::Count(0));
+        assert!(validate(&counts, 10, Some(2)).is_ok());
+        counts.pc_silence = None;
+        assert!(validate(&counts, 10, Some(2)).is_err());
     }
     #[test]
     fn rf_counts_cannot_hide_missing_quiet_restart_controls() {
         let mut counts = Counts {
-            pc_silence: Some(0),
+            pc_silence: Some(PcSilence::RxEndedByReset),
             esp_silence: Some(0),
             esp_to_pc: Some(87),
             pc_to_esp: Some(42),
@@ -955,7 +996,7 @@ mod tests {
     #[test]
     fn stress_gate_requires_every_requested_cycle() {
         let mut counts = Counts {
-            pc_silence: Some(0),
+            pc_silence: Some(PcSilence::RxEndedByReset),
             esp_silence: Some(0),
             esp_to_pc: Some(87),
             pc_to_esp: Some(42),

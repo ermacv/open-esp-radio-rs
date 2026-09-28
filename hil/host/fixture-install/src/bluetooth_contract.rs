@@ -5,4 +5,4 @@
 //! the target profile, so a target change never requires a reinstallation.
 
 pub const CONNECTION_RESET_SCHEMA: u32 = 14;
-pub const HELPER_CAPABILITIES: &str = "schema=20 dtm-check=v1,v2 encrypted-acl=true key-refresh=true security-failure=missing-key,wrong-key,missing-refresh-key,active-data-mic post-rejection-version=true termination=peer-reset,peer-rfkill,target-disconnect,target-reset att-parameters=7.5ms,restore";
+pub const HELPER_CAPABILITIES: &str = "schema=21 dtm-check=v1,v2 dtm-profile=receive-transmit,transmit,receive-silence encrypted-acl=true key-refresh=true security-failure=missing-key,wrong-key,missing-refresh-key,active-data-mic post-rejection-version=true termination=peer-reset,peer-rfkill,target-disconnect,target-reset att-parameters=7.5ms,restore";

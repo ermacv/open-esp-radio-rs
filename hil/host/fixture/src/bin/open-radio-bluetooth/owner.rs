@@ -372,7 +372,11 @@ mod tests {
     #[test]
     fn partial_acquisition_failure_restores_the_mutated_owner() {
         let mut unblocked = false;
-        let mut report = Check::new(Adapter(0), super::super::model::DtmVersion::V2);
+        let mut report = Check::new(
+            Adapter(0),
+            super::super::model::DtmVersion::V2,
+            super::super::model::DtmProfile::ReceiveTransmit,
+        );
         checked_lifetime(
             &mut unblocked,
             &mut report,
@@ -389,11 +393,19 @@ mod tests {
         assert!(!unblocked);
         assert!(report.restored);
         assert_eq!(report.errors, ["exclusive channel busy"]);
-        assert!(!report.passed(Adapter(0), super::super::model::DtmVersion::V2));
+        assert!(!report.passed(
+            Adapter(0),
+            super::super::model::DtmVersion::V2,
+            super::super::model::DtmProfile::ReceiveTransmit,
+        ));
     }
     #[test]
     fn restoration_failure_is_retained_alongside_original_error() {
-        let mut report = Check::new(Adapter(0), super::super::model::DtmVersion::V2);
+        let mut report = Check::new(
+            Adapter(0),
+            super::super::model::DtmVersion::V2,
+            super::super::model::DtmProfile::ReceiveTransmit,
+        );
         checked_lifetime(
             &mut (),
             &mut report,

@@ -26,6 +26,9 @@ const SCHEMA_SOURCES: &str = "verification/schema";
 const PRODUCTION_CRATES: &str = "crates";
 /// The pinned toolchain, and the lock file and package manifest names.
 const TOOLCHAIN: &str = "rust-toolchain.toml";
+/// The directory name Cargo writes build outputs below; like
+/// [`evidence_index::digest_directory`], a shard never records it.
+const BUILD_OUTPUT: &str = "target";
 const LOCK_FILE: &str = "Cargo.lock";
 const PACKAGE_MANIFEST: &str = "Cargo.toml";
 /// The probe compiler, a host build tool whose sources Cargo's dep-info of
@@ -42,7 +45,9 @@ const PROBE_IMAGE_DIRECTORY: &str = "elf";
 /// `artifact`, from the `.d` file beside it: every compiled source file,
 /// `include!`/`include_str!`/`include_bytes!` input and build-script
 /// `rerun-if-changed` path. Files outside the repository are pinned by the
-/// lock files and the toolchain.
+/// lock files and the toolchain. Files a build writes below a `target`
+/// directory, such as a build script's generated catalog, change with every
+/// rebuild; the build script and the sources it reads are recorded instead.
 pub fn dep_info(root: &Path, artifact: &Path) -> Result<Vec<PathBuf>> {
     let mut path = artifact.as_os_str().to_owned();
     path.push(".d");
@@ -65,6 +70,7 @@ pub fn dep_info(root: &Path, artifact: &Path) -> Result<Vec<PathBuf>> {
                     let file = PathBuf::from(std::mem::take(&mut current));
                     if let Ok(canonical) = file.canonicalize()
                         && let Ok(relative) = canonical.strip_prefix(root)
+                        && !relative.components().any(|c| c.as_os_str() == BUILD_OUTPUT)
                     {
                         files.insert(relative.to_path_buf());
                     }
@@ -411,12 +417,15 @@ mod source_tests {
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(root.join("src/lib.rs"), "").unwrap();
         std::fs::write(root.join("src/a b.txt"), "").unwrap();
+        std::fs::create_dir_all(root.join("target/out")).unwrap();
+        std::fs::write(root.join("target/out/catalog.rs"), "").unwrap();
         let artifact = root.join("app");
         std::fs::write(
             root.join("app.d"),
             format!(
-                "{}: {} {} /usr/lib/outside.rs\n\n{}:\n",
+                "{}: {} {} {} /usr/lib/outside.rs\n\n{}:\n",
                 artifact.display(),
+                root.join("target/out/catalog.rs").display(),
                 root.join("src/lib.rs").display(),
                 root.join("src/a b.txt")
                     .display()

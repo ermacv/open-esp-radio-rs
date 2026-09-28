@@ -2396,17 +2396,17 @@ scope-and-limitations = "A connectable `ADV_IND` set answers `SCAN_REQ` with its
 id = "bluetooth-scannable-non-connectable-advertising-adv-scan-ind"
 section = "bluetooth-legacy-advertising-scanning"
 title = "Scannable non-connectable advertising (`ADV_SCAN_IND`)"
-status = "absent"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "No production role publishes this advertising mode."
+scope-and-limitations = "The [advertising role](../../../../protocols/bluetooth/le/controller/src/advertising.rs) schedules `ADV_SCAN_IND` events whose `SCAN_REQ` the S31 response-capable graph answers with the scan response; connection indications are ignored. The `bluetooth-scannable-advertising` HIL scenario checks the scan response through an active Linux scanner."
 
 [[items]]
 id = "bluetooth-low-duty-high-duty-directed-advertising-adv-direct-ind"
 section = "bluetooth-legacy-advertising-scanning"
 title = "Low-duty / high-duty directed advertising (`ADV_DIRECT_IND`)"
-status = "absent"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "No directed-advertising scheduler and lifecycle exists."
+scope-and-limitations = "The [advertising role](../../../../protocols/bluetooth/le/controller/src/advertising.rs) schedules `ADV_DIRECT_IND` to one target and accepts a connection indication only from it. High duty cycle events follow each other 3.75 ms apart for 1.28 s and end with LE Connection Complete status Advertising Timeout; low duty cycle uses the advertising interval and delay. The S31 set keeps one TX node and receives on the non-scanning chain. The `bluetooth-directed-advertising` HIL scenario checks both duty cycles."
 
 [[items]]
 id = "bluetooth-high-duty-cycle-non-connectable-advertising"
@@ -2684,9 +2684,9 @@ scope-and-limitations = "No connected classification generation/report/update pr
 id = "bluetooth-ble-encryption-accelerator-surface"
 section = "bluetooth-security-privacy"
 title = "BLE encryption accelerator surface"
-status = "partial"
+status = "absent"
 level = "composed-product"
-scope-and-limitations = "[Reviewed hardware registers](../../../../../registers/esp32s31/model/peripherals/ble-hw-accelerator.toml) describe encryption operations. The portable Link Layer uses software AES-CCM, and no owner drives this accelerator."
+scope-and-limitations = "[Reviewed hardware registers](../../../../../registers/esp32s31/model/peripherals/ble-hw-accelerator.toml) describe encryption operations, but no Rust owner drives them; the Link Layer uses software AES-CCM."
 
 [[items]]
 id = "bluetooth-link-layer-encryption"
@@ -2716,9 +2716,9 @@ scope-and-limitations = "[PHY engine storage](memory/src/ble_phy_engine.rs) owns
 id = "bluetooth-le-secure-connections-integration"
 section = "bluetooth-security-privacy"
 title = "LE Secure Connections integration"
-status = "implemented"
+status = "host-only"
 level = "composed-product"
-scope-and-limitations = "The [secure GATT application](../../../../../examples/bluetooth-gatt/src/security.rs) pairs with LE Secure Connections Numeric Comparison through the Trouble Host over the open Controller and encrypts the link with the resulting key."
+scope-and-limitations = "Pairing and SMP belong to the Host: the [secure GATT application](../../../../../examples/bluetooth-gatt/src/security.rs) pairs with LE Secure Connections Numeric Comparison through the Trouble Host. The Controller side of the resulting encryption is the Link Layer encryption row."
 
 [[items]]
 id = "bluetooth-encrypted-advertising-data"

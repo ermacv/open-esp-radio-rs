@@ -49,6 +49,7 @@ struct Outstanding {
     reservation: RadioWindow,
 }
 
+// CAPABILITY: bluetooth-legacy-passive-scanning
 pub(crate) struct Scanner {
     phase: Phase,
     interval: RadioDuration,

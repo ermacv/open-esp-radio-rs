@@ -27,6 +27,7 @@ enum Phase {
 }
 
 #[derive(Debug)]
+// CAPABILITY: bluetooth-le-receiver-test-transmitter-test
 pub(crate) struct DtmRole {
     session: DtmSession,
     phase: Phase,

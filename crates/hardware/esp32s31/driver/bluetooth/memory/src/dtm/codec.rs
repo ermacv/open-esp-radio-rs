@@ -514,6 +514,7 @@ enum DtmRxPacketCompletionObservationError {
 
 /// Controller-SRAM graph of one DTM instance.
 #[repr(C)]
+// CAPABILITY: dtm-memory-graph
 pub struct DtmStorage {
     #[cfg_attr(test, allow(dead_code))]
     pub(super) link_state: DtmLinkStateStorage,

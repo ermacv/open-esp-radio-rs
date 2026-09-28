@@ -18,6 +18,7 @@ pub(crate) const PDU_CAPACITY: usize = u8::MAX as usize + 2;
 
 /// The plaintext PDU, header included, to dispatch next; `None` when the
 /// packet was consumed by the encryption procedure, was empty, or failed it.
+// CAPABILITY: bluetooth-ll-data-pdu-rx
 pub(crate) fn decode<'a>(
     encryption: &mut Procedure,
     pdu: &[u8],

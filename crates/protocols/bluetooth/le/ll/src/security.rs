@@ -189,6 +189,7 @@ enum LePeripheralEncryptionState {
 /// visible only after `LL_ENC_RSP` is acknowledged. The first received and sent
 /// encrypted `LL_START_ENC_RSP` packets consume counter zero in their respective
 /// directions.
+// CAPABILITY: bluetooth-link-layer-encryption, link-layer-encryption
 pub struct LePeripheralEncryptionProcedure {
     state: LePeripheralEncryptionState,
     long_term_key_request_reported: bool,

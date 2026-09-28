@@ -182,6 +182,7 @@ fn reset_core(
     large_assignments,
     reason = "the Controller core moves once into its static cell; the linked-image stack-frame audit bounds this frame"
 )]
+// CAPABILITY: bluetooth-trouble-host-integration, trouble-host-integration
 pub fn start_bluetooth_hci(
     runtime: &'static BluetoothSystemRuntime,
     public_address: BluetoothPublicDeviceAddress,

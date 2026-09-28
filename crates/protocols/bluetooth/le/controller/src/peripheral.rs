@@ -216,6 +216,7 @@ impl Events {
     }
 }
 
+// CAPABILITY: bluetooth-peripheral, bluetooth-peripheral-latency, bluetooth-establishment-supervision-timeout, bluetooth-missed-event-recovery, bluetooth-termination, bluetooth-ll-data-pdu-tx, bluetooth-sn-nesn-retransmission-duplicate-suppression-and-empty-pdu-acknowledgments
 pub(crate) struct Peripheral {
     connection: Option<Connection>,
     events: Events,

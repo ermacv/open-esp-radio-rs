@@ -107,6 +107,7 @@ enum Pending {
 /// full are dropped and counted. A connection event is planned only while the
 /// output has room for everything it can produce, so connection data and
 /// events are never dropped.
+// CAPABILITY: bluetooth-hci-command-event-packets, bluetooth-hci-reset, bluetooth-event-masks, bluetooth-connection-handles-connection-complete-disconnection-complete, bluetooth-hci-acl-routing-and-bidirectional-flow-control
 pub struct LeController<'r, const OUTPUT: usize> {
     bootstrap: LeControllerBootstrap,
     random: Option<&'r dyn LeRandomSource>,

@@ -35,6 +35,7 @@ pub(crate) const fn advertising_period(interval: RadioDuration) -> u16 {
 /// `ble_2.o` `r_sym_ble_2eLkvpKuoaxT83Mj406p` schedules the next event
 /// before that update, so an event carries the level of the count before
 /// the previous event ended, and the first two carry the start level.
+// CAPABILITY: coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority
 pub(crate) const fn advertising_level(period: u16, ended: u16) -> CoexistenceLevel {
     if ended <= 1 || (ended - 1).is_multiple_of(period) {
         CoexistenceLevel::Elevated
@@ -60,6 +61,7 @@ const CONNECTION_OPENING_EVENTS: u16 = 6;
 /// a local control procedure (`r_sym_coexConn_FwW1rUBEXrFbsmQm3dvU` when
 /// one starts), raise the level. `r_sym_coexConn_8zwo11wSByltviHFU8eN`
 /// counts receptions from event zero when the connection is created.
+// CAPABILITY: coex-coexistence-policy-and-scheduler-ble-connection-dynamic-priority
 pub(crate) const fn peripheral_connection_level(
     event_counter: u16,
     last_reception: Option<u16>,

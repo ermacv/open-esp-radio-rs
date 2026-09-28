@@ -245,6 +245,7 @@ pub const fn le_peripheral_supported_features() -> [u8; 8] {
 
 /// Two waiting responses plus the independently retained controller TX packet.
 /// Removing a response means the memory owner accepted it, not that it was ACKed.
+// CAPABILITY: bluetooth-llcp-framework, bluetooth-feature-exchange, bluetooth-version-exchange, bluetooth-le-ping
 pub struct LePeripheralControl {
     responses: [Option<LeControlResponse>; 2],
     termination: Option<LeControlResponse>,

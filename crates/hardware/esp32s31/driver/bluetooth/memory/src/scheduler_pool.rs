@@ -338,6 +338,7 @@ pub struct SchedulerRoleReleaseFailure {
 }
 
 /// Fixed pool of role instances of one kind.
+// CAPABILITY: bluetooth-controller-sram-ownership
 pub struct SchedulerRolePool<S: SchedulerRoleStorage, const N: usize> {
     storage: Pin<&'static mut SchedulerRolePoolStorage<S, N>>,
     bindings: [S::Binding; N],

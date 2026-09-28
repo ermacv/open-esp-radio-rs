@@ -113,6 +113,7 @@ const fn rx_address_delays_micros() -> [u8; 4] {
 /// immutable PHY lookup data, but does not claim Link Layer, privacy,
 /// advertising, scanning, or connection readiness.
 #[repr(C, align(4))]
+// CAPABILITY: bluetooth-resolving-list
 pub struct BlePhyEngineStorage {
     environment: [VolatileCell<u8>; BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES],
     channel_frequency_offsets_mhz: [u8; CHANNEL_FREQUENCY_OFFSETS_BYTES],

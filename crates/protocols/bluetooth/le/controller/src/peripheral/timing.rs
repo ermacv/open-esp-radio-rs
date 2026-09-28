@@ -34,6 +34,7 @@ pub(crate) struct Plan {
 }
 
 /// The first event, anchored at the start of its transmit window.
+// CAPABILITY: bluetooth-first-peripheral-connection-window
 pub(crate) fn first(
     anchor: RadioInstant,
     transmit_window: u32,
@@ -61,6 +62,7 @@ pub(crate) fn first(
 }
 
 /// A later event at `anchor` with `transmit_window` still uncertain.
+// CAPABILITY: bluetooth-recurring-peripheral-events, bluetooth-sleep-clock-accuracy-window-widening
 pub(crate) fn recurring(
     anchor: RadioInstant,
     reference: RadioInstant,

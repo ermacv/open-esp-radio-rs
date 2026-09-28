@@ -9,6 +9,7 @@
 /// Multi-bit names describe the transmitted least-significant-bit-first bit
 /// sequence; each variant documents its stored byte.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: bluetooth-dtm-test-patterns, dtm-tx-payload
 pub enum DtmPayloadPattern {
     /// PRBS9, payload type zero.
     Prbs9,

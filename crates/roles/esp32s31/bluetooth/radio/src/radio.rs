@@ -261,6 +261,7 @@ impl RadioClock {
 }
 
 /// The contract over the executor and the role pools.
+// CAPABILITY: bluetooth-le-1m-phy, bluetooth-le-2m-phy, bluetooth-le-coded-s-8-125-kbit-s, bluetooth-le-coded-s-2-500-kbit-s
 pub struct BluetoothRadio<
     const LEGACY: usize,
     const CONNECTABLE: usize,

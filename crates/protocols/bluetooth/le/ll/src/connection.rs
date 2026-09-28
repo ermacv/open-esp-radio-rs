@@ -365,6 +365,7 @@ impl LeConnectionTimingTransition {
 
 /// Complete semantic value carried by one legacy `CONNECT_IND` PDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: bluetooth-connect-ind-decoding-and-admission
 pub struct LeLegacyConnectionRequest {
     initiator: LeDeviceAddress,
     advertiser: LeDeviceAddress,
@@ -530,6 +531,7 @@ pub enum LeLegacyConnectionRequestError {
 
 /// Pure Channel Selection Algorithm #2 event selector.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: bluetooth-channel-selection-algorithm-2
 pub struct LeChannelSelectionAlgorithmTwo {
     channel_identifier: u16,
     channel_map: LeDataChannelMap,
@@ -581,6 +583,7 @@ const fn permute(value: u16) -> u16 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: bluetooth-channel-selection-algorithm-1, bluetooth-adaptive-frequency-hopping-channel-assessment
 enum ConnectionChannelSelector {
     One {
         channel_map: LeDataChannelMap,
@@ -771,6 +774,7 @@ impl LePeripheralConnectionEventDelta {
 /// Portable peripheral connection between hardware events.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "prepare the next event or retain the connection"]
+// CAPABILITY: portable-peripheral-connection, bluetooth-connection-update-channel-map-update
 pub struct LePeripheralConnection {
     request: LeLegacyConnectionRequest,
     event_counter: u16,

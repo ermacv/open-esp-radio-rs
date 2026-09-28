@@ -29,6 +29,7 @@ pub enum LeChannelSelectionAlgorithmTwoSupport {
 
 /// Semantic `ADV_IND` payload and channel-selection capability.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: portable-connectable-advertising
 pub struct LegacyConnectableAdvertisement<'a> {
     advertiser: LeDeviceAddress,
     data: LegacyAdvertisingData<'a>,

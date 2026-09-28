@@ -36,6 +36,7 @@ const DISABLED_CTE_DESCRIPTOR_OFFSET: u32 = 0x0c;
 /// Volatile cells reflect that the Controller may observe and later mutate the
 /// published descriptor. No public API grants CPU access after publication.
 #[repr(C, align(4))]
+// CAPABILITY: bluetooth-constant-tone-extension-activation
 pub struct DirectionFindingWorkspaceStorage {
     words: [VolatileCell<u32>; WORKSPACE_WORDS],
     _pin: PhantomPinned,

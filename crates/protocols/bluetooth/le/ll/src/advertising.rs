@@ -118,6 +118,7 @@ impl LegacyNonconnectableKind {
 /// Semantic non-connectable undirected advertisement: `ADV_NONCONN_IND` or
 /// `ADV_SCAN_IND`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: portable-legacy-advertising
 pub struct LegacyNonconnectableAdvertisement<'a> {
     kind: LegacyNonconnectableKind,
     advertiser: LeDeviceAddress,

@@ -467,6 +467,7 @@ struct Epoch {
 /// value keeps the PHY membership, the BLE PHY graph, the source-127 task and
 /// the bound CPU routes until [`Self::stop`].
 #[must_use = "the running Bluetooth client must be stopped"]
+// CAPABILITY: bluetooth-powered-shutdown, bluetooth-always-awake-controller, bluetooth-internal-wi-fi-bluetooth-coexistence, bluetooth-wi-fi-bluetooth-ieee-802-15-4-radio-coordination, coex-protocol-integration-and-lifetime-live-bt-ble-requests
 pub struct BluetoothSystem {
     epoch: Epoch,
 }
@@ -794,6 +795,7 @@ fn unwind_powered(
     large_assignments,
     reason = "the powered owner graph crosses the PHY poll boundaries once; the linked-image stack-frame audit independently bounds this future"
 )]
+// CAPABILITY: controller-initialization
 pub async fn start<P, C: PlatformClockProvider>(
     radio: &RadioSystem<P, C>,
     parked: BluetoothParked,

@@ -26,6 +26,7 @@ pub use oer_esp32s31_hal::bluetooth::BluetoothControllerTimeScale;
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Debug, Eq, PartialEq)]
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+// CAPABILITY: bluetooth-controller-scheduler-timebase
 pub struct ControllerTimeSample {
     latched_time: BluetoothControllerLatchedTime,
 }

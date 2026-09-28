@@ -224,6 +224,7 @@ impl DtmSchedulerItemEventType {
 /// Names are byte offsets, not semantic descriptor fields. The omitted bytes
 /// and the hardware consumer remain unresolved.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: dtm-link-state-reset
 pub struct DtmLinkStateReviewedWords {
     /// Complete word at byte offset `+0x00`; low 20 bits carry the TX head.
     pub(crate) word_00: u32,
@@ -324,6 +325,7 @@ impl DtmLinkStateReviewedWords {
 /// Names are byte offsets. This is not the complete scheduler object and has
 /// no list-linkage or hardware-ownership authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: dtm-scheduler-item
 pub struct DtmSchedulerItemReviewedWords {
     /// Complete word at byte offset `+0x00`; only byte `+0x02` is transformed.
     pub(crate) word_00: u32,

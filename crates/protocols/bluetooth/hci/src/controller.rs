@@ -41,6 +41,7 @@ pub enum LeControllerHciResourcesError {
 
 /// Both endpoints borrowed from one HCI resource epoch.
 #[must_use = "all HCI endpoints belong to one resource epoch"]
+// CAPABILITY: hci-controller-endpoints
 pub struct LeControllerHciEndpoints<
     'resources,
     M,
@@ -74,6 +75,7 @@ pub struct LeControllerHciEndpoints<
 /// advertised Host ACL credit fits the storage. The aggregate is neither
 /// `Copy` nor `Clone`; splitting requires a unique borrow.
 #[must_use = "HCI runtime resources must remain owned by their Controller epoch"]
+// CAPABILITY: hci-handoff-storage
 pub struct LeControllerHciResources<
     M,
     const HOST_TO_CONTROLLER_DEPTH: usize,

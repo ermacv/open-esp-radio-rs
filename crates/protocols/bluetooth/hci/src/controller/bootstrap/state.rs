@@ -25,6 +25,7 @@ pub struct BootstrapHostBuffers {
 /// Successful setters update requested Host policy only. No field in this type
 /// means that a mask, address, buffer or flow-control mode has reached the
 /// ESP32-S31 Controller, Link Layer or radio.
+// CAPABILITY: hci-bootstrap, bluetooth-read-local-supported-commands, bluetooth-public-bd-addr-le-read-buffer-size, bluetooth-le-set-random-address, bluetooth-le-read-filter-accept-list-size, bluetooth-le-read-local-supported-features-command, bluetooth-optional-le-capability-advertisement
 pub struct LeControllerBootstrap {
     config: LeControllerBootstrapConfig,
     phase: BootstrapPhase,

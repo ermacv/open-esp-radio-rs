@@ -93,6 +93,7 @@ pub enum PassiveScanStartSelection {
 /// disabled privacy and disabled periodic synchronization. Callers cannot
 /// supply positional descriptor words or vendor option images.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: bluetooth-le-privacy-1-2
 pub struct PassiveScanResetConfig {
     default_tx_power: LeTxPower,
 }

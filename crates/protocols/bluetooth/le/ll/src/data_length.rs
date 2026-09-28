@@ -160,6 +160,7 @@ pub(crate) struct LeDataLengthMalformed;
 
 /// The Data Length Update state of one connection.
 #[derive(Clone, Copy, Debug)]
+// CAPABILITY: bluetooth-data-length-extension-data-length-update
 pub(crate) struct LeDataLengthProcedure {
     local: LeDataLengths,
     remote: LeDataLengths,

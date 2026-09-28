@@ -101,6 +101,7 @@ struct Partition {
 /// Construction splits the partition without touching MMIO. It proves
 /// neither power nor clocks, common-PHY, BTBB, IRQ or Controller readiness.
 #[must_use = "the cold Bluetooth client retains its radio partition"]
+// CAPABILITY: cold-ownership
 pub struct ColdOwner {
     partition: Partition,
 }
@@ -289,6 +290,7 @@ fn clock_checkpoint(
 /// the Controller, and is where the lifecycle returns before the clocks are
 /// released.
 #[must_use = "the clocked Bluetooth client must release its clocks"]
+// CAPABILITY: clock-reset-prerequisite
 pub struct ClockedOwner {
     partition: Partition,
 }

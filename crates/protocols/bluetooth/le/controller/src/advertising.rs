@@ -107,6 +107,7 @@ struct Outstanding {
 }
 
 #[derive(Debug)]
+// CAPABILITY: bluetooth-legacy-non-connectable-advertising-adv-nonconn-ind, bluetooth-legacy-connectable-advertising-adv-ind, bluetooth-advertiser-scan-response-scan-rsp, bluetooth-scannable-non-connectable-advertising-adv-scan-ind, bluetooth-low-duty-high-duty-directed-advertising-adv-direct-ind, bluetooth-static-random-advertiser-address, bluetooth-broadcaster-observer
 pub(crate) struct Advertiser {
     phase: Phase,
     kind: SetKind,

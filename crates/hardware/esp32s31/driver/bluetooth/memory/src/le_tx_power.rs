@@ -14,6 +14,7 @@ use oer_esp32s31_hal::phy::baseband::TX_POWER_LEVELS_DBM;
 /// lowest level matches none and asserts; this type refuses it instead. The
 /// index never crosses the memory-codec boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: bluetooth-static-default-tx-power-selection
 pub struct LeTxPower(u8);
 
 impl LeTxPower {

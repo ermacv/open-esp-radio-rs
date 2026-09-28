@@ -1,7 +1,8 @@
-# Target investigation workflows
+# Investigation workflows
 
-The following profiles define current support; broader pass composition and
-qualification examples below are target contracts unless listed here. The
+The following profiles define current support; a use case missing here is not
+provided. Blobray has no general equivalence proof, TUI, cache, pruning,
+provider registry, or cross-revision correspondence or rebase. The
 [command reference](../../next/README.md) owns syntax and format versions.
 
 | Scenario | Status and boundary |
@@ -16,7 +17,6 @@ qualification examples below are target contracts unless listed here. The
 | Current PHY calibration leaves → compiled-production comparison → replay | [Finite native matrix](../../../../verification/esp32s31/README.md#current-calibration-leaves); TX-gain restore, forced gain, temperature conversion and post-init AGC with explicit domains and independent writes/returns; enclosing calibration remains outside this profile |
 | Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
 | Exact data ranges → integer table/constant proposal → review → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
-| General equivalence, broader ISA/model support, TUI and cache reclamation | Target, not currently provided |
 
 Concrete scenario orchestration belongs to application. Selection/planning and
 execution share one original deadline and work/memory/disk budget. Failure before
@@ -40,19 +40,18 @@ publication leaves prior results and current selections intact.
 
 ## Workflow contract map
 
-These routes define the user-facing responsibilities of the target system.
+These routes define Blobray's user-facing responsibilities.
 An arrow transfers a typed request/result or resource lease, not a database
 connection. Existing CLI commands are not the authority for these boundaries.
 
 | User question or action | Operation route and retained result | Governing contract | Acceptance scenarios |
 | --- | --- | --- | --- |
 | What is in these inputs, including missing/unsupported parts? | import → store capture → artifacts inventory → revision → read query | [Import](contracts.md#import-and-revision-capture), [identity](contracts.md#identity-and-provenance) | A1, A3, A4, A6, A8, R5, R7 |
-| What does this occurrence do? | snapshot → plan → analysis with ISA ports → validated publication → query | [Handles](contracts.md#handles-and-capability-boundaries), [passes](contracts.md#analysis-knowledge-and-verification-ports) | A7, K2, I1, I3, R1, R8, R9 |
+| What does this occurrence do? | snapshot → plan → analysis with ISA ports → validated publication → query | [Handles](contracts.md#handles-and-capability-boundaries), [analysis ports](contracts.md#analysis-knowledge-and-verification-ports) | A7, I1, I3, R1, R8, R9 |
 | Can this archive entry be executed under this environment? | snapshot → link plan → host tool → prepared image → execution session | [Image preparation](contracts.md#artifact-inspection-and-image-preparation) | A2, A5, A7, J1 |
-| Can this interpretation be accepted and explained later? | evidence-bearing candidate → knowledge validation → review transaction → retained knowledge revision | [Review](contracts.md#analysis-knowledge-and-verification-ports), [retention](contracts.md#durable-repository-and-disposable-cache) | K1, K4, K5, P3 |
-| What remains applicable after an input/model change? | new revision → correspondence/lineage proposals → explicit review → dependency-qualified recomputation | [Identity](contracts.md#identity-and-provenance), [passes](contracts.md#analysis-knowledge-and-verification-ports) | A8, K2, K3 |
+| Can this interpretation be accepted and explained later? | evidence-bearing candidate → knowledge validation → review transaction → retained knowledge revision | [Review](contracts.md#analysis-knowledge-and-verification-ports), [retention](contracts.md#durable-repository) | K4, K5 |
 | Does the compiled Rust implementation satisfy the declared comparison? | identified pair → prepared images → sessions → verifier → retained evidence | [Comparison](contracts.md#analysis-knowledge-and-verification-ports) | V1, V2, V3, A5 |
-| Can I cancel, recover, clean caches or move the project? | supervisor or explicit maintenance/export → retained roots and leased closure → validated outcome | [Jobs](contracts.md#jobs-cancellation-and-failures), [retention](contracts.md#durable-repository-and-disposable-cache) | J1–J5, P1–P6, M2 |
+| Can I cancel, recover or move the project? | supervisor or explicit recovery/backup → retained records and leased closure → validated outcome | [Jobs](contracts.md#jobs-cancellation-and-failures), [retention](contracts.md#durable-repository) | J1–J5, P1, P4–P6, M2 |
 
 A workflow requires all its relevant authority, resource and coverage contracts,
 not just its successful path. Resource containment does not make a wrong symbol
@@ -95,17 +94,14 @@ The result identifies analyzed scope, observations, hypotheses, blockers,
 coverage and provenance. An investigator can navigate from a semantic subject
 to its exact physical occurrences and from a finding to the bytes and producer
 that support it. Queries use a retained snapshot and do not trigger analysis,
-cache repair or publication as a hidden side effect.
+repair or publication as a hidden side effect.
 
 Publication makes the completed result bundle visible in one metadata commit.
 Switching to it is an explicit frontend action or completion handling for the
 same selected revision. An older snapshot remains readable. A failed run leaves
 the previous completed publication available and explains which operation failed.
 
-Repeated requests can reuse computations when their dependency identities match.
-The plan explains reuse or invalidation in terms of changed inputs, parameters,
-providers or producers. A result without a reproducible dependency identity is
-not made persistent merely to avoid repeated work.
+A repeated request recomputes its result; no computation is reused.
 
 ## Build and execute an archive entry
 
@@ -135,7 +131,7 @@ export that exposes addresses.
 The researcher proposes an assertion over a physical occurrence or semantic
 subject, supplies its applicability, and references supporting evidence. Examples
 include a recovered function boundary, interface signature, register meaning,
-data layout or a correspondence between library revisions.
+data layout or constant.
 
 Validation checks that the evidence exists, the subject is unambiguous, the claim
 does not exceed its evidence class, and the assertion is consistent with other
@@ -149,8 +145,8 @@ rules. They share the transaction, provenance and retention mechanism. An
 accepted display name does not become a physical symbol identity, and acceptance
 does not erase a contradictory observation.
 
-Success means accepted knowledge can be explained and exported after clearing
-the computational cache. Required recovered hardware tables and calibration
+Success means accepted knowledge can be explained and exported from its
+retained evidence alone. Required recovered hardware tables and calibration
 coefficients retain source identity, purpose, representation and applicability
 under the [source policy](../../../../docs/source-policy.md). Their binary origin
 does not justify dropping them or substituting another profile.
@@ -204,27 +200,14 @@ Importing changed libraries creates a new revision with its own physical
 identities. Reviewed interpretation changes create a separate knowledge revision.
 ABI/model selections belong to analysis or execution recipes; changing them does
 not manufacture a new source revision when captured inputs are unchanged.
-Correspondence and automatic transfer below remain target behavior.
-
-Correspondence analysis proposes associations between old and new occurrences.
-Lineage composes supported relationships across several revisions. The result
-distinguishes confirmed evidence, ambiguous candidates, conflicts and unmatched
-entities. Knowledge review decides which assertions can be transferred under
-their applicability; behavioral evidence remains bound to its original context.
-
-Planning invalidates only computations whose semantic dependencies changed. A
-rename does not invalidate unrelated structural byte facts; an executable model
-change invalidates consumers of that model even when its human label is unchanged.
-An old result can still be opened explicitly without being shown as current proof.
-
-Success means no manual repair of generated files is necessary to preserve the
-old investigation or establish the new one. The user can explain each retained,
-recomputed and unresolved result.
+No correspondence, lineage or automatic transfer of knowledge between
+revisions exists: each revision's research stands on its own, and an old
+result can still be opened explicitly without being shown as current proof.
 
 ## Cancel, close and recover
 
 Cancellation is a request to the application supervisor, independent of whether
-it comes from CLI signals, TUI, or an embedded client. The supervisor stops new
+it comes from CLI signals or an embedded client. The supervisor stops new
 work, cooperatively cancels workers, terminates owned child processes where
 necessary, reaps them and releases staging within its shutdown contract.
 
@@ -235,7 +218,7 @@ does not detach a worker whose resource lifetime has no remaining owner.
 After a crash, opening the repository reconciles abandoned operations before
 admitting a new writer. Read-only inspection never performs that reconciliation
 implicitly; it either reads a committed snapshot or returns an explicit recovery
-requirement. A subsequent run can reuse verified completed computations.
+requirement.
 
 Next query/Plan admission reconciles its private runtime root independently of
 project recovery: dead owner, inactive lease and empty containment are all
@@ -246,8 +229,7 @@ also governs aggregate admission and retained-result lifetime.
 
 Disk exhaustion reports protected data and the failed operation. Corrupt retained
 evidence reports an integrity failure and supports restoration from a known backup;
-it is not silently regenerated under today's analyzer. Damaged disposable cache
-data can be discarded and recomputed with a diagnostic.
+it is not silently regenerated under today's analyzer.
 
 Success means a previous coherent publication remains accessible, no interrupted
 run appears complete, and recovery does not require deleting unknown database,
@@ -272,15 +254,13 @@ remain descriptive provenance and need not exist on the destination machine.
 Reading results requires a supported record schema. Re-execution additionally
 requires the recorded tool/model implementations and reports missing dependencies.
 
-Downstream SVD/PAC and reference-code generators consume a selected validated
-snapshot or versioned export. Their outputs retain links to the knowledge and
-evidence used. Generator failure does not invalidate the research publication,
-and generated code does not acquire a stronger proof class through publication.
+The [register tool](../../../registers/README.md) publishes SVD/PAC from reviewed
+hardware models, not from an investigation; Blobray generates no code.
 
 ## Acceptance scenarios
 
-These are required behavioral checks for a future implementation, not a record
-of tests already run. Synthetic ELF/AR fixtures exercise contracts without vendor
+Each scenario states observable behavior Blobray guarantees; the table is not a
+record of tests already run. Synthetic ELF/AR fixtures exercise contracts without vendor
 inputs. Real vendor reproductions remain private and use the resource-limited
 host. Tests assert observable behavior and ownership rather than internal file
 layout or generated register constants.
@@ -295,20 +275,15 @@ layout or generated register constants.
 | A6 | Source changes during import or after revision creation | Detectable capture change/expected-digest mismatch rejects capture; committed revision always uses its imported bytes | import, store |
 | A7 | Required source mapping or relocation is unknown | Affected claim is incomplete, never inferred from an equal label or placeholder value | artifacts, verification |
 | A8 | Import unchanged thin-container bytes with a changed external member | Old and new snapshots retain their own payload bindings; equal occurrence selectors do not reuse stale analysis or transfer evidence | domain, planning, store |
-| K1 | Clear all computational cache after accepting reviewed knowledge | Assertions, cited evidence and captured inputs remain readable | store, knowledge |
-| K2 | Change one assertion or selected model | Only dependent computations become stale, with an explanation; old evidence keeps its identity | planning, analysis |
-| K3 | Rebase between renamed/changed/ambiguous functions | Supported associations are explicit; uncertainty blocks automatic proof transfer | analysis, knowledge |
 | K4 | Two reviews use the same base revision | First commit succeeds; second reports conflict without lost decisions | application, store |
 | K5 | An analysis proposes an assertion, then its candidate or evidence changes before review commit | Analysis cannot accept it; commit validates the exact reviewed candidate and retained supporting closure | knowledge, application, store |
 | P1 | Inject failure before payload sync, before metadata commit and after commit | Readers see the previous or new complete publication; no mixed result bundle | store |
-| P2 | Hold an old reader while publishing, compacting and pruning | Reader retains its selected content; active and persisted roots remain protected | store |
-| P3 | Corrupt cache-only data versus referenced evidence | Cache miss/recompute and retained-evidence integrity failure remain distinct outcomes | store |
 | P4 | Exhaust disk quota with protected content | Write fails without evicting accepted evidence or replacing current publication | store |
 | P5 | Export files are deleted or changed | Snapshot queries still read retained content; export can be recreated | application, store |
 | P6 | Exhaust temporary-output quota or disk while spooling a query, manifest or image | Typed failure, prior publication intact, owned residue identified, no eviction of retained evidence | application, store, host |
-| J1 | Cancel CPU analysis, blocked external tool and TUI-owned comparison | Bounded cleanup, descendant reaping, no unmanaged worker or false publication | supervisor, host |
+| J1 | Cancel CPU analysis, a blocked external tool and a comparison | Bounded cleanup, descendant reaping, no unmanaged worker or false publication | supervisor, host |
 | J2 | Race cancellation or project revision change with commit | One explicit terminal outcome; stale run cannot replace a newer revision's current result | application, store |
-| J3 | Kill a writer and restart | Interrupted attempt is abandoned; committed evidence survives; verified work can be reused | recovery |
+| J3 | Kill a writer and restart | Interrupted attempt is abandoned; committed evidence survives | recovery |
 | J4 | Drop all client handles or close the frontend during import, query or execution | Supervisor retains ownership through terminal cleanup; shutdown rejects new work and does not detach workers | application, host |
 | J5 | Query succeeds but destination fails; cancellation races with commit admission | Delivery failure remains distinct from computation; accepted cancellation prevents commit and rejected cancellation reports actual commit outcome | application, store, host |
 | R1 | Exhaust work in an ELF table, member iteration or long name | Typed resource failure retains exact last context; current is unchanged | application, artifacts |
@@ -319,20 +294,19 @@ layout or generated register constants.
 | R6 | Exhaust scoped scratch, unwind a phase, then start another | Typed capacity failure; no escaped reference or stale ID; temporary capacity is reusable | computing module |
 | R7 | Process many thin members and a large result | Input leases and temporary memory end when no longer needed; staged output avoids aggregate RAM growth | application, store, artifacts |
 | R8 | Repeat with the same work policy and budget; overflow a counter | Deterministic accounting and checked arithmetic; no budget reset or wraparound | application |
-| R9 | Cyclic CFG/call graph or nonconvergent dataflow; a cycle in pass dependencies | Program traversal is iterative and bounded with declared completeness; scheduler dependency cycle is rejected before execution | analysis, planning |
+| R9 | Cyclic CFG/call graph or nonconvergent dataflow | Program traversal is iterative and bounded with declared completeness | analysis |
 | R10 | A sink retains records, a phase grows a buffer, or a child worker starts | Simultaneous allocations and result lifetimes remain charged; capacity/work cannot be duplicated or reset | consumer, application |
 | R11 | Exhaust computation capacity while emitting diagnostics; request a claimed allocation-controlled path | Fixed-size failure remains available; only independently checked paths claim absence of hidden allocation | computing module, host |
 | V1 | Missing behavior, known difference and fully discharged comparison | Typed INCOMPLETE, DIFF and MATCH with their coverage and claim scopes | verification |
 | V2 | Generated reference or model stands in for production behavior | Evidence keeps its limited class; exact production equivalence is not asserted | verification |
 | V3 | Stateful phase is incomplete, or independent cases run in a different order | Dependent phases cannot consume unknown state; independent cases have fresh session state and no cross-case leakage | executor, verification |
-| I1 | Issue equivalent requests through API, CLI/JSON and TUI | Same selection, revision, results and diagnostics; only presentation differs | application, frontends |
-| I2 | Create two applications with different provider sets | Independent behavior and identities without process-global interference | host composition |
-| I3 | Open an absent cache or query an existing snapshot | No hidden analysis, repair, migration or writer acquisition | query interface |
+| I1 | Issue equivalent requests through API and CLI/JSON | Same selection, revision, results and diagnostics; only presentation differs | application, frontends |
+| I3 | Query an existing snapshot | No hidden analysis, repair, migration or writer acquisition | query interface |
 | M2 | Backup, move and restore; original input paths are unavailable | Retained closure verifies and remains readable; missing replay tools are reported | store, application |
-| B1 | Build generic Blobray without open-radio-specific providers | No generic dependency on production code, chip hosts or qualification policy | crate dependency checks |
+| B1 | Build generic Blobray without open-radio-specific code | No generic dependency on production code, chip hosts or qualification policy | crate dependency checks |
 | B2 | Attempt a forbidden dependency or mutation through a read handle | Dependency checks or type boundary reject it | architecture and API checks |
-| B3 | Pass a snapshot/analysis port to code attempting writer acquisition, tool discovery or provider installation | Public capabilities do not expose those operations; compile-fail API checks reject authority escalation | application, domain, store |
-| B4 | Start a planned operation after inputs/providers/current selection change | It uses retained inputs and identified implementations or returns explicit unavailability; no implicit replanning or fallback | application, host |
+| B3 | Pass a snapshot/analysis port to code attempting writer acquisition or tool discovery | Public capabilities do not expose those operations; compile-fail API checks reject authority escalation | application, domain, store |
+| B4 | Start a planned operation after inputs, implementations or the current selection change | It uses retained inputs and identified implementations or returns explicit unavailability; no implicit replanning or fallback | application, host |
 
 ## Current inspection reports
 
@@ -347,12 +321,6 @@ without source files, and recreating accepted-data exports. Other database or
 journal versions are rejected unchanged. No old-reader packaging, upgrade or
 compatibility reader is provided. Exports retain bytes and provenance; they do not
 promise automatic import into another format.
-
-**Target extensions:** cross-revision correspondence/rebase, cache invalidation,
-pruning with transitive retention pins, general provider sets and TUI remain
-unsupported. Acceptance rows referring to those capabilities are target
-obligations, not prerequisites of the current PHY workflow. In particular K1–K3,
-P2–P3 and I2 do not describe current callable maintenance/planning operations.
 
 ## Contract enforcement
 
@@ -629,8 +597,8 @@ load order, atomic outcome/order or branch choice may differ despite identical f
 bytes and return. Excluded raw observations remain readable. Unknown/inaccessible
 selected reads cannot MATCH. Model/service memory effects retain their explicit
 assumption provenance; setup and inspection are excluded. Physical branch sites
-compare exactly; reviewed cross-layout/ABI/control correspondence remains the next
-profile, with no automatic normalization.
+compare exactly; cross-layout/ABI/control correspondence needs the reviewed layout
+profile below, with no automatic normalization.
 
 ### Reviewed layout comparison — implemented finite profile
 

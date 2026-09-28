@@ -7,8 +7,8 @@ preserves projects through backup/restore. The API and CLI share supervised
 work, cancellation, publication and recovery; `cargo blobray` selects this host.
 The [architecture](../docs/design/architecture.md) owns module authority;
 [contracts](../docs/design/contracts.md) owns identities, assessment, lifetime and
-resource rules; [workflows](../docs/design/workflows.md) distinguishes implemented
-scenarios from target capabilities. This page indexes the current command references.
+resource rules; [workflows](../docs/design/workflows.md) lists the supported
+scenarios. This page indexes the current command references.
 
 The current data model separates captured source revisions, selected analysis
 recipes, reviewed knowledge revisions and immutable result publications. A run
@@ -64,9 +64,9 @@ See [Coverage and storage observations](reference/resources-storage/README.md#co
 
 See [Owners and interfaces](reference/interfaces-formats/README.md#owners-and-interfaces).
 
-### Relationship to target interfaces
+### Shared operation lifecycle
 
-See [Relationship to target interfaces](reference/interfaces-formats/README.md#relationship-to-target-interfaces).
+See [Shared operation lifecycle](reference/interfaces-formats/README.md#shared-operation-lifecycle).
 
 ## Synthetic prepared images
 

@@ -1,8 +1,7 @@
 # Blobray architecture
 
-This directory is the architecture authority for Blobray Next. Implemented
-profiles and remaining target interfaces are distinguished in
-[workflows](workflows.md); the [operator reference](../../next/README.md)
+This directory is the architecture authority for Blobray Next. Supported
+profiles are listed in [workflows](workflows.md); the [operator reference](../../next/README.md)
 owns CLI syntax and current format versions.
 
 This document owns purpose, component boundaries and dependency direction.
@@ -26,24 +25,23 @@ The architecture satisfies these conditions:
 - Import preserves private binary inputs independently of their original paths.
 - Every run binds a fixed investigation revision and its execution recipe.
 - Clearing computational caches preserves accepted knowledge and its evidence.
-- Changing a library produces a new revision and explicit correspondence;
-  existing evidence remains interpretable in its original context.
+- Changing a library produces a new revision; existing evidence remains
+  interpretable in its original context.
 - Readers observe coherent publications. Failure and cancellation cannot expose
   an unfinished run as the current completed result.
-- CLI, JSON and TUI share selection, analysis, review and verification semantics.
+- CLI and JSON share selection, analysis, review and verification semantics.
 - Each resource has a named owner for acquisition, completion and release.
 - An uncertainty or unsupported operation remains visible at every projection.
 
-The first implementation covers RV32 and the ESP32-S31 investigation. Container
-formats, ISA semantics, ABI, ecosystem models and chip facts have separate
-interfaces. Additional ISA implementations are outside this design's initial
-acceptance scope. The initial deployment is a local repository with one writer
-and concurrent readers. Distributed execution, a network service and concurrent
-collaborative editing are outside that scope.
+Blobray covers RV32 and the ESP32-S31 investigation; no other ISA is
+implemented. Container formats, ISA semantics, ABI, ecosystem models and chip
+facts have separate interfaces. A project is a local repository with one writer
+and concurrent readers; there is no distributed execution, network service or
+concurrent collaborative editing.
 
-SVD/PAC and reference-code generators are separate consumers of versioned
-research contracts. Blobray supplies knowledge and evidence to them; their
-publication policies do not shape the analysis engine. Production readiness
+SVD/PAC publication belongs to the register tool, which consumes reviewed
+hardware models rather than investigations; its publication policies do not
+shape the analysis engine. Production readiness
 belongs to the independent qualification evaluator, as defined by the
 [repository qualification contract](../../../../docs/verification-and-qualification.md).
 
@@ -81,7 +79,7 @@ The shipping host package is `blobray-next` and its executable is `blobray`. Mod
 | `blobray-verification` | scenarios, comparison, evidence | Comparison relations and verdict construction | domain |
 | `blobray-store` | imports, objects, revisions, transactions, cache, retention | Durable storage and separately authorized cache operations | domain |
 | `blobray-application` | workspace, operations, planning, jobs, image preparation, queries | User operations, orchestration and resource ownership | domain, artifacts, analysis, knowledge, verification, store |
-| `blobray` | CLI, JSON, TUI, host composition, platform adapters | Process entry points, rendering and concrete dependency selection | application, domain, backend-riscv, selected add-ons |
+| `blobray` | CLI, JSON, host composition, platform adapters | Process entry points, rendering and concrete dependency selection | application, domain, backend-riscv, selected add-ons |
 
 The common `blobray-` prefix is omitted in the dependency column. Application
 receives backend, model and external-tool capabilities through domain ports; it
@@ -135,7 +133,7 @@ size, common prefixes and similar container names are insufficient reasons.
 
 ```mermaid
 flowchart TD
-    Host[CLI / JSON / TUI and host composition] --> App[Application]
+    Host[CLI / JSON and host composition] --> App[Application]
     Host --> RV[RV32 backend and selected providers]
     App --> Store[Store]
     App --> Analysis[Analysis]
@@ -156,20 +154,10 @@ do not add a reverse crate dependency.
 
 ## Authority and extension boundaries
 
-**Target extension contract:** a general `ProviderSet` is not a callable Next
-registry. The current host injects the decoder/executor and operation host.
-The broader provider contract below does not require a new runtime crate.
-
-In that target contract, the application owns a `ProviderSet` for its lifetime. Creating another
-application with different providers is supported in the same process. Library
-code does not install a process-global registry, inspect CLI flags, or read
-environment variables to select a provider.
-
-Providers declare identity, implementation identity, contract versions,
-applicability, supported operations and interpretation inputs. A compiled model
-is an implementation dependency even when its configuration is unchanged.
-Facts-only packs and executable models remain separate selections. Chip facts
-do not acquire investigation-specific applicability merely through composition.
+The host injects the decoder/executor and the operation host into the
+application. Library code does not install a process-global registry, inspect
+CLI flags or read environment variables to select an implementation; another
+application with different injections can coexist in the same process.
 
 The image-preparation operation owns link planning. Its host adapter owns each
 external linker process, CLI/script dialect and raw evidence parsers under the
@@ -183,7 +171,7 @@ consumes a prepared image; it does not discover tools through `PATH` or invoke
 the same image-preparation contract.
 
 The job supervisor owns cancellation, resource budgets, temporary directories
-and descendant processes. CLI and TUI are clients of this owner. The resource
+and descendant processes. CLI is a client of this owner. The resource
 limiter is a platform adapter of the same job contract. Existing repository
 process helpers may inform that adapter, but importing a repository-only helper
 must not break standalone Blobray composition.
@@ -194,8 +182,7 @@ control port from domain; they cannot choose their own budgets or restart clocks
 The host owns emergency containment and platform observations. No second runtime
 or global allocator becomes an implicit resource owner. The mandatory
 [resource contracts](contracts.md#resource-ownership-and-bounded-computation)
-apply to computation, retained-data queries and diagnostics. Implemented coverage
-is reported by Next, separately from these target obligations.
+apply to computation, retained-data queries and diagnostics.
 
 In Next, application creates the working-capacity authority. Domain defines
 positional byte and borrowed-record ports; artifacts enumerates members and emits
@@ -217,7 +204,7 @@ query admission resolves current before launching work. CLI import and inventory
 streaming paths; the materializing convenience APIs and their narrower guarantees
 are described in Next's [memory boundary](../../next/reference/resources-storage/README.md#current-memory-boundary).
 
-The target supervisor serves durable operations and ephemeral read operations.
+The supervisor serves durable operations and ephemeral read operations.
 They share admission, cancellation, deadlines, worker ownership and cleanup.
 Only durable operations receive a project journal and publication capability.
 Read operations return their diagnostics to the caller. Sharing the supervisor
@@ -226,18 +213,18 @@ Embedded synchronous adapters use the same operation lifecycle; lower-level
 streaming ports explicitly leave supervision and consumer capacity to the caller.
 
 Knowledge validators borrow observations and assertion candidates. Storage and
-application own reading, committing and exporting them. External generators
-receive a validated snapshot and produce an export bundle with provenance; they
-cannot modify research observations or comparison verdicts. HAL, driver and
+application own reading, committing and exporting them. An export bundle
+carries provenance; its consumers cannot modify research observations or
+comparison verdicts. HAL, driver and
 qualification behavior remains with those external owners.
 
 Materializing helpers are
 adapters over the same validated stream and require explicit caller limits and
 supervision obligations; they cannot become an alternative operation engine.
-The target application API exposes retained read capabilities, not concrete store
+The application API exposes retained read capabilities, not concrete store
 handles or filesystem staging protocols. Host wire/render types stay outside
-the shared research vocabulary. The currently callable, narrower interfaces and
-their limitations remain documented in [Next](../../next/README.md).
+the shared research vocabulary. [Next](../../next/README.md) documents the
+callable interfaces and their limitations.
 
 ## Basis for the decisions
 

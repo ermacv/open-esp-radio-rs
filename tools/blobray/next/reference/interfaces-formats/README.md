@@ -52,10 +52,9 @@ reads, then publishes. Large inventory never becomes a supervisor message or an
 import response. The host/worker protocol is trusted composition, not a sandbox
 for arbitrary hostile plugins running under the same OS user.
 
-### Relationship to target interfaces
+### Shared operation lifecycle
 
-The [target capability boundaries](../../../docs/design/contracts.md#handles-and-capability-boundaries)
-are broader than these callable interfaces. Import, inventory, doctor, selection
+Import, inventory, doctor, selection
 and inspection planning/execution share
 application admission, worker lifecycle, cancellation and teardown. Queries keep
 their status and diagnostics in memory; they never acquire a project writer or

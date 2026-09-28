@@ -87,9 +87,8 @@ top-level command and subcommands. JSON format is useful for automation; it is
 not a separate analysis engine. `Completed` describes run termination and may
 coexist with partial coverage or an `INCOMPLETE` comparison.
 
-TUI, reference-code generation, retention GC and cross-revision rebase are not
-implemented. Design obligations do not make those features callable. Use the
-current references to select commands and their supported scope.
+Blobray has no TUI, code generation, garbage collection or cross-revision
+rebase. Use the references to select commands and their supported scope.
 
 ## Start an investigation
 
@@ -147,5 +146,4 @@ comparison inside their own process through
 without a project.
 
 The [architecture](docs/design/architecture.md), [contracts](docs/design/contracts.md)
-and [workflows](docs/design/workflows.md) distinguish implemented scope from target
-obligations. Qualifying production behavior remains an external responsibility.
+and [workflows](docs/design/workflows.md) describe the implemented scope. Qualifying production behavior remains an external responsibility.

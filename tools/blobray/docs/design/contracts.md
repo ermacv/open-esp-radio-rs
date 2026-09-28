@@ -1,8 +1,8 @@
 # Interfaces and ownership contracts
 
-This is the contract authority for Blobray Next. Implemented boundaries are
-identified below; broader interfaces explicitly marked target describe unsupported
-capabilities. The [command reference](../../next/README.md) owns CLI syntax.
+This is the contract authority for Blobray Next. It describes implemented
+boundaries; a capability it does not describe is not provided. The
+[command reference](../../next/README.md) owns CLI syntax.
 [Architecture](architecture.md) owns components and [workflows](workflows.md)
 owns supported use cases.
 
@@ -134,13 +134,11 @@ identity at a subsystem boundary.
 | `ArtifactId` | SHA-256 identity of exact captured or derived payload bytes |
 | `ObjectId` | Artifact identity plus standalone-object or archive payload ordinal |
 | `SymbolId` | Object identity plus symbol-table kind, table section and entry index |
-| `CodeRangeId` (target) | Object, section and byte range for code without a symbol; boundary justification is a separate fact |
 | `RevisionId` | Immutable source manifest: ordered input roles/bindings, captured occurrences, target and inventory producer |
 | `KnowledgeRevisionId` | Immutable review event chain, independently selected by analysis recipes; does not change a source revision |
 | `PublicationId` | Immutable completed result root for an identified revision; independent of the mutable current-publication reference |
 | `PlanId` | Immutable operation recipe bound to a revision and requested obligations |
 | `RunId` | One execution attempt of a plan; retries have separate run identities |
-| `EvidenceId` (target) | Immutable evidence record and its recorded dependency closure |
 | `SubjectId` | Reviewed semantic subject; association with physical occurrences is explicit |
 
 Archive payload ordinals preserve independent occurrences even when names and
@@ -159,7 +157,7 @@ binding, not only the container digest and ordinal. Cross-revision reuse require
 equal relevant captured bindings and interpretation inputs. This rule preserves
 schema-1 selector encodings; it does not silently assign new meanings to old IDs.
 
-`ObjectOffset` identifies an offset in an identified object section.
+A section offset identifies a location in an identified object section;
 `ImageAddress` identifies an address in a selected prepared image. Conversion
 requires that image's recorded mapping. Address widths are validated against the
 selected target; no narrowing to RV32 occurs in generic identities or storage.
@@ -177,16 +175,14 @@ cannot be reconstructed from a display label.
 | Source bytes | Store import transaction copies caller-selected inputs | Immutable file leases retain captured content; caller keeps ownership of original files |
 | Parsed container | Artifacts constructs views over a lease | Views cannot outlive their bytes; parsing never reopens a source path |
 | Project snapshot | Store reader captures revision and selected publication in one metadata transaction | Cloneable read handles retain leases; final release removes transient retention |
-| Provider set | Host constructs one validated set for an application | Runs retain exact descriptors/implementations until completion; no global installation |
 | Write transaction | Store grants one writer authority | Commit consumes the transaction; rollback/drop leaves published roots unchanged |
-| Analysis memo | Analysis worker, scoped to its recipe and dependencies | Drop or eviction loses only recomputable work |
 | Prepared image | Image-preparation operation under a job | Artifact and mapping leases transfer to execution; source and tool identities remain attached |
 | Execution session | Application, created for a declared scenario lifecycle | Warm phases retain session-owned state; cold reset/completion/cancellation releases it |
 | Run handle | Application supervisor registers a job | Client requests cancellation or waits; supervisor owns cleanup regardless of client handle lifetime |
 | Child process and temporary files | Host process adapter under the supervisor | Termination includes descendants and reaping before job resources are released |
 | Export bundle | Application export operation over a snapshot | Caller receives materialized files and manifest; repository evidence ownership is unchanged |
 
-Read handles expose no writer, maintenance or provider-installation capability.
+Read handles expose no writer capability.
 Domain operations receive borrowed typed inputs and ports with the minimum
 authority they need. A callback or generic context object cannot recover the
 whole application or database connection.
@@ -201,13 +197,12 @@ implementation. Human output is a renderer of those results.
 | --- | --- | --- |
 | `import` | Explicit file bindings, order, target context and optional expected digests | Staged import followed by a new revision; the only operation that acquires live binary paths for durable project research |
 | `snapshot` | Project and explicit revision/publication selection or current selection | Read-only retained snapshot with resolved identities |
-| `plan` | Snapshot, operation request and resource budget | Immutable plan, dependencies, obligations, cache decisions and missing prerequisites; no analysis publication |
+| `plan` | Snapshot, operation request and resource budget | Immutable plan, dependencies, obligations and missing prerequisites; no analysis publication |
 | `start_run` | Plan and application capabilities | `RunHandle`; executes the recorded plan rather than resolving new inputs |
 | `query` | Snapshot and typed selector | Observations/projections with provenance, completeness and diagnostics; no implicit analysis or repair |
 | `review` | Base revision, assertion changes, decision and evidence references | Validated knowledge transaction producing a new revision or a conflict |
-| `compare` | Snapshot, both compiled implementations, scenario and relation | A planned verification run with explicit claim scope |
+| `compare` | Snapshot, both compiled implementations, scenario and relation | A supervised execution run with explicit claim scope |
 | `export` | Snapshot, selected records, destination and overwrite policy | Verified bundle/manifest; never changes accepted knowledge |
-| `maintenance` | Retention preview and explicit cache/repository scope | Separate authorized operation; revalidates roots and active leases before deletion |
 
 `RunHandle` exposes status, typed progress events, cancellation and completion
 waiting. Every event identifies its run and phase. A late result from an older
@@ -218,8 +213,8 @@ available through status/wait even when a client stops consuming events.
 Plans retain the exact revision, requested entry occurrences, ordered input
 roles, linker recipe where needed, provider/model identities, pass and schema
 versions, parameters, declared environment inputs, outputs and resource budget.
-Planning may hash/imported-read inputs and inspect existing cache metadata. It
-does not populate a missing cache, execute passes or migrate a repository.
+Planning may hash and read imported inputs. It does not execute analysis or
+migrate a repository.
 
 A run can complete on an older revision after the project advances. Its result
 remains bound to that revision. Advancing the current publication requires the
@@ -229,27 +224,11 @@ There is no automatic rebase of a running computation.
 
 Next implements `Plan` for inventory inspection only: one revision, input,
 object or symbol scope. Its live owner retains a captured manifest; portable
-reopening revalidates project membership and recipe dependencies. This is not
-the general pass/provider graph or a transitive retention pin described below.
-See [inspection plans](../../next/reference/capture-images/README.md#selection-and-inspection-plans) for
+reopening revalidates project membership and recipe dependencies. It is not a
+general pass/provider graph or a transitive retention pin. See [inspection plans](../../next/reference/capture-images/README.md#selection-and-inspection-plans) for
 the implemented schema, resource handoffs and command semantics.
 
 ### Handles and capability boundaries
-
-The following are target API obligations, not signatures promised by the current
-import implementation. Public research records, application handles and private
-worker messages have distinct compatibility boundaries.
-
-| Interface | Inputs and result | Ownership and failure contract |
-| --- | --- | --- |
-| `Snapshot` | Explicit project plus revision/publication selection; immutable selection with retained record/byte access | Store resolves selection once and pins its reachable closure atomically with respect to retention. Clones share the pin; last release ends it. No writer, recovery or origin-path capability is exposed. |
-| `Plan` | Snapshot, typed operation request, pass/provider descriptors and budget; immutable dependency graph, obligations and recipe | Application owns planning. The live plan retains its snapshot; starting a run acquires its own retention. Missing prerequisites produce a blocked plan, never an implicit import or analysis. Reopening a serialized plan revalidates identities and reacquires leases. |
-| `RunHandle` | One admitted attempt of an executable plan; status, progress, cancel and wait | Application retains ownership independently of client handles. Retries get a new `RunId`. Shutdown stops admission and drains owned jobs; dropping a client cannot detach them. |
-| `LinkPlan` | Captured inputs in order, entry/root occurrences, companion bindings, target/ABI and identified tool recipe | Application owns the plan. Host materializes exactly those inputs in job-private storage. Reconstruction retains original occurrence mappings. No caller-supplied live binary path reaches the linker. |
-| `PreparedImage` | Validated image bytes, recipe, selection/mapping evidence and unresolved boundaries | Owns leases for image and source mappings. Execution borrows these leases; memory views cannot outlive them. Missing exact mapping remains unknown; creating an execution session validates the obligations that session needs. |
-| Analysis pass | Declared dependency views, ISA ports, control/capacity and result sink | Owns run-local computation and emits qualified records. Cannot publish or accept assertions. Consumer failure aborts production; it cannot be reclassified as malformed input. |
-| Review candidate | Base revision, proposed assertions, explicit decision and retained supporting records | Knowledge validates meaning and applicability. Application commits a candidate bound to its validated inputs; store rechecks expected base and reference closure. Conflict requires a new review decision, not an automatic rebase. |
-| Comparison | Two identified compiled implementations, prepared execution inputs, scenario and relation | Executor owns each session; verifier consumes observations and owns verdict construction. Application alone retains/publishes the resulting evidence. Models and frontends cannot supply the verdict. |
 
 External link definitions acquire one captured function address, not a runnable
 program view. Artifacts validates the selected static symbol table, nonzero
@@ -272,7 +251,7 @@ does not persist a new project record implicitly. Rendering or exporting the
 recipe is a separate caller action.
 
 Application requests and results carry semantic selections, not human output
-formats. CLI/JSON/TUI render the same results; host-internal transport may stream
+formats. CLI/JSON render the same results; host-internal transport may stream
 or spool them. Collecting an entire stream is an explicitly bounded adapter.
 Low-level ports do not acquire an implicit supervisor; their caller must supply
 the declared control, memory and retention capabilities.
@@ -352,9 +331,9 @@ qualified coverage. `FunctionSource` and `CodeAddressSpace` distinguish section
 offsets from image addresses. Prepared-image identity includes its link recipe;
 the image's source revision is frozen even when the current revision differs.
 Its ISA port is injected;
-the analysis module never selects an external symbol implementation. Broader
-pass scheduling and model policies below remain target interfaces; the concrete
-integer execution/verification subset is implemented as described below.
+the analysis module never selects an external symbol implementation. No pass
+scheduler, provider registry or computation cache exists: each operation runs
+its declared analysis directly.
 
 Artifacts owns the borrowed `ImageMemory` view over validated static ELF load
 segments. The view and its segment capacity cannot outlive the admitted input
@@ -366,34 +345,6 @@ an assertion about original placement. The implemented static memory profile
 and transfer limitations are documented by Next, without claiming execution
 or interprocedural completeness.
 
-
-Analysis passes declare inputs, output kinds, semantic implementation version
-and dependencies. One declaration drives planning, cache lookup and execution.
-Passes consume snapshots and return typed results; they do not publish files or
-select a current revision. ISA ports supply decode/lift/execute operations with
-explicit target and ABI context.
-
-A pass declaration specifies required/optional dependency kinds, interpretation
-inputs, output schema, semantic version, coverage obligations and termination
-policy. Planning and execution consume that same declaration. Optional absence
-is an explicit input outcome; it cannot hide a missing required dependency.
-The pass graph must be acyclic. Cycles in the analyzed program are handled inside
-a pass by a bounded worklist with a declared repeated-visit or fixed-point rule;
-they are not recursive scheduler calls. Nonconvergence reports an unsatisfied
-analysis obligation; exhaustion of the operation budget is a resource failure.
-
-Cache keys cover the semantic dependency closure: input content/occurrences,
-configuration, selected models, producer and schema versions, link recipe and
-execution parameters where relevant. Paths and modification times do not stand
-in for content. Runtime memoization does not become evidence. Recursion-dependent
-or otherwise context-sensitive results include that context or remain uncached.
-
-An execution limit and a semantic analysis parameter are different inputs.
-Changing a depth/precision parameter that defines an analysis result changes its
-computation identity. A larger emergency process limit alone does not relabel
-existing evidence. A cached incomplete result cannot satisfy a request for a
-stronger obligation merely because its bytes are available. Cache hits still
-validate identity, integrity and coverage under the current operation budget.
 
 Knowledge validation checks subject identity, applicability, evidence existence,
 claim strength and conflicts. It produces an acceptance candidate; the application
@@ -420,7 +371,7 @@ start fresh; stateful phases carry only declared persistent state. Unknown state
 after an incomplete phase blocks dependent phases. Models record applicable
 preconditions and cannot silently replace the implementation under comparison.
 
-## Durable repository and disposable cache
+## Durable repository
 
 Store owns transactional metadata and immutable content-addressed objects.
 Repository identity and object references are independent of installation paths.
@@ -428,22 +379,11 @@ The implementation uses SQLite transactions for metadata and durable immutable
 object storage for payloads. Pack layout, compression and indexes are internal
 storage choices; no public ID contains a pack offset or database row number.
 
-| State | Retention root | Can cache clear remove it? |
-| --- | --- | --- |
-| Imported inputs in a retained revision | Revision manifest | No |
-| Accepted assertions and review provenance | Knowledge revision | No |
-| Evidence cited by retained knowledge | Evidence reference and its transitive dependencies | No |
-| Current completed publication | Current publication reference | No |
-| Explicitly saved investigation/result | User retention reference | No |
-| Open snapshot and prepared image | Active reader/job lease | No |
-| Computation lookup metadata and unreferenced intermediate results | Cache ownership only | Yes |
-
-Successful historical runs are not all retained forever. Their objects remain
-protected while reachable from these roots. Repository pruning is a separate,
-explicitly previewed operation; cache clear cannot remove repository roots.
-An active read lease protects the referenced bytes through publication and
-compaction. Persisted user references and transient process leases are distinct;
-crash recovery cannot discard a user reference as a stale process lease.
+Store retains every revision, publication, knowledge event, run record and
+evidence payload. It has no cache, pruning, compaction or garbage collection,
+so nothing retained is ever reclaimed. An active read lease protects the
+referenced bytes through publication. Persisted records and transient process
+leases are distinct; crash recovery cannot discard a record as a stale lease.
 
 The store owns the full closure of evidence retention: cited records, their
 captured inputs, interpretations, producer identities and comparison context.
@@ -451,9 +391,8 @@ Re-reading an archived result does not require the old analyzer to execute.
 Re-execution additionally requires the recorded tools/providers; their absence
 is an explicit limitation, not permission to substitute current versions.
 
-Disk quota failure identifies protected data and prevents a new write that
-cannot complete. Automatic maintenance may reclaim cache-only unreachable data;
-it does not expire accepted knowledge or delete evidence to make an operation fit.
+Disk quota failure prevents a new write that cannot complete; it never deletes
+retained knowledge or evidence to make an operation fit.
 
 ## Publication and recovery
 
@@ -469,8 +408,7 @@ Publication proceeds in this order:
 The current reference is the commit point. Readers capture it and its revision
 consistently, then hold leases to its objects. They never fill a missing published
 record from a current export path. A corrupted referenced object is a store
-integrity error. Optional cache corruption is a cache miss with a diagnostic and
-recomputation; it cannot replace or reinterpret corrupted retained evidence.
+integrity error; nothing recomputes or reinterprets corrupted retained evidence.
 
 Exports are rebuildable projections. Each file is staged and verified before
 replacement. A multi-file export is delivered as an immutable bundle with a
@@ -499,10 +437,9 @@ and output-delivery outcome are separate facts. Staging output does not imply
 permission to modify the selected project.
 
 ```text
-planned -> queued -> running -> validating -> completed
-              |         |           |
-              +---------+-----------+-> cancelling -> cancelled
-                        +-----------+-> failed
+registered -> running -> validating -> completed
+     |           |           |
+     +-----------+-----------+-> cancelled, timed-out, resource-limited or failed
 interrupted nonterminal run -> abandoned (during recovery)
 ```
 
@@ -554,7 +491,7 @@ bounds, including materialized link inputs and prepared images.
 Application shutdown stops admission, cancels owned jobs, terminates/reaps
 remaining children within the configured shutdown grace, and releases leases.
 Dropping a client handle does not detach unmanaged computation. Closing an owned
-CLI/TUI application closes its supervisor; an embedded client may keep its own
+CLI application closes its supervisor; an embedded client may keep its own
 application alive explicitly. An uncooperative in-process workload must run in
 an owned worker process if it cannot satisfy bounded shutdown.
 
@@ -571,8 +508,8 @@ distinctions and the selected revision; prose errors are not machine protocols.
 
 ## Resource ownership and bounded computation
 
-These are mandatory target contracts. The [Next implementation](../../next/README.md)
-identifies which guarantees are implemented; the existence of a supervisor does
+Every module obeys these contracts. The [Next references](../../next/README.md)
+state the bounds each operation enforces; the existence of a supervisor does
 not establish bounded working memory inside an algorithm.
 
 | Resource | Owner and contract |
@@ -661,8 +598,7 @@ interchangeable. A supported nested format uses iterative jobs and a shared
 expanded-byte budget. Unsupported compression or nested containers remain
 explicit coverage gaps; this design does not imply ZIP/TAR support in Next.
 
-Import, snapshot queries and doctor all owe bounded resource behavior in the
-target system. Read-only operations retain their no-write/no-repair contract.
+Import, snapshot queries and doctor are bounded operations. Read-only operations retain their no-write/no-repair contract.
 One user command owns supervision; no separately invoked limiter is required.
 Uncooperative loops and process crashes still require an internal worker boundary.
 Deadlines cannot guarantee hard real-time teardown of uninterruptible kernel I/O.
@@ -691,9 +627,8 @@ unsupported versions produce explicit incompatibility; they do not select an
 older interpretation automatically.
 
 Public exports carry schema/version and the identities needed to interpret them
-without the generating CLI. Downstream generators consume those contracts or a
-snapshot reader, never private SQLite tables or pack offsets. Implementation
-documents must publish their actual wire schemas before those APIs ship.
+without the generating CLI. Downstream consumers use those contracts or a
+snapshot reader, never private SQLite tables or pack offsets.
 
 ### Local value analysis boundary
 

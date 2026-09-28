@@ -696,6 +696,24 @@ impl MacHtAmpduCompletionObservation {
             block_ack_received,
         }
     }
+    /// Construct a sampled A-MPDU completion in a compiled validation image,
+    /// where a Blobray hardware double supplies the BlockAck result.
+    #[cfg(feature = "validation-probes")]
+    pub const fn new_validation(
+        tx: MacTxCompletionObservation,
+        block_ack_control: u8,
+        block_ack_starting_sequence: u16,
+        block_ack_bitmap: u64,
+        block_ack_received: bool,
+    ) -> Self {
+        Self {
+            tx,
+            block_ack_control,
+            block_ack_starting_sequence,
+            block_ack_bitmap,
+            block_ack_received,
+        }
+    }
 }
 
 /// Hardware edge which must precede reuse of one TX descriptor chain.

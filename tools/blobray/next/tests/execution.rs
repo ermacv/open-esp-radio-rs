@@ -3,6 +3,8 @@ use blobray_application as app;
 use blobray_domain::*;
 use blobray_next_host::linux::LinuxHost;
 use std::{fs, path::PathBuf, process::Command, sync::Arc};
+mod support;
+use support::{executable as elf, executable_with_symbols as elf_with_symbols};
 fn budget() -> ResourceBudget {
     ResourceBudget {
         mode: LimitMode::Watchdog,
@@ -12,32 +14,6 @@ fn budget() -> ResourceBudget {
         working_memory_bytes: Some(32 * 1024 * 1024),
         ..Default::default()
     }
-}
-fn elf(code: &[u32]) -> Vec<u8> {
-    let mut bytes = vec![0; 256];
-    bytes[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
-    for (offset, value) in [(16, 2u16), (18, 243), (40, 52), (42, 32), (44, 1)] {
-        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-    }
-    for (offset, value) in [
-        (20, 1u32),
-        (24, 0x1000),
-        (28, 52),
-        (52, 1),
-        (56, 256),
-        (60, 0x1000),
-        (64, 0x1000),
-        (68, (code.len() * 4) as u32),
-        (72, (code.len() * 4) as u32),
-        (76, 5),
-        (80, 4),
-    ] {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-    }
-    for op in code {
-        bytes.extend_from_slice(&op.to_le_bytes());
-    }
-    bytes
 }
 struct Fixture {
     _dir: tempfile::TempDir,

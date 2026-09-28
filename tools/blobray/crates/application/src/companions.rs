@@ -5,7 +5,6 @@ struct Scan<'a> {
     input: u64,
     executable: bool,
     matches: Vec<Option<SymbolRecord>>,
-    definitions: Vec<Vec<u8>>,
 }
 impl InventorySink for Scan<'_> {
     fn input(&mut self, i: u64, _: &InputRecord, _: &mut dyn RunControl) -> Result<()> {
@@ -22,18 +21,6 @@ impl InventorySink for Scan<'_> {
 impl ElfSink for Scan<'_> {
     fn symbol(&mut self, r: &SymbolRecord, c: &mut dyn RunControl) -> Result<()> {
         c.checkpoint(1)?;
-        if self.request.inputs.contains(&self.input)
-            && r.raw_section != 0
-            && r.binding != 0
-            && r.name
-                .as_ref()
-                .is_some_and(|n| self.definitions.contains(n))
-        {
-            return Err(Error::new(
-                ErrorCode::Conflict,
-                "companion name also defined by a selected link input",
-            ));
-        }
         for (i, selection) in self.request.companions.iter().enumerate() {
             if selection.input == self.input && selection.symbol == r.id {
                 // STT_OBJECT (1) or STT_FUNC (2); the carrier validates the extent.
@@ -62,6 +49,26 @@ impl ElfSink for Scan<'_> {
         Ok(())
     }
 }
+/// Fail when a selected link input's symbol `r` defines a companion name.
+/// The link's own pass over its inputs applies this, so resolving the
+/// companions reads only the companion inputs.
+pub(crate) fn check_link_symbol(names: &[(String, u32)], r: &SymbolRecord) -> Result<()> {
+    if r.raw_section != 0
+        && r.binding != 0
+        && r.name
+            .as_ref()
+            .is_some_and(|n| names.iter().any(|(name, _)| name.as_bytes() == n))
+    {
+        return Err(Error::new(
+            ErrorCode::Conflict,
+            "companion name also defined by a selected link input",
+        ));
+    }
+    Ok(())
+}
+/// Linker definitions of the request's companions, in selection order,
+/// then of its absent names. A selected link input must not define a
+/// companion name; see [`check_link_symbol`].
 pub(crate) fn resolve(
     project: &Project,
     request: &LinkRequest,
@@ -87,7 +94,6 @@ pub(crate) fn resolve(
         input: 0,
         executable: false,
         matches: vec![None; request.companions.len()],
-        definitions: Vec::new(),
     };
     crate::linking::read_inputs(
         project,
@@ -127,18 +133,8 @@ pub(crate) fn resolve(
                 "ROM address overlaps synthetic placement",
             ));
         }
-        scan.definitions.push(name.as_bytes().to_vec());
         definitions.push((name, address));
     }
-    // Only the link inputs can define a companion's name a second time.
-    crate::linking::read_inputs(
-        project,
-        request.revision.as_ref(),
-        request.inputs.iter().copied(),
-        memory,
-        c,
-        &mut scan,
-    )?;
     for (name, address) in absent {
         if definitions.iter().any(|(old, _)| *old == name) {
             return Err(Error::new(

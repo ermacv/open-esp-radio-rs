@@ -933,6 +933,54 @@ fn linking_reads_only_the_selected_inputs_of_its_revision() {
     );
 }
 #[test]
+fn a_companion_name_defined_by_a_selected_link_input_conflicts() {
+    let f = custom_fixture(
+        vec![
+            ("entry.o", dependency_object(b"entry", None)),
+            (
+                "helper.elf",
+                support::executable_with_symbols(&[0x00008067], &[("rom_helper", 0x1000, 4)]),
+            ),
+            (
+                "clash.elf",
+                support::executable_with_symbols(&[0x00008067], &[("entry", 0x1000, 4)]),
+            ),
+        ],
+        0,
+        0,
+    );
+    let revision = app::inventory(&f.project, None).unwrap().revision;
+    let companion = |input: usize, name: &[u8]| EntrySelection {
+        input: input as u64,
+        symbol: revision.inputs[input].inventory.as_ref().unwrap().objects[0]
+            .elf
+            .as_ref()
+            .unwrap()
+            .symbols
+            .iter()
+            .find(|s| s.name.as_deref() == Some(name))
+            .unwrap()
+            .id
+            .clone(),
+    };
+    let plan = |companions: Vec<EntrySelection>| {
+        let mut request = f.request.clone();
+        request.inputs = vec![0];
+        request.companions = companions;
+        f.app.link_plan(&f.project, request, &linker(), budget())
+    };
+    let helper = plan(vec![companion(1, b"rom_helper")]).unwrap();
+    assert!(
+        helper.description().ready(),
+        "{:?}",
+        helper.description().blockers
+    );
+    assert_eq!(
+        plan(vec![companion(2, b"entry")]).err().unwrap().code,
+        ErrorCode::Conflict
+    );
+}
+#[test]
 fn unsupported_abi_and_map_line_injection_are_plan_blockers() {
     for mutation in [0, 1] {
         let mut helper = object(false);

@@ -259,6 +259,7 @@ mod tests {
         let found = Collected {
             project: id.as_str().parse().unwrap(),
             blockers: vec![],
+            definitions: vec![],
             members: vec![Member {
                 input: 7,
                 object,

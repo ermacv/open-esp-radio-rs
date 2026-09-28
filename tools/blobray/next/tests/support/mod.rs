@@ -4,6 +4,7 @@ use object::{
     write::{Object, Relocation, Symbol, SymbolSection},
 };
 
+#[allow(dead_code)]
 pub fn elf() -> Vec<u8> {
     let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
     let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
@@ -64,6 +65,7 @@ pub fn elf() -> Vec<u8> {
     object.write().unwrap()
 }
 
+#[allow(dead_code)]
 pub fn archive(members: &[(&[u8], &[u8])], thin: bool) -> Vec<u8> {
     let mut result = if thin {
         b"!<thin>\n".to_vec()
@@ -137,4 +139,79 @@ pub fn dynamic_symbols(mut bytes: Vec<u8>, only: bool) -> Vec<u8> {
     bytes.extend_from_slice(&headers);
     bytes.extend_from_slice(&dynamic);
     bytes
+}
+/// A static RV32 executable whose one loadable segment at 0x1000 holds `code`.
+#[allow(dead_code)]
+pub fn executable(code: &[u32]) -> Vec<u8> {
+    let mut bytes = vec![0; 256];
+    bytes[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
+    for (offset, value) in [(16, 2u16), (18, 243), (40, 52), (42, 32), (44, 1)] {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    for (offset, value) in [
+        (20, 1u32),
+        (24, 0x1000),
+        (28, 52),
+        (52, 1),
+        (56, 256),
+        (60, 0x1000),
+        (64, 0x1000),
+        (68, (code.len() * 4) as u32),
+        (72, (code.len() * 4) as u32),
+        (76, 5),
+        (80, 4),
+    ] {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    for op in code {
+        bytes.extend_from_slice(&op.to_le_bytes());
+    }
+    bytes
+}
+/// `executable(code)` with `.text`, `.symtab` and `.strtab` naming global functions.
+#[allow(dead_code)]
+pub fn executable_with_symbols(code: &[u32], symbols: &[(&str, u32, u32)]) -> Vec<u8> {
+    let put = |b: &mut Vec<u8>, v: u32| b.extend_from_slice(&v.to_le_bytes());
+    let mut b = executable(code);
+    let text = (256, (code.len() * 4) as u32);
+    let mut strtab = vec![0u8];
+    let mut symtab = vec![0u8; 16];
+    for (name, address, size) in symbols {
+        put(&mut symtab, strtab.len() as u32);
+        strtab.extend_from_slice(name.as_bytes());
+        strtab.push(0);
+        put(&mut symtab, *address);
+        put(&mut symtab, *size);
+        symtab.extend_from_slice(&[0x12, 0]); // STB_GLOBAL | STT_FUNC, default visibility
+        symtab.extend_from_slice(&1u16.to_le_bytes()); // .text
+    }
+    let shstrtab = b"\0.text\0.symtab\0.strtab\0.shstrtab\0";
+    let place = |b: &mut Vec<u8>, bytes: &[u8]| {
+        while !b.len().is_multiple_of(4) {
+            b.push(0);
+        }
+        let offset = b.len() as u32;
+        b.extend_from_slice(bytes);
+        (offset, bytes.len() as u32)
+    };
+    let symtab = place(&mut b, &symtab);
+    let strtab = place(&mut b, &strtab);
+    let shstrtab = place(&mut b, shstrtab);
+    let headers = place(&mut b, &[0; 40]).0;
+    // name, type, flags, address, offset, size, link, info, align, entsize
+    for header in [
+        [1, 1, 6, 0x1000, text.0, text.1, 0, 0, 4, 0],
+        [7, 2, 0, 0, symtab.0, symtab.1, 3, 1, 4, 16],
+        [15, 3, 0, 0, strtab.0, strtab.1, 0, 0, 1, 0],
+        [23, 3, 0, 0, shstrtab.0, shstrtab.1, 0, 0, 1, 0],
+    ] {
+        for v in header {
+            put(&mut b, v);
+        }
+    }
+    b[32..36].copy_from_slice(&headers.to_le_bytes());
+    b[46..48].copy_from_slice(&40u16.to_le_bytes());
+    b[48..50].copy_from_slice(&5u16.to_le_bytes());
+    b[50..52].copy_from_slice(&4u16.to_le_bytes());
+    b
 }

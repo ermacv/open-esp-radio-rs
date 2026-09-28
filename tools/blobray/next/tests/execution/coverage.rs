@@ -248,53 +248,6 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
     );
 }
 
-/// `elf(code)` with `.text`, `.symtab` and `.strtab` naming global functions.
-fn elf_with_symbols(code: &[u32], symbols: &[(&str, u32, u32)]) -> Vec<u8> {
-    let put = |b: &mut Vec<u8>, v: u32| b.extend_from_slice(&v.to_le_bytes());
-    let mut b = elf(code);
-    let text = (256, (code.len() * 4) as u32);
-    let mut strtab = vec![0u8];
-    let mut symtab = vec![0u8; 16];
-    for (name, address, size) in symbols {
-        put(&mut symtab, strtab.len() as u32);
-        strtab.extend_from_slice(name.as_bytes());
-        strtab.push(0);
-        put(&mut symtab, *address);
-        put(&mut symtab, *size);
-        symtab.extend_from_slice(&[0x12, 0]); // STB_GLOBAL | STT_FUNC, default visibility
-        symtab.extend_from_slice(&1u16.to_le_bytes()); // .text
-    }
-    let shstrtab = b"\0.text\0.symtab\0.strtab\0.shstrtab\0";
-    let place = |b: &mut Vec<u8>, bytes: &[u8]| {
-        while !b.len().is_multiple_of(4) {
-            b.push(0);
-        }
-        let offset = b.len() as u32;
-        b.extend_from_slice(bytes);
-        (offset, bytes.len() as u32)
-    };
-    let symtab = place(&mut b, &symtab);
-    let strtab = place(&mut b, &strtab);
-    let shstrtab = place(&mut b, shstrtab);
-    let headers = place(&mut b, &[0; 40]).0;
-    // name, type, flags, address, offset, size, link, info, align, entsize
-    for header in [
-        [1, 1, 6, 0x1000, text.0, text.1, 0, 0, 4, 0],
-        [7, 2, 0, 0, symtab.0, symtab.1, 3, 1, 4, 16],
-        [15, 3, 0, 0, strtab.0, strtab.1, 0, 0, 1, 0],
-        [23, 3, 0, 0, shstrtab.0, shstrtab.1, 0, 0, 1, 0],
-    ] {
-        for v in header {
-            put(&mut b, v);
-        }
-    }
-    b[32..36].copy_from_slice(&headers.to_le_bytes());
-    b[46..48].copy_from_slice(&40u16.to_le_bytes());
-    b[48..50].copy_from_slice(&5u16.to_le_bytes());
-    b[50..52].copy_from_slice(&4u16.to_le_bytes());
-    b
-}
-
 #[test]
 fn a_jump_to_a_defined_function_start_is_a_named_tail_call() {
     // 0x1000 `j 0x1008`; 0x1004 dead `ret`; 0x1008 `ret`.

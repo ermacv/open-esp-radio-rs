@@ -305,6 +305,8 @@ struct Member {
 }
 struct Inventory<'a> {
     request: &'a LinkRequest,
+    /// Companion definitions no selected input may define again.
+    companions: &'a [(String, u32)],
     input: u64,
     selected: bool,
     source: Option<ArtifactId>,
@@ -334,7 +336,10 @@ impl ElfSink for Inventory<'_> {
     fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {
         Ok(())
     }
-    fn symbol(&mut self, _: &SymbolRecord, _: &mut dyn RunControl) -> Result<()> {
+    fn symbol(&mut self, r: &SymbolRecord, _: &mut dyn RunControl) -> Result<()> {
+        if self.selected {
+            crate::companions::check_link_symbol(self.companions, r)?;
+        }
         Ok(())
     }
     fn relocation(&mut self, _: &RelocationRecord, _: &mut dyn RunControl) -> Result<()> {
@@ -422,6 +427,8 @@ pub(crate) fn read_inputs(
 }
 struct Collected {
     members: Vec<Member>,
+    /// Companion then absent-name definitions of the request.
+    definitions: Vec<(String, u32)>,
     roots: Vec<blobray_artifacts::LinkRootFacts>,
     blockers: Vec<LinkBlocker>,
     project: ProjectId,
@@ -439,13 +446,14 @@ fn collect(
     ) -> Result<()>,
 ) -> Result<Collected> {
     validate_request(request)?;
-    crate::companions::resolve(project, request, memory, control)?;
+    let definitions = crate::companions::resolve(project, request, memory, control)?;
     let revision = request
         .revision
         .as_ref()
         .ok_or_else(|| invalid("link admission must freeze revision"))?;
     let mut inventory = Inventory {
         request,
+        companions: &definitions[..request.companions.len()],
         input: 0,
         selected: false,
         source: None,
@@ -553,10 +561,14 @@ fn collect(
         }
     }
     root_facts.sort_by_key(|r| selectors.iter().position(|s| s == &r.selection).unwrap());
+    let Inventory {
+        members, blockers, ..
+    } = inventory;
     Ok(Collected {
-        members: inventory.members,
+        members,
+        definitions,
         roots: root_facts,
-        blockers: inventory.blockers,
+        blockers,
         project: project.id().clone(),
     })
 }
@@ -824,8 +836,7 @@ fn prepare_image_inner(
             ));
         }
     }
-    let definitions =
-        crate::companions::resolve(&project, &request_from(&work.plan), memory, control)?;
+    let definitions = found.definitions.clone();
     let mut outputs = Outputs::new(&workspace)?;
     control.phase(RunPhase::Link)?;
     let invocation = LinkInvocation {

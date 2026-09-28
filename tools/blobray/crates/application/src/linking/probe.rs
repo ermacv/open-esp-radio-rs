@@ -83,6 +83,7 @@ fn check_once(
     )?;
     let found = Collected {
         members,
+        definitions: Vec::new(),
         roots,
         blockers: Vec::new(),
         project: ArtifactId::of_bytes(b"link-probe").as_str().parse()?,

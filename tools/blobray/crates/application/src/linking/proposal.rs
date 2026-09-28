@@ -157,7 +157,7 @@ pub(crate) fn propose_companions(
             ));
         }
     }
-    let definitions = crate::companions::resolve(&project, request, memory, control)?;
+    let definitions = found.definitions.clone();
     let mut outputs = Outputs::new(workspace)?;
     control.phase(RunPhase::Link)?;
     let invocation = LinkInvocation {

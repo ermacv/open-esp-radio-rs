@@ -1,0 +1,10 @@
+schema = 5
+id = "bluetooth-peripheral-missing-key-plaintext"
+description = "Runner-driven HCI Host refuses the central's first key request; the central reads the remote version over the plaintext link before disconnecting, then an encrypted connection with two ACL echoes succeeds"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "key-failure", "air-exclusive"]
+
+[bluetooth]
+kind = "security-failure"
+failure = "missing-key"
+read_version_before_disconnect = true

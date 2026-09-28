@@ -1,0 +1,9 @@
+schema = 5
+id = "bluetooth-peripheral-missing-refresh-key"
+description = "Runner-driven HCI Host encrypts with the test key, then refuses the refresh key; the Controller terminates with PIN or Key Missing, then an encrypted connection with two ACL echoes succeeds"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "key-failure", "key-refresh", "air-exclusive"]
+
+[bluetooth]
+kind = "security-failure"
+failure = "missing-refresh-key"

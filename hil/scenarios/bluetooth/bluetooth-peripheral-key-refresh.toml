@@ -1,0 +1,12 @@
+schema = 5
+id = "bluetooth-peripheral-key-refresh"
+description = "Runner-driven HCI Host: two encrypted LE peripheral connections in which the central replaces the test key with the refresh key, each with two backpressured 251-octet ACL echoes, peer Reset and advertising again"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "key-refresh", "recovery", "air-exclusive"]
+
+[bluetooth]
+kind = "peripheral"
+connections = 2
+hold_millis = 100
+termination = "peer-reset"
+security = "key-refresh"

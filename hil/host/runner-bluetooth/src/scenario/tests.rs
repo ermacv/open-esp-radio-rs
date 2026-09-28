@@ -26,6 +26,14 @@ fn each_workload_selects_its_image() {
             "kind = 'peripheral'\nconnections = 2\nhold_millis = 100\ntermination = 'peer-reset'",
             ImageClass::BluetoothHci,
         ),
+        (
+            "kind = 'peripheral'\nconnections = 2\nhold_millis = 100\ntermination = 'peer-reset'\nsecurity = 'key-refresh'",
+            ImageClass::BluetoothHci,
+        ),
+        (
+            "kind = 'security-failure'\nfailure = 'missing-key'\nread_version_before_disconnect = true",
+            ImageClass::BluetoothHci,
+        ),
     ] {
         let scenario = parse(text);
         scenario.validate().unwrap();
@@ -96,5 +104,14 @@ fn peripheral_scenarios_bound_their_cycles_and_name_the_termination() {
             "kind = 'peripheral'\nconnections = 1\nhold_millis = 0\ntermination = 'peer-sleep'"
         )
         .is_err()
+    );
+}
+
+#[test]
+fn the_active_data_mic_failure_waits_for_its_hook() {
+    assert!(
+        parse("kind = 'security-failure'\nfailure = 'active-data-mic'")
+            .validate()
+            .is_err()
     );
 }

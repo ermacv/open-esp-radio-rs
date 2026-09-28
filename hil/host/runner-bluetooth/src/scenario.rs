@@ -10,7 +10,9 @@ use hil_core::{
     lab::requirements::Requirements,
     scenario::{Plan, bounded},
 };
-use oer_hil_protocol::{BluetoothPeripheralTermination, FeatureCapabilities};
+use oer_hil_protocol::{
+    BluetoothPeripheralTermination, BluetoothSecurityFailure, FeatureCapabilities,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -60,6 +62,15 @@ pub enum BluetoothScenario {
         connections: u8,
         hold_millis: u16,
         termination: BluetoothPeripheralTermination,
+        #[serde(default)]
+        security: workload::peripheral::Security,
+    },
+    /// One peripheral connection whose encryption fails as `failure` asks,
+    /// then an encrypted connection that must succeed.
+    SecurityFailure {
+        failure: BluetoothSecurityFailure,
+        #[serde(default)]
+        read_version_before_disconnect: bool,
     },
 }
 
@@ -98,6 +109,12 @@ impl BluetoothScenario {
                 bounded(*connections, 1, 100, "connections")?;
                 bounded(*hold_millis, 0, 5000, "hold_millis")
             }
+            Self::SecurityFailure { failure, .. } => {
+                if *failure == BluetoothSecurityFailure::ActiveDataMic {
+                    return Err("active-data-mic needs the diagnostic MIC hook".into());
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -110,7 +127,8 @@ impl BluetoothScenario {
             | Self::DtmPeer { .. }
             | Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
-            | Self::Peripheral { .. } => ImageClass::BluetoothHci,
+            | Self::Peripheral { .. }
+            | Self::SecurityFailure { .. } => ImageClass::BluetoothHci,
         }
     }
 
@@ -144,7 +162,8 @@ impl BluetoothScenario {
             Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
             | Self::DtmPeer { .. }
-            | Self::Peripheral { .. } => features.bluetooth_hci,
+            | Self::Peripheral { .. }
+            | Self::SecurityFailure { .. } => features.bluetooth_hci,
             Self::Dtm { .. } => features.bluetooth_dtm,
         }
     }
@@ -159,6 +178,10 @@ impl BluetoothScenario {
             | Self::DirectedAdvertising {} => fixture::att::preflight,
             Self::Dtm { .. } => fixture::preflight,
             Self::Peripheral { .. } => fixture::preflight_connect_reset,
+            Self::SecurityFailure { .. } => |adapter| {
+                fixture::preflight_connect_reset(adapter)?;
+                fixture::preflight_security_failure(adapter)
+            },
             Self::DtmPeer { .. } => return None,
         })
     }
@@ -184,11 +207,24 @@ impl BluetoothScenario {
                 connections,
                 hold_millis,
                 termination,
+                security,
             } => workload::peripheral::run(
-                workload::peripheral::Config {
+                workload::peripheral::Config::Connections {
                     connections: *connections,
                     hold_millis: *hold_millis,
                     termination: *termination,
+                    security: *security,
+                },
+                output,
+                context,
+            ),
+            Self::SecurityFailure {
+                failure,
+                read_version_before_disconnect,
+            } => workload::peripheral::run(
+                workload::peripheral::Config::SecurityFailure {
+                    failure: *failure,
+                    read_version_before_disconnect: *read_version_before_disconnect,
                 },
                 output,
                 context,

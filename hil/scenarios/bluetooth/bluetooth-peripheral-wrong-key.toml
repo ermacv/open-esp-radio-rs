@@ -1,0 +1,9 @@
+schema = 5
+id = "bluetooth-peripheral-wrong-key"
+description = "Runner-driven HCI Host answers the central's first key request with a key the central does not hold; the Controller terminates on the MIC failure, then an encrypted connection with two ACL echoes succeeds"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "key-failure", "air-exclusive"]
+
+[bluetooth]
+kind = "security-failure"
+failure = "wrong-key"

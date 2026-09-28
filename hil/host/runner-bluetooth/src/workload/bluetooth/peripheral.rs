@@ -3,12 +3,18 @@
 //! The image passes raw HCI through; this module is the whole Host. It resets
 //! the Controller, declares one 27-octet Host ACL buffer with
 //! Controller-to-Host flow control, and advertises connectable. The Linux
-//! helper connects as central (`connect-reset`) on its own thread while this
-//! thread pumps the Controller: every received ACL fragment's credit returns
-//! explicitly (the first fragment of each L2CAP frame after a 300 ms hold),
-//! each complete frame is echoed as one ACL packet, and the connection ends
-//! as the scenario's termination asks: the peer resets or loses RF, or the
-//! target Host disconnects or resets its Controller after both echoes.
+//! helper connects as central on its own thread while this thread pumps the
+//! Controller:
+//!
+//! - every received ACL fragment's credit returns explicitly, the first
+//!   fragment of each L2CAP frame after a 300 ms hold, and each complete
+//!   frame is echoed as one ACL packet;
+//! - LE Long Term Key Requests are answered by the connection's key policy:
+//!   the fixed public test keys, or a deliberate missing, wrong or missing
+//!   refresh key;
+//! - the connection ends as its profile asks: the peer resets, loses RF or
+//!   disconnects, the Controller terminates on a key failure, or the target
+//!   Host disconnects or resets its Controller after both echoes.
 //!
 //! ACL timing observed here includes the HIL console link and supports no
 //! throughput or latency claim.
@@ -16,11 +22,18 @@
 use super::hci::{self, Packet};
 use crate::{
     Result,
-    fixture::bluetooth::{self as fixture, model::PeerAddress},
+    fixture::bluetooth::{
+        self as fixture,
+        model::{Adapter, PeerAddress},
+    },
 };
 use hil_core::{context::Context, session::SerialCapture};
-use oer_hil_protocol::{BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BluetoothPeripheralTermination};
-use serde::Serialize;
+use oer_hil_protocol::{
+    BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK,
+    BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV, BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
+    BluetoothPeripheralTermination as Termination, BluetoothSecurityFailure,
+};
+use serde::{Deserialize, Serialize};
 use std::{
     path::Path,
     time::{Duration, Instant},
@@ -36,7 +49,7 @@ const CREDIT_HOLD: Duration = Duration::from_millis(300);
 /// ACL fragments one echoed frame arrives in.
 const FRAGMENTS_PER_FRAME: u32 =
     (BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u32).div_ceil(HOST_ACL_BYTES as u32);
-/// Echoes the helper requires before it ends the connection.
+/// Echoes the connect-reset helper requires before it ends the connection.
 const ECHOES: u32 = 2;
 /// Bound on one connection cycle, above the helper's own 45 s.
 const CYCLE_DEADLINE: Duration = Duration::from_secs(50);
@@ -44,26 +57,132 @@ const CYCLE_DEADLINE: Duration = Duration::from_secs(50);
 const ADVERTISING_INTERVAL: u16 = 160;
 /// The helper's requested connection interval, 120 ms, in 1.25 ms units.
 const UPDATED_INTERVAL: u16 = 96;
+/// A key the central does not hold.
+const WRONG_LTK: [u8; 16] = [0xa5; 16];
 
 const DISCONNECTION_COMPLETE: u8 = 0x05;
+const ENCRYPTION_CHANGE: u8 = 0x08;
 const NUMBER_OF_COMPLETED_PACKETS: u8 = 0x13;
+const ENCRYPTION_KEY_REFRESH_COMPLETE: u8 = 0x30;
 const LE_META: u8 = 0x3e;
 const LE_CONNECTION_COMPLETE: u8 = 0x01;
 const LE_CONNECTION_UPDATE_COMPLETE: u8 = 0x03;
+const LE_LONG_TERM_KEY_REQUEST: u8 = 0x05;
+const LE_LONG_TERM_KEY_REQUEST_REPLY: u16 = 0x201a;
+const LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY: u16 = 0x201b;
+const KEY_MISSING: u8 = 0x06;
+const SUPERVISION_TIMEOUT: u8 = 0x08;
 const REMOTE_USER_TERMINATED: u8 = 0x13;
 const LOCAL_HOST_TERMINATED: u8 = 0x16;
-const SUPERVISION_TIMEOUT: u8 = 0x08;
+const MIC_FAILURE: u8 = 0x3d;
 const PERIPHERAL_ROLE: u8 = 0x01;
 /// First non-automatically-flushable packet, the LE Host's only start flag.
 const HOST_START: u16 = 0b00;
 const CONTROLLER_START: u16 = 0b10;
 const CONTINUATION: u16 = 0b01;
 
+/// Encryption of the connect-reset connections.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Security {
+    #[default]
+    Plaintext,
+    /// The central encrypts with the fixed test key.
+    Encrypted,
+    /// The central then replaces it with the refresh key.
+    KeyRefresh,
+}
+
+/// One scenario: the connections in order.
 #[derive(Clone, Copy, Debug)]
-pub struct Config {
-    pub connections: u8,
-    pub hold_millis: u16,
-    pub termination: BluetoothPeripheralTermination,
+pub enum Config {
+    /// `connections` connect-reset cycles.
+    Connections {
+        connections: u8,
+        hold_millis: u16,
+        termination: Termination,
+        security: Security,
+    },
+    /// One connection whose encryption fails as `failure` asks, then one
+    /// encrypted connect-reset connection that must succeed.
+    SecurityFailure {
+        failure: BluetoothSecurityFailure,
+        read_version_before_disconnect: bool,
+    },
+}
+
+/// What the Host answers to the central's key requests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum Keys {
+    /// No key request may arrive.
+    None,
+    /// The test key, and the refresh key when the central refreshes.
+    Valid,
+    /// The first request is refused.
+    Missing,
+    /// The first request gets a key the central does not hold.
+    Wrong,
+    /// The test key, then the refresh request is refused.
+    MissingRefresh,
+}
+
+/// How one connection must go, from the Host's side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Profile {
+    echoes: u32,
+    update: bool,
+    keys: Keys,
+    refreshes: u32,
+    local: Option<Termination>,
+    reasons: &'static [u8],
+}
+
+impl Profile {
+    fn connect_reset(termination: Termination, security: Security) -> Self {
+        let local = matches!(
+            termination,
+            Termination::TargetDisconnect | Termination::TargetReset
+        )
+        .then_some(termination);
+        Self {
+            echoes: ECHOES,
+            update: true,
+            keys: match security {
+                Security::Plaintext => Keys::None,
+                Security::Encrypted | Security::KeyRefresh => Keys::Valid,
+            },
+            refreshes: u32::from(security == Security::KeyRefresh),
+            local,
+            reasons: match termination {
+                Termination::PeerReset => &[SUPERVISION_TIMEOUT],
+                Termination::PeerRfkill => &[SUPERVISION_TIMEOUT, REMOTE_USER_TERMINATED],
+                Termination::TargetDisconnect => &[LOCAL_HOST_TERMINATED],
+                Termination::TargetReset => &[],
+            },
+        }
+    }
+
+    fn security_failure(failure: BluetoothSecurityFailure) -> Result<Self> {
+        let (keys, reasons): (Keys, &'static [u8]) = match failure {
+            // The link survives the refusal until the central disconnects.
+            BluetoothSecurityFailure::MissingKey => (Keys::Missing, &[REMOTE_USER_TERMINATED]),
+            // The central's encrypted response fails authentication here.
+            BluetoothSecurityFailure::WrongKey => (Keys::Wrong, &[MIC_FAILURE]),
+            BluetoothSecurityFailure::MissingRefreshKey => (Keys::MissingRefresh, &[KEY_MISSING]),
+            BluetoothSecurityFailure::ActiveDataMic => {
+                return Err("active-data-mic needs the diagnostic MIC hook".into());
+            }
+        };
+        Ok(Self {
+            echoes: 0,
+            update: false,
+            keys,
+            refreshes: 0,
+            local: None,
+            reasons,
+        })
+    }
 }
 
 pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
@@ -75,9 +194,7 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
         let mut report = Report {
             schema: 1,
             adapter: adapter.to_string(),
-            connections: config.connections,
-            hold_millis: config.hold_millis,
-            termination: config.termination,
+            scenario: format!("{config:?}"),
             address: None,
             cycles: Vec::new(),
             passed: false,
@@ -94,9 +211,97 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     })
 }
 
+/// One helper invocation as central.
+#[derive(Clone, Copy, Debug)]
+enum Central {
+    ConnectReset {
+        hold_millis: u16,
+        termination: Termination,
+        security: Security,
+    },
+    SecurityFailure {
+        failure: BluetoothSecurityFailure,
+        read_version_before_disconnect: bool,
+    },
+}
+
+impl Central {
+    fn run(self, directory: &Path, adapter: Adapter, peer: PeerAddress) -> Result<()> {
+        match self {
+            Self::ConnectReset {
+                hold_millis,
+                termination,
+                security,
+            } => fixture::connect_profile_in(
+                directory,
+                adapter,
+                peer,
+                hold_millis,
+                termination,
+                security != Security::Plaintext,
+                security == Security::KeyRefresh,
+            )
+            .map(|_| ()),
+            Self::SecurityFailure {
+                failure,
+                read_version_before_disconnect,
+            } => fixture::security_failure_in(
+                directory,
+                adapter,
+                peer,
+                failure,
+                read_version_before_disconnect,
+            )
+            .map(|_| ()),
+        }
+    }
+}
+
+fn plan(config: Config) -> Result<Vec<(Central, Profile)>> {
+    Ok(match config {
+        Config::Connections {
+            connections,
+            hold_millis,
+            termination,
+            security,
+        } => (0..connections)
+            .map(|_| {
+                (
+                    Central::ConnectReset {
+                        hold_millis,
+                        termination,
+                        security,
+                    },
+                    Profile::connect_reset(termination, security),
+                )
+            })
+            .collect(),
+        Config::SecurityFailure {
+            failure,
+            read_version_before_disconnect,
+        } => vec![
+            (
+                Central::SecurityFailure {
+                    failure,
+                    read_version_before_disconnect,
+                },
+                Profile::security_failure(failure)?,
+            ),
+            (
+                Central::ConnectReset {
+                    hold_millis: 100,
+                    termination: Termination::PeerReset,
+                    security: Security::Encrypted,
+                },
+                Profile::connect_reset(Termination::PeerReset, Security::Encrypted),
+            ),
+        ],
+    })
+}
+
 fn exercise(
     capture: &SerialCapture,
-    adapter: fixture::model::Adapter,
+    adapter: Adapter,
     config: Config,
     output: &Path,
     report: &mut Report,
@@ -104,32 +309,25 @@ fn exercise(
     hci::require(capture)?;
     let host = Host::start(capture)?;
     report.address = Some(host.address.to_string());
-    for cycle in 1..=config.connections {
-        let directory = output.join(format!("connection-{cycle:03}"));
+    for (index, (central, profile)) in plan(config)?.into_iter().enumerate() {
+        let directory = output.join(format!("connection-{:03}", index + 1));
         host.advertise()?;
-        let mut observed = Cycle::default();
+        let mut observed = Cycle {
+            keys: profile.keys,
+            ..Cycle::default()
+        };
         let result = std::thread::scope(|scope| {
-            let helper = scope.spawn(|| {
-                fixture::connect_profile_in(
-                    &directory,
-                    adapter,
-                    host.address,
-                    config.hold_millis,
-                    config.termination,
-                    false,
-                    false,
-                )
-            });
-            let served = host.serve(config.termination, &mut observed, || helper.is_finished());
+            let helper = scope.spawn(|| central.run(&directory, adapter, host.address));
+            let served = host.serve(profile, &mut observed, || helper.is_finished());
             let helper = helper
                 .join()
                 .map_err(|_| "Bluetooth helper thread panicked")?;
-            served.and(helper.map(|_| ()))
+            served.and(helper)
         });
         observed.error = result.as_ref().err().map(ToString::to_string);
         report.cycles.push(observed);
-        result.map_err(|error| format!("connection {cycle}: {error}"))?;
-        if config.termination == BluetoothPeripheralTermination::TargetReset {
+        result.map_err(|error| format!("connection {}: {error}", index + 1))?;
+        if profile.local == Some(Termination::TargetReset) {
             host.initialize()?;
         }
     }
@@ -204,11 +402,11 @@ impl<'a> Host<'a> {
         Ok(())
     }
 
-    /// Pump one connection until it ended as `termination` asks and the
-    /// helper has finished.
+    /// Pump one connection until it ended as `profile` asks and the helper
+    /// has finished.
     fn serve(
         &self,
-        termination: BluetoothPeripheralTermination,
+        profile: Profile,
         cycle: &mut Cycle,
         helper_finished: impl Fn() -> bool,
     ) -> Result<()> {
@@ -227,32 +425,16 @@ impl<'a> Host<'a> {
                 cycle.credits_returned += 1;
             }
             if link.ended && helper_finished() {
-                return link.finish(termination, cycle);
+                return link.finish(profile, cycle);
             }
             // A local termination waits until the Controller has sent the
             // second echo, so that the peer receives it first.
-            if link.echoes == ECHOES && !link.controller_busy && !link.terminated_locally {
-                match termination {
-                    BluetoothPeripheralTermination::TargetDisconnect => {
-                        let handle = link.handle.ok_or("echoes without a connection")?;
-                        let [low, high] = handle.to_le_bytes();
-                        let status = hci::command_status(
-                            self.capture,
-                            hci::DISCONNECT,
-                            &[low, high, REMOTE_USER_TERMINATED],
-                        )?;
-                        if status != 0 {
-                            return Err(format!("Disconnect returned status {status:#04x}").into());
-                        }
-                    }
-                    BluetoothPeripheralTermination::TargetReset => {
-                        hci::command(self.capture, hci::RESET, &[])?;
-                        link.ended = true;
-                    }
-                    BluetoothPeripheralTermination::PeerReset
-                    | BluetoothPeripheralTermination::PeerRfkill => {}
-                }
-                link.terminated_locally = true;
+            if let Some(local) = profile.local
+                && link.echoes == profile.echoes
+                && !link.controller_busy
+                && !link.terminated_locally
+            {
+                self.terminate(&mut link, local)?;
             }
             let wait = if link.held_until.is_some() {
                 Duration::from_millis(20)
@@ -266,7 +448,11 @@ impl<'a> Host<'a> {
                 continue;
             };
             match packet {
-                Packet::Event(event) => link.event(&event, cycle)?,
+                Packet::Event(event) => {
+                    if let Some(reply) = link.event(&event, profile, cycle)? {
+                        self.answer(&link, reply)?;
+                    }
+                }
                 Packet::Acl(packet) => {
                     let (handle, frame) = link.acl(&packet, cycle)?;
                     if link.held_until.is_none() {
@@ -274,23 +460,81 @@ impl<'a> Host<'a> {
                         cycle.credits_returned += 1;
                     }
                     if let Some(frame) = frame {
-                        self.echo(&mut link, handle, &frame, cycle)?;
+                        self.echo(&mut link, profile, handle, &frame, cycle)?;
                     }
                 }
             }
         }
     }
 
+    fn terminate(&self, link: &mut Link, local: Termination) -> Result<()> {
+        match local {
+            Termination::TargetDisconnect => {
+                let handle = link.handle.ok_or("echoes without a connection")?;
+                let [low, high] = handle.to_le_bytes();
+                let status = hci::command_status(
+                    self.capture,
+                    hci::DISCONNECT,
+                    &[low, high, REMOTE_USER_TERMINATED],
+                )?;
+                if status != 0 {
+                    return Err(format!("Disconnect returned status {status:#04x}").into());
+                }
+            }
+            Termination::TargetReset => {
+                hci::command(self.capture, hci::RESET, &[])?;
+                link.ended = true;
+            }
+            Termination::PeerReset | Termination::PeerRfkill => {}
+        }
+        link.terminated_locally = true;
+        Ok(())
+    }
+
+    /// Answer one LE Long Term Key Request.
+    fn answer(&self, link: &Link, reply: KeyReply) -> Result<()> {
+        let handle = link.handle.ok_or("key request without a connection")?;
+        let [low, high] = handle.to_le_bytes();
+        let returned = match reply {
+            KeyReply::Key(key) => {
+                let mut parameters = [0; 18];
+                parameters[0..2].copy_from_slice(&[low, high]);
+                parameters[2..].copy_from_slice(&key);
+                hci::command(self.capture, LE_LONG_TERM_KEY_REQUEST_REPLY, &parameters)?
+            }
+            KeyReply::Negative => hci::command(
+                self.capture,
+                LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY,
+                &[low, high],
+            )?,
+        };
+        if returned != [low, high] {
+            return Err(format!("the key reply returned {returned:02x?}").into());
+        }
+        Ok(())
+    }
+
     /// Send one frame back as one ACL packet once the Controller has a
     /// buffer for it.
-    fn echo(&self, link: &mut Link, handle: u16, frame: &[u8], cycle: &mut Cycle) -> Result<()> {
+    fn echo(
+        &self,
+        link: &mut Link,
+        profile: Profile,
+        handle: u16,
+        frame: &[u8],
+        cycle: &mut Cycle,
+    ) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(5);
         while link.controller_busy {
             if Instant::now() > deadline {
                 return Err("the Controller returned no ACL buffer for the echo".into());
             }
             match hci::next_packet(self.capture, Duration::from_millis(200))? {
-                Some(Packet::Event(event)) => link.event(&event, cycle)?,
+                Some(Packet::Event(event)) => {
+                    if let Some(reply) = link.event(&event, profile, cycle)? {
+                        self.answer(link, reply)?;
+                    }
+                }
                 Some(Packet::Acl(_)) => {
                     return Err("ACL data arrived before the previous echo completed".into());
                 }
@@ -309,6 +553,13 @@ impl<'a> Host<'a> {
     }
 }
 
+/// The Host's answer to one key request.
+#[derive(Debug, PartialEq, Eq)]
+enum KeyReply {
+    Key([u8; 16]),
+    Negative,
+}
+
 /// Host state of one connection.
 #[derive(Default)]
 struct Link {
@@ -319,13 +570,21 @@ struct Link {
     /// An echo occupies the Controller's buffer until its completion.
     controller_busy: bool,
     echoes: u32,
+    key_requests: u32,
+    encrypted: bool,
+    refreshes: u32,
     terminated_locally: bool,
     ended: bool,
     reason: Option<u8>,
 }
 
 impl Link {
-    fn event(&mut self, event: &[u8], cycle: &mut Cycle) -> Result<()> {
+    fn event(
+        &mut self,
+        event: &[u8],
+        profile: Profile,
+        cycle: &mut Cycle,
+    ) -> Result<Option<KeyReply>> {
         let parameters = event.get(2..).unwrap_or_default();
         match (event.first().copied(), parameters.first().copied()) {
             (Some(LE_META), Some(LE_CONNECTION_COMPLETE)) => {
@@ -336,8 +595,7 @@ impl Link {
                 if self.handle.is_some() {
                     return Err("a second connection completed on the same cycle".into());
                 }
-                let status = parameters[1];
-                if status != 0 || parameters[4] != PERIPHERAL_ROLE {
+                if parameters[1] != 0 || parameters[4] != PERIPHERAL_ROLE {
                     return Err(format!("the connection failed: {event:02x?}").into());
                 }
                 let handle = u16::from_le_bytes([parameters[2], parameters[3]]);
@@ -351,13 +609,55 @@ impl Link {
                 if parameters.len() < 10 {
                     return Err(format!("short LE Connection Update Complete {event:02x?}").into());
                 }
-                let interval = u16::from_le_bytes([parameters[4], parameters[5]]);
-                if parameters[1] != 0
-                    || Some(u16::from_le_bytes([parameters[2], parameters[3]])) != self.handle
-                {
+                self.require_handle(parameters[2], parameters[3], event)?;
+                if parameters[1] != 0 {
                     return Err(format!("the connection update failed: {event:02x?}").into());
                 }
-                cycle.updated_interval = Some(interval);
+                cycle.updated_interval = Some(u16::from_le_bytes([parameters[4], parameters[5]]));
+            }
+            (Some(LE_META), Some(LE_LONG_TERM_KEY_REQUEST)) => {
+                // Subevent, handle, random number, diversifier.
+                if parameters.len() < 13 {
+                    return Err(format!("short LE Long Term Key Request {event:02x?}").into());
+                }
+                self.require_handle(parameters[1], parameters[2], event)?;
+                let rand: [u8; 8] = parameters[3..11].try_into().expect("eight");
+                let ediv = u16::from_le_bytes([parameters[11], parameters[12]]);
+                self.key_requests += 1;
+                cycle.key_requests += 1;
+                return key_reply(profile.keys, self.encrypted, rand, ediv).map(Some);
+            }
+            (Some(ENCRYPTION_CHANGE), _) => {
+                // Status, handle, enabled.
+                if parameters.len() < 4 {
+                    return Err(format!("short Encryption Change {event:02x?}").into());
+                }
+                self.require_handle(parameters[1], parameters[2], event)?;
+                cycle
+                    .encryption_changes
+                    .push((parameters[0], parameters[3]));
+                // A failed start is reported by termination, never by a
+                // failed Encryption Change.
+                if parameters[0] != 0 || parameters[3] == 0 {
+                    return Err(format!("unexpected Encryption Change {event:02x?}").into());
+                }
+                if self.encrypted {
+                    return Err("encryption started twice".into());
+                }
+                self.encrypted = true;
+            }
+            (Some(ENCRYPTION_KEY_REFRESH_COMPLETE), _) => {
+                // Status, handle.
+                if parameters.len() < 3 {
+                    return Err(
+                        format!("short Encryption Key Refresh Complete {event:02x?}").into(),
+                    );
+                }
+                self.require_handle(parameters[1], parameters[2], event)?;
+                cycle.refreshes.push(parameters[0]);
+                if parameters[0] == 0 {
+                    self.refreshes += 1;
+                }
             }
             (Some(NUMBER_OF_COMPLETED_PACKETS), Some(count)) => {
                 for index in 0..usize::from(count) {
@@ -373,19 +673,25 @@ impl Link {
             }
             (Some(DISCONNECTION_COMPLETE), _) => {
                 // Status, handle, reason.
-                if parameters.len() < 4
-                    || parameters[0] != 0
-                    || Some(u16::from_le_bytes([parameters[1], parameters[2]])) != self.handle
-                {
+                if parameters.len() < 4 || parameters[0] != 0 {
                     return Err(format!("unexpected Disconnection Complete {event:02x?}").into());
                 }
+                self.require_handle(parameters[1], parameters[2], event)?;
                 self.reason = Some(parameters[3]);
                 cycle.reason = Some(parameters[3]);
                 self.ended = true;
             }
             _ => cycle.other_events += 1,
         }
-        Ok(())
+        Ok(None)
+    }
+
+    fn require_handle(&self, low: u8, high: u8, event: &[u8]) -> Result<()> {
+        if Some(u16::from_le_bytes([low, high])) == self.handle {
+            Ok(())
+        } else {
+            Err(format!("event {event:02x?} names another connection").into())
+        }
     }
 
     /// Consume one ACL fragment; returns its handle and the frame it
@@ -436,44 +742,77 @@ impl Link {
         }
     }
 
-    fn finish(&self, termination: BluetoothPeripheralTermination, cycle: &Cycle) -> Result<()> {
-        if self.echoes != ECHOES {
+    fn finish(&self, profile: Profile, cycle: &Cycle) -> Result<()> {
+        if self.echoes != profile.echoes {
             return Err(format!(
-                "{} of {ECHOES} echoes before the connection ended",
-                self.echoes
+                "{} of {} echoes before the connection ended",
+                self.echoes, profile.echoes
             )
             .into());
         }
-        if cycle.updated_interval != Some(UPDATED_INTERVAL) {
+        if profile.update && cycle.updated_interval != Some(UPDATED_INTERVAL) {
             return Err(format!(
                 "the connection update to {UPDATED_INTERVAL} was not observed: {:?}",
                 cycle.updated_interval
             )
             .into());
         }
-        let reasons: &[u8] = match termination {
-            BluetoothPeripheralTermination::PeerReset => &[SUPERVISION_TIMEOUT],
-            BluetoothPeripheralTermination::PeerRfkill => {
-                &[SUPERVISION_TIMEOUT, REMOTE_USER_TERMINATED]
-            }
-            BluetoothPeripheralTermination::TargetDisconnect => &[LOCAL_HOST_TERMINATED],
-            BluetoothPeripheralTermination::TargetReset => &[],
+        let (encrypted, requests) = match profile.keys {
+            Keys::None => (false, 0),
+            Keys::Valid => (true, 1 + profile.refreshes),
+            Keys::Missing | Keys::Wrong => (false, 1),
+            Keys::MissingRefresh => (true, 2),
         };
+        if self.encrypted != encrypted || self.key_requests != requests {
+            return Err(format!(
+                "encryption {} after {} key requests, expected {encrypted} after {requests}",
+                self.encrypted, self.key_requests
+            )
+            .into());
+        }
+        if self.refreshes != profile.refreshes {
+            return Err(format!(
+                "{} key refreshes, expected {}",
+                self.refreshes, profile.refreshes
+            )
+            .into());
+        }
         match self.reason {
-            Some(reason) if reasons.contains(&reason) => Ok(()),
-            None if reasons.is_empty() => Ok(()),
+            Some(reason) if profile.reasons.contains(&reason) => Ok(()),
+            None if profile.reasons.is_empty() => Ok(()),
             reason => Err(format!("the connection ended with reason {reason:?}").into()),
         }
     }
+}
+
+/// The reply `keys` gives to a request for the key identified by `rand` and
+/// `ediv`, once encryption is or is not already on.
+fn key_reply(keys: Keys, encrypted: bool, rand: [u8; 8], ediv: u16) -> Result<KeyReply> {
+    let test = rand == BLUETOOTH_TEST_RAND && ediv == BLUETOOTH_TEST_EDIV;
+    let refresh = rand == BLUETOOTH_REFRESH_RAND && ediv == BLUETOOTH_REFRESH_EDIV;
+    Ok(match (keys, encrypted, test, refresh) {
+        (Keys::Valid | Keys::MissingRefresh, false, true, false) => {
+            KeyReply::Key(BLUETOOTH_TEST_LTK)
+        }
+        (Keys::Valid, true, false, true) => KeyReply::Key(BLUETOOTH_REFRESH_LTK),
+        (Keys::MissingRefresh, true, false, true) | (Keys::Missing, false, true, false) => {
+            KeyReply::Negative
+        }
+        (Keys::Wrong, false, true, false) => KeyReply::Key(WRONG_LTK),
+        _ => {
+            return Err(format!(
+                "unexpected key request (rand {rand:02x?}, ediv {ediv:#06x}) under {keys:?}"
+            )
+            .into());
+        }
+    })
 }
 
 #[derive(Serialize)]
 struct Report {
     schema: u8,
     adapter: String,
-    connections: u8,
-    hold_millis: u16,
-    termination: BluetoothPeripheralTermination,
+    scenario: String,
     address: Option<String>,
     cycles: Vec<Cycle>,
     passed: bool,
@@ -482,8 +821,9 @@ struct Report {
 }
 
 /// What the Host observed on one connection.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 struct Cycle {
+    keys: Keys,
     handle: Option<u16>,
     central: Option<String>,
     interval: Option<u16>,
@@ -492,172 +832,37 @@ struct Cycle {
     credits_held: u32,
     credits_returned: u32,
     echoes: u32,
+    key_requests: u32,
+    /// Status and enabled level of each Encryption Change.
+    encryption_changes: Vec<(u8, u8)>,
+    /// Status of each Encryption Key Refresh Complete.
+    refreshes: Vec<u8>,
     reason: Option<u8>,
     other_events: u32,
     error: Option<String>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use oer_hil_protocol::bluetooth_peripheral_acl_payload;
-
-    const HANDLE: u16 = 0x0001;
-
-    fn connected() -> (Link, Cycle) {
-        let mut link = Link::default();
-        let mut cycle = Cycle::default();
-        let mut complete = vec![
-            LE_META,
-            19,
-            LE_CONNECTION_COMPLETE,
-            0,
-            1,
-            0,
-            PERIPHERAL_ROLE,
-            0,
-        ];
-        complete.extend_from_slice(&[0x11; 6]);
-        complete.extend_from_slice(&[80, 0, 0, 0, 200, 0, 0]);
-        link.event(&complete, &mut cycle).unwrap();
-        (link, cycle)
-    }
-
-    fn fragments(payload: &[u8]) -> Vec<Vec<u8>> {
-        payload
-            .chunks(usize::from(HOST_ACL_BYTES))
-            .enumerate()
-            .map(|(index, chunk)| {
-                let flag = if index == 0 {
-                    CONTROLLER_START
-                } else {
-                    CONTINUATION
-                };
-                let mut packet = (HANDLE | flag << 12).to_le_bytes().to_vec();
-                packet.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
-                packet.extend_from_slice(chunk);
-                packet
-            })
-            .collect()
-    }
-
-    #[test]
-    fn a_frame_reassembles_from_its_exact_fragments_and_holds_the_first_credit() {
-        let (mut link, mut cycle) = connected();
-        let payload = bluetooth_peripheral_acl_payload();
-        let packets = fragments(&payload);
-        assert_eq!(packets.len() as u32, FRAGMENTS_PER_FRAME);
-        let mut completed = None;
-        for (index, packet) in packets.iter().enumerate() {
-            let (handle, frame) = link.acl(packet, &mut cycle).unwrap();
-            assert_eq!(handle, HANDLE);
-            if index == 0 {
-                assert!(link.held_until.is_some());
-            }
-            completed = frame;
+impl Default for Cycle {
+    fn default() -> Self {
+        Self {
+            keys: Keys::None,
+            handle: None,
+            central: None,
+            interval: None,
+            updated_interval: None,
+            fragments: 0,
+            credits_held: 0,
+            credits_returned: 0,
+            echoes: 0,
+            key_requests: 0,
+            encryption_changes: Vec::new(),
+            refreshes: Vec::new(),
+            reason: None,
+            other_events: 0,
+            error: None,
         }
-        assert_eq!(completed.as_deref(), Some(&payload[..]));
-        assert_eq!(cycle.credits_held, 1);
-        assert_eq!(cycle.fragments, FRAGMENTS_PER_FRAME);
-    }
-
-    #[test]
-    fn out_of_order_boundaries_and_foreign_handles_fail() {
-        let (mut link, mut cycle) = connected();
-        let packets = fragments(&bluetooth_peripheral_acl_payload());
-        assert!(link.acl(&packets[1], &mut cycle).is_err());
-        let (mut link, mut cycle) = connected();
-        let mut foreign = packets[0].clone();
-        foreign[0] = 2;
-        assert!(link.acl(&foreign, &mut cycle).is_err());
-    }
-
-    #[test]
-    fn completed_packets_free_the_controller_buffer_only_for_the_connection() {
-        let (mut link, mut cycle) = connected();
-        link.controller_busy = true;
-        link.event(&[NUMBER_OF_COMPLETED_PACKETS, 5, 1, 2, 0, 1, 0], &mut cycle)
-            .unwrap();
-        assert!(link.controller_busy);
-        link.event(&[NUMBER_OF_COMPLETED_PACKETS, 5, 1, 1, 0, 1, 0], &mut cycle)
-            .unwrap();
-        assert!(!link.controller_busy);
-    }
-
-    #[test]
-    fn each_termination_requires_its_own_disconnection_reason() {
-        let (mut link, mut cycle) = connected();
-        link.echoes = ECHOES;
-        cycle.updated_interval = Some(UPDATED_INTERVAL);
-        link.event(
-            &[DISCONNECTION_COMPLETE, 4, 0, 1, 0, SUPERVISION_TIMEOUT],
-            &mut cycle,
-        )
-        .unwrap();
-        assert!(
-            link.finish(BluetoothPeripheralTermination::PeerReset, &cycle)
-                .is_ok()
-        );
-        assert!(
-            link.finish(BluetoothPeripheralTermination::PeerRfkill, &cycle)
-                .is_ok()
-        );
-        assert!(
-            link.finish(BluetoothPeripheralTermination::TargetDisconnect, &cycle)
-                .is_err()
-        );
-        assert!(
-            link.finish(BluetoothPeripheralTermination::TargetReset, &cycle)
-                .is_err()
-        );
-        let (mut link, cycle) = connected();
-        link.echoes = ECHOES;
-        let cycle = Cycle {
-            updated_interval: Some(UPDATED_INTERVAL),
-            ..cycle
-        };
-        assert!(
-            link.finish(BluetoothPeripheralTermination::TargetReset, &cycle)
-                .is_ok()
-        );
-        link.echoes = 1;
-        assert!(
-            link.finish(BluetoothPeripheralTermination::TargetReset, &cycle)
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn a_failed_connection_or_update_is_an_error() {
-        let mut link = Link::default();
-        let mut cycle = Cycle::default();
-        let mut failed = vec![
-            LE_META,
-            19,
-            LE_CONNECTION_COMPLETE,
-            0x3e,
-            1,
-            0,
-            PERIPHERAL_ROLE,
-            0,
-        ];
-        failed.extend_from_slice(&[0; 13]);
-        assert!(link.event(&failed, &mut cycle).is_err());
-        let (mut link, mut cycle) = connected();
-        let update = [
-            LE_META,
-            10,
-            LE_CONNECTION_UPDATE_COMPLETE,
-            0x3b,
-            1,
-            0,
-            96,
-            0,
-            0,
-            0,
-            200,
-            0,
-        ];
-        assert!(link.event(&update, &mut cycle).is_err());
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -108,15 +108,8 @@
         "shutdown": "bond-load-failure",
         "irq_sampling": "every-snapshot"
       },
-      "acl-backpressure": { "active_maintenance": false },
-      "encrypted-acl": { "exercise": "none" },
       "security-failure": { "read_version_before_disconnect": false },
-      "peripheral": {
-        "termination": "peer-reset",
-        "retire_after": false,
-        "restart_between_connections": false,
-        "phy_maintenance": { "kind": "none" }
-      }
+      "peripheral": { "security": "plaintext" }
     }
   },
   "system": {

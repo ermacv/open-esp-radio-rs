@@ -379,6 +379,7 @@ per bundle whether it applies to that checkout's sources.
 ```console
 cargo hil runs list --scenario station-reconnect --outcome failed --since 7d
 cargo hil runs why <run-id>
+cargo hil runs wait <run-id>          # or --latest: this checkout's newest run
 cargo hil runs compare <run-a> <run-b> --measurement mbps
 cargo hil runs history <scenario> --measurement mbps
 cargo hil runs pin <run-id> --reason "A/B baseline"
@@ -393,7 +394,12 @@ repetition, the recorded failure, the measurements that missed their
 criteria (a criterion miss, unlike a fault), cleanup failures, the artifact
 directory and the end of `uart.log`. `compare` and `history` use per-scenario
 means of numeric measurements over repetitions. These views never decide
-qualification.
+qualification. `wait` follows a run's `events.jsonl`, printing each step,
+until the run ends or its runner is gone, and exits with its outcome: 0
+passed, 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or on a
+quarantined board; an agent that started a run in the background waits on it
+instead of polling its log. `why`, `wait`, `compare` and `pin` read only the
+runs they name.
 
 When a repetition fails, the runner attaches to the target without resetting
 it and asks for its boot evidence, waiting up to 20 s for the target's hang

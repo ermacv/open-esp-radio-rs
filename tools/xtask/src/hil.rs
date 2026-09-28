@@ -204,6 +204,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil devices release BOARD
   cargo hil runs list [--scenario S] [--outcome O] [--commit C] [--image I] [--since 3d]
   cargo hil runs why RUN              why a run did not pass: failure, missed criteria, log tail
+  cargo hil runs wait RUN|--latest    follow a run to its end; exit 0 passed, 1 failed, 2 interrupted
   cargo hil runs compare A B [--measurement TEXT]   measurement means side by side
   cargo hil runs history SCENARIO [--measurement TEXT]
   cargo hil runs pin RUN --reason TEXT | unpin RUN
@@ -873,6 +874,16 @@ fn runs(
         Unpin {
             run: String,
         },
+        /// Follow a run until it ends and exit with its outcome: 0 passed,
+        /// 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or
+        /// on a quarantined board.
+        #[command(group(clap::ArgGroup::new("which").required(true).args(["run", "latest"])))]
+        Wait {
+            run: Option<String>,
+            /// The newest run of this checkout.
+            #[arg(long)]
+            latest: bool,
+        },
         /// List, or with --apply delete, runs no rule keeps.
         Prune {
             #[arg(long, default_value_t = PRUNE_DAYS)]
@@ -893,16 +904,33 @@ fn runs(
         .parent()
         .ok_or("the run store has no parent")?
         .to_owned();
-    let all = hil_runs::all(&directory)?;
+    let parsed = RunsCli::try_parse_from(args)?;
+    // Waiting reads one run, not the whole store.
+    if let RunsCli::Wait { run, .. } = &parsed {
+        let checkout = ctx
+            .root
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        let run = match run {
+            Some(run) => hil_runs::load(&directory.join(run))
+                .ok_or_else(|| format!("no run {run} in {}", directory.display()))?,
+            None => hil_runs::newest_of(&directory, checkout.as_deref())
+                .ok_or("this checkout has no run")?,
+        };
+        return Ok(std::process::ExitCode::from(hil_runs::wait(
+            &run.directory,
+        )?));
+    }
+    // Reading every run takes long; commands about one run read only it.
+    let all = || hil_runs::all(&directory);
     let find = |id: &str| {
-        all.iter()
-            .find(|run| run.id == id)
+        hil_runs::load(&directory.join(id))
             .ok_or_else(|| format!("no run {id} in {}", directory.display()))
     };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as u64;
-    match RunsCli::try_parse_from(args)? {
+    match parsed {
         RunsCli::List {
             scenario,
             outcome,
@@ -920,6 +948,7 @@ fn runs(
                 checkout,
                 since_millis: since.map(|since| now.saturating_sub(since.as_millis() as u64)),
             };
+            let all = all()?;
             let matching = all
                 .iter()
                 .filter(|run| filter.matches(run))
@@ -928,16 +957,18 @@ fn runs(
                 println!("{}", hil_runs::list_line(run));
             }
         }
-        RunsCli::Why { run, tail } => print!("{}", hil_runs::why(find(&run)?, tail)),
+        RunsCli::Why { run, tail } => print!("{}", hil_runs::why(&find(&run)?, tail)),
+        RunsCli::Wait { .. } => unreachable!("handled before the store is read"),
         RunsCli::Compare { a, b, measurement } => print!(
             "{}",
-            hil_runs::compare(find(&a)?, find(&b)?, measurement.as_deref())
+            hil_runs::compare(&find(&a)?, &find(&b)?, measurement.as_deref())
         ),
         RunsCli::History {
             scenario,
             measurement,
             limit,
         } => {
+            let all = all()?;
             let containing = all
                 .iter()
                 .filter(|run| run.scenarios.iter().any(|s| s.id == scenario))
@@ -965,6 +996,7 @@ fn runs(
             keep_failed,
             apply,
         } => {
+            let all = all()?;
             let pinned = hil_runs::pins(&store).into_keys().collect();
             let keep = hil_runs::retained(
                 &all,

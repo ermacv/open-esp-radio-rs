@@ -289,6 +289,100 @@ fn collect_strings(value: &Value, key: &str) -> Vec<String> {
 }
 
 /// Every run below `runs`, oldest first.
+/// The newest run of `checkout` in `runs`, reading run directories newest
+/// first until one matches.
+pub fn newest_of(runs: &Path, checkout: Option<&str>) -> Option<Run> {
+    let mut names = fs::read_dir(runs)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(|character: char| character.is_ascii_digit()))
+        .collect::<Vec<_>>();
+    names.sort_unstable_by(|a, b| b.cmp(a));
+    names
+        .into_iter()
+        .filter_map(|name| load(&runs.join(name)))
+        .find(|run| run.checkout.as_deref() == checkout)
+}
+
+/// Follow the run in `directory`, printing each step its `events.jsonl`
+/// records, until it ends; the exit status for its outcome: 0 passed, 1
+/// failed, broken, blocked or skipped, 2 interrupted, abandoned or on a
+/// quarantined board.
+pub fn wait(directory: &Path) -> Result<u8> {
+    use oer_hil_schema::run::{RunEvent, RunEventKind};
+    use std::io::{BufRead as _, Seek as _};
+    let path = directory.join("events.jsonl");
+    let mut offset = 0;
+    let mut pending = String::new();
+    loop {
+        if let Ok(mut file) = fs::File::open(&path) {
+            file.seek(std::io::SeekFrom::Start(offset))?;
+            let mut reader = std::io::BufReader::new(file);
+            let mut line = String::new();
+            while reader.read_line(&mut line)? > 0 {
+                offset += line.len() as u64;
+                pending.push_str(&line);
+                line.clear();
+                // A line is complete once its newline arrived.
+                if !pending.ends_with('\n') {
+                    continue;
+                }
+                let event: RunEvent = serde_json::from_str(pending.trim_end())
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                pending.clear();
+                println!(
+                    "{} {}{}{}",
+                    event.timestamp_unix_millis / 1000,
+                    event.kind.id(),
+                    event
+                        .scenario
+                        .as_deref()
+                        .map(|scenario| format!(" {scenario}"))
+                        .unwrap_or_default(),
+                    event
+                        .outcome
+                        .map(|outcome| format!(" {}", outcome.id()))
+                        .unwrap_or_default()
+                );
+                if matches!(
+                    event.kind,
+                    RunEventKind::RunFinished | RunEventKind::RunInterrupted
+                ) {
+                    return Ok(exit_status(load(directory).and_then(|run| run.outcome)));
+                }
+            }
+        }
+        match load(directory) {
+            // A runner that died leaves its run running forever.
+            Some(run) if run.state == State::Abandoned => {
+                println!("abandoned: the run's runner is gone");
+                return Ok(2);
+            }
+            // A sealed run ends waiting even when its events stop short.
+            Some(run) if run.state.is_sealed() => {
+                println!(
+                    "{}: {}",
+                    run.state,
+                    run.outcome.map_or("no outcome", Outcome::id)
+                );
+                return Ok(exit_status(run.outcome));
+            }
+            _ => {}
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+
+/// The exit status [`wait`] reports for a run's `outcome`.
+fn exit_status(outcome: Option<Outcome>) -> u8 {
+    match outcome {
+        Some(Outcome::Passed) => 0,
+        Some(Outcome::Failed | Outcome::Broken | Outcome::Blocked | Outcome::Skipped) => 1,
+        Some(Outcome::Interrupted | Outcome::BoardQuarantined) | None => 2,
+    }
+}
+
 pub fn all(runs: &Path) -> Result<Vec<Run>> {
     let mut found = Vec::new();
     let Ok(entries) = fs::read_dir(runs) else {
@@ -827,6 +921,44 @@ pub fn cited_by_shards(root: &Path) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn waiting_ends_at_the_run_end_with_its_outcome() {
+        let run = tempfile::tempdir().unwrap();
+        let event = |kind: &str, outcome: Option<&str>| {
+            serde_json::json!({"timestamp_unix_millis": 1, "kind": kind, "scenario": null,
+                               "image": null, "outcome": outcome})
+            .to_string()
+        };
+        fs::write(
+            run.path().join("events.jsonl"),
+            format!(
+                "{}\n{}\n",
+                event("run-started", None),
+                event("run-finished", Some("failed"))
+            ),
+        )
+        .unwrap();
+        // Without a readable suite the outcome is unknown: not a pass.
+        assert_eq!(wait(run.path()).unwrap(), 2);
+        // A sealed run whose events stop short still ends the wait.
+        let sealed = tempfile::tempdir().unwrap();
+        fs::write(
+            sealed.path().join("events.jsonl"),
+            format!("{}\n", event("run-started", None)),
+        )
+        .unwrap();
+        fs::write(
+            sealed.path().join("manifest.json"),
+            serde_json::json!({"state": "interrupted", "run_id": "1-a", "started_unix_millis": 1})
+                .to_string(),
+        )
+        .unwrap();
+        assert_eq!(wait(sealed.path()).unwrap(), 2);
+        assert_eq!(exit_status(Some(Outcome::Passed)), 0);
+        assert_eq!(exit_status(Some(Outcome::Broken)), 1);
+        assert_eq!(exit_status(Some(Outcome::BoardQuarantined)), 2);
+    }
 
     #[test]
     fn observer_builds_no_run_names_are_collected_after_a_grace() {

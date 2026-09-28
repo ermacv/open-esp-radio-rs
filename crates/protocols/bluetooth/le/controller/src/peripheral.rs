@@ -28,7 +28,8 @@
 //! The connection ends when the central's `LL_TERMINATE_IND` arrives, when the
 //! central acknowledged a local `LL_TERMINATE_IND`, when the supervision
 //! timeout passes without a received packet, when six events pass without
-//! establishment, or on Reset. The event in progress is cancelled, the
+//! establishment, at once with `0x3D` and without a terminate when a received
+//! packet fails its MIC or the encryption procedure, or on Reset. The event in progress is cancelled, the
 //! backend's connection is closed and Disconnection Complete follows, except
 //! after Reset.
 
@@ -60,7 +61,7 @@ use oer_bluetooth_ll::{
     data_length::{LE_DATA_LENGTH_MAXIMUM_OCTETS, LeDataLength, LeDataLengths},
     security::{
         LE_ACL_MIC_BYTES, LeLongTermKey, LePeripheralEncryptionProcedure,
-        LePeripheralEncryptionRandom,
+        LePeripheralEncryptionRandom, LePeripheralEncryptionTermination,
     },
 };
 use oer_bluetooth_radio::{
@@ -90,6 +91,8 @@ const PRIORITY: u8 = 8;
 const PROCEDURE_TIMEOUT: RadioDuration = RadioDuration::from_micros(40_000_000);
 /// Events tried per plan before the connection waits for the next call.
 const PLAN_ATTEMPTS: usize = 64;
+/// Connection Terminated due to MIC Failure.
+const MIC_FAILURE: u8 = 0x3d;
 
 /// What the connection reports to the Host.
 #[derive(Clone, Copy, Debug)]
@@ -960,8 +963,17 @@ impl Connection {
         if self.security.take_encryption_refreshed() {
             events.push(PeripheralEvent::KeyRefreshed(Status::SUCCESS));
         }
-        if let Some(reason) = self.security.termination_reason() {
-            self.control.request_local_termination(reason);
+        match self.security.termination() {
+            Some(LePeripheralEncryptionTermination::Terminate(reason)) => {
+                self.control.request_local_termination(reason);
+            }
+            Some(LePeripheralEncryptionTermination::Exit) if self.closing.is_none() => {
+                self.closing = Some(Closing {
+                    reason: Some(Status::new(MIC_FAILURE)),
+                    cancel_sent: false,
+                });
+            }
+            Some(LePeripheralEncryptionTermination::Exit) | None => {}
         }
         if let Some(result) = self.control.take_remote_features_result() {
             events.push(features_event(result));

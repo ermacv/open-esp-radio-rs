@@ -26,7 +26,7 @@ pub(crate) fn decode<'a>(
     random: impl FnMut() -> Option<LePeripheralEncryptionRandom>,
 ) -> Option<&'a [u8]> {
     // A failed procedure stays failed for the rest of the event.
-    if encryption.termination_reason().is_some() {
+    if encryption.termination().is_some() {
         return None;
     }
     match decode_inner(encryption, pdu, decoded, random) {

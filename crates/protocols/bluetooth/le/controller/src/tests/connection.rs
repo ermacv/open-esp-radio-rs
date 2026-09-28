@@ -339,6 +339,45 @@ fn encryption_start_asks_the_host_for_its_key() {
 }
 
 #[test]
+fn a_mic_failure_exits_at_once_without_a_terminate() {
+    let (mut harness, first) = Harness::connected();
+    let mut request = std::vec![0x03, 23, 0x03];
+    request.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+    request.extend_from_slice(&0x1234_u16.to_le_bytes());
+    request.extend_from_slice(&[9; 8]);
+    request.extend_from_slice(&[7; 4]);
+    harness.receive(first, &request);
+    harness.end_at(first, Some(INDICATION_AT + 2_000));
+    assert!(matches!(
+        harness.step(),
+        Some(Request::Transmit(DataPduKind::Control, _))
+    ));
+    let Some(Request::ConnectionEvent(second)) = harness.step() else {
+        panic!("the second event");
+    };
+    harness.acknowledge();
+    harness.drain();
+    harness.end_at(second.id, Some(INDICATION_AT + 2_000 + INTERVAL));
+    let mut reply = std::vec![0, 0];
+    reply.extend_from_slice(&[0x42; 16]);
+    assert_eq!(harness.command(LTK_REPLY, &reply), Some(SUCCESS));
+    assert_eq!(
+        harness.step(),
+        Some(Request::Transmit(DataPduKind::Control, std::vec![0x05]))
+    );
+    let Some(Request::ConnectionEvent(third)) = harness.step() else {
+        panic!("the third event");
+    };
+    harness.acknowledge();
+    // An encrypted LL_START_ENC_RSP whose MIC does not authenticate.
+    harness.receive(third.id, &[0x03, 5, 0x9f, 0xcd, 0xa7, 0xf4, 0x49]);
+    harness.end_at(third.id, Some(INDICATION_AT + 2_000 + 2 * INTERVAL));
+    // No LL_TERMINATE_IND: the connection closes at once.
+    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x3d]]);
+}
+
+#[test]
 fn a_connection_update_moves_the_anchor_at_its_instant() {
     let (mut harness, first) = Harness::connected();
     // LL_CONNECTION_UPDATE_IND: WinSize 1, WinOffset 2, Interval 40 (50 ms),

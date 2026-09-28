@@ -182,6 +182,20 @@ enum LePeripheralEncryptionState {
     Failed,
 }
 
+/// How a terminal encryption-procedure failure ends the connection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LePeripheralEncryptionTermination {
+    /// Send `LL_TERMINATE_IND` with this reason: PIN or Key Missing when the
+    /// Host rejects the key of a restart.
+    Terminate(u8),
+    /// Leave the Connection state at once without sending anything, and
+    /// report Connection Terminated due to MIC Failure (`0x3D`). A MIC
+    /// failure or an unexpected PDU during the procedure requires this (Core
+    /// Vol 6 Part B, encryption procedures); the peer then loses the
+    /// connection at its supervision timeout.
+    Exit,
+}
+
 /// Peripheral-side encryption-start handshake with retained response ownership.
 ///
 /// Radio code reports when each unencrypted response enters its reliable TX
@@ -589,11 +603,13 @@ impl LePeripheralEncryptionProcedure {
         matches!(self.state, LePeripheralEncryptionState::Active(_))
     }
 
-    /// Required ACL termination after a terminal procedure failure.
-    pub const fn termination_reason(&self) -> Option<u8> {
+    /// How a terminal procedure failure ends the connection.
+    pub const fn termination(&self) -> Option<LePeripheralEncryptionTermination> {
         match self.state {
-            LePeripheralEncryptionState::TerminationRequired => Some(0x06),
-            LePeripheralEncryptionState::Failed => Some(0x3d),
+            LePeripheralEncryptionState::TerminationRequired => {
+                Some(LePeripheralEncryptionTermination::Terminate(0x06))
+            }
+            LePeripheralEncryptionState::Failed => Some(LePeripheralEncryptionTermination::Exit),
             _ => None,
         }
     }
@@ -1026,7 +1042,7 @@ mod tests {
             );
         }
         assert!(procedure.is_active());
-        assert_eq!(procedure.termination_reason(), None);
+        assert_eq!(procedure.termination(), None);
         let cipher = procedure.active_encryption().unwrap();
         assert_eq!(cipher.next_central_transmit_counter(), Some(1));
         assert_eq!(cipher.next_peripheral_transmit_counter(), Some(1));
@@ -1248,7 +1264,10 @@ mod tests {
             procedure.receive_encrypted_start_response(0x02, &mut packet),
             Err(LePeripheralEncryptionProcedureError::UnexpectedPhysicalChannelPdu)
         );
-        assert_eq!(procedure.termination_reason(), Some(0x3d));
+        assert_eq!(
+            procedure.termination(),
+            Some(LePeripheralEncryptionTermination::Exit)
+        );
         assert!(!procedure.take_encryption_enabled());
     }
 
@@ -1281,7 +1300,7 @@ mod tests {
             Err(LePeripheralEncryptionProcedureError::MalformedEncryptionRequest)
         );
         assert!(procedure.is_idle());
-        assert_eq!(procedure.termination_reason(), None);
+        assert_eq!(procedure.termination(), None);
         procedure
             .begin(&encryption_request(), peripheral_random())
             .unwrap();
@@ -1306,7 +1325,10 @@ mod tests {
         assert_eq!(bad_mic, [0; 5]);
         assert!(!procedure.is_active());
         assert_eq!(procedure.pending_response(), None);
-        assert_eq!(procedure.termination_reason(), Some(0x3d));
+        assert_eq!(
+            procedure.termination(),
+            Some(LePeripheralEncryptionTermination::Exit)
+        );
     }
 
     #[test]
@@ -1416,7 +1438,10 @@ mod tests {
         procedure.response_enqueued().unwrap();
         procedure.observe_transmission_completion(true);
         procedure.reject_long_term_key().unwrap();
-        assert_eq!(procedure.termination_reason(), Some(0x06));
+        assert_eq!(
+            procedure.termination(),
+            Some(LePeripheralEncryptionTermination::Terminate(0x06))
+        );
         assert_eq!(procedure.pending_response(), None);
         assert!(procedure.blocks_unrelated_transmission());
         assert!(procedure.permits_control_pdu(&[0x02, 0x06]));
@@ -1430,7 +1455,10 @@ mod tests {
             assert!(!procedure.permits_control_pdu(payload));
         }
         procedure.observe_transmission_completion(true);
-        assert_eq!(procedure.termination_reason(), Some(0x06));
+        assert_eq!(
+            procedure.termination(),
+            Some(LePeripheralEncryptionTermination::Terminate(0x06))
+        );
         assert!(!procedure.is_idle());
         assert!(procedure.active_encryption().is_none());
         assert!(!procedure.take_encryption_enabled());

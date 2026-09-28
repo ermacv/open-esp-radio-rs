@@ -829,10 +829,16 @@ cargo hil fixture install --provider linux-net
 cargo hil fixture install --provider linux-bluetooth
 ```
 
-Installation queues on the stand like a run, claiming only
-`fixture-software:<provider>` exclusively: it waits for the runs using that
-provider and later runs of the provider wait for it. Runs claim it shared and
-take the software lease only once granted, so a queued run never blocks an
+Installation is stand maintenance: it claims only
+`fixture-software:<provider>` exclusively and goes ahead of every waiting
+request, whatever the balances. Every lease holding a conflicting claim,
+such as a run of that provider, is preempted at once with the reason
+`fixture maintenance: <provider> install by <owner>`: `SIGTERM` with the
+ordinary cleanup, `SIGKILL` after the grace, no further charge, a history
+record and a notice to the user. Waiting requests it overtakes say so in
+their wait line, and a preempted run ends interrupted, not failed; rerun
+it. Later runs of the provider wait for the installation. Runs take the
+software lease only once granted, so a queued run never blocks an
 installation. Preparation happens before queueing; `sudo` prompts only once
 the claim is granted.
 

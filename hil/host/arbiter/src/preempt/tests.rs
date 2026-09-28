@@ -31,6 +31,7 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity) -> Ticket {
         process,
         enqueued_unix: crate::unix_now(),
         claims: vec![Claim::board("AA")],
+        priority: Default::default(),
         unknown: Default::default(),
     }
 }

@@ -43,6 +43,7 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity, claims: Vec<Claim>) ->
         process,
         enqueued_unix: crate::unix_now(),
         claims: normalize(&claims),
+        priority: Default::default(),
         unknown: Default::default(),
     }
 }

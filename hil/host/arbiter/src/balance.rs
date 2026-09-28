@@ -111,9 +111,16 @@ pub(crate) fn of(balances: &BTreeMap<String, Balance>, owner: &str) -> i64 {
     balances.get(owner).map_or(0, |balance| balance.balance_ms)
 }
 
-/// Whether ticket `a` is served before ticket `b`: the higher balance, then
-/// the earlier arrival.
+/// Whether ticket `a` is served before ticket `b`: maintenance before
+/// ordinary requests, then the higher balance, then the earlier arrival.
 pub(crate) fn before(state: &State, a: &crate::state::Ticket, b: &crate::state::Ticket) -> bool {
+    use crate::state::Priority;
+    match (a.priority, b.priority) {
+        (Priority::Maintenance, Priority::Ordinary) => return true,
+        (Priority::Ordinary, Priority::Maintenance) => return false,
+        (Priority::Maintenance, Priority::Maintenance) => return a.id < b.id,
+        (Priority::Ordinary, Priority::Ordinary) => {}
+    }
     let (balance_a, balance_b) = (of(&state.balances, &a.owner), of(&state.balances, &b.owner));
     balance_a > balance_b || (balance_a == balance_b && a.id < b.id)
 }
@@ -137,6 +144,7 @@ mod tests {
             process: ProcessIdentity::current().unwrap(),
             enqueued_unix: 0,
             claims: vec![Claim::board("AA")],
+            priority: Default::default(),
             unknown: Default::default(),
         }
     }

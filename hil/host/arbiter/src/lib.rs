@@ -46,7 +46,7 @@ pub use history::{GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance};
 pub use maintenance::{Confirmation, Maintenance, QuarantineTrigger, ServiceKind};
 pub use owners::{NoOwner, NotAnOwner, Owner};
 pub use process::process_started_unix_millis;
-pub use state::{AIR, Claim, Mode, STAND};
+pub use state::{AIR, Claim, Mode, Priority, STAND};
 pub use status::{HolderStatus, QueuedStatus, Status};
 pub use store::{Arbiter, DIRECTORY_ENV};
 pub use unknown::Unknown;

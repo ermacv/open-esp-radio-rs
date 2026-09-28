@@ -33,7 +33,7 @@ pub const NO_BUDGETS: &str =
     "the stand charges the time a lease holds; there is no budget or short lease to request";
 
 /// Time a terminated holder has to clean up before it is killed.
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(300);
+pub(crate) const SHUTDOWN_GRACE: Duration = Duration::from_secs(300);
 /// How often a holder checks the hard limit and waiters that outrank it.
 const SUPERVISION: Duration = Duration::from_secs(1);
 const POLL: Duration = Duration::from_millis(500);
@@ -162,11 +162,37 @@ impl Arbiter {
         self.acquire_within(request, enclosing)
     }
 
+    /// Acquire a lease for stand maintenance, such as a fixture software
+    /// installation: it is served before every ordinary request, and every
+    /// holder whose claims conflict with it is preempted for `reason`, with
+    /// the ordinary cancellation, cleanup and notification.
+    pub fn acquire_maintenance(&self, request: &Request, reason: &str) -> crate::Result<Grant> {
+        let enclosing = std::env::var(LEASE_ENV)
+            .ok()
+            .filter(|token| !token.is_empty());
+        self.acquire_as(request, enclosing, Some(reason))
+    }
+
     pub(crate) fn acquire_within(
         &self,
         request: &Request,
         enclosing: Option<String>,
     ) -> crate::Result<Grant> {
+        self.acquire_as(request, enclosing, None)
+    }
+
+    /// Queue `request` and wait for its grant; with a maintenance `reason`
+    /// it goes first and preempts the holders it conflicts with.
+    fn acquire_as(
+        &self,
+        request: &Request,
+        enclosing: Option<String>,
+        maintenance: Option<&str>,
+    ) -> crate::Result<Grant> {
+        let priority = match maintenance {
+            Some(_) => crate::state::Priority::Maintenance,
+            None => crate::state::Priority::Ordinary,
+        };
         // Every lease is charged to one agent under its one name.
         crate::Owner::parse(&request.owner)?;
         let me = ProcessIdentity::current()?;
@@ -191,6 +217,7 @@ impl Arbiter {
                 process: me,
                 enqueued_unix: crate::unix_now(),
                 claims: claims.clone(),
+                priority,
                 unknown: Default::default(),
             });
             Ok(id)
@@ -203,7 +230,11 @@ impl Arbiter {
         let token = token()?;
         let started = Instant::now();
         let mut reported: Option<(String, Instant)> = None;
+        let mut preempting = std::collections::BTreeSet::new();
         let (waited, balance) = loop {
+            if let Some(reason) = maintenance {
+                self.preempt_conflicting(id, &request.owner, reason, &mut preempting)?;
+            }
             match self.poll(id, &token, started)? {
                 Poll::Granted { waited, balance } => break (waited, balance),
                 Poll::Waiting { key, message } => {
@@ -254,6 +285,39 @@ impl Arbiter {
                 watchdog: None,
             }),
         })
+    }
+
+    /// Preempt, each on its own thread, the holders that conflict with
+    /// waiting ticket `id` and are not in `started` yet.
+    fn preempt_conflicting(
+        &self,
+        id: u64,
+        by: &str,
+        reason: &str,
+        started: &mut std::collections::BTreeSet<u64>,
+    ) -> crate::Result<()> {
+        let holders = self.transaction(|state| {
+            let Some(ticket) = state.queue.iter().find(|ticket| ticket.id == id) else {
+                return Ok(Vec::new());
+            };
+            Ok(state
+                .holders
+                .iter()
+                .filter(|holder| {
+                    holder.preempted.is_none() && conflict(&holder.ticket.claims, &ticket.claims)
+                })
+                .map(|holder| holder.ticket.id)
+                .collect::<Vec<_>>())
+        })?;
+        for holder in holders {
+            if started.insert(holder) {
+                let (arbiter, by, reason) = (self.clone(), by.to_owned(), reason.to_owned());
+                std::thread::spawn(move || {
+                    let _ = arbiter.preempt(holder, &by, &reason, SHUTDOWN_GRACE);
+                });
+            }
+        }
+        Ok(())
     }
 
     fn join_enclosing(
@@ -326,7 +390,7 @@ impl Arbiter {
                     balance,
                 });
             }
-            let (_, ahead, wait) = queue::expected_starts(state, crate::unix_now())
+            let (_, ahead, wait) = queue::expected_starts(state, crate::unix_now(), SHUTDOWN_GRACE)
                 .into_iter()
                 .find(|(ticket, ..)| *ticket == id)
                 .ok_or("this request left the HIL queue")?;
@@ -342,11 +406,31 @@ impl Arbiter {
                 .filter(|holder| conflict(&holder.ticket.claims, &claims))
                 .map(|holder| format!("{} `{}`", holder.ticket.owner, holder.ticket.work))
                 .collect::<Vec<_>>();
-            let holders = if blocking.is_empty() {
+            let mut holders = if blocking.is_empty() {
                 String::from("no conflicting holder")
             } else {
                 format!("held by {}", blocking.join(", "))
             };
+            let own = state.queue.iter().find(|ticket| ticket.id == id);
+            let maintenance = state
+                .queue
+                .iter()
+                .filter(|ticket| {
+                    ticket.id != id
+                        && ticket.priority == crate::state::Priority::Maintenance
+                        && own.is_some_and(|own| {
+                            own.priority == crate::state::Priority::Ordinary
+                                && conflict(&ticket.claims, &own.claims)
+                        })
+                })
+                .map(|ticket| format!("#{} `{}` by {}", ticket.id, ticket.work, ticket.owner))
+                .collect::<Vec<_>>();
+            if !maintenance.is_empty() {
+                holders.push_str(&format!(
+                    "; stand maintenance {} goes ahead of every request",
+                    maintenance.join(", ")
+                ));
+            }
             let owner = state
                 .queue
                 .iter()

@@ -180,9 +180,31 @@ pub(crate) struct Ticket {
     pub(crate) process: ProcessIdentity,
     pub(crate) enqueued_unix: u64,
     pub(crate) claims: Vec<Claim>,
+    /// Maintenance goes before every ordinary request.
+    #[serde(default, skip_serializing_if = "Priority::is_ordinary")]
+    pub(crate) priority: Priority,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub(crate) unknown: crate::Unknown,
+}
+
+/// How a request is ordered against the others.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Priority {
+    /// Served by its owner's balance.
+    #[default]
+    Ordinary,
+    /// Stand maintenance, such as a fixture software installation: served
+    /// before every ordinary request, and it preempts the holders it
+    /// conflicts with.
+    Maintenance,
+}
+
+impl Priority {
+    fn is_ordinary(&self) -> bool {
+        *self == Self::Ordinary
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

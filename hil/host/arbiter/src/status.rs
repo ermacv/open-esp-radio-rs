@@ -104,7 +104,7 @@ impl Arbiter {
     pub fn status(&self) -> crate::Result<Status> {
         let now = crate::unix_now();
         let state = self.transaction(|state| Ok(state.clone()))?;
-        let mut starts = queue::expected_starts(&state, now);
+        let mut starts = queue::expected_starts(&state, now, crate::grant::SHUTDOWN_GRACE);
         let order = |id: u64| state.queue.iter().find(|ticket| ticket.id == id);
         starts.sort_by(|(a, ..), (b, ..)| match (order(*a), order(*b)) {
             (Some(a), Some(b)) if balance::before(&state, a, b) => std::cmp::Ordering::Less,

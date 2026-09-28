@@ -91,27 +91,63 @@ pub(crate) fn outranked_by(
 }
 
 /// The conflicting tickets served earlier and the expected wait in seconds of
-/// every queued ticket, from the estimates of the leases ahead of it.
-pub(crate) fn expected_starts(state: &State, now: u64) -> Vec<(u64, usize, u64)> {
+/// every queued ticket. A ticket starts once its conflicting holders end and
+/// every conflicting ticket served before it has started and ended, so the
+/// wait of a ticket behind one that itself waits includes that wait. A
+/// holder that a waiting maintenance ticket conflicts with is preempted and
+/// ends within `grace`.
+pub(crate) fn expected_starts(state: &State, now: u64, grace: Duration) -> Vec<(u64, usize, u64)> {
     let remaining = |ticket: &Ticket| {
         state
             .holders
             .iter()
             .filter(|holder| conflict(&holder.ticket.claims, &ticket.claims))
-            .map(|holder| (holder.granted_unix + holder.ticket.estimate_secs).saturating_sub(now))
+            .map(|holder| {
+                let end = (holder.granted_unix + holder.ticket.estimate_secs).saturating_sub(now);
+                // A waiting maintenance ticket preempts the holder.
+                let preempted = state.queue.iter().any(|waiting| {
+                    waiting.priority == crate::state::Priority::Maintenance
+                        && conflict(&waiting.claims, &holder.ticket.claims)
+                });
+                if preempted {
+                    end.min(grace.as_secs())
+                } else {
+                    end
+                }
+            })
             .max()
             .unwrap_or(0)
     };
+    // Service order puts every ticket after those served before it, so each
+    // start is known when a later ticket needs it.
+    let mut order = state.queue.iter().collect::<Vec<_>>();
+    order.sort_by(|a, b| {
+        if balance::before(state, a, b) {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        }
+    });
+    let mut starts = std::collections::BTreeMap::<u64, u64>::new();
+    for ticket in order {
+        let ahead = ahead(state, ticket);
+        let start = ahead
+            .iter()
+            .map(|earlier| starts.get(&earlier.id).copied().unwrap_or(0) + earlier.estimate_secs)
+            .chain([remaining(ticket)])
+            .max()
+            .unwrap_or(0);
+        starts.insert(ticket.id, start);
+    }
     state
         .queue
         .iter()
         .map(|ticket| {
-            let ahead = ahead(state, ticket);
-            let queued = ahead
-                .iter()
-                .map(|earlier| earlier.estimate_secs)
-                .sum::<u64>();
-            (ticket.id, ahead.len(), remaining(ticket) + queued)
+            (
+                ticket.id,
+                ahead(state, ticket).len(),
+                starts.get(&ticket.id).copied().unwrap_or(0),
+            )
         })
         .collect()
 }
@@ -137,6 +173,7 @@ mod tests {
             },
             enqueued_unix: id,
             claims,
+            priority: Default::default(),
             unknown: Default::default(),
         }
     }
@@ -231,8 +268,48 @@ mod tests {
             ..State::default()
         };
         assert_eq!(
-            expected_starts(&state, 1100),
+            expected_starts(&state, 1100, Duration::from_secs(300)),
             [(1, 0, 200), (2, 0, 0), (3, 1, 800)]
         );
+    }
+
+    #[test]
+    fn a_request_behind_a_waiting_one_starts_after_it() {
+        // Ticket 1 waits for the board the holder keeps for 900 s more;
+        // ticket 2 needs only the fixture software ticket 1 shares.
+        let software = |mode: fn(&str) -> Claim| vec![mode("fixture-software:linux-bluetooth")];
+        let mut first = board("esp32s31");
+        first.extend(software(|name| Claim::shared(name)));
+        let state = State {
+            holders: vec![holder(ticket(9, 1000, board("esp32s31")))],
+            queue: vec![
+                ticket(1, 60, first),
+                ticket(2, 60, software(|name| Claim::exclusive(name))),
+            ],
+            ..State::default()
+        };
+        assert_eq!(
+            expected_starts(&state, 1100, Duration::from_secs(300)),
+            [(1, 0, 900), (2, 1, 960)]
+        );
+    }
+
+    #[test]
+    fn maintenance_goes_first_and_waits_only_for_the_preemption_grace() {
+        let mut maintenance = ticket(2, 60, board("esp32s31"));
+        maintenance.priority = crate::state::Priority::Maintenance;
+        let mut state = State {
+            holders: vec![holder(ticket(9, 3000, board("esp32s31")))],
+            queue: vec![ticket(1, 60, board("esp32s31")), maintenance],
+            ..State::default()
+        };
+        balance(&mut state, "owner-1", 30);
+        assert_eq!(
+            expected_starts(&state, 1100, Duration::from_secs(300)),
+            [(1, 1, 360), (2, 0, 300)]
+        );
+        state.holders.clear();
+        assert!(grantable(&state, 2), "maintenance outranks any balance");
+        assert!(!grantable(&state, 1));
     }
 }

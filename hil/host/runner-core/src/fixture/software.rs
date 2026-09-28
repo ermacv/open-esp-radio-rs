@@ -2,8 +2,9 @@
 //!
 //! A provider's installed software is also a stand resource,
 //! `fixture-software:<provider>`: runs claim it shared and an installation
-//! claims it exclusively, so an installation queues behind the runs using the
-//! provider and later runs queue behind it. Runs take the software lease only
+//! claims it exclusively as stand maintenance, so an installation goes ahead
+//! of every waiting request, preempts the runs using the provider, and later
+//! runs queue behind it. Runs take the software lease only
 //! once the stand granted their claims, never while they wait.
 
 use oer_hil_fixture_install::{OperationalLease, Provider};
@@ -76,13 +77,20 @@ pub fn resource(provider: Provider) -> String {
     format!("fixture-software:{}", provider.as_str())
 }
 
-/// Wait in the stand's queue until no run uses `provider`, for installing it.
-/// The grant keeps later runs of the provider queued until it is dropped.
+/// Take the stand for installing `provider`: stand maintenance, served
+/// before every waiting request, and every run that uses the provider is
+/// preempted with the ordinary cleanup and a notice. The grant keeps later
+/// runs of the provider queued until it is dropped.
 pub fn install_grant(provider: Provider) -> Result<oer_hil_arbiter::Grant> {
     let mut request = oer_hil_arbiter::Request::from_environment(format!(
         "fixture install --provider {}",
         provider.as_str()
     ))?;
     request.claims = vec![oer_hil_arbiter::Claim::exclusive(resource(provider))];
-    oer_hil_arbiter::Arbiter::open()?.acquire(&request)
+    let reason = format!(
+        "fixture maintenance: {} install by {}",
+        provider.as_str(),
+        request.owner
+    );
+    oer_hil_arbiter::Arbiter::open()?.acquire_maintenance(&request, &reason)
 }

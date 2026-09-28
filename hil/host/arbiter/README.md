@@ -17,8 +17,14 @@ journal.
   claim of a request that names nothing. Holders whose claims do not conflict
   hold leases at once.
 - `Arbiter::acquire` enqueues a ticket and waits until no holder and no
-  waiting ticket served before it conflicts with it: the ticket whose owner
-  has the higher balance, the earlier one on a tie (`balance`). Every
+  waiting ticket served before it conflicts with it: a maintenance ticket
+  first, then the ticket whose owner has the higher balance, the earlier one
+  on a tie (`balance`). `Arbiter::acquire_maintenance` enqueues a
+  `Priority::Maintenance` ticket, used by fixture software installation,
+  and preempts every conflicting holder as `preempt` does. A ticket's
+  expected start counts the expected starts of the conflicting tickets
+  served before it, and a holder a maintenance ticket preempts ends within
+  the shutdown grace. Every
   transaction first advances the balances to now: they decay with a two-hour
   half-life, every held lease charges its owner the elapsed time, an owner
   with a ticket blocked by a holder is credited it once, and they are clamped

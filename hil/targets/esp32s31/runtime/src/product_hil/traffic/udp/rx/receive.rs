@@ -92,6 +92,8 @@ pub(super) async fn run(
         let now = Instant::now().as_micros();
         if now >= window.end() && task_poll_end.is_none() {
             task_poll_end = Some(task_polls.snapshot());
+            #[cfg(feature = "pc-profile")]
+            crate::pc_profile::disarm();
         }
         let terminal = flows.iter().flatten().all(|flow| flow.terminal);
         if window.finished(now, terminal) {

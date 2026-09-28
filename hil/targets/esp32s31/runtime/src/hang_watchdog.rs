@@ -34,7 +34,7 @@ use esp_hal::{
     Blocking,
     interrupt::{Priority, software::SoftwareInterrupt},
     time::Duration,
-    timer::{PeriodicTimer, systimer::SystemTimer},
+    timer::{PeriodicTimer, systimer::Alarm},
 };
 use oer_hil_protocol::{HangFault, HartState, TaskSlot};
 use oer_hil_target_core::liveness::TaskLiveness;
@@ -134,8 +134,8 @@ pub(crate) fn heartbeat(executor: Executor) {
 }
 
 /// Start the watchdog on SYSTIMER alarm 0; its interrupt runs on this core.
-pub(super) fn start(systimer: esp_hal::peripherals::SYSTIMER<'static>) {
-    let mut periodic = PeriodicTimer::new(SystemTimer::new(systimer).alarm0);
+pub(super) fn start(alarm: Alarm<'static>) {
+    let mut periodic = PeriodicTimer::new(alarm);
     periodic.set_interrupt_handler(check);
     periodic
         .start(Duration::from_millis(CHECK_PERIOD_MILLIS))

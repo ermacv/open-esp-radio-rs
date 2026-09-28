@@ -108,6 +108,8 @@ mod gdma_mem2mem_probe;
 mod hang_watchdog;
 #[cfg(feature = "memory-benchmark")]
 mod memory_benchmark;
+#[cfg(feature = "pc-profile")]
+mod pc_profile;
 #[cfg(feature = "open-radio-hil")]
 mod phy_fault;
 #[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
@@ -372,7 +374,12 @@ extern "C" fn runtime_main() -> ! {
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0));
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    hang_watchdog::start(peripherals.SYSTIMER);
+    {
+        let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
+        hang_watchdog::start(systimer.alarm0);
+        #[cfg(feature = "pc-profile")]
+        pc_profile::start(systimer.alarm1);
+    }
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let watchdog_service = watchdog::init(peripherals.TIMG1);
 
@@ -538,6 +545,8 @@ fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
     paint_app_core_stack();
     #[cfg(not(feature = "memory-benchmark"))]
     hang_watchdog::bind_core1_sampler();
+    #[cfg(feature = "pc-profile")]
+    pc_profile::bind_core1_sampler();
     // SAFETY: Core 1 enters directly from ROM rather than through
     // `_runtime_start` with MIE clear; its per-hart vector state and stack
     // ownership are complete, so hand interrupt enable to its executor.

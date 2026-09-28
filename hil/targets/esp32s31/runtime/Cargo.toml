@@ -124,7 +124,9 @@ connected-datapath-poll-telemetry = [
 # residence. Keep the rejected/experimental TX backing implementations out of
 # this image: their compile-time branches and DMA-visible owners measurably
 # change the linked hot-path layout even when runtime-disabled.
-task-residence-telemetry = ["connected-datapath-poll-telemetry"]
+task-residence-telemetry = ["connected-datapath-poll-telemetry", "pc-profile"]
+# Statistical PC profile of both harts over each UDP RX window.
+pc-profile = []
 # Same-image home for hardware-address and memory-transfer probes. It retains
 # residence timing, but must never be used as the production CPU budget.
 tx-architecture-probes = [

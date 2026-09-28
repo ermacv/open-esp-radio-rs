@@ -72,6 +72,11 @@ pub fn plan(
         if extension == "md" || path.starts_with("qualification") {
             plan.docs = true;
         }
+        // The evaluator's tests read the catalogs, programs and reviews, so
+        // a change to any of them tests the evaluator.
+        if path.starts_with("qualification") && !path.starts_with("qualification/evaluator") {
+            plan.packages.insert(String::from("oer-qualification"));
+        }
         if ["hil/targets", "hil/protocol", "hil/target-core"]
             .iter()
             .any(|prefix| path.starts_with(prefix))
@@ -386,6 +391,13 @@ mod tests {
             assert!(run(&[path]).firmware, "{path}");
         }
         assert!(!run(&["hil/host/runner/src/cli.rs"]).firmware);
+    }
+
+    #[test]
+    fn a_catalog_change_tests_the_evaluator() {
+        let plan = run(&["qualification/catalog/esp32s31/bluetooth-products.toml"]);
+        assert!(plan.docs);
+        assert!(plan.packages.contains("oer-qualification"));
     }
 
     #[test]

@@ -507,6 +507,17 @@ ends the aggregate at its publication limit. The expired and the limit cases
 must DIFF at the first missing MPDU; they stay unclassified until the Wi-Fi
 owner decides which bound production takes.
 
+Completions without a BlockAck compare as sequences: after the vendor's
+`lmacInit`, each warm phase applies one timeout to the vendor aggregate and
+to the production aggregate the probe keeps in flight, compares every MPDU
+header, and checks that the vendor retries exactly while production continues.
+A CTS timeout sends no MPDU: neither side sets the Retry bit and both end at
+the vendor's short retry limit (MATCH). An acknowledgement timeout sets the
+Retry bit of every MPDU on both sides, but the vendor republishes the
+aggregate until its short retry limit or its rate record's publication limit,
+while production ends it at its publication limit; that difference stays
+unclassified pending the same decision.
+
 The comparison does not cover the HE one-member conversion
 (`ppHEAMPDU2Normal`) or the all-acknowledged shortcut of a terminated
 aggregate. Production writes zero in the metadata bits the

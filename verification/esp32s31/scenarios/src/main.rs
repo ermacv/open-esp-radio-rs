@@ -546,6 +546,7 @@ fn wifi_mac(
     retry::exercise(&mut ctx)?;
     rx_append::exercise(&mut ctx)?;
     ampdu_resort::exercise(&mut ctx)?;
+    ampdu_resort::exercise_timeouts(&mut ctx)?;
     let claims = ctx.session.claims(
         "wifi-mac",
         &ctx.roots,

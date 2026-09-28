@@ -19,9 +19,14 @@ use blobray_domain::{
 
 /// The vendor function, linked as an extra root.
 pub const ROOTS: &[&str] = &[VENDOR];
-/// Evidence claim: the vendor resort with the production completion and
-/// retry retention.
-pub const CLAIMS: &[(&str, &str, &str)] = &[("archive", VENDOR, RESORT_PROBE)];
+/// Evidence claims: the vendor resort with the production completion and
+/// retry retention, and the vendor protection-failure leaf with the
+/// production aggregate republication. The acknowledgement-timeout
+/// sequences compare too, but end at different attempts pending a decision.
+pub const CLAIMS: &[(&str, &str, &str)] = &[
+    ("archive", VENDOR, RESORT_PROBE),
+    ("archive", "lmacProcessCtsTimeout", TIMEOUT_STEP_PROBE),
+];
 const VENDOR: &str = "ppResortTxAMPDU";
 const LAYOUT_PROBE: &str = "open_libpp_ampdu_trace_layout";
 const RESORT_PROBE: &str = "open_libpp_ampdu_trace_resort";
@@ -222,6 +227,8 @@ const PRODUCTION_ATTEMPT_LIMIT: u8 = 4;
 const DESCRIPTOR_PUBLICATIONS: usize = 5;
 const DESCRIPTOR_SHORT: usize = 6;
 const DESCRIPTOR_ENQUEUED: usize = 0x18;
+/// The rate schedule record `rcReachRetryLimit` reads.
+const DESCRIPTOR_RECORD: usize = 0x1c;
 const ENQUEUED_US: u32 = 0x0100_0000;
 /// Beyond the vendor lifetime by more than its own 1024-microsecond margin.
 const EXPIRED_MARGIN_US: u32 = 4096;
@@ -317,6 +324,94 @@ fn answered(name: &str, address: u32, boundary: CallBoundary, value: u32) -> Cal
     }
 }
 
+/// One vendor aggregate: an `esf_buf`, DMA descriptor, transmit descriptor
+/// and buffer with A-MPDU metadata and frame per MPDU, linked in order.
+struct Aggregate {
+    count: usize,
+    first_sequence: u16,
+    /// Transmit-descriptor word 0 flags beyond the A-MPDU markers.
+    descriptor_flags: u32,
+    vendor_attempts: u8,
+    /// The rate schedule record every descriptor names, with its address.
+    record: Option<u32>,
+}
+
+impl Aggregate {
+    /// The aggregate's bytes, as (address, bytes) regions.
+    fn regions(&self) -> Vec<(u32, Vec<u8>)> {
+        let count = self.count;
+        let mut esf = vec![0u8; count * ESF_BYTES as usize];
+        let mut dma = vec![0u8; count * DMA_BYTES as usize];
+        let mut descriptors = vec![0u8; count * DESCRIPTOR_BYTES as usize];
+        let mut buffers = vec![0u8; count * BUFFER_BYTES];
+        for index in 0..count {
+            let buffer = &mut esf[index * ESF_BYTES as usize..(index + 1) * ESF_BYTES as usize];
+            word(buffer, ESF_DMA, ARENA_DMA + index as u32 * DMA_BYTES);
+            word(buffer, ESF_LAST_DMA, ARENA_DMA + index as u32 * DMA_BYTES);
+            buffer[ESF_LENGTH..ESF_LENGTH + 2].copy_from_slice(&(MPDU_BYTES as u16).to_le_bytes());
+            buffer[ESF_FLAGS..ESF_FLAGS + 2].copy_from_slice(&ESF_AMPDU_METADATA.to_le_bytes());
+            word(buffer, ESF_STATION, ARENA_STATION);
+            let next = if index + 1 < count {
+                ARENA_ESF + (index as u32 + 1) * ESF_BYTES
+            } else {
+                0
+            };
+            word(buffer, ESF_NEXT, next);
+            word(
+                buffer,
+                ESF_DESCRIPTOR,
+                ARENA_DESCRIPTOR + index as u32 * DESCRIPTOR_BYTES,
+            );
+            let descriptor = &mut dma[index * DMA_BYTES as usize..];
+            let size = BUFFER_BYTES as u32;
+            let end = if index + 1 == count {
+                DMA_END_OF_FRAME
+            } else {
+                0
+            };
+            word(descriptor, 0, size | size << DMA_LENGTH_SHIFT | end);
+            word(
+                descriptor,
+                DMA_FRAME,
+                ARENA_FRAMES + (index * BUFFER_BYTES) as u32,
+            );
+            let next_dma = if index + 1 < count {
+                ARENA_DMA + (index as u32 + 1) * DMA_BYTES
+            } else {
+                0
+            };
+            word(descriptor, DMA_NEXT, next_dma);
+            let flags = DESCRIPTOR_AMPDU
+                | self.descriptor_flags
+                | if index == 0 { DESCRIPTOR_FIRST } else { 0 };
+            let descriptor = &mut descriptors[index * DESCRIPTOR_BYTES as usize..];
+            word(descriptor, 0, flags);
+            descriptor[DESCRIPTOR_PUBLICATIONS] = self.vendor_attempts;
+            descriptor[DESCRIPTOR_SHORT] = self.vendor_attempts;
+            word(descriptor, DESCRIPTOR_ENQUEUED, ENQUEUED_US);
+            if let Some(record) = self.record {
+                word(descriptor, DESCRIPTOR_RECORD, record);
+            }
+            let buffer = &mut buffers[index * BUFFER_BYTES..(index + 1) * BUFFER_BYTES];
+            let sequence = u32::from(self.first_sequence.wrapping_add(index as u16) & 0xff);
+            let metadata = (MPDU_BYTES + FCS_BYTES) as u32 | sequence << METADATA_SEQUENCE_SHIFT;
+            word(buffer, 0, metadata);
+            buffer[METADATA_BYTES..].copy_from_slice(&frame(self.first_sequence, index));
+        }
+        vec![
+            (ARENA_ESF, esf),
+            (ARENA_DMA, dma),
+            (ARENA_DESCRIPTOR, descriptors),
+            (ARENA_FRAMES, buffers),
+        ]
+    }
+}
+
+/// Where the vendor side keeps MPDU `index`'s frame.
+const fn vendor_frame(index: usize) -> u32 {
+    ARENA_FRAMES + (index * BUFFER_BYTES + METADATA_BYTES) as u32
+}
+
 /// The encoded MPDU at `index` of an aggregate starting at `first`.
 fn frame(first: u16, index: usize) -> Vec<u8> {
     let mut frame = vec![0u8; MPDU_BYTES];
@@ -341,14 +436,22 @@ fn word(bytes: &mut [u8], offset: usize, value: u32) {
 /// reads, in units of 1024 microseconds, of an aggregate member (word 0)
 /// and of an ordinary MPDU (word 2).
 const CONF: &str = "lmacConfMib";
-const CONF_LIFETIMES_BYTES: u32 = 12;
+const CONF_LIFETIMES_BYTES: u32 = 0x16;
+/// The short retry limit byte `lmacProcessShortRetryFail` compares.
+const CONF_SHORT_LIMIT: usize = 0x15;
 const LIFETIME_AGGREGATE: usize = 0;
 const LIFETIME_ORDINARY: usize = 8;
 const LIFETIME_UNIT_SHIFT: u32 = 10;
 
-/// The aggregate and ordinary MSDU lifetimes, in microseconds, that the
-/// vendor's `lmacInit` installs.
-fn vendor_lifetimes(ctx: &mut Mac) -> Result<(u32, u32)> {
+/// What the vendor's `lmacInit` installs: the aggregate and ordinary MSDU
+/// lifetimes, in microseconds, and the short retry limit.
+struct VendorConf {
+    aggregate_lifetime: u32,
+    ordinary_lifetime: u32,
+    short_limit: u8,
+}
+
+fn vendor_conf(ctx: &mut Mac) -> Result<VendorConf> {
     let image = ctx.image_symbols()?;
     let address = ctx.symbol_address(&image, CONF)?;
     let init =
@@ -372,7 +475,13 @@ fn vendor_lifetimes(ctx: &mut Mac) -> Result<(u32, u32)> {
             .ok_or_else(|| invalid("lmacInit left no MSDU lifetimes"))?;
         Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) << LIFETIME_UNIT_SHIFT)
     };
-    Ok((at(LIFETIME_AGGREGATE)?, at(LIFETIME_ORDINARY)?))
+    Ok(VendorConf {
+        aggregate_lifetime: at(LIFETIME_AGGREGATE)?,
+        ordinary_lifetime: at(LIFETIME_ORDINARY)?,
+        short_limit: *conf
+            .get(CONF_SHORT_LIMIT)
+            .ok_or_else(|| invalid("lmacInit left no short retry limit"))?,
+    })
 }
 
 /// The production layout entry, which also serves as the production side of
@@ -478,77 +587,23 @@ fn case_rows(
         known(ARENA_ACCESS, ACCESS_BYTES, &vec![0; ACCESS_BYTES as usize])?,
         known(ARENA_STATION, STATION_BYTES, &station)?,
     ];
-    let mut esf = vec![0u8; count * ESF_BYTES as usize];
-    let mut dma = vec![0u8; count * DMA_BYTES as usize];
-    let mut descriptors = vec![0u8; count * DESCRIPTOR_BYTES as usize];
-    let mut frames_vendor = vec![0u8; count * BUFFER_BYTES];
-    for index in 0..count {
-        let buffer = &mut esf[index * ESF_BYTES as usize..(index + 1) * ESF_BYTES as usize];
-        word(buffer, ESF_DMA, ARENA_DMA + index as u32 * DMA_BYTES);
-        word(buffer, ESF_LAST_DMA, ARENA_DMA + index as u32 * DMA_BYTES);
-        buffer[ESF_LENGTH..ESF_LENGTH + 2].copy_from_slice(&(MPDU_BYTES as u16).to_le_bytes());
-        buffer[ESF_FLAGS..ESF_FLAGS + 2].copy_from_slice(&ESF_AMPDU_METADATA.to_le_bytes());
-        word(buffer, ESF_STATION, ARENA_STATION);
-        let next = if index + 1 < count {
-            ARENA_ESF + (index as u32 + 1) * ESF_BYTES
-        } else {
-            0
-        };
-        word(buffer, ESF_NEXT, next);
-        word(
-            buffer,
-            ESF_DESCRIPTOR,
-            ARENA_DESCRIPTOR + index as u32 * DESCRIPTOR_BYTES,
-        );
-        let descriptor = &mut dma[index * DMA_BYTES as usize..];
-        let size = BUFFER_BYTES as u32;
-        let end = if index + 1 == count {
-            DMA_END_OF_FRAME
-        } else {
-            0
-        };
-        word(descriptor, 0, size | size << DMA_LENGTH_SHIFT | end);
-        word(
-            descriptor,
-            DMA_FRAME,
-            ARENA_FRAMES + (index * BUFFER_BYTES) as u32,
-        );
-        let next_dma = if index + 1 < count {
-            ARENA_DMA + (index as u32 + 1) * DMA_BYTES
-        } else {
-            0
-        };
-        word(descriptor, DMA_NEXT, next_dma);
-        let flags = DESCRIPTOR_AMPDU | if index == 0 { DESCRIPTOR_FIRST } else { 0 };
-        let descriptor = &mut descriptors[index * DESCRIPTOR_BYTES as usize..];
-        word(descriptor, 0, flags);
-        descriptor[DESCRIPTOR_PUBLICATIONS] = completion.vendor_attempts;
-        descriptor[DESCRIPTOR_SHORT] = completion.vendor_attempts;
-        word(descriptor, DESCRIPTOR_ENQUEUED, ENQUEUED_US);
-        let buffer = &mut frames_vendor[index * BUFFER_BYTES..(index + 1) * BUFFER_BYTES];
-        let sequence = u32::from(completion.first_sequence.wrapping_add(index as u16) & 0xff);
-        let metadata = (MPDU_BYTES + FCS_BYTES) as u32 | sequence << METADATA_SEQUENCE_SHIFT;
-        word(buffer, 0, metadata);
-        buffer[METADATA_BYTES..].copy_from_slice(&encoded[index]);
+    let aggregate = Aggregate {
+        count,
+        first_sequence: completion.first_sequence,
+        descriptor_flags: 0,
+        vendor_attempts: completion.vendor_attempts,
+        record: None,
+    };
+    for (address, bytes) in aggregate.regions() {
+        memory.push(known(address, bytes.len() as u32, &bytes)?);
     }
-    memory.extend([
-        known(ARENA_ESF, esf.len() as u32, &esf)?,
-        known(ARENA_DMA, dma.len() as u32, &dma)?,
-        known(ARENA_DESCRIPTOR, descriptors.len() as u32, &descriptors)?,
-        known(ARENA_FRAMES, frames_vendor.len() as u32, &frames_vendor)?,
-    ]);
     let header = |name: String, address: u32| MemorySelection {
         name,
         address,
         length: HEADER_BYTES,
     };
     let vendor_observed: Vec<MemorySelection> = (0..count)
-        .map(|index| {
-            header(
-                format!("mpdu-{index}-header"),
-                ARENA_FRAMES + (index * BUFFER_BYTES + METADATA_BYTES) as u32,
-            )
-        })
+        .map(|index| header(format!("mpdu-{index}-header"), vendor_frame(index)))
         .collect();
     let mut vendor = direct(symbol(VENDOR)?, &[QUEUE], memory, vec![], vendor_observed);
     let access = symbol("GetAccess")?;
@@ -684,8 +739,12 @@ fn case_rows(
 /// BlockAckReq exactly when the station has one pending.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
     let frames = layout(ctx)?;
-    let (aggregate, ordinary) = vendor_lifetimes(ctx)?;
-    println!("vendor MSDU lifetimes: aggregate {aggregate} us, ordinary {ordinary} us");
+    let conf = vendor_conf(ctx)?;
+    let aggregate = conf.aggregate_lifetime;
+    println!(
+        "vendor MSDU lifetimes: aggregate {aggregate} us, ordinary {} us",
+        conf.ordinary_lifetime
+    );
     let image = ctx.image_symbols()?;
     let request_bar = ctx.symbol_address(&image, "ppReSendBar")?;
     for completion in COMPLETIONS {
@@ -745,6 +804,356 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                 "{label}: the vendor BlockAckReq was {}sent: {BAR_GAP}",
                 if sent_bar { "" } else { "not " }
             )));
+        }
+    }
+    Ok(())
+}
+
+/// One kind of completion without a BlockAck: the vendor leaf, the
+/// completion status production observes and the decision it makes while
+/// the aggregate continues.
+#[derive(Clone, Copy)]
+struct Timeout {
+    label: &'static str,
+    leaf: &'static str,
+    status: u32,
+    continuing: u32,
+    /// Whether the vendor's rate record limit bounds it besides the short
+    /// retry limit, and the pending decision when production ends first.
+    record_bounded: bool,
+    pending: Option<&'static str>,
+}
+
+const TIMEOUTS: [Timeout; 2] = [
+    Timeout {
+        label: "ack-timeout",
+        leaf: "lmacProcessAckTimeout",
+        status: 5,
+        continuing: STEP_RETAIN,
+        record_bounded: true,
+        pending: Some(PENDING_TIMEOUT_BOUND),
+    },
+    // A protection failure sent no MPDU: neither side sets the Retry bit,
+    // and both end at the vendor's short retry limit.
+    Timeout {
+        label: "cts-timeout",
+        leaf: "lmacProcessCtsTimeout",
+        status: 2,
+        continuing: STEP_REPUBLISH,
+        record_bounded: false,
+        pending: None,
+    },
+];
+/// The production entries of a timeout sequence.
+const TIMEOUT_BEGIN_PROBE: &str = "open_libpp_ampdu_trace_timeout_begin";
+const TIMEOUT_STEP_PROBE: &str = "open_libpp_ampdu_trace_timeout_step";
+/// The lmac queue contexts `lmacInit` builds at the address the retry
+/// scenario gives it, and the fields the timeout sequence installs: the
+/// transmitting `esf_buf` and the exchange state, transmitting.
+const LMAC_QUEUES: u32 = 0x3fff_2000;
+const LMAC_QUEUE_BYTES: u32 = 0x38;
+const LMAC_QUEUE_BUFFER: u32 = 0x00;
+const LMAC_QUEUE_STATE: u32 = 0x12;
+const LMAC_TRANSMITTING: u8 = 1;
+/// Source of the queue-context patches, and the rate schedule record.
+const PATCH: u32 = 0x3fff_ad00;
+const ARENA_RECORD: u32 = 0x3fff_ae00;
+/// An HT MCS 0 long-guard-interval aggregate, the frames' rate.
+const HT_MCS0: u32 = 0x10;
+/// Transmit-descriptor flag that makes the acknowledgement timeout a long
+/// frame's failure.
+const DESCRIPTOR_LONG: u32 = 0x100;
+/// Decisions the production step reports.
+const STEP_RETAIN: u32 = 1;
+const STEP_FINISH: u32 = 2;
+const STEP_REPUBLISH: u32 = 3;
+/// The step's answer once the aggregate left the sequence.
+const STEP_NONE: u32 = 9;
+/// The publication-limit byte of a rate schedule record.
+const RECORD_PUBLICATION_LIMIT: usize = 8;
+/// Pending decision: how many acknowledgement timeouts end an aggregate.
+const PENDING_TIMEOUT_BOUND: &str = "unclassified, pending decision: without a BlockAck the vendor \
+    republishes the whole aggregate, every MPDU with the Retry bit, until its short retry limit or \
+    its rate record's publication limit ends it through lmacEndFrameExchangeSequence; production \
+    ends it at its aggregate publication limit";
+/// Vendor callees a timeout phase answers: the continuations it chooses
+/// between, and callees outside the compared frame state.
+const TIMEOUT_CONTINUATIONS: &[&str] = &[
+    "lmacEndFrameExchangeSequence",
+    "lmacEndRetryAMPDUFail",
+    "lmacDiscardFrameExchangeSequence",
+    "lmacRetryTxFrame",
+];
+const TIMEOUT_QUIET: &[&str] = &[
+    "lmacMSDUAged",
+    "is_use_muedca",
+    "esp_test_tx_count_retry",
+    "lmacProcessTBSuccess",
+    "lmacProcessTxopQComplete",
+    "lmacProcessShortFrameSuccess",
+    "lmacProcessLongFrameSuccess",
+    "wifi_assert",
+    "wifi_log",
+];
+/// Compared MPDUs of a timeout sequence.
+const TIMEOUT_MPDUS: usize = 4;
+
+/// The vendor continuation a phase reached: the modeled callee and its third
+/// argument word.
+fn reached(
+    records: &[blobray_domain::ExecutionEvidence],
+    case: u32,
+    targets: &[(u32, &'static str)],
+) -> Option<(&'static str, Option<u32>)> {
+    let mut found = None;
+    let mut current: Option<&'static str> = None;
+    for event in crate::evidence::events(records, case, false) {
+        match event {
+            blobray_domain::ExecutionEvent::ModeledCall { target, .. } => {
+                current = targets.iter().find(|(a, _)| *a == target).map(|(_, n)| *n);
+                if let Some(name) = current {
+                    found = Some((name, None));
+                }
+            }
+            blobray_domain::ExecutionEvent::CallArgument { word: 2, value }
+                if current.is_some() =>
+            {
+                found = Some((current.expect("a continuation"), value));
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// One timeout sequence: the vendor `lmacInit` with the aggregate and the
+/// production begin, the queue-context patch, and `phases` compared
+/// acknowledgement timeouts.
+fn timeout_rows(
+    ctx: &mut Mac,
+    frames: &[u32],
+    timeout: Timeout,
+    descriptor_flags: u32,
+    phases: usize,
+) -> Result<Vec<ExecutionCase>> {
+    let image = ctx.image_symbols()?;
+    let symbol = |name: &str| ctx.symbol_address(&image, name);
+    let boundary = |name: &str| crate::mac::call_boundary(&image, name);
+    let record = ctx
+        .context::<crate::mac::RateTables>()?
+        .record(crate::mac::RateArena::Ht, HT_MCS0)?;
+    let aggregate = Aggregate {
+        count: TIMEOUT_MPDUS,
+        first_sequence: 100,
+        descriptor_flags,
+        vendor_attempts: 0,
+        record: Some(ARENA_RECORD),
+    };
+    let mut init = crate::retry::lmac_init(ctx, &image, vec![])?;
+    for (address, bytes) in aggregate
+        .regions()
+        .into_iter()
+        .chain([(ARENA_RECORD, record)])
+    {
+        init.memory.push(crate::harness::region(
+            address,
+            bytes.len() as u32,
+            &bytes,
+            None,
+            RegionLifetime::Session,
+        )?);
+    }
+    let joined: Vec<u8> = (0..TIMEOUT_MPDUS).flat_map(|i| frame(100, i)).collect();
+    let mut begin = ctx.session.probes.invoke(
+        TIMEOUT_BEGIN_PROBE,
+        vec![
+            ("frames", Arg::Word(Some(i64::from(PRODUCTION_FRAMES)))),
+            ("count", Arg::Word(Some(TIMEOUT_MPDUS as i64))),
+            ("first_sequence", Arg::Word(Some(100))),
+            (
+                "attempt_limit",
+                Arg::Word(Some(i64::from(PRODUCTION_ATTEMPT_LIMIT))),
+            ),
+        ],
+        vec![],
+        vec![],
+    )?;
+    begin
+        .memory
+        .push(known(PRODUCTION_FRAMES, joined.len() as u32, &joined)?);
+    begin.arguments.resize(8, Some(0));
+    let label = format!("ampdu-{}-{descriptor_flags:x}", timeout.label);
+    let mut rows = vec![crate::harness::setup(
+        format!("{label}-init"),
+        init,
+        begin,
+        SessionReset::Cold,
+    )];
+    // The vendor's transmit path installs the aggregate and marks the queue
+    // transmitting; production has no counterpart.
+    let memcpy = u32::try_from(
+        crate::harness::symbol(
+            &ctx.session.inventory,
+            crate::layout::ROM_INPUT as usize,
+            "memcpy",
+        )?
+        .value,
+    )?;
+    let context = LMAC_QUEUES + QUEUE * LMAC_QUEUE_BYTES;
+    let patches: [(u32, Vec<u8>); 2] = [
+        (
+            context + LMAC_QUEUE_BUFFER,
+            ARENA_ESF.to_le_bytes().to_vec(),
+        ),
+        (context + LMAC_QUEUE_STATE, vec![LMAC_TRANSMITTING]),
+    ];
+    for (index, (address, bytes)) in patches.iter().enumerate() {
+        let length = bytes.len() as u32;
+        rows.push(crate::harness::setup(
+            format!("{label}-patch-{index}"),
+            direct(
+                memcpy,
+                &[*address, PATCH, length],
+                vec![known(PATCH, length, bytes)?],
+                vec![],
+                vec![],
+            ),
+            direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![]),
+            SessionReset::Warm,
+        ));
+    }
+    let header = |name: String, address: u32| MemorySelection {
+        name,
+        address,
+        length: HEADER_BYTES,
+    };
+    for phase in 0..phases {
+        let observed_vendor: Vec<MemorySelection> = (0..TIMEOUT_MPDUS)
+            .map(|index| header(format!("mpdu-{index}-header"), vendor_frame(index)))
+            .collect();
+        let mut vendor = direct(
+            symbol(timeout.leaf)?,
+            &[QUEUE, 0],
+            vec![],
+            vec![],
+            observed_vendor,
+        );
+        for name in TIMEOUT_QUIET.iter().chain(TIMEOUT_CONTINUATIONS) {
+            vendor
+                .calls
+                .push(answered(name, symbol(name)?, boundary(name), 0));
+        }
+        let observed_production: Vec<MemorySelection> = (0..TIMEOUT_MPDUS)
+            .map(|index| header(format!("mpdu-{index}-header"), frames[index]))
+            .collect();
+        let mut production = ctx.session.probes.invoke(
+            TIMEOUT_STEP_PROBE,
+            vec![("status", Arg::Word(Some(i64::from(timeout.status))))],
+            vec![],
+            observed_production,
+        )?;
+        production.arguments.resize(8, Some(0));
+        let mut row = case(
+            format!("{label}-{phase}"),
+            vendor,
+            Some(production),
+            SessionReset::Warm,
+            false,
+        );
+        let relation = row.relation.as_mut().expect("a compared case");
+        relation.events = EventChannels {
+            timeline: crate::harness::TIMELINE,
+            mmio_read: false,
+            mmio_write: false,
+            fence: false,
+            delay: false,
+        };
+        relation.memory = (0..TIMEOUT_MPDUS as u16)
+            .map(|index| MemoryPair {
+                vendor: index,
+                replacement: index,
+            })
+            .collect();
+        rows.push(row);
+    }
+    for row in &mut rows {
+        row.stack_fill = Some(LEAF_FILLS[0]);
+    }
+    Ok(rows)
+}
+
+/// Compare acknowledgement timeouts without a BlockAck: in every phase both
+/// sides mark the same MPDUs for retry, and the vendor retries exactly while
+/// production retains the aggregate.
+pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
+    let frames = layout(ctx)?;
+    let image = ctx.image_symbols()?;
+    let targets: Vec<(u32, &'static str)> = TIMEOUT_CONTINUATIONS
+        .iter()
+        .map(|name| Ok((ctx.symbol_address(&image, name)?, *name)))
+        .collect::<Result<_>>()?;
+    let record_limit = *ctx
+        .context::<crate::mac::RateTables>()?
+        .record(crate::mac::RateArena::Ht, HT_MCS0)?
+        .get(RECORD_PUBLICATION_LIMIT)
+        .ok_or_else(|| invalid("the HT record has no publication limit"))?;
+    let short_limit = vendor_conf(ctx)?.short_limit;
+    for timeout in TIMEOUTS {
+        // The vendor ends the aggregate at the first limit its counters
+        // reach; production at its own limit.
+        let vendor_attempts = usize::from(if timeout.record_bounded {
+            record_limit.min(short_limit)
+        } else {
+            short_limit
+        });
+        for flags in [0, DESCRIPTOR_LONG] {
+            let phases = vendor_attempts;
+            let rows = timeout_rows(ctx, &frames, timeout, flags, phases)?;
+            let first = rows.len() - phases;
+            let label = format!("ampdu-{}-{flags:x}", timeout.label);
+            let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
+            let records = ctx
+                .submit(
+                    &label,
+                    &crate::session::request(&vendor, Some(&production), None, rows, RESORT_EVENTS),
+                    Some(ComparisonVerdict::Match),
+                )?
+                .records
+                .clone();
+            let mut production_attempts = None;
+            for phase in 0..phases {
+                let case = (first + phase) as u32;
+                let decision = crate::i2c::returned_low(&records, case, true);
+                let continuation = reached(&records, case, &targets);
+                let vendor_continues = phase + 1 < vendor_attempts;
+                let retried = continuation == Some(("lmacEndFrameExchangeSequence", Some(1)));
+                let production_continues = decision == Some(timeout.continuing);
+                if decision == Some(STEP_FINISH) {
+                    production_attempts = Some(phase + 1);
+                }
+                let production_valid = match production_attempts {
+                    None => production_continues,
+                    Some(attempts) if attempts == phase + 1 => true,
+                    Some(_) => decision == Some(STEP_NONE),
+                };
+                if retried != vendor_continues || continuation.is_none() || !production_valid {
+                    return Err(invalid(format!(
+                        "{label} phase {phase}: production decided {decision:?}, the vendor reached {continuation:?}"
+                    )));
+                }
+            }
+            match (production_attempts, timeout.pending) {
+                (Some(attempts), None) if attempts == vendor_attempts => {}
+                (Some(attempts), Some(pending)) if attempts < vendor_attempts => println!(
+                    "{label}: {pending}: the vendor ends after {vendor_attempts} completions, \
+                     production after {attempts}"
+                ),
+                (attempts, _) => {
+                    return Err(invalid(format!(
+                        "{label}: production ended after {attempts:?} completions, the vendor after {vendor_attempts}"
+                    )));
+                }
+            }
         }
     }
     Ok(())

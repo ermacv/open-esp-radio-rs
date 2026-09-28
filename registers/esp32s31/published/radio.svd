@@ -16777,8 +16777,8 @@
           </fields>
         </register>
         <register>
-          <name>RX_GAIN_FORCE_OPAQUE</name>
-          <description>Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.</description>
+          <name>RX_GAIN_FORCE</name>
+          <description>Bluetooth receive gain force word. Complete ROM phy_rx_gain_force forces the gain through FORCE_GAIN and FORCE_ENABLE; ble_bb_set_agc_target_value and bt_agc_target_set write AGC_TARGET.</description>
           <addressOffset>0x40</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -16796,14 +16796,32 @@
               </writeConstraint>
             </field>
             <field>
-              <name>TARGET_BITS_13_21</name>
-              <description>Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4.</description>
+              <name>AGC_TARGET</name>
+              <description>Complete ble_bb_set_agc_target_value replaces this field with its argument and ble_bb_get_agc_target_value reads it back; bt_agc_target_set writes the finite image 0x1d4.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>9</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
                   <maximum>511</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>FORCE_ENABLE</name>
+              <description>Complete ROM phy_rx_gain_force and librftest force_rx_gain write the low bit of the caller's flags here after the forced gain.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>FORCE_GAIN</name>
+              <description>Complete ROM phy_rx_gain_force and librftest force_rx_gain replace this byte with the caller's gain.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
                 </range>
               </writeConstraint>
             </field>
@@ -17273,8 +17291,8 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>DYNAMIC_BITS_14_20</name>
-              <description>Project-assigned name. Exact dynamic image written by the complete leaf.</description>
+              <name>AGC_GAIN_MAX</name>
+              <description>Complete bt_agc_gain_max replaces this field with its argument.</description>
               <bitOffset>14</bitOffset>
               <bitWidth>7</bitWidth>
             </field>

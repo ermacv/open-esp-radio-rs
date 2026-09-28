@@ -519,3 +519,11 @@ description = "ESP32-S31 rev0 software-CCM controlled comparison, 2026-09-19. Se
 [[sources]]
 id = "BLOB_LIBBREDR_HAL_LINK_ACCESSORS"
 description = "libbredr_app.a sha256 813f8a34e98694be4e19e9ac5d0ce5e805f531c73154c35f98e22143834ad851 (espressif/esp32s31-bt-lib 10c507788e9da0993709cf82e405c896561172d8); unobfuscated BR/EDR accessors in orca_bt_hal_link.c.o and orca_bt_driver_common.c.o over the shared Bluetooth MAC block. r_obh_link_btlc_timer_cc_set(index, value) writes indexes 0..3 to 0x2010108c, 0x201010b8, 0x201010bc and 0x201010c0. r_obh_link_btlc_fre_get returns the crystal frequency in kHz shifted right by bits 2:0 of 0x20101090, which r_obh_link_btlc_fre_set programs; r_obd_update_btlc_timer writes 0x20101094..0x2010109c and r_obd_capture_btlc_timer reads 0x201010ac..0x201010b4. r_obh_link_current_txlinkptr_get and r_obh_link_current_rxlinkptr_get read 0x201010c8 and 0x201010cc. r_obh_link_wdt_config packs its enable into bit 31 of 0x201010dc beside two further arguments and four packed arguments into 0x201010e0. r_obh_link_gpio_diag_set replaces bits 7:4 of 0x20101248 with its first argument and writes its remaining arguments to 0x201011f0, 0x201011e0, 0x201011d8 and 0x201011dc. r_obh_link_global_rxlink_curr_ptr_set, r_obh_link_global_rxlink_next_ptr_set and r_obh_link_global_rxvalid_set select 0x20101280/0x20101284, 0x20101288/0x2010128c or 0x20101290/0x20101294 by list index 1..3; the current pointer and the valid flag share the first word, bits 19:0 and bit 20."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BLE_BB_AGC_TARGET_VALUE"
+description = "libbtbb.a sha256 9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895; complete bt_cte.o ble_bb_set_agc_target_value, size 0x20, which replaces exactly 0x20102840 bits 21:13 with its argument in one fresh-read RMW, and ble_bb_get_agc_target_value, which reads the same word."
+
+[[sources]]
+id = "BLOB_LIBRFTEST_FORCE_RX_GAIN"
+description = "librftest.a sha256 c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a; complete phy_test.o force_rx_gain, which writes the caller's gain into 0x20102840 bits 31:24 and then its flag bit into bit 23 in separate fresh-read RMWs, the same layout as ROM phy_rx_gain_force."

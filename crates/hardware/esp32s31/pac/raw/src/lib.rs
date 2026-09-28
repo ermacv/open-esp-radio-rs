@@ -37453,7 +37453,7 @@ pub mod phy_btagc_recovered {
         _reserved1: [u8; 0x1c],
         cte_re_gain: CteReGain,
         _reserved2: [u8; 0x1c],
-        rx_gain_force_opaque: RxGainForceOpaque,
+        rx_gain_force: RxGainForce,
         rx_comp_control: RxCompControl,
         gain_offset_word_0_opaque: GainOffsetWord0Opaque,
         rx_config_004c: RxConfig004c,
@@ -37509,10 +37509,10 @@ pub mod phy_btagc_recovered {
         pub const fn cte_re_gain(&self) -> &CteReGain {
             &self.cte_re_gain
         }
-        #[doc = "0x40 - Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word."]
+        #[doc = "0x40 - Bluetooth receive gain force word. Complete ROM phy_rx_gain_force forces the gain through FORCE_GAIN and FORCE_ENABLE; ble_bb_set_agc_target_value and bt_agc_target_set write AGC_TARGET."]
         #[inline(always)]
-        pub const fn rx_gain_force_opaque(&self) -> &RxGainForceOpaque {
-            &self.rx_gain_force_opaque
+        pub const fn rx_gain_force(&self) -> &RxGainForce {
+            &self.rx_gain_force
         }
         #[doc = "0x44 - Project-assigned name. Complete bt_set_rx_comp updates five non-overlapping fields; the two low fields are dynamic and the three higher fields receive finite images."]
         #[inline(always)]
@@ -37786,56 +37786,84 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_GAIN_FORCE_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_force_opaque`] module"]
-    #[doc(alias = "RX_GAIN_FORCE_OPAQUE")]
-    pub type RxGainForceOpaque = crate::Reg<rx_gain_force_opaque::RxGainForceOpaqueSpec>;
-    #[doc = "Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word."]
-    pub mod rx_gain_force_opaque {
-        #[doc = "Register `RX_GAIN_FORCE_OPAQUE` reader"]
-        pub type R = crate::R<RxGainForceOpaqueSpec>;
-        #[doc = "Register `RX_GAIN_FORCE_OPAQUE` writer"]
-        pub type W = crate::W<RxGainForceOpaqueSpec>;
+    #[doc = "RX_GAIN_FORCE (rw) register accessor: Bluetooth receive gain force word. Complete ROM phy_rx_gain_force forces the gain through FORCE_GAIN and FORCE_ENABLE; ble_bb_set_agc_target_value and bt_agc_target_set write AGC_TARGET.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_force`] module"]
+    #[doc(alias = "RX_GAIN_FORCE")]
+    pub type RxGainForce = crate::Reg<rx_gain_force::RxGainForceSpec>;
+    #[doc = "Bluetooth receive gain force word. Complete ROM phy_rx_gain_force forces the gain through FORCE_GAIN and FORCE_ENABLE; ble_bb_set_agc_target_value and bt_agc_target_set write AGC_TARGET."]
+    pub mod rx_gain_force {
+        #[doc = "Register `RX_GAIN_FORCE` reader"]
+        pub type R = crate::R<RxGainForceSpec>;
+        #[doc = "Register `RX_GAIN_FORCE` writer"]
+        pub type W = crate::W<RxGainForceSpec>;
         #[doc = "Field `DYNAMIC_BITS_0_6` reader - Project-assigned name. bt_agc_gain_set replaces this field with the low seven bits of the byte read from the linked phy_param image at offset 0x120."]
         pub type DynamicBits0_6R = crate::FieldReader;
         #[doc = "Field `DYNAMIC_BITS_0_6` writer - Project-assigned name. bt_agc_gain_set replaces this field with the low seven bits of the byte read from the linked phy_param image at offset 0x120."]
         pub type DynamicBits0_6W<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
-        #[doc = "Field `TARGET_BITS_13_21` reader - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
-        pub type TargetBits13_21R = crate::FieldReader<u16>;
-        #[doc = "Field `TARGET_BITS_13_21` writer - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
-        pub type TargetBits13_21W<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
+        #[doc = "Field `AGC_TARGET` reader - Complete ble_bb_set_agc_target_value replaces this field with its argument and ble_bb_get_agc_target_value reads it back; bt_agc_target_set writes the finite image 0x1d4."]
+        pub type AgcTargetR = crate::FieldReader<u16>;
+        #[doc = "Field `AGC_TARGET` writer - Complete ble_bb_set_agc_target_value replaces this field with its argument and ble_bb_get_agc_target_value reads it back; bt_agc_target_set writes the finite image 0x1d4."]
+        pub type AgcTargetW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
+        #[doc = "Field `FORCE_ENABLE` reader - Complete ROM phy_rx_gain_force and librftest force_rx_gain write the low bit of the caller's flags here after the forced gain."]
+        pub type ForceEnableR = crate::BitReader;
+        #[doc = "Field `FORCE_ENABLE` writer - Complete ROM phy_rx_gain_force and librftest force_rx_gain write the low bit of the caller's flags here after the forced gain."]
+        pub type ForceEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FORCE_GAIN` reader - Complete ROM phy_rx_gain_force and librftest force_rx_gain replace this byte with the caller's gain."]
+        pub type ForceGainR = crate::FieldReader;
+        #[doc = "Field `FORCE_GAIN` writer - Complete ROM phy_rx_gain_force and librftest force_rx_gain replace this byte with the caller's gain."]
+        pub type ForceGainW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:6 - Project-assigned name. bt_agc_gain_set replaces this field with the low seven bits of the byte read from the linked phy_param image at offset 0x120."]
             #[inline(always)]
             pub fn dynamic_bits_0_6(&self) -> DynamicBits0_6R {
                 DynamicBits0_6R::new((self.bits & 0x7f) as u8)
             }
-            #[doc = "Bits 13:21 - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
+            #[doc = "Bits 13:21 - Complete ble_bb_set_agc_target_value replaces this field with its argument and ble_bb_get_agc_target_value reads it back; bt_agc_target_set writes the finite image 0x1d4."]
             #[inline(always)]
-            pub fn target_bits_13_21(&self) -> TargetBits13_21R {
-                TargetBits13_21R::new(((self.bits >> 13) & 0x01ff) as u16)
+            pub fn agc_target(&self) -> AgcTargetR {
+                AgcTargetR::new(((self.bits >> 13) & 0x01ff) as u16)
+            }
+            #[doc = "Bit 23 - Complete ROM phy_rx_gain_force and librftest force_rx_gain write the low bit of the caller's flags here after the forced gain."]
+            #[inline(always)]
+            pub fn force_enable(&self) -> ForceEnableR {
+                ForceEnableR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bits 24:31 - Complete ROM phy_rx_gain_force and librftest force_rx_gain replace this byte with the caller's gain."]
+            #[inline(always)]
+            pub fn force_gain(&self) -> ForceGainR {
+                ForceGainR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
             #[doc = "Bits 0:6 - Project-assigned name. bt_agc_gain_set replaces this field with the low seven bits of the byte read from the linked phy_param image at offset 0x120."]
             #[inline(always)]
-            pub fn dynamic_bits_0_6(&mut self) -> DynamicBits0_6W<'_, RxGainForceOpaqueSpec> {
+            pub fn dynamic_bits_0_6(&mut self) -> DynamicBits0_6W<'_, RxGainForceSpec> {
                 DynamicBits0_6W::new(self, 0)
             }
-            #[doc = "Bits 13:21 - Project-assigned name. bt_agc_target_set replaces this positional field with the finite image 0x1d4."]
+            #[doc = "Bits 13:21 - Complete ble_bb_set_agc_target_value replaces this field with its argument and ble_bb_get_agc_target_value reads it back; bt_agc_target_set writes the finite image 0x1d4."]
             #[inline(always)]
-            pub fn target_bits_13_21(&mut self) -> TargetBits13_21W<'_, RxGainForceOpaqueSpec> {
-                TargetBits13_21W::new(self, 13)
+            pub fn agc_target(&mut self) -> AgcTargetW<'_, RxGainForceSpec> {
+                AgcTargetW::new(self, 13)
+            }
+            #[doc = "Bit 23 - Complete ROM phy_rx_gain_force and librftest force_rx_gain write the low bit of the caller's flags here after the forced gain."]
+            #[inline(always)]
+            pub fn force_enable(&mut self) -> ForceEnableW<'_, RxGainForceSpec> {
+                ForceEnableW::new(self, 23)
+            }
+            #[doc = "Bits 24:31 - Complete ROM phy_rx_gain_force and librftest force_rx_gain replace this byte with the caller's gain."]
+            #[inline(always)]
+            pub fn force_gain(&mut self) -> ForceGainW<'_, RxGainForceSpec> {
+                ForceGainW::new(self, 24)
             }
         }
-        #[doc = "Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct RxGainForceOpaqueSpec;
-        impl crate::RegisterSpec for RxGainForceOpaqueSpec {
+        #[doc = "Bluetooth receive gain force word. Complete ROM phy_rx_gain_force forces the gain through FORCE_GAIN and FORCE_ENABLE; ble_bb_set_agc_target_value and bt_agc_target_set write AGC_TARGET.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxGainForceSpec;
+        impl crate::RegisterSpec for RxGainForceSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`rx_gain_force_opaque::R`](R) reader structure"]
-        impl crate::Readable for RxGainForceOpaqueSpec {}
-        #[doc = "`write(|w| ..)` method takes [`rx_gain_force_opaque::W`](W) writer structure"]
-        impl crate::Writable for RxGainForceOpaqueSpec {
+        #[doc = "`read()` method returns [`rx_gain_force::R`](R) reader structure"]
+        impl crate::Readable for RxGainForceSpec {}
+        #[doc = "`write(|w| ..)` method takes [`rx_gain_force::W`](W) writer structure"]
+        impl crate::Writable for RxGainForceSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -38632,22 +38660,22 @@ pub mod phy_btagc_recovered {
         pub type R = crate::R<AgcGainMaxControlSpec>;
         #[doc = "Register `AGC_GAIN_MAX_CONTROL` writer"]
         pub type W = crate::W<AgcGainMaxControlSpec>;
-        #[doc = "Field `DYNAMIC_BITS_14_20` reader - Project-assigned name. Exact dynamic image written by the complete leaf."]
-        pub type DynamicBits14_20R = crate::FieldReader;
-        #[doc = "Field `DYNAMIC_BITS_14_20` writer - Project-assigned name. Exact dynamic image written by the complete leaf."]
-        pub type DynamicBits14_20W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `AGC_GAIN_MAX` reader - Complete bt_agc_gain_max replaces this field with its argument."]
+        pub type AgcGainMaxR = crate::FieldReader;
+        #[doc = "Field `AGC_GAIN_MAX` writer - Complete bt_agc_gain_max replaces this field with its argument."]
+        pub type AgcGainMaxW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         impl R {
-            #[doc = "Bits 14:20 - Project-assigned name. Exact dynamic image written by the complete leaf."]
+            #[doc = "Bits 14:20 - Complete bt_agc_gain_max replaces this field with its argument."]
             #[inline(always)]
-            pub fn dynamic_bits_14_20(&self) -> DynamicBits14_20R {
-                DynamicBits14_20R::new(((self.bits >> 14) & 0x7f) as u8)
+            pub fn agc_gain_max(&self) -> AgcGainMaxR {
+                AgcGainMaxR::new(((self.bits >> 14) & 0x7f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 14:20 - Project-assigned name. Exact dynamic image written by the complete leaf."]
+            #[doc = "Bits 14:20 - Complete bt_agc_gain_max replaces this field with its argument."]
             #[inline(always)]
-            pub fn dynamic_bits_14_20(&mut self) -> DynamicBits14_20W<'_, AgcGainMaxControlSpec> {
-                DynamicBits14_20W::new(self, 14)
+            pub fn agc_gain_max(&mut self) -> AgcGainMaxW<'_, AgcGainMaxControlSpec> {
+                AgcGainMaxW::new(self, 14)
             }
         }
         #[doc = "Project-assigned name. Complete bt_agc_gain_max replaces bits 20:14 with one dynamic image while preserving all other bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`agc_gain_max_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_gain_max_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -62963,11 +62991,7 @@ pub mod partition_image_read {
                 .bits(),
             68 => registers.phy_btagc_recovered.cte_dc_shift().read().bits(),
             69 => registers.phy_btagc_recovered.cte_re_gain().read().bits(),
-            70 => registers
-                .phy_btagc_recovered
-                .rx_gain_force_opaque()
-                .read()
-                .bits(),
+            70 => registers.phy_btagc_recovered.rx_gain_force().read().bits(),
             71 => registers
                 .phy_btagc_recovered
                 .rx_comp_control()
@@ -67624,13 +67648,13 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE fields `[DYNAMIC_BITS_0_6]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE fields `[DYNAMIC_BITS_0_6]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_gain_force(
         registers: &crate::PhyBtagcRecovered,
         input: u32,
     ) {
-        registers.rx_gain_force_opaque().modify(|_, writer| {
+        registers.rx_gain_force().modify(|_, writer| {
             let input = input.wrapping_sub(0x00000000) & 0x0000007f;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
@@ -67736,14 +67760,14 @@ pub mod field_replace_modify {
             });
     }
 
-    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE fields `[TARGET_BITS_13_21]` from one reviewed logical image while preserving every other bit.
+    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE fields `[AGC_TARGET]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn initialize_bluetooth_receive_target_gain_force(registers: &crate::PhyBtagcRecovered) {
-        registers.rx_gain_force_opaque().modify(|_, writer| {
+        registers.rx_gain_force().modify(|_, writer| {
             let input = 0x000001d4_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
-            unsafe { writer.target_bits_13_21().bits((input & 0x000001ff) as u16) }
+            unsafe { writer.agc_target().bits((input & 0x000001ff) as u16) }
         });
     }
 

@@ -1056,6 +1056,18 @@ symbol = "ble_bb_cte_set_cte_en"
 code = "7bdcd0d2883ba4dcfea60974fc0c45a175d9b39a4d527cd24d6b4e092050bd3e"
 
 [[function]]
+artifact = "libbtbb"
+member = "bt_cte.o"
+symbol = "ble_bb_get_agc_target_value"
+code = "52185e31bb900eec4c98ee5e1e07bb139694a1f2bfefc4908b3b05fa7b3b1952"
+
+[[function]]
+artifact = "libbtbb"
+member = "bt_cte.o"
+symbol = "ble_bb_set_agc_target_value"
+code = "2d07bedec16a5135972013654de88fa1a04ca23d60131adcfbd38b11ff503e2c"
+
+[[function]]
 artifact = "libbtdm_common"
 member = "10.o"
 symbol = "r_sym_bt_RJ9vWjyuZJabuhkGCaRp"
@@ -4632,6 +4644,12 @@ artifact = "libpp"
 member = "wdev.o"
 symbol = "wdev_process_tbtt"
 code = "101cd146279b40460a640dec5dbd08a3e81d22becf3437a1fdc0355cef22255e"
+
+[[function]]
+artifact = "librftest"
+member = "phy_test.o"
+symbol = "force_rx_gain"
+code = "867a79ebd1ab19e4da56fc4d93d9ed9701cfdf5b45bb406f3c398cc5e686086c"
 
 [[function]]
 artifact = "rom"

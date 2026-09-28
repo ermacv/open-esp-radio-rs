@@ -4850,7 +4850,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_gain_force"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_GAIN_FORCE_OPAQUE"
+register = "RX_GAIN_FORCE"
 fields = [{ field = "DYNAMIC_BITS_0_6", source-bit-offset = 0 }]
 domain = "BluetoothBasebandGainParameterByte"
 input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
@@ -4924,8 +4924,8 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 [[field-replace-modifies]]
 name = "initialize_bluetooth_receive_target_gain_force"
 peripheral = "PHY_BTAGC_RECOVERED"
-register = "RX_GAIN_FORCE_OPAQUE"
-fields = [{ field = "TARGET_BITS_13_21", source-bit-offset = 0 }]
+register = "RX_GAIN_FORCE"
+fields = [{ field = "AGC_TARGET", source-bit-offset = 0 }]
 value = 0x1d4
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]

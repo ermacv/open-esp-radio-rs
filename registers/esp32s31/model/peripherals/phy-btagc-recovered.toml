@@ -56,8 +56,8 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_GAIN_FORCE_OPAQUE"
-description = "Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word."
+name = "RX_GAIN_FORCE"
+description = "Bluetooth receive gain force word. Complete ROM phy_rx_gain_force forces the gain through FORCE_GAIN and FORCE_ENABLE; ble_bb_set_agc_target_value and bt_agc_target_set write AGC_TARGET."
 addressOffset = 0x40
 size = 32
 access = "read-write"
@@ -73,14 +73,30 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "TARGET_BITS_13_21"
-description = "bt_agc_target_set replaces this positional field with the finite image 0x1d4."
+name = "AGC_TARGET"
+description = "Complete ble_bb_set_agc_target_value replaces this field with its argument and ble_bb_get_agc_target_value reads it back; bt_agc_target_set writes the finite image 0x1d4."
 bitOffset = 13
 bitWidth = 9
 
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0x0
 maximum = 0x1FF
+
+[[peripherals.registers.register.fields]]
+name = "FORCE_ENABLE"
+description = "Complete ROM phy_rx_gain_force and librftest force_rx_gain write the low bit of the caller's flags here after the forced gain."
+bitOffset = 23
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "FORCE_GAIN"
+description = "Complete ROM phy_rx_gain_force and librftest force_rx_gain replace this byte with the caller's gain."
+bitOffset = 24
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
 
 [[peripherals.registers]]
 
@@ -482,8 +498,8 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "DYNAMIC_BITS_14_20"
-description = "Exact dynamic image written by the complete leaf."
+name = "AGC_GAIN_MAX"
+description = "Complete bt_agc_gain_max replaces this field with its argument."
 bitOffset = 14
 bitWidth = 7
 
@@ -1364,8 +1380,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE"
-naming = "opaque"
+entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE"
+naming = "vendor"
 sources = [
     "ROM_REV0_PHY_BLOBRAY_GAPS",
     "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",
@@ -1549,8 +1565,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.AGC_GAIN_MAX_CONTROL.DYNAMIC_BITS_14_20"
-naming = "descriptive"
+entity = "PHY_BTAGC_RECOVERED.AGC_GAIN_MAX_CONTROL.AGC_GAIN_MAX"
+naming = "vendor"
 sources = ["BLOB_LIBBTBB_BT_AGC_BASIC_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
@@ -2165,7 +2181,7 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE.DYNAMIC_BITS_0_6"
+entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE.DYNAMIC_BITS_0_6"
 naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
@@ -2173,9 +2189,28 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE.TARGET_BITS_13_21"
-naming = "descriptive"
-sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE.AGC_TARGET"
+naming = "vendor"
+sources = [
+    "BLOB_LIBBTBB_BLE_BB_AGC_TARGET_VALUE",
+    "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",
+]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE.FORCE_ENABLE"
+naming = "vendor"
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS", "BLOB_LIBRFTEST_FORCE_RX_GAIN"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE.FORCE_GAIN"
+naming = "vendor"
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS", "BLOB_LIBRFTEST_FORCE_RX_GAIN"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

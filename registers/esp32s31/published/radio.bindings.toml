@@ -8128,12 +8128,12 @@ access = "read-write"
 address = 537929792
 width = 32
 access = "read-write"
-identity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE"
+identity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE"
 peripheral = "PHY_BTAGC_RECOVERED"
 peripheral-type = "PhyBtagcRecovered"
 peripheral-module = "phy_btagc_recovered"
 scope = []
-register-method = "rx_gain_force_opaque"
+register-method = "rx_gain_force"
 
 [[registers.fields]]
 svd-name = "DYNAMIC_BITS_0_6"
@@ -8143,10 +8143,24 @@ bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "TARGET_BITS_13_21"
-method = "target_bits_13_21"
+svd-name = "AGC_TARGET"
+method = "agc_target"
 bit-offset = 13
 bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FORCE_ENABLE"
+method = "force_enable"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FORCE_GAIN"
+method = "force_gain"
+bit-offset = 24
+bit-width = 8
 access = "read-write"
 
 [[registers]]
@@ -8306,8 +8320,8 @@ scope = []
 register-method = "agc_gain_max_control"
 
 [[registers.fields]]
-svd-name = "DYNAMIC_BITS_14_20"
-method = "dynamic_bits_14_20"
+svd-name = "AGC_GAIN_MAX"
+method = "agc_gain_max"
 bit-offset = 14
 bit-width = 7
 access = "read-write"

@@ -81,6 +81,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             return crate::hil_flash::run(ctx, request, &args[1..]);
         }
         Some("runs") => return runs(ctx, &options, &args[1..]),
+        Some("evidence") => return crate::hil_evidence::command(ctx, &args[1..]),
         Some("perf") => return perf(ctx, &options, &args[1..]),
         _ => {}
     }
@@ -130,7 +131,8 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             }),
             &created,
         ) {
-            None => record_evidence(ctx, &receipt_path, &run_ids)?,
+            None if record_forced => record_evidence(ctx, &receipt_path, &run_ids)?,
+            None => remember_pending(ctx, &run_ids)?,
             Some(reason) => eprintln!(
                 "hil: HIL evidence not recorded: {reason}; pass {RECORD_EVIDENCE} to record it"
             ),
@@ -169,6 +171,9 @@ Stand commands (shared by every checkout of this user):
   cargo hil runs history SCENARIO [--measurement TEXT]
   cargo hil runs pin RUN --reason TEXT | unpin RUN
   cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
+  cargo hil evidence record [--run ID ...] [--since REV]   write runs' qualifying observations as tracked shards;
+                                      default: this checkout's pending clean runs
+  cargo hil evidence pending          clean runs whose evidence is not recorded yet
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
   cargo hil firmware build IMAGE      build against the one pinned ESP-IDF
   cargo hil firmware flash IMAGE --board NAME|MAC [--jtag] [--if-changed]   flash under a lease of that board, journaled
@@ -189,6 +194,10 @@ scenario to a waiter with a higher balance and queues again; a single
 scenario or lease command runs to its end. Every lease ends at 1h (lease
 exit status 124). `cargo hil queue` shows every balance and who goes next.
 Scenarios tagged `air-exclusive` claim the air exclusively.
+
+Runs never write tracked files: a clean run's passed scenarios become this
+checkout's pending evidence, recorded by `cargo hil evidence record`. Add
+--record-evidence to a run to record its evidence at once, even from a dirty tree.
 
 Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";
 
@@ -1218,7 +1227,7 @@ fn use_shared_store(ctx: &Context) -> Result<()> {
 }
 
 /// The HIL target the runner executes on.
-const HIL_TARGET: &str = "esp32s31";
+pub(crate) const HIL_TARGET: &str = "esp32s31";
 
 /// Forces recording HIL evidence after a run that would otherwise skip it.
 const RECORD_EVIDENCE: &str = "--record-evidence";
@@ -1263,6 +1272,32 @@ fn evidence_skip_reason(
     }
 }
 
+/// Note clean runs as pending evidence of this checkout: a run never writes
+/// tracked files unless asked to with `--record-evidence`.
+fn remember_pending(ctx: &Context, run_ids: &[String]) -> Result<()> {
+    let store = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let pending = run_ids
+        .iter()
+        .map(|run| crate::hil_evidence::Pending {
+            run: run.clone(),
+            scenarios: crate::hil_evidence::passed_scenarios(&store.join(run)),
+        })
+        .collect::<Vec<_>>();
+    crate::hil_evidence::remember(&ctx.root, &pending)?;
+    let passed = pending
+        .iter()
+        .filter(|run| !run.scenarios.is_empty())
+        .map(|run| format!(" --run {}", run.run))
+        .collect::<String>();
+    if !passed.is_empty() {
+        eprintln!(
+            "hil: evidence not recorded in hil/evidence; record it with the change it qualifies: \
+             cargo hil evidence record{passed}"
+        );
+    }
+    Ok(())
+}
+
 /// Commands that execute scenarios and write run bundles.
 fn produces_runs(args: &[OsString]) -> bool {
     matches!(
@@ -1274,7 +1309,11 @@ fn produces_runs(args: &[OsString]) -> bool {
 /// Record the observations that qualify on this checkout as tracked HIL
 /// evidence shards, with the observer receipt the runs were produced under.
 /// Failed scenarios record nothing, so this also runs after a failing suite.
-fn record_evidence(ctx: &Context, receipt: &std::path::Path, run_ids: &[String]) -> Result<()> {
+pub(crate) fn record_evidence(
+    ctx: &Context,
+    receipt: &std::path::Path,
+    run_ids: &[String],
+) -> Result<()> {
     // Every checkout's runs share one store, so recording evidence reads all
     // of them. One recording at a time on the host, each in a memory-capped
     // scope, keeps simultaneous runs of several agents from exhausting it.

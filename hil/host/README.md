@@ -209,7 +209,8 @@ lease ends at one hour: it is stopped with `SIGTERM`, which runs the ordinary
 cancellation and fixture cleanup, a `lease` stopped this way exits with status
 124, and `SIGKILL` follows five minutes later. Estimates from earlier leases of
 the same work only predict when a waiting request starts. A top-level run
-records its evidence shards after its lease is released. `cargo hil doctor`
+given `--record-evidence` records its evidence shards after its lease is
+released; otherwise `cargo hil evidence record` does. `cargo hil doctor`
 reports conflicting holders without queueing.
 
 A command started in the background returns when its lease ends; its exit is

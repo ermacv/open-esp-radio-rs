@@ -5,7 +5,9 @@
 //! usual breakage first: formatting of every workspace a changed file belongs
 //! to, Clippy and API documentation of the root workspace, the tests of the
 //! changed root packages, the Markdown/catalog check when prose changed, and
-//! the metadata check when a manifest or lockfile changed. It is not full
+//! the metadata check when a manifest or lockfile changed. It reminds, without
+//! failing, of clean HIL runs of qualification scenarios whose evidence this
+//! checkout has not recorded. It is not full
 //! repository coverage; the CI jobs remain the source checkpoint.
 
 use std::{
@@ -257,6 +259,13 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             "check changed: formatted {}; build it with its own target and feature profile",
             workspace.display()
         );
+    }
+    // A reminder only: runs never write tracked files, so evidence is an
+    // explicit step that is easy to forget.
+    match crate::hil_evidence::reminder(&ctx.root) {
+        Ok(Some(reminder)) => println!("check changed: {reminder}"),
+        Ok(None) => {}
+        Err(error) => println!("check changed: pending HIL evidence unreadable: {error}"),
     }
     println!("check changed passed; the CI jobs remain the full checkpoint");
     Ok(())

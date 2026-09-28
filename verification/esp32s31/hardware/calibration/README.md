@@ -11,7 +11,7 @@ It does not depend on Blobray peripheral models.
 ```console
 cargo xtask vendor-firmware --chip esp32s31 calibration
 cargo build -p oer-esp32s31-phy-vendor-calibration
-cargo hil --owner <name> lease --board esp32s31 --air exclusive --budget 30m -- \
+cargo hil --owner <name> lease --board esp32s31 --air exclusive -- \
     target/debug/oer-esp32s31-phy-vendor-calibration capture --output <new directory>
 cargo run -p oer-esp32s31-phy-vendor-calibration -- compare --captures <directory>
 ```

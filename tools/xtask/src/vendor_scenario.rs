@@ -40,22 +40,33 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
         "--bin",
         "blobray",
     ]))?;
-    let build = crate::blobray::cargo(ctx, "build")
+    // Cargo keeps a `.d` only beside a root unit's output, so the verdict
+    // libraries are built as roots first; the binary links the same units.
+    let libraries = crate::blobray::cargo(ctx, "build")
         .args([
             "--profile",
             "blobray",
             "-p",
-            package,
-            "--bin",
-            binary,
+            ENGINE_PACKAGE,
+            "-p",
+            library,
+            "--lib",
             MESSAGE_FORMAT,
         ])
         .stderr(std::process::Stdio::inherit())
         .output()?;
-    if !build.status.success() {
-        return Err(format!("building {package} failed").into());
+    if !libraries.status.success() {
+        return Err(format!("building {ENGINE_PACKAGE} and {library} failed").into());
     }
-    let verdict = verdict_dep_info(&build.stdout, &[ENGINE_PACKAGE, library])?;
+    let verdict = verdict_dep_info(&libraries.stdout, &[ENGINE_PACKAGE, library])?;
+    process::run(crate::blobray::cargo(ctx, "build").args([
+        "--profile",
+        "blobray",
+        "-p",
+        package,
+        "--bin",
+        binary,
+    ]))?;
     let mut command = ctx.command(crate::blobray::binary(ctx, binary));
     command
         .arg(scenario)
@@ -70,7 +81,7 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
 }
 
 /// The dep-info files of the library targets of `packages` in Cargo's JSON
-/// build `messages`: each sits beside its `.rlib`.
+/// build `messages`: each sits beside the `.rlib` a root build writes.
 fn verdict_dep_info(messages: &[u8], packages: &[&str]) -> Result<Vec<PathBuf>> {
     let mut files = vec![];
     for package in packages {

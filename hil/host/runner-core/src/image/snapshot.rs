@@ -3,7 +3,8 @@
 //! Tracked files are included automatically. Every nonignored untracked file
 //! must be named explicitly before any content is archived, or, with
 //! `--include-untracked`, lie inside a path package of the firmware
-//! workspaces, the packages an image build reads. The manifest lists every
+//! workspaces, the packages an image build reads, or inside the HIL host
+//! packages and scenarios, which the run reads. The manifest lists every
 //! untracked file it archived and why. This is a source
 //! snapshot, not a hermetic build or a qualification decision.
 
@@ -28,6 +29,10 @@ const FIRMWARE_WORKSPACES: [&str; 2] = [
     "hil/targets/esp32s31/Cargo.toml",
     "platform/esp32s31/bootstrap/Cargo.toml",
 ];
+
+/// Repository directories of the HIL host packages and scenarios, whose
+/// untracked files `--include-untracked` also archives.
+const HIL_HOST_INPUTS: [&str; 3] = ["hil/host", "hil/schema", "hil/scenarios"];
 
 /// Repository-relative directories of the path packages the firmware
 /// workspaces build, from Cargo's locked metadata.
@@ -336,8 +341,8 @@ struct Selection {
 /// and, when `include_untracked`, every untracked file inside an image
 /// package.
 pub fn capture(root: &Path, include: &[String], include_untracked: bool) -> Result<Snapshot> {
-    let packages = if include_untracked {
-        image_packages(root)?
+    let scopes = if include_untracked {
+        untracked_scopes(image_packages(root)?)
     } else {
         Vec::new()
     };
@@ -354,9 +359,37 @@ pub fn capture(root: &Path, include: &[String], include_untracked: bool) -> Resu
     capture_roots(
         &roots,
         include,
-        &packages,
+        &scopes,
         &root.join("target/hil/esp32s31/source-snapshots"),
     )
+}
+
+/// The repository directories whose untracked files `--include-untracked`
+/// archives, each with the reason it records: the image `packages`, then the
+/// HIL host inputs.
+fn untracked_scopes(packages: Vec<PathBuf>) -> Vec<(PathBuf, UntrackedReason)> {
+    packages
+        .into_iter()
+        .map(|package| (package, UntrackedReason::ImagePackage))
+        .chain(
+            HIL_HOST_INPUTS
+                .into_iter()
+                .map(|input| (PathBuf::from(input), UntrackedReason::HilHost)),
+        )
+        .collect()
+}
+
+/// The `--source-include` arguments that add each of `unresolved` (as
+/// `role:path`) to a run, ready to paste.
+fn source_include_arguments(unresolved: &[(&str, &Path)]) -> String {
+    unresolved
+        .iter()
+        .map(|(role, path)| match *role {
+            "repository" => format!("--source-include {}", path.display()),
+            role => format!("--source-include {role}:{}", path.display()),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
@@ -441,12 +474,12 @@ fn select(name: &str, root: &Path) -> Result<Selection> {
     })
 }
 
-/// `packages` are repository-relative directories whose untracked files are
-/// archived without being named.
+/// `scopes` are repository-relative directories whose untracked files are
+/// archived without being named, each with the reason recorded for them.
 fn capture_roots(
     roots: &[(String, PathBuf)],
     include: &[String],
-    packages: &[PathBuf],
+    scopes: &[(PathBuf, UntrackedReason)],
     output: &Path,
 ) -> Result<Snapshot> {
     let selections = roots
@@ -477,10 +510,8 @@ fn capture_roots(
     if let Some(repository) = selections.iter().find(|s| s.name == "repository") {
         let accepted = accepted.entry(repository.name.clone()).or_default();
         for path in &repository.untracked {
-            if packages.iter().any(|package| path.starts_with(package)) {
-                accepted
-                    .entry(path.clone())
-                    .or_insert(UntrackedReason::ImagePackage);
+            if let Some((_, reason)) = scopes.iter().find(|(scope, _)| path.starts_with(scope)) {
+                accepted.entry(path.clone()).or_insert(*reason);
             }
         }
     }
@@ -490,16 +521,21 @@ fn capture_roots(
             s.untracked
                 .iter()
                 .filter(|p| !accepted.get(&s.name).is_some_and(|v| v.contains_key(*p)))
-                .map(|p| format!("{}:{}", s.name, p.display()))
+                .map(|p| (s.name.as_str(), p.as_path()))
         })
         .collect::<Vec<_>>();
     if !unresolved.is_empty() {
         return Err(format!(
-            "source snapshot blocked by untracked files, which a build could read. For each \
-             one, commit it, add it to this run with `--source-include <path>` (another \
-             source: `--source-include <role>:<path>`), or remove or ignore it; \
-             `--include-untracked` adds those inside the packages an image builds:\n{}",
-            unresolved.join("\n")
+            "source snapshot blocked by untracked files, which a build could read:\n{}\n\
+             Commit, remove or ignore each one, or add them all to this run with\n  {}\n\
+             `--include-untracked` adds those inside the packages an image builds, the HIL \
+             host packages and hil/scenarios.",
+            unresolved
+                .iter()
+                .map(|(role, path)| format!("{role}:{}", path.display()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            source_include_arguments(&unresolved)
         )
         .into());
     }

@@ -64,6 +64,8 @@ pub enum UntrackedReason {
     SourceInclude,
     /// Inside an image package, with `--include-untracked`.
     ImagePackage,
+    /// Inside the HIL host packages or scenarios, with `--include-untracked`.
+    HilHost,
 }
 
 #[cfg(test)]

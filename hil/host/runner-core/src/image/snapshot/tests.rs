@@ -55,7 +55,7 @@ fn untracked_evidence_shards_neither_block_nor_enter_a_snapshot() {
         .err()
         .unwrap()
         .to_string();
-    assert!(error.contains("--source-include <path>"), "{error}");
+    assert!(error.contains("\n  --source-include new.rs\n"), "{error}");
     assert!(!error.contains("station.json"), "{error}");
     let snapshot = capture_roots(&roots, &["new.rs".into()], &[], &target).unwrap();
     let mut archive =
@@ -292,27 +292,30 @@ fn concurrent_builds_take_free_workspace_slots_without_waiting() {
 }
 
 #[test]
-fn include_untracked_archives_only_files_inside_image_packages_and_records_why() {
+fn include_untracked_archives_only_files_inside_its_scopes_and_records_why() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let target = output.path().join("snapshots");
-    fs::create_dir_all(root.path().join("crates/driver/src")).unwrap();
-    fs::write(
-        root.path().join("crates/driver/src/new.rs"),
-        "pub fn new() {}\n",
-    )
-    .unwrap();
+    for file in [
+        "crates/driver/src/new.rs",
+        "hil/host/runner/src/new.rs",
+        "hil/scenarios/new.toml",
+    ] {
+        let path = root.path().join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "new\n").unwrap();
+    }
     fs::write(root.path().join("notes.txt"), "scratch\n").unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let packages = [PathBuf::from("crates/driver")];
-    // A file outside every image package still has to be named.
-    let error = capture_roots(&roots, &[], &packages, &target)
+    let scopes = untracked_scopes(vec![PathBuf::from("crates/driver")]);
+    // A file outside every scope still has to be named.
+    let error = capture_roots(&roots, &[], &scopes, &target)
         .err()
         .unwrap()
         .to_string();
     assert!(error.contains("repository:notes.txt"), "{error}");
-    assert!(!error.contains("new.rs"), "{error}");
-    let snapshot = capture_roots(&roots, &["notes.txt".into()], &packages, &target).unwrap();
+    assert!(!error.contains("new."), "{error}");
+    let snapshot = capture_roots(&roots, &["notes.txt".into()], &scopes, &target).unwrap();
     let manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(snapshot.directory.join("manifest.json")).unwrap())
             .unwrap();
@@ -320,7 +323,20 @@ fn include_untracked_archives_only_files_inside_image_packages_and_records_why()
         manifest["sources"][0]["untracked"],
         serde_json::json!([
             {"path": "crates/driver/src/new.rs", "by": "image-package"},
+            {"path": "hil/host/runner/src/new.rs", "by": "hil-host"},
+            {"path": "hil/scenarios/new.toml", "by": "hil-host"},
             {"path": "notes.txt", "by": "source-include"},
         ])
+    );
+}
+
+#[test]
+fn the_blocked_snapshot_error_names_arguments_ready_to_paste() {
+    assert_eq!(
+        source_include_arguments(&[
+            ("repository", Path::new("a/new.rs")),
+            ("esp-hal", Path::new("b.rs")),
+        ]),
+        "--source-include a/new.rs --source-include esp-hal:b.rs"
     );
 }

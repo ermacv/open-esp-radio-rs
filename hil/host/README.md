@@ -637,9 +637,11 @@ nonignored untracked file must be explicitly named with a repeated
 `--source-include`, or, with `--include-untracked`, lie inside a path package
 of the firmware workspaces (`hil/targets/esp32s31` and
 `platform/esp32s31/bootstrap`, as Cargo's locked metadata lists them), the
-packages an image build reads; unresolved files block capture with their
-names, before content is archived. The manifest lists every archived untracked
-file with `by: source-include` or `by: image-package`, and a run with either
+packages an image build reads, or inside the HIL host packages and scenarios
+(`hil/host`, `hil/schema` and `hil/scenarios`), which the run reads;
+unresolved files block capture with their names and the `--source-include`
+arguments that add them all, ready to paste, before content is archived. The manifest lists every archived untracked
+file with `by: source-include`, `by: image-package` or `by: hil-host`, and a run with any
 option records no evidence unless `--record-evidence` asks for it. Directory selections and ignored files are not accepted.
 For the configured local overrides, qualify each new file with `esp-hal:`,
 `embassy:` or `xarxa:`. No symlink or submodule content is silently followed;

@@ -47,7 +47,8 @@ pub(crate) fn execute_workload(
 ) -> ExecutionEvidence {
     // The board's MAC outlives its port name, which a reset can change.
     let mac = hil_core::post_mortem::board_mac(&lab.device.serial);
-    let context = hil_core::context::Context::new(lab, selected.plan().settings, output);
+    let context = hil_core::context::Context::new(lab, selected.plan().settings, output)
+        .with_profile(selected.header.profile);
     let result = selected.family.run(output, &context, fixture);
     let elf = runtime_elf(output, selected.image().id());
     // A failure may be the target ending: ask it how, without resetting it;

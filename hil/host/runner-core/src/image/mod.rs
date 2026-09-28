@@ -98,6 +98,19 @@ pub fn classify_flashed_capabilities(
     if features.phy_fault_injection {
         return None;
     }
+    // The program-counter sampler rides in the classes that compile it: the
+    // image is its class without the feature.
+    if features
+        .diagnostic_features
+        .contains(DiagnosticFeature::PcProfile)
+    {
+        let mut control = *features;
+        control.diagnostic_features = features
+            .diagnostic_features
+            .with(DiagnosticFeature::PcProfile, false);
+        return classify_flashed_capabilities(&control)
+            .filter(|class| class.samples_program_counter());
+    }
     // A diagnostic-feature class is the performance image plus exactly its
     // one feature.
     if !features.diagnostic_features.is_empty() {

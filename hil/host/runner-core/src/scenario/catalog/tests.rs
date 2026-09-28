@@ -153,3 +153,40 @@ fn only_a_diagnostic_scenario_selects_the_station_exit_image() {
         assert!(scenario(refused).is_err(), "tags [{refused}]");
     }
 }
+
+#[test]
+fn a_profile_needs_a_sampling_image_a_period_in_range_and_a_diagnostic_scenario() {
+    let document = |image: &str, tags: &str, period: u32| {
+        format!(
+            "schema = 5\nid = \"profiled\"\ndescription = \"profiled\"\ntags = [{tags}]\n\
+             [profile]\nharts = \"both\"\nperiod-us = {period}\n\
+             [wifi]\nimage = \"{image}\"\nworkload = {{ kind = \"x\" }}\n"
+        )
+    };
+    let parse = |text: String| {
+        crate::scenario::Scenario::<super::super::test_family::TestFamily>::from_toml(
+            &text,
+            std::path::Path::new("profiled.toml"),
+        )
+    };
+    let profiled = parse(document(
+        "diagnostic-task-residence",
+        "\"diagnostic\"",
+        1999,
+    ))
+    .unwrap();
+    assert_eq!(
+        profiled.header.profile,
+        Some(crate::scenario::ProfileRequest {
+            harts: crate::scenario::ProfileHarts::Both,
+            period_us: 1999,
+        })
+    );
+    // The profile is part of the procedure the scenario records.
+    assert!(serde_json::to_value(&profiled).unwrap()["profile"].is_object());
+    assert!(parse(document("correctness", "\"diagnostic\"", 1999)).is_err());
+    assert!(parse(document("diagnostic-task-residence", "\"diagnostic\"", 50)).is_err());
+    for gated in ["\"performance\"", "\"qualification\""] {
+        assert!(parse(document("diagnostic-task-residence", gated, 1999)).is_err());
+    }
+}

@@ -222,6 +222,8 @@ pub struct SerialCapture {
     output: PathBuf,
     persisted: bool,
     measurements: Option<crate::evidence::measurements::CaptureRecorder>,
+    /// The armed program-counter profile, drained when the capture finishes.
+    profile: Option<crate::scenario::ProfileRequest>,
 }
 
 fn command_response_matches(

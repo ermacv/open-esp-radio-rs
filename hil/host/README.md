@@ -490,6 +490,27 @@ shared arbiter state with one binary. Reinstall after arbiter or stand changes
 land on `main`. Runs, image builds and flashing keep using `cargo hil`, which
 builds the runner from the caller's sources.
 
+### Program-counter profiles
+
+A scenario with a [`[profile]` table](../scenarios/README.md#program-counter-profile)
+arms the image's sampler right after each boot's hello; the workload opens
+and closes the sampled window, and when the capture finishes the runner pages
+out the raw `(pc, ra)` samples of both harts into the capture's
+`profile.json`, with the target's status, and disarms it. A drain that fails
+is recorded there as an error, never as a workload failure.
+
+```console
+cargo hil profile <run-id>                       # every profiled repetition
+cargo hil profile <run-id> --scenario S --repetition 1 --top 20
+```
+
+`profile` symbolizes each `profile.json` against the run's own
+`firmware/<image>/runtime.elf`, prints each hart's most sampled functions
+(the outermost frame of the inline chain), their most frequent inlined frame
+and the callers the return addresses name, and writes the report beside it as
+`profile.txt`. A return address names the caller only while the sampled
+function has not called another, so callers are exact for leaf functions.
+
 ### Performance across commits
 
 A scenario's gated measurements, those with an `at-least` or `at-most`

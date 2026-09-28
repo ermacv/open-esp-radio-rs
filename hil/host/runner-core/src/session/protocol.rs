@@ -1134,6 +1134,83 @@ impl SerialCapture {
         Ok(checkpoints)
     }
 
+    /// Arm the program-counter profile once the boot's hello arrived; the
+    /// capture drains it into `profile.json` when it finishes.
+    pub fn profiled(mut self, profile: crate::scenario::ProfileRequest) -> Result<Self> {
+        self.wait_for_protocol_after(0, PROTOCOL_READY_TIMEOUT, |message| {
+            matches!(message.body, Event::Hello(_))
+        })?
+        .ok_or("device did not publish a HIL protocol hello before the profile")?;
+        match self
+            .send_command(
+                0,
+                Command::ProfileControl(profile.control()),
+                Duration::from_secs(5),
+            )?
+            .body
+        {
+            Event::ProfileStatus(status) if status.armed => {}
+            response => {
+                return Err(format!("the image did not arm the profile: {response:?}").into());
+            }
+        }
+        self.profile = Some(profile);
+        Ok(self)
+    }
+
+    /// The closed window's status and each hart's raw `(pc, ra)` samples;
+    /// the profile is disarmed afterwards.
+    pub(crate) fn drain_profile(&self) -> Result<DrainedProfile> {
+        let status = match self
+            .send_command(
+                0,
+                Command::ProfileControl(oer_hil_protocol::ProfileControl::Status),
+                Duration::from_secs(5),
+            )?
+            .body
+        {
+            Event::ProfileStatus(status) => status,
+            response => return Err(format!("profile status rejected: {response:?}").into()),
+        };
+        let mut samples = [Vec::new(), Vec::new()];
+        if !status.open {
+            for (hart, pairs) in samples.iter_mut().enumerate() {
+                while (pairs.len() as u32) < status.samples[hart] {
+                    let first = pairs.len() as u32;
+                    match self
+                        .send_command(
+                            0,
+                            Command::GetProfileSamples {
+                                hart: hart as u8,
+                                first,
+                            },
+                            Duration::from_secs(5),
+                        )?
+                        .body
+                    {
+                        Event::ProfileSamples(page)
+                            if page.first == first && !page.samples.is_empty() =>
+                        {
+                            pairs.extend(page.samples);
+                        }
+                        response => {
+                            return Err(format!(
+                                "profile page {first} of hart {hart} rejected: {response:?}"
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
+        }
+        let _ = self.send_command(
+            0,
+            Command::ProfileControl(oer_hil_protocol::ProfileControl::Disarm),
+            Duration::from_secs(5),
+        );
+        Ok((status, samples))
+    }
+
     /// Report, start or re-mask the target's event trace.
     pub fn trace_control(
         &self,
@@ -2249,3 +2326,7 @@ pub(super) fn station_unchanged_since_in(
     }
     Ok(())
 }
+
+/// A drained profile: the target's status and each hart's raw `(pc, ra)`
+/// samples.
+pub(crate) type DrainedProfile = (oer_hil_protocol::ProfileStatus, [Vec<(u32, u32)>; 2]);

@@ -12,6 +12,9 @@ pub struct Context<'a> {
     pub lab: &'a LabConfig,
     pub settings: Settings,
     pub measurements: Recorder,
+    /// The program-counter profile each capture arms after the boot's hello
+    /// and drains when it finishes.
+    pub profile: Option<crate::scenario::ProfileRequest>,
     output: &'a Path,
 }
 
@@ -22,7 +25,14 @@ impl<'a> Context<'a> {
             settings,
             output,
             measurements: Recorder::default(),
+            profile: None,
         }
+    }
+
+    /// Profile every capture of this workload.
+    pub fn with_profile(mut self, profile: Option<crate::scenario::ProfileRequest>) -> Self {
+        self.profile = profile;
+        self
     }
 
     /// The laboratory and initialization settings a target session uses.
@@ -42,7 +52,12 @@ impl<'a> Context<'a> {
             .strip_prefix(self.output)
             .map_err(|_| "capture output is outside its repetition")?;
         let recorder = self.measurements.capture(relative)?;
-        Ok(SerialCapture::start_with_reset(&self.lab.device.serial, output)?.record_into(recorder))
+        let capture =
+            SerialCapture::start_with_reset(&self.lab.device.serial, output)?.record_into(recorder);
+        Ok(match self.profile {
+            Some(profile) => capture.profiled(profile)?,
+            None => capture,
+        })
     }
 
     pub fn with_capture<T>(

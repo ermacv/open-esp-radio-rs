@@ -183,6 +183,17 @@ The modes publish `wifi.station.recovery-retry-exhausted` or
 interface afterwards and publish `wifi.station.control-responsive`. The host
 observes production lifecycle events; it does not implement retry policy.
 
+## Program-counter profile
+
+An optional top-level `[profile]` table (`harts = "both" | "core0" |
+"core1"`, `period-us` in 100..=100000) samples the program counter of the
+image's harts during the workload's measured window. The image class must
+compile the sampler (`pc-profile`, today `diagnostic-task-residence`), and a
+scenario tagged `performance` or `qualification` refuses it: sampling
+perturbs timing. The table is part of the procedure, so a profiled scenario
+is a different scenario from its unprofiled copy, and its evidence never
+stands in for a throughput or timing measurement.
+
 ## Unsupported scenarios
 
 The optional top-level `unsupported` field states why the current firmware

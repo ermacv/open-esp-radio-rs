@@ -62,6 +62,46 @@ pub struct Header {
     /// refuses to select it, before any image build, with this reason.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<String>,
+    /// Sample the program counter of the image's harts during the
+    /// workload's measured window. It is part of the procedure: a profiled
+    /// scenario is a diagnostic, never a throughput or timing measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ProfileRequest>,
+}
+
+/// A scenario's request for a program-counter profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ProfileRequest {
+    pub harts: ProfileHarts,
+    pub period_us: u32,
+}
+
+/// The harts a profile samples.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProfileHarts {
+    Both,
+    Core0,
+    Core1,
+}
+
+impl ProfileRequest {
+    /// Periods the sampler supports: short enough to resolve a window,
+    /// long enough that sampling stays a small part of each hart's time.
+    pub const PERIOD_US: std::ops::RangeInclusive<u32> = 100..=100_000;
+
+    /// The protocol's arming command.
+    pub fn control(self) -> oer_hil_protocol::ProfileControl {
+        oer_hil_protocol::ProfileControl::Arm {
+            harts: match self.harts {
+                ProfileHarts::Both => oer_hil_protocol::ProfileHarts::Both,
+                ProfileHarts::Core0 => oer_hil_protocol::ProfileHarts::Core0,
+                ProfileHarts::Core1 => oer_hil_protocol::ProfileHarts::Core1,
+            },
+            period_us: self.period_us,
+        }
+    }
 }
 
 const fn one_repetition() -> u8 {
@@ -76,7 +116,7 @@ fn is_default_targets(targets: &[String]) -> bool {
     targets == default_targets()
 }
 
-const HEADER_FIELDS: [&str; 8] = [
+const HEADER_FIELDS: [&str; 9] = [
     "schema",
     "id",
     "description",
@@ -85,6 +125,7 @@ const HEADER_FIELDS: [&str; 8] = [
     "tags",
     "targets",
     "unsupported",
+    "profile",
 ];
 
 impl Header {
@@ -127,6 +168,29 @@ impl Header {
             .is_some_and(|reason| reason.trim().is_empty())
         {
             return Err(format!("scenario `{}` gives an empty unsupported reason", self.id).into());
+        }
+        if let Some(profile) = self.profile {
+            let range = ProfileRequest::PERIOD_US;
+            bounded(
+                profile.period_us,
+                *range.start(),
+                *range.end(),
+                "profile.period-us",
+            )?;
+            // Sampling perturbs timing, so a profile never shapes a
+            // performance or qualification figure.
+            if self
+                .tags
+                .iter()
+                .any(|tag| tag == "performance" || tag == "qualification")
+            {
+                return Err(format!(
+                    "scenario `{}` profiles a performance or qualification scenario; profile a \
+                     diagnostic copy of it instead",
+                    self.id
+                )
+                .into());
+            }
         }
         bounded(self.repetitions, 1, 20, "repetitions")
     }
@@ -233,6 +297,15 @@ impl<F: ScenarioFamily> Scenario<F> {
     pub fn validate(&self) -> Result<()> {
         self.header.validate()?;
         self.family.validate()?;
+        if self.header.profile.is_some() && !self.image().samples_program_counter() {
+            return Err(format!(
+                "scenario {} requests a profile, but its image {} does not sample the program \
+                 counter",
+                self.header.id,
+                self.image().id()
+            )
+            .into());
+        }
         // The station-exit image admits air observers beside saturated
         // traffic. An observer must never shape a qualification or gated
         // figure, so only diagnostic scenarios may select it.

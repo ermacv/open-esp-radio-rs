@@ -111,6 +111,7 @@ impl SerialCapture {
             output: output.to_owned(),
             persisted: false,
             measurements: None,
+            profile: None,
         })
     }
 
@@ -193,6 +194,22 @@ impl SerialCapture {
         } else {
             None
         };
+        if let Some(profile) = self.profile {
+            // A profile is diagnostic: a drain that fails is recorded, not a
+            // failure of the workload it observed.
+            let drained = if active && self.check_link().is_ok() {
+                self.drain_profile()
+            } else {
+                Err("the link ended before the profile was drained".into())
+            };
+            let record = match drained {
+                Ok(profile_record) => serde_json::json!({"schema": 1, "request": profile,
+                    "status": profile_record.0, "samples": profile_record.1}),
+                Err(error) => serde_json::json!({"schema": 1, "request": profile,
+                    "error": error.to_string()}),
+            };
+            crate::durable::atomic_json(&self.output.join("profile.json"), &record)?;
+        }
         self.stop_and_join();
         let uart = self.persist(target_health.as_ref(), true)?;
         let state = self

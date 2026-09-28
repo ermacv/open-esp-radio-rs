@@ -593,3 +593,48 @@ fn the_bootstrap_takes_only_the_esp_hal_override() {
             .any(|argument| argument.contains("xarxa") || argument.contains("embassy"))
     );
 }
+
+#[test]
+fn the_program_counter_sampler_rides_only_in_the_classes_that_compile_it() {
+    let performance = FeatureCapabilities {
+        bidirectional: true,
+        data_plane_placement: true,
+        psram_task_stack: true,
+        runtime_configuration: true,
+        runtime_initialization: true,
+        rx: true,
+        simultaneous_station_access_point: true,
+        startup_artifact: true,
+        station_epoch_control: true,
+        station_lifecycle_events: true,
+        structured_evidence: true,
+        tcp: true,
+        timebase_probe: true,
+        tx: true,
+        udp: true,
+        udp_multi_flow: true,
+        wifi_access_point: true,
+        wifi_monitor_capture: true,
+        wifi_role_control: true,
+        ..Default::default()
+    };
+    let residence = FeatureCapabilities {
+        task_poll_evidence: true,
+        ..performance
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&residence),
+        Some(ImageClass::DiagnosticTaskResidence)
+    );
+    let sampling = |features: FeatureCapabilities| FeatureCapabilities {
+        diagnostic_features: DiagnosticFeatures::empty().with(DiagnosticFeature::PcProfile, true),
+        ..features
+    };
+    assert_eq!(
+        classify_flashed_capabilities(&sampling(residence)),
+        Some(ImageClass::DiagnosticTaskResidence)
+    );
+    assert!(ImageClass::DiagnosticTaskResidence.samples_program_counter());
+    // A class that does not compile the sampler never advertises it.
+    assert_eq!(classify_flashed_capabilities(&sampling(performance)), None);
+}

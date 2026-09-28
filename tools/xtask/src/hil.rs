@@ -86,6 +86,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("runs") => return runs(ctx, &options, &args[1..]),
         Some("evidence") => return crate::hil_evidence::command(ctx, &args[1..]),
         Some("perf") => return perf(ctx, &options, &args[1..]),
+        Some("profile") => return profile(&args[1..]),
         _ => {}
     }
     // The runner has no lease options: take them from after the command
@@ -195,6 +196,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
 const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
+  cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
   cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases (alias: status)
   cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
   cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
@@ -433,6 +435,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         "evidence",
         "owner",
         "preempt",
+        "profile",
     ];
     let mut root = node(&["hil"], &stand, &["--owner"]);
     root.subcommands.extend(runner_top);
@@ -459,6 +462,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         ("devices", DevicesCli::command()),
         ("peer", crate::hil_board::PeerCli::command()),
         ("flash", crate::hil_flash::FlashCli::command()),
+        ("profile", ProfileCli::command()),
     ] {
         nodes.extend(walk(&command, &path(&["hil", name])));
     }
@@ -1552,6 +1556,115 @@ enum PerfCli {
     /// Fail when a run's gated measurements regressed against the
     /// baselines.
     Check { run: String },
+}
+
+/// `cargo hil profile RUN [--scenario S] [--repetition N] [--top N]`.
+#[derive(clap::Parser)]
+#[command(name = "cargo hil profile", no_binary_name = true)]
+struct ProfileCli {
+    /// The run whose profiled repetitions to report.
+    run: String,
+    /// Only this scenario's repetitions.
+    #[arg(long)]
+    scenario: Option<String>,
+    /// Only this repetition number.
+    #[arg(long)]
+    repetition: Option<u8>,
+    /// The most sampled functions shown per hart.
+    #[arg(long, default_value_t = 15)]
+    top: usize,
+}
+
+/// Report every `profile.json` a run's repetitions left, symbolized against
+/// the run's own image, and write each report beside it as `profile.txt`.
+fn profile(args: &[OsString]) -> Result<std::process::ExitCode> {
+    use clap::Parser as _;
+    let cli = ProfileCli::try_parse_from(args)?;
+    let run = crate::hil_store::shared_runs(HIL_TARGET)?.join(&cli.run);
+    if !run.is_dir() {
+        return Err(format!("no run {} in the store", cli.run).into());
+    }
+    let mut found = 0;
+    let mut scenarios = fs::read_dir(run.join("scenarios"))?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .collect::<Vec<_>>();
+    scenarios.sort();
+    for scenario in scenarios {
+        let id = scenario
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        if cli.scenario.as_ref().is_some_and(|wanted| *wanted != id) {
+            continue;
+        }
+        // The scenario's result names the image class every family ran.
+        let image = fs::read(scenario.join("result.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|result| result["image"].as_str().map(str::to_owned));
+        let elf = image
+            .map(|image| run.join("firmware").join(image).join("runtime.elf"))
+            .filter(|elf| elf.is_file());
+        let mut profiles = Vec::new();
+        collect_profiles(&scenario, &mut profiles)?;
+        profiles.sort();
+        for path in profiles {
+            let repetition = path
+                .strip_prefix(&scenario)
+                .ok()
+                .and_then(|relative| relative.components().next())
+                .and_then(|first| {
+                    first
+                        .as_os_str()
+                        .to_str()?
+                        .strip_prefix("repetition-")?
+                        .parse::<u8>()
+                        .ok()
+                });
+            if cli
+                .repetition
+                .is_some_and(|wanted| Some(wanted) != repetition)
+            {
+                continue;
+            }
+            let report = oer_hil_runner_core::profile::report(&path, elf.as_deref(), cli.top)?;
+            println!(
+                "== {id} {}",
+                path.parent()
+                    .unwrap_or(&path)
+                    .strip_prefix(&scenario)
+                    .unwrap_or(&path)
+                    .display()
+            );
+            print!("{report}");
+            fs::write(path.with_file_name("profile.txt"), &report)?;
+            found += 1;
+        }
+    }
+    if found == 0 {
+        return Err(format!(
+            "run {} has no profile.json in the selected repetitions",
+            cli.run
+        )
+        .into());
+    }
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+fn collect_profiles(
+    directory: &std::path::Path,
+    found: &mut Vec<std::path::PathBuf>,
+) -> Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_profiles(&path, found)?;
+        } else if path.file_name().is_some_and(|name| name == "profile.json") {
+            found.push(path);
+        }
+    }
+    Ok(())
 }
 
 #[derive(clap::Parser)]

@@ -19,6 +19,7 @@ pub mod image;
 pub mod lab;
 pub mod output;
 pub mod post_mortem;
+pub mod profile;
 pub mod recovery;
 mod repository;
 pub mod scenario;

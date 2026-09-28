@@ -1,9 +1,9 @@
 # Bluetooth GATT application
 
 `oer-example-bluetooth-gatt` is a portable Trouble Host GATT application
-library. No LE Controller composition or firmware currently consumes it; it
-remains a library so that a future firmware and the Bluetooth HIL target can
-compose it independently.
+library. The Bluetooth HIL images compose it with the production Controller;
+it stays a library so that each firmware composes its own platform and
+console.
 
 - `gatt` serves the plaintext profile: one writable value, a fixed legacy
   advertising payload and value-only observations.

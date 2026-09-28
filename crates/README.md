@@ -108,10 +108,13 @@ PHY policy.
 AP `roles/access_point/network_tx` retains one TX owner. Its `queue`,
 `power_save`, `aggregate` and `completion` modules operate on that same arena
 and state; publication and cancellation remain at the owner boundary.
-No LE Controller role, Bluetooth runtime or Bluetooth integration currently
-exists. IRQ, scheduler and hardware ownership lives in the
-[hardware engine](hardware/esp32s31/driver/bluetooth/README.md); portable HCI and
-Link Layer policy live in `protocols/bluetooth/`.
+The Bluetooth LE Controller core, Link Layer and HCI live in
+`protocols/bluetooth/`; the chip radio role in `roles/esp32s31/bluetooth/radio`
+realizes their radio event contract on the hardware scheduler, the
+executor-independent runtime in `runtime/esp32s31/bluetooth` drives it, and
+`composition/esp32s31/embassy/bluetooth` runs Controller epochs on the shared
+radio with the HCI service. IRQ, scheduler and hardware ownership lives in the
+[hardware engine](hardware/esp32s31/driver/bluetooth/README.md).
 
 The chip Wi-Fi `rx/frontier` owns finite physical-ring transitions and borrows
 an abstract delay. Its `rx/transaction` synchronously borrows the live ring,

@@ -33,8 +33,9 @@ and [secure peripheral GATT](../../../../../qualification/targets/esp32s31/bluet
 select the narrower product criteria in the
 [product catalog](../../../../../qualification/catalog/esp32s31/bluetooth-products.toml).
 The secure program includes the peripheral lifecycle through dependencies.
-The complete LE program above retains its wider requirements. No LE Controller
-composition currently exists, so neither product has a source implementation.
+The complete LE program above retains its wider requirements. Both products
+run on the production Controller composition; their remaining implementation
+gaps and missing hardware evidence are listed in the product catalog.
 
 ## Qualification scope mapping
 

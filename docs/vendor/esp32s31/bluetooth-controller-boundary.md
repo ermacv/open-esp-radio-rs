@@ -159,8 +159,9 @@ and which apparent Rust integrations still terminate in closed firmware.
 | Host | L2CAP, ATT/GATT, GAP/SMP and application policy above HCI |
 | Qualification | Independent protocol, RF, concurrency and teardown evidence requirements |
 
-No LE Controller currently composes these layers. The source tables below
-classify the vendor lifecycle; they do not claim that a feature is operational.
+The open Controller composes these layers without the vendor's software
+container. The source tables below classify the vendor lifecycle; they do not
+claim that a feature is operational.
 
 ## 2. Init/deinit classification
 

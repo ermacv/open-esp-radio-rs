@@ -44,64 +44,63 @@ source-paths = [
 
 [[source-facts]]
 id = "bluetooth-idle-phy-maintenance"
-status = "absent"
+status = "implemented"
 level = "composed-product"
 
 [source-facts.source-contract]
 id = "bluetooth-idle-phy-maintenance"
 composition = "production"
-scope = "Service a real due shared-PHY request from the idle Bluetooth Controller after command, role, timer and hardware-output admission, then atomically restore both original ISR owners and the same HCI, counter and role epochs"
-limits = "No LE Controller composition currently exists. The listed sources are the remaining lower primitives that such a composition must use; they do not implement this contract"
-source-paths = [
-  "crates/hardware/esp32s31/phy/src/tracking/deadline.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/phy.rs",
-]
-
-[[source-facts]]
-id = "bluetooth-periodic-phy-maintenance"
-status = "absent"
-level = "composed-product"
-
-[source-facts.source-contract]
-id = "bluetooth-periodic-phy-maintenance"
-composition = "production"
-scope = "Idle-first periodic shared-PHY maintenance with bounded deferral throughout the Bluetooth Controller lifetime, a time-budgeted pause across eligible established ACL events per transaction, and no preemption of active DTM TX/RX"
-limits = "No LE Controller composition currently exists. The listed sources are the remaining lower primitives that such a composition must use; they do not implement this contract"
+scope = "Run due shared-PHY tracking while the idle Bluetooth Controller is a PHY client, under the vendor policy: the radio system's periodic tracking timer runs the tracking transaction under the PHY lock and grant protection without stopping the Controller's HCI, role or interrupt epochs"
+limits = "The stricter quiesced policy, which would pause the Controller around tracking, is not composed. Thermal and RF qualification remain separate"
 source-paths = [
   "crates/runtime/esp32s31/radio/src/system.rs",
-  "crates/protocols/bluetooth/le/ll/src/connection/maintenance.rs",
-  "crates/hardware/esp32s31/phy/src/tracking/fail_stop.rs",
-  "crates/adapters/esp-hal/esp32s31/soc/src/reset.rs",
+  "crates/hardware/esp32s31/phy/src/concurrent.rs",
+  "crates/hardware/esp32s31/phy/src/bluetooth_client.rs",
+]
+
+[[source-facts]]
+id = "bluetooth-periodic-phy-maintenance"
+status = "implemented"
+level = "composed-product"
+
+[source-facts.source-contract]
+id = "bluetooth-periodic-phy-maintenance"
+composition = "production"
+scope = "Periodic shared-PHY tracking throughout the Bluetooth Controller lifetime as ESP-IDF's phy_track_pll timer does, without pausing advertising, scanning, connection or Direct Test Mode events"
+limits = "Tracking does not wait for a gap between Bluetooth events; the vendor policy relies on the PHY lock and grant protection. Qualified worst-case execution, thermal and RF bounds remain separate"
+source-paths = [
+  "crates/runtime/esp32s31/radio/src/system.rs",
+  "crates/hardware/esp32s31/phy/src/concurrent.rs",
 ]
 
 [[source-facts]]
 id = "bluetooth-idle-powered-release"
-status = "absent"
+status = "implemented"
 level = "composed-product"
 
 [source-facts.source-contract]
 id = "bluetooth-idle-powered-release"
 composition = "production"
-scope = "Release the standalone idle Controller through exact-epoch HCI retirement, task and role-memory extraction, timer drain, IRQ/output quiescence, last-client RF close, temperature power-down, Controller reset and captured clock/power restoration to the actual cold radio owner"
-limits = "No LE Controller composition currently exists. The listed sources are the remaining lower primitives that such a composition must use; they do not implement this contract"
+scope = "Stop one Controller epoch in any role state: stop the scheduler with any events still listed, settle the source-127 task, remove the CPU routes and recover both interrupt owners, release the Controller output, leave the shared PHY domain and BTBB, reset the Controller, release its clocks and leave common power, returning the parked partition with the controller memory at its allocation-time image"
+limits = "A failed step leaves the Controller unable to run again in this boot. RF closes only when the last PHY client leaves the shared radio"
 source-paths = [
-  "crates/hardware/esp32s31/driver/bluetooth/src/resources.rs",
-  "crates/hardware/esp32s31/hal/src/bluetooth.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system.rs",
+  "crates/runtime/esp32s31/bluetooth/src/runtime.rs",
 ]
 
 [[source-facts]]
 id = "bluetooth-same-storage-powered-restart"
-status = "absent"
+status = "implemented"
 level = "composed-product"
 
 [source-facts.source-contract]
 id = "bluetooth-same-storage-powered-restart"
 composition = "production"
-scope = "Restart after bluetooth-idle-powered-release using the returned cold radio, original BLE/DF and role allocations, exclusive runtime leases and continuous ISR storage reservation; restore both ISR owners atomically and issue a new HCI generation"
-limits = "No LE Controller composition currently exists. The listed sources are the remaining lower primitives that such a composition must use; they do not implement this contract"
+scope = "Start the next Controller epoch from the parked partition that the previous epoch returned, reusing the same controller memory allocations, while the HCI service retires the drained Host end and restarts with a fresh Controller core"
+limits = "The controller memory is claimed once per boot. Host bonds and connections do not survive the restart"
 source-paths = [
-  "crates/hardware/esp32s31/driver/bluetooth/src/resources.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/runtime_resources.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/system.rs",
+  "crates/composition/esp32s31/embassy/bluetooth/src/hci.rs",
 ]
 
 [[source-facts]]

@@ -52,7 +52,7 @@ const QUEUE_BITMAP_LOW: u32 = 0x3c;
 const QUEUE_RECORD_BYTES: u32 = 0x40;
 /// Bytes of the transmit context the queue records occupy.
 const TX_RX_BYTES: u32 = 0x200;
-/// The queue the aggregate completed on: best effort, TID zero.
+/// The queue the aggregate completed on, best effort, and the default TID.
 const QUEUE: u32 = 2;
 const TID: u8 = 0;
 
@@ -209,6 +209,8 @@ struct Completion {
     starting_sequence: u16,
     bitmap: u64,
     retain_single: bool,
+    /// The aggregate's TID, which selects the vendor access category.
+    tid: u8,
     bar_pending: bool,
     /// The starting sequence of the BlockAckReq the vendor sends, if any.
     bar: Option<u16>,
@@ -271,6 +273,7 @@ const fn completion(
         starting_sequence,
         bitmap,
         retain_single: true,
+        tid: TID,
         bar_pending: false,
         bar: None,
         vendor_attempts: 0,
@@ -380,6 +383,25 @@ const COMPLETIONS: &[Completion] = &[
         }),
         ..completion("agreement-ended-head-missing", 4, 100, 100, 0b1010)
     },
+    // Each access category the vendor maps a TID to: background, video,
+    // voice; a request pending for the TID is answered on it.
+    Completion {
+        tid: 1,
+        ..completion("tid-background", 4, 100, 100, 0b0101)
+    },
+    Completion {
+        tid: 4,
+        bar_pending: true,
+        bar: Some(101),
+        ..completion("tid-video-bar", 4, 100, 100, 0b0101)
+    },
+    Completion {
+        tid: 6,
+        ..completion("tid-voice", 4, 100, 100, 0b1001)
+    },
+    // MPDUs 32 and more past the starting sequence use the bitmap's high
+    // word.
+    completion("high-bitmap-word", 4, 132, 100, 0b1010 << 32),
     // Nothing is left to hand over when every MPDU was acknowledged.
     Completion {
         operational: false,
@@ -655,7 +677,7 @@ fn case_rows(
     tx_rx[record + QUEUE_VALID as usize] = 1;
     tx_rx[record + QUEUE_STARTING_SEQUENCE as usize..record + QUEUE_STARTING_SEQUENCE as usize + 2]
         .copy_from_slice(&completion.starting_sequence.to_le_bytes());
-    tx_rx[record + QUEUE_TID as usize] = TID;
+    tx_rx[record + QUEUE_TID as usize] = completion.tid;
     word(&mut tx_rx, record + QUEUE_AGGREGATE as usize, ARENA_ESF);
     word(
         &mut tx_rx,
@@ -673,7 +695,7 @@ fn case_rows(
     }
     let mut station = vec![0u8; STATION_BYTES as usize];
     if completion.bar_pending {
-        station[STATION_BAR_PENDING] = 1 << TID;
+        station[STATION_BAR_PENDING] = 1 << completion.tid;
     }
     let mut memory = vec![
         known(symbol(TX_RX)?, 4, &ARENA_TX_RX.to_le_bytes())?,
@@ -1077,7 +1099,7 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
             });
         let expected_bar = completion
             .bar
-            .map(|sequence| (Some(u32::from(TID)), Some(u32::from(sequence))));
+            .map(|sequence| (Some(u32::from(completion.tid)), Some(u32::from(sequence))));
         if bar != expected_bar {
             return Err(invalid(format!(
                 "{label}: the vendor BlockAckReq (TID, starting sequence) was {bar:?}, expected {expected_bar:?}: {BAR_GAP}"

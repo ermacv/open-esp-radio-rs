@@ -241,17 +241,19 @@ scope-and-limitations = "The schedule model computes each phase's slice as perio
 id = "coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority"
 section = "coex-coexistence-policy-and-scheduler"
 title = "BLE advertising dynamic priority"
-status = "absent"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "No event-count/promotion policy composes priority changes with advertising."
+scope-and-limitations = "The LE Controller core raises every third, second or single advertising event for intervals up to 25 ms, up to 50 ms and longer, as the vendor `coexAdv` level update does. While another radio shares the antenna, the ESP32-S31 radio role gives a legacy advertising item the vendor lanes 4, 0, 13, 13 and replaces lane zero with 4, 9 or 11 by the event's level from the vendor legacy table. Alone on the antenna every lane requests 15, a product choice. Legacy advertising only; extended and periodic advertising have no producer."
+packages = ["oer-bluetooth-controller", "oer-esp32s31-bluetooth-radio"]
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ble-connection-dynamic-priority"
 section = "coex-coexistence-policy-and-scheduler"
 title = "BLE connection dynamic priority"
-status = "absent"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "No connected-runtime producer or consumer implements the vendor dynamic-priority interface."
+scope-and-limitations = "The LE Controller core raises a peripheral connection's first six events, events after more missed receptions than its interval allows and events during a local control procedure, as the vendor `coexConn` level update does. While another radio shares the antenna, the ESP32-S31 radio role gives the connection item base lane 4 and an event lane of 4, 9 or 11 by that level from the vendor connection table, and the link state the vendor coexistence protection. Alone on the antenna every lane requests 15. Peripheral connections only; there is no central role."
+packages = ["oer-bluetooth-controller", "oer-esp32s31-bluetooth-radio"]
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ieee-802-15-4-operation-priorities"
@@ -299,9 +301,10 @@ scope-and-limitations = "The Wi-Fi station submits its beacon-window, slice and 
 id = "coex-protocol-integration-and-lifetime-live-bt-ble-requests"
 section = "coex-protocol-integration-and-lifetime"
 title = "Live BT/BLE requests"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "Production Bluetooth runtime does not submit requests through the radio runtime's coexistence owner."
+scope-and-limitations = "Each Bluetooth LE Controller epoch enables coexistence in the radio runtime and publishes its advertising, scanning and connection schedule status bits as the vendor BLE status hook does; per-event priorities travel in the scheduler items' PTI lanes, which the arbiter hardware reads. Like the vendor BLE Controller it submits no per-event software requests and does not react to phases. Classic Bluetooth requests have no producer. The joint Wi-Fi/BLE scenario `wifi-udp-rx-ble-echo` passes (run 1790553029016-003b36c4) but is not a qualification."
+packages = ["oer-esp32s31-bluetooth-system", "oer-esp32s31-radio-runtime"]
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-wifi-beacon-shared-rx-individual-twt-pti-hooks"

@@ -11,6 +11,12 @@
 //! `mcause` and `mstatus`, in the post-mortem record, prints one
 //! `hil-postmortem:` line and resets the chip, so the next boot reports it.
 //!
+//! A task can also hang while both executors run: it awaits forever while
+//! work waits for it. Such a task owns a slot in [`LIVENESS`], armed while
+//! its work waits (see `oer_hil_target_core::liveness`); a slot past its
+//! deadline is sampled and recorded like a stalled executor, with core 0's
+//! samples and the slot named instead of an executor.
+//!
 //! The core 1 executor's timers are driven by core 0's time driver, so a
 //! core 0 executor that stops at the interrupt level of that driver or above
 //! stalls both heartbeats; the samples then come from core 0.
@@ -30,7 +36,48 @@ use esp_hal::{
     time::Duration,
     timer::{PeriodicTimer, systimer::SystemTimer},
 };
-use oer_hil_protocol::{HangFault, HartState};
+use oer_hil_protocol::{HangFault, HartState, TaskSlot};
+use oer_hil_target_core::liveness::TaskLiveness;
+
+/// Tasks with work waiting for them.
+pub(crate) static LIVENESS: TaskLiveness = TaskLiveness::new();
+
+/// Milliseconds since boot, the clock of [`LIVENESS`].
+pub(crate) fn uptime_ms() -> u32 {
+    esp_hal::time::Instant::now()
+        .duration_since_epoch()
+        .as_millis() as u32
+}
+
+/// Work for `slot`'s task arrived.
+pub(crate) fn arm(slot: TaskSlot) {
+    LIVENESS.arm(slot, uptime_ms());
+}
+
+/// `slot`'s task took work; `more` tells whether work is still waiting.
+pub(crate) fn took_work(slot: TaskSlot, more: bool) {
+    if more {
+        LIVENESS.progress(slot, uptime_ms());
+    } else {
+        LIVENESS.disarm(slot);
+    }
+}
+
+/// Set by a diagnostic console hang: the console stops taking commands.
+static CONSOLE_STALLED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Stop the console's command consumer after its current command.
+pub(crate) fn inject_console_stall() {
+    CONSOLE_STALLED.store(true, Ordering::Release);
+}
+
+/// Park the console's command consumer forever once a diagnostic console
+/// hang was injected; its executor keeps running.
+pub(crate) async fn console_stall_point() {
+    if CONSOLE_STALLED.load(Ordering::Acquire) {
+        core::future::pending::<()>().await;
+    }
+}
 
 /// Heartbeats of the core 0 protocol and core 1 network executors.
 static HEARTBEATS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
@@ -189,13 +236,20 @@ fn check() {
             STALE_CHECKS[executor].store(0, Ordering::Relaxed);
         }
     }
+    // A task is watched only while both executors run: an executor stall
+    // explains any task on it.
+    let task = if stalled == 0 {
+        LIVENESS.overdue(uptime_ms())
+    } else {
+        None
+    };
     let responses = CORE1_RESPONSES.load(Ordering::Acquire);
     // Core 1 reports its context from the first missed heartbeat on, so the
     // first sample of a stall is already current.
     let lagging = STALE_CHECKS
         .iter()
         .any(|stale| stale.load(Ordering::Relaxed) != 0);
-    if stalled == 0 {
+    if stalled == 0 && task.is_none() {
         SAMPLED.store(0, Ordering::Relaxed);
         if lagging {
             raise_core1_sample();
@@ -207,7 +261,9 @@ fn check() {
     if index == 0 {
         RESPONSES_AT_STALL.store(responses, Ordering::Relaxed);
     }
-    let sample = if stalled & 1 != 0 {
+    // A stalled task is sampled on core 0, where the console and session
+    // tasks run.
+    let sample = if stalled & 1 != 0 || stalled == 0 {
         interrupted()[0]
     } else {
         CORE1_CONTEXT[0].load(Ordering::Relaxed)
@@ -235,11 +291,13 @@ fn check() {
             ),
         ],
         samples: core::array::from_fn(|index| SAMPLES[index].load(Ordering::Relaxed)),
+        stalled_task: task,
     };
     crate::system::postmortem::record_hang(&hang);
     crate::console::emergency_log(format_args!(
-        "hil-postmortem: hang stalled={stalled:#04b} core0 mepc={:08x} ra={:08x} sp={:08x} \
+        "hil-postmortem: hang stalled={stalled:#04b} task={:?} core0 mepc={:08x} ra={:08x} sp={:08x} \
          core1 responded={} mepc={:08x} ra={:08x} sp={:08x} samples={:08x?}",
+        task.map(|stall| stall.slot.id()),
         hang.harts[0].mepc,
         hang.harts[0].ra,
         hang.harts[0].sp,

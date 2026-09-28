@@ -1,19 +1,32 @@
-//! The correctness image's hang watchdog: a stalled executor leaves a
-//! post-mortem naming the stall, and the chip resets.
+//! The correctness image's hang watchdog: a stalled executor, or a console
+//! that stops taking commands while both executors run, leaves a post-mortem
+//! naming the stall, and the chip resets.
 use crate::Result;
 use hil_core::context::Context;
-use oer_hil_protocol::{Fault, HangTarget, ResetReason};
+use oer_hil_protocol::{Fault, HangFault, HangTarget, ResetReason, TaskSlot};
 use std::{path::Path, time::Duration};
 
+const TARGETS: [HangTarget; 3] = [
+    HangTarget::ProtocolExecutor,
+    HangTarget::NetworkExecutor,
+    HangTarget::Console,
+];
+
 pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
-    for target in [HangTarget::ProtocolExecutor, HangTarget::NetworkExecutor] {
+    for target in TARGETS {
         let directory = output.join(scope(target));
         std::fs::create_dir_all(&directory)?;
         context.with_capture(&directory, |capture| {
             capture.prepare_startup(context.target())?;
-            // Detection takes 3 s of stall and 4 s of sampling.
-            capture.expect_reboot(Duration::from_secs(5), Duration::from_secs(20))?;
+            // An executor stall is detected after 3 s, a waiting command
+            // after 5 s; sampling takes 4 s more.
+            capture.expect_reboot(Duration::from_secs(5), Duration::from_secs(25))?;
             capture.inject_hang(target)?;
+            if target == HangTarget::Console {
+                // The console now takes no command: this one waits, unanswered,
+                // until the watchdog resets the chip.
+                let _ = capture.boot_status();
+            }
             let reboot = capture.wait_expected_reboot()?;
             let fresh = capture.boot_status()?;
             if fresh.reset_reason != ResetReason::Software {
@@ -27,15 +40,7 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             else {
                 return Err(format!("no hang post-mortem after the reset: {fresh:?}").into());
             };
-            let stalled = stalled_bit(target);
-            let hart = &hang.harts[usize::from(stalled.trailing_zeros() as u8)];
-            // Core 1's timers are driven from core 0, so a stalled protocol
-            // executor stalls the network executor's heartbeat too.
-            if hang.stalled_executors & stalled == 0
-                || !hart.responded
-                || hart.mepc == 0
-                || hang.samples.contains(&0)
-            {
+            if !names(target, &hang) {
                 return Err(
                     format!("the hang post-mortem does not name the stall: {hang:?}").into(),
                 );
@@ -52,17 +57,67 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
     Ok(())
 }
 
-/// The watchdog's executor bit for `target`: bit 0 core 0, bit 1 core 1.
-fn stalled_bit(target: HangTarget) -> u8 {
-    match target {
-        HangTarget::ProtocolExecutor => 0b01,
-        HangTarget::NetworkExecutor => 0b10,
-    }
+/// Whether `hang` names the stall of `target` and where its hart was.
+fn names(target: HangTarget, hang: &HangFault) -> bool {
+    let (stalled, task, hart) = match target {
+        // Core 1's timers are driven from core 0, so a stalled protocol
+        // executor stalls the network executor's heartbeat too.
+        HangTarget::ProtocolExecutor => (hang.stalled_executors & 0b01 != 0, true, 0),
+        HangTarget::NetworkExecutor => (hang.stalled_executors & 0b10 != 0, true, 1),
+        HangTarget::Console => (
+            hang.stalled_executors == 0,
+            hang.stalled_task
+                .is_some_and(|stall| stall.slot == TaskSlot::Console),
+            0,
+        ),
+    };
+    let hart = &hang.harts[hart];
+    stalled && task && hart.responded && hart.mepc != 0 && !hang.samples.contains(&0)
 }
 
 fn scope(target: HangTarget) -> &'static str {
     match target {
         HangTarget::ProtocolExecutor => "protocol-executor",
         HangTarget::NetworkExecutor => "network-executor",
+        HangTarget::Console => "console",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oer_hil_protocol::{HartState, TaskStall};
+
+    fn hang(stalled_executors: u8, stalled_task: Option<TaskSlot>) -> HangFault {
+        let hart = HartState {
+            responded: true,
+            mepc: 0x4200_0000,
+            ..HartState::default()
+        };
+        HangFault {
+            detected_uptime_ms: 9_000,
+            stalled_executors,
+            harts: [hart; 2],
+            samples: [0x4200_0000; 16],
+            stalled_task: stalled_task.map(|slot| TaskStall {
+                slot,
+                pending_ms: 5_001,
+            }),
+        }
+    }
+
+    #[test]
+    fn a_console_hang_must_name_the_console_and_no_executor() {
+        assert!(names(
+            HangTarget::Console,
+            &hang(0, Some(TaskSlot::Console))
+        ));
+        assert!(!names(HangTarget::Console, &hang(0b01, None)));
+        assert!(!names(
+            HangTarget::Console,
+            &hang(0, Some(TaskSlot::SessionEvidence))
+        ));
+        assert!(names(HangTarget::ProtocolExecutor, &hang(0b11, None)));
+        assert!(!names(HangTarget::NetworkExecutor, &hang(0b01, None)));
     }
 }

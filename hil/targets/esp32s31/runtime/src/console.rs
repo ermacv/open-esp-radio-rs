@@ -1079,8 +1079,15 @@ pub async fn protocol_task(capabilities: Capabilities) {
     let mut startup_artifact = StartupArtifactAssembler::new();
     let mut ap_scheduler = oer_hil_protocol::WifiApScheduler::Disabled;
     loop {
+        #[cfg(not(feature = "memory-benchmark"))]
+        crate::hang_watchdog::console_stall_point().await;
         match select(COMMANDS.receive(), SESSION_RESULTS.receive()).await {
             Either::First(command) => {
+                #[cfg(not(feature = "memory-benchmark"))]
+                crate::hang_watchdog::took_work(
+                    oer_hil_protocol::TaskSlot::Console,
+                    !COMMANDS.is_empty(),
+                );
                 let session_id = command.session_id;
                 let request_id = command.request_id;
                 match command.body {
@@ -1216,14 +1223,15 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     #[cfg(not(feature = "memory-benchmark"))]
                     Command::InjectHang(target) => {
                         let response = if session_id == 0 {
-                            crate::hang_watchdog::inject(match target {
-                                HangTarget::ProtocolExecutor => {
-                                    crate::hang_watchdog::Executor::Protocol
-                                }
-                                HangTarget::NetworkExecutor => {
-                                    crate::hang_watchdog::Executor::Network
-                                }
-                            });
+                            match target {
+                                HangTarget::ProtocolExecutor => crate::hang_watchdog::inject(
+                                    crate::hang_watchdog::Executor::Protocol,
+                                ),
+                                HangTarget::NetworkExecutor => crate::hang_watchdog::inject(
+                                    crate::hang_watchdog::Executor::Network,
+                                ),
+                                HangTarget::Console => crate::hang_watchdog::inject_console_stall(),
+                            }
                             Event::HangInjected(target)
                         } else {
                             Event::Rejected(RejectReason::InvalidState)
@@ -2737,7 +2745,13 @@ fn receive_command(command: Envelope<Command>) {
     let request_id = command.request_id;
     if let Err(reason) = command.validate_target(boot_id()) {
         publish_event(session_id, request_id, Event::Rejected(reason));
-    } else if COMMANDS.try_send(command).is_err() {
+        return;
+    }
+    // Armed before the command is queued, so the consumer taking it can
+    // never be followed by a stale arm.
+    #[cfg(not(feature = "memory-benchmark"))]
+    crate::hang_watchdog::arm(oer_hil_protocol::TaskSlot::Console);
+    if COMMANDS.try_send(command).is_err() {
         publish_event(session_id, request_id, Event::Rejected(RejectReason::Busy));
     }
 }

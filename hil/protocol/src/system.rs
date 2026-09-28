@@ -15,13 +15,48 @@ pub enum WatchdogTestMode {
     LateRestoration,
 }
 
-/// The executor a diagnostic hang stalls.
+/// What a diagnostic hang stalls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HangTarget {
     /// The core 0 protocol executor.
     ProtocolExecutor,
     /// The core 1 network executor.
     NetworkExecutor,
+    /// The protocol console's command consumer, while both executors run.
+    Console,
+}
+
+/// A task whose progress the hang watchdog checks while work waits for it.
+///
+/// Append new slots only; the post-mortem record stores a slot's position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskSlot {
+    /// The protocol console's command consumer, while a command waits.
+    Console,
+    /// A session's evidence publication after its traffic ends.
+    SessionEvidence,
+}
+
+impl TaskSlot {
+    pub const ALL: [Self; 2] = [Self::Console, Self::SessionEvidence];
+
+    /// The slot's identifier in post-mortems and failure messages.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Console => "console",
+            Self::SessionEvidence => "session-evidence",
+        }
+    }
+}
+
+/// A task that made no progress on pending work while the executors ran.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskStall {
+    pub slot: TaskSlot,
+    /// How long the work had waited when the watchdog recorded the hang,
+    /// its deadline plus the sampling time.
+    pub pending_ms: u32,
 }
 
 /// Platform reset classification, independent of radio protocol resets.
@@ -96,6 +131,9 @@ pub struct HangFault {
     pub harts: [HartState; 2],
     /// The stalled hart's preempted instruction at successive checks.
     pub samples: [u32; 16],
+    /// The task that stalled while both executors ran, when that was the
+    /// hang; `stalled_executors` is then zero.
+    pub stalled_task: Option<TaskStall>,
 }
 
 /// Where a hart was interrupted.

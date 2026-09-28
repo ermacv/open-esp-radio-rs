@@ -383,7 +383,13 @@ watchdog to reset a stalled image. A post-mortem hang makes the failure
 `hang`: which executor stalled, where each hart was, named from the run's
 archived `runtime.elf` (function, the function it was inlined into, and the
 source line), and the code the stalled hart kept running; a core 1 stall seen
-together with a core 0 stall is reported as depending on core 0's timers. A
+together with a core 0 stall is reported as depending on core 0's timers.
+The watchdog also sees a task that awaits forever while both executors run:
+a task whose work can wait for it owns a named slot (`console`,
+`session-evidence`) in `oer_hil_target_core::liveness`, armed while its work
+waits, and a slot armed past its deadline (5 s for the console, 10 s for
+session evidence) is a hang of that task, reported as `hang: task <slot> made
+no progress for N ms while executors ran`. A
 reset the runner did not cause (neither USB Serial/JTAG nor JTAG) makes it
 `unexpected-reset` with the reset reason and code. Both name the last
 checkpoints the ended boot passed. The exchange and the workload's own
@@ -393,7 +399,9 @@ A target that does not answer within those 20 s climbs the recovery ladder:
 an EN pulse through the board's registered reset path, or an RTS pulse on its
 own USB Serial/JTAG port when it has none, then the same query again (a power
 cycle through a switchable hub port becomes the next step once boards have
-one). A step that brings it back is journaled as a recovery, `hardware` when
+one). The failure then names where core 0 was when the reset hit, from the
+ROM banner's saved program counter symbolized like a hang: stuck in code, or
+idle in its executor. A step that brings it back is journaled as a recovery, `hardware` when
 the port had vanished or the ROM waited for a download. A board no step brings
 back, or with three hardware-level recoveries within an hour, is quarantined:
 the repetition and the run's remaining repetitions end `board-quarantined`,

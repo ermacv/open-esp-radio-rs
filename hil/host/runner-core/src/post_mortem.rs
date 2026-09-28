@@ -137,7 +137,16 @@ pub fn classify(
 fn describe_hang(hang: &HangFault, name: &dyn Fn(u32) -> String) -> String {
     let protocol = hang.stalled_executors & 0b01 != 0;
     let network = hang.stalled_executors & 0b10 != 0;
+    let task;
     let stalled = match (protocol, network) {
+        (false, false) if let Some(stall) = hang.stalled_task => {
+            task = format!(
+                "task {} made no progress for {} ms while executors ran",
+                stall.slot.id(),
+                stall.pending_ms
+            );
+            task.as_str()
+        }
         (true, true) => {
             "the core 0 protocol executor stalled (core 1's network heartbeat \
                          stopped with it: its timers depend on core 0)"
@@ -159,6 +168,7 @@ fn describe_hang(hang: &HangFault, name: &dyn Fn(u32) -> String) -> String {
             format!("core {index} did not answer: its interrupts are masked")
         }
     };
+    // A stalled task is sampled on core 0, like a stalled core 0.
     let sampled = if network && !protocol { 1 } else { 0 };
     let mut samples = hang.samples.to_vec();
     samples.sort_unstable();
@@ -270,6 +280,7 @@ mod tests {
             stalled_executors: stalled,
             harts: [hart(0x5000_0010), hart(0x5000_0020)],
             samples: [0x5000_0020; 16],
+            stalled_task: None,
         })
     }
 
@@ -311,6 +322,31 @@ mod tests {
         assert!(
             message.contains("last checkpoints: coex.grant(1)@10ms"),
             "{message}"
+        );
+    }
+
+    #[test]
+    fn a_stalled_task_is_named_with_how_long_its_work_waited() {
+        let Fault::Hang(mut stall) = hang(0) else {
+            unreachable!()
+        };
+        stall.stalled_task = Some(oer_hil_protocol::TaskStall {
+            slot: oer_hil_protocol::TaskSlot::Console,
+            pending_ms: 5_250,
+        });
+        let failure = classify(
+            &boot(ResetReason::Software, Some(Fault::Hang(stall))),
+            &[],
+            &name,
+        )
+        .unwrap();
+        assert_eq!(failure.kind, FailureKind::Hang);
+        assert!(
+            failure.message.contains(
+                "hang after 7505 ms: task console made no progress for 5250 ms while executors ran"
+            ),
+            "{}",
+            failure.message
         );
     }
 

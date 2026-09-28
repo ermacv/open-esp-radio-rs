@@ -1,6 +1,6 @@
 schema = 5
 id = "system-hang-watchdog"
-description = "A stalled protocol or network executor leaves a hang post-mortem with both harts' interrupted context, and the chip resets"
+description = "A stalled protocol or network executor, or a console that stops taking commands while both run, leaves a hang post-mortem with both harts' interrupted context, and the chip resets"
 repetitions = 1
 transfer = "identical-image"
 tags = ["watchdog", "soc", "fault-injection", "post-mortem"]

@@ -18,7 +18,7 @@ mod system;
 pub use system::{
     BootEvidence, CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HangTarget, HartState,
     POST_MORTEM_CHECKPOINT_PAGE, POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints,
-    PostMortemSummary, ResetReason, WatchdogTestMode,
+    PostMortemSummary, ResetReason, TaskSlot, TaskStall, WatchdogTestMode,
 };
 mod phy_fault;
 mod phy_register_image;

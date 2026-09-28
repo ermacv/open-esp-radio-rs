@@ -20,13 +20,14 @@
 use crc::{CRC_32_ISCSI, Crc};
 use oer_hil_protocol::{
     CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HartState, POST_MORTEM_CHECKPOINT_PAGE,
-    POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints, PostMortemSummary,
+    POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints, PostMortemSummary, TaskSlot,
+    TaskStall,
 };
 
 const CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 const MAGIC: u32 = u32::from_le_bytes(*b"OPMR");
 /// Layout of [`Record`]; a record of another layout is discarded.
-const LAYOUT: u32 = 1;
+const LAYOUT: u32 = 2;
 
 const FAULT_NONE: u32 = 0;
 const FAULT_HANG: u32 = 1;
@@ -83,6 +84,9 @@ struct RawFault {
     /// Per hart: responded, mepc, ra, sp, mcause, mstatus.
     harts: [[u32; 6]; 2],
     samples: [u32; 16],
+    /// Zero, or one plus the stalled task slot's position.
+    stalled_task: u32,
+    task_pending_ms: u32,
     panic_line: u32,
     panic_file: [u8; PANIC_FILE_BYTES],
     panic_message: [u8; PANIC_MESSAGE_BYTES],
@@ -96,6 +100,8 @@ impl RawFault {
         stalled_executors: 0,
         harts: [[0; 6]; 2],
         samples: [0; 16],
+        stalled_task: 0,
+        task_pending_ms: 0,
         panic_line: 0,
         panic_file: [0; PANIC_FILE_BYTES],
         panic_message: [0; PANIC_MESSAGE_BYTES],
@@ -110,7 +116,9 @@ impl RawFault {
         for word in self.harts.iter().flatten().chain(&self.samples) {
             digest.update(&word.to_le_bytes());
         }
-        digest.update(&self.panic_line.to_le_bytes());
+        for word in [self.stalled_task, self.task_pending_ms, self.panic_line] {
+            digest.update(&word.to_le_bytes());
+        }
         digest.update(&self.panic_file);
         digest.update(&self.panic_message);
         digest.finalize()
@@ -140,6 +148,13 @@ impl RawFault {
                         mstatus,
                     }),
                 samples: self.samples,
+                stalled_task: match self.stalled_task {
+                    0 => None,
+                    position => Some(TaskStall {
+                        slot: *TaskSlot::ALL.get(usize::try_from(position - 1).ok()?)?,
+                        pending_ms: self.task_pending_ms,
+                    }),
+                },
             })),
             FAULT_PANIC => Some(Fault::Panic(PanicFault {
                 file: text(&self.panic_file)?,
@@ -303,6 +318,13 @@ impl Record {
                 ]
             }),
             samples: hang.samples,
+            stalled_task: hang.stalled_task.map_or(0, |stall| {
+                TaskSlot::ALL
+                    .iter()
+                    .position(|slot| *slot == stall.slot)
+                    .map_or(0, |position| position as u32 + 1)
+            }),
+            task_pending_ms: hang.stalled_task.map_or(0, |stall| stall.pending_ms),
             ..RawFault::NONE
         }
         .seal();
@@ -389,6 +411,7 @@ mod tests {
             stalled_executors: 0b01,
             harts: [hart(0x4200_1000), HartState::default()],
             samples: [0x4200_1000; 16],
+            stalled_task: None,
         }
     }
 
@@ -426,6 +449,22 @@ mod tests {
         assert_eq!(next.boot_count, 2);
         assert!(next.checkpoints.is_empty());
         assert_eq!(next.fault, None);
+    }
+
+    #[test]
+    fn a_task_stall_survives_the_reset() {
+        let mut record = Record::EMPTY;
+        record.begin_boot();
+        let stall = HangFault {
+            stalled_executors: 0,
+            stalled_task: Some(TaskStall {
+                slot: TaskSlot::SessionEvidence,
+                pending_ms: 5_250,
+            }),
+            ..hang()
+        };
+        record.record_hang(&stall);
+        assert_eq!(record.begin_boot().unwrap().fault, Some(Fault::Hang(stall)));
     }
 
     #[test]

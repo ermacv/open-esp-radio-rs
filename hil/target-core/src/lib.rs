@@ -15,6 +15,7 @@ pub mod bluetooth;
 #[cfg(feature = "secure-gatt")]
 pub mod bluetooth_gatt;
 pub mod console;
+pub mod liveness;
 pub mod memory_benchmark;
 pub mod network;
 pub mod postmortem;

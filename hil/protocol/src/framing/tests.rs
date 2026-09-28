@@ -1834,6 +1834,10 @@ fn the_largest_post_mortem_fits_a_frame() {
             stalled_executors: u8::MAX,
             harts: [hart; 2],
             samples: [u32::MAX; 16],
+            stalled_task: Some(crate::TaskStall {
+                slot: crate::TaskSlot::SessionEvidence,
+                pending_ms: u32::MAX,
+            }),
         }),
         Fault::Panic(PanicFault {
             file: text(48).as_str().try_into().unwrap(),

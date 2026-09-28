@@ -39,7 +39,7 @@ critical-section = { version = "1.2.0", features = ["std"] }
 embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 oer-esp32s31-hal = { path = "../../../hardware/esp32s31/hal", features = ["validation-probes"] }
 oer-esp32s31-ieee80211-ap = { path = "../../../roles/esp32s31/ieee80211/ap", features = ["diagnostics"] }
-xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", features = ["async"] }
+xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "3953379094ae1d90f1a89d8bb85dfe3ebd8a9d19", features = ["async"] }
 
 [features]
 # Place the direct source-owned RX-gain transaction in internal SRAM for A/B

@@ -8,15 +8,15 @@ repository.workspace = true
 description = "Owned-packet boundary for the optimized open ESP radio Embassy/Xarxa integration"
 
 [dependencies]
-owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91" }
+owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "9c390fa27e636824b935d245810f03856bf5d459" }
 embassy-sync = "0.8.0"
 oer-network-interface = { path = "../../../network/interface" }
 oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }
-xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", features = ["async"] }
+xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "3953379094ae1d90f1a89d8bb85dfe3ebd8a9d19", features = ["async"] }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
-owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91", features = ["medium-ethernet", "proto-ipv4", "std", "udp"] }
+owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "9c390fa27e636824b935d245810f03856bf5d459", features = ["medium-ethernet", "proto-ipv4", "std", "udp"] }
 
 [lints]
 workspace = true

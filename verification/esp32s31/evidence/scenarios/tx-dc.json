@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "ffd427027f380f6f5e630a1bed2de57451a6c79d8cb23641a9340cbec0dea6d5",
+    "input-2": "156978b7571475bee1645740fd7d85020f4df16beced8eac9483c1d5823fed8d",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
@@ -60,7 +60,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/phy/pbus.rs",
-      "sha256": "04f9f759172e9d647761ebca6209eb630859fb853669325dab0facf380e98d5e"
+      "sha256": "15a5052527de99ba8482d00580ddd694b6919ce111647c273fde6da415800f70"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/phy/power_detector/platform.rs",
@@ -124,7 +124,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/Cargo.toml",
-      "sha256": "d98f4ea3516ed8042407b82d4739c75f8fb28f243978a75376e1c6bda370f821"
+      "sha256": "95a9c747de510930f4700da8b08b841bf8a6e8c896b51e41543e7854769667b5"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/executor/wait/poll.rs",
@@ -165,6 +165,10 @@
     {
       "path": "crates/hardware/radio/clock/Cargo.toml",
       "sha256": "969067e99838021292557f0a22783742aaf408d783a2d4d73e7ce8896ad51df0"
+    },
+    {
+      "path": "crates/hardware/radio/trace/Cargo.toml",
+      "sha256": "7ca8cee87c84ec4553f78344a090a14a778efc6e7a6d97b002ff2dda51801f99"
     },
     {
       "path": "crates/memory/Cargo.toml",
@@ -241,10 +245,6 @@
     {
       "path": "rust-toolchain.toml",
       "sha256": "4e062fad6c8b59464e2cab74c89664598ac9d61e43404c8e2cb3a6d8ad015b26"
-    },
-    {
-      "path": "target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/build/oer-esp32s31-probe-radio-elf-1500303fb773a5e7/out/probe_catalog.rs",
-      "sha256": "0e4100207de52c2962d64203dc95b3a51920bdee664abefa5000b034400a16be"
     },
     {
       "path": "tools/blobray/Cargo.lock",
@@ -1060,7 +1060,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "dd4b296880692f33babb76c1f3b6448fb9ace530bfe0d9309b9bda1c8c360843"
+      "sha256": "9d232ad245aa1c1a8dd75bfcd383349a32ed7d9914d2cfb8a0bd8a2b38a7d0ba"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -1332,7 +1332,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "212ec618692fdf77e4101c69e995a8128652897d595d998abf1bb6da50b7c927"
+      "sha256": "98b318860b86c48b395a62e93567e44dbaa6ae708f3d656d6a2c92b349488ac0"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1340,7 +1340,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/shard.rs",
-      "sha256": "6663393cb7d60115ea789aec3064c694485a18175e2d688c6ad22c453eac7769"
+      "sha256": "3f441e735d975555db0ad539d569635fa40ab40f2aeaa9b8ed720eb8e2608cce"
     },
     {
       "path": "verification/harness/scenarios/src/state.rs",
@@ -1580,7 +1580,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/phy/pbus.rs",
-      "line": 126
+      "line": 171
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/phy/power_detector/platform.rs",

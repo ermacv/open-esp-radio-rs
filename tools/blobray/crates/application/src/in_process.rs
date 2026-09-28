@@ -4,8 +4,9 @@
 //! the effect contracts and layout projections its relations select. Contracts
 //! and projections are reviewed outside Blobray and selected by the digest of
 //! their canonical encoding. Records stay in memory: no project, content store,
-//! journal or knowledge review participates. Goals must not need symbol
-//! resolution, and runtime tables and reviewed call pairs need a project.
+//! journal or knowledge review participates. A symbol goal resolves in the
+//! given executable whose content is its object; runtime tables and reviewed
+//! call pairs need a project.
 //!
 //! The vendor side of a request can execute once and be reused by requests
 //! that differ only in their replacement side, such as the same request over

@@ -119,7 +119,6 @@ supervisor publishes typed function receipts, including semantic incompleteness.
 Read/export operations consume retained records without scheduling computation.
 See [function analysis](../../next/reference/analysis/README.md#function-analysis-contract).
 
-
 `investigations` owns object-input or prepared-image selection and execution through
 `ReadQuery::PlanInvestigation` and `Application::start_analyze_project`. It freezes
 an `InvestigationPlan`, validates every explicit selector, and streams exact
@@ -191,6 +190,19 @@ publication boundary. Read/replay clients use `ReadQuery::Execution`.
 See [execution and comparison](../../next/reference/execution/README.md#concrete-execution-and-comparison)
 for stateful lifetimes, resource obligations and claim limits.
 
+`in_process` runs the same execution and comparison inside the calling
+process over caller-supplied executable bytes, with no project, store or
+journal: `verify` for a request, `vendor` for its vendor side alone, whose
+results a later `verify` of the same vendor side reuses, and `coverage` over
+the results. `execution_coverage` accumulates the code one side reaches over
+all its sessions; `code_coverage` compares that with the static closure of
+the vendor roots, for `code-coverage` and `in_process::coverage` alike. With
+dependence requested, `execution_steps` records each replacement session's
+step log and `dependence` derives which executed instructions the compared
+observations depend on. Image patches replace replacement bytes in every
+session without a rebuild. See
+[in-process verification](../../next/reference/execution/README.md#in-process-verification).
+
 `ReadQuery::AuditTargets` reads an explicitly selected ELF outside a project under
 the same ephemeral supervisor. `prepare_query_with_tools` injects its decoder and
 linker capabilities. The artifact owner validates executable sections; analysis
@@ -250,11 +262,9 @@ call graph metadata, and streams reached effects in a second linear pass. Native
 path proposal/review rechecks exact immutable hops through this shared resolver.
 No path query invokes analysis, and review is not executable reachability.
 
-
 `ReadQuery::MemorySlice` loads one authenticated saved record owner and streams
 bounded local definition queries under the same supervision/export lifecycle.
 Application owns acquisition and atomic delivery; analysis owns CFG/alias rules.
-
 
 `ReadQuery::EventRoute` and native route proposal/review share one evidence path.
 Navigation supplies exact selected callees and a synchronous borrowed-facts port;
@@ -298,9 +308,7 @@ once and release ELF bytes immediately after address validation. Early goals clo
 a phase without claiming return or callee-body execution; warm successors start
 their own entry with only session-owned memory retained.
 
-
 `devices` owns admitted configuration/state, exact sorted ports and phase/session closure. Session snapshots model participation before releasing closed instances; verification sees both code outcomes and due model obligations. Warm continuation cannot redeclare a live id. All models use the shared execution/replay path and budget.
-
 
 `external_calls` owns immutable response copies, admitted instances and cursors. `execution_memory::execution_calls` validates complete effects, writes only checked normal memory, and owns bounded allocations. Phase/session closure and call evidence share execution supervision, capacity and atomic publication.
 

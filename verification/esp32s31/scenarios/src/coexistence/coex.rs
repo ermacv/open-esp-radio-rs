@@ -23,7 +23,8 @@ use std::path::PathBuf;
 /// link entry. `coex_schm_init` installs the static
 /// `coex_schm_timeout_process` as the phase-timer function, which links it;
 /// the static `coex_schm_status_change` is linked through the status entries.
-/// Cases enter the static functions at their image addresses.
+/// Cases enter the static functions at their image addresses, and the
+/// claims name them there.
 pub const ROOTS: &[&str] = &[
     "coex_schm_status_bit_set",
     "coex_schm_status_bit_clear",
@@ -45,6 +46,16 @@ pub const CLAIMS: &[(&str, &str, &str)] = &[
     (
         "archive",
         "coex_schm_process_restart",
+        "open_coex_schm_trace_step",
+    ),
+    (
+        "archive",
+        "coex_schm_status_change",
+        "open_coex_schm_trace_step",
+    ),
+    (
+        "archive",
+        "coex_schm_timeout_process",
         "open_coex_schm_trace_step",
     ),
 ];
@@ -278,7 +289,13 @@ impl Coex {
         ]
         .into_iter()
         .map(|name| Ok((name, symbol(name)?)))
-        .collect::<Result<_>>()?;
+        .collect::<Result<BTreeMap<_, _>>>()?;
+        // The claims name the static entries the cases enter too, at their
+        // linked addresses.
+        let mut roots = linked.roots;
+        for (name, address) in &entries {
+            roots.entry((*name).to_owned()).or_insert(*address);
+        }
         Ok(Self {
             entries,
             env: symbol("coex_schm_env")?,
@@ -286,7 +303,7 @@ impl Coex {
             schemes,
             phases,
             run: session.run.clone(),
-            roots: linked.roots,
+            roots,
             vendor,
             production,
             session,

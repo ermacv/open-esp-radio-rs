@@ -440,8 +440,8 @@ looping and non-looping status. The relation compares the scheme pointer, the
 phase index and the five status words; the scenario then requires the
 production step to re-arm the phase timer for the vendor's `timer_arm_us`
 microseconds and to notify exactly the phase callbacks the vendor called. The
-static entries are entered at their linked addresses; claims name the global
-entries.
+static entries are entered at their linked addresses, where their claims
+name them too.
 
 ```console
 cargo xtask vendor-scenario --chip esp32s31 coex \

@@ -34,6 +34,22 @@ pub(super) struct SourceInput {
     commit: String,
     dirty: bool,
     pub(super) files: Vec<FileInput>,
+    /// The untracked files among `files` and why the producer archived
+    /// each; left out of the identity when empty, as the producer does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    untracked: Vec<UntrackedInput>,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct UntrackedInput {
+    path: PathBuf,
+    by: UntrackedReason,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum UntrackedReason {
+    SourceInclude,
+    ImagePackage,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -160,4 +176,29 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
         }
     }
     Ok(verified(&directory, sources)?.is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The source identity is the digest of the reserialized manifest entry,
+    /// so an entry must read back to the producer's exact bytes.
+    #[test]
+    fn a_source_entry_reserializes_to_the_producers_bytes() {
+        let file = r#"{"path":"a.rs","size_bytes":1,"sha256":"00","mode":420}"#;
+        for entry in [
+            format!(r#"{{"name":"repository","commit":"c","dirty":true,"files":[{file}]}}"#),
+            format!(
+                r#"{{"name":"repository","commit":"c","dirty":true,"files":[{file}],"untracked":[{{"path":"a.rs","by":"source-include"}},{{"path":"b.rs","by":"image-package"}}]}}"#
+            ),
+        ] {
+            let parsed: SourceInput = serde_json::from_str(&entry).unwrap();
+            assert_eq!(serde_json::to_string(&parsed).unwrap(), entry);
+        }
+        let unknown = format!(
+            r#"{{"name":"repository","commit":"c","dirty":true,"files":[{file}],"untracked":[{{"path":"a.rs","by":"guess"}}]}}"#
+        );
+        assert!(serde_json::from_str::<SourceInput>(&unknown).is_err());
+    }
 }

@@ -26,6 +26,28 @@ const DEFAULT_PORT: u16 = 8765;
 const RECENT_LEASES: usize = 30;
 const RECENT_RUNS: usize = 25;
 const PAGE: &str = include_str!("hil_dashboard.html");
+/// How often the host fixtures are probed again.
+const FIXTURE_REFRESH: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The host fixtures as last probed, refreshed by a background thread.
+static FIXTURES: std::sync::Mutex<Vec<crate::hil_fixtures::Fixture>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Probe the host fixtures now and every [`FIXTURE_REFRESH`] after.
+fn watch_fixtures() {
+    let Ok(lab) = oer_hil_runner_core::lab::config::LabConfig::default_path() else {
+        return;
+    };
+    std::thread::spawn(move || {
+        loop {
+            let fixtures = crate::hil_fixtures::probe(&lab);
+            *FIXTURES
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = fixtures;
+            std::thread::sleep(FIXTURE_REFRESH);
+        }
+    });
+}
 
 pub fn serve(runs: &Path, args: &[std::ffi::OsString]) -> Result<std::process::ExitCode> {
     let port = match args {
@@ -56,6 +78,7 @@ pub fn serve(runs: &Path, args: &[std::ffi::OsString]) -> Result<std::process::E
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .map_err(|error| format!("cannot listen on 127.0.0.1:{port}: {error}"))?;
     me.write(&record)?;
+    watch_fixtures();
     eprintln!(
         "hil dashboard: http://{} (Ctrl+C stops it)",
         listener.local_addr()?
@@ -218,6 +241,9 @@ fn snapshot(runs: &Path) -> Result<Value> {
         "queue": status.queue,
         "balances": status.balances,
         "devices": status.devices,
+        "fixtures": *FIXTURES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
         "maintenance": status.maintenance,
         "jobs": crate::hil_jobs::views(&jobs, &status),
         "leases": history,

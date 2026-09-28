@@ -383,6 +383,14 @@ user's host cache, so every checkout of the repository shares them. A checkout w
 still fails fast on the fixture locks and bypasses the queue; a granted holder
 waits for such a process to finish.
 
+`cargo hil fixtures` probes the host fixtures the lab configuration names:
+this host's Wi-Fi radios and Bluetooth adapter and the OpenWrt station fixture
+and air observer over SSH. It prints each one's lease key (the claim a run
+takes it by), whether it answers, its model and firmware, and each
+interface's type, channel and CCA busy share (busy over active time of the
+frequency in use, from the radio's survey). The dashboard's Fixtures section
+shows the same, refreshed every minute, with the lease holding each fixture.
+
 ## Find and compare runs
 
 Every checkout's `target/hil/esp32s31/runs` is a link to one store shared by

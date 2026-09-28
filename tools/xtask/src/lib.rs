@@ -23,6 +23,7 @@ pub mod hil_bisect;
 pub mod hil_board;
 pub mod hil_dashboard;
 pub mod hil_evidence;
+pub mod hil_fixtures;
 pub mod hil_flash;
 pub mod hil_jobs;
 pub mod hil_jtag;

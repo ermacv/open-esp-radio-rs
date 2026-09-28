@@ -88,6 +88,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   <section><h2>Queue</h2><div id="queue"></div></section>
   <section><h2>Balances</h2><div id="balances"></div></section>
   <section class="wide"><h2>Boards</h2><div id="devices"></div></section>
+  <section class="wide"><h2>Fixtures</h2><div id="fixtures"></div></section>
   <section class="wide"><h2>Recent runs</h2><div id="runs"></div></section>
   <section class="wide"><h2>Recent leases</h2><div id="leases"></div></section>
 </main>
@@ -200,6 +201,27 @@ function devices(list, maintenance) {
   return `<div class="table-wrap"><table><tr><th>Board</th><th>Port</th><th>Health</th><th>Firmware</th><th>Flashed by</th></tr>${rows}</table></div>`;
 }
 
+function fixtures(list, holding, waiting) {
+  if (!list || !list.length) return '<p class="empty">Probing the host fixtures…</p>';
+  const rows = list.map((f) => {
+    const holder = f.key ? holding.find((h) => h.claims.includes(f.key)) : null;
+    const queued = f.key ? waiting.filter((q) => q.claims.includes(f.key)).length : 0;
+    const state = !f.reachable ? `<span class="bad">${esc(f.error ?? "not answering")}</span>`
+      : holder ? `held by <b>${esc(holder.owner)}</b> <span class="id">#${holder.id}</span>`
+      : '<span class="ok">free</span>';
+    const radios = (f.interfaces || []).map((i) => {
+      const busy = i.cca_busy_percent;
+      const cca = busy == null ? "" : ` · CCA busy <span class="${busy >= 80 ? "bad" : busy >= 50 ? "warn" : "ok"}">${busy}%</span>`;
+      return `<div><span class="work">${esc(i.name)}</span> <span class="muted">${esc(i.kind ?? "")}${i.channel ? " · ch " + esc(i.channel) : ""}</span>${cca}</div>`;
+    }).join("") || '<span class="muted">no interface</span>';
+    return `<tr><td><b>${esc(f.name)}</b><div class="claims">${esc(f.role)}</div></td>
+      <td>${state}${queued ? ` <span class="muted">· ${queued} waiting</span>` : ""}</td>
+      <td>${radios}</td><td class="claims">${esc(f.detail ?? "")}</td></tr>`;
+  }).join("");
+  return `<p class="muted">Probed every minute. CCA busy is the radio's busy share of the channel in use, as its survey reports it.</p>
+    <div class="table-wrap"><table><tr><th>Fixture</th><th>State</th><th>Interfaces</th><th>Host</th></tr>${rows}</table></div>`;
+}
+
 function runs(list) {
   if (!list.length) return '<p class="empty">No runs in the shared store.</p>';
   const rows = list.map((r) => {
@@ -242,6 +264,7 @@ async function refresh() {
     $("stand-service").innerHTML = standService(data.maintenance);
     $("balances").innerHTML = balances(data.balances);
     $("devices").innerHTML = devices(data.devices, data.maintenance);
+    $("fixtures").innerHTML = fixtures(data.fixtures, data.holders, data.queue);
     $("runs").innerHTML = runs(data.runs);
     $("leases").innerHTML = leases(data.leases);
     last = Date.now();

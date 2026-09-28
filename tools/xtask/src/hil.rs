@@ -68,6 +68,14 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("owner") => return owner(ctx, &args[1..]),
         Some("__command-tree") => return command_tree(ctx),
         Some("devices") => return devices(ctx, &options, &args[1..]),
+        Some("fixtures") => {
+            let lab = oer_hil_runner_core::lab::config::LabConfig::default_path()?;
+            print!(
+                "{}",
+                crate::hil_fixtures::describe(&crate::hil_fixtures::probe(&lab))
+            );
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
         Some("flash") => {
             let request = oer_hil_arbiter::Request {
@@ -240,6 +248,7 @@ Stand commands (shared by every checkout of this user):
       --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
       [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
+  cargo hil fixtures                  host Wi-Fi radios, Bluetooth adapter and OpenWrt hosts: key, interfaces, channel, CCA busy
   cargo hil devices [--json]          boards: name, chip, port, health, last firmware
   cargo hil devices set MAC [--chip CHIP] [--name NAME] [--reset-uart SERIAL --en LINE --boot LINE]
   cargo hil devices reset BOARD [--download]   reset through the registered reset path
@@ -443,6 +452,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         "board",
         "peer",
         "devices",
+        "fixtures",
         "firmware",
         "flash",
         "runs",

@@ -97,7 +97,7 @@ pub(crate) async fn debug_tx_cap() -> u32 {
     };
     let mut guard = radio.lock().await;
     let mut lease = guard.lease();
-    match lease.phy_analog_image(12, ANALOG_READ_POLLS) {
+    match lease.phy_analog_image(33, ANALOG_READ_POLLS) {
         Some(Ok(value)) => u32::from(value),
         _ => 0xee,
     }

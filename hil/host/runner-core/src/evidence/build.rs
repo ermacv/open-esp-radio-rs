@@ -509,6 +509,8 @@ pub(super) fn create_provenance(
         ("workspace-lock", "Cargo.lock"),
         ("embedded-workspace", "hil/targets/esp32s31/Cargo.toml"),
         ("stack-policy", "hil/targets/esp32s31/stack.toml"),
+        // The HIL stack policy extends the production one.
+        ("stack-policy-base", "platform/esp32s31/stack.toml"),
         (
             "partition-table",
             "platform/esp32s31/partitions/applications.csv",

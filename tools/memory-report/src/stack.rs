@@ -45,12 +45,30 @@ pub struct StackBudget {
     pub reported_frame_count: usize,
     #[serde(default)]
     pub reviewed_frames: Vec<ReviewedStackFrame>,
+    /// Every policy file this budget was read from, the extending one last;
+    /// build provenance records them all.
+    #[serde(skip)]
+    pub sources: Vec<PathBuf>,
+}
+
+/// A policy that reuses a base policy (`extends`, relative to this file): it
+/// inherits the base's budgets and reviewed frames, and adds the frames only
+/// its image has. A frame whose selector the base already reviews replaces
+/// that review, because this image's frame differs; repeating the base's
+/// review unchanged is rejected, so each production frame is reviewed once.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Extension {
+    schema: u32,
+    extends: PathBuf,
+    #[serde(default)]
+    reviewed_frames: Vec<ReviewedStackFrame>,
 }
 
 /// Explicit exception for one understood generated frame above the ordinary
 /// review threshold. The selector is matched against complete demangled
 /// function names; crate disambiguator hashes therefore do not enter policy.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReviewedStackFrame {
     pub function_contains: String,
@@ -67,7 +85,7 @@ pub struct ReviewedStackFrame {
 }
 
 /// Stack storage and call-chain headroom for a function's execution context.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionStack {
     pub storage_symbol: String,
@@ -80,6 +98,13 @@ impl StackBudget {
             path: path.to_owned(),
             source,
         })?;
+        let extends = source
+            .parse::<toml_edit::DocumentMut>()
+            .ok()
+            .is_some_and(|document| document.contains_key("extends"));
+        if extends {
+            return Self::load_extension(path, &source);
+        }
         let mut budget: Self =
             toml_edit::de::from_str(&source).map_err(|source| Error::Policy {
                 path: path.to_owned(),
@@ -88,6 +113,55 @@ impl StackBudget {
         if let Some(review) = &mut budget.coverage_policy {
             *review = path.parent().unwrap_or(Path::new(".")).join(&*review);
         }
+        budget.sources = vec![path.to_owned()];
+        budget.validate()?;
+        Ok(budget)
+    }
+
+    fn load_extension(path: &Path, source: &str) -> Result<Self> {
+        let extension: Extension =
+            toml_edit::de::from_str(source).map_err(|source| Error::Policy {
+                path: path.to_owned(),
+                source,
+            })?;
+        let base_path = path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(&extension.extends);
+        let mut budget = Self::load(&base_path)?;
+        if budget.sources.len() > 1 {
+            return Err(Error::InvalidPolicy(format!(
+                "{} extends {}, which itself extends another policy; extend the base directly",
+                path.display(),
+                base_path.display()
+            )));
+        }
+        if extension.schema != budget.schema {
+            return Err(Error::InvalidPolicy(format!(
+                "{} has schema {} but its base has schema {}",
+                path.display(),
+                extension.schema,
+                budget.schema
+            )));
+        }
+        for frame in extension.reviewed_frames {
+            match budget
+                .reviewed_frames
+                .iter_mut()
+                .find(|base| base.function_contains == frame.function_contains)
+            {
+                Some(base) if *base == frame => {
+                    return Err(Error::InvalidPolicy(format!(
+                        "{} repeats the base review of `{}` unchanged; remove it",
+                        path.display(),
+                        frame.function_contains
+                    )));
+                }
+                Some(base) => *base = frame,
+                None => budget.reviewed_frames.push(frame),
+            }
+        }
+        budget.sources.push(path.to_owned());
         budget.validate()?;
         Ok(budget)
     }

@@ -1636,6 +1636,12 @@ code = "048e57c04daefe447bc7314081872d0d44c8d80547fc79071e4d40a719a9168d"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_api.o"
+symbol = "esp_wifi_config_11b_rate"
+code = "1528c64005a82939b2e65e6984a2708ba5aa9d2d6542acc894fe84b06bbfa4c9"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_api.o"
 symbol = "esp_wifi_config_80211_tx"
 code = "d9124e337505e621ea7f22587d2a7d7f093b6534d7fb7c0f453f0986987c5291"
 
@@ -3973,6 +3979,12 @@ code = "c9882c3a1a1056778e1d1739ebf36700f4688dc79fcaa7ab019dc9fc28c6801d"
 [[function]]
 artifact = "libpp"
 member = "if_hwctrl.o"
+symbol = "ic_set_vif"
+code = "6892eb7f2e0c17e9734dc7fa8ce20211172868b6466cf5a24445c59aa5c4c918"
+
+[[function]]
+artifact = "libpp"
+member = "if_hwctrl.o"
 symbol = "ic_update_sta_tsf"
 code = "67358168a25e4ebfbfe50209914508741ba02792eb115ee79873075696a2cb6e"
 
@@ -4581,6 +4593,12 @@ code = "b1cae6c8b0caf134b046cb5914760a5fb13d8938ce46c44092de1ac5c5de005e"
 [[function]]
 artifact = "libpp"
 member = "trc.o"
+symbol = "trc_init"
+code = "7e47b90f0b36b0c1fa8b02b1fd438007ebe6f5843504bacb8382563a62172241"
+
+[[function]]
+artifact = "libpp"
+member = "trc.o"
 symbol = "trc_isTxAmpduOperational"
 code = "9ee1c1f056bf7daa35ce19c5637dd190eac83e26d8de4edef3c5753ef3f97402"
 
@@ -4589,6 +4607,12 @@ artifact = "libpp"
 member = "trc.o"
 symbol = "trc_set_bf_report_rate"
 code = "d553a697bc3647209b03a133425af8893b0680f34c0c57dbb64b7160687899ea"
+
+[[function]]
+artifact = "libpp"
+member = "trc.o"
+symbol = "trc_set_per_pkt_rate"
+code = "6261a05e42cc855772f92fb39982a8b579c55c1daf82ad35fcb5ae5a00d23e41"
 
 [[function]]
 artifact = "libpp"

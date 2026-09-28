@@ -600,13 +600,9 @@ impl ExecutionRequest {
                         format!("case `{name}` has a relation but no replacement to compare")
                     });
                 }
-                (None, Some(_)) => {
-                    return require(false, || {
-                        format!(
-                            "case `{name}` has a replacement but no relation; a paired case compares"
-                        )
-                    });
-                }
+                // A paired case without a relation is setup: both sides run
+                // and nothing of it is compared, observed or claimed.
+                (None, Some(_)) => {}
             }
             // A vendor symbol goal may pair with a replacement return: a
             // prefix comparison of every vendor effect before the boundary
@@ -1115,9 +1111,10 @@ mod validation_tests {
         r.binding = None;
         assert!(rejected(r).contains("binding must be given together"));
 
+        // A paired case without a relation is a valid setup case.
         let mut r = request();
         r.cases[0].relation = None;
-        assert!(rejected(r).contains("has a replacement but no relation"));
+        r.validate().unwrap();
 
         let mut r = request();
         r.cases[0].vendor.entry = 0x1001;

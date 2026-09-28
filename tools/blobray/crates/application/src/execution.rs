@@ -548,13 +548,21 @@ pub(crate) fn run_resolved<'m>(
         evidence(emit, index as u32, false, &left, control)?;
         if let Some(right) = &right {
             evidence(emit, index as u32, true, right, control)?;
+        }
+        // A paired case without a relation is setup: both sides run and
+        // nothing of it is compared or observed.
+        if right.is_some()
+            && case.relation.is_none()
+            && let Some(steps) = sides[1].session.as_mut().and_then(|s| s.steps())
+        {
+            steps.end_case(Default::default(), control)?;
+        }
+        if let (Some(right), Some(relation)) = (&right, &case.relation) {
             control.phase(RunPhase::Compare)?;
             let comparison = blobray_verification::compare(
                 &left,
                 right,
-                case.relation.as_ref().ok_or_else(|| {
-                    Error::new(ErrorCode::Integrity, "comparison relation missing")
-                })?,
+                relation,
                 resolved.pairs,
                 selected_projection(case.relation.as_ref(), resolved.projections)?.map(
                     |resolved| blobray_verification::ProjectionComparison {
@@ -576,7 +584,6 @@ pub(crate) fn run_resolved<'m>(
                 _ => ComparisonVerdict::Match,
             });
             if let Some(steps) = sides[1].session.as_mut().and_then(|s| s.steps()) {
-                let relation = case.relation.as_ref().unwrap();
                 let compared = blobray_verification::compared_observations(
                     right,
                     case.replacement.as_ref().unwrap(),

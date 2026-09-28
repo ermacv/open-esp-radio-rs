@@ -750,6 +750,13 @@ pub fn validate_execution_records_with(
                 } else if !side {
                     side = true;
                     events = 0;
+                } else if phase.relation.is_none() {
+                    // A setup case records no comparison.
+                    blocked = !phase_complete;
+                    phase_complete = true;
+                    case += 1;
+                    side = false;
+                    events = 0;
                 } else {
                     outcome = true;
                 }

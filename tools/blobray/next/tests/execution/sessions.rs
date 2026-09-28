@@ -266,3 +266,35 @@ fn cold_reset_releases_both_sides_before_allocating_the_next_address_spaces() {
         "MATCH"
     );
 }
+
+#[test]
+fn a_setup_case_runs_both_sides_and_records_no_comparison() {
+    let f = Fixture::new(&[0x00b52023, 0x00008067, 0x00052503, 0x00008067]);
+    let mut request = phases(&f, RegionLifetime::Session);
+    // The setup case stores on both sides without comparing anything: the
+    // replacement stores at another address, so the setup returns differ,
+    // and only the compared read, of each side's stored word, decides.
+    request.cases[0].relation = None;
+    request.cases[0].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
+    request.cases[1].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
+    let run = f.run(request, budget());
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    // Reading the execution back re-verifies its record order.
+    let result = f.read(&run.execution.unwrap());
+    let comparisons: Vec<_> = result["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["value"]["kind"] == "comparison")
+        .map(|r| r["value"]["case"].as_u64().unwrap())
+        .collect();
+    assert_eq!(comparisons, [1]);
+    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+    // Compared, the same setup case is a difference.
+    let mut compared = phases(&f, RegionLifetime::Session);
+    compared.cases[0].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
+    compared.cases[1].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
+    let run = f.run(compared, budget());
+    let result = f.read(&run.execution.unwrap());
+    assert_eq!(result["summary"]["manifest"]["verdict"], "DIFF");
+}

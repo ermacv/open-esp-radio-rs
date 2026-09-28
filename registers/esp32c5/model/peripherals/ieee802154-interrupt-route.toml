@@ -27,7 +27,7 @@ bitWidth = 6
 
 [[peripherals.registers.register.fields]]
 name = "BITS_6_7_OPAQUE"
-description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
+description = "Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 6
 bitWidth = 2
 
@@ -39,7 +39,7 @@ bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BITS_9_31_OPAQUE"
-description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
+description = "Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 9
 bitWidth = 23
 
@@ -77,7 +77,9 @@ naming = "descriptive"
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_6_7_OPAQUE"
 naming = "opaque"
+sources = ["ESP_IDF_4D59230D_C5_INTERRUPT_MATRIX_ZB_MAC_MAP"]
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_9_31_OPAQUE"
 naming = "opaque"
+sources = ["ESP_IDF_4D59230D_C5_INTERRUPT_MATRIX_ZB_MAC_MAP"]

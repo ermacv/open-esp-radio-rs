@@ -27,7 +27,7 @@ bitWidth = 6
 
 [[peripherals.registers.register.fields]]
 name = "BITS_6_7_OPAQUE"
-description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
+description = "Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 6
 bitWidth = 2
 
@@ -39,7 +39,7 @@ bitWidth = 2
 
 [[peripherals.registers.register.fields]]
 name = "BITS_10_31_OPAQUE"
-description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
+description = "Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 10
 bitWidth = 22
 
@@ -61,7 +61,7 @@ bitWidth = 6
 
 [[peripherals.registers.register.fields]]
 name = "BITS_6_7_OPAQUE"
-description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
+description = "Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 6
 bitWidth = 2
 
@@ -73,7 +73,7 @@ bitWidth = 2
 
 [[peripherals.registers.register.fields]]
 name = "BITS_10_31_OPAQUE"
-description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
+description = "Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 10
 bitWidth = 22
 
@@ -138,15 +138,19 @@ naming = "descriptive"
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_6_7_OPAQUE"
 naming = "opaque"
+sources = ["ESP_IDF_4D59230D_S31_INTERRUPT_ZB_MAC_MAP"]
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_10_31_OPAQUE"
 naming = "opaque"
+sources = ["ESP_IDF_4D59230D_S31_INTERRUPT_ZB_MAC_MAP"]
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE1_ROUTE.BITS_6_7_OPAQUE"
 naming = "opaque"
+sources = ["ESP_IDF_4D59230D_S31_INTERRUPT_ZB_MAC_MAP"]
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE1_ROUTE.BITS_10_31_OPAQUE"
 naming = "opaque"
+sources = ["ESP_IDF_4D59230D_S31_INTERRUPT_ZB_MAC_MAP"]

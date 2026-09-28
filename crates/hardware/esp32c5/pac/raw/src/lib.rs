@@ -4460,17 +4460,17 @@ pub mod ieee802154_interrupt_route {
         pub type MapR = crate::FieldReader;
         #[doc = "Field `MAP` writer - Project-assigned name. CPU-interrupt destination selected for the peripheral source."]
         pub type MapW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
-        #[doc = "Field `BITS_6_7_OPAQUE` reader - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        #[doc = "Field `BITS_6_7_OPAQUE` reader - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
         pub type Bits6_7OpaqueR = crate::FieldReader;
-        #[doc = "Field `BITS_6_7_OPAQUE` writer - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        #[doc = "Field `BITS_6_7_OPAQUE` writer - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
         pub type Bits6_7OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         #[doc = "Field `PASS_IN_SEC` reader - Project-assigned name. Secure-world pass-through selection for the peripheral source."]
         pub type PassInSecR = crate::BitReader;
         #[doc = "Field `PASS_IN_SEC` writer - Project-assigned name. Secure-world pass-through selection for the peripheral source."]
         pub type PassInSecW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `BITS_9_31_OPAQUE` reader - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        #[doc = "Field `BITS_9_31_OPAQUE` reader - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
         pub type Bits9_31OpaqueR = crate::FieldReader<u32>;
-        #[doc = "Field `BITS_9_31_OPAQUE` writer - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        #[doc = "Field `BITS_9_31_OPAQUE` writer - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
         pub type Bits9_31OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 23, u32>;
         impl R {
             #[doc = "Bits 0:5 - Project-assigned name. CPU-interrupt destination selected for the peripheral source."]
@@ -4478,7 +4478,7 @@ pub mod ieee802154_interrupt_route {
             pub fn map(&self) -> MapR {
                 MapR::new((self.bits & 0x3f) as u8)
             }
-            #[doc = "Bits 6:7 - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[doc = "Bits 6:7 - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
             #[inline(always)]
             pub fn bits_6_7_opaque(&self) -> Bits6_7OpaqueR {
                 Bits6_7OpaqueR::new(((self.bits >> 6) & 3) as u8)
@@ -4488,7 +4488,7 @@ pub mod ieee802154_interrupt_route {
             pub fn pass_in_sec(&self) -> PassInSecR {
                 PassInSecR::new(((self.bits >> 8) & 1) != 0)
             }
-            #[doc = "Bits 9:31 - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[doc = "Bits 9:31 - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
             #[inline(always)]
             pub fn bits_9_31_opaque(&self) -> Bits9_31OpaqueR {
                 Bits9_31OpaqueR::new((self.bits >> 9) & 0x007f_ffff)
@@ -4500,7 +4500,7 @@ pub mod ieee802154_interrupt_route {
             pub fn map(&mut self) -> MapW<'_, Core0RouteSpec> {
                 MapW::new(self, 0)
             }
-            #[doc = "Bits 6:7 - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[doc = "Bits 6:7 - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
             #[inline(always)]
             pub fn bits_6_7_opaque(&mut self) -> Bits6_7OpaqueW<'_, Core0RouteSpec> {
                 Bits6_7OpaqueW::new(self, 6)
@@ -4510,7 +4510,7 @@ pub mod ieee802154_interrupt_route {
             pub fn pass_in_sec(&mut self) -> PassInSecW<'_, Core0RouteSpec> {
                 PassInSecW::new(self, 8)
             }
-            #[doc = "Bits 9:31 - Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[doc = "Bits 9:31 - Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value."]
             #[inline(always)]
             pub fn bits_9_31_opaque(&mut self) -> Bits9_31OpaqueW<'_, Core0RouteSpec> {
                 Bits9_31OpaqueW::new(self, 9)

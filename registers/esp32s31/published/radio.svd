@@ -24531,7 +24531,7 @@ polled or validation transaction starts with both CPU routes detached.</descript
             </field>
             <field>
               <name>BITS_6_7_OPAQUE</name>
-              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <description>Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
@@ -24543,7 +24543,7 @@ polled or validation transaction starts with both CPU routes detached.</descript
             </field>
             <field>
               <name>BITS_10_31_OPAQUE</name>
-              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <description>Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>22</bitWidth>
             </field>
@@ -24565,7 +24565,7 @@ polled or validation transaction starts with both CPU routes detached.</descript
             </field>
             <field>
               <name>BITS_6_7_OPAQUE</name>
-              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <description>Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
@@ -24577,7 +24577,7 @@ polled or validation transaction starts with both CPU routes detached.</descript
             </field>
             <field>
               <name>BITS_10_31_OPAQUE</name>
-              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <description>Opaque: meaning not established. Bits the vendor declares reserved, retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>22</bitWidth>
             </field>

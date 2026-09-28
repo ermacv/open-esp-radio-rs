@@ -134,9 +134,61 @@ fn newest_runs(runs: &Path, count: usize) -> Vec<Value> {
                     "id": scenario.id,
                     "outcome": scenario.outcome,
                 })).collect::<Vec<_>>(),
+                "progress": (run.state == hil_runs::State::Running)
+                    .then(|| progress(&run.directory))
+                    .flatten(),
             })
         })
         .collect()
+}
+
+/// Where a running run is: its latest step, the scenario it is in, and how
+/// many of its planned scenarios finished. `None` when its events or plan
+/// cannot be read or use a vocabulary this build does not know.
+fn progress(run: &Path) -> Option<Value> {
+    use oer_hil_runner_core::evidence::run::{PlanDisposition, RunPlan};
+    use oer_hil_schema::run::{RunEvent, RunEventKind};
+    let events = std::fs::read_to_string(run.join("events.jsonl"))
+        .ok()?
+        .lines()
+        .map(serde_json::from_str::<RunEvent>)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .ok()?;
+    let plan: RunPlan = serde_json::from_slice(&std::fs::read(run.join("plan.json")).ok()?).ok()?;
+    let planned = plan
+        .entries
+        .iter()
+        .filter(|entry| entry.disposition == PlanDisposition::Selected)
+        .count();
+    let finished = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.kind,
+                RunEventKind::ScenarioFinished | RunEventKind::ScenarioBlocked
+            )
+        })
+        .count();
+    let latest = events.last()?;
+    let current = events
+        .iter()
+        .rev()
+        .find(|event| event.kind == RunEventKind::ScenarioStarted)
+        .filter(|started| {
+            !events.iter().any(|event| {
+                event.kind == RunEventKind::ScenarioFinished
+                    && event.scenario == started.scenario
+                    && event.timestamp_unix_millis >= started.timestamp_unix_millis
+            })
+        })
+        .and_then(|started| started.scenario.clone());
+    Some(json!({
+        "step": latest.kind.id(),
+        "step_since_millis": latest.timestamp_unix_millis,
+        "scenario": current,
+        "finished": finished,
+        "planned": planned,
+    }))
 }
 
 #[cfg(test)]
@@ -151,6 +203,50 @@ mod tests {
             json!({"state": "completed", "outcome": outcome, "started_at_unix_ms": 1}).to_string(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_running_run_reports_its_step_scenario_and_finished_count() {
+        let run = tempfile::tempdir().unwrap();
+        let event = |millis: u64, kind: &str, scenario: Option<&str>| {
+            json!({"timestamp_unix_millis": millis, "kind": kind, "scenario": scenario,
+                   "image": null, "outcome": null})
+            .to_string()
+        };
+        std::fs::write(
+            run.path().join("events.jsonl"),
+            [
+                event(1, "run-started", None),
+                event(2, "scenario-started", Some("a")),
+                event(3, "scenario-finished", Some("a")),
+                event(4, "scenario-started", Some("b")),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let entry = |scenario: &str, disposition: &str| {
+            json!({"scenario": scenario, "image": "correctness", "repetitions": 1,
+                   "disposition": disposition, "reason": null})
+        };
+        std::fs::write(
+            run.path().join("plan.json"),
+            json!({"schema": 2, "run_id": "r", "selection": "s", "entries": [
+                entry("a", "selected"), entry("b", "selected"), entry("c", "selected"),
+                entry("d", "filtered"),
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            progress(run.path()).unwrap(),
+            json!({"step": "scenario-started", "step_since_millis": 4, "scenario": "b",
+                   "finished": 1, "planned": 3})
+        );
+        // An event this build does not know is not guessed at.
+        let mut events = std::fs::read_to_string(run.path().join("events.jsonl")).unwrap();
+        events.push_str(&format!("\n{}", event(5, "future-step", None)));
+        std::fs::write(run.path().join("events.jsonl"), events).unwrap();
+        assert_eq!(progress(run.path()), None);
     }
 
     #[test]

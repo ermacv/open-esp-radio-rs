@@ -36,7 +36,8 @@ pub use model::RunnerProvenance;
 pub use model::{
     Attachment, Comparison, CompletionReport, Failure, FailureKind, Measurement, MeasurementUnit,
     MeasurementVerdict, Outcome, PlanDisposition, PlanEntry, PlannedFirmware, RUN_SCHEMA,
-    RepetitionResult, RunPlan, RunState, ScenarioResult, SuiteCounts, SuiteResult, Threshold,
+    RepetitionResult, RunEventKind, RunPlan, RunState, ScenarioResult, SuiteCounts, SuiteResult,
+    Threshold,
 };
 pub(super) use model::{
     CellProvenance, FirmwareArtifact, FirmwareReplayOrigin, IntegrityFile, IntegrityIndex,
@@ -166,7 +167,7 @@ impl RunSession {
             events,
             finished: false,
         };
-        session.record_event("run-started", None, None, None)?;
+        session.record_event(RunEventKind::RunStarted, None, None, None)?;
         unpublished_directory.publish();
         Ok(session)
     }
@@ -208,7 +209,7 @@ impl RunSession {
 
     pub fn record_event(
         &mut self,
-        kind: &str,
+        kind: RunEventKind,
         scenario: Option<&str>,
         image: Option<ImageClass>,
         outcome: Option<Outcome>,
@@ -258,7 +259,7 @@ impl RunSession {
             &self.directory.join("report.html"),
             render::html(&suite, &self.manifest).as_bytes(),
         )?;
-        self.record_event("run-finished", None, None, Some(outcome))?;
+        self.record_event(RunEventKind::RunFinished, None, None, Some(outcome))?;
         self.manifest.state = RunState::Completed;
         self.manifest.finished_unix_millis = Some(finished_unix_millis);
         self.manifest.duration_millis = Some(duration_millis);
@@ -304,7 +305,12 @@ impl Drop for RunSession {
         if self.finished {
             return;
         }
-        let _ = self.record_event("run-interrupted", None, None, Some(Outcome::Interrupted));
+        let _ = self.record_event(
+            RunEventKind::RunInterrupted,
+            None,
+            None,
+            Some(Outcome::Interrupted),
+        );
         self.manifest.state = RunState::Interrupted;
         self.manifest.finished_unix_millis = unix_millis().ok();
         self.manifest.duration_millis = Some(duration_millis(self.started.elapsed()));

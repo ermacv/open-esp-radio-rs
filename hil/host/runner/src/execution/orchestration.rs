@@ -1,5 +1,6 @@
 //! Suite, scenario and repetition lifecycle orchestration.
 
+use hil_core::evidence::run::RunEventKind;
 use std::{
     ffi::OsString,
     fs,
@@ -360,10 +361,10 @@ fn lease_stand(
     lab: &LabConfig,
     selected: &[&Scenario],
 ) -> Result<hil_core::lab::lock::FixtureLock> {
-    session.record_event("stand-lease-requested", None, None, None)?;
+    session.record_event(RunEventKind::StandLeaseRequested, None, None, None)?;
     let request = lease_request(lab, selected);
     let fixture = hil_core::lab::lock::FixtureLock::lease(lab, request.clone())?;
-    session.record_event("stand-lease-granted", None, None, None)?;
+    session.record_event(RunEventKind::StandLeaseGranted, None, None, None)?;
     hil_core::durable::atomic_json(
         &session.directory().join("air.json"),
         &hil_core::lab::lock::air_record(&request)?,
@@ -371,7 +372,7 @@ fn lease_stand(
     let lab_provenance =
         hil_core::lab::provenance::LabProvenance::capture(lab, requirements(selected))?;
     session.record_lab_provenance(&lab_provenance)?;
-    session.record_event("lab-provenance-captured", None, None, None)?;
+    session.record_event(RunEventKind::LabProvenanceCaptured, None, None, None)?;
     Ok(fixture)
 }
 
@@ -490,10 +491,10 @@ impl SuiteEffects for LiveSuite<'_> {
         {
             return Ok(None);
         }
-        session.record_event("stand-lease-yielded", None, class, None)?;
+        session.record_event(RunEventKind::StandLeaseYielded, None, class, None)?;
         let lease = self.lease.take().ok_or("the run holds no stand lease")?;
         self.lease = Some(lease.requeue(self.lab)?);
-        session.record_event("stand-lease-granted", None, class, None)?;
+        session.record_event(RunEventKind::StandLeaseGranted, None, class, None)?;
         let Some(class) = class else {
             return Ok(None);
         };
@@ -531,13 +532,13 @@ impl LiveSuite<'_> {
             return Ok(());
         };
         let lease = self.lease.as_ref().ok_or("the run holds no stand lease")?;
-        session.record_event("then-started", None, None, None)?;
+        session.record_event(RunEventKind::ThenStarted, None, None, None)?;
         eprintln!("hil: running `{command}` within the run's lease");
         let status =
             then_command(self.root, command, lease.environment(), session.directory()).status();
         let kind = match &status {
-            Ok(status) if status.success() => "then-succeeded",
-            _ => "then-failed",
+            Ok(status) if status.success() => RunEventKind::ThenSucceeded,
+            _ => RunEventKind::ThenFailed,
         };
         match status {
             Ok(status) => eprintln!("hil: `{command}` exited with {status}"),
@@ -613,7 +614,7 @@ fn execute_selected(
         for scenario in class_scenarios {
             if let Some(failure) = effects.preflight(scenario) {
                 session.record_event(
-                    "scenario-blocked",
+                    RunEventKind::ScenarioBlocked,
                     Some(scenario.id()),
                     Some(class),
                     Some(Outcome::Blocked),
@@ -630,7 +631,7 @@ fn execute_selected(
         if let Some(failure) = effects.prepare_image(class, session)? {
             for scenario in executable {
                 session.record_event(
-                    "scenario-blocked",
+                    RunEventKind::ScenarioBlocked,
                     Some(scenario.id()),
                     Some(class),
                     Some(Outcome::Blocked),
@@ -645,7 +646,7 @@ fn execute_selected(
                 && let Some(failure) = effects.yield_point(Some(class), session)?
             {
                 session.record_event(
-                    "scenario-blocked",
+                    RunEventKind::ScenarioBlocked,
                     Some(scenario.id()),
                     Some(class),
                     Some(Outcome::Blocked),
@@ -653,11 +654,16 @@ fn execute_selected(
                 results.push(write_blocked_scenario(session, scenario, failure)?);
                 continue;
             }
-            session.record_event("scenario-started", Some(scenario.id()), Some(class), None)?;
+            session.record_event(
+                RunEventKind::ScenarioStarted,
+                Some(scenario.id()),
+                Some(class),
+                None,
+            )?;
             let result = effects.execute_scenario(scenario, session)?;
             session.seal_scenario(scenario, &result)?;
             session.record_event(
-                "scenario-finished",
+                RunEventKind::ScenarioFinished,
                 Some(scenario.id()),
                 Some(class),
                 Some(result.outcome),
@@ -675,7 +681,7 @@ fn execute_one(
 ) -> Result<Vec<ScenarioResult>> {
     if let Some(failure) = effects.preflight(selected) {
         session.record_event(
-            "scenario-blocked",
+            RunEventKind::ScenarioBlocked,
             Some(selected.id()),
             Some(selected.image()),
             Some(Outcome::Blocked),
@@ -684,7 +690,7 @@ fn execute_one(
     }
     if let Some(failure) = effects.prepare_image(selected.image(), session)? {
         session.record_event(
-            "scenario-blocked",
+            RunEventKind::ScenarioBlocked,
             Some(selected.id()),
             Some(selected.image()),
             Some(Outcome::Blocked),
@@ -692,7 +698,7 @@ fn execute_one(
         return Ok(vec![write_blocked_scenario(session, selected, failure)?]);
     }
     session.record_event(
-        "scenario-started",
+        RunEventKind::ScenarioStarted,
         Some(selected.id()),
         Some(selected.image()),
         None,
@@ -700,7 +706,7 @@ fn execute_one(
     let result = effects.execute_scenario(selected, session)?;
     session.seal_scenario(selected, &result)?;
     session.record_event(
-        "scenario-finished",
+        RunEventKind::ScenarioFinished,
         Some(selected.id()),
         Some(selected.image()),
         Some(result.outcome),
@@ -770,7 +776,7 @@ fn start_run(
         firmware,
         entries,
     })?;
-    session.record_event("plan-resolved", None, None, None)?;
+    session.record_event(RunEventKind::PlanResolved, None, None, None)?;
     for scenario in selected {
         let directory = session.scenario_directory(scenario.id());
         fs::create_dir_all(&directory)?;

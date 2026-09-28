@@ -188,8 +188,13 @@ function runs(list) {
     const outcome = r.outcome ?? (r.state === "running" ? "running" : r.state);
     const scenarios = r.scenarios.map((s) =>
       `<span class="pill ${tone(s.outcome)}" title="${esc(s.outcome)}">${esc(s.id)}</span>`).join("");
+    const p = r.progress;
+    const progress = !p ? "" : `<div class="claims">${p.finished}/${p.planned} scenarios · ${esc(p.step.replaceAll("-", " "))}`
+      + (p.scenario ? ` <b>${esc(p.scenario)}</b>` : "")
+      + ` for ${duration(Date.now() / 1000 - p.step_since_millis / 1000)}</div>`
+      + `<div class="bar"><div style="width:${p.planned ? Math.min(100, 100 * p.finished / p.planned) : 0}%"></div></div>`;
     return `<tr><td class="num">${when(r.started_millis / 1000)}</td><td>${pill(outcome)}</td>
-      <td><div class="scenarios">${scenarios || '<span class="muted">—</span>'}</div></td>
+      <td><div class="scenarios">${scenarios || '<span class="muted">—</span>'}</div>${progress}</td>
       <td>${esc(r.checkout ?? "")}</td>
       <td class="num">${esc(r.commit ?? "")}${r.dirty ? ' <span class="warn">dirty</span>' : ""}</td>
       <td class="claims">${esc(r.id)}</td></tr>`;

@@ -93,6 +93,78 @@ impl FailureKind {
     }
 }
 
+/// One step of a run, as `events.jsonl` records it in order.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunEventKind {
+    RunStarted,
+    RunFinished,
+    RunInterrupted,
+    SourceSnapshotBound,
+    PlanResolved,
+    ImageBuildStarted,
+    ImageBuildFinished,
+    ImageBuildFailed,
+    ImageFlashStarted,
+    ImageFlashFinished,
+    ImageFlashFailed,
+    ImageReplayImportStarted,
+    ImageReplayImportFinished,
+    ImageReplayImportFailed,
+    LabProvenanceCaptured,
+    StandLeaseRequested,
+    StandLeaseGranted,
+    StandLeaseYielded,
+    ScenarioStarted,
+    ScenarioFinished,
+    ScenarioBlocked,
+    ThenStarted,
+    ThenSucceeded,
+    ThenFailed,
+}
+
+impl RunEventKind {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::RunStarted => "run-started",
+            Self::RunFinished => "run-finished",
+            Self::RunInterrupted => "run-interrupted",
+            Self::SourceSnapshotBound => "source-snapshot-bound",
+            Self::PlanResolved => "plan-resolved",
+            Self::ImageBuildStarted => "image-build-started",
+            Self::ImageBuildFinished => "image-build-finished",
+            Self::ImageBuildFailed => "image-build-failed",
+            Self::ImageFlashStarted => "image-flash-started",
+            Self::ImageFlashFinished => "image-flash-finished",
+            Self::ImageFlashFailed => "image-flash-failed",
+            Self::ImageReplayImportStarted => "image-replay-import-started",
+            Self::ImageReplayImportFinished => "image-replay-import-finished",
+            Self::ImageReplayImportFailed => "image-replay-import-failed",
+            Self::LabProvenanceCaptured => "lab-provenance-captured",
+            Self::StandLeaseRequested => "stand-lease-requested",
+            Self::StandLeaseGranted => "stand-lease-granted",
+            Self::StandLeaseYielded => "stand-lease-yielded",
+            Self::ScenarioStarted => "scenario-started",
+            Self::ScenarioFinished => "scenario-finished",
+            Self::ScenarioBlocked => "scenario-blocked",
+            Self::ThenStarted => "then-started",
+            Self::ThenSucceeded => "then-succeeded",
+            Self::ThenFailed => "then-failed",
+        }
+    }
+}
+
+/// One line of a run's `events.jsonl`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RunEvent {
+    pub timestamp_unix_millis: u64,
+    pub kind: RunEventKind,
+    pub scenario: Option<String>,
+    /// The image class's identifier.
+    pub image: Option<String>,
+    pub outcome: Option<Outcome>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MeasurementUnit {

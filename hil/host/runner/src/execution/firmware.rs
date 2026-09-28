@@ -1,5 +1,6 @@
 //! Run-local firmware preparation and exact-image flash ordering.
 
+use hil_core::evidence::run::RunEventKind;
 use std::path::Path;
 
 use crate::Result;
@@ -65,13 +66,13 @@ pub(crate) fn build_image(
     network: Integration,
     session: &mut RunSession,
 ) -> Result<Built> {
-    session.record_event("image-build-started", None, Some(class), None)?;
+    session.record_event(RunEventKind::ImageBuildStarted, None, Some(class), None)?;
     let artifacts = match session.build_frozen_image(class, network) {
         Ok(artifacts) => artifacts,
         Err(error) => {
             oer_process::check_cancelled()?;
             session.record_event(
-                "image-build-failed",
+                RunEventKind::ImageBuildFailed,
                 None,
                 Some(class),
                 Some(Outcome::Broken),
@@ -139,11 +140,16 @@ pub(crate) fn reflash_replayed(
     archived: &ArchivedFirmware,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
-    session.record_event("image-flash-started", None, Some(archived.image), None)?;
+    session.record_event(
+        RunEventKind::ImageFlashStarted,
+        None,
+        Some(archived.image),
+        None,
+    )?;
     if let Err(error) = device::flash_archived(root, archived, &lab.device.serial) {
         oer_process::check_cancelled()?;
         session.record_event(
-            "image-flash-failed",
+            RunEventKind::ImageFlashFailed,
             None,
             Some(archived.image),
             Some(Outcome::Broken),
@@ -154,7 +160,7 @@ pub(crate) fn reflash_replayed(
         )));
     }
     session.record_event(
-        "image-flash-finished",
+        RunEventKind::ImageFlashFinished,
         None,
         Some(archived.image),
         Some(Outcome::Passed),
@@ -188,7 +194,7 @@ fn archive_built(
 ) -> Result<Artifacts> {
     artifacts.application_image = session.record_firmware(class, &artifacts)?;
     session.record_event(
-        "image-build-finished",
+        RunEventKind::ImageBuildFinished,
         None,
         Some(class),
         Some(Outcome::Passed),
@@ -202,11 +208,11 @@ fn flash_archived_build(
     session: &mut RunSession,
     flash: impl FnOnce(&Artifacts) -> Result<()>,
 ) -> Result<Option<Failure>> {
-    session.record_event("image-flash-started", None, Some(class), None)?;
+    session.record_event(RunEventKind::ImageFlashStarted, None, Some(class), None)?;
     if let Err(error) = flash(artifacts) {
         oer_process::check_cancelled()?;
         session.record_event(
-            "image-flash-failed",
+            RunEventKind::ImageFlashFailed,
             None,
             Some(class),
             Some(Outcome::Broken),
@@ -217,7 +223,7 @@ fn flash_archived_build(
         )));
     }
     session.record_event(
-        "image-flash-finished",
+        RunEventKind::ImageFlashFinished,
         None,
         Some(class),
         Some(Outcome::Passed),
@@ -263,7 +269,7 @@ fn import_and_flash_replay(
     flash: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<Option<Failure>> {
     session.record_event(
-        "image-replay-import-started",
+        RunEventKind::ImageReplayImportStarted,
         None,
         Some(archived.image),
         None,
@@ -273,7 +279,7 @@ fn import_and_flash_replay(
         Err(error) => {
             oer_process::check_cancelled()?;
             session.record_event(
-                "image-replay-import-failed",
+                RunEventKind::ImageReplayImportFailed,
                 None,
                 Some(archived.image),
                 Some(Outcome::Broken),
@@ -282,16 +288,21 @@ fn import_and_flash_replay(
         }
     };
     session.record_event(
-        "image-replay-import-finished",
+        RunEventKind::ImageReplayImportFinished,
         None,
         Some(archived.image),
         Some(Outcome::Passed),
     )?;
-    session.record_event("image-flash-started", None, Some(archived.image), None)?;
+    session.record_event(
+        RunEventKind::ImageFlashStarted,
+        None,
+        Some(archived.image),
+        None,
+    )?;
     if let Err(error) = flash(&application) {
         oer_process::check_cancelled()?;
         session.record_event(
-            "image-flash-failed",
+            RunEventKind::ImageFlashFailed,
             None,
             Some(archived.image),
             Some(Outcome::Broken),
@@ -302,7 +313,7 @@ fn import_and_flash_replay(
         )));
     }
     session.record_event(
-        "image-flash-finished",
+        RunEventKind::ImageFlashFinished,
         None,
         Some(archived.image),
         Some(Outcome::Passed),

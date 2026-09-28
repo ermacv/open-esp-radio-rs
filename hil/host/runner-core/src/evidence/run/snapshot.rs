@@ -29,7 +29,7 @@ impl RunSession {
         self.snapshot_materials = files;
         self.frozen_sources = Some(frozen);
         atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
-        self.record_event("source-snapshot-bound", None, None, None)
+        self.record_event(RunEventKind::SourceSnapshotBound, None, None, None)
     }
 
     pub fn build_frozen_image(&self, class: ImageClass, network: Integration) -> Result<Artifacts> {

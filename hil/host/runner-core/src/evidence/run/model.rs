@@ -9,7 +9,8 @@ use crate::image::ImageClass;
 pub const RUN_SCHEMA: u16 = 2;
 
 pub use oer_hil_schema::run::{
-    Comparison, FailureKind, MeasurementUnit, MeasurementVerdict, Outcome, RunState, Threshold,
+    Comparison, FailureKind, MeasurementUnit, MeasurementVerdict, Outcome, RunEventKind, RunState,
+    Threshold,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -340,7 +341,7 @@ pub struct FirmwareArtifact {
 #[derive(Serialize)]
 pub(super) struct EventRecord<'a> {
     pub(super) timestamp_unix_millis: u64,
-    pub(super) kind: &'a str,
+    pub(super) kind: RunEventKind,
     pub(super) scenario: Option<&'a str>,
     pub(super) image: Option<ImageClass>,
     pub(super) outcome: Option<Outcome>,

@@ -8,6 +8,7 @@ pub fn test_snapshot(inputs: &Path) -> (tempfile::TempDir, Snapshot) {
         "hil/targets/esp32s31/Cargo.lock",
         "hil/targets/esp32s31/Cargo.toml",
         "hil/targets/esp32s31/stack.toml",
+        "platform/esp32s31/stack.toml",
         "platform/esp32s31/partitions/applications.csv",
     ] {
         let target = root.path().join(relative);

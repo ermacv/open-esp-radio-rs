@@ -30,7 +30,7 @@ use esp_hal::{
     time::Instant,
 };
 
-const SOURCE: Interrupt = Interrupt::IEEE802154;
+const SOURCE: Interrupt = Interrupt::MODEM_ZB_MAC;
 const ROUTE_PRIORITY: Priority = Priority::Priority1;
 
 /// ESP-HAL's one-microsecond monotonic clock (`esp_timer_get_time`).

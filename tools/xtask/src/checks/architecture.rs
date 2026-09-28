@@ -4,6 +4,7 @@ use super::{TARGET, common::*};
 
 mod facade;
 mod pac_transactions;
+mod shared_words;
 mod unsafe_policy;
 
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
@@ -33,6 +34,8 @@ pub fn run(ctx: &Context) -> Result<()> {
         &ctx.root,
         &tracked.lines().map(str::to_owned).collect::<Vec<_>>(),
     )?;
+    let shared = shared_words(ctx)?;
+    eprintln!("shared MMIO words of esp32s31: {shared} reviewed");
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages)?;
     unsafe_policy::check(&packages)?;
@@ -234,6 +237,34 @@ pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Re
         }
     }
     Ok(())
+}
+
+/// Runs [`shared_words::check`] against the esp-hal and platform PAC
+/// sources the HIL target workspace resolves.
+fn shared_words(ctx: &Context) -> Result<usize> {
+    let graph = cargo::metadata(
+        ctx,
+        &ctx.root.join("hil/targets/esp32s31/Cargo.toml"),
+        &[],
+        None,
+        true,
+    )?;
+    let directory = |name: &str| -> Result<std::path::PathBuf> {
+        graph
+            .metadata
+            .packages
+            .iter()
+            .find(|package| package.name.as_str() == name)
+            .and_then(|package| package.manifest_path.parent())
+            .map(|directory| directory.as_std_path().join("src"))
+            .ok_or_else(|| format!("the HIL target workspace resolves no {name} package").into())
+    };
+    shared_words::check(
+        &ctx.root,
+        "esp32s31",
+        &directory("esp-hal")?,
+        &directory("esp32s31")?,
+    )
 }
 
 #[cfg(test)]

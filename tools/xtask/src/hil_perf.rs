@@ -311,6 +311,9 @@ pub enum AbVerdict {
     /// The 95 % confidence interval of the difference excludes zero and the
     /// difference is at least 2 % of A's mean.
     Significant { better: Arm },
+    /// As [`Self::Significant`], for a measurement without a gate: nothing
+    /// says which direction is better, so only the higher arm is named.
+    Changed { higher: Arm },
     /// The interval includes zero, or the difference is too small to matter.
     WithinNoise,
     /// Fewer than [`AB_MINIMUM_REPETITIONS`] values on a side.
@@ -350,8 +353,9 @@ fn t_critical_95(freedom: f64) -> f64 {
 }
 
 /// Compare the values of arms A and B of one measurement whose better
-/// direction is `better`, with Welch's unequal-variance t interval.
-pub fn compare(better: Better, a: &[f64], b: &[f64]) -> Option<AbComparison> {
+/// direction is `better` (`None` for an ungated measurement), with Welch's
+/// unequal-variance t interval.
+pub fn compare(better: Option<Better>, a: &[f64], b: &[f64]) -> Option<AbComparison> {
     let (spread_a, spread_b) = (Spread::of(a)?, Spread::of(b)?);
     let difference = spread_b.mean - spread_a.mean;
     let (variance_a, variance_b) = (
@@ -375,12 +379,17 @@ pub fn compare(better: Better, a: &[f64], b: &[f64]) -> Option<AbComparison> {
         {
             AbVerdict::WithinNoise
         } else {
-            let b_is_better = match better {
-                Better::Higher => difference > 0.0,
-                Better::Lower => difference < 0.0,
-            };
-            AbVerdict::Significant {
-                better: if b_is_better { Arm::B } else { Arm::A },
+            let arm = |b_wins: bool| if b_wins { Arm::B } else { Arm::A };
+            match better {
+                Some(Better::Higher) => AbVerdict::Significant {
+                    better: arm(difference > 0.0),
+                },
+                Some(Better::Lower) => AbVerdict::Significant {
+                    better: arm(difference < 0.0),
+                },
+                None => AbVerdict::Changed {
+                    higher: arm(difference > 0.0),
+                },
             }
         };
     Some(AbComparison {
@@ -879,7 +888,7 @@ mod tests {
         let verdict = |better, a: &[f64], b: &[f64]| compare(better, a, b).unwrap().verdict;
         // Two values a side are too few to judge.
         assert_eq!(
-            verdict(Better::Higher, &[100.0, 101.0], &[120.0, 121.0]),
+            verdict(Some(Better::Higher), &[100.0, 101.0], &[120.0, 121.0]),
             AbVerdict::InsufficientRepetitions
         );
         // A clear gain in the better direction, and the same data read with
@@ -887,27 +896,33 @@ mod tests {
         let a = [100.0, 101.0, 99.0, 100.5];
         let b = [110.0, 111.0, 109.5, 110.5];
         assert_eq!(
-            verdict(Better::Higher, &a, &b),
+            verdict(Some(Better::Higher), &a, &b),
             AbVerdict::Significant { better: Arm::B }
         );
         assert_eq!(
-            verdict(Better::Lower, &a, &b),
+            verdict(Some(Better::Lower), &a, &b),
             AbVerdict::Significant { better: Arm::A }
         );
         // Overlapping noisy arms stay within noise.
         assert_eq!(
-            verdict(Better::Higher, &[100.0, 110.0, 90.0], &[103.0, 95.0, 112.0]),
+            verdict(
+                Some(Better::Higher),
+                &[100.0, 110.0, 90.0],
+                &[103.0, 95.0, 112.0]
+            ),
             AbVerdict::WithinNoise
         );
         // Perfectly repeatable but below the practical tolerance.
         assert_eq!(
-            verdict(Better::Higher, &[100.0; 3], &[101.0; 3]),
+            verdict(Some(Better::Higher), &[100.0; 3], &[101.0; 3]),
             AbVerdict::WithinNoise
         );
-        let comparison = compare(Better::Higher, &a, &b).unwrap();
+        // Without a gate the same gain is a change, not an improvement.
+        assert_eq!(verdict(None, &a, &b), AbVerdict::Changed { higher: Arm::B });
+        let comparison = compare(Some(Better::Higher), &a, &b).unwrap();
         assert!((comparison.difference - 10.125).abs() < 1e-9);
         assert!(comparison.interval > 0.0 && comparison.interval < comparison.difference);
-        assert!(compare(Better::Higher, &[], &b).is_none());
+        assert!(compare(Some(Better::Higher), &[], &b).is_none());
     }
 
     #[test]

@@ -85,7 +85,10 @@ Push to `main` with `cargo xtask push`: it rebases onto `origin/main`, runs
 `cargo xtask check changed` there, and pushes only a revision that passed. A
 machine-wide push queue keeps `main` still while a push rechecks, so a push
 checks at most twice and never chases a moving `main`. After a dependency or
-pin change, `cargo xtask lock` updates every workspace's lock file at once. Do not chain `check changed | tail && git
+pin change, `cargo xtask lock` updates every workspace's lock file at once.
+For a second checkout, use `cargo xtask worktree add`: its `target/` starts
+warm instead of rebuilding every dependency, and it is never shared with another
+checkout. Do not chain `check changed | tail && git
 push`: a pipeline's status is its last command's. `check changed` formats every
 workspace a changed file belongs to, runs workspace Clippy, and tests and
 documents the changed root packages, plus the docs and metadata checks when

@@ -13,3 +13,10 @@ blobray = "run --manifest-path tools/blobray/Cargo.toml --profile blobray -p blo
 # GitHub access in the lab uses HTTPS credentials managed by Git. Delegate git
 # dependencies to the CLI so Cargo shares the configured credential helper.
 git-fetch-with-cli = true
+
+[env]
+# Cargo reads this file for every workspace below the repository root.
+# ESP32-S31 images keep esp-hal's PMP region setup off: its single
+# "read/write, no execute" TOR region from `_data_start` to `_noinit_end`
+# would span stage two's PSRAM code between SRAM data and PSRAM noinit.
+ESP_HAL_CONFIG_ENABLE_PMP = "false"

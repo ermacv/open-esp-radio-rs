@@ -218,7 +218,77 @@ fn budget() -> StackBudget {
             max_matches: None,
             execution_stack: None,
         }],
+        sources: Vec::new(),
     }
+}
+
+#[test]
+fn an_extending_policy_inherits_the_base_and_reviews_each_frame_once() {
+    let dir = std::env::temp_dir().join(format!("oer-stack-extends-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("image")).unwrap();
+    let frame = |name: &str, bytes: u64, reason: &str| {
+        format!(
+            "[[reviewed_frames]]\nfunction_contains = \"{name}\"\nmax_bytes = {bytes}\nreason = \"{reason}\"\n"
+        )
+    };
+    std::fs::write(
+        dir.join("base.toml"),
+        format!(
+            "schema = 4\nstack_start_symbol = \"_stack_start\"\nstack_end_symbol = \"_stack_end\"\nwarn_frame_bytes = 8192\nmax_frame_bytes = 51200\nmax_move_bytes = 4096\nruntime_cpu0_minimum_free_bytes = 16384\nruntime_cpu1_minimum_free_bytes = 4096\nruntime_irq_minimum_free_bytes = 4096\n{}{}",
+            frame("shared", 9000, "production"),
+            frame("differs", 9000, "production"),
+        ),
+    )
+    .unwrap();
+    let child = dir.join("image/stack.toml");
+    std::fs::write(
+        &child,
+        format!(
+            "schema = 4\nextends = \"../base.toml\"\n{}{}",
+            frame("differs", 10000, "this image"),
+            frame("image-only", 9500, "harness"),
+        ),
+    )
+    .unwrap();
+    let budget = StackBudget::load(&child).unwrap();
+    let limits: Vec<_> = budget
+        .reviewed_frames
+        .iter()
+        .map(|frame| (frame.function_contains.as_str(), frame.max_bytes))
+        .collect();
+    assert_eq!(
+        limits,
+        [("shared", 9000), ("differs", 10000), ("image-only", 9500)]
+    );
+    assert_eq!(budget.max_frame_bytes, 51200);
+    assert_eq!(
+        budget.sources,
+        [dir.join("image/../base.toml"), child.clone()]
+    );
+
+    // An unchanged repeat of the base review is rejected.
+    std::fs::write(
+        &child,
+        format!(
+            "schema = 4\nextends = \"../base.toml\"\n{}",
+            frame("shared", 9000, "production")
+        ),
+    )
+    .unwrap();
+    assert!(
+        StackBudget::load(&child)
+            .unwrap_err()
+            .to_string()
+            .contains("unchanged")
+    );
+    // An extending policy cannot restate the base's budgets.
+    std::fs::write(
+        &child,
+        "schema = 4\nextends = \"../base.toml\"\nmax_frame_bytes = 1\n",
+    )
+    .unwrap();
+    assert!(StackBudget::load(&child).is_err());
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]

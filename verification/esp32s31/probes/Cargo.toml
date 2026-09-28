@@ -28,7 +28,7 @@ disallowed_methods = "deny"
 [workspace.dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32s31", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", default-features = false, features = ["esp32s31", "unstable"] }
 oer-esp32s31-ieee80211-runtime = { path = "../../../crates/runtime/esp32s31/ieee80211" }
 oer-esp32s31-radio-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 oer-memory = { path = "../../../crates/memory" }
@@ -50,12 +50,6 @@ opt-level = 3
 debug = true
 panic = "abort"
 strip = false
-
-# Keep production probes on the same PAC revision as the repository workspace.
-# This workspace is intentionally excluded from the root workspace, so Cargo
-# does not inherit the root patch table automatically.
-[patch."https://github.com/esp-rs/esp-pacs"]
-esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc26128b929b044d76f09cf2d1d2f6" }
 
 [patch."https://github.com/ermacv/embassy.git"]
 embassy-futures = { version = "0.1.2", registry = "crates-io" }

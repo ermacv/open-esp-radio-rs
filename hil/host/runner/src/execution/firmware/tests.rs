@@ -14,6 +14,7 @@ fn build_inputs(root: &Path) -> Artifacts {
         "hil/targets/esp32s31/Cargo.lock",
         "hil/targets/esp32s31/Cargo.toml",
         "hil/targets/esp32s31/stack.toml",
+        "platform/esp32s31/stack.toml",
         "platform/esp32s31/Cargo.lock",
         "platform/esp32s31/partitions/applications.csv",
     ] {

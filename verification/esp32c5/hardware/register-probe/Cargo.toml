@@ -8,11 +8,11 @@ publish = false
 description = "Board observation of the ESP32-C5 radio register model"
 
 [dependencies]
-esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32c5", "panic-handler", "println"] }
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32c5"] }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32c5", "rt", "unstable"] }
-esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["auto", "esp32c5"] }
-esp32c5 = { git = "https://github.com/esp-rs/esp-pacs", rev = "5cd68d2", default-features = false }
+esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", default-features = false, features = ["esp32c5", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", default-features = false, features = ["esp32c5"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", default-features = false, features = ["esp32c5", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", default-features = false, features = ["auto", "esp32c5"] }
+esp32c5 = { git = "https://github.com/esp-rs/esp-pacs", rev = "c29264b", default-features = false }
 oer-esp32c5-hal = { path = "../../../../crates/hardware/esp32c5/hal" }
 oer-esp32c5-pac = { path = "../../../../crates/hardware/esp32c5/pac" }
 oer-esp32c5-pac-raw = { path = "../../../../crates/hardware/esp32c5/pac/raw" }
@@ -25,9 +25,6 @@ lto = "fat"
 opt-level = "s"
 panic = "abort"
 strip = false
-
-[patch."https://github.com/esp-rs/esp-pacs"]
-esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc26128b929b044d76f09cf2d1d2f6" }
 
 [workspace]
 resolver = "3"

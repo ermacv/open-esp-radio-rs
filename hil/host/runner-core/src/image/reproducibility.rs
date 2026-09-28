@@ -199,6 +199,7 @@ pub fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -> Resul
         super::BuildPlacement {
             output: Some(&output.join("build-a")),
             cache: super::CompileCache::Isolated,
+            layout_seed: None,
         },
         trim_paths,
         false,
@@ -212,6 +213,7 @@ pub fn verify_rebuild(root: &Path, class: ImageClass, trim_paths: bool) -> Resul
         super::BuildPlacement {
             output: Some(&output.join("build-directory-b")),
             cache: super::CompileCache::Isolated,
+            layout_seed: None,
         },
         trim_paths,
         false,

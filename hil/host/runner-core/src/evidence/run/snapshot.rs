@@ -1,7 +1,7 @@
 //! Bind one complete source snapshot before any experiment can be sealed.
 
 use super::*;
-use crate::image::{Artifacts, Integration};
+use crate::image::Artifacts;
 
 impl RunSession {
     pub fn bind_source_snapshot(&mut self, directory: &Path) -> Result<()> {
@@ -32,10 +32,19 @@ impl RunSession {
         self.record_event(RunEventKind::SourceSnapshotBound, None, None, None)
     }
 
-    pub fn build_frozen_image(&self, class: ImageClass, network: Integration) -> Result<Artifacts> {
+    pub fn build_frozen_image(
+        &self,
+        class: ImageClass,
+        build: crate::image::CurrentBuild,
+    ) -> Result<Artifacts> {
         self.frozen_sources
             .as_ref()
             .ok_or("HIL build requires a bound source snapshot")?
-            .build(&self.repository_root, class, network)
+            .build(
+                &self.repository_root,
+                class,
+                build.network,
+                build.layout_seed,
+            )
     }
 }

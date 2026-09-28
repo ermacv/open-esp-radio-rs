@@ -27,6 +27,8 @@ oer-hil-fixture-install = { path = "../fixture-install" }
 addr2line = { version = "=0.27.1", default-features = false, features = ["loader", "rustc-demangle"] }
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
 oer-esp32s31-firmware = { path = "../../../tools/firmware" }
+# The layout seed a runtime image build is linked with.
+oer-esp32s31-platform-layout = { path = "../../../platform/esp32s31/layout", features = ["build"] }
 oer-chip-profile = { path = "../../../tools/chip-profile" }
 clap = { version = "4.5", features = ["derive"] }
 fs2 = "0.4"

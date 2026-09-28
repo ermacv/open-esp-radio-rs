@@ -125,6 +125,7 @@ pub(crate) fn run() -> Result<()> {
             check,
             source_include,
             include_untracked,
+            layout_seed,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let plan: hil_core::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
@@ -145,7 +146,10 @@ pub(crate) fn run() -> Result<()> {
                 &catalog,
                 &selected,
                 orchestration::SuiteSelection::Campaign(&plan),
-                network,
+                hil_core::image::CurrentBuild {
+                    network,
+                    layout_seed,
+                },
                 orchestration::Invocation {
                     arguments: invocation,
                     snapshot: Some(snapshot),
@@ -191,25 +195,31 @@ pub(crate) fn run() -> Result<()> {
                 class,
                 network,
                 source_snapshot,
+                layout_seed,
             } => {
                 let artifacts = match source_snapshot {
                     Some(snapshot) => {
-                        let artifacts = image::snapshot::build(&root, &snapshot, class, network)?;
+                        let artifacts =
+                            image::snapshot::build(&root, &snapshot, class, network, layout_seed)?;
                         let record = hil_core::evidence::build_record::publish(
                             &root, &snapshot, class, &artifacts,
                         )?;
                         eprintln!("build_record={}", record.display());
                         artifacts
                     }
-                    None => image::build(&root, class, network)?,
+                    None => image::build(&root, class, network, layout_seed)?,
                 };
                 image::print_artifacts(class, &artifacts, false)
             }
             ImageCommand::VerifyRebuild { class, trim_paths } => {
                 image::verify_rebuild(&root, class, trim_paths)
             }
-            ImageCommand::Flash { class, network } => {
-                let artifacts = image::build(&root, class, network)?;
+            ImageCommand::Flash {
+                class,
+                network,
+                layout_seed,
+            } => {
+                let artifacts = image::build(&root, class, network, layout_seed)?;
                 let lab = lab::config::LabConfig::load(&lab_path)?;
                 let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash(&root, &artifacts, &lab.device.serial)?;
@@ -276,6 +286,7 @@ pub(crate) fn run() -> Result<()> {
             ap_scheduler,
             firmware_from,
             network,
+            layout_seed,
             then,
             target,
         } => {
@@ -304,7 +315,10 @@ pub(crate) fn run() -> Result<()> {
                         &root, &target, &run_id, class,
                     )?))
                 }
-                None => RunFirmware::BuildCurrent(network),
+                None => RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
+                    network,
+                    layout_seed,
+                }),
             };
             let lab = lab::config::LabConfig::load(&lab_path)?.for_target(&target)?;
             orchestration::require_image_pipeline(&target)?;
@@ -330,6 +344,7 @@ pub(crate) fn run() -> Result<()> {
         CliCommand::RunAll {
             tag,
             network,
+            layout_seed,
             source_include,
             include_untracked,
             all: _,
@@ -352,7 +367,10 @@ pub(crate) fn run() -> Result<()> {
                 &catalog,
                 &selected,
                 orchestration::SuiteSelection::Catalog(orchestration::selection_description(&tag)),
-                network,
+                hil_core::image::CurrentBuild {
+                    network,
+                    layout_seed,
+                },
                 orchestration::Invocation {
                     arguments: invocation,
                     snapshot: Some(snapshot),

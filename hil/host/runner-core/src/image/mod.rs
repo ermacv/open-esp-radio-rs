@@ -1,5 +1,6 @@
 //! Reproducible HIL firmware construction and image auditing.
 
+use std::num::NonZeroU32;
 use std::{
     env,
     error::Error,
@@ -428,20 +429,39 @@ pub struct Artifacts {
     pub source_inputs: Option<PathBuf>,
     /// Host tools that produced this build, recorded in its provenance.
     pub environment: crate::evidence::build::BuildEnvironment,
+    /// The seed the runtime's code and read-only data were shuffled by;
+    /// `None` is the linker's natural order.
+    pub layout_seed: Option<NonZeroU32>,
 }
+
+/// The seed of a runtime image's link order: `None` keeps the linker's
+/// natural order, a seed shuffles ordinary code and read-only data by it.
+pub type LayoutSeed = Option<NonZeroU32>;
+
+/// How a run builds its images from the current sources.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CurrentBuild {
+    pub network: Integration,
+    pub layout_seed: LayoutSeed,
+}
+
+/// The build environment's layout seed variable.
+pub const LAYOUT_SEED_ENV: &str = oer_esp32s31_platform_layout::build::LAYOUT_SEED_ENV;
 
 pub fn build(
     root: &Path,
     class: crate::image::ImageClass,
     network: Integration,
+    layout_seed: LayoutSeed,
 ) -> Result<Artifacts> {
-    build_selected(root, class, network)
+    build_selected(root, class, network, layout_seed)
 }
 
 fn build_selected(
     root: &Path,
     class: crate::image::ImageClass,
     network: Integration,
+    layout_seed: LayoutSeed,
 ) -> Result<Artifacts> {
     let local_esp_hal = local_esp_hal_override()?;
     let local_embassy = local_embassy_override()?;
@@ -458,6 +478,7 @@ fn build_selected(
         BuildPlacement {
             output: None,
             cache: CompileCache::Shared(&shared_compile_cache(root, class, network)),
+            layout_seed,
         },
         false,
         false,
@@ -470,6 +491,9 @@ pub(crate) struct BuildPlacement<'a> {
     /// Artifact directory; the class/network default when absent.
     pub(crate) output: Option<&'a Path>,
     pub(crate) cache: CompileCache<'a>,
+    /// The runtime's layout seed. It is part of the default artifact
+    /// directory; a shared compile cache only relinks for it.
+    pub(crate) layout_seed: LayoutSeed,
 }
 
 /// Where Cargo keeps compiled units for one image build.
@@ -567,14 +591,16 @@ fn build_resolved(
     let BuildPlacement {
         output: output_override,
         cache: compile_cache,
+        layout_seed,
     } = placement;
     let output = output_override.map_or_else(
         || {
             root.join("target/hil/esp32s31").join(format!(
-                "{}-{}-{}",
+                "{}-{}-{}{}",
                 class.runtime_profile(),
                 class.id(),
-                network.id()
+                network.id(),
+                seed_suffix(layout_seed)
             ))
         },
         Path::to_owned,
@@ -630,6 +656,11 @@ fn build_resolved(
         .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
+    // Only a recorded seed reaches the link: `cargo_command` removed any
+    // inherited one.
+    if let Some(seed) = layout_seed {
+        runtime.env(LAYOUT_SEED_ENV, seed.to_string());
+    }
     if !overridden {
         runtime.arg("--locked");
     }
@@ -747,7 +778,14 @@ fn build_resolved(
         application_image,
         source_inputs: Some(source_inputs),
         environment: crate::evidence::build::BuildEnvironment::capture(),
+        layout_seed,
     })
+}
+
+/// The artifact directory suffix of a seeded build, so a seed never reuses
+/// another layout's artifacts.
+pub(crate) fn seed_suffix(layout_seed: LayoutSeed) -> String {
+    layout_seed.map_or_else(String::new, |seed| format!("-seed{seed}"))
 }
 
 fn cargo_command() -> Command {
@@ -755,6 +793,9 @@ fn cargo_command() -> Command {
     for variable in inherited_build_overrides(env::vars_os().map(|(name, _)| name)) {
         command.env_remove(variable);
     }
+    // A layout seed reaches a build only as the build's recorded seed, never
+    // from the caller's environment.
+    command.env_remove(LAYOUT_SEED_ENV);
     command
 }
 

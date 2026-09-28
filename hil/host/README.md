@@ -511,6 +511,21 @@ and the callers the return addresses name, and writes the report beside it as
 `profile.txt`. A return address names the caller only while the sampled
 function has not called another, so callers are exact for leaf functions.
 
+### Code layout seeds
+
+Throughput of code that runs from cached external memory depends on where
+the linker happens to place each function, so an unrelated change can move a
+figure by tens of percent. `run`, `run-all`, `run-plan`, `image build` and
+`image flash` accept `--layout-seed N` (a nonzero u32): the runtime's
+ordinary code and read-only data are linked in the order that seed shuffles
+them to, through the platform's `OER_LAYOUT_SEED`. Without the flag the
+runner removes any inherited `OER_LAYOUT_SEED`, so the natural order is the
+only unrecorded layout. The seed is part of the image: seeded artifacts get
+directories of their own, the build record's parameters name it, and the
+run manifest's `firmware[]` entry carries `layout_seed`, which `report
+verify` requires to equal the build record's. Comparing several seeds of the
+same commit separates placement from the source change under test.
+
 ### Performance across commits
 
 A scenario's gated measurements, those with an `at-least` or `at-most`

@@ -468,6 +468,9 @@ fn validate_build_provenance(
                 None => artifact.image.runtime_features().to_owned(),
             }
         || provenance.parameters.target != crate::image::TARGET
+        // The manifest's seed is the one the build record says the image
+        // was linked with, so a run cannot claim another layout.
+        || provenance.parameters.layout_seed != artifact.layout_seed
         || provenance.reproducibility != BuildReproducibility::Unverified
     {
         return Err(format!(

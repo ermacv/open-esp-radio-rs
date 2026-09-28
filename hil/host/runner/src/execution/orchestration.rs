@@ -13,7 +13,7 @@ use hil_core::{
     evidence::run::PlanDisposition, evidence::run::PlanEntry, evidence::run::PlannedFirmware,
     evidence::run::RUN_SCHEMA, evidence::run::RepetitionResult, evidence::run::RunPlan,
     evidence::run::RunSession, evidence::run::ScenarioResult, image::ImageClass,
-    image::Integration, lab::config::LabConfig,
+    lab::config::LabConfig,
 };
 
 use crate::scenario::{Catalog, Scenario, requirements};
@@ -49,7 +49,7 @@ pub(crate) fn run_all(
     catalog: &Catalog,
     selected: &[&Scenario],
     selection: SuiteSelection<'_>,
-    network: Integration,
+    build: hil_core::image::CurrentBuild,
     invocation: Invocation,
 ) -> Result<()> {
     let mut session = start_run(
@@ -67,13 +67,13 @@ pub(crate) fn run_all(
     if let SuiteSelection::Campaign(plan) = selection {
         session.write_campaign(plan)?;
     }
-    let prebuilt = prebuild(&mut session, lab, selected, network)?;
+    let prebuilt = prebuild(&mut session, lab, selected, build)?;
     let lease = lease_stand(&mut session, lab, selected)?;
     let results = {
         let mut operations = LiveSuite {
             root,
             lab,
-            firmware: FirmwarePreparation::BuildCurrent(network),
+            firmware: FirmwarePreparation::BuildCurrent(build),
             prebuilt,
             lease: Some(lease),
             flashed: None,
@@ -105,9 +105,7 @@ pub(crate) fn run_one(
         invocation,
     )?;
     let prebuilt = match &firmware {
-        RunFirmware::BuildCurrent(network) => {
-            prebuild(&mut session, lab, &selected_entries, *network)?
-        }
+        RunFirmware::BuildCurrent(build) => prebuild(&mut session, lab, &selected_entries, *build)?,
         RunFirmware::Replay(_) => Vec::new(),
     };
     let lease = lease_stand(&mut session, lab, &selected_entries)?;
@@ -150,7 +148,7 @@ pub(crate) fn run_many(
         invocation,
     )?;
     let prebuilt = match &firmware {
-        RunFirmware::BuildCurrent(network) => prebuild(&mut session, lab, selected, *network)?,
+        RunFirmware::BuildCurrent(build) => prebuild(&mut session, lab, selected, *build)?,
         RunFirmware::Replay(_) => Vec::new(),
     };
     let lease = lease_stand(&mut session, lab, selected)?;
@@ -224,7 +222,7 @@ fn prebuild(
     session: &mut RunSession,
     lab: &LabConfig,
     selected: &[&Scenario],
-    network: Integration,
+    build: hil_core::image::CurrentBuild,
 ) -> Result<Vec<(ImageClass, firmware::Built)>> {
     let mut built = Vec::new();
     for (class, scenarios) in group_selected_scenarios(selected) {
@@ -235,7 +233,7 @@ fn prebuild(
         {
             continue;
         }
-        built.push((class, firmware::build_image(class, network, session)?));
+        built.push((class, firmware::build_image(class, build, session)?));
     }
     Ok(built)
 }
@@ -380,7 +378,7 @@ fn lease_stand(
 }
 
 enum FirmwarePreparation<'a> {
-    BuildCurrent(Integration),
+    BuildCurrent(hil_core::image::CurrentBuild),
     Selected(&'a RunFirmware),
 }
 
@@ -463,8 +461,8 @@ impl SuiteEffects for LiveSuite<'_> {
                 )
             } else {
                 let failure = match self.firmware {
-                    FirmwarePreparation::BuildCurrent(network) => {
-                        firmware::prepare_image(self.root, self.lab, class, network, session)?
+                    FirmwarePreparation::BuildCurrent(build) => {
+                        firmware::prepare_image(self.root, self.lab, class, build, session)?
                     }
                     FirmwarePreparation::Selected(firmware) => {
                         firmware::prepare_run_image(self.root, self.lab, class, firmware, session)?

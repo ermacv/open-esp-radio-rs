@@ -77,6 +77,9 @@ pub(super) struct BuildParameters {
     pub(super) runtime_profile: String,
     pub(super) target: String,
     pub(super) runtime_features: String,
+    /// The seed the runtime was linked with; absent for the natural order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) layout_seed: Option<std::num::NonZeroU32>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -490,14 +493,18 @@ pub(super) fn build_id(subjects: &[BuildSubject]) -> String {
 
 pub(super) fn create_provenance(
     root: &Path,
-    selection: (ImageClass, crate::image::Integration),
+    selection: (
+        ImageClass,
+        crate::image::Integration,
+        crate::image::LayoutSeed,
+    ),
     build_id: String,
     sources: Vec<SourceMaterial>,
     subjects: Vec<BuildSubject>,
     effective_locks: Vec<BuildFileMaterial>,
     environment: BuildEnvironment,
 ) -> Result<BuildProvenance> {
-    let (image, network) = selection;
+    let (image, network, layout_seed) = selection;
     let mut files = [
         ("workspace-lock", "Cargo.lock"),
         ("embedded-workspace", "hil/targets/esp32s31/Cargo.toml"),
@@ -522,6 +529,7 @@ pub(super) fn create_provenance(
             runtime_profile: image.runtime_profile().to_owned(),
             target: crate::image::TARGET.to_owned(),
             runtime_features: image.build_features(network),
+            layout_seed,
         },
         source_reconstructable: sources
             .iter()

@@ -1,6 +1,7 @@
 use std::{cell::RefCell, ffi::OsString, fs, path::PathBuf};
 
 use super::*;
+use hil_core::image::Integration;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -27,6 +28,7 @@ fn build_inputs(root: &Path) -> Artifacts {
         write(&root.join(relative), bytes);
     }
     Artifacts {
+        layout_seed: None,
         network: Integration::OwnedXarxa,
         output: root.join("build"),
         runtime_elf: root.join("build/runtime.elf"),
@@ -112,7 +114,11 @@ fn flash_failure_is_typed_after_archival() {
 #[test]
 fn current_build_has_the_canonical_firmware_plan_identity() {
     assert!(matches!(
-        RunFirmware::BuildCurrent(Integration::OwnedXarxa).plan(),
+        RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
+            network: Integration::OwnedXarxa,
+            layout_seed: None,
+        })
+        .plan(),
         PlannedFirmware::BuildCurrent
     ));
 }

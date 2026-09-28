@@ -61,6 +61,11 @@ pub(crate) enum CliCommand {
         /// Validate the saved plan offline without acquiring fixtures or a DUT.
         #[arg(long)]
         check: bool,
+        /// Shuffle the runtime's code and read-only data by this nonzero
+        /// seed, recorded with the image; without it the linker keeps its
+        /// natural order.
+        #[arg(long, value_name = "SEED", conflicts_with = "check")]
+        layout_seed: Option<std::num::NonZeroU32>,
     },
     /// Inspect and validate the host-owned scenario catalog.
     Scenario {
@@ -109,6 +114,11 @@ pub(crate) enum CliCommand {
         /// Network implementation: owned-xarxa, the only one.
         #[arg(long, default_value = "owned-xarxa", conflicts_with = "firmware_from")]
         network: hil_core::image::Integration,
+        /// Shuffle the runtime's code and read-only data by this nonzero
+        /// seed, recorded with the image; without it the linker keeps its
+        /// natural order.
+        #[arg(long, value_name = "SEED", conflicts_with = "firmware_from")]
+        layout_seed: Option<std::num::NonZeroU32>,
         /// Shell command run after the scenarios while the run still holds
         /// its stand lease, for example to read the board's reset reason.
         /// It may use the boards' ports directly; nested `cargo hil` commands
@@ -134,6 +144,11 @@ pub(crate) enum CliCommand {
         /// Network implementation: owned-xarxa, the only one.
         #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
+        /// Shuffle the runtime's code and read-only data by this nonzero
+        /// seed, recorded with the image; without it the linker keeps its
+        /// natural order.
+        #[arg(long, value_name = "SEED")]
+        layout_seed: Option<std::num::NonZeroU32>,
         /// Select only scenarios carrying this tag. May be repeated.
         #[arg(long)]
         tag: Vec<String>,
@@ -225,6 +240,11 @@ pub(crate) enum ImageCommand {
         /// Network implementation: owned-xarxa, the only one.
         #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
+        /// Shuffle the runtime's code and read-only data by this nonzero
+        /// seed, recorded with the image; without it the linker keeps its
+        /// natural order.
+        #[arg(long, value_name = "SEED")]
+        layout_seed: Option<std::num::NonZeroU32>,
     },
     /// Build one clean commit in two different checkout roots and compare every firmware subject.
     VerifyRebuild {
@@ -238,6 +258,11 @@ pub(crate) enum ImageCommand {
         /// Network implementation: owned-xarxa, the only one.
         #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
+        /// Shuffle the runtime's code and read-only data by this nonzero
+        /// seed, recorded with the image; without it the linker keeps its
+        /// natural order.
+        #[arg(long, value_name = "SEED")]
+        layout_seed: Option<std::num::NonZeroU32>,
     },
     /// Verify and flash an exact application archived by an earlier HIL run.
     Replay {

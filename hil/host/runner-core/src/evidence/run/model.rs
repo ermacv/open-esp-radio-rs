@@ -336,6 +336,10 @@ pub struct FirmwareArtifact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bootstrap_elf_size_bytes: Option<u64>,
     pub bootstrap_elf_sha256: String,
+    /// The seed the image's runtime was linked with, as its build record
+    /// names it; absent for the natural order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_seed: Option<std::num::NonZeroU32>,
 }
 
 #[derive(Serialize)]

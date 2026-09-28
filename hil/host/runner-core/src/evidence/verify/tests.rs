@@ -182,6 +182,7 @@ fn add_build_provenance(run: &Path) {
                 runtime_profile: ImageClass::Correctness.runtime_profile().to_owned(),
                 target: crate::image::TARGET.to_owned(),
                 runtime_features: ImageClass::Correctness.runtime_features().to_owned(),
+                layout_seed: None,
             },
             sources: vec![SourceMaterial {
                 name: String::from("repository"),
@@ -409,6 +410,26 @@ fn verifies_complete_build_provenance_and_all_firmware_subjects() {
     add_build_provenance(&run);
     let completion = verify(&root, "esp32s31", Some("run-1")).unwrap();
     assert_eq!(completion.firmware_artifacts, 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_manifest_seed_must_be_the_build_records_seed() {
+    let (root, run) = fixture();
+    add_build_provenance(&run);
+    let mut manifest: RunManifest = read_json(&run.join("manifest.json")).unwrap();
+    manifest.firmware[0].layout_seed = std::num::NonZeroU32::new(7);
+    atomic_json(&run.join("manifest.json"), &manifest).unwrap();
+    write_integrity_index(&run, "run-1").unwrap();
+    let error = verify(&root, "esp32s31", Some("run-1")).unwrap_err();
+    assert!(
+        error.to_string().contains("build provenance inconsistent"),
+        "{error}"
+    );
+    // Unseeded, the manifest keeps its earlier form.
+    manifest.firmware[0].layout_seed = None;
+    let json = serde_json::to_value(&manifest).unwrap();
+    assert!(json["firmware"][0].get("layout_seed").is_none());
     fs::remove_dir_all(root).unwrap();
 }
 

@@ -108,6 +108,7 @@ pub fn capture(root: &Path, class: ImageClass) -> Result<()> {
         BuildPlacement {
             output: Some(&directory),
             cache: CompileCache::Isolated,
+            layout_seed: None,
         },
         false,
         true,

@@ -237,6 +237,7 @@ source-paths = ["phy.rs"]
     }
     write(root, "target/bootstrap.lock", "unchanged bootstrap lock");
     let artifacts = Artifacts {
+        layout_seed: None,
         network: Integration::OwnedXarxa,
         output: output.clone(),
         application_image: output.join("application.bin"),

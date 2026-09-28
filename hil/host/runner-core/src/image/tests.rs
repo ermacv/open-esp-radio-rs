@@ -678,3 +678,24 @@ fn the_classes_that_sample_the_program_counter_are_those_whose_features_enable_i
         );
     }
 }
+
+#[test]
+fn an_inherited_layout_seed_never_reaches_a_build() {
+    let command = super::cargo_command();
+    assert!(
+        command
+            .get_envs()
+            .any(|(name, value)| name == super::LAYOUT_SEED_ENV && value.is_none()),
+        "cargo_command must remove {}",
+        super::LAYOUT_SEED_ENV
+    );
+}
+
+#[test]
+fn a_seeded_build_has_artifacts_of_its_own() {
+    assert_eq!(super::seed_suffix(None), "");
+    let seven = super::seed_suffix(std::num::NonZeroU32::new(7));
+    let eleven = super::seed_suffix(std::num::NonZeroU32::new(11));
+    assert_eq!(seven, "-seed7");
+    assert_ne!(seven, eleven);
+}

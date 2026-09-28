@@ -7,11 +7,11 @@ use crate::Result;
 use hil_core::{
     device, evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
     evidence::run::PlannedFirmware, evidence::run::RunSession, evidence::verify::ArchivedFirmware,
-    image::Artifacts, image::ImageClass, image::Integration, lab::config::LabConfig,
+    image::Artifacts, image::CurrentBuild, image::ImageClass, lab::config::LabConfig,
 };
 
 pub(crate) enum RunFirmware {
-    BuildCurrent(Integration),
+    BuildCurrent(CurrentBuild),
     Replay(Box<ArchivedFirmware>),
 }
 
@@ -37,7 +37,7 @@ pub(crate) fn prepare_run_image(
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     match firmware {
-        RunFirmware::BuildCurrent(network) => prepare_image(root, lab, class, *network, session),
+        RunFirmware::BuildCurrent(build) => prepare_image(root, lab, class, *build, session),
         RunFirmware::Replay(archived) => prepare_replayed_image(root, lab, archived, session),
     }
 }
@@ -52,10 +52,10 @@ pub(crate) fn prepare_image(
     root: &Path,
     lab: &LabConfig,
     class: ImageClass,
-    network: Integration,
+    build: CurrentBuild,
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
-    let built = build_image(class, network, session)?;
+    let built = build_image(class, build, session)?;
     flash_built(root, lab, class, built, session)
 }
 
@@ -63,11 +63,11 @@ pub(crate) fn prepare_image(
 /// before waiting for the stand.
 pub(crate) fn build_image(
     class: ImageClass,
-    network: Integration,
+    build: CurrentBuild,
     session: &mut RunSession,
 ) -> Result<Built> {
     session.record_event(RunEventKind::ImageBuildStarted, None, Some(class), None)?;
-    let artifacts = match session.build_frozen_image(class, network) {
+    let artifacts = match session.build_frozen_image(class, build) {
         Ok(artifacts) => artifacts,
         Err(error) => {
             oer_process::check_cancelled()?;

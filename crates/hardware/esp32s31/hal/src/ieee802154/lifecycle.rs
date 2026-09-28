@@ -110,6 +110,7 @@ pub(crate) mod state {
 
 /// Exclusive whole-radio backend at one proved IEEE 802.15.4 phase.
 #[derive(Debug)]
+// CAPABILITY: clock-reset-foundation
 pub(crate) struct Ieee802154Lifecycle<Backend, State> {
     backend: Backend,
     _state: PhantomData<State>,

@@ -230,6 +230,7 @@ pub enum CoexSchemeId {
 
 impl CoexSchemeId {
     /// Every recovered scheme, in vendor symbol order.
+    // CAPABILITY: coex-coexistence-policy-and-scheduler-wifi-idle-connected-scan-connecting-schemes
     pub const ALL: [Self; 107] = [
         Self::AllDefault,
         Self::BleDefaultBtA2dpWifiConn,

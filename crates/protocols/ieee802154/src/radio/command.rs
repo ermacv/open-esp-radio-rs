@@ -219,6 +219,7 @@ pub struct EnergyScanRequest {
 /// them; [`Configuration::Interface`] addresses any interface of a
 /// multi-PAN radio.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+// CAPABILITY: ieee802154-filtering-addressing-and-mac-automation-hardware-frame-filtering, ieee802154-filtering-addressing-and-mac-automation-promiscuous-receive-mode
 pub enum Configuration {
     /// Set the local PAN identifier in host byte order.
     PanId(u16),

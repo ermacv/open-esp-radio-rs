@@ -84,6 +84,7 @@ impl Ieee802154CoexPriorities {
 
 /// How the MAC takes part in coexistence.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+// CAPABILITY: coex-protocol-integration-and-lifetime-ieee-802-15-4-request-break-stage-hooks
 pub enum Ieee802154Coexistence {
     /// A build without software coexistence: both PTIs are disabled.
     #[default]

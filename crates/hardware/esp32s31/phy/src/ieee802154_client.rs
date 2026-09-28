@@ -84,6 +84,7 @@ pub enum Ieee802154PhyClientError {
 /// Every check runs before the client set or BTBB changes: the domain is not
 /// registered and settled, its registration no longer describes the lease,
 /// IEEE 802.15.4 already holds BTBB, or the client set rejects the client.
+// CAPABILITY: ieee802154-registered-timing-entry
 pub fn join_ieee802154(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: &Ieee802154Clocked,

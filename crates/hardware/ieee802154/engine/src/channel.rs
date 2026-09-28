@@ -8,6 +8,7 @@ pub const IEEE802154_MAX_CHANNEL: u8 = 26;
 
 /// One checked IEEE 802.15.4 2.4 GHz channel.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+// CAPABILITY: ieee802154-phy-and-rf-channels-11-26
 pub struct Ieee802154Channel(u8);
 
 /// An integer outside the IEEE 802.15.4 2.4 GHz channel range.

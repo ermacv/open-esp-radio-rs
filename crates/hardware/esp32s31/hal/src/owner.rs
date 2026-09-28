@@ -70,6 +70,7 @@ pub mod route {
 ///     phy
 /// }
 /// ```
+// CAPABILITY: whole-radio-exclusive-ownership-and-client-handoff-shared-rf-analog-borrow
 pub struct SharedPhyHal<'owner, R: route::Route> {
     pub(crate) registers: &'owner mut RadioPhyRegisters,
     pub(crate) restore: &'owner mut PhyRouteState,

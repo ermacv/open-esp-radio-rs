@@ -13,6 +13,7 @@ use oer_esp32s31_hal::power::{PlatformClockError, PlatformClockProvider};
 
 /// Platform clock provider backed by ESP-HAL's reference-counted clocks.
 #[derive(Debug, Default)]
+// CAPABILITY: whole-radio-cold-power-and-clocks-shared-clock-lifetime
 pub struct EspHalRadioClocks {
     _private: (),
 }

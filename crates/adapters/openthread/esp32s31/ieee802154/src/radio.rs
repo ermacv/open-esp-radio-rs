@@ -67,6 +67,7 @@ impl OpenThreadRadioDefaults {
 /// queue of `QUEUE` frames for [`Radio::receive`]; a full queue drops the
 /// newest, as the trait allows. A transmission whose future OpenThread drops
 /// finishes in the runtime; the next operation first waits for its end.
+// CAPABILITY: ieee802154-product-stacks-thread
 pub struct OpenThreadRadio<'r, 's, M: RawMutex, H, const EVENTS: usize, const QUEUE: usize> {
     runtime: &'r Ieee802154Runtime<'s, M, H, EVENTS>,
     /// The composition's live RSSI read (`otPlatRadioGetRssi`).

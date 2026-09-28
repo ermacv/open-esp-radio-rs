@@ -145,6 +145,7 @@ impl Ieee802154ResetPort for LeasedResetPort<'_> {
 /// neither power nor clocks, common-PHY, BTBB, RF, IRQ, DMA, or MAC
 /// readiness.
 #[must_use = "the IEEE 802.15.4 client retains its radio partition"]
+// CAPABILITY: ieee802154-registered-timing-entry
 pub struct Ieee802154Cold {
     mac: Ieee802154Mac,
 }

@@ -7,6 +7,7 @@
 /// The Time IE of one transmission, as OpenThread describes it in the
 /// frame's `otRadioIeInfo`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+// CAPABILITY: ieee802154-timing-network-time-sync
 pub struct TimeSync {
     /// Offset of the Time IE content - the sequence byte, then the eight
     /// bytes of network time - from the first MAC byte (`mTimeIeOffset`).

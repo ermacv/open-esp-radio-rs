@@ -61,6 +61,7 @@ pub use oer_ieee802154_engine::coex::CoexPti;
 /// The vendor coexistence scheduler changes entries at run time; the table
 /// is therefore shared state of the arbiter, not a constant of any protocol.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: coex-internal-arbitration-hardware-and-models-48-event-pti-lookup
 pub struct CoexPtiTable([u8; COEX_EVENT_COUNT]);
 
 impl CoexPtiTable {
@@ -81,6 +82,7 @@ impl CoexPtiTable {
     }
 
     /// The priority of an IEEE 802.15.4 coexistence level.
+    // CAPABILITY: coex-coexistence-policy-and-scheduler-ieee-802-15-4-operation-priorities
     pub const fn ieee802154_pti(&self, level: Ieee802154CoexLevel) -> CoexPti {
         self.pti(level.event())
     }
@@ -264,6 +266,7 @@ impl CoexPolicyTimer {
 ///
 /// Every method is one finite register transaction. A write does not report
 /// RF admission or grant revocation.
+// CAPABILITY: coex-internal-arbitration-hardware-and-models-five-entry-hardware-timer-bank, coex-internal-arbitration-hardware-and-models-physical-timer-set-enable-disable
 pub struct CoexTimerBank<'registers> {
     registers: &'registers mut SharedRadioRegisters,
 }
@@ -304,6 +307,7 @@ impl<'registers> CoexTimerBank<'registers> {
         self.registers.disable_coex_timer(timer.register());
     }
 
+    // CAPABILITY: coex-internal-arbitration-hardware-and-models-timer-force-unforce
     pub fn force(&mut self, timer: CoexPolicyTimer) {
         self.registers.force_coex_timer(timer.register());
     }
@@ -356,6 +360,7 @@ const EXTERNAL_COEX_BASE_PRIORITY: u8 = 0x3;
 /// External coexistence, as ESP-IDF's `esp_enable_extern_coex_gpio_pin`
 /// configures it after routing the signals.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: coex-external-coexistence-advanced-external-arbitration-hardware, whole-radio-concurrent-ownership-and-arbitration-external-rf-arbitration-boundary
 pub struct ExternalCoexConfig {
     pub role: ExternalCoexRole,
     pub wires: ExternalCoexWires,

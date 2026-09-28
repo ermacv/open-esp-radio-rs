@@ -30,6 +30,7 @@ pub(crate) const IEEE802154_CCA_ED_DURATION: u16 = 8;
 
 /// One finite operation supported by the interrupt-detached polling boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: ieee802154-cca-and-channel-access-energy-detection-command, ieee802154-cca-and-channel-access-standalone-cca-command
 pub enum Ieee802154PolledOperation {
     /// Sample one uncalibrated signed ED RSS code.
     EnergyDetection {
@@ -374,6 +375,7 @@ where
 }
 
 /// Serialized backend before any ED/CCA request has been prepared.
+// CAPABILITY: polled-ed-cca
 pub(crate) struct Ieee802154PolledOperationOwner<Backend> {
     backend: Backend,
 }

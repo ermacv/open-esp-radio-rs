@@ -34,6 +34,7 @@ use crate::{
 /// let _second = hardware.into_concurrent(());
 /// ```
 #[must_use = "dropping the radio root permanently loses the unique hardware capability"]
+// CAPABILITY: whole-radio-exclusive-ownership-and-client-handoff-exclusive-radio-root-ownership, radio-cold-start
 pub struct RadioHardware {
     partitions: RadioPartitions,
     phy_registration: PhyRegistration,
@@ -233,6 +234,7 @@ impl RadioHardware {
         clippy::result_large_err,
         reason = "rejection returns the arbiter and every partition without allocation"
     )]
+    // CAPABILITY: whole-radio-exclusive-ownership-and-client-handoff-inactive-route-release-reselection
     pub fn from_concurrent<T>(
         shared: SharedRadio<T>,
         partitions: ConcurrentPartitions,

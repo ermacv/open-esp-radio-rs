@@ -17,6 +17,7 @@ pub use oer_ieee802154_engine::coex::{
 
 /// Level of each TX/RX scene (`esp_ieee802154_coex_config_t`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: ieee802154-security-power-and-coexistence-wifi-bluetooth-coexistence
 pub struct Ieee802154CoexConfig {
     /// Level of the idle scene.
     pub idle: Ieee802154CoexLevel,

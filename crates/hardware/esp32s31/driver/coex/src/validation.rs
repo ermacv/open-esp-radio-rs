@@ -55,6 +55,7 @@ pub fn unforce_timer(index: u32) {
 
 /// Execute one complete timer program. The caller supplies only the chip
 /// clock environment and typed values.
+// CAPABILITY: coex-timer-validation-bridge
 pub fn program_timer(
     real_chip: bool,
     index: CoexTimerIndex,

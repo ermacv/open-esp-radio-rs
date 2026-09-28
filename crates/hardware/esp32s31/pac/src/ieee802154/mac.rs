@@ -1712,6 +1712,7 @@ pub struct Ieee802154TimerLease<'registers> {
 
 impl Ieee802154TimerLease<'_> {
     /// Publish one complete TIMER0 threshold without assigning clock units.
+    // CAPABILITY: ieee802154-timing-mac-timers-clock-match
     pub fn set_timer0_threshold(&mut self, threshold: Ieee802154Timer0ThresholdWord) {
         self.registers.publish_timer0_threshold(threshold.get());
     }

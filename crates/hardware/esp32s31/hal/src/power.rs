@@ -147,6 +147,7 @@ pub(crate) enum PowerEntry {
     Repeated,
 }
 
+// CAPABILITY: whole-radio-cold-power-and-clocks-cold-modem-phy-power-prerequisites, whole-radio-cold-power-and-clocks-modem-bus-clock-setup, whole-radio-cold-power-and-clocks-shared-modem-clock-map, whole-radio-cold-power-and-clocks-modem-source-clock-setup, whole-radio-cold-power-and-clocks-baseband-reset-prerequisites, whole-radio-cold-power-and-clocks-phy-calibration-and-analog-i2c-clocks, radio-cold-start
 pub(crate) fn execute_owned(
     registers: &mut impl PowerSequenceBackend,
     entry: PowerEntry,

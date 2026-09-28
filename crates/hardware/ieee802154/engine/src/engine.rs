@@ -111,6 +111,7 @@ pub enum Ieee802154TxError {
 
 /// Receive metadata (`esp_ieee802154_frame_info_t`).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+// CAPABILITY: ieee802154-timing-rx-timestamp
 pub struct Ieee802154FrameInfo {
     /// The frame was acknowledged with the pending bit set.
     pub pending: bool,
@@ -195,6 +196,7 @@ pub struct Ieee802154ReceivedAck<'frame> {
 
 /// Upper-layer notifications and platform services, invoked inside the
 /// engine's critical section (`esp_ieee802154_event.c` and `esp_timer`).
+// CAPABILITY: ieee802154-timing-tx-rx-sfd-events
 pub trait Ieee802154Environment {
     /// `esp_timer_get_time` in microseconds.
     fn now_micros(&mut self) -> u64;
@@ -303,6 +305,7 @@ struct Cx<'a, L: ?Sized, E: ?Sized> {
 }
 
 /// The ported MAC engine.
+// CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154Engine<'storage> {
     buffers: &'storage mut Ieee802154EngineBuffers,
     levels: Ieee802154TxPowerLevels<'storage>,
@@ -356,6 +359,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     }
 
     /// A disabled engine built with multi-PAN and `interfaces` interfaces.
+    // CAPABILITY: ieee802154-filtering-addressing-and-mac-automation-four-multi-pan-contexts
     pub fn new_multipan(
         buffers: &'storage mut Ieee802154EngineBuffers,
         levels: Ieee802154TxPowerLevels<'storage>,
@@ -603,6 +607,7 @@ impl<'storage> Ieee802154Engine<'storage> {
 
     /// `esp_ieee802154_set_ack_timeout`: microseconds rounded up to the
     /// 16-microsecond unit and truncated to the sixteen-bit field.
+    // CAPABILITY: ieee802154-rx-tx-dataplane-and-acknowledgments-ack-timeout-configuration
     pub fn set_ack_timeout<L: Ieee802154LowLevel + ?Sized>(
         &mut self,
         ll: &mut L,
@@ -620,6 +625,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     /// secured `frame` image the next transmission sends. The vendor asserts
     /// that the frame enables security; an unparseable header programs its
     /// invalid offset `0xff` truncated to the seven-bit field.
+    // CAPABILITY: ieee802154-security-power-and-coexistence-hardware-tx-security
     pub fn set_transmit_security<L: Ieee802154LowLevel + ?Sized>(
         &mut self,
         ll: &mut L,
@@ -636,6 +642,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     }
 
     /// `ieee802154_get_recent_lqi`.
+    // CAPABILITY: ieee802154-phy-and-rf-lqi
     pub fn recent_lqi(&self) -> u8 {
         self.rx_info[usize::from(self.recent_rx_info_index)].lqi
     }
@@ -766,6 +773,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     /// `ieee802154_transmit`: `frame` is a `[PHR, PSDU...]` image. A frame
     /// arriving while a received frame or its ACK is in flight fails at
     /// once.
+    // CAPABILITY: ieee802154-rx-tx-dataplane-and-acknowledgments-direct-tx, ieee802154-cca-and-channel-access-cca-before-tx, ieee802154-rx-tx-dataplane-and-acknowledgments-hardware-fcs-generation-check
     pub fn transmit<L, E>(
         &mut self,
         ll: &mut L,
@@ -814,6 +822,7 @@ impl<'storage> Ieee802154Engine<'storage> {
 
     /// `ieee802154_transmit_at`: start the transmission when TIMER0 reaches
     /// `time` minus the ramp-up, through ETM channel zero.
+    // CAPABILITY: ieee802154-timing-timed-tx-transmit-at
     pub fn transmit_at<L, E>(
         &mut self,
         ll: &mut L,
@@ -854,6 +863,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     }
 
     /// `ieee802154_receive`: keep an ongoing reception unless the PIB changed.
+    // CAPABILITY: ieee802154-rx-tx-dataplane-and-acknowledgments-rx
     pub fn receive<L, E>(&mut self, ll: &mut L, env: &mut E)
     where
         L: Ieee802154LowLevel + ?Sized,
@@ -873,6 +883,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     /// microseconds when nonzero, starting through ETM channel one. Returns
     /// `false`, leaving the current operation, for a window that already
     /// ended, where the vendor returns `ESP_OK` without starting it.
+    // CAPABILITY: ieee802154-timing-timed-rx-receive-at
     pub fn receive_at<L, E>(&mut self, ll: &mut L, env: &mut E, time: u32, duration: u32) -> bool
     where
         L: Ieee802154LowLevel + ?Sized,
@@ -904,6 +915,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     }
 
     /// `ieee802154_sleep`.
+    // CAPABILITY: ieee802154-security-power-and-coexistence-radio-sleep-wake
     pub fn sleep<L, E>(&mut self, ll: &mut L, env: &mut E)
     where
         L: Ieee802154LowLevel + ?Sized,
@@ -1107,6 +1119,7 @@ impl<'storage> Ieee802154Engine<'storage> {
 
     /// `ieee802154_transmit_done`: an ACK landing in the stub buffer turns
     /// the completion into a missing ACK.
+    // CAPABILITY: ieee802154-rx-tx-dataplane-and-acknowledgments-tx-ack-request-and-ack-reception
     fn transmit_done<L, E>(&mut self, cx: &mut Cx<'_, L, E>, with_ack: bool)
     where
         L: Ieee802154LowLevel + ?Sized,
@@ -1599,6 +1612,7 @@ impl<'storage> Ieee802154Engine<'storage> {
     }
 
     /// `ieee802154_ack_config_pending_bit`.
+    // CAPABILITY: ieee802154-rx-tx-dataplane-and-acknowledgments-hardware-auto-ack-generation
     fn ack_config_pending_bit<L, E>(&mut self, cx: &mut Cx<'_, L, E>, frame: PhrFrame<'_>) -> bool
     where
         L: Ieee802154LowLevel + ?Sized,

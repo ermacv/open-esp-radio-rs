@@ -246,6 +246,7 @@ impl<'frame> Received<'frame> {
 ///
 /// The received frame cannot be acknowledged this way, or the ACK does not
 /// fit one MAC frame.
+// CAPABILITY: ieee802154-rx-tx-dataplane-and-acknowledgments-enhanced-ack-tx
 pub fn generate_enhanced_ack(
     received: FrameView<'_>,
     frame_pending: bool,

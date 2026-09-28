@@ -144,6 +144,7 @@ impl Ieee802154InterruptSetupOwner {
 
 /// Active IEEE 802.15.4 hard-IRQ owner.
 #[must_use = "the active IEEE 802.15.4 interrupt owner must be deactivated"]
+// CAPABILITY: active-interrupt-runtime
 pub struct Ieee802154InterruptOwner {
     registers: PacInterruptRegisters,
 }

@@ -20,6 +20,7 @@ pub use schemes::CoexSchemeId;
 /// One phase of a scheme: its share of the period and the radios it
 /// notifies.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: coex-coexistence-policy-and-scheduler-phase-representation
 pub struct CoexPhase {
     share_percent: u8,
     wifi: u8,
@@ -189,6 +190,7 @@ impl CoexStatusWords {
     }
 
     /// `coex_schm_status_change`: the scheme these status words select.
+    // CAPABILITY: coex-coexistence-policy-and-scheduler-scheme-selection
     pub const fn select(&self) -> CoexSchemeId {
         use CoexSchemeId as S;
         if self.external_coex & 0x01 != 0 {
@@ -440,6 +442,7 @@ pub enum CoexScheduleIdle {
 
 /// The state of `coex_schm_env` that the schedule owns.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: coex-coexistence-policy-and-scheduler-scheduler-state
 pub struct CoexSchedule {
     status: CoexStatusWords,
     scheme: CoexSchemeId,
@@ -592,6 +595,7 @@ impl CoexSchedule {
     ///
     /// The last phase stays current because the phases do not loop in this
     /// state; the timer stays disarmed and nobody is notified.
+    // CAPABILITY: coex-coexistence-policy-and-scheduler-executable-phase-transitions
     pub fn timeout(&mut self) -> Result<CoexPhaseStep, CoexScheduleIdle> {
         self.change_phase(false)
     }

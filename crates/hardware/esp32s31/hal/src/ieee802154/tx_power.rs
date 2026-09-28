@@ -13,6 +13,7 @@ use oer_ieee802154_engine::tx_power::Ieee802154TxPowerLevels;
 /// [`crate::phy::baseband::TX_POWER_LEVELS_DBM`].
 ///
 /// The index into this set is the MAC `TXPOWER` field code.
+// CAPABILITY: ieee802154-phy-and-rf-tx-power
 pub const ESP32S31_TX_POWER_LEVELS: Ieee802154TxPowerLevels<'static> =
     match Ieee802154TxPowerLevels::new(&crate::phy::baseband::TX_POWER_LEVELS_DBM) {
         Ok(levels) => levels,

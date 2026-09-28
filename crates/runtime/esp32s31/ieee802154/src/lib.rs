@@ -293,6 +293,7 @@ impl<M: RawMutex, const EVENTS: usize> Ieee802154RadioSink for QueueSink<'_, M, 
 ///
 /// `EVENTS` bounds the events waiting for the consumer. Overflow drops the
 /// newest event and reports [`Ieee802154EventsLost`] once.
+// CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
     installed: Mutex<M, RefCell<Option<Installed<'storage, H>>>>,
     events: Channel<M, Ieee802154RadioEvent, EVENTS>,
@@ -314,6 +315,7 @@ where
     /// # Errors
     ///
     /// No radio is installed.
+    // CAPABILITY: ieee802154-phy-and-rf-rssi
     pub fn recent_rssi(&self) -> Result<i8, Ieee802154RuntimeError> {
         self.with_radio(|_, hardware, _| hardware.recent_rssi())
     }

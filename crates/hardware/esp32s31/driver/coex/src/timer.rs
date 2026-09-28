@@ -36,6 +36,7 @@ pub trait CoexTimerHardware {
 /// Enabling the timer is deliberately separate because the vendor core first
 /// completes all four fresh-read RMW operations and only then publishes the
 /// timer through `coex_hw_timer_enable`.
+// CAPABILITY: coex-internal-arbitration-hardware-and-models-timer-programming-sequence
 pub fn program_timer<H: CoexTimerHardware, C: CoexClockHardware>(
     hardware: &mut H,
     clock: &mut C,

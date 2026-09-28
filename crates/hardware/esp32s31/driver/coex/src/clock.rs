@@ -1,6 +1,7 @@
 use crate::CoexError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: coex-internal-arbitration-hardware-and-models-timer-clock-conversion
 pub struct CoexTimerClock {
     selector: CoexClockSelector,
     /// Hardware divisor minus one, already decoded and bounded by the PAC.

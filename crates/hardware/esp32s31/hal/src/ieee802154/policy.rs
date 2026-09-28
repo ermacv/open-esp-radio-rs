@@ -36,6 +36,7 @@ pub const IEEE802154_MAX_ACK_TIMEOUT_MICROSECONDS: u32 =
 /// never truncates or wraps. [`Self::from_units`] also represents every field
 /// image, including zero, without inventing a narrower semantic domain.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+// CAPABILITY: ieee802154-rx-tx-dataplane-and-acknowledgments-ack-timeout-configuration
 pub struct Ieee802154AckTimeout {
     units: u16,
 }
@@ -121,6 +122,7 @@ const fn cca_mode_from_pac(value: PacCcaMode) -> Ieee802154CcaMode {
 
 /// Source-confirmed automatic-ACK and address-filter control policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: ieee802154-filtering-addressing-and-mac-automation-coordinator-filtering-mode, ieee802154-filtering-addressing-and-mac-automation-promiscuous-receive-mode
 pub struct Ieee802154MacControl {
     tx_auto_ack: bool,
     rx_auto_ack: bool,
@@ -207,6 +209,7 @@ impl Ieee802154MacControl {
 
 /// Address-filter identity for the primary PAN context.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: ieee802154-filtering-addressing-and-mac-automation-pan-id, ieee802154-filtering-addressing-and-mac-automation-short-address, ieee802154-filtering-addressing-and-mac-automation-extended-address
 pub struct Ieee802154PanIdentity {
     pan_id: u16,
     short_address: u16,
@@ -257,6 +260,7 @@ impl Ieee802154PanIdentity {
 /// TX power is intentionally absent because its RF-dependent conversion table
 /// has not been recovered from an authoritative public source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: ieee802154-cca-and-channel-access-four-cca-modes, ieee802154-cca-and-channel-access-cca-threshold, static-mac-policy
 pub struct Ieee802154MacPolicy {
     channel: Ieee802154Channel,
     cca_mode: Ieee802154CcaMode,

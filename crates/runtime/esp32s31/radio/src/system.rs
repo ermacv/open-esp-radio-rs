@@ -197,6 +197,7 @@ impl CoexSignals {
 
 /// The shared radio: the arbiter with its PHY domain and the platform
 /// resources, taken together through [`Self::lock`].
+// CAPABILITY: coex-protocol-integration-and-lifetime-wifi-ble-coexistence, whole-radio-active-operation-power-saving-and-shutdown-protocol-active-operation
 pub struct RadioSystem<P, C> {
     radio: SharedRadio<ConcurrentPhy>,
     /// Taken only while the arbiter lease is held, so taking it never waits.
@@ -523,6 +524,7 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
     ///
     /// Cancelling it stops the phases where they are; an expiry that has
     /// taken the lease completes its step first.
+    // CAPABILITY: coex-protocol-integration-and-lifetime-radio-runtime-owner, coex-coexistence-policy-and-scheduler-wifi-bt-ble-time-slices
     pub async fn run_coex_schedule(&self) -> ! {
         self.run_coex_schedule_until(core::future::pending()).await;
         unreachable!("a pending stop never completes")

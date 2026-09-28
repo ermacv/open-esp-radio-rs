@@ -37,6 +37,7 @@ pub struct PendingTableFull;
 /// Entries keep their slot until cleared; a cleared slot is reused by the
 /// next insertion that scans past it first, as the vendor table does.
 #[derive(Clone, Debug, Eq, PartialEq)]
+// CAPABILITY: ieee802154-filtering-addressing-and-mac-automation-source-matching-table
 pub struct PendingTable<const CAPACITY: usize> {
     short: [Option<[u8; 2]>; CAPACITY],
     extended: [Option<[u8; 8]>; CAPACITY],
@@ -147,6 +148,7 @@ pub struct AckPending {
 /// `enhanced_lookup` is the hardware pending-mode selector the driver read
 /// first; when set, a data request starts as pending. A frame without a
 /// parseable source keeps that initial decision.
+// CAPABILITY: ieee802154-filtering-addressing-and-mac-automation-automatic-frame-pending
 pub fn ack_pending<const CAPACITY: usize>(
     frame: PhrFrame<'_>,
     enhanced_lookup: bool,

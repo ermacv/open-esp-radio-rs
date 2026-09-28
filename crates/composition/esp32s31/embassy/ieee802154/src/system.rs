@@ -224,6 +224,7 @@ pub struct Ieee802154StopFailure {
 /// The MAC owners and the engine live in the runtime; this value keeps the
 /// PHY membership and the bound CPU route until [`Self::stop`].
 #[must_use = "the running IEEE 802.15.4 client must be stopped"]
+// CAPABILITY: ieee802154-mac-operation-subset
 pub struct Ieee802154System {
     route: RegisteredIeee802154OperationalRoute,
     /// Bound except while PHY maintenance holds the MAC paused, or after a
@@ -302,6 +303,7 @@ fn unwind_powered(
     clippy::result_large_err,
     reason = "the allocation-free failure returns the parked partition and engine"
 )]
+// CAPABILITY: ieee802154-phy-and-rf-2-4-ghz-o-qpsk-250-kbit-s, ieee802154-security-power-and-coexistence-powered-lifecycle
 pub async fn start<P, C: PlatformClockProvider>(
     radio: &RadioSystem<P, C>,
     parked: Ieee802154Parked,

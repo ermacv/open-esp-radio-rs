@@ -264,6 +264,7 @@ impl Ieee802154Pib {
 
     /// `ieee802154_pib_set_rx_when_idle`: a driver-only value, so it never
     /// marks the PIB pending.
+    // CAPABILITY: ieee802154-security-power-and-coexistence-rx-on-when-idle
     pub fn set_rx_when_idle(&mut self, enable: bool) {
         self.rx_when_idle = enable;
     }

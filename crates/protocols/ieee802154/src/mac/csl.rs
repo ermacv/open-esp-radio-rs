@@ -43,6 +43,7 @@ pub const fn csl_phase(now: u32, sample_time: u32, period: u16) -> Option<u16> {
 /// Write `period` and `phase` into the CSL IE of the `[PHR, MAC...]` image
 /// of a frame, as `otMacFrameSetCslIe` does. Returns `false`, leaving the
 /// image, for a frame without a CSL IE.
+// CAPABILITY: ieee802154-timing-coordinated-sampled-listening-csl
 pub fn write_csl_ie(image: &mut [u8], period: u16, phase: u16) -> bool {
     let Some(offset) = PhrFrame::new(image).header_ie(CSL_IE_ID) else {
         return false;

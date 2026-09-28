@@ -24,6 +24,7 @@ pub const SYMBOL_MICROS: u32 = 16;
 
 /// The backoff state of one CSMA-CA transmission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: ieee802154-cca-and-channel-access-csma-ca
 pub struct CsmaCa {
     max_backoffs: u8,
     backoffs: u8,

@@ -784,6 +784,37 @@ impl TaskPollSet {
             && self.tcp.intervals != 0
     }
 
+    /// The poll residence of each task that reported, as typed
+    /// measurements `task_poll.<task>.<counter>`, so run comparisons and
+    /// performance reports see it beside throughput.
+    pub fn measurements(self) -> Vec<hil_core::evidence::run::Measurement> {
+        use hil_core::evidence::run::{Measurement, MeasurementUnit::*};
+        [
+            ("network", self.network),
+            ("radio", self.radio),
+            ("udp_rx", self.udp_rx),
+            ("udp_tx", self.udp_tx),
+            ("tcp", self.tcp),
+        ]
+        .into_iter()
+        .filter(|(_, evidence)| evidence.intervals != 0)
+        .flat_map(|(task, evidence)| {
+            [
+                ("polls", evidence.polls, Count),
+                ("poll_us", evidence.poll_us, Microseconds),
+                ("boot_max_us", evidence.poll_boot_max_us, Microseconds),
+                ("over_100us", evidence.over_100us, Count),
+                ("over_500us", evidence.over_500us, Count),
+                ("over_1000us", evidence.over_1000us, Count),
+                ("over_5000us", evidence.over_5000us, Count),
+            ]
+            .map(|(counter, value, unit)| {
+                Measurement::observed(format!("task_poll.{task}.{counter}"), value, unit)
+            })
+        })
+        .collect()
+    }
+
     pub(super) fn merge_log_line(&mut self, line: &str) {
         if !(line.starts_with("ORTP ") || line.contains(" ORTP ")) {
             return;

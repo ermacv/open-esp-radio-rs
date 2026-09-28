@@ -49,6 +49,31 @@ fn extracts_tx_task_polls_without_an_rx_interval_marker() {
 }
 
 #[test]
+fn task_polls_become_typed_measurements_per_reporting_task() {
+    let measurements =
+        task_polls_from_log("ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n")
+            .measurements();
+    let value = |name: &str| {
+        measurements
+            .iter()
+            .find(|measurement| measurement.name == name)
+            .map(|measurement| (measurement.value, measurement.unit))
+    };
+    use hil_core::evidence::run::MeasurementUnit;
+    assert_eq!(
+        value("task_poll.radio.poll_us"),
+        Some((390_000, MeasurementUnit::Microseconds))
+    );
+    assert_eq!(
+        value("task_poll.radio.over_100us"),
+        Some((20, MeasurementUnit::Count))
+    );
+    // A task that reported no interval publishes nothing.
+    assert_eq!(value("task_poll.network.polls"), None);
+    assert_eq!(measurements.len(), 7);
+}
+
+#[test]
 fn ht40_tx_accepts_mcs7_long_or_short_gi_but_not_a_lower_vector() {
     let mut report = DeviceReport {
         tx: vec![TxSample {

@@ -512,6 +512,7 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
             rx.task_polls = report.task_polls;
             rx
         });
+    context.measurements.record(rx.task_polls.measurements());
     if let Some(required_floor) = options.tx_floor_bps {
         let measured_device = tx_floor.saturating_mul(1_000);
         let measured_host = host_tx.throughput_kbps().saturating_mul(1_000);

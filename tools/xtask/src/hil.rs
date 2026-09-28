@@ -1157,6 +1157,7 @@ fn runs(
                 println!("{}", hil_runs::list_line(run));
             }
         }
+        RunsCli::Show { run } => print!("{}", hil_runs::show(&find(&run)?)),
         RunsCli::Why { run, tail } => print!("{}", hil_runs::why(&find(&run)?, tail)),
         RunsCli::Wait { .. } => unreachable!("handled before the store is read"),
         RunsCli::Compare { a, b, measurement } => print!(
@@ -1972,6 +1973,11 @@ enum RunsCli {
         since: Option<std::time::Duration>,
         #[arg(long, default_value_t = 30)]
         limit: usize,
+    },
+    /// Where a run's artifacts are: its directory in the shared store and
+    /// each repetition's artifact directory.
+    Show {
+        run: String,
     },
     /// Why a run did not pass.
     Why {

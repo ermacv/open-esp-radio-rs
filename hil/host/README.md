@@ -410,6 +410,7 @@ per bundle whether it applies to that checkout's sources.
 
 ```console
 cargo hil runs list --scenario station-reconnect --outcome failed --since 7d
+cargo hil runs show <run-id>          # where its artifacts are
 cargo hil runs why <run-id>
 cargo hil runs wait <run-id>          # or --latest: this checkout's newest run
 cargo hil runs compare <run-a> <run-b> --measurement mbps
@@ -421,7 +422,10 @@ cargo hil runs prune --apply
 
 `list` shows each run's time, outcome, checkout, commit (`+` when dirty),
 images and scenario outcomes, filtered by scenario, outcome, commit prefix,
-image class or digest prefix, checkout and age. `why` names, per failed
+image class or digest prefix, checkout and age. `show` prints the run's
+directory in the store, its reports, and per scenario and repetition the
+outcome, the artifact directory and the files in it; use it rather than
+`find`, which does not follow the store link. `why` names, per failed
 repetition, the recorded failure, the measurements that missed their
 criteria (a criterion miss, unlike a fault), cleanup failures, host USB
 events of its boards, the artifact directory and the end of `uart.log`. `compare` and `history` use per-scenario

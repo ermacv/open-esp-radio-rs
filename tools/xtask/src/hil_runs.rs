@@ -660,6 +660,70 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
     text
 }
 
+/// Where a run's artifacts live: the bundle directory in the shared store,
+/// its reports, and per scenario and repetition the outcome and the
+/// directory with the files it holds.
+pub fn show(run: &Run) -> String {
+    let directory = fs::canonicalize(&run.directory).unwrap_or_else(|_| run.directory.clone());
+    let mut text = format!(
+        "run {} ({}) from {} at {}: {}\n  directory: {}\n",
+        run.id,
+        date(run.started_millis),
+        run.checkout.as_deref().unwrap_or("?"),
+        short(&run.commit, run.dirty),
+        status(run),
+        directory.display()
+    );
+    for report in ["manifest.json", "suite.json", "events.jsonl", "report.html"] {
+        if directory.join(report).exists() {
+            text.push_str(&format!(
+                "  {report}: {}\n",
+                directory.join(report).display()
+            ));
+        }
+    }
+    for scenario in &run.scenarios {
+        text.push_str(&format!(
+            "  {} [{}]: {}\n",
+            scenario.id, scenario.image, scenario.outcome
+        ));
+        for repetition in &scenario.repetitions {
+            let Some(relative) = &repetition.directory else {
+                text.push_str(&format!(
+                    "    repetition {}: {} (no artifacts)\n",
+                    repetition.number, repetition.outcome
+                ));
+                continue;
+            };
+            let path = directory.join(relative);
+            text.push_str(&format!(
+                "    repetition {}: {} {}\n",
+                repetition.number,
+                repetition.outcome,
+                path.display()
+            ));
+            let mut entries = fs::read_dir(&path)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if entry.path().is_dir() {
+                        name + "/"
+                    } else {
+                        name
+                    }
+                })
+                .collect::<Vec<_>>();
+            entries.sort();
+            if !entries.is_empty() {
+                text.push_str(&format!("      {}\n", entries.join("  ")));
+            }
+        }
+    }
+    text
+}
+
 /// Trace events `why` shows per failed repetition.
 const TRACE_EVENTS_SHOWN: usize = 64;
 
@@ -1165,6 +1229,24 @@ mod tests {
         );
         assert!(!why.contains("event-5\n"), "{why}");
         assert!(!why.contains("| boot"), "{why}");
+        let shown = show(&runs[1]);
+        let directory = fs::canonicalize(store.path().join("r2")).unwrap();
+        assert!(
+            shown.contains(&format!("  directory: {}\n", directory.display())),
+            "{shown}"
+        );
+        assert!(shown.contains("  s [correctness]: failed\n"), "{shown}");
+        assert!(
+            shown.contains(&format!(
+                "    repetition 1: failed {}\n",
+                directory.join("scenarios/s/repetition-001").display()
+            )),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("post-mortem/") && shown.contains("uart.log"),
+            "{shown}"
+        );
         let compared = compare(&runs[0], &runs[1], Some("rx"));
         assert!(compared.contains("-50.0%"), "{compared}");
         let history = history(&runs, "s", Some("rx"));

@@ -37,6 +37,7 @@ pub(super) const CLOSED_PACS: &[&str] = &[
     "oer-esp32c5-pac",
     "oer-ieee80211-pac-raw",
     "oer-ieee80211-pac",
+    "oer-ieee802154-pac",
 ];
 /// The HAL is the only production consumer of the closed PAC; drivers and
 /// adapters reach hardware through HAL owners.

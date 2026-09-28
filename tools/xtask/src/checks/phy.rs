@@ -26,6 +26,9 @@ const PHY_PACKAGES: &[&str] = &[
     // the chip PAC places; closed register PACs, no vendor code.
     "oer-ieee80211-pac",
     "oer-ieee80211-pac-raw",
+    // Shared IEEE 802.15.4 MAC values and transactions the chip PAC
+    // re-exports; a closed register PAC crate, no vendor code.
+    "oer-ieee802154-pac",
     // Portable IEEE 802.15.4 frame values the MAC engine is typed over.
     "oer-ieee802154",
     // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive.

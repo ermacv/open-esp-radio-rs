@@ -532,10 +532,17 @@ fn wifi_mac(
     libnet80211: PathBuf,
     phy_sdk: PathBuf,
 ) -> Result<Outcome> {
+    // The command line overrides the archives it names; the modem clock
+    // archives the suite also links are the pinned ones.
+    let named = [libpp, libnet80211];
+    let pinned = mac::WIFI_MAC.archives[named.len()..]
+        .iter()
+        .map(|id| oer_esp32s31_vendor_scenarios::artifacts::default_path(id));
+    let archives = named.into_iter().chain(pinned).collect();
     let options = mac::MacOptions {
         binary: common.binary,
         suite: &mac::WIFI_MAC,
-        archives: vec![libpp, libnet80211],
+        archives,
         rom: common.rom,
         firmware: Some(phy_sdk),
         production: common.production,

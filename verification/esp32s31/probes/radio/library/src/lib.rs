@@ -2529,3 +2529,22 @@ oer_probe_macros::probe! {
         u32::from(step.is_some())
     }
 }
+
+/// ESP-IDF `MODEM_CLOCK_LPCLK_SRC_RC_SLOW` and `MODEM_CLOCK_LPCLK_SRC_XTAL32K`
+/// of `hal/modem_clock_types.h`: the two sources `esp_perip_clk_init` selects
+/// for the Wi-Fi power domain.
+const MODEM_CLOCK_LPCLK_SRC_RC_SLOW: u32 = 0;
+const MODEM_CLOCK_LPCLK_SRC_XTAL32K: u32 = 4;
+
+oer_probe_macros::probe! {
+    /// The production Wi-Fi power-domain low-power clock selection for the
+    /// ESP-IDF source enumerator `source`; any other source selects nothing.
+    pub fn open_modem_clock_trace_select_wifi_low_power_clock(source: u32) {
+        let source = match source {
+            MODEM_CLOCK_LPCLK_SRC_RC_SLOW => oer_esp32s31_pac::WifiLowPowerClockSource::SlowOscillator,
+            MODEM_CLOCK_LPCLK_SRC_XTAL32K => oer_esp32s31_pac::WifiLowPowerClockSource::Crystal32Khz,
+            _ => return,
+        };
+        with_phy(|registers| registers.select_wifi_low_power_clock(source));
+    }
+}

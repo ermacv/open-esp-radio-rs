@@ -995,10 +995,7 @@ reason = """
 low-power clock selection for the coexistence module (8): production owns \
 only the Bluetooth module's selection \
 (`SharedRadioLease::select_bluetooth_low_power_clock`), and no ESP-IDF path \
-selects the coexistence module's (reviewed with the Bluetooth owner). The \
-Wi-Fi module (5) arm, which ESP-IDF's `esp_perip_clk_init` selects at start \
-whenever Wi-Fi is built in, stays untriaged: production does not select it \
-yet"""
+selects the coexistence module's (reviewed with the Bluetooth owner)"""
 # The coexistence arm.
 [[decision.place]]
 function = "modem_clock_select_lp_clock_source"
@@ -1070,3 +1067,15 @@ record: production's retry owners take both as typed values"""
 function = "rcReachRetryLimit"
 start = 0xa
 end = 0x8c
+
+[[decision]]
+reason = """
+Wi-Fi low-power clock sources other than the RC slow oscillator and the \
+32 kHz crystal: the only ESP-IDF selection for the Wi-Fi module is \
+`esp_perip_clk_init`, which picks the 32 kHz crystal when the RTC slow clock \
+runs from it and the RC slow oscillator otherwise, so the RC fast, main \
+crystal, RC 32 kHz and external 32 kHz arms and the out-of-range assertion \
+have no caller; production admits exactly the two sources \
+(`WifiLowPowerClockSource`)"""
+[[decision.place]]
+function = "modem_clock_hal_select_wifi_lpclk_source"

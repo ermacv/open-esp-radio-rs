@@ -53,10 +53,18 @@ const LOW_POWER_CLOCK_DESELECT: Claim = (
     "modem_clock_deselect_lp_clock_source",
     "open_bluetooth_trace_deselect_low_power_clock",
 );
+const WIFI_LOW_POWER_CLOCK_SELECT: Claim = (
+    "modem_clock_select_lp_clock_source",
+    "open_modem_clock_trace_select_wifi_low_power_clock",
+);
 /// `modem_clock_context_t` of ESP-IDF `esp_hw_support/modem`: the `dev` and
-/// `icg_config` pointers, and the Bluetooth entry of `lpclk_src`.
+/// `icg_config` pointers, and the Wi-Fi and Bluetooth entries of `lpclk_src`.
 const MODEM_CLOCK_CONTEXT: &str = "modem_clock_context.7";
 const MODEM_CLOCK_POINTERS: (u32, u32) = (12, 20);
+const MODEM_CLOCK_WIFI_SOURCE: (u32, u32) = (20, 24);
+/// The static reference count of `modem_clock_hal_enable_wifipwr_clock`.
+const WIFI_POWER_CLOCK_REFERENCES: &str = "ref.1";
+const WIFI_POWER_CLOCK_REFERENCE_COUNT: (u32, u32) = (0, 4);
 const MODEM_CLOCK_BLUETOOTH_SOURCE: (u32, u32) = (24, 28);
 /// The flags of the I2C-master entry of the ESP32-S31 modem device context.
 const MODEM_CLOCK_DEVICES: &str = "dev.4";
@@ -268,6 +276,18 @@ pub const DECISIONS: &[Decision] = &[
                 MODEM_CLOCK_I2C_MASTER_FLAGS.0,
                 MODEM_CLOCK_I2C_MASTER_FLAGS.1,
             ),
+            place(
+                WIFI_LOW_POWER_CLOCK_SELECT,
+                MODEM_CLOCK_CONTEXT,
+                MODEM_CLOCK_POINTERS.0,
+                MODEM_CLOCK_POINTERS.1,
+            ),
+            place(
+                WIFI_LOW_POWER_CLOCK_SELECT,
+                MODEM_CLOCK_DEVICES,
+                MODEM_CLOCK_I2C_MASTER_FLAGS.0,
+                MODEM_CLOCK_I2C_MASTER_FLAGS.1,
+            ),
         ],
     },
     Decision {
@@ -291,5 +311,33 @@ pub const DECISIONS: &[Decision] = &[
                 MODEM_CLOCK_BLUETOOTH_SOURCE.1,
             ),
         ],
+    },
+    Decision {
+        reason: "the vendor's record of the Wi-Fi low-power clock source, which only the \
+            light-sleep power-domain configuration reads (`esp_sleep_pd_config` keeps the \
+            selected source's domain powered in sleep and releases the previous one; answered \
+            without effect): production selects the source once at the first cold radio \
+            power-up, never deselects it and has no light-sleep domain management, so it \
+            keeps no record (reviewed with the Wi-Fi owner); the compared register effects \
+            select the same source",
+        places: &[place(
+            WIFI_LOW_POWER_CLOCK_SELECT,
+            MODEM_CLOCK_CONTEXT,
+            MODEM_CLOCK_WIFI_SOURCE.0,
+            MODEM_CLOCK_WIFI_SOURCE.1,
+        )],
+    },
+    Decision {
+        reason: "the vendor's reference count of the Wi-Fi power clock gate, which \
+            `modem_clock_hal_enable_wifipwr_clock` increments on each selection and a disable \
+            decrements, gating the clock off at zero: production sets the gate once at the \
+            first cold radio power-up and never clears it, so it counts no references \
+            (reviewed with the Wi-Fi owner); the compared register effects set the same gate",
+        places: &[place(
+            WIFI_LOW_POWER_CLOCK_SELECT,
+            WIFI_POWER_CLOCK_REFERENCES,
+            WIFI_POWER_CLOCK_REFERENCE_COUNT.0,
+            WIFI_POWER_CLOCK_REFERENCE_COUNT.1,
+        )],
     },
 ];

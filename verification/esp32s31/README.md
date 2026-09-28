@@ -477,6 +477,17 @@ exactly. The driver's HAL context is copied into the linked image with the
 `MODEM_SYSCON` and `MODEM_LPCON` bases of the pinned firmware, because Blobray
 binds no linker-script absolute symbol.
 
+## Wi-Fi low-power clock
+
+`wifi-mac` links the same two archives and compares
+`modem_clock_select_lp_clock_source(PERIPH_WIFI_MODULE, source, 0)`, the call
+of ESP-IDF's `esp_perip_clk_init`, with production
+`RadioPhyRegisters::select_wifi_low_power_clock` for the RC slow oscillator and
+the 32 kHz crystal ([`low_power_clock.rs`](scenarios/src/wifi/low_power_clock.rs)).
+The driver's record of the selected source and the Wi-Fi power clock
+reference count are reviewed state differences: production selects once at
+the first cold radio power-up and never deselects.
+
 ## Wi-Fi A-MPDU completion
 
 `wifi-mac` compares `libpp.a[pp.o]::ppResortTxAMPDU` with the production

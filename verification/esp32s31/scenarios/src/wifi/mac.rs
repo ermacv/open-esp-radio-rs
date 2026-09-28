@@ -23,9 +23,31 @@ use std::any::Any;
 use std::collections::BTreeMap;
 
 /// Names no pinned input defines: newlib `putchar`, which only the
-/// `libpp.a` diagnostic dumps reachable from the transmit leaves call. They
-/// resolve to an unmapped address, so reaching one stops the case.
-const ABSENT: &[&str] = &["putchar"];
+/// `libpp.a` diagnostic dumps reachable from the transmit leaves call, and,
+/// as in the Bluetooth suite, the peripheral bases the linker scripts provide,
+/// the firmware's writable-IRAM error, log and I2C functions only modem clock
+/// driver paths the compared cases never take reference, and the
+/// writable-IRAM FreeRTOS port the low-power clock leaf answers as quiet
+/// calls. They resolve to an unmapped address, so reaching one stops the case.
+const ABSENT: &[&str] = &[
+    "putchar",
+    "MODEM_SYSCON",
+    "MODEM_LPCON",
+    "LP_CLKRST",
+    "PMU",
+    "HP_SYS_CLKRST",
+    "HP_ALIVE_SYS",
+    "TIMERG0",
+    "esp_rom_delay_us",
+    "esp_rom_printf",
+    "_esp_error_check_failed",
+    "_regi2c_impl_write",
+    "esp_log",
+    "esp_log_timestamp",
+    "xPortInIsrContext",
+    "xPortEnterCriticalTimeout",
+    "vPortExitCriticalMultiCore",
+];
 /// Input index of the pinned `libnet80211.a`.
 const NET80211_INPUT: u64 = 4;
 /// Logical transmit queues the production HAL admits.
@@ -88,7 +110,7 @@ const fn concat_claims<const N: usize>(
 pub const WIFI_MAC: Suite = Suite {
     title: "Wi-Fi MAC HAL leaf comparison",
     id: CONTRACT_ID,
-    archives: &["libpp", "libnet80211"],
+    archives: &["libpp", "libnet80211", "libesp-hw-support", "libhal"],
     rom: ROM,
     firmware: Some(FIRMWARE),
     leaves: LEAVES,
@@ -1445,6 +1467,7 @@ pub const LEAVES: &[Leaf] = &[
         )),
         &["ic_set_mac"],
     ),
+    crate::low_power_clock::SELECT,
 ];
 
 /// The record index of every rate code in `codes`, returned by the vendor's

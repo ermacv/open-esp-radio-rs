@@ -676,7 +676,7 @@ const SCHEDULER_QUIET: &[&str] = &[
 /// Modem clock driver calls outside its register transaction. The FreeRTOS
 /// port lives in the firmware's writable IRAM, which cannot carry a link
 /// definition, so the suite declares it absent.
-const MODEM_CLOCK_QUIET: &[&str] = &[
+pub(crate) const MODEM_CLOCK_QUIET: &[&str] = &[
     "xPortInIsrContext",
     "xPortEnterCriticalTimeout",
     "vPortExitCriticalMultiCore",
@@ -695,7 +695,7 @@ const BLUETOOTH_MAIN_XTAL_DIVIDER: u32 = 40_000_000 / 100_000 - 1;
 /// use: the `MODEM_SYSCON` and `MODEM_LPCON` bases the firmware's linker
 /// scripts provide. It is copied into the linked image, so the driver finds
 /// its HAL initialized and never references the absent linker names.
-fn modem_clock_hal_context(vendor: &Vendor<'_>) -> Result<(u32, Vec<u8>)> {
+pub(crate) fn modem_clock_hal_context(vendor: &Vendor<'_>) -> Result<(u32, Vec<u8>)> {
     let mut context = (vendor.firmware)("MODEM_SYSCON")?.to_le_bytes().to_vec();
     context.extend((vendor.firmware)("MODEM_LPCON")?.to_le_bytes());
     Ok((vendor.symbol("modem_clock_hal.8")?, context))

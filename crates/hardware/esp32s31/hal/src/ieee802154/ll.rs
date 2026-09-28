@@ -282,6 +282,12 @@ impl Ieee802154MacOwners {
     pub fn task_mut(&mut self) -> &mut Ieee802154TaskOwner {
         &mut self.task
     }
+
+    /// Read the MAC power-sequencing words from `PAON_DELAY` to `DCDC_CTRL`,
+    /// for comparison with an ESP-IDF image on hardware.
+    pub fn power_sequence(&mut self) -> super::Ieee802154PowerSequence {
+        self.task.lease().power_sequence()
+    }
 }
 
 impl Ieee802154RecentRssi for Ieee802154MacOwners {

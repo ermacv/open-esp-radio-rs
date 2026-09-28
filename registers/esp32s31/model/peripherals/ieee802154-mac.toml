@@ -1025,6 +1025,13 @@ bitWidth = 10
 minimum = 0
 maximum = 0x3ff
 
+[[peripherals.registers.register.fields]]
+name = "BITS_10_31_OPAQUE"
+description = "Bits the vendor declares reserved (reserved10), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 10
+bitWidth = 22
+access = "read-only"
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1043,6 +1050,13 @@ bitWidth = 6
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0
 maximum = 0x3f
+
+[[peripherals.registers.register.fields]]
+name = "BITS_6_31_OPAQUE"
+description = "Bits the vendor declares reserved (reserved6), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 6
+bitWidth = 26
+access = "read-only"
 
 [[peripherals.registers]]
 
@@ -1063,6 +1077,13 @@ bitWidth = 11
 minimum = 0
 maximum = 0x7ff
 
+[[peripherals.registers.register.fields]]
+name = "BITS_11_31_OPAQUE"
+description = "Bits the vendor declares reserved (reserved11), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 11
+bitWidth = 21
+access = "read-only"
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1081,6 +1102,13 @@ bitWidth = 10
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0
 maximum = 0x3ff
+
+[[peripherals.registers.register.fields]]
+name = "BITS_10_31_OPAQUE"
+description = "Bits the vendor declares reserved (reserved10), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 10
+bitWidth = 22
+access = "read-only"
 
 [[peripherals.registers]]
 
@@ -1504,6 +1532,13 @@ description = "Ten-bit power-amplifier-on delay."
 bitOffset = 0
 bitWidth = 10
 
+[[peripherals.registers.register.fields]]
+name = "BITS_10_31_OPAQUE"
+description = "Bits the vendor declares reserved (reserved10), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 10
+bitWidth = 22
+access = "read-only"
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1519,6 +1554,13 @@ description = "Six-bit transmit-enable stop delay."
 bitOffset = 0
 bitWidth = 6
 
+[[peripherals.registers.register.fields]]
+name = "BITS_6_31_OPAQUE"
+description = "Bits the vendor declares reserved (reserved6), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 6
+bitWidth = 26
+access = "read-only"
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1533,6 +1575,13 @@ name = "CONT_RX_DELAY"
 description = "Six-bit continuous-receive delay."
 bitOffset = 0
 bitWidth = 6
+
+[[peripherals.registers.register.fields]]
+name = "BITS_6_31_OPAQUE"
+description = "Bits the vendor declares reserved (uint32_t cont_rx_delay), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 6
+bitWidth = 26
+access = "read-only"
 
 [[peripherals.registers]]
 
@@ -1566,6 +1615,13 @@ name = "TX_DCDC_UP"
 description = "Raise the DC-DC converter for transmission."
 bitOffset = 31
 bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "BITS_17_30_OPAQUE"
+description = "Bits the vendor declares reserved (reserved17), read so a hardware comparison sees the complete word; the vendor image holds nonzero values here in PAON_DELAY and RXON_DELAY."
+bitOffset = 17
+bitWidth = 14
+access = "read-only"
 
 [[review]]
 entity = "IEEE802154_MAC"
@@ -2696,3 +2752,67 @@ provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
 naming = "vendor"
+
+[[review]]
+entity = "IEEE802154_MAC.PAON_DELAY.BITS_10_31_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_MAC.TXON_DELAY.BITS_10_31_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_MAC.TXEN_STOP_DELAY.BITS_6_31_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_MAC.TXOFF_DELAY.BITS_6_31_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_MAC.RXON_DELAY.BITS_11_31_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_MAC.TXRX_SWITCH_DELAY.BITS_10_31_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_MAC.CONT_RX_DELAY.BITS_6_31_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_MAC.DCDC_CTRL.BITS_17_30_OPAQUE"
+sources = ["ESP_IDF_7B9CC1AC_S31_IEEE802154_STRUCT"]
+provenance = "imported"
+accuracy = "exact"
+completeness = "complete"
+naming = "opaque"

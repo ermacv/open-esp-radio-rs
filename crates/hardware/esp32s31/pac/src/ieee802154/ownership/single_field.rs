@@ -19,16 +19,23 @@ pub struct RawRxStatus {
     pub sfd_match: bool,
 }
 
-/// The MAC power-sequencing fields the public driver never writes.
+/// The MAC power-sequencing words from `PAON_DELAY` to `DCDC_CTRL`, field by
+/// field; `reserved` holds each word's vendor-reserved remainder in address
+/// order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RawPowerSequence {
     pub paon_delay: u16,
+    pub txon_delay: u16,
     pub txen_stop_delay: u8,
+    pub txoff_delay: u8,
+    pub rxon_delay: u16,
+    pub txrx_switch_delay: u16,
     pub cont_rx_delay: u8,
     pub dcdc_pre_up_delay: u8,
     pub dcdc_down_delay: u8,
     pub dcdc_ctrl_enabled: bool,
     pub tx_dcdc_up: bool,
+    pub reserved: [u32; 8],
 }
 
 /// Complete `TX_STATUS` observation (`ieee802154_ll_get_tx_status`).
@@ -345,24 +352,41 @@ impl TaskRegisters {
         }
     }
 
-    /// `PAON_DELAY`, `TXEN_STOP_DELAY`, `CONT_RX_DELAY` and `DCDC_CTRL`,
+    /// The eight words from `PAON_DELAY` to `DCDC_CTRL`, each read once and
     /// decoded field by field.
     #[doc(hidden)]
     pub fn power_sequence(&self) -> RawPowerSequence {
-        let dcdc = self.registers.dcdc_ctrl().read();
+        let registers = &self.registers;
+        let paon = registers.paon_delay().read();
+        let txon = registers.txon_delay().read();
+        let txen_stop = registers.txen_stop_delay().read();
+        let txoff = registers.txoff_delay().read();
+        let rxon = registers.rxon_delay().read();
+        let txrx_switch = registers.txrx_switch_delay().read();
+        let cont_rx = registers.cont_rx_delay().read();
+        let dcdc = registers.dcdc_ctrl().read();
         RawPowerSequence {
-            paon_delay: self.registers.paon_delay().read().paon_delay().bits(),
-            txen_stop_delay: self
-                .registers
-                .txen_stop_delay()
-                .read()
-                .txen_stop_dly()
-                .bits(),
-            cont_rx_delay: self.registers.cont_rx_delay().read().cont_rx_delay().bits(),
+            paon_delay: paon.paon_delay().bits(),
+            txon_delay: txon.txon_delay().bits(),
+            txen_stop_delay: txen_stop.txen_stop_dly().bits(),
+            txoff_delay: txoff.txoff_delay().bits(),
+            rxon_delay: rxon.rxon_delay().bits(),
+            txrx_switch_delay: txrx_switch.txrx_switch_delay().bits(),
+            cont_rx_delay: cont_rx.cont_rx_delay().bits(),
             dcdc_pre_up_delay: dcdc.dcdc_pre_up_delay().bits(),
             dcdc_down_delay: dcdc.dcdc_down_delay().bits(),
             dcdc_ctrl_enabled: dcdc.dcdc_ctrl_en().bit_is_set(),
             tx_dcdc_up: dcdc.tx_dcdc_up().bit_is_set(),
+            reserved: [
+                paon.bits_10_31_opaque().bits(),
+                txon.bits_10_31_opaque().bits(),
+                txen_stop.bits_6_31_opaque().bits(),
+                txoff.bits_6_31_opaque().bits(),
+                rxon.bits_11_31_opaque().bits(),
+                txrx_switch.bits_10_31_opaque().bits(),
+                cont_rx.bits_6_31_opaque().bits(),
+                u32::from(dcdc.bits_17_30_opaque().bits()),
+            ],
         }
     }
 

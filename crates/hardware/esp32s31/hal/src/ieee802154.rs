@@ -20,7 +20,7 @@ pub mod tx_power;
 
 pub(crate) mod validation;
 
-pub use oer_esp32s31_pac::Ieee802154MultipanIndex;
+pub use oer_esp32s31_pac::{Ieee802154MultipanIndex, Ieee802154PowerSequence};
 
 /// The memory the ESP32-S31 IEEE 802.15.4 MAC DMA reaches: the internal SRAM
 /// of `SOC_DMA_LOW`..`SOC_DMA_HIGH` in ESP-IDF's

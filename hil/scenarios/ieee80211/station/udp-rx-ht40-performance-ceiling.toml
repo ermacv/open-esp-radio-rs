@@ -1,7 +1,7 @@
 schema = 5
 id = "udp-rx-ht40-performance-ceiling"
 description = "Observer-free HT40 UDP host-to-station 100 Mbit/s production gate"
-repetitions = 1
+repetitions = 3
 transfer = "identical-image"
 tags = ["qualification", "performance", "udp", "station", "ht40", "split-core", "ceiling", "air-strict"]
 

@@ -361,11 +361,22 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                             bytes = bytes.saturating_add(payload_bytes as u64);
                             datagrams = datagrams.saturating_add(1);
                         }
-                        Err(_) => send_errors = send_errors.saturating_add(1),
+                        Err(_) => {
+                            send_errors = send_errors.saturating_add(1);
+                            // A refused datagram completes without waiting;
+                            // retrying it at once would never yield this core.
+                            embassy_futures::yield_now().await;
+                            continue;
+                        }
                     }
-                    if let Some(rate_bps) = offered_rate_bps
-                        && datagrams.is_multiple_of(u64::from(pacing_group_datagrams))
-                    {
+                    if datagrams.is_multiple_of(u64::from(pacing_group_datagrams)) {
+                        let Some(rate_bps) = offered_rate_bps else {
+                            // An unpaced sender whose socket always admits
+                            // must still let the network core's other tasks
+                            // run once per group.
+                            embassy_futures::yield_now().await;
+                            continue;
+                        };
                         // Enforce one byte-budget deadline per bounded socket-queue
                         // group. Keep small timer/executor lateness on the absolute
                         // schedule. A four-group token-bucket horizon prevents a
@@ -383,8 +394,15 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                             #[cfg(feature = "task-poll-telemetry")]
                             let pacing = pacing_wait.observe(pacing, || Instant::now().as_micros());
                             pacing.await;
-                        } else if now - next_send > group_duration * MAX_PACING_CATCH_UP_GROUPS {
-                            next_send = now;
+                        } else {
+                            // An offer above the link keeps the sender behind
+                            // its schedule, so no pacing timer is awaited:
+                            // yield once per group so the network core's
+                            // other tasks still run.
+                            if now - next_send > group_duration * MAX_PACING_CATCH_UP_GROUPS {
+                                next_send = now;
+                            }
+                            embassy_futures::yield_now().await;
                         }
                     }
                 }

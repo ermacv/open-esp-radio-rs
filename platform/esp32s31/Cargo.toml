@@ -21,8 +21,8 @@ debug_assert_with_mut_call = "deny"
 disallowed_methods = "deny"
 
 [workspace.dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "6336b453391a62f44cca1ffde0763d10ae50c668", default-features = false }
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "6336b453391a62f44cca1ffde0763d10ae50c668", default-features = false }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false }
 static_cell = "2.1.1"
 oer-esp32s31-platform-layout = { path = "layout" }
 oer-esp32s31-soc-esp-hal = { path = "../../crates/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }

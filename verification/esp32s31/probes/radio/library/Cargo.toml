@@ -11,7 +11,7 @@ description = "Retained ESP32-S31 Rust entry points for compiled vendor verifica
 oer-probe-macros = { path = "../../../../harness/macros" }
 embassy-futures.workspace = true
 embassy-sync.workspace = true
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "6336b453391a62f44cca1ffde0763d10ae50c668", default-features = false, features = ["esp32s31", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32s31", "unstable"] }
 oer-esp32s31-coex.workspace = true
 oer-memory.workspace = true
 oer-esp32s31-hal.workspace = true

@@ -15,6 +15,12 @@ on the ESP32-C5), the modem ETM trigger words and the MAC-initialization
 delays. The chip PACs re-export these values, so their HALs name them through
 the chip PAC as before.
 
+The register leases stay in each chip PAC: they forward to the chip's raw
+access with type conversions, so a mistake there is a type error rather than
+a behavior, and sharing them would need a public generic API over chip
+associated types. They move here only when a third chip with this MAC
+appears or when lease ownership or ordering logic must change in both chips.
+
 The engine's `Ieee802154LowLevel` in `oer-ieee802154-engine` remains the
 driver boundary: each chip HAL implements it over its chip PAC. This crate sits
 below the chip PACs and is not a driver interface.

@@ -37,12 +37,29 @@ application binds its timers and executor handlers; it then calls the unsafe
 `oer_esp32s31_platform_runtime::enable_interrupts_after_handoff` once per hart. PSRAM
 must not be reset or remapped after handoff.
 
-Standalone applications use PSRAM for code, ordinary data and a 192-KiB CPU0
-stack. DMA storage and two 32-KiB interrupt stacks remain in SRAM. HIL also
-selects a 16-KiB CPU1 task stack through the `multicore` runtime feature; its
-CPU startup policy and second-core application entry remain in HIL. The shared
-linker also supports the HIL control profiles with SRAM data or inherited SRAM
-thread stacks. These board/profile sizes are not universal chip capabilities.
+Every image uses one placement: PSRAM for code, ordinary data and a 192-KiB
+CPU0 task stack; SRAM for interrupt entries, hot code, critical state, DMA
+storage and two 32-KiB interrupt stacks. HIL also selects a 16-KiB CPU1 task
+stack through the `multicore` runtime feature; its CPU startup policy and
+second-core application entry remain in HIL. These board sizes are not
+universal chip capabilities.
+
+Because code runs from PSRAM, the adopted mapping keeps the PSRAM function
+clock, and through it MPLL, referenced in ESP-HAL's clock tree for the life of
+the image. A driver that releases MPLL therefore never powers it down under
+PSRAM.
+
+## Recovery after a lockup
+
+An application can leave LP/PMU state behind that survives a watchdog reset,
+the USB-Serial-JTAG (RTS) reset and a reflash: on 2026-09-28 a CPU lockup with
+MPLL powered down left the ESP-IDF bootloader looping on
+`rst:0x7 HP_SYS_HP_WDT0_RESET` after `Multicore bootloader`. A system reset
+through the built-in USB-JTAG (OpenOCD `reset run`, reported by the ROM as
+`rst:0x3 SW_SYS_RESET`) cleared it; this board has no EN line wired to the
+host. The HIL runner applies that escalation itself (see the
+[runner's boot-loop recovery](../../hil/host/README.md)); a board that none of
+its resets clears is quarantined for a person.
 
 Each dedicated IRQ stack is painted once during its first installation, before
 IRQ admission. Reinstalling vectors preserves the paint. Thread-mode callers

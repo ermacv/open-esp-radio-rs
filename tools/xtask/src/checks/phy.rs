@@ -26,6 +26,7 @@ const PHY_PACKAGES: &[&str] = &[
     // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive.
     "oer-ieee802154-engine",
     // The chip-neutral modem clock planner behind the HAL's clock owners.
+    "oer-radio-analog",
     "oer-radio-clock",
     // Safe structural pin projection for the observed child future; this is
     // a Rust macro library, with no allocator, native build or radio ABI.

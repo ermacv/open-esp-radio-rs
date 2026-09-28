@@ -148,6 +148,24 @@ pub fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// The dumpcap command line of one capture.
+fn dumpcap_program(interface: &str, filter: Option<&str>, snapshot: u16, path: &str) -> String {
+    // The kernel's capture ring must absorb bursts at the links' ceiling
+    // rates: the default 2 MiB dropped frames at 90 Mbit/s.
+    let mut program = format!(
+        "dumpcap -q -i {} -B {CAPTURE_BUFFER_MIB} -s {snapshot} -a filesize:131072 -w {}",
+        quote(interface),
+        quote(path)
+    );
+    if let Some(filter) = filter {
+        program.push_str(&format!(" -f {}", quote(filter)));
+    }
+    program
+}
+
+/// The kernel capture buffer of every stand capture, in MiB.
+const CAPTURE_BUFFER_MIB: u32 = 64;
+
 pub fn dumpcap(
     interface: &str,
     filter: Option<&str>,
@@ -156,14 +174,7 @@ pub fn dumpcap(
     duration: Duration,
 ) -> Result<Capture> {
     let path = output.to_str().ok_or("capture path is not UTF-8")?;
-    let mut program = format!(
-        "dumpcap -q -i {} -s {snapshot} -a filesize:131072 -w {}",
-        quote(interface),
-        quote(path)
-    );
-    if let Some(filter) = filter {
-        program.push_str(&format!(" -f {}", quote(filter)));
-    }
+    let program = dumpcap_program(interface, filter, snapshot, path);
     let lifetime = duration.saturating_add(Duration::from_secs(120));
     let mut command = Command::new("timeout");
     command.args([

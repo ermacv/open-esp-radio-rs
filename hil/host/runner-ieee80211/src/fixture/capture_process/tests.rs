@@ -90,3 +90,9 @@ fn installed_dumpcap_acknowledges_ready_and_reports_explicit_stop() {
     );
     assert!(String::from_utf8_lossy(&output.stderr).contains("Packets captured:"));
 }
+
+#[test]
+fn every_capture_has_a_ring_for_ceiling_bursts() {
+    let program = dumpcap_program("eth0", Some("arp"), 128, "/tmp/x.pcapng");
+    assert!(program.contains(" -B 64 "), "{program}");
+}

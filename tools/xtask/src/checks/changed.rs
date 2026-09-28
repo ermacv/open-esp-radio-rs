@@ -276,8 +276,9 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
                 crate::vendor_provenance::check(ctx, &chip)?;
             } else {
                 println!(
-                    "check changed: vendor provenance of {chip} skipped: {} not fetched as pinned; run `cargo xtask vendor-fetch {chip}` to check citations",
-                    unfetched.join(", ")
+                    "check changed: vendor provenance of {chip} skipped: {} pinned artifacts (such as {}) not fetched; run `cargo xtask vendor-fetch {chip}` to check citations",
+                    unfetched.len(),
+                    unfetched[0]
                 );
             }
         }

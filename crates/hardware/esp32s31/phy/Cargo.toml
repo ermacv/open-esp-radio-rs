@@ -19,6 +19,7 @@ rx-gain-hot-sram = []
 registration-diagnostics = []
 
 [dependencies]
+oer-radio-analog = { path = "../../radio/analog" }
 oer-esp32s31-hal = { path = "../hal" }
 
 [dev-dependencies]

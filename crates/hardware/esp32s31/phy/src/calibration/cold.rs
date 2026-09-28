@@ -385,7 +385,7 @@ pub struct PhyColdI2cConfigurationBinding {
 }
 
 impl PhyColdI2cConfigurationBinding {
-    pub const fn new(outer_action: PhyRfInitPrefixAction) -> Result<Self, PhyColdLoweringError> {
+    pub fn new(outer_action: PhyRfInitPrefixAction) -> Result<Self, PhyColdLoweringError> {
         let operation = match outer_action {
             PhyRfInitPrefixAction::ConfigureBiasRegisters => {
                 oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationOperation::BiasRegisters
@@ -420,7 +420,7 @@ impl PhyColdI2cConfigurationBinding {
         })
     }
 
-    pub const fn action(&self) -> oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction {
+    pub fn action(&self) -> oer_esp32s31_hal::phy::i2c::PhyI2cConfigurationAction {
         self.transaction.action()
     }
 

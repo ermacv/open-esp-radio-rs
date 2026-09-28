@@ -10,11 +10,11 @@ use super::{
     BluetoothTxPowerControlOperation, BluetoothTxPowerControlPrepareError,
     BluetoothTxPowerControlRegister, BluetoothTxPowerControlRestoreError,
     BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAddress,
-    PhyI2cCommandMemoryInputs, PhyI2cConfigurationAccess, PhyI2cConfigurationAction,
-    PhyI2cConfigurationCommand, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
-    PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction, PhyI2cHost,
-    PhyI2cInitializationStageOneInputs, PhyI2cInitializationStageTwoError, PhyI2cParallelAccess,
-    PhyI2cParallelWrite, configure_initialization_stage_two_with,
+    PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationCommand,
+    PhyI2cConfigurationError, PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
+    PhyI2cConfigurationTransaction, PhyI2cHost, PhyI2cInitializationStageOneInputs,
+    PhyI2cInitializationStageTwoError, PhyI2cParallelAccess, PhyI2cParallelWrite,
+    configure_initialization_stage_two_with,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -230,44 +230,50 @@ struct FakeConfigurationI2c {
     observed: core::cell::RefCell<std::vec::Vec<PhyI2cAddress>>,
 }
 
-impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
-    fn start_read(&mut self, address: PhyI2cAddress) -> Result<(), ()> {
+impl oer_radio_analog::AnalogRegisterBus for FakeConfigurationI2c {
+    type Address = PhyI2cAddress;
+
+    fn try_start_read(&mut self, address: PhyI2cAddress) -> Result<(), oer_radio_analog::Busy> {
         if self.busy_starts != 0 {
             self.busy_starts -= 1;
-            return Err(());
+            return Err(oer_radio_analog::Busy);
         }
         self.accepted_commands += 1;
         self.started.set(Some(address));
         Ok(())
     }
 
-    fn start_write(&mut self, address: PhyI2cAddress, _value: u8) -> Result<(), ()> {
+    fn try_start_write(
+        &mut self,
+        address: PhyI2cAddress,
+        _value: u8,
+    ) -> Result<(), oer_radio_analog::Busy> {
         if self.busy_starts != 0 {
             self.busy_starts -= 1;
-            return Err(());
+            return Err(oer_radio_analog::Busy);
         }
         self.accepted_commands += 1;
         self.started.set(Some(address));
         Ok(())
     }
 
-    fn observe_read(&self, address: PhyI2cAddress) -> Result<u8, ()> {
+    fn try_finish_read(&self, address: PhyI2cAddress) -> Result<u8, oer_radio_analog::Busy> {
         assert_eq!(self.started.get(), Some(address));
         self.observed.borrow_mut().push(address);
         if self.pending_observations == 0 {
             Ok(0xa0)
         } else {
-            Err(())
+            Err(oer_radio_analog::Busy)
         }
     }
 
-    fn observe_write(&self, address: PhyI2cAddress) -> Result<(), ()> {
+    fn try_finish_write(&self, address: PhyI2cAddress) -> Result<(), oer_radio_analog::Busy> {
         assert_eq!(self.started.get(), Some(address));
         self.observed.borrow_mut().push(address);
         if self.pending_observations == 0 {
             Ok(())
         } else {
-            Err(())
+            Err(oer_radio_analog::Busy)
         }
     }
 }

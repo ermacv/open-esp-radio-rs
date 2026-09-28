@@ -13,7 +13,7 @@ use crate::{
     HARDWARE_EDGE_LIMIT,
     analog::{
         dcode::{PhyDcodeCompletion, PhyDcodeI2cBinding},
-        i2c::{MaskedI2cWriteBinding, MaskedI2cWriteCompletion},
+        i2c::MaskedI2cWriteBinding,
         pbus::PhyPbusHardwareObservation,
         rfpll::{RfpllFrequencyCompletion, RfpllFrequencyI2cBinding},
         temperature::{PhyTemperatureCompletion, PhyTemperatureI2cBinding},
@@ -354,7 +354,7 @@ macro_rules! define_i2c_executor {
 pub fn complete_rx_gain_i2c(
     mut binding: MaskedI2cWriteBinding,
     registers: &mut impl SharedPhyAccess,
-) -> Result<MaskedI2cWriteCompletion, PhyTargetPortError> {
+) -> Result<oer_radio_analog::Completion<crate::analog::i2c::PhyI2cAddress>, PhyTargetPortError> {
     let completed = crate::executor::wait::poll::bounded(|| {
         match binding.action() {
             PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
@@ -535,7 +535,7 @@ define_i2c_executor!(
 define_i2c_executor!(
     complete_masked_i2c,
     MaskedI2cWriteBinding,
-    MaskedI2cWriteCompletion
+    oer_radio_analog::Completion<crate::analog::i2c::PhyI2cAddress>
 );
 define_i2c_executor!(
     complete_temperature_i2c,

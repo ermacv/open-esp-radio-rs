@@ -415,88 +415,25 @@ impl AdcRateTransition {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MaskedI2cWriteAction {
-    ReadByte { address: PhyI2cAddress },
-    WriteByte { address: PhyI2cAddress, value: u8 },
-    Complete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MaskedI2cWriteCompletion {
-    I2cReadCompleted { address: PhyI2cAddress, value: u8 },
-    I2cWriteCompleted { address: PhyI2cAddress },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MaskedI2cWriteTransitionError {
-    WrongCompletion,
-    AlreadyComplete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum MaskedI2cWriteStep {
-    ReadByte,
-    WriteByte(u8),
-    Complete,
-}
-
-/// One owned replacement for ROM `phy_i2c_writeReg_Mask`.
+/// One owned replacement for ROM `phy_i2c_writeReg_Mask`: the portable
+/// [`oer_radio_analog::FieldWriteTransition`] over this chip's analog
+/// identities. The current byte crosses the async read edge as a completion
+/// value, is transformed in Rust, and is then owned until the separately
+/// completed write.
 ///
-/// Construction validates the bit range. The current byte crosses the async
-/// read edge as a completion value, is transformed in Rust, and is then owned
-/// until the separately completed write. No hidden I2C read, write, or wait
-/// remains inside a nominally synchronous action.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MaskedI2cWriteTransition {
+/// Every production value fits its field; a wider value would leak into the
+/// neighboring bits of the vendor leaf and is a programming error here.
+pub const fn field_write(
     field: PhyI2cField,
-    field_value: u8,
-    step: MaskedI2cWriteStep,
-}
-
-impl MaskedI2cWriteTransition {
-    pub const fn new(field: PhyI2cField, field_value: u8) -> Self {
-        Self {
-            field,
-            field_value,
-            step: MaskedI2cWriteStep::ReadByte,
-        }
-    }
-
-    pub const fn action(self) -> MaskedI2cWriteAction {
-        match self.step {
-            MaskedI2cWriteStep::ReadByte => MaskedI2cWriteAction::ReadByte {
-                address: self.field.address(),
-            },
-            MaskedI2cWriteStep::WriteByte(value) => MaskedI2cWriteAction::WriteByte {
-                address: self.field.address(),
-                value,
-            },
-            MaskedI2cWriteStep::Complete => MaskedI2cWriteAction::Complete,
-        }
-    }
-
-    pub fn advance(
-        &mut self,
-        completion: MaskedI2cWriteCompletion,
-    ) -> Result<(), MaskedI2cWriteTransitionError> {
-        self.step = match (self.step, completion) {
-            (
-                MaskedI2cWriteStep::ReadByte,
-                MaskedI2cWriteCompletion::I2cReadCompleted { address, value },
-            ) if address == self.field.address() => {
-                MaskedI2cWriteStep::WriteByte(self.field.replace(value, self.field_value))
-            }
-            (
-                MaskedI2cWriteStep::WriteByte(_),
-                MaskedI2cWriteCompletion::I2cWriteCompleted { address },
-            ) if address == self.field.address() => MaskedI2cWriteStep::Complete,
-            (MaskedI2cWriteStep::Complete, _) => {
-                return Err(MaskedI2cWriteTransitionError::AlreadyComplete);
-            }
-            _ => return Err(MaskedI2cWriteTransitionError::WrongCompletion),
-        };
-        Ok(())
+    value: u8,
+) -> oer_radio_analog::FieldWriteTransition<PhyI2cAddress> {
+    let (msb, lsb) = field.bit_range();
+    let Some(field) = oer_radio_analog::AnalogField::new(field.address(), msb, lsb) else {
+        panic!("a reviewed analog field lies within its byte");
+    };
+    match oer_radio_analog::FieldWriteTransition::new(field, value) {
+        Ok(write) => write,
+        Err(_) => panic!("a production value fits its analog field"),
     }
 }
 
@@ -508,23 +445,25 @@ pub enum MaskedI2cWriteBindingError {
 }
 
 /// Non-cloneable lowering for one explicit read or write emitted by
-/// [`MaskedI2cWriteTransition`].
+/// [`oer_radio_analog::FieldWriteTransition<crate::analog::i2c::PhyI2cAddress>`].
 #[derive(Debug, Eq, PartialEq)]
 pub struct MaskedI2cWriteBinding {
-    outer_action: MaskedI2cWriteAction,
+    outer_action: oer_radio_analog::Action<crate::analog::i2c::PhyI2cAddress, ()>,
     transaction: crate::calibration::cold::PhyColdI2cTransaction,
 }
 
 impl MaskedI2cWriteBinding {
-    pub fn new(action: MaskedI2cWriteAction) -> Result<Self, MaskedI2cWriteBindingError> {
+    pub fn new(
+        action: oer_radio_analog::Action<crate::analog::i2c::PhyI2cAddress, ()>,
+    ) -> Result<Self, MaskedI2cWriteBindingError> {
         let request = match action {
-            MaskedI2cWriteAction::ReadByte { address } => {
+            oer_radio_analog::Action::Read { address } => {
                 crate::calibration::cold::PhyColdI2cRequest::read_byte(address)
             }
-            MaskedI2cWriteAction::WriteByte { address, value } => {
+            oer_radio_analog::Action::Write { address, value } => {
                 crate::calibration::cold::PhyColdI2cRequest::write_byte(address, value)
             }
-            MaskedI2cWriteAction::Complete => {
+            oer_radio_analog::Action::Complete(()) => {
                 return Err(MaskedI2cWriteBindingError::UnsupportedAction);
             }
         };
@@ -589,10 +528,15 @@ impl MaskedI2cWriteBinding {
         self.transaction.observe_target_edge(platform)
     }
 
-    pub fn into_completion(self) -> Result<MaskedI2cWriteCompletion, MaskedI2cWriteBindingError> {
+    pub fn into_completion(
+        self,
+    ) -> Result<
+        oer_radio_analog::Completion<crate::analog::i2c::PhyI2cAddress>,
+        MaskedI2cWriteBindingError,
+    > {
         match (self.outer_action, self.transaction.action()) {
             (
-                MaskedI2cWriteAction::ReadByte { address },
+                oer_radio_analog::Action::Read { address },
                 crate::calibration::cold::PhyColdI2cAction::Complete(
                     crate::calibration::cold::PhyColdI2cOutcome::Read {
                         address: completed_address,
@@ -600,17 +544,17 @@ impl MaskedI2cWriteBinding {
                     },
                 ),
             ) if completed_address == address => {
-                Ok(MaskedI2cWriteCompletion::I2cReadCompleted { address, value })
+                Ok(oer_radio_analog::Completion::Read { address, value })
             }
             (
-                MaskedI2cWriteAction::WriteByte { address, .. },
+                oer_radio_analog::Action::Write { address, .. },
                 crate::calibration::cold::PhyColdI2cAction::Complete(
                     crate::calibration::cold::PhyColdI2cOutcome::Written {
                         address: completed_address,
                     },
                 ),
             ) if completed_address == address => {
-                Ok(MaskedI2cWriteCompletion::I2cWriteCompleted { address })
+                Ok(oer_radio_analog::Completion::Written { address })
             }
             (_, crate::calibration::cold::PhyColdI2cAction::Complete(_)) => {
                 Err(MaskedI2cWriteBindingError::UnexpectedOutcome)

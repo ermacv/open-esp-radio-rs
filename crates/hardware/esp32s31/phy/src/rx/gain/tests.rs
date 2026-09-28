@@ -482,9 +482,11 @@ fn complete_calibration(
 /// the parent's preparation or RF/clock sequence.
 fn root_at_minimum() -> PhyRxGainInitTransition {
     use crate::analog::{
-        i2c::{MaskedI2cWriteAction as I, MaskedI2cWriteCompletion as IC},
+        i2c,
         rfpll::{RfpllFrequencyAction as R, RfpllFrequencyCompletion as RC},
     };
+    use oer_radio_analog::Action as I;
+    use oer_radio_analog::Completion as IC;
     let mut root = PhyRxGainInitTransition::new(init_parameters());
     for _ in 0..100 {
         if root.minimum_mut().is_some() {
@@ -533,8 +535,8 @@ fn root_at_minimum() -> PhyRxGainInitTransition {
                     value: 0,
                 },
                 PhyRxGainDcAction::I2c(action) => PhyRxGainDcCompletion::I2c(match action {
-                    I::ReadByte { address } => IC::I2cReadCompleted { address, value: 0 },
-                    I::WriteByte { address, .. } => IC::I2cWriteCompleted { address },
+                    I::Read { address } => IC::Read { address, value: 0 },
+                    I::Write { address, .. } => IC::Written { address },
                     other => panic!("unexpected I2C prefix {other:?}"),
                 }),
                 PhyRxGainDcAction::DelayMicros { phase, micros } => {

@@ -1435,6 +1435,7 @@ dependencies = [
  "oer-esp32s31-pac",
  "oer-ieee802154-engine",
  "oer-memory",
+ "oer-radio-analog",
  "oer-radio-clock",
 ]
 
@@ -1609,6 +1610,7 @@ name = "oer-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+ "oer-radio-analog",
 ]
 
 [[package]]
@@ -1790,6 +1792,10 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
 ]
+
+[[package]]
+name = "oer-radio-analog"
+version = "0.1.0"
 
 [[package]]
 name = "oer-radio-clock"

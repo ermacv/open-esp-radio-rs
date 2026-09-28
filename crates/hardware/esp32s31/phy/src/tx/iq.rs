@@ -13,10 +13,7 @@
 
 use crate::{
     analog::{
-        i2c::{
-            MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition,
-            PhyI2cAddress, PhyI2cField, analog_registers,
-        },
+        i2c::{PhyI2cAddress, PhyI2cField, analog_registers},
         pbus::PhyPbusForceTest,
         rfpll::{
             RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
@@ -701,7 +698,7 @@ impl PhyTxIqCoverTransition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxIqLoopbackAction {
-    I2c(MaskedI2cWriteAction),
+    I2c(oer_radio_analog::Action<crate::analog::i2c::PhyI2cAddress, ()>),
     ConfigureTxClock { enabled: bool },
     ConfigureRxClock { enabled: bool },
     Complete { enabled: bool },
@@ -709,7 +706,7 @@ pub enum PhyTxIqLoopbackAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxIqLoopbackCompletion {
-    I2c(MaskedI2cWriteCompletion),
+    I2c(oer_radio_analog::Completion<crate::analog::i2c::PhyI2cAddress>),
     TxClockConfigured { enabled: bool },
     RxClockConfigured { enabled: bool },
 }
@@ -722,7 +719,7 @@ pub enum PhyTxIqLoopbackTransitionError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LoopbackStep {
-    I2c(MaskedI2cWriteTransition),
+    I2c(oer_radio_analog::FieldWriteTransition<crate::analog::i2c::PhyI2cAddress>),
     TxClock,
     RxClock,
     Complete,
@@ -738,7 +735,7 @@ pub struct PhyTxIqLoopbackTransition {
 impl PhyTxIqLoopbackTransition {
     pub fn new(enabled: bool) -> Self {
         let transition =
-            MaskedI2cWriteTransition::new(analog_registers::TX_IQ_LOOPBACK_ENABLE, enabled as u8);
+            crate::analog::i2c::field_write(analog_registers::TX_IQ_LOOPBACK_ENABLE, enabled as u8);
         Self {
             enabled,
             step: LoopbackStep::I2c(transition),
@@ -769,7 +766,7 @@ impl PhyTxIqLoopbackTransition {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyTxIqLoopbackTransitionError::WrongCompletion)?;
-                self.step = if transition.action() == MaskedI2cWriteAction::Complete {
+                self.step = if transition.action() == oer_radio_analog::Action::Complete(()) {
                     LoopbackStep::TxClock
                 } else {
                     LoopbackStep::I2c(transition)

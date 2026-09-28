@@ -17,10 +17,7 @@ pub use quality::PhyRxGainDcQuality;
 
 use crate::{
     analog::{
-        i2c::{
-            MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition,
-            analog_registers,
-        },
+        i2c::analog_registers,
         pbus::PhyPbusForceTest,
         rfpll::{
             RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
@@ -917,7 +914,7 @@ pub enum PhyRxGainDcAction {
         selector: u8,
         path: u8,
     },
-    I2c(MaskedI2cWriteAction),
+    I2c(oer_radio_analog::Action<crate::analog::i2c::PhyI2cAddress, ()>),
     Calibration(PhyRxDcCalibrationAction),
     ConfigurePbusWorkMode,
     DelayMicros {
@@ -954,7 +951,7 @@ pub enum PhyRxGainDcCompletion {
         path: u8,
         value: u32,
     },
-    I2c(MaskedI2cWriteCompletion),
+    I2c(oer_radio_analog::Completion<crate::analog::i2c::PhyI2cAddress>),
     Calibration(PhyRxDcCalibrationCompletion),
     PbusWorkModeConfigured {
         settle_required: bool,
@@ -999,7 +996,7 @@ enum DcStep {
     SharedForcePbus {
         value: u16,
     },
-    SharedI2c(MaskedI2cWriteTransition),
+    SharedI2c(oer_radio_analog::FieldWriteTransition<crate::analog::i2c::PhyI2cAddress>),
     FineCode {
         index: u8,
     },
@@ -1039,7 +1036,7 @@ enum DcStep {
         index: u8,
         transition: PhyRxDcCalibrationTransition,
     },
-    SharedRestoreI2c(MaskedI2cWriteTransition),
+    SharedRestoreI2c(oer_radio_analog::FieldWriteTransition<crate::analog::i2c::PhyI2cAddress>),
     WifiRxOn {
         index: u8,
     },
@@ -1461,7 +1458,7 @@ impl PhyRxGainDcTransition {
                 index: index + 1,
             };
         } else if bank == PhyRxGainDcBank::Shared {
-            self.step = DcStep::SharedRestoreI2c(MaskedI2cWriteTransition::new(
+            self.step = DcStep::SharedRestoreI2c(crate::analog::i2c::field_write(
                 analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE,
                 1,
             ));
@@ -1631,7 +1628,7 @@ impl PhyRxGainDcTransition {
                     transaction,
                 },
             ) if transaction == PhyPbusForceTest::new(1, 1, value) => {
-                self.step = DcStep::SharedI2c(MaskedI2cWriteTransition::new(
+                self.step = DcStep::SharedI2c(crate::analog::i2c::field_write(
                     analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE,
                     0,
                 ));
@@ -1640,7 +1637,7 @@ impl PhyRxGainDcTransition {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                self.step = if transition.action() == MaskedI2cWriteAction::Complete {
+                self.step = if transition.action() == oer_radio_analog::Action::Complete(()) {
                     DcStep::SetupRadioI {
                         bank: PhyRxGainDcBank::Shared,
                         index: 0,
@@ -1764,7 +1761,7 @@ impl PhyRxGainDcTransition {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRxGainDcTransitionError::WrongCompletion)?;
-                if transition.action() == MaskedI2cWriteAction::Complete {
+                if transition.action() == oer_radio_analog::Action::Complete(()) {
                     self.cleanup(DcTerminal::ContinueWifi);
                 } else {
                     self.step = DcStep::SharedRestoreI2c(transition);

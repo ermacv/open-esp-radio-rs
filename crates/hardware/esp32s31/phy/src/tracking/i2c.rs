@@ -6,11 +6,7 @@
 //! body is 330 bytes at `0x1000_0140`; no vendor table or ABI image is needed
 //! by this source-owned replacement.
 
-use crate::analog::i2c::{
-    MaskedI2cWriteAction, MaskedI2cWriteBinding, MaskedI2cWriteBindingError,
-    MaskedI2cWriteCompletion, MaskedI2cWriteTransition, MaskedI2cWriteTransitionError,
-    analog_registers,
-};
+use crate::analog::i2c::{MaskedI2cWriteBinding, MaskedI2cWriteBindingError, analog_registers};
 
 /// Semantic replacement for the vendor range byte at `phy_param + 0x4d`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,13 +66,13 @@ pub struct PhyWifiI2cTrackingOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyWifiI2cTrackingAction {
-    MaskedWrite(MaskedI2cWriteAction),
+    MaskedWrite(oer_radio_analog::Action<crate::analog::i2c::PhyI2cAddress, ()>),
     Complete(PhyWifiI2cTrackingOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyWifiI2cTrackingCompletion {
-    MaskedWrite(MaskedI2cWriteCompletion),
+    MaskedWrite(oer_radio_analog::Completion<crate::analog::i2c::PhyI2cAddress>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,7 +88,7 @@ pub struct PhyWifiI2cTrackingTransition {
     target_band: PhyWifiI2cTrackingBand,
     changed: bool,
     write_index: u8,
-    write: Option<MaskedI2cWriteTransition>,
+    write: Option<oer_radio_analog::FieldWriteTransition<crate::analog::i2c::PhyI2cAddress>>,
 }
 
 impl PhyWifiI2cTrackingTransition {
@@ -107,14 +103,17 @@ impl PhyWifiI2cTrackingTransition {
         }
     }
 
-    fn write(band: PhyWifiI2cTrackingBand, index: u8) -> MaskedI2cWriteTransition {
+    fn write(
+        band: PhyWifiI2cTrackingBand,
+        index: u8,
+    ) -> oer_radio_analog::FieldWriteTransition<crate::analog::i2c::PhyI2cAddress> {
         let (first, second) = band.values();
         let (field, value) = if index == 0 {
             (analog_registers::WIFI_TX_TEMPERATURE_TRACKING_0, first)
         } else {
             (analog_registers::WIFI_TX_TEMPERATURE_TRACKING_1, second)
         };
-        MaskedI2cWriteTransition::new(field, value)
+        crate::analog::i2c::field_write(field, value)
     }
 
     pub const fn action(&self) -> PhyWifiI2cTrackingAction {
@@ -136,15 +135,15 @@ impl PhyWifiI2cTrackingTransition {
         };
         let PhyWifiI2cTrackingCompletion::MaskedWrite(completion) = completion;
         write.advance(completion).map_err(|error| match error {
-            MaskedI2cWriteTransitionError::WrongCompletion => {
+            oer_radio_analog::TransitionError::WrongCompletion => {
                 PhyWifiI2cTrackingTransitionError::WrongCompletion
             }
-            MaskedI2cWriteTransitionError::AlreadyComplete => {
+            oer_radio_analog::TransitionError::AlreadyComplete => {
                 PhyWifiI2cTrackingTransitionError::AlreadyComplete
             }
         })?;
 
-        if write.action() == MaskedI2cWriteAction::Complete {
+        if write.action() == oer_radio_analog::Action::Complete(()) {
             self.write_index += 1;
             self.write = (self.write_index < 2).then(|| Self::write(self.target_band, 1));
         } else {

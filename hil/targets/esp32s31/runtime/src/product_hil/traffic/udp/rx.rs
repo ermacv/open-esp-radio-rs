@@ -20,7 +20,7 @@ use oer_esp32s31_ieee80211_system::{
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters;
 use oer_hil_esp32s31_telemetry::{
-    rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS},
+    rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS, RxPhySnapshot, RxSmpduSnapshot},
     rx_pipeline::RxPipelineCounters,
     task_poll::TaskPollSet,
 };
@@ -363,9 +363,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             sequence.maximum_interarrival_at.unwrap_or(u32::MAX),
         ));
         yield_now().await;
-        let rx_s_mpdu = rx_qualification::RX_S_MPDU
-            .snapshot()
-            .wrapping_delta_since(s_mpdu_start);
+        let (s_mpdu_end, phy_end) = settled_benchmark_counters().await;
+        let rx_s_mpdu = s_mpdu_end.wrapping_delta_since(s_mpdu_start);
         let beacon_s_mpdu = rx_qualification::BEACON_S_MPDU
             .snapshot()
             .wrapping_delta_since(beacon_s_mpdu_start);
@@ -395,7 +394,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             rx_ampdu.unavailable_frames,
         ));
         yield_now().await;
-        let phy_end = rx_qualification::RX_PHY.snapshot();
         let mcs = core::array::from_fn::<_, RX_HE_MCS_BUCKETS, _>(|index| {
             phy_end.he_mcs[index].wrapping_sub(phy_start.he_mcs[index])
         });
@@ -594,4 +592,34 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
 
 async fn receive_rx_session(source: UdpRxSessionSource) -> crate::console::ActiveSession {
     source.sessions.receive().await
+}
+
+/// Idle intervals a settled counter pair must survive, and at most how many
+/// intervals to wait for one.
+const COUNTER_SETTLE_INTERVAL: Duration = Duration::from_micros(200);
+const COUNTER_SETTLE_ATTEMPTS: u32 = 50;
+
+/// The benchmark datagram and PHY-vector counters, read once neither moves.
+///
+/// RX dispatch counts each benchmark datagram in both, one after the other,
+/// on another task. A pair read while a late datagram is being observed can
+/// hold it in one counter and not the other, so the interval check compares
+/// a pair read across an idle interval.
+async fn settled_benchmark_counters() -> (RxSmpduSnapshot, RxPhySnapshot) {
+    let read = || {
+        (
+            rx_qualification::RX_S_MPDU.snapshot(),
+            rx_qualification::RX_PHY.snapshot(),
+        )
+    };
+    let mut previous = read();
+    for _ in 0..COUNTER_SETTLE_ATTEMPTS {
+        embassy_time::Timer::after(COUNTER_SETTLE_INTERVAL).await;
+        let current = read();
+        if current == previous {
+            return current;
+        }
+        previous = current;
+    }
+    previous
 }

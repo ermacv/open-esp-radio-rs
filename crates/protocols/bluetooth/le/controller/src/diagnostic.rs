@@ -2,14 +2,15 @@
 //!
 //! Compiled only with the `diagnostic-mic-fault` feature, which diagnostic
 //! images enable and product images never do. Vendor-specific HCI command
-//! `0xFC01` (OGF `0x3F`, OCF `0x001`) takes one Connection_Handle. When that
-//! connection is encrypted, the next received encrypted data PDU on it has one
-//! MIC octet inverted before CCM authentication, so the production
+//! `0xFC01` (OGF `0x3F`, OCF `0x001`) takes one Connection_Handle and may be
+//! sent before encryption starts. The next received encrypted data PDU on that
+//! connection has one MIC octet inverted before CCM authentication;
+//! plaintext PDUs carry no MIC and are left alone, so the production
 //! authentication failure and connection exit run unchanged. The arming is
 //! one-shot and belongs to the connection: disconnection and Reset clear it.
 //! Command Complete returns the status and the Connection_Handle: `0x00`,
-//! `0x02` Unknown Connection Identifier, `0x0C` Command Disallowed when the
-//! connection is not encrypted, or `0x12` for malformed parameters.
+//! `0x02` Unknown Connection Identifier, `0x0C` Command Disallowed while the
+//! connection is closing, or `0x12` for malformed parameters.
 
 use bt_hci::{
     cmd::{Opcode, OpcodeGroup},

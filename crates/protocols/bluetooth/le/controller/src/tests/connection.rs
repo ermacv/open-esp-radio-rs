@@ -758,13 +758,17 @@ const ARM_MIC_CORRUPTION: Opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 0x0
 
 #[cfg(feature = "diagnostic-mic-fault")]
 #[test]
-fn mic_corruption_arms_only_an_encrypted_connection() {
+fn mic_corruption_arms_an_open_connection_before_encryption() {
     let mut harness = Harness::configured();
     assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(0x02));
-    let (mut harness, _first) = Harness::connected_from(harness);
+    let (mut harness, first) = Harness::connected_from(harness);
     assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[1, 0]), Some(0x02));
-    assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(0x0c));
     assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0]), Some(0x12));
+    assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(SUCCESS));
+    // A plaintext data PDU carries no MIC: it is delivered unchanged and the
+    // arming waits for encryption.
+    harness.receive(first, &[0x02, 1, 0xaa]);
+    assert_eq!(harness.drain(), [std::vec![0x00, 0x20, 1, 0, 0xaa]]);
 }
 
 #[cfg(not(feature = "diagnostic-mic-fault"))]

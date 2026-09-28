@@ -753,14 +753,15 @@ impl Peripheral {
         }
     }
 
-    /// Arm one received-MIC corruption on the encrypted connection `handle`.
+    /// Arm one received-MIC corruption on the connection `handle`, encrypted
+    /// or not yet.
     #[cfg(feature = "diagnostic-mic-fault")]
     pub(crate) fn arm_mic_corruption(&mut self, handle: ConnHandle) -> Status {
         if self.handle() != Some(handle) {
             return HciError::UNKNOWN_CONN_IDENTIFIER.to_status();
         }
         match self.connection.as_mut() {
-            Some(connection) if connection.closing.is_none() && connection.security.is_active() => {
+            Some(connection) if connection.closing.is_none() => {
                 connection.corrupt_next_mic = true;
                 Status::SUCCESS
             }

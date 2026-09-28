@@ -2334,3 +2334,71 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
     );
     assert_eq!(hardware.station_tsf, 2_000_000 + 2_000);
 }
+
+#[test]
+fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 4>::new();
+    let (mut publisher, receiver) = resources.split();
+    let link = StationPowerLink::<NoopRawMutex>::new();
+    let mut control = ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    control.enable_power_management(SleepType::None, join_beacon(), link.bind(&SharedCoex));
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut performed = std::vec::Vec::new();
+    settle(
+        &mut control,
+        &link,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+        &mut performed,
+    );
+
+    // Under saturated traffic the TBTT and the beacon after it wait for
+    // the same control step, and a new power input waits at every step.
+    embassy_futures::block_on(tx.wait_until_micros(12_000));
+    publisher.publish(ConnectedRxEvent::Beacon {
+        observation: StaBeaconObservation {
+            timestamp_tsf: 2_000_000,
+            ..idle_beacon()
+        },
+        metadata: MacRxMetadata::unavailable(),
+        received_at_micros: Some(10_000),
+    });
+    link.perform_for_test(&mut |command| performed.push(command), None, true);
+    // The TBTT goes first; the Null it starts completes before any event.
+    assert_eq!(
+        service(
+            &mut control,
+            &mut hardware,
+            &mut tx,
+            DatapathControlContext::IDLE
+        ),
+        DatapathControlProgress::TxPending
+    );
+    finish_tx(&mut hardware, &mut tx, 0);
+    service(
+        &mut control,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+    );
+    assert_ne!(hardware.station_tsf, 2_000_000 + 2_000);
+    link.perform_for_test(&mut |command| performed.push(command), None, true);
+    service(
+        &mut control,
+        &mut hardware,
+        &mut tx,
+        DatapathControlContext::IDLE,
+    );
+    assert_eq!(hardware.station_tsf, 2_000_000 + 2_000);
+}

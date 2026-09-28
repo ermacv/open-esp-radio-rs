@@ -808,6 +808,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             ));
         }
 
+        // A power input the core performs leaves queued RX work in the
+        // mailbox for the next step, which the core then yields to it.
+        if self.core.power_input_first(tx, context) {
+            let queued_control_pending =
+                self.deferred_control_event.is_some() || !self.receiver.is_empty();
+            return self.service_core_step(hardware, tx, None, queued_control_pending, context);
+        }
+
         // Security processing can publish EAPOL immediately, so its frames
         // wait while power management holds the TX queues. Beacons are
         // handled below meanwhile: they drive power management itself.

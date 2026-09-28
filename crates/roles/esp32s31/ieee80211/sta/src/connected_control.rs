@@ -503,6 +503,9 @@ pub enum ConnectedControlError {
     Hardware(S31RxBlockAckAgreementError),
     Tx(SingleMpduTxError),
     MissingTxOutcome,
+    /// A control event arrived before the core consumed the completion of
+    /// its transmission.
+    EventBeforeTxCompletion,
     MissingQosSequence(u8),
     BeaconDeadline(StaBeaconLossConfigError),
     /// The station TBTT schedule rejected power management's request.
@@ -949,6 +952,11 @@ impl ConnectedControlCore {
     }
 
     /// Execute at most one finite transition.
+    ///
+    /// A delivered `event` is always applied in this step. The caller
+    /// delivers none while a transmission completes, and delivers one only
+    /// when [`Self::power_input_first`] yields the step to it; otherwise
+    /// the step performs one power input.
     pub fn service_step<H, X, R, const PEER_CAPACITY: usize>(
         &mut self,
         ports: ConnectedControlPorts<'_, H, X, R, PEER_CAPACITY>,
@@ -969,6 +977,9 @@ impl ConnectedControlCore {
         } = ports;
         if let Some(monitor) = &mut self.beacon_monitor {
             monitor.arm(tx.now_micros())?;
+        }
+        if event.is_some() && self.in_flight.is_some() {
+            return Err(ConnectedControlError::EventBeforeTxCompletion);
         }
         if let Some(in_flight) = self.in_flight.take() {
             let outcome = tx
@@ -1046,11 +1057,8 @@ impl ConnectedControlCore {
             return self.leave(hardware, tx);
         }
 
-        if let Some(progress) = self.service_power(hardware, tx, context, control_event_pending)? {
-            return Ok(progress);
-        }
-
         if let Some(event) = event {
+            self.power.control_event_turn = false;
             self.observations.last_event = Some(event);
             return self.apply_event(
                 ConnectedControlPorts {
@@ -1063,6 +1071,10 @@ impl ConnectedControlCore {
                 context,
                 control_event_pending,
             );
+        }
+
+        if let Some(progress) = self.service_power(hardware, tx, context, control_event_pending)? {
+            return Ok(progress);
         }
 
         let now_micros = tx.now_micros();

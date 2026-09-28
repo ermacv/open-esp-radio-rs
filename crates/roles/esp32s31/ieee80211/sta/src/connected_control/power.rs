@@ -154,6 +154,22 @@ pub(super) struct ConnectedPower {
     network_held: bool,
     /// The current network frame was offered to power management.
     network_offered: bool,
+    /// Power performed an input while a control event waited, so the
+    /// next step delivers that event before another power input.
+    pub(super) control_event_turn: bool,
+}
+
+/// The power input the next step performs, in priority order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PowerInput {
+    Start(JoinBeacon),
+    Null(bool),
+    Tbtt,
+    Phase(CoexPhaseView),
+    Preemption(Option<u64>),
+    Timer(usize),
+    NetworkTxReport,
+    NetworkTxOffer,
 }
 
 impl ConnectedPower {
@@ -173,6 +189,7 @@ impl ConnectedPower {
             tx_blocked: false,
             network_held: false,
             network_offered: false,
+            control_event_turn: false,
         }
     }
 
@@ -193,6 +210,7 @@ impl ConnectedPower {
         self.tx_blocked = false;
         self.network_held = false;
         self.network_offered = false;
+        self.control_event_turn = false;
     }
 
     pub(super) fn coex_view(&self) -> CoexView {
@@ -245,16 +263,15 @@ impl ConnectedPower {
         command
     }
 
-    fn take_expired_timer(&mut self, now_micros: u64) -> Option<PmTimer> {
-        let (index, _) = self
-            .deadlines
+    /// The index of the earliest timer expired at `now_micros`.
+    fn expired_timer(&self, now_micros: u64) -> Option<usize> {
+        self.deadlines
             .iter()
             .enumerate()
             .filter_map(|(index, deadline)| deadline.map(|deadline| (index, deadline)))
             .filter(|(_, deadline)| *deadline <= now_micros)
-            .min_by_key(|(_, deadline)| *deadline)?;
-        self.deadlines[index] = None;
-        Some(TIMERS[index])
+            .min_by_key(|(_, deadline)| *deadline)
+            .map(|(index, _)| index)
     }
 }
 
@@ -351,9 +368,51 @@ impl ConnectedControlCore {
         }
     }
 
-    /// Perform at most one power input: the start, a queued Null, the TBTT,
-    /// a coexistence phase, a preemption report, an expired timer or the
-    /// offer of a queued network frame.
+    /// The power input the next step performs: the start, a queued Null,
+    /// the TBTT, a coexistence phase, a preemption report, an expired timer
+    /// or network TX, in that order.
+    fn next_power_input<X: ConnectedControlTx>(
+        &self,
+        tx: &X,
+        context: DatapathControlContext,
+    ) -> Option<PowerInput> {
+        let power = &self.power;
+        if let Some(join) = power.start {
+            Some(PowerInput::Start(join))
+        } else if let Some(power_save) = power.nulls[0] {
+            Some(PowerInput::Null(power_save))
+        } else if power.tbtt {
+            Some(PowerInput::Tbtt)
+        } else if let Some(phase) = power.phase {
+            Some(PowerInput::Phase(phase))
+        } else if let Some(end) = power.preemption {
+            Some(PowerInput::Preemption(end))
+        } else if let Some(index) = power.expired_timer(tx.now_micros()) {
+            Some(PowerInput::Timer(index))
+        } else if power.engine.is_started() && tx.has_network_tx_report() {
+            Some(PowerInput::NetworkTxReport)
+        } else if self.network_tx_needs_offer(context) {
+            Some(PowerInput::NetworkTxOffer)
+        } else {
+            None
+        }
+    }
+
+    /// Whether the next step performs a power input rather than take a
+    /// waiting control event. After each power input performed while an
+    /// event waited, the event takes the next step, so a stream of power
+    /// inputs under saturated traffic cannot starve received beacons, and
+    /// a stream of events cannot starve the TBTT.
+    pub fn power_input_first<X: ConnectedControlTx>(
+        &self,
+        tx: &X,
+        context: DatapathControlContext,
+    ) -> bool {
+        !self.power.control_event_turn && self.next_power_input(tx, context).is_some()
+    }
+
+    /// Perform at most one power input. `control_event_pending` is whether
+    /// a control event waits for the next step.
     pub(super) fn service_power<H, X>(
         &mut self,
         hardware: &mut H,
@@ -365,70 +424,91 @@ impl ConnectedControlCore {
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
+        let Some(input) = self.next_power_input(tx, context) else {
+            return Ok(None);
+        };
+        self.power.control_event_turn = control_event_pending;
         let coex = self.power.coex_view();
         let traffic = self.power_traffic(context, control_event_pending);
         let clock = power_clock(tx);
         let mut actions = PmActions::new();
-        if let Some(join) = self.power.start.take() {
-            // The TBTT schedule is in the access point's TSF, so the station
-            // takes it before power management places its first TBTT, as the
-            // vendor does on the Association Response.
-            hardware.set_station_tsf(join.access_point_tsf_at(clock.now_micros));
-            self.power.engine.start(join.beacon, coex, &mut actions);
-        } else if let Some(power_save) = self.power.nulls[0] {
-            self.power.nulls = [self.power.nulls[1], None];
-            return self.start_null(hardware, tx, power_save).map(Some);
-        } else if core::mem::take(&mut self.power.tbtt) {
-            self.power.engine.tbtt(clock, coex, traffic, &mut actions);
-        } else if let Some(phase) = self.power.phase.take() {
-            self.power
-                .engine
-                .coex_phase(phase, clock, coex, &mut actions);
-        } else if let Some(end) = self.power.preemption.take() {
-            self.power
-                .engine
-                .preemption_end(end, clock, coex, traffic, &mut actions);
-        } else if let Some(timer) = self.power.take_expired_timer(clock.now_micros) {
-            match timer {
-                PmTimer::SliceEnd => self
-                    .power
+        match input {
+            PowerInput::Start(join) => {
+                self.power.start = None;
+                // The TBTT schedule is in the access point's TSF, so the
+                // station takes it before power management places its first
+                // TBTT, as the vendor does on the Association Response.
+                hardware.set_station_tsf(join.access_point_tsf_at(clock.now_micros));
+                self.power.engine.start(join.beacon, coex, &mut actions);
+            }
+            PowerInput::Null(power_save) => {
+                self.power.nulls = [self.power.nulls[1], None];
+                return self.start_null(hardware, tx, power_save).map(Some);
+            }
+            PowerInput::Tbtt => {
+                self.power.tbtt = false;
+                self.power.engine.tbtt(clock, coex, traffic, &mut actions);
+            }
+            PowerInput::Phase(phase) => {
+                self.power.phase = None;
+                self.power
                     .engine
-                    .slice_end_timer(coex, traffic, &mut actions),
-                PmTimer::Active => self.power.engine.active_timer(coex, traffic, &mut actions),
-                PmTimer::SleepDelay => {
-                    self.power
-                        .engine
-                        .sleep_delay_timer(clock, coex, traffic, &mut actions)
-                }
-                PmTimer::Dream => self.power.engine.dream_timer(&mut actions),
-                PmTimer::Preemption => {
-                    self.power
-                        .engine
-                        .preemption_timer(coex, traffic, &mut actions)
+                    .coex_phase(phase, clock, coex, &mut actions);
+            }
+            PowerInput::Preemption(end) => {
+                self.power.preemption = None;
+                self.power
+                    .engine
+                    .preemption_end(end, clock, coex, traffic, &mut actions);
+            }
+            PowerInput::Timer(index) => {
+                self.power.deadlines[index] = None;
+                match TIMERS[index] {
+                    PmTimer::SliceEnd => {
+                        self.power
+                            .engine
+                            .slice_end_timer(coex, traffic, &mut actions)
+                    }
+                    PmTimer::Active => self.power.engine.active_timer(coex, traffic, &mut actions),
+                    PmTimer::SleepDelay => {
+                        self.power
+                            .engine
+                            .sleep_delay_timer(clock, coex, traffic, &mut actions)
+                    }
+                    PmTimer::Dream => self.power.engine.dream_timer(&mut actions),
+                    PmTimer::Preemption => {
+                        self.power
+                            .engine
+                            .preemption_timer(coex, traffic, &mut actions)
+                    }
                 }
             }
-        } else if self.power.engine.is_started() && tx.has_network_tx_report() {
-            let report = tx.take_network_tx_report();
-            if report.started && !core::mem::take(&mut self.power.network_offered) {
-                let _ = self
+            PowerInput::NetworkTxReport => {
+                let report = tx.take_network_tx_report();
+                if report.started && !core::mem::take(&mut self.power.network_offered) {
+                    let _ = self
+                        .power
+                        .engine
+                        .tx_data(true, clock, coex, traffic, &mut actions);
+                }
+                if let Some(acknowledged) = report.completed {
+                    self.power.engine.tx_data_done(
+                        acknowledged,
+                        clock,
+                        coex,
+                        traffic,
+                        &mut actions,
+                    );
+                }
+            }
+            PowerInput::NetworkTxOffer => {
+                self.power.network_offered = true;
+                let hold = self
                     .power
                     .engine
                     .tx_data(true, clock, coex, traffic, &mut actions);
+                self.power.network_held = hold;
             }
-            if let Some(acknowledged) = report.completed {
-                self.power
-                    .engine
-                    .tx_data_done(acknowledged, clock, coex, traffic, &mut actions);
-            }
-        } else if self.network_tx_needs_offer(context) {
-            self.power.network_offered = true;
-            let hold = self
-                .power
-                .engine
-                .tx_data(true, clock, coex, traffic, &mut actions);
-            self.power.network_held = hold;
-        } else {
-            return Ok(None);
         }
         self.apply_power_actions(hardware, tx, actions)?;
         Ok(Some(self.start_queued_null(hardware, tx)?))

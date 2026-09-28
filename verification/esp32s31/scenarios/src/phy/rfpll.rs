@@ -28,6 +28,29 @@ pub const SEARCH_SAMPLES: i32 = 30;
 /// Status samples of a search that exhausts both directions.
 const SEARCH_STATUSES: usize = 2 * SEARCH_SAMPLES as usize;
 
+/// Reviewed divergence: production bounds the typed capacitor code to nine
+/// bits and averages the codes it programs.
+const BOUNDED_CODE: &str = "the user decided to bound the typed RFPLL capacitor code to nine bits: \
+    production programs no upward candidate above 0x1ff and ends that direction there, and \
+    averages the programmed codes (a negative candidate programs zero, as the ROM writes), where \
+    the vendor searches past 0x1ff, leaks bit 9 into RFPLL_INITIAL_CONFIGURATION_HIGH and averages \
+    the requested values with wrap; the leak into the neighbouring field is not reproduced";
+/// Search profiles and direct-programming profiles at the code's edges,
+/// which [`BOUNDED_CODE`] makes differ.
+const BOUNDED_SEARCHES: &[&str] = &["lowest-initial-cap", "highest-initial-cap", "signed-wrap"];
+const BOUNDED_PROGRAMS: &[&str] = &["high-byte"];
+
+/// Each case's comparison verdict in `records`, in case order.
+fn verdicts(records: &[ExecutionEvidence]) -> Vec<ComparisonVerdict> {
+    records
+        .iter()
+        .filter_map(|r| match r {
+            ExecutionEvidence::Comparison { result, .. } => Some(result.verdict),
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn search_cases() -> Vec<Search> {
     let n = SEARCH_SAMPLES as usize;
     let down = |c: i32| (0..SEARCH_SAMPLES).map(move |i| c - i);
@@ -642,19 +665,44 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             relation.effects = Some(search_effects.clone());
             Ok(row)
         };
-    // Every search profile is one request; each case sets its own stack fill.
-    let (mut rows, mut expectations) = (vec![], vec![]);
+    // The search profiles are two requests, the matching ones and those at
+    // the code's edges; each case sets its own stack fill.
+    let (mut rows, mut expectations) = ([vec![], vec![]], [vec![], vec![]]);
     for (name, cap, statuses, candidates, selected) in search_cases() {
+        let bounded = usize::from(BOUNDED_SEARCHES.contains(&name));
         for fill in FILLS {
             for busy in [0u32, 1] {
                 let label = format!("rfpll-search-{name}-{fill}-{busy}");
                 let mut row = search_row(label.clone(), cap, &statuses, busy)?;
                 row.stack_fill = Some(fill);
-                rows.push(row);
-                expectations.push((label, cap, statuses.clone(), candidates.clone(), selected));
+                rows[bounded].push(row);
+                expectations[bounded].push((
+                    label,
+                    cap,
+                    statuses.clone(),
+                    candidates.clone(),
+                    selected,
+                ));
             }
         }
     }
+    let [rows, bounded_rows] = rows;
+    let [expectations, bounded_expectations] = expectations;
+    let bounded = ctx.submit_with(
+        "rfpll-search-bounded-code",
+        &vendor,
+        Some(&replacement),
+        None,
+        bounded_rows,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Diff),
+    )?;
+    assert!(
+        verdicts(&bounded)
+            .iter()
+            .all(|v| *v == ComparisonVerdict::Diff),
+        "every edge search differs: {BOUNDED_CODE}"
+    );
     let records = ctx.submit_with(
         "rfpll-search",
         &vendor,
@@ -664,32 +712,41 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         MAX_EVENTS,
         Some(ComparisonVerdict::Match),
     )?;
-    for (case, (label, cap, statuses, candidates, selected)) in expectations.iter().enumerate() {
-        let (case, cap, selected) = (case as u32, *cap, *selected);
-        for side in [false, true] {
-            let low = returned_low(&records, case, side);
-            assert_eq!(low, Some((selected - cap) as u32), "{label} {side}");
-            let observed = events(&records, case, side);
-            let commands: Vec<_> = observed
+    // The vendor side of the edge searches still follows the oracle.
+    let checked = expectations
+        .iter()
+        .enumerate()
+        .flat_map(|(case, e)| [(&records, case, e, false), (&records, case, e, true)])
+        .chain(
+            bounded_expectations
                 .iter()
-                .filter_map(|e| match e {
-                    ExecutionEvent::Write {
-                        address: address @ (I2C_PORT_0 | I2C_PORT_1),
-                        value,
-                        ..
-                    } => Some((*address, *value)),
-                    _ => None,
-                })
-                .collect();
-            assert_eq!(
-                commands,
-                expected_commands(candidates, selected),
-                "{label} {side}"
-            );
-            let waits = delays_of(&observed);
-            assert_eq!(waits, vec![5; statuses.len()], "{label} {side}");
-            assert!(all_complete(&records, case, side), "{label} {side}");
-        }
+                .enumerate()
+                .map(|(case, e)| (&bounded, case, e, false)),
+        );
+    for (records, case, (label, cap, statuses, candidates, selected), side) in checked {
+        let (case, cap, selected) = (case as u32, *cap, *selected);
+        let low = returned_low(&records, case, side);
+        assert_eq!(low, Some((selected - cap) as u32), "{label} {side}");
+        let observed = events(&records, case, side);
+        let commands: Vec<_> = observed
+            .iter()
+            .filter_map(|e| match e {
+                ExecutionEvent::Write {
+                    address: address @ (I2C_PORT_0 | I2C_PORT_1),
+                    value,
+                    ..
+                } => Some((*address, *value)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            commands,
+            expected_commands(candidates, selected),
+            "{label} {side}"
+        );
+        let waits = delays_of(&observed);
+        assert_eq!(waits, vec![5; statuses.len()], "{label} {side}");
+        assert!(all_complete(&records, case, side), "{label} {side}");
     }
     let program_effects = ctx.review_pair(
         "rfpll-program",
@@ -698,22 +755,54 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         plumbing(&[], MAX_EVENTS),
         "direct RFPLL programming under explicit capacitor, lock and status inputs",
     )?;
-    let programs = program_cases();
-    let mut rows = vec![];
-    for program in &programs {
-        let mut row = case(
-            format!("rfpll-program-{}", program.name),
-            rfpll.program(false, program)?,
-            Some(rfpll.program(true, program)?),
-            SessionReset::Cold,
-            false,
+    let (programs, bounded_programs): (Vec<_>, Vec<_>) = program_cases()
+        .into_iter()
+        .partition(|p| !BOUNDED_PROGRAMS.contains(&p.name.as_str()));
+    let program_rows = |programs: &[Program]| -> Result<Vec<ExecutionCase>> {
+        let mut rows = vec![];
+        for program in programs {
+            let mut row = case(
+                format!("rfpll-program-{}", program.name),
+                rfpll.program(false, program)?,
+                Some(rfpll.program(true, program)?),
+                SessionReset::Cold,
+                false,
+            );
+            let relation = row.relation.as_mut().unwrap();
+            relation.returns.low = true;
+            relation.effects = Some(program_effects.clone());
+            row.stack_fill = Some(FILLS[0]);
+            rows.push(row);
+        }
+        Ok(rows)
+    };
+    let bounded = ctx.submit_with(
+        "rfpll-program-bounded-code",
+        &vendor,
+        Some(&replacement),
+        None,
+        program_rows(&bounded_programs)?,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Diff),
+    )?;
+    assert!(
+        verdicts(&bounded)
+            .iter()
+            .all(|v| *v == ComparisonVerdict::Diff),
+        "every edge program differs: {:?} {:?}: {BOUNDED_CODE}",
+        bounded_programs.iter().map(|p| &p.name).collect::<Vec<_>>(),
+        verdicts(&bounded)
+    );
+    for (case, program) in bounded_programs.iter().enumerate() {
+        let expected = ((program.cap as u32) << 16) | program.selected;
+        assert_eq!(
+            returned_low(&bounded, case as u32, false),
+            Some(expected),
+            "rfpll-program-{} vendor",
+            program.name
         );
-        let relation = row.relation.as_mut().unwrap();
-        relation.returns.low = true;
-        relation.effects = Some(program_effects.clone());
-        row.stack_fill = Some(FILLS[0]);
-        rows.push(row);
     }
+    let rows = program_rows(&programs)?;
     let records = ctx.submit_with(
         "rfpll-program",
         &vendor,

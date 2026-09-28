@@ -751,45 +751,22 @@ impl Session {
                 } if Some(compared.verdict) != verdict => Some((*case, compared.clone())),
                 _ => None,
             });
-            if let Some((case, compared)) = departing {
-                let stops: Vec<_> = [false, true]
-                    .map(|side| crate::evidence::stop(&result.records, case, side))
-                    .to_vec();
-                let open_models: Vec<_> = result
-                    .records
-                    .iter()
-                    .filter_map(|r| match r {
-                        ExecutionEvidence::Model {
-                            case: c,
-                            replacement,
-                            observation,
-                        } if *c == case
-                            && observation.status != blobray_domain::ModelStatus::Complete =>
-                        {
-                            Some((*replacement, observation.id.clone(), observation.status))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                // Raw events around a compared event index; the compared
-                // stream may be a projection, so this is a navigation aid.
-                let nearby: Vec<_> = match compared.difference {
-                    Some(blobray_domain::ComparisonDifference::Event { index }) => [false, true]
-                        .map(|side| {
-                            let events = crate::evidence::events(&result.records, case, side);
-                            let start = (index as usize).saturating_sub(2);
-                            events.into_iter().skip(start).take(5).collect::<Vec<_>>()
-                        })
-                        .to_vec(),
-                    _ => vec![],
-                };
-                panic!(
-                    "{label}: {:?}, expected {verdict:?}; case {case} `{}`: {compared:?}; stops {stops:?}; unfinished models {open_models:?}; nearby events {nearby:?}; report {report}",
-                    result.verdict, request.cases[case as usize].name
-                );
+            // The report holds both sides' stops, unfinished models and
+            // classified events; the panic only points at it.
+            match departing {
+                Some((case, compared)) => panic!(
+                    "{label}: {:?}, expected {verdict:?}; first departing case {case} `{}`: {:?}, difference {:x?}; report {report}",
+                    result.verdict,
+                    request.cases[case as usize].name,
+                    compared.verdict,
+                    compared.difference
+                ),
+                None => panic!(
+                    "{label}: {:?}, expected {verdict:?}; report {report}",
+                    result.verdict
+                ),
             }
         }
-        assert_eq!(result.verdict, verdict, "{label}");
         let identity = ArtifactId::of_bytes(&serde_json::to_vec(request)?);
         let records: Vec<ExecutionEvidence> = if events {
             result.records

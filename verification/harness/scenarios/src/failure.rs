@@ -43,6 +43,8 @@ pub struct Case {
 #[derive(Debug, Serialize)]
 pub struct Side {
     pub stop: String,
+    /// Device models the side left unfinished, with their status.
+    pub unfinished: Vec<String>,
     pub events: Vec<Event>,
 }
 
@@ -122,8 +124,25 @@ pub fn cases(
         let contract = contract(*case);
         let side = |replacement: bool| -> Result<Side> {
             let events = crate::evidence::events(records, *case, replacement);
+            let unfinished = records
+                .iter()
+                .filter_map(|r| match r {
+                    ExecutionEvidence::Model {
+                        case: c,
+                        replacement: side,
+                        observation,
+                    } if c == case
+                        && *side == replacement
+                        && observation.status != blobray_domain::ModelStatus::Complete =>
+                    {
+                        Some(format!("{} {:?}", observation.id, observation.status))
+                    }
+                    _ => None,
+                })
+                .collect();
             Ok(Side {
                 stop: format!("{:x?}", crate::evidence::stop(records, *case, replacement)),
+                unfinished,
                 events: classify(&events, contract.as_ref(), replacement)?,
             })
         };
@@ -179,6 +198,12 @@ pub fn render(label: &str, expected: Option<ComparisonVerdict>, cases: &[Case]) 
         ));
         for (title, side) in [("vendor", &case.vendor), ("production", &case.replacement)] {
             text.push_str(&format!("  {title}: stop {}\n", side.stop));
+            if !side.unfinished.is_empty() {
+                text.push_str(&format!(
+                    "  {title}: unfinished models {}\n",
+                    side.unfinished.join(", ")
+                ));
+            }
             for event in &side.events {
                 let class = event
                     .class
@@ -326,6 +351,7 @@ pub(crate) mod tests {
             difference: "Some(Event { index: 0 })".into(),
             vendor: Side {
                 stop: "Returned".into(),
+                unfinished: vec!["rx-control Incomplete".into()],
                 events: vec![Event {
                     index: 0,
                     event: "Read".into(),
@@ -334,6 +360,7 @@ pub(crate) mod tests {
             },
             replacement: Side {
                 stop: "Returned".into(),
+                unfinished: vec![],
                 events: vec![],
             },
         }];
@@ -349,6 +376,7 @@ pub(crate) mod tests {
         let body = std::fs::read_to_string(&text).unwrap();
         assert!(body.contains("case 3 `rx-append-1-beyond-00`: Diff"));
         assert!(body.contains("[unlisted]"));
+        assert!(body.contains("vendor: unfinished models rx-control Incomplete"));
         assert!(text.with_extension("json").is_file());
     }
 }

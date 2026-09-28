@@ -265,6 +265,16 @@ ASSERT(__runtime_payload_end <= ORIGIN(RUNTIME_CODE) + LENGTH(RUNTIME_CODE),
        "runtime initialized payload does not fit selected code region");
 ASSERT(SIZEOF(.rtc_fast.unsupported) == 0,
        "runtime RTC-fast code/data requires an explicit bootstrap copy contract");
+/* ESP-IDF keeps the tail of the ESP32-S31 LP RAM as lp_reserved_seg:
+ * RESERVE_RTC_MEM = the RTC timer data (RTC_TIMER_RESERVE_RTC, 24 bytes)
+ * + the bootloader's retained data (ESP_BOOTLOADER_RESERVE_RTC)
+ * + the secure-boot fast-wake digest, placed at 0x2E008000 - RESERVE_RTC_MEM
+ * (components/esp_system/ld/esp32s31/memory.ld.in, ESP-IDF 4d59230d). The
+ * espflash bootloader this platform boots through enables neither the
+ * bootloader reserve nor secure boot, so the tail is the 24-byte RTC timer
+ * block. Runtime RTC-fast data grows up from ORIGIN and must stay below it. */
+ASSERT(_rtc_fast_persistent_end <= ORIGIN(RTC_FAST) + LENGTH(RTC_FAST) - 24,
+       "runtime RTC-fast data reaches ESP-IDF's reserved LP RAM tail");
 ASSERT(__runtime_psram_noinit_end <= ORIGIN(PSRAM_EXTERNAL) + LENGTH(PSRAM_EXTERNAL),
        "PSRAM runtime explicit no-init storage does not fit");
 ASSERT(__runtime_cpu1_task_stack_top <= ORIGIN(PSRAM_EXTERNAL) + LENGTH(PSRAM_EXTERNAL),

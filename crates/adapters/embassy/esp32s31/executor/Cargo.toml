@@ -24,8 +24,8 @@ esp32s31 = [
 embassy-executor = { version = "0.10.0", default-features = false, optional = true }
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"], optional = true }
 embassy-time-queue-utils = { version = "0.3", optional = true }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", default-features = false, features = ["esp32s31", "rt", "unstable"], optional = true }
-esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "7b8e375a75dc2d91027b5ca68a4ba40c5ae45437", features = ["esp32s31"], optional = true }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", default-features = false, features = ["esp32s31", "rt", "unstable"], optional = true }
+esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", features = ["esp32s31"], optional = true }
 portable-atomic = { version = "1.11", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]

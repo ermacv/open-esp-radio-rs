@@ -45,6 +45,15 @@ PROVIDE(__flash_text_end = ADDR(.text) + SIZEOF(.text));
    or SRAM address and never initialized. */
 SECTIONS
 {
+  /* esp-riscv-rt zeroes `.dram2_uninit.bss` at reset; this platform places
+     nothing in the region after the loaded image, so it stays empty. */
+  .dram2_uninit.unsupported (NOLOAD) :
+  {
+    _dram2_uninit_bss_start = ABSOLUTE(.);
+    *(.dram2_uninit.bss .dram2_uninit.bss.* .dram2_uninit .dram2_uninit.*);
+    _dram2_uninit_bss_end = ABSOLUTE(.);
+  } > RWDATA
+
   .psram.unsupported (NOLOAD) :
   {
     *(.psram.text .psram.text.* .psram.rodata .psram.rodata.*);
@@ -66,3 +75,5 @@ INCLUDE "eh_frame.x"
    in executable SRAM from a valid stack in the data portion of unified SRAM. */
 _dram_data_start = ADDR(.data);
 INCLUDE "hal-defaults.x"
+ASSERT(SIZEOF(.dram2_uninit.unsupported) == 0,
+       "this platform places nothing in .dram2_uninit");

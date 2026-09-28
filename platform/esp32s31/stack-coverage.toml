@@ -25,9 +25,9 @@ source = "platform/esp32s31/runtime/src/entry.rs"
 reason = "Assembly boot and fallback stack initialization run before normal tasks; no compiler frame is claimed."
 
 [[reviewed]]
-symbols = ["_runtime_enter_cpu1_psram", "esp_hal::soc::implementation::cpu_control::start_core1_init::<oer_hil_esp32s31_runtime::runtime_main::{closure#0}>"]
+symbols = ["_runtime_enter_cpu1_psram", "esp_hal::system::multi_core::start_core1_init::<oer_hil_esp32s31_runtime::runtime_main::{closure#0}>"]
 category = "assembly"
-source = "platform/esp32s31/runtime/src/stacks.rs; esp-hal@890fd49 esp-hal/src/soc/esp32s31/cpu_control.rs start_core1_init #[naked]"
+source = "platform/esp32s31/runtime/src/stacks.rs; esp-hal@21e2e93 esp-hal/src/system/multi_core.rs start_core1_init #[naked]"
 reason = "Reviewed secondary-core stack/PMA boot entries use assembly, then jump to separately compiled Rust. The full concrete Rust symbol is matched ignoring only v0 crate disambiguators; start_core1_init_impl is not exempt."
 
 [[reviewed]]
@@ -35,3 +35,9 @@ symbols = ["strlen"]
 category = "compiler-runtime"
 source = "rustc 1.97.1 library/compiler-builtins/compiler-builtins/src/mem/mod.rs and src/macros.rs"
 reason = "Pinned compiler memory builtin wrapper lacks emitted frame metadata in the final image. Review does not assign zero usage; runtime stack headroom remains independent."
+
+[[reviewed]]
+symbols = ["esp_hal::interrupt::ipc::implem::ipc_handler::<0usize>", "esp_hal::interrupt::ipc::implem::ipc_handler::<1usize>", "esp_hal::interrupt::ipc::implem::callback_handler"]
+category = "assembly"
+source = "esp-hal@21e2e93 esp-hal/src/interrupt/ipc/riscv.rs #[naked] handlers bound by esp_hal::init"
+reason = "Naked CLINT software-interrupt entries that esp_hal::init binds to CPU interrupt 3. The runtime's stack-switched vector entries replace that slot and no image uses esp_hal::interrupt::ipc, so they never run here; no frame size is claimed."

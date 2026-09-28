@@ -419,10 +419,35 @@ fn host_credits_hold_received_data_and_the_next_event() {
     assert_eq!(harness.drain(), [std::vec![0x00, 0x20, 1, 0, 0xaa]]);
     harness.end_at(first, Some(INDICATION_AT + 2_000));
     // Held data keeps the next event from being planned.
-    assert!(!harness.core.wants_radio());
+    assert_eq!(harness.step(), None);
     harness.send(HOST_COMPLETED, &[1, 0, 0, 1, 0]);
     assert_eq!(harness.drain(), [std::vec![0x00, 0x20, 1, 0, 0xbb]]);
     assert!(matches!(harness.step(), Some(Request::ConnectionEvent(_))));
+}
+
+#[test]
+fn withheld_host_credits_end_the_connection_at_the_supervision_timeout() {
+    const FLOW_CONTROL: Opcode = Opcode::new(OpcodeGroup::CONTROL_BASEBAND, 0x0031);
+    const HOST_BUFFER_SIZE: Opcode = Opcode::new(OpcodeGroup::CONTROL_BASEBAND, 0x0033);
+    let mut harness = Harness::configured();
+    assert_eq!(harness.command(FLOW_CONTROL, &[0x01]), Some(SUCCESS));
+    assert_eq!(
+        harness.command(HOST_BUFFER_SIZE, &[27, 0, 0, 1, 0, 0, 0]),
+        Some(SUCCESS)
+    );
+    let (mut harness, first) = Harness::connected_from(harness);
+    harness.receive(first, &[0x02, 1, 0xaa]);
+    harness.receive(first, &[0x02, 1, 0xbb]);
+    assert_eq!(harness.drain(), [std::vec![0x00, 0x20, 1, 0, 0xaa]]);
+    let anchor = INDICATION_AT + 2_000;
+    harness.end_at(first, Some(anchor));
+    // The credit stays withheld: no event is planned, and the connection
+    // survives until the supervision timeout has passed.
+    harness.now = anchor + TIMEOUT;
+    assert_eq!(harness.step(), None);
+    harness.now = anchor + TIMEOUT + 1;
+    assert_eq!(harness.step(), Some(Request::CloseConnection));
+    assert_eq!(harness.drain(), [std::vec![0x05, 4, 0, 0, 0, 0x08]]);
 }
 
 const LE_SET_EVENT_MASK: Opcode = Opcode::new(OpcodeGroup::LE, 0x0001);

@@ -6,7 +6,9 @@
 //! received packet fixed, widened for clock drift. The next event is planned
 //! when the previous one ended; events that can no longer be admitted in time,
 //! or that would find no room in the Host output for their receptions, are
-//! skipped. Peripheral latency is not used: the peripheral listens at every
+//! skipped. While events are skipped for lack of room the supervision timeout
+//! still runs against the current time, so a Host that withholds its credits
+//! loses the connection with Disconnection Complete `0x08`. Peripheral latency is not used: the peripheral listens at every
 //! event it plans.
 //!
 //! Between events at most one PDU waits for the central's acknowledgement.
@@ -364,8 +366,13 @@ impl Peripheral {
         if let Some(closing) = connection.closing {
             return connection.event.is_none() || !closing.cancel_sent;
         }
+        // Without room an established connection still wants the radio: the
+        // request pass checks its supervision timeout against the current
+        // time instead of planning an event.
         connection.event.is_none()
-            && (room || connection.pending.is_none() && connection.has_transmission())
+            && (room
+                || connection.last_activity.is_some()
+                || connection.pending.is_none() && connection.has_transmission())
     }
 
     /// The reservation of the event in progress.
@@ -470,6 +477,14 @@ impl Peripheral {
             });
         }
         if !room {
+            if connection.supervision_lost(now) {
+                connection.closing = Some(Closing {
+                    reason: Some(HciError::CONN_TIMEOUT.to_status()),
+                    cancel_sent: false,
+                });
+                self.requested = Some(RequestKind::Close);
+                return Some(RadioRequest::CloseConnection(CONNECTION));
+            }
             return None;
         }
         let Some((prepared, event)) = connection.plan(earliest, timing) else {
@@ -978,6 +993,14 @@ impl Connection {
             self.control.expire_local_procedure();
             self.poll_procedures(events);
         }
+    }
+
+    /// Whether the supervision timeout passed at `now` since the last anchor a
+    /// received packet established.
+    fn supervision_lost(&self, now: RadioInstant) -> bool {
+        let supervision = u64::from(self.request.timing().supervision_timeout_micros());
+        self.last_activity
+            .is_some_and(|last| now.as_micros().saturating_sub(last.as_micros()) > supervision)
     }
 
     /// Whether a local procedure awaits the central.

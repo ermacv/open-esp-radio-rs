@@ -109,7 +109,7 @@
         "irq_sampling": "every-snapshot"
       },
       "security-failure": { "read_version_before_disconnect": false },
-      "peripheral": { "security": "plaintext" }
+      "peripheral": { "security": "plaintext", "phy_tracking": false }
     }
   },
   "system": {

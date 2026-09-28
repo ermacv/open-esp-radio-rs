@@ -13,7 +13,8 @@
 //! queue in arrival order; when it is full the oldest packet is dropped and
 //! counted. The image is only a passthrough: the host runner is the HCI Host,
 //! including Controller-to-Host flow control. The Controller core runs every
-//! role over the radio runtime.
+//! role over the radio runtime. `PhyTracking` reports and suspends the
+//! image's periodic PHY tracking.
 
 use core::cell::RefCell;
 
@@ -122,6 +123,7 @@ impl console::Profile for Profile {
         let request = match command {
             Command::BluetoothDtm(operation) => Request::Dtm(operation),
             Command::BluetoothHci(request) => Request::Hci(request),
+            Command::PhyTracking(control) => return crate::phy_tracking::control(control),
             _ => return Event::Rejected(RejectReason::InvalidState),
         };
         let operation = match &request {

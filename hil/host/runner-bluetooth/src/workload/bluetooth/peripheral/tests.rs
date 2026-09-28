@@ -9,6 +9,7 @@ const PLAIN: Profile = Profile {
     refreshes: 0,
     local: None,
     reasons: &[SUPERVISION_TIMEOUT],
+    phy_tracking: false,
 };
 
 fn connected() -> (Link, Cycle) {
@@ -320,6 +321,30 @@ fn a_failed_encryption_change_is_never_accepted() {
         assert!(
             link.event(&event, profile, &mut cycle).is_err(),
             "{event:02x?}"
+        );
+    }
+}
+
+#[test]
+fn phy_tracking_must_complete_a_pass_without_a_skip_or_suspension() {
+    let reading = |running, tracked, skipped| PhyTrackingEvidence {
+        running,
+        tracked,
+        not_due: 0,
+        skipped,
+    };
+    assert!(tracked_during(Some(reading(true, 3, 1)), Some(reading(true, 4, 1))).is_ok());
+    for (before, after) in [
+        (Some(reading(true, 3, 1)), Some(reading(true, 3, 1))),
+        (Some(reading(true, 3, 1)), Some(reading(true, 5, 2))),
+        (Some(reading(false, 3, 1)), Some(reading(true, 5, 1))),
+        (Some(reading(true, 3, 1)), Some(reading(false, 5, 1))),
+        (None, Some(reading(true, 5, 1))),
+        (Some(reading(true, 3, 1)), None),
+    ] {
+        assert!(
+            tracked_during(before, after).is_err(),
+            "{before:?} {after:?}"
         );
     }
 }

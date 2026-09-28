@@ -150,11 +150,33 @@ async fn image(
     spawner.spawn(gatt::task(host, usb, boot).expect("Bluetooth GATT task"));
 }
 
-#[cfg(feature = "bluetooth-radio")]
+#[cfg(all(feature = "bluetooth-radio", not(feature = "bluetooth-hil")))]
 #[embassy_executor::task]
 async fn tracking(radio: &'static Radio) {
     let _error = radio.run_tracking().await;
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=phy-tracking\r\n");
+}
+
+/// Periodic tracking that counts each tick for `PhyTracking` and stops
+/// between ticks while the console suspends it.
+#[cfg(feature = "bluetooth-hil")]
+#[embassy_executor::task]
+async fn tracking(radio: &'static Radio) {
+    loop {
+        while super::phy_tracking::suspended() {
+            super::phy_tracking::changed().await;
+        }
+        if radio
+            .run_tracking_until(
+                super::phy_tracking::until_suspended(),
+                super::phy_tracking::record,
+            )
+            .await
+            .is_err()
+        {
+            super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=phy-tracking\r\n");
+        }
+    }
 }
 
 #[cfg(not(feature = "bluetooth-secure-gatt"))]

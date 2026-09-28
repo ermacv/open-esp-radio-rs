@@ -12,6 +12,9 @@
 //! - LE Long Term Key Requests are answered by the connection's key policy:
 //!   the fixed public test keys, or a deliberate missing, wrong or missing
 //!   refresh key;
+//! - with PHY tracking required, the image's `PhyTracking` counters are read
+//!   when the connection completes and when it ends, and periodic tracking
+//!   must have completed at least one pass in between without a skip;
 //! - the connection ends as its profile asks: the peer resets, loses RF or
 //!   disconnects, the Controller terminates on a key failure, or the target
 //!   Host disconnects or resets its Controller after both echoes.
@@ -31,7 +34,8 @@ use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
     BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK,
     BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV, BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
-    BluetoothPeripheralTermination as Termination, BluetoothSecurityFailure,
+    BluetoothPeripheralTermination as Termination, BluetoothSecurityFailure, PhyTrackingCommand,
+    PhyTrackingEvidence,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -102,6 +106,7 @@ pub enum Config {
         hold_millis: u16,
         termination: Termination,
         security: Security,
+        phy_tracking: bool,
     },
     /// One connection whose encryption fails as `failure` asks, then one
     /// encrypted connect-reset connection that must succeed.
@@ -136,6 +141,8 @@ struct Profile {
     refreshes: u32,
     local: Option<Termination>,
     reasons: &'static [u8],
+    /// Periodic PHY tracking must complete a pass during the connection.
+    phy_tracking: bool,
 }
 
 impl Profile {
@@ -154,6 +161,7 @@ impl Profile {
             },
             refreshes: u32::from(security == Security::KeyRefresh),
             local,
+            phy_tracking: false,
             reasons: match termination {
                 Termination::PeerReset => &[SUPERVISION_TIMEOUT],
                 Termination::PeerRfkill => &[SUPERVISION_TIMEOUT, REMOTE_USER_TERMINATED],
@@ -181,6 +189,7 @@ impl Profile {
             refreshes: 0,
             local: None,
             reasons,
+            phy_tracking: false,
         })
     }
 }
@@ -264,6 +273,7 @@ fn plan(config: Config) -> Result<Vec<(Central, Profile)>> {
             hold_millis,
             termination,
             security,
+            phy_tracking,
         } => (0..connections)
             .map(|_| {
                 (
@@ -272,7 +282,10 @@ fn plan(config: Config) -> Result<Vec<(Central, Profile)>> {
                         termination,
                         security,
                     },
-                    Profile::connect_reset(termination, security),
+                    Profile {
+                        phy_tracking,
+                        ..Profile::connect_reset(termination, security)
+                    },
                 )
             })
             .collect(),
@@ -449,7 +462,17 @@ impl<'a> Host<'a> {
             };
             match packet {
                 Packet::Event(event) => {
-                    if let Some(reply) = link.event(&event, profile, cycle)? {
+                    let connected = link.handle.is_some();
+                    let reply = link.event(&event, profile, cycle)?;
+                    if profile.phy_tracking && (link.handle.is_some() != connected || link.ended) {
+                        let tracking = self.capture.phy_tracking(PhyTrackingCommand::Status)?;
+                        if connected {
+                            cycle.tracking_after.get_or_insert(tracking);
+                        } else {
+                            cycle.tracking_before = Some(tracking);
+                        }
+                    }
+                    if let Some(reply) = reply {
                         self.answer(&link, reply)?;
                     }
                 }
@@ -777,12 +800,37 @@ impl Link {
             )
             .into());
         }
+        if profile.phy_tracking {
+            tracked_during(cycle.tracking_before, cycle.tracking_after)?;
+        }
         match self.reason {
             Some(reason) if profile.reasons.contains(&reason) => Ok(()),
             None if profile.reasons.is_empty() => Ok(()),
             reason => Err(format!("the connection ended with reason {reason:?}").into()),
         }
     }
+}
+
+/// Periodic tracking ran to completion at least once between the two
+/// readings, skipped no tick and was never suspended.
+fn tracked_during(
+    before: Option<PhyTrackingEvidence>,
+    after: Option<PhyTrackingEvidence>,
+) -> Result<()> {
+    let (Some(before), Some(after)) = (before, after) else {
+        return Err("PHY tracking was not read at both ends of the connection".into());
+    };
+    if !before.running
+        || !after.running
+        || after.tracked <= before.tracked
+        || after.skipped != before.skipped
+    {
+        return Err(format!(
+            "PHY tracking did not complete a pass during the connection: {before:?} -> {after:?}"
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// The reply `keys` gives to a request for the key identified by `rand` and
@@ -839,6 +887,8 @@ struct Cycle {
     refreshes: Vec<u8>,
     reason: Option<u8>,
     other_events: u32,
+    tracking_before: Option<PhyTrackingEvidence>,
+    tracking_after: Option<PhyTrackingEvidence>,
     error: Option<String>,
 }
 
@@ -859,6 +909,8 @@ impl Default for Cycle {
             refreshes: Vec::new(),
             reason: None,
             other_events: 0,
+            tracking_before: None,
+            tracking_after: None,
             error: None,
         }
     }

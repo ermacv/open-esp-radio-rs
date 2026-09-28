@@ -64,6 +64,10 @@ pub enum BluetoothScenario {
         termination: BluetoothPeripheralTermination,
         #[serde(default)]
         security: workload::peripheral::Security,
+        /// Require periodic PHY tracking to complete a pass during every
+        /// connection.
+        #[serde(default)]
+        phy_tracking: bool,
     },
     /// One peripheral connection whose encryption fails as `failure` asks,
     /// then an encrypted connection that must succeed.
@@ -208,12 +212,14 @@ impl BluetoothScenario {
                 hold_millis,
                 termination,
                 security,
+                phy_tracking,
             } => workload::peripheral::run(
                 workload::peripheral::Config::Connections {
                     connections: *connections,
                     hold_millis: *hold_millis,
                     termination: *termination,
                     security: *security,
+                    phy_tracking: *phy_tracking,
                 },
                 output,
                 context,

@@ -1846,3 +1846,31 @@ fn an_unprotected_robust_action_is_dropped_under_protection() {
     assert_eq!(dispatch, ConnectedRxDispatch::BlockAck);
     assert_eq!(sink.block_ack.len(), 1);
 }
+
+#[test]
+fn a_block_ack_request_from_the_associated_ap_names_its_reorder_session() {
+    let mut storage = [0_u8; 192];
+    set_tail(&mut storage, 24);
+    let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + 20];
+    frame[..2].copy_from_slice(&[0x84, 0x00]);
+    frame[4..10].copy_from_slice(&STATION);
+    frame[10..16].copy_from_slice(&BSSID);
+    frame[16..18].copy_from_slice(&(3_u16 << 12 | 0x0004).to_le_bytes());
+    frame[18..20].copy_from_slice(&(77_u16 << 4).to_le_bytes());
+    let dispatcher = dispatcher();
+    assert_eq!(
+        dispatcher.block_ack_request_key(segment(&storage, 24)),
+        Some(RxBlockAckRequestKey {
+            peer: BSSID,
+            tid: 3,
+            starting_sequence: SequenceNumber::new(77).unwrap(),
+        })
+    );
+    assert_eq!(dispatcher.reorder_key(segment(&storage, 24)), None);
+
+    storage[FRAME_OFFSET + 10] ^= 1;
+    assert_eq!(
+        dispatcher.block_ack_request_key(segment(&storage, 24)),
+        None
+    );
+}

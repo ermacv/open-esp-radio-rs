@@ -858,3 +858,91 @@ fn peer_teardown_removes_pending_and_active_agreements_only_for_that_peer() {
     let remaining = sessions.begin_pending().unwrap().unwrap();
     assert_eq!(remaining.negotiated().peer, second_peer);
 }
+
+#[test]
+fn a_block_ack_request_releases_frames_before_its_start_then_the_run_from_it() {
+    let mut state = RxBlockAckReorderState::<40>::new(SequenceNumber::new(10).unwrap(), 8).unwrap();
+    // 10 and 11 are missing; 12, 14 and 15 are buffered.
+    for (sequence, slot) in [(12, 2), (14, 4), (15, 5)] {
+        assert!(state.ingest(frame(sequence, slot)).unwrap().buffered);
+    }
+    let release = state
+        .move_window_to(SequenceNumber::new(13).unwrap())
+        .expect("a forward starting sequence moves the window");
+    // 12 lies before the new start; 13 is still missing, so 14 and 15 stay.
+    assert_eq!(release.iter().collect::<std::vec::Vec<_>>(), [frame(12, 2)]);
+    assert_eq!(release.missing, 2);
+    assert_eq!(state.next_sequence(), SequenceNumber::new(13).unwrap());
+
+    let release = state
+        .move_window_to(SequenceNumber::new(14).unwrap())
+        .unwrap();
+    assert_eq!(
+        release.iter().collect::<std::vec::Vec<_>>(),
+        [frame(14, 4), frame(15, 5)]
+    );
+    assert_eq!(state.next_sequence(), SequenceNumber::new(16).unwrap());
+    assert_eq!(state.occupied(), 0);
+}
+
+#[test]
+fn a_block_ack_request_at_or_behind_the_window_start_is_ignored() {
+    let mut state =
+        RxBlockAckReorderState::<40>::new(SequenceNumber::new(100).unwrap(), 8).unwrap();
+    assert!(state.ingest(frame(102, 2)).unwrap().buffered);
+    assert!(
+        state
+            .move_window_to(SequenceNumber::new(100).unwrap())
+            .is_none()
+    );
+    assert!(
+        state
+            .move_window_to(SequenceNumber::new(99).unwrap())
+            .is_none()
+    );
+    // Half the sequence space behind wraps to "behind", not "ahead".
+    assert!(
+        state
+            .move_window_to(SequenceNumber::new(100 + 2048).unwrap())
+            .is_none()
+    );
+    assert_eq!(state.next_sequence(), SequenceNumber::new(100).unwrap());
+    assert_eq!(state.occupied(), 1);
+}
+
+#[test]
+fn a_block_ack_request_names_its_session_regardless_of_policy_bits() {
+    let local = [2, 0, 0, 0, 0, 1];
+    let peer = [2, 0, 0, 0, 0, 2];
+    let mut raw = [0_u8; PUBLIC_HEADER_SIZE + 24];
+    let frame = &mut raw[PUBLIC_HEADER_SIZE..];
+    frame[..2].copy_from_slice(&[0x84, 0x00]);
+    frame[4..10].copy_from_slice(&local);
+    frame[10..16].copy_from_slice(&peer);
+    // TID 5 with the No-Ack policy and Basic variant: not validated.
+    frame[16..18].copy_from_slice(&(5_u16 << 12 | 1).to_le_bytes());
+    frame[18..20].copy_from_slice(&(0x123_u16 << 4).to_le_bytes());
+    let expected = RxBlockAckRequestKey {
+        peer,
+        tid: 5,
+        starting_sequence: SequenceNumber::new(0x123).unwrap(),
+    };
+    assert_eq!(
+        rx_block_ack_request_key(&raw, local, Some(peer)),
+        Some(expected)
+    );
+    assert_eq!(rx_block_ack_request_key(&raw, local, None), Some(expected));
+    assert_eq!(rx_block_ack_request_key(&raw, local, Some(local)), None);
+    assert_eq!(rx_block_ack_request_key(&raw, peer, None), None);
+
+    let mut high_tid = raw;
+    high_tid[PUBLIC_HEADER_SIZE + 17] = 0x80;
+    assert_eq!(rx_block_ack_request_key(&high_tid, local, None), None);
+    let mut block_ack = raw;
+    block_ack[PUBLIC_HEADER_SIZE] = 0x94;
+    assert_eq!(rx_block_ack_request_key(&block_ack, local, None), None);
+    assert_eq!(
+        rx_block_ack_request_key(&raw[..PUBLIC_HEADER_SIZE + 19], local, None),
+        None
+    );
+}

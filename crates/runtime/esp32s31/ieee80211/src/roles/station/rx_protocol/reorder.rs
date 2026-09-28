@@ -1,4 +1,5 @@
 use super::*;
+use oer_esp32s31_ieee80211_mac::rx::ampdu::RxBlockAckRequestKey;
 #[cfg(any(feature = "diagnostics", test))]
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
@@ -159,6 +160,15 @@ where
             self.observe_reorder_prepared(reorder_started);
             CORE0_REORDER_CYCLES.prepared_observer_completed();
             CORE0_REORDER_CYCLES.finish(Core0ReorderPath::NoKey);
+            if let Some(request) = self
+                .runtime
+                .dispatcher
+                .block_ack_request_key(frame.segment())
+            {
+                drop(frame);
+                self.irq.notify_rx_capacity();
+                return Some(self.move_reorder_window(request).await);
+            }
             return Some(self.dispatch_owned_frame(frame).await);
         };
         let bank = self.runtime.reorder_banks.find(
@@ -479,6 +489,30 @@ where
         } else {
             self.runtime.gap_deadlines[tid] = None;
         }
+    }
+
+    /// Apply a BlockAckReq from the associated AP to its TID's reorder window.
+    async fn move_reorder_window(&mut self, request: RxBlockAckRequestKey) -> ConnectedRxDispatch {
+        let Some(bank) = self.runtime.reorder_banks.find(
+            oer_esp32s31_ieee80211_mac::MacInterface::Station,
+            request.peer,
+            request.tid,
+        ) else {
+            return ConnectedRxDispatch::BlockAckRequest;
+        };
+        let Some(release) = self
+            .runtime
+            .reorder_banks
+            .state_mut(bank)
+            .and_then(|reorder| reorder.move_window_to(request.starting_sequence))
+        else {
+            return ConnectedRxDispatch::BlockAckRequest;
+        };
+        self.update_gap_deadline(bank);
+        #[cfg(any(feature = "diagnostics", test))]
+        self.record_reorder_occupied();
+        self.dispatch_release(release).await;
+        ConnectedRxDispatch::BlockAckRequest
     }
 
     pub(super) async fn expire_reorder_gap(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {

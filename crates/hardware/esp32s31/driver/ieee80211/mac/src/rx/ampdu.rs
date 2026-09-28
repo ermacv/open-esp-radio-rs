@@ -99,6 +99,54 @@ pub fn rx_block_ack_mpdu_key(
     })
 }
 
+/// Receive BlockAck session and window start named by one BlockAckReq.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxBlockAckRequestKey {
+    pub peer: [u8; 6],
+    pub tid: u8,
+    pub starting_sequence: SequenceNumber,
+}
+
+const BLOCK_ACK_REQUEST_FRAME_CONTROL: u16 = 0x0084;
+const BLOCK_ACK_REQUEST_LENGTH: usize = 20;
+
+/// Extract the receive session a BlockAckReq addresses.
+///
+/// Only the TID and the Starting Sequence Control are read. The BAR Control
+/// policy bits (BAR Ack Policy, Compressed, Multi-TID) are not validated,
+/// and a TID above 7 is ignored.
+///
+/// SOURCE: `libnet80211.a::sta_recv_ctl`/`hostap_recv_ctl` dispatch control
+/// subtype 8 to `ieee80211_recv_bar`, and `ieee80211_process_bar_info` reads
+/// only `bar_control >> 12` and `ssc >> 4` (blobray RX BlockAckReq answer).
+pub fn rx_block_ack_request_key(
+    raw: &[u8],
+    local_address: [u8; 6],
+    expected_peer: Option<[u8; 6]>,
+) -> Option<RxBlockAckRequestKey> {
+    let frame = raw.get(PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + BLOCK_ACK_REQUEST_LENGTH)?;
+    let frame_control = u16::from_le_bytes([frame[0], frame[1]]);
+    if frame_control & 0x00fc != BLOCK_ACK_REQUEST_FRAME_CONTROL || frame[4..10] != local_address {
+        return None;
+    }
+    let peer: [u8; 6] = frame[10..16].try_into().ok()?;
+    if expected_peer.is_some_and(|expected| expected != peer) {
+        return None;
+    }
+    let control = u16::from_le_bytes([frame[16], frame[17]]);
+    let tid = (control >> 12) as u8;
+    if tid > 7 {
+        return None;
+    }
+    Some(RxBlockAckRequestKey {
+        peer,
+        tid,
+        starting_sequence: SequenceNumber::from_sequence_control(u16::from_le_bytes([
+            frame[18], frame[19],
+        ])),
+    })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxAmpduMpdu {
     pub sequence: SequenceNumber,
@@ -1084,6 +1132,28 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
             distance += 1;
         }
         release
+    }
+
+    /// Move the window start to a received BlockAckReq's starting sequence.
+    ///
+    /// Every retained frame before `starting_sequence` is released in order,
+    /// then the contiguous run from the new start. A starting sequence equal
+    /// to the current start or behind it (in the backward half of the sequence
+    /// space) is ignored and returns `None`.
+    ///
+    /// SOURCE: `libnet80211.a::ieee80211_process_bar_info` ignores those two
+    /// cases and otherwise calls `ampdu_dispatch_upto(ni, rx, ssn)` (blobray
+    /// RX BlockAckReq answer). The contiguous release after the move is the
+    /// recipient behaviour of IEEE Std 802.11-2020 10.25.6.6.
+    pub fn move_window_to(&mut self, starting_sequence: SequenceNumber) -> Option<RxAmpduRelease> {
+        let distance = self.next_sequence.forward_distance(starting_sequence);
+        if distance == 0 || distance >= SequenceNumber::HALF_SPACE {
+            return None;
+        }
+        let mut release = RxAmpduRelease::empty();
+        self.advance(distance, &mut release);
+        self.release_contiguous(&mut release);
+        Some(release)
     }
 
     pub fn stop(&mut self) -> RxAmpduRelease {

@@ -52,7 +52,9 @@ use static_cell::StaticCell;
 use oer_ieee80211_trace::{BeaconDispatch, BeaconVerdict, ControlEventKind};
 
 use oer_esp32s31_ieee80211_mac::{
-    rx::ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
+    rx::ampdu::{
+        RxBlockAckMpduKey, RxBlockAckRequestKey, rx_block_ack_mpdu_key, rx_block_ack_request_key,
+    },
     rx::{
         PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
         extract_control, extract_management, extract_protected_management,
@@ -1303,6 +1305,8 @@ pub enum ConnectedRxDispatch {
     Trigger,
     Ndpa,
     BlockAck,
+    /// A BlockAckReq moved, or left unchanged, a receive reorder window.
+    BlockAckRequest,
     IndividualTwt,
     EspNow {
         peer: EspNowPeerId,
@@ -1649,6 +1653,21 @@ impl ConnectedRxDispatcher {
             return None;
         }
         rx_block_ack_mpdu_key(
+            segment.buffer,
+            self.config.station_address,
+            Some(self.config.bssid),
+        )
+    }
+
+    /// Classify a BlockAckReq from the associated AP for this station.
+    ///
+    /// Agreement state still decides whether the named TID has a reorder
+    /// window to move.
+    pub fn block_ack_request_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckRequestKey> {
+        if self.config.security == LinkProtection::Open {
+            return None;
+        }
+        rx_block_ack_request_key(
             segment.buffer,
             self.config.station_address,
             Some(self.config.bssid),

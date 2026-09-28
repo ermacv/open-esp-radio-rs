@@ -562,6 +562,29 @@ vendor fills with the sequence number's low byte: the vendor writer of that
 byte and whether hardware reads it are not established, so it stays an
 unexplained difference.
 
+## Inspecting vendor code
+
+Two subcommands read every pinned code artifact of the manifest (archives,
+the ROM and the reference firmware images present in the checkout, each
+authenticated against its pinned SHA-256) without running a scenario:
+
+```console
+cargo xtask vendor-scenario --chip esp32s31 xref 0x2010d830 [END]
+cargo xtask vendor-scenario --chip esp32s31 show pm_on_isr_twt_wake
+```
+
+`xref` lists every load and store whose address a forward pass over the
+function resolves inside `START..END` (one word without `END`): the
+register and field names of the published bindings, the origin
+(`artifact` or `artifact[member]`), the function and offset, and for a
+store the bits it clears, sets to a constant or takes from a value the pass
+does not know, such as an argument. `show` prints each definition of a
+function with folded constants, named registers, relocation targets and the
+string literals they address. The pass is intraprocedural and forgets what it
+knows at branch targets, so an access through a pointer loaded from memory
+or computed in another function is not attributed. The engine owns both in
+[`inspect.rs`](../harness/scenarios/src/inspect.rs).
+
 ## Inputs and probes
 
 Private vendor artifacts are explicit scenario arguments; they are captured into

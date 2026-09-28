@@ -13,6 +13,7 @@ pub mod discovery;
 pub mod evidence;
 pub mod failure;
 pub mod harness;
+pub mod inspect;
 pub mod leaf;
 pub mod mutant;
 pub mod observation;

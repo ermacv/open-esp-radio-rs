@@ -24,12 +24,12 @@ const AFTER: usize = 3;
 /// Definitions followed back from a location's operands.
 const DEPTH: usize = 2;
 /// Architectural registers, and the ones a call preserves.
-const REGISTERS: usize = 32;
-const ZERO: u8 = 0;
+pub(crate) const REGISTERS: usize = 32;
+pub(crate) const ZERO: u8 = 0;
 const STACK: u8 = 2;
-const CALLEE_SAVED: [u8; 13] = [2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27];
+pub(crate) const CALLEE_SAVED: [u8; 13] = [2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27];
 /// Smallest instruction, the step of the undecodable-bytes fallback.
-const PARCEL: usize = 2;
+pub(crate) const PARCEL: usize = 2;
 
 /// A register's value where the forward pass knows it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

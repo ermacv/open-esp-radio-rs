@@ -6,7 +6,7 @@ use oer_esp32c5_vendor_scenarios::{
 use oer_vendor_scenario_engine::harness::{Budget, Result};
 use oer_vendor_scenario_engine::leaf::{self, LeafOptions};
 use oer_vendor_scenario_engine::shard::{self, ProbeImages};
-use oer_vendor_scenario_engine::{artifacts, observation, session, state};
+use oer_vendor_scenario_engine::{artifacts, inspect, observation, session, state};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -28,6 +28,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Scenario {
+    /// Every read and write of the pinned vendor code to the addresses from
+    /// `start` up to `end`, one word when `end` is omitted, with the bits each
+    /// store clears, sets or takes from a computed value.
+    Xref {
+        #[arg(value_parser = oer_vendor_scenario_engine::inspect::parse_address)]
+        start: u32,
+        #[arg(value_parser = oer_vendor_scenario_engine::inspect::parse_address)]
+        end: Option<u32>,
+    },
+    /// One pinned vendor function, annotated, from every artifact defining it.
+    Show { function: String },
     /// The analog-register I2C transport of `libphy.a[phy_i2c.o]`.
     PhyI2c {
         #[command(flatten)]
@@ -143,6 +154,16 @@ fn main() -> ExitCode {
             phy_i2c(&common).and_then(|claims| record(&common, "phy-i2c", &claims))
         }
         Scenario::All { common } => all(&common),
+        Scenario::Xref { start, end } => inspect::load().map(|corpus| {
+            let end = end.unwrap_or(start.saturating_add(inspect::WORD));
+            print!("{}", inspect::xref(&corpus, start, end));
+        }),
+        Scenario::Show { function } => inspect::load().and_then(|corpus| {
+            let text = inspect::show(&corpus, &function)
+                .ok_or_else(|| format!("no pinned artifact defines {function}"))?;
+            print!("{text}");
+            Ok(())
+        }),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

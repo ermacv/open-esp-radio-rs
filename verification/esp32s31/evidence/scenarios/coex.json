@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "60647769e8f9d7764e20ea6a28a2251f72dd062bc218f2e797475217a773f2fe"
+    "input-2": "05ce705adb0caf1363b0c47654fa167b257b2b256ba12d4bb8eb94bcf0fbcddd"
   },
   "sources": [
     {
@@ -155,7 +155,7 @@
     },
     {
       "path": "tools/blobray/Cargo.lock",
-      "sha256": "9aa38367271bdc26bf136542983212ca91169899938fc06ea38d1bb45c234b92"
+      "sha256": "86de819ef8cfa610da6e52c5988b687ea8f293b6311bee9111b45b75686866ea"
     },
     {
       "path": "tools/blobray/crates/analysis/Cargo.toml",
@@ -903,11 +903,11 @@
     },
     {
       "path": "tools/blobray/crates/verification/src/effects.rs",
-      "sha256": "4f01991508f18718c7620d6af73de4910e918b755c6a6eec92e4dda53b0b0377"
+      "sha256": "afb8b7e5c96e5cdfb79dec5b4e114e35c72a27a287b9b82bee7fd807a7fc4cd8"
     },
     {
       "path": "tools/blobray/crates/verification/src/lib.rs",
-      "sha256": "f8141138634b374bb353cc897ae8a675e6bc03d3880060577cea96fecbf43e05"
+      "sha256": "434725991b447fc55c0f4f0042ce4d0992ef641308764b10c3f2033c14f1d67d"
     },
     {
       "path": "tools/blobray/crates/verification/src/projection.rs",
@@ -1103,11 +1103,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rfpll.rs",
-      "sha256": "e853ccb962acea7fc6bed54e788a820acb89f1e394053c7a371ff712d606d627"
+      "sha256": "b7ca511b889757862b1a187fabe926422edd6d7f92a02b0ddbadf807d1592871"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rx_gain.rs",
-      "sha256": "d338fb48638f89ec13cc9750e790ada087e3e67cad38fc9be3add4cd1ae3d05a"
+      "sha256": "5c7eca3fe9742a6cc37fac36687d43974c619b5a25d79170beb73bfacd39aaa9"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/tracking.rs",
@@ -1119,7 +1119,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/tx_dc.rs",
-      "sha256": "681ee3a609581742cbbf79dc12169800e61337a05c3277772bc6b42133155ab8"
+      "sha256": "99486bfb85b8211bc8e9aaf2f69d7f0ec737a2ca6e97a8ad5520321d420959b2"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
@@ -1163,7 +1163,7 @@
     },
     {
       "path": "verification/harness/scenarios/Cargo.toml",
-      "sha256": "099b25863297def7ac6095acbf11d9ea57ecbc88f3b9d322f77f46d8313569e6"
+      "sha256": "39b30445775eab8094c36fe0125cdf565b9e0b163771a97bc1837ad64bae1441"
     },
     {
       "path": "verification/harness/scenarios/src/artifacts.rs",
@@ -1191,7 +1191,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/failure.rs",
-      "sha256": "82a6da4e19fe0a2bc4c065b6c607b541875423d78ebf9355e96547345c15d4c9"
+      "sha256": "f0b2989a1c0cfc7060baf31eb986a7ee653f94770a31b477bbfeb2992d4aac88"
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
@@ -1203,7 +1203,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/lib.rs",
-      "sha256": "c5162b09fbf5f3bce64dca7887b533417acd4c23b8f82af7242494ed201883e3"
+      "sha256": "cb4779a8bf581003c52a1085b6b68ea22fc5e45a7ca596e7208cb4979892a027"
     },
     {
       "path": "verification/harness/scenarios/src/observation.rs",
@@ -1211,7 +1211,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/phy/contracts.rs",
-      "sha256": "bf8d6b1a5bd364ebca53f346c84cbbbcb2674dc41e69325cc4bb805e1e1ca057"
+      "sha256": "6ee30f041e7bf02a571245e3e95b342393f661c92c72fc213efc72718531b31e"
     },
     {
       "path": "verification/harness/scenarios/src/phy/layout.rs",
@@ -1226,8 +1226,12 @@
       "sha256": "55cc9cb47f9a5d7d30166d7a4786c58f23acbcfebe6620967a6586383c9a5231"
     },
     {
+      "path": "verification/harness/scenarios/src/rule_use.rs",
+      "sha256": "23717ce7ca3c1b5299586c20b524ea8a00c055cae52468aa056af790e038ef04"
+    },
+    {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "1a443a451f1495ec167d0121bef53735f6d669f7e10e642cda194a93dc107392"
+      "sha256": "487a555ec618370294abb7976299927b69d001d4477c2831ada6a55217be2bb1"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1255,7 +1259,7 @@
     }
   ],
   "dependence": {
-    "read-data": "1a7dd25df09ee35dc8cbe3dbccf00a0ab8c29d0a30fe0413897f7c120904a66e",
+    "read-data": "d7072f5bb4a80d87c700890aa0536af55c99de2435b18c130db5d2e7b50a005b",
     "fallback": null
   },
   "entries": [

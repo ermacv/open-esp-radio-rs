@@ -232,7 +232,15 @@ reports conflicting holders without queueing.
 A command started in the background returns when its lease ends; its exit is
 the notification for an agent. The user receives desktop notifications through
 `notify-send` when a waiting owner is granted a lease, when the stand becomes
-free, and when a lease reaches the hard limit; `OER_HIL_NOTIFY=0` disables them.
+free, and when a lease reaches the hard limit or is preempted;
+`OER_HIL_NOTIFY=0` disables them.
+
+Do not wrap `cargo hil` in `timeout`: its clock also runs while the request
+waits in the queue, which can last longer than the work itself. A timeout that
+fires while the request waits only drops it from the queue; one that fires
+during the lease stops the work with `SIGTERM` and the ordinary cleanup, so a
+run ends interrupted with no verdict. Every lease already ends at the one-hour
+hard limit; to stop a lease that is stuck, use `cargo hil preempt`.
 
 The stand holds several equal boards, currently an ESP32-S31 and an ESP32-C5.
 No board has a fixed role: a scenario or other consumer chooses which board it

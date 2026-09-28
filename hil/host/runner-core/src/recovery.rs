@@ -28,6 +28,8 @@ pub enum Recovery {
         step: RecoveryStep,
         hardware: bool,
         reset_line: Option<String>,
+        /// Where core 0 was when the reset hit, from the ROM banner.
+        core0: Option<String>,
         finding: Box<Finding>,
     },
     /// The board was quarantined for `trigger`.
@@ -45,15 +47,20 @@ impl Recovery {
                 step,
                 hardware,
                 reset_line,
+                core0,
                 ..
             } => format!(
-                "the target did not answer; {step:?} brought it back ({} failure: {})",
+                "the target did not answer; {step:?} brought it back ({} failure: {}){}",
                 if *hardware {
                     "hardware"
                 } else {
                     "firmware or unknown"
                 },
-                reset_line.as_deref().unwrap_or("no reset line")
+                reset_line.as_deref().unwrap_or("no reset line"),
+                core0
+                    .as_deref()
+                    .map(|core0| format!("; core 0 was at {core0}"))
+                    .unwrap_or_default()
             ),
             Self::Quarantined { reason, .. } => format!("the board was quarantined: {reason}"),
         }
@@ -99,6 +106,10 @@ pub fn recover(
         .as_deref()
         .and_then(oer_hil_arbiter::control::reset_line)
         .map(str::to_owned);
+    let core0 = banner.as_deref().and_then(saved_pc).map(|address| {
+        let symbols = elf.and_then(|elf| addr2line::Loader::new(elf).ok());
+        post_mortem::symbol(symbols.as_ref(), address)
+    });
     let _ = std::fs::create_dir_all(&evidence);
     let _ = std::fs::write(
         evidence.join(format!("{step:?}-banner.txt").to_lowercase()),
@@ -152,6 +163,7 @@ pub fn recover(
         step,
         hardware,
         reset_line,
+        core0,
         finding: Box::new(finding),
     })
 }
@@ -218,6 +230,15 @@ fn board_mac(port: &Path) -> Option<String> {
     })
 }
 
+/// The program counter the ROM reports core 0 was at when the reset hit
+/// (`Core0 Saved PC:0x...`), the last one printed.
+fn saved_pc(banner: &str) -> Option<u32> {
+    banner.lines().rev().find_map(|line| {
+        let value = line.split_once("Core0 Saved PC:")?.1.trim();
+        u32::from_str_radix(value.strip_prefix("0x")?, 16).ok()
+    })
+}
+
 /// Whether the repetition's console ended in the ROM waiting for a download.
 fn console_waits_for_download(output: &Path) -> bool {
     let tail = |path: PathBuf| {
@@ -246,6 +267,13 @@ mod tests {
             Some("38:44:BE:AA:25:64")
         );
         assert_eq!(board_mac(Path::new("/dev/ttyACM9")), None);
+    }
+
+    #[test]
+    fn the_rom_banner_names_where_core_zero_was() {
+        let banner = "ESP-ROM:esp32s31-20251218\nrst:0x17 (CHIP_USB_UART_RESET),boot:0x5f (SPI_FAST_FLASH_BOOT)\nCore0 Saved PC:0x50050cd4\nSPI mode:DIO\n";
+        assert_eq!(saved_pc(banner), Some(0x5005_0cd4));
+        assert_eq!(saved_pc("rst:0x1 (POWERON)\n"), None);
     }
 
     #[test]

@@ -202,7 +202,7 @@ fn trail(checkpoints: &[Checkpoint]) -> String {
 /// `function (file.rs:34)` for `address` in the image from its debug
 /// information, naming the function it was inlined into as `in outer`; the
 /// address when the image does not describe it.
-fn symbol(loader: Option<&addr2line::Loader>, address: u32) -> String {
+pub(crate) fn symbol(loader: Option<&addr2line::Loader>, address: u32) -> String {
     let raw = format!("{address:#010x}");
     let Some(loader) = loader else {
         return raw;

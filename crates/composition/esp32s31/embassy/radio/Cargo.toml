@@ -1,0 +1,34 @@
+[package]
+name = "oer-esp32s31-radio-system"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "One-call bring-up of the shared ESP32-S31 radio and its periodic tasks for Embassy and esp-hal"
+
+[dependencies]
+oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }
+oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy" }
+oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
+
+# Hardware composition is target-only.
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+embassy-executor = { version = "0.10.0", default-features = false }
+oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
+static_cell = "2.1.1"
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+# Chip APIs exist only for the chip target; document them there alone.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+
+[package.metadata.open-radio]
+scope = "production"
+layer = "composition"
+platform = "chip"
+chip = "esp32s31"

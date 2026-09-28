@@ -48,8 +48,8 @@ transaction that fails keeps its owner as fail-stop; the chip must be reset.
 The crate reexports what construction needs, so an application builds the
 client through it, or through the `oer` facade's `embassy-ieee802154`
 feature at `oer::systems::esp32s31::embassy::ieee802154`, alone:
-`RadioHardware`, `EspHalRadioPlatform` and `EspHalRadioClocks` create the
-`SharedRadio`, whose `run_tracking` the application runs;
+`EspHalRadioPlatform` is what the facade's `radio::start` takes to create
+the `SharedRadio` and spawn its PHY tracking and coexistence schedule;
 `Ieee802154Parked::new` takes the radio's IEEE 802.15.4 partition and the
 `Ieee802154PibDefaults`, and `start` joins the shared radio with them.
 `Ieee802154MacOwners` names the runtime's owners for adapters generic over

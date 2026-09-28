@@ -64,6 +64,10 @@ pub mod embassy {
 pub mod systems {
     pub mod esp32s31 {
         pub mod embassy {
+            /// The shared radio every protocol composition joins, brought
+            /// up with its periodic tasks by one `start` call.
+            pub use radio_system as radio;
+
             #[cfg(feature = "owned-xarxa")]
             pub use wifi_composition as wifi;
 

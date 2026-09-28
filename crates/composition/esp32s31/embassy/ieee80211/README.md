@@ -8,11 +8,11 @@ explains the external crates, reasons for patches and complete build commands.
 
 ## Start here
 
-Applications split the radio once: `RadioHardware::take()` and
-`SharedRadio::new(hardware, EspHalRadioPlatform, EspHalRadioClocks, identity)`
-return the shared radio and its `ConcurrentPartitions`. The application
-retains the shared radio in static storage and runs its periodic PHY tracking
-(`run_tracking`) on its own task, as every radio client does. It then calls
+Applications bring the radio up once with
+[`oer-esp32s31-radio-system`](../radio/src/lib.rs)'s `start(spawner,
+EspHalRadioPlatform, RadioStart::new())`: it returns the shared radio in
+static storage and its `ConcurrentPartitions`, and spawns the radio's periodic
+PHY tracking and coexistence schedule, which every radio client needs. It then calls
 the crate's `new` entry point once with the shared radio, the Wi-Fi partition
 and the `EspHalWifiPlatform` (the `WIFI` singleton), and receives
 `WifiStarted`: the Wi-Fi application capabilities, the bring-up evidence and

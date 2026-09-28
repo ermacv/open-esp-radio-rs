@@ -20,9 +20,9 @@ esp32s31 = ["dep:chip-hal"]
 esp32s31-wifi = ["esp32s31", "wifi", "dep:chip-mac", "dep:chip-sta", "dep:chip-ap"]
 esp32s31-bluetooth = ["esp32s31", "bluetooth", "dep:chip-bluetooth"]
 esp32s31-ieee802154 = ["esp32s31", "ieee802154", "dep:chip-ieee802154"]
-embassy-ieee802154 = ["esp32s31-ieee802154", "dep:ieee802154-composition"]
+embassy-ieee802154 = ["esp32s31-ieee802154", "dep:ieee802154-composition", "dep:radio-system"]
 openthread = ["embassy-ieee802154", "dep:ieee802154-openthread"]
-owned-xarxa = ["esp32s31-wifi", "dep:radio-embassy", "dep:wifi-composition", "wifi-composition/owned-network"]
+owned-xarxa = ["esp32s31-wifi", "dep:radio-embassy", "dep:radio-system", "dep:wifi-composition", "wifi-composition/owned-network"]
 
 [package.metadata.open-radio]
 scope = "production"
@@ -67,6 +67,7 @@ chip-bluetooth = { package = "oer-esp32s31-bluetooth", path = "../hardware/esp32
 chip-ieee802154 = { package = "oer-ieee802154-engine", path = "../hardware/ieee802154/engine", optional = true }
 wifi-composition = { package = "oer-esp32s31-ieee80211-system", path = "../composition/esp32s31/embassy/ieee80211", default-features = false, optional = true }
 ieee802154-composition = { package = "oer-esp32s31-ieee802154-system", path = "../composition/esp32s31/embassy/ieee802154", optional = true }
+radio-system = { package = "oer-esp32s31-radio-system", path = "../composition/esp32s31/embassy/radio", optional = true }
 ieee802154-openthread = { package = "oer-esp32s31-ieee802154-openthread", path = "../adapters/openthread/esp32s31/ieee802154", optional = true }
 
 [lints]

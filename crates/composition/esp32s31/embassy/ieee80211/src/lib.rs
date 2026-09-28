@@ -300,6 +300,7 @@ impl ConnectedDatapathPollObserver {
 /// The PHY calibration identity and retained calibration cache belong to the
 /// shared radio ([`SharedRadio`]).
 #[cfg(target_arch = "riscv32")]
+// CAPABILITY: phy-calibration-state-and-tracking-connected-observation-driven-service
 pub struct RadioConfig {
     #[cfg(feature = "rx-ownership-observation")]
     pub(crate) rx_ownership_observer:

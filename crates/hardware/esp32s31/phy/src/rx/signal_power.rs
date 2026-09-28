@@ -177,6 +177,7 @@ pub fn calculate_signal_power(
 /// ROM body. The next measurement begins with the ROM-equivalent disable
 /// tail. A typed timeout performs that same disable tail before failing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-receive-signal-power-measurement
 pub struct PhySignalPowerTransition {
     request: PhySignalPowerRequest,
     readiness_activity_edges: u16,

@@ -910,6 +910,7 @@ const fn loopback_gain_transaction(index: u8, parameter_002: u8) -> PhyPbusForce
 
 /// Complete heap-free composition of ROM `phy_rfcal_txiq`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-tx-iq-calibration
 pub struct PhyTxIqCalibrationTransition {
     request: PhyTxIqCalibrationRequest,
     step: CalibrationStep,

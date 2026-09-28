@@ -376,6 +376,7 @@ pub fn calculate_pwdet_reference(sample_average: u16, reference_codes: [i16; 2])
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-power-detector-reference-calibration
 pub struct PhyPwdetTransition {
     parameters: PhyPwdetParameters,
     reference_codes: [i16; 2],

@@ -53,6 +53,7 @@ impl fmt::Debug for WifiPhyMembership {
 ///
 /// The domain is not registered and settled, or the client set rejects the
 /// client; nothing changed.
+// CAPABILITY: phy-protocol-consumer-protocol-client-ownership-wifi
 pub fn join_wifi(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocked: &WifiClocked,

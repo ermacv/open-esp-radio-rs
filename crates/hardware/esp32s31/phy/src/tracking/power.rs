@@ -147,6 +147,7 @@ enum PhyTxPowerTrackingStep {
 
 /// Exact finite I/O ordering of archive `phy_txpwr_cal_track_new`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-calibration-state-and-tracking-tx-power-tracking
 pub struct PhyTxPowerTrackingTransition {
     request: PhyTxPowerTrackingRequest,
     /// The gain child publishes and therefore brackets itself with the

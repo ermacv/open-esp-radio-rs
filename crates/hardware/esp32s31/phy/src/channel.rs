@@ -533,6 +533,7 @@ impl PhyChipChannelRequest {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-wi-fi-channel-retune
 pub struct PhyChipChannelTransition {
     request: PhyChipChannelRequest,
     /// Force-TX/RX nesting count held by the caller.

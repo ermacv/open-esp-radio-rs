@@ -97,6 +97,7 @@ const fn rfpll_transition(calibration_index: u8, crystal_selector: u8) -> RfpllF
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-d-code-calibration
 pub struct PhyDcodeTransition {
     parameters: PhyDcodeParameters,
     codes: [u8; 8],

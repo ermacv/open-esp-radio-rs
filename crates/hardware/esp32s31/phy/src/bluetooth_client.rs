@@ -66,6 +66,7 @@ pub enum BluetoothPhyClientError {
 /// Every check runs before the client set or BTBB changes: the domain is not
 /// registered and settled, its registration no longer describes the lease,
 /// Bluetooth already holds BTBB, or the client set rejects the client.
+// CAPABILITY: phy-protocol-consumer-protocol-client-ownership-bluetooth, bluetooth-initial-phy-handoff
 pub fn join_bluetooth(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     task: &TaskOwner,

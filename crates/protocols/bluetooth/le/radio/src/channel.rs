@@ -101,6 +101,7 @@ impl DataChannel {
 
 /// One of the 40 RF channels addressed by Direct Test Mode, `(f - 2402) / 2`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+// CAPABILITY: phy-protocol-consumer-protocol-channel-switching-bluetooth
 pub struct TestChannel(u8);
 
 impl TestChannel {

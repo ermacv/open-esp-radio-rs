@@ -242,6 +242,7 @@ struct BluetoothPhyState {
 ///
 /// The type is intentionally neither `Copy` nor `Clone`: moving it transfers
 /// the authority to update the calibrated radio state.
+// CAPABILITY: phy-calibration-state-and-tracking-common-wi-fi-bluetooth-calibration-state
 pub struct PhyState {
     config: PhyConfig,
     common: CommonPhyState,
@@ -253,6 +254,7 @@ pub struct PhyState {
 ///
 /// This is deliberately not `Copy` or `Clone`: persistence code must move the
 /// one cache value instead of duplicating a former vendor memory image.
+// CAPABILITY: phy-calibration-state-and-tracking-calibration-cache-representation-export, whole-radio-active-operation-power-saving-and-shutdown-calibration-state-cache
 pub struct PhyCalibrationCache {
     snapshot: PhyCalibrationSnapshot,
 }
@@ -264,6 +266,7 @@ pub struct PhyCalibrationCache {
 /// restores the calibration state, and republishes hardware state which does
 /// not survive a cold epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-calibration-state-and-tracking-calibration-snapshot
 pub struct PhyCalibrationSnapshot {
     pub schema: u16,
     pub identity: crate::calibration::registration::PhyCalibrationIdentity,

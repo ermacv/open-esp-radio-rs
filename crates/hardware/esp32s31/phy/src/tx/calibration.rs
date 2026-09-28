@@ -172,6 +172,7 @@ const fn tx_work_pbus(index: u8, parameters: PhyTxCalibrationParameters) -> PhyP
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-tx-calibration-measurement-primitives
 pub struct PhyTxCalibrationEnvironmentTransition {
     parameters: PhyTxCalibrationParameters,
     step: EnvironmentStep,

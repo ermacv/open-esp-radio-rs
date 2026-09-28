@@ -99,6 +99,7 @@ enum PhyRxSaturationStep {
 /// reference's bounded 100-sample policy while allowing the Rust executor to
 /// yield between samples.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-rx-saturation-check
 pub struct PhyRxSaturationTransition {
     parameter_002: u8,
     step: PhyRxSaturationStep,

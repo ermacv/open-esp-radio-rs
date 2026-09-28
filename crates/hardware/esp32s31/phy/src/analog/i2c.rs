@@ -423,6 +423,7 @@ impl AdcRateTransition {
 ///
 /// Every production value fits its field; a wider value would leak into the
 /// neighboring bits of the vendor leaf and is a programming error here.
+// CAPABILITY: phy-rf-and-analog-primitives-analog-i2c-access
 pub const fn field_write(
     field: PhyI2cField,
     value: u8,
@@ -1132,6 +1133,7 @@ enum PhyRfInitPrefixStep {
 /// intervals are separate executor timer edges. No transition is caused by
 /// polling this value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-rf-analog-initialization-prefix, rf-bb-initialization
 pub struct PhyRfInitPrefixTransition {
     step: PhyRfInitPrefixStep,
 }

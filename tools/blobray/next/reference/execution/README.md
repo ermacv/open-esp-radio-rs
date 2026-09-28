@@ -144,6 +144,15 @@ state. Changing a live mapping's owner/lifetime conflicts. A cold reset discards
 that mapping and permits a fresh declaration. Stack fill is an explicit condition;
 zero is never inferred from absent initialization.
 
+An invocation may also list up to 128 `preload` elements, each an `address` and
+known `bytes`, for example `{"address":805306368,"bytes":[1,0,0,0]}`. After the
+phase's stack and memory are mapped and before its entry, each preload writes its
+bytes into the one mapped writable region that holds all of them: ELF data,
+declared RAM or the stack. A preload that crosses a region's end, lies outside
+every region or targets read-only memory is rejected. A preload is an input of
+the phase, like a seed: it creates no guest memory or MMIO event. An empty list
+is omitted from the request's encoding.
+
 MMIO uses explicit `models` declarations. Each has a unique live `id`, caller
 `applicability` conditions, `lifetime` (`phase` or `session`) and tagged `behavior`.
 For example:

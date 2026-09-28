@@ -529,6 +529,7 @@ pub fn invocation(
         goal: ExecutionGoal::Return,
         arguments,
         memory,
+        preload: vec![],
         models,
         calls: vec![],
         tables: vec![],

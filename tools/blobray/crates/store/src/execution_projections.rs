@@ -189,6 +189,7 @@ mod tests {
             goal: ExecutionGoal::Return,
             arguments: vec![],
             memory: vec![],
+            preload: vec![],
             models: vec![],
             calls: vec![],
             tables: vec![],

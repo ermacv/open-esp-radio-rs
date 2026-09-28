@@ -363,3 +363,51 @@ fn event_capacity_is_admitted_as_events_occur() {
     drop(s);
     assert_eq!(memory.used(), 0);
 }
+
+#[test]
+fn a_preload_writes_known_bytes_only_inside_one_writable_region() {
+    let memory = WorkingMemory::new(16 * 1024 * 1024).unwrap();
+    let mut s = session(&memory, None);
+    s.region(
+        Mapping {
+            address: 0x2000,
+            length: 8,
+            flags: 4,
+            kind: RegionKind::Image,
+        },
+        Some(0),
+        &[],
+        &mut || Ok(()),
+    )
+    .unwrap();
+    let preload = |address, bytes: &[u8]| MemoryPreload {
+        address,
+        bytes: bytes.to_vec(),
+    };
+    s.preload(&preload(0x1002, &[1, 2, 3, 4]), &mut || Ok(()))
+        .unwrap();
+    // Preloaded bytes are known; the rest of the unseeded region is not.
+    assert_eq!(
+        s.read(0x1002, 4, MemoryAccess::Read, &mut || Ok(()))
+            .unwrap(),
+        Some(0x0403_0201)
+    );
+    assert_eq!(
+        s.read(0x1000, 2, MemoryAccess::Read, &mut || Ok(()))
+            .unwrap(),
+        None
+    );
+    // Across a region's end, outside every region, or into read-only memory.
+    for (address, bytes) in [
+        (0x1006, &[0u8; 4][..]),
+        (0x3000, &[0; 1]),
+        (0x2000, &[0; 4]),
+    ] {
+        assert_eq!(
+            s.preload(&preload(address, bytes), &mut || Ok(()))
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidRequest
+        );
+    }
+}

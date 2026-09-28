@@ -63,6 +63,7 @@ fn invocation(arguments: [u32; 8]) -> Invocation {
         entry: 0x1000,
         arguments: arguments.into_iter().map(Some).collect(),
         memory: vec![],
+        preload: vec![],
         models: vec![],
         calls: vec![],
         tables: vec![],

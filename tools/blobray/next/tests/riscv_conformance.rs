@@ -122,6 +122,7 @@ fn run(elf: &[u8]) -> std::result::Result<Vec<u32>, String> {
                 goal: ExecutionGoal::Return,
                 arguments: vec![Some(0); 8],
                 memory: vec![],
+                preload: vec![],
                 models: vec![],
                 calls: vec![],
                 tables: vec![],

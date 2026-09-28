@@ -275,6 +275,56 @@ impl<'a> Session<'a> {
         r.bytes[offset..offset + length].copy_from_slice(&patch.replacement);
         Ok(())
     }
+    /// Write `preload`'s known bytes into the one mapped writable region that
+    /// holds all of them: an input of the phase, never a guest effect.
+    fn preload(&mut self, preload: &MemoryPreload, c: &mut dyn RunControl) -> Result<()> {
+        c.checkpoint(self.regions.len() as u64 + 1)?;
+        let (start, end) = (
+            u64::from(preload.address),
+            u64::from(preload.address) + preload.bytes.len() as u64,
+        );
+        let Some(r) = self.regions.iter_mut().find(|r| {
+            u64::from(r.address) <= start && end <= u64::from(r.address) + r.bytes.len() as u64
+        }) else {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                format!(
+                    "preload {:#x}+{:#x} is not inside one mapped region",
+                    preload.address,
+                    preload.bytes.len()
+                ),
+            ));
+        };
+        if r.flags & 2 == 0 {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                format!(
+                    "preload {:#x}+{:#x} targets read-only {:?} memory",
+                    preload.address,
+                    preload.bytes.len(),
+                    r.kind
+                ),
+            ));
+        }
+        if let Some(steps) = &mut self.steps {
+            steps.push(
+                crate::execution_steps::StepEntry::Input {
+                    address: preload.address,
+                    length: preload.bytes.len() as u32,
+                    transient: r.kind.is_transient(),
+                },
+                c,
+            )?;
+        }
+        let offset = (start - u64::from(r.address)) as usize;
+        for (index, chunk) in preload.bytes.chunks(WORK_BLOCK).enumerate() {
+            c.checkpoint(1)?;
+            let at = offset + index * WORK_BLOCK;
+            r.bytes[at..at + chunk.len()].copy_from_slice(chunk);
+            r.known[at..at + chunk.len()].fill(1);
+        }
+        Ok(())
+    }
     /// Record this session's steps from now on.
     pub fn record_steps(&mut self) {
         self.steps = Some(crate::execution_steps::StepLog::new(self.memory));
@@ -572,6 +622,9 @@ impl<'a> Session<'a> {
                     c,
                 )?;
             }
+        }
+        for preload in &input.preload {
+            self.preload(preload, c)?;
         }
         let regions = &self.regions;
         self.devices

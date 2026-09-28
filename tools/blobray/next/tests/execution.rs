@@ -118,6 +118,7 @@ impl Fixture {
             entry: 0x1000,
             arguments: vec![Some(0); 8],
             memory: vec![],
+            preload: vec![],
             models: vec![],
             calls: vec![],
             tables: vec![],

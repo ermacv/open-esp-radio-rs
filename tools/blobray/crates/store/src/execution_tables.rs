@@ -550,6 +550,7 @@ mod tests {
             entry: 0x1000,
             arguments: vec![],
             memory: vec![],
+            preload: vec![],
             models: vec![],
             calls: vec![],
             tables: vec![table],

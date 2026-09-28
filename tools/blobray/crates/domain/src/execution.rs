@@ -13,6 +13,8 @@ pub const MAX_EXECUTION_CASES: usize = 4096;
 pub const MAX_EXECUTION_EVENTS: u32 = 1 << 20;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
+/// Preloads one invocation may declare.
+pub const MAX_MEMORY_PRELOADS: usize = 128;
 
 /// Captured address space; each invocation selects its own entry within the mappings.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -53,6 +55,11 @@ pub struct Invocation {
     /// Clients lower multiword/variadic arguments and insert ABI padding explicitly.
     pub arguments: Vec<Option<u32>>,
     pub memory: Vec<ExecutionRegion>,
+    /// Known bytes written, after the phase's memory is mapped and before its
+    /// entry, into memory the phase already maps writable: image data,
+    /// declared RAM or the stack. A preload is an input, not a guest effect.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preload: Vec<MemoryPreload>,
     pub models: Vec<DeviceDeclaration>,
     pub calls: Vec<CallDeclaration>,
     pub tables: Vec<RuntimeTable>,
@@ -60,6 +67,13 @@ pub struct Invocation {
     pub observe_memory: Vec<MemorySelection>,
     pub observe_calls: Option<CallCapture>,
     pub observe_timeline: TimelineCapture,
+}
+/// Known bytes at `address`, preloaded into mapped writable memory.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryPreload {
+    pub address: u32,
+    pub bytes: Vec<u8>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -716,6 +730,26 @@ impl ExecutionRequest {
                         });
                     }
                 }
+                require(input.preload.len() <= MAX_MEMORY_PRELOADS, || {
+                    format!(
+                        "case `{name}` {side} declares {} preloads, more than {MAX_MEMORY_PRELOADS}",
+                        input.preload.len()
+                    )
+                })?;
+                for preload in &input.preload {
+                    require(
+                        !preload.bytes.is_empty()
+                            && u64::from(preload.address) + (preload.bytes.len() as u64)
+                                < u64::from(u32::MAX),
+                        || {
+                            format!(
+                                "case `{name}` {side} preload at {:#x} of {} bytes is empty or out of range",
+                                preload.address,
+                                preload.bytes.len()
+                            )
+                        },
+                    )?;
+                }
                 require(input.tables.len() <= MAX_RUNTIME_TABLES, || {
                     format!(
                         "case `{name}` {side} has more than {MAX_RUNTIME_TABLES} runtime tables"
@@ -1009,6 +1043,7 @@ mod validation_tests {
             entry: 0x1000,
             arguments: vec![Some(0); 8],
             memory: vec![],
+            preload: vec![],
             models: vec![],
             calls: vec![],
             tables: vec![],

@@ -911,7 +911,7 @@ mod tests {
     fn cargo_tree_finds_the_packages_of_one_image() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let provenance = json!({"parameters": {
-            "runtime_features": "bluetooth-hil,phy-rx-hot-sram,psram-task-stack,code-psram,profile-psram-data",
+            "runtime_features": "bluetooth-hil,phy-rx-hot-sram",
             "target": "riscv32imafc-unknown-none-elf"
         }});
         let packages = image_packages(&root, &provenance).unwrap().unwrap();

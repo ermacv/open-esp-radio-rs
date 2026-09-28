@@ -96,6 +96,12 @@ pub fn plan(
         if path.starts_with("qualification/evaluator") {
             plan.packages.insert(String::from("oer-hil-runner-core"));
         }
+        // The evaluator resolves image source graphs with `cargo tree` over
+        // the HIL runtime's features, so a runtime manifest change can break
+        // its tests without a Cargo edge from the evaluator.
+        if path.starts_with("hil/targets") && name == "Cargo.toml" {
+            plan.packages.insert(String::from("oer-qualification"));
+        }
         if ["hil/targets", "hil/protocol", "hil/target-core"]
             .iter()
             .any(|prefix| path.starts_with(prefix))
@@ -542,6 +548,11 @@ mod tests {
             run(&["qualification/evaluator/src/main.rs"])
                 .packages
                 .contains("oer-hil-runner-core")
+        );
+        assert!(
+            run(&["hil/targets/esp32s31/runtime/Cargo.toml"])
+                .packages
+                .contains("oer-qualification")
         );
         assert_eq!(run(&["docs/guide.md"]).capabilities, None);
     }

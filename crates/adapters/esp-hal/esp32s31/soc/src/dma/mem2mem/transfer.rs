@@ -9,9 +9,10 @@ use super::{
         validate_descriptors,
     },
     registers::{
-        INTERNAL_SRAM_END, INTERNAL_SRAM_START, PSRAM_END, PSRAM_START, RX_ERRORS, TX_ERRORS,
-        disable_channel_interrupts, dma_fence, enable_and_configure_group,
+        INTERNAL_SRAM_END, INTERNAL_SRAM_START, PSRAM_END, PSRAM_START, disable_channel_interrupts,
+        dma_fence, enable_and_configure_group,
     },
+    status::AxiGdmaMem2MemStatus,
 };
 use crate::{PsramCacheWritebackError, writeback_psram_for_dma_read};
 use core::marker::PhantomData;
@@ -36,7 +37,7 @@ pub enum AxiGdmaMem2MemError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AxiGdmaMem2MemTransferError {
     Timeout,
-    Hardware { rx_raw: u32, tx_raw: u32 },
+    Hardware { status: AxiGdmaMem2MemStatus },
     DescriptorWriteback,
     ReceivedLength { expected: usize, actual: usize },
 }
@@ -45,8 +46,7 @@ pub enum AxiGdmaMem2MemTransferError {
 pub struct AxiGdmaMem2MemReport {
     pub bytes: usize,
     pub descriptors: usize,
-    pub rx_raw: u32,
-    pub tx_raw: u32,
+    pub status: AxiGdmaMem2MemStatus,
 }
 
 /// One discontiguous source/destination pair retained by an M2M transfer.
@@ -339,7 +339,7 @@ impl AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
         spin_budget: u32,
     ) -> Result<AxiGdmaMem2MemReport, AxiGdmaMem2MemTransferError> {
         let mut remaining = spin_budget;
-        let (rx_raw, tx_raw) = loop {
+        let status = loop {
             if let Some(status) = terminal_status() {
                 break status;
             }
@@ -352,20 +352,19 @@ impl AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
             core::hint::spin_loop();
         };
 
-        self.finish(rx_raw, tx_raw)
+        self.finish(status)
     }
 
     pub(super) fn finish(
         &mut self,
-        rx_raw: u32,
-        tx_raw: u32,
+        status: AxiGdmaMem2MemStatus,
     ) -> Result<AxiGdmaMem2MemReport, AxiGdmaMem2MemTransferError> {
         disable_channel_interrupts();
         dma_fence();
         self.driver.stop_and_reset_channel();
         self.active = false;
-        if rx_raw & RX_ERRORS != 0 || tx_raw & TX_ERRORS != 0 {
-            return Err(AxiGdmaMem2MemTransferError::Hardware { rx_raw, tx_raw });
+        if status.failed() {
+            return Err(AxiGdmaMem2MemTransferError::Hardware { status });
         }
 
         let mut received = 0usize;
@@ -393,8 +392,7 @@ impl AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
         Ok(AxiGdmaMem2MemReport {
             bytes: received,
             descriptors: self.descriptor_count,
-            rx_raw,
-            tx_raw,
+            status,
         })
     }
 }

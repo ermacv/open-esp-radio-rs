@@ -28,8 +28,8 @@ impl Future for AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
         let this = self.get_mut();
         assert!(this.active, "AXI-GDMA transfer polled after completion");
 
-        if let Some((rx_raw, tx_raw)) = terminal_status() {
-            return Poll::Ready(this.finish(rx_raw, tx_raw));
+        if let Some(status) = terminal_status() {
+            return Poll::Ready(this.finish(status));
         }
 
         CHANNEL0_WAKER.register(context.waker());
@@ -38,9 +38,9 @@ impl Future for AxiGdmaMem2MemTransferOwner<'_, '_, '_> {
         // Re-check after publishing the waker and enabling the peripheral
         // sources. This closes both completion-before-registration and
         // completion-between-registration-and-enable races.
-        if let Some((rx_raw, tx_raw)) = terminal_status() {
+        if let Some(status) = terminal_status() {
             disable_channel_interrupts();
-            Poll::Ready(this.finish(rx_raw, tx_raw))
+            Poll::Ready(this.finish(status))
         } else {
             Poll::Pending
         }

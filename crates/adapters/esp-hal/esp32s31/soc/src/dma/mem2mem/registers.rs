@@ -1,105 +1,86 @@
 //! Typed upstream AXI-GDMA register operations and DMA visibility fences.
 
-use super::{descriptor::BurstSize, transfer::AxiGdmaMem2Mem};
+use super::{
+    descriptor::BurstSize,
+    status::{AxiGdmaMem2MemRxStatus, AxiGdmaMem2MemStatus, AxiGdmaMem2MemTxStatus},
+    transfer::AxiGdmaMem2Mem,
+};
 use core::{
     arch::asm,
     sync::atomic::{Ordering, compiler_fence},
 };
 use esp_hal::peripherals::{AXI_GDMA, HP_SYS_CLKRST};
 
-pub(super) const INTERNAL_SRAM_START: usize = 0x2f00_0000;
+// System address map of the ESP32-S31, from ESP-IDF 4d59230d
+// `components/soc/esp32s31/include/soc/soc.h`. The DMA windows describe what
+// the AXI-GDMA can address, not a linker region or the board's population.
 
+/// Internal SRAM, all 512 KiB (`SOC_DRAM_LOW..SOC_DRAM_HIGH`).
+pub(super) const INTERNAL_SRAM_START: usize = 0x2f00_0000;
 pub(super) const INTERNAL_SRAM_END: usize = 0x2f08_0000;
 
+/// External PSRAM address window, 64 MiB (`SOC_EXTRAM_LOW..SOC_EXTRAM_HIGH`).
 pub(super) const PSRAM_START: usize = 0x5000_0000;
-
 pub(super) const PSRAM_END: usize = 0x5400_0000;
 
 const CHANNEL: usize = 0;
 
 const M2M_TRIGGER_ID: u8 = 6;
 
-const TX_DONE: u32 = 1 << 0;
-
-const TX_EOF: u32 = 1 << 1;
-
-const TX_DESCRIPTOR_ERROR: u32 = 1 << 2;
-
-const TX_TOTAL_EOF: u32 = 1 << 3;
-
-const TX_FIFO_OVERFLOW: u32 = 1 << 4;
-
-const TX_FIFO_UNDERFLOW: u32 = 1 << 5;
-
-const TX_ALL: u32 =
-    TX_DONE | TX_EOF | TX_DESCRIPTOR_ERROR | TX_TOTAL_EOF | TX_FIFO_OVERFLOW | TX_FIFO_UNDERFLOW;
-
-pub(super) const TX_ERRORS: u32 = TX_DESCRIPTOR_ERROR | TX_FIFO_OVERFLOW | TX_FIFO_UNDERFLOW;
-
-const RX_DONE: u32 = 1 << 0;
-
-const RX_SUCCESS_EOF: u32 = 1 << 1;
-
-const RX_ERROR_EOF: u32 = 1 << 2;
-
-const RX_DESCRIPTOR_ERROR: u32 = 1 << 3;
-
-const RX_DESCRIPTOR_EMPTY: u32 = 1 << 4;
-
-const RX_FIFO_OVERFLOW: u32 = 1 << 5;
-
-const RX_FIFO_UNDERFLOW: u32 = 1 << 6;
-
-const RX_ALL: u32 = RX_DONE
-    | RX_SUCCESS_EOF
-    | RX_ERROR_EOF
-    | RX_DESCRIPTOR_ERROR
-    | RX_DESCRIPTOR_EMPTY
-    | RX_FIFO_OVERFLOW
-    | RX_FIFO_UNDERFLOW;
-
-pub(super) const RX_ERRORS: u32 =
-    RX_ERROR_EOF | RX_DESCRIPTOR_ERROR | RX_DESCRIPTOR_EMPTY | RX_FIFO_OVERFLOW | RX_FIFO_UNDERFLOW;
-
-pub(super) fn terminal_status() -> Option<(u32, u32)> {
+fn channel_status() -> AxiGdmaMem2MemStatus {
     let regs = AXI_GDMA::regs();
-    let rx_raw = regs.in_ch(CHANNEL).in_int().raw().read().bits();
-    let tx_raw = regs.out_ch(CHANNEL).out_int().raw().read().bits();
-    let failed = rx_raw & RX_ERRORS != 0 || tx_raw & TX_ERRORS != 0;
-    let completed = rx_raw & RX_SUCCESS_EOF != 0 && tx_raw & TX_TOTAL_EOF != 0;
-    (failed || completed).then_some((rx_raw, tx_raw))
+    let rx = regs.in_ch(CHANNEL).in_int().raw().read();
+    let tx = regs.out_ch(CHANNEL).out_int().raw().read();
+    AxiGdmaMem2MemStatus {
+        rx: AxiGdmaMem2MemRxStatus {
+            done: rx.in_done().bit_is_set(),
+            success_eof: rx.in_suc_eof().bit_is_set(),
+            error_eof: rx.in_err_eof().bit_is_set(),
+            descriptor_error: rx.in_dscr_err().bit_is_set(),
+            descriptor_empty: rx.in_dscr_empty().bit_is_set(),
+            fifo_overflow: rx.infifo_l1_ovf().bit_is_set(),
+            fifo_underflow: rx.infifo_l1_udf().bit_is_set(),
+        },
+        tx: AxiGdmaMem2MemTxStatus {
+            done: tx.out_done().bit_is_set(),
+            eof: tx.out_eof().bit_is_set(),
+            descriptor_error: tx.out_dscr_err().bit_is_set(),
+            total_eof: tx.out_total_eof().bit_is_set(),
+            fifo_overflow: tx.outfifo_l1_ovf().bit_is_set(),
+            fifo_underflow: tx.outfifo_l1_udf().bit_is_set(),
+        },
+    }
 }
 
+pub(super) fn terminal_status() -> Option<AxiGdmaMem2MemStatus> {
+    let status = channel_status();
+    status.terminal().then_some(status)
+}
+
+/// Enable the completion and failure sources that `terminal_status` reads.
 pub(super) fn enable_channel_interrupts() {
     let regs = AXI_GDMA::regs();
-    // SAFETY: the masks contain only defined channel interrupt bits; the
-    // channel owner is the sole writer of its enable registers.
-    unsafe {
-        regs.in_ch(CHANNEL)
-            .in_int()
-            .ena()
-            .write_with_zero(|writer| writer.bits(RX_SUCCESS_EOF | RX_ERRORS));
-        regs.out_ch(CHANNEL)
-            .out_int()
-            .ena()
-            .write_with_zero(|writer| writer.bits(TX_TOTAL_EOF | TX_ERRORS));
-    }
+    regs.in_ch(CHANNEL).in_int().ena().write(|writer| {
+        writer
+            .in_suc_eof()
+            .set_bit()
+            .in_err_eof()
+            .set_bit()
+            .in_dscr_err()
+            .set_bit()
+            .in_dscr_empty()
+            .set_bit()
+    });
+    regs.out_ch(CHANNEL)
+        .out_int()
+        .ena()
+        .write(|writer| writer.out_total_eof().set_bit().out_dscr_err().set_bit());
 }
 
 pub(super) fn disable_channel_interrupts() {
     let regs = AXI_GDMA::regs();
-    // SAFETY: zero disables every channel interrupt; the channel owner is the
-    // sole writer of its enable registers.
-    unsafe {
-        regs.in_ch(CHANNEL)
-            .in_int()
-            .ena()
-            .write_with_zero(|writer| writer.bits(0));
-        regs.out_ch(CHANNEL)
-            .out_int()
-            .ena()
-            .write_with_zero(|writer| writer.bits(0));
-    }
+    regs.in_ch(CHANNEL).in_int().ena().write(|writer| writer);
+    regs.out_ch(CHANNEL).out_int().ena().write(|writer| writer);
 }
 
 pub(super) fn enable_and_configure_group() {
@@ -129,8 +110,9 @@ pub(super) fn enable_and_configure_group() {
             .clear_bit()
     });
     // SAFETY: the four window bounds are the internal SRAM range and the
-    // external range from Flash XIP through the end of PSRAM, which this
-    // module's descriptor and payload validation already requires.
+    // external range from the Flash XIP base (`SOC_IROM_LOW`) through the end
+    // of the PSRAM window, which this module's descriptor and payload
+    // validation already requires.
     regs.intr_mem_start_addr().write(|writer| unsafe {
         writer
             .access_intr_mem_start_addr()
@@ -143,8 +125,11 @@ pub(super) fn enable_and_configure_group() {
             .bits((INTERNAL_SRAM_END - 1) as u32)
     });
     // SAFETY: see the window bounds above.
-    regs.extr_mem_start_addr()
-        .write(|writer| unsafe { writer.access_extr_mem_start_addr().bits(0x4000_0000) });
+    regs.extr_mem_start_addr().write(|writer| unsafe {
+        writer
+            .access_extr_mem_start_addr()
+            .bits(crate::FLASH_XIP_START as u32)
+    });
     // SAFETY: see the window bounds above.
     regs.extr_mem_end_addr()
         .write(|writer| unsafe { writer.access_extr_mem_end_addr().bits(PSRAM_END as u32 - 1) });
@@ -166,16 +151,38 @@ impl<'d> AxiGdmaMem2Mem<'d> {
         let input = regs.in_ch(CHANNEL);
         let output = regs.out_ch(CHANNEL);
 
-        // SAFETY: the clear masks contain only defined channel interrupt bits.
-        input
-            .in_int()
-            .clr()
-            .write(|writer| unsafe { writer.bits(RX_ALL) });
-        // SAFETY: see the clear masks above.
-        output
-            .out_int()
-            .clr()
-            .write(|writer| unsafe { writer.bits(TX_ALL) });
+        input.in_int().clr().write(|writer| {
+            writer
+                .in_done()
+                .clear_bit_by_one()
+                .in_suc_eof()
+                .clear_bit_by_one()
+                .in_err_eof()
+                .clear_bit_by_one()
+                .in_dscr_err()
+                .clear_bit_by_one()
+                .in_dscr_empty()
+                .clear_bit_by_one()
+                .infifo_l1_ovf()
+                .clear_bit_by_one()
+                .infifo_l1_udf()
+                .clear_bit_by_one()
+        });
+        output.out_int().clr().write(|writer| {
+            writer
+                .out_done()
+                .clear_bit_by_one()
+                .out_eof()
+                .clear_bit_by_one()
+                .out_dscr_err()
+                .clear_bit_by_one()
+                .out_total_eof()
+                .clear_bit_by_one()
+                .outfifo_l1_ovf()
+                .clear_bit_by_one()
+                .outfifo_l1_udf()
+                .clear_bit_by_one()
+        });
 
         // SAFETY: `BurstSize::register_value` yields only the encoded 16-,
         // 32- or 64-byte burst selector values.

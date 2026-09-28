@@ -14,13 +14,16 @@ mod descriptor;
 #[cfg(feature = "axi-gdma-mem2mem")]
 #[allow(
     unsafe_code,
-    reason = "this reviewed PAC boundary programs validated S31 register images and emits the DMA visibility fence"
+    reason = "this reviewed PAC boundary programs validated S31 register fields and emits the DMA visibility fence"
 )]
 mod registers;
+mod status;
 #[cfg(feature = "axi-gdma-mem2mem")]
 mod transfer;
 
 #[cfg(feature = "axi-gdma-mem2mem")]
 pub use descriptor::{AxiGdmaDescriptor, BurstSize};
+#[cfg(feature = "axi-gdma-mem2mem")]
+pub use status::{AxiGdmaMem2MemRxStatus, AxiGdmaMem2MemStatus, AxiGdmaMem2MemTxStatus};
 #[cfg(feature = "axi-gdma-mem2mem")]
 pub use transfer::*;

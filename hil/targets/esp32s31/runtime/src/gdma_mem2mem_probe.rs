@@ -439,9 +439,8 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
         return;
     }
     log::info!(
-        "OPEN_RADIO_HIL gdma_mem2mem sram_control=PASS rx_raw={:08x} tx_raw={:08x}",
-        sram_report.rx_raw,
-        sram_report.tx_raw,
+        "OPEN_RADIO_HIL gdma_mem2mem sram_control=PASS status={:?}",
+        sram_report.status,
     );
 
     for (case, size) in [64usize, 1536, 4032, 4096, BATCH_SIZE]
@@ -500,11 +499,10 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
             return;
         }
         log::info!(
-            "OPEN_RADIO_HIL gdma_mem2mem correctness=PASS size={} descriptors={} rx_raw={:08x} tx_raw={:08x}",
+            "OPEN_RADIO_HIL gdma_mem2mem correctness=PASS size={} descriptors={} status={:?}",
             size,
             report.descriptors,
-            report.rx_raw,
-            report.tx_raw,
+            report.status,
         );
     }
 
@@ -569,12 +567,11 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
         return;
     }
     log::info!(
-        "OPEN_RADIO_HIL gdma_mem2mem ethernet_geometry=PASS offset={} bytes={} descriptors={} rx_raw={:08x} tx_raw={:08x}",
+        "OPEN_RADIO_HIL gdma_mem2mem ethernet_geometry=PASS offset={} bytes={} descriptors={} status={:?}",
         SG_DESTINATION_OFFSET,
         ethernet_report.bytes,
         ethernet_report.descriptors,
-        ethernet_report.rx_raw,
-        ethernet_report.tx_raw,
+        ethernet_report.status,
     );
 
     // Prove the actual Wi-Fi promotion geometry rather than extrapolating
@@ -649,12 +646,11 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
             return;
         }
         log::info!(
-            "OPEN_RADIO_HIL gdma_mem2mem scatter_gather=PASS frames={} bytes={} descriptors={} rx_raw={:08x} tx_raw={:08x}",
+            "OPEN_RADIO_HIL gdma_mem2mem scatter_gather=PASS frames={} bytes={} descriptors={} status={:?}",
             active,
             report.bytes,
             report.descriptors,
-            report.rx_raw,
-            report.tx_raw,
+            report.status,
         );
     }
 
@@ -760,12 +756,11 @@ pub(crate) async fn run(channel: DMA_AXI_CH0<'static>) {
         return;
     }
     log::info!(
-        "OPEN_RADIO_HIL gdma_mem2mem scatter_gather_async=PASS frames={} bytes={} descriptors={} rx_raw={:08x} tx_raw={:08x}",
+        "OPEN_RADIO_HIL gdma_mem2mem scatter_gather_async=PASS frames={} bytes={} descriptors={} status={:?}",
         FRAMES_PER_BATCH,
         sg_report.bytes,
         sg_report.descriptors,
-        sg_report.rx_raw,
-        sg_report.tx_raw,
+        sg_report.status,
     );
 
     let mut elapsed_cycles = 0u32;

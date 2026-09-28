@@ -6,65 +6,13 @@
 //! the accessor sequence the vendor driver issues.
 
 use super::{
-    Ieee802154AckTimeoutUnits, Ieee802154Event, Ieee802154FrequencyCode, Ieee802154MultipanIndex,
-    Ieee802154RegisterLease, Ieee802154RxAbortReasonObservation, Ieee802154RxStateCode,
-    Ieee802154SecurityPayloadOffset, Ieee802154TxAbortReasonObservation, Ieee802154TxStateCode,
+    Ieee802154AckTimeoutUnits, Ieee802154EdSampleMode, Ieee802154Event, Ieee802154FrequencyCode,
+    Ieee802154MultipanIndex, Ieee802154RegisterLease, Ieee802154RxAbortEnableSet,
+    Ieee802154RxAbortReasonObservation, Ieee802154RxStateCode, Ieee802154SecurityPayloadOffset,
+    Ieee802154TxAbortEnableSet, Ieee802154TxAbortReasonObservation,
+    Ieee802154TxSecurityErrorObservation, Ieee802154TxStateCode, Ieee802154TxStatus,
 };
 use crate::ieee802154::ownership::{RawDebugCounter, RawEvent};
-
-/// Energy-detection sample reduction (`ieee802154_ll_ed_sample_mode_t`).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ieee802154EdSampleMode {
-    /// Report the maximum sample.
-    Maximum,
-    /// Report the average sample.
-    Average,
-}
-
-/// A receive-abort enable set named by the public LL.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ieee802154RxAbortEnableSet {
-    /// `TX_ACK_TIMEOUT` and `TX_ACK_COEX_BREAK`, as enabled by MAC init.
-    RuntimeBaseline,
-    /// `IEEE802154_RX_ABORT_ALL`.
-    All,
-}
-
-impl Ieee802154RxAbortEnableSet {
-    /// Bit `reason - 1` of every reason in the set.
-    const fn mask(self) -> u32 {
-        match self {
-            Self::RuntimeBaseline => (1 << (16 - 1)) | (1 << (18 - 1)),
-            Self::All => 0x7fff_ffff,
-        }
-    }
-}
-
-/// A transmit-abort enable set named by the public LL.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ieee802154TxAbortEnableSet {
-    /// `RX_ACK_TIMEOUT`, `TX_COEX_BREAK`, `TX_SECURITY_ERROR`, `CCA_FAILED`
-    /// and `CCA_BUSY`, as enabled by MAC init.
-    RuntimeBaseline,
-    /// `IEEE802154_TX_ABORT_ALL`.
-    All,
-}
-
-impl Ieee802154TxAbortEnableSet {
-    /// Bit `reason - 1` of every reason in the set.
-    const fn mask(self) -> u32 {
-        match self {
-            Self::RuntimeBaseline => {
-                (1 << (16 - 1))
-                    | (1 << (18 - 1))
-                    | (1 << (19 - 1))
-                    | (1 << (24 - 1))
-                    | (1 << (25 - 1))
-            }
-            Self::All => 0x7fff_ffff,
-        }
-    }
-}
 
 /// Complete `RX_STATUS` observation (`ieee802154_ll_get_rx_status`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,71 +72,6 @@ impl Ieee802154RxStatus {
     /// Whether the SFD matched.
     pub const fn sfd_match(&self) -> bool {
         self.sfd_match
-    }
-}
-
-/// Transmit-security failure (`ieee802154_ll_tx_security_failed_reason_t`).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ieee802154TxSecurityError {
-    /// `IEEE802154_TX_SEC_FRAME_CTRL_NOT_SET`.
-    FrameControlNotSet,
-    /// `IEEE802154_TX_SEC_RESERVED_SEC_LEVEL`.
-    ReservedSecurityLevel,
-    /// `IEEE802154_TX_SEC_HEADER_PARSE`.
-    HeaderParse,
-    /// `IEEE802154_TX_SEC_PAYLOAD_ERROR`.
-    PayloadError,
-    /// `IEEE802154_TX_SEC_FRAME_COUNTER_SUP`.
-    FrameCounterSuppression,
-}
-
-/// Observed transmit-security error field.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ieee802154TxSecurityErrorObservation {
-    /// The field is zero.
-    None,
-    /// The field matched a public-LL reason.
-    Named(Ieee802154TxSecurityError),
-    /// The field value has no public-LL identity.
-    Unclassified,
-}
-
-impl Ieee802154TxSecurityErrorObservation {
-    const fn from_field(value: u8) -> Self {
-        match value {
-            0 => Self::None,
-            1 => Self::Named(Ieee802154TxSecurityError::FrameControlNotSet),
-            2 => Self::Named(Ieee802154TxSecurityError::ReservedSecurityLevel),
-            3 => Self::Named(Ieee802154TxSecurityError::HeaderParse),
-            4 => Self::Named(Ieee802154TxSecurityError::PayloadError),
-            5 => Self::Named(Ieee802154TxSecurityError::FrameCounterSuppression),
-            _ => Self::Unclassified,
-        }
-    }
-}
-
-/// Complete `TX_STATUS` observation (`ieee802154_ll_get_tx_status`).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154TxStatus {
-    state: Ieee802154TxStateCode,
-    abort_reason: Ieee802154TxAbortReasonObservation,
-    security_error: Ieee802154TxSecurityErrorObservation,
-}
-
-impl Ieee802154TxStatus {
-    /// Transmitter state code.
-    pub const fn state(&self) -> Ieee802154TxStateCode {
-        self.state
-    }
-
-    /// Transmit-abort reason of the last abort.
-    pub const fn abort_reason(&self) -> Ieee802154TxAbortReasonObservation {
-        self.abort_reason
-    }
-
-    /// `ieee802154_ll_get_tx_security_failed_reason`.
-    pub const fn security_error(&self) -> Ieee802154TxSecurityErrorObservation {
-        self.security_error
     }
 }
 
@@ -310,7 +193,7 @@ impl Ieee802154RegisterLease<'_> {
 
     /// `ieee802154_ll_get_ack_timeout`.
     pub fn ack_timeout(&self) -> Ieee802154AckTimeoutUnits {
-        Ieee802154AckTimeoutUnits(self.registers.ack_timeout())
+        Ieee802154AckTimeoutUnits::new(self.registers.ack_timeout())
     }
 
     /// `ieee802154_ll_set_multipan_panid`.
@@ -405,11 +288,11 @@ impl Ieee802154RegisterLease<'_> {
     /// `ieee802154_ll_get_tx_status`.
     pub fn tx_status(&self) -> Ieee802154TxStatus {
         let status = self.registers.tx_status();
-        Ieee802154TxStatus {
-            state: Ieee802154TxStateCode::from_field(status.state),
-            abort_reason: Ieee802154TxAbortReasonObservation::from_field(status.abort_reason),
-            security_error: Ieee802154TxSecurityErrorObservation::from_field(status.security_error),
-        }
+        Ieee802154TxStatus::new(
+            Ieee802154TxStateCode::from_field(status.state),
+            Ieee802154TxAbortReasonObservation::from_field(status.abort_reason),
+            Ieee802154TxSecurityErrorObservation::from_field(status.security_error),
+        )
     }
 
     /// `ieee802154_ll_set_transmit_security`.
@@ -424,7 +307,7 @@ impl Ieee802154RegisterLease<'_> {
 
     /// `ieee802154_ll_get_security_offset`.
     pub fn security_payload_offset(&self) -> Ieee802154SecurityPayloadOffset {
-        Ieee802154SecurityPayloadOffset(self.registers.security_payload_offset())
+        Ieee802154SecurityPayloadOffset::from_field(self.registers.security_payload_offset())
     }
 
     /// `ieee802154_ll_set_security_addr`.

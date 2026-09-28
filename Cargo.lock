@@ -2444,6 +2444,7 @@ name = "oer-esp32c5-pac"
 version = "0.1.0"
 dependencies = [
  "oer-esp32c5-pac-raw",
+ "oer-ieee802154-pac",
 ]
 
 [[package]]
@@ -2816,6 +2817,7 @@ version = "0.1.0"
 dependencies = [
  "oer-esp32s31-pac-raw",
  "oer-ieee80211-pac",
+ "oer-ieee802154-pac",
  "oer-memory",
 ]
 
@@ -3248,6 +3250,10 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee802154",
 ]
+
+[[package]]
+name = "oer-ieee802154-pac"
+version = "0.1.0"
 
 [[package]]
 name = "oer-memory"

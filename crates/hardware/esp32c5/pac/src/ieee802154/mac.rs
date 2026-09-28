@@ -14,6 +14,115 @@ pub use crate::generated::{
     Ieee802154Timer1ThresholdWord, Ieee802154Timer1ValueWord, Ieee802154TxPowerCode,
 };
 use crate::{Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters};
+pub use oer_ieee802154_pac::{
+    Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCommand, Ieee802154EdSampleMode,
+    Ieee802154EdSampleRate, Ieee802154Event, Ieee802154EventEnableState, Ieee802154EventMask,
+    Ieee802154EventObservation, Ieee802154EventObservationError, Ieee802154MacCommand,
+    Ieee802154MacControl, Ieee802154MultipanEnableState, Ieee802154MultipanIndex,
+    Ieee802154ObservedEventState, Ieee802154OperationEventEnableObservation,
+    Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154RouteState,
+    Ieee802154RxAbortEnableSet, Ieee802154RxAbortEnableState, Ieee802154RxAbortReason,
+    Ieee802154RxAbortReasonObservation, Ieee802154RxStateCode, Ieee802154SecurityPayloadOffset,
+    Ieee802154StateSnapshot, Ieee802154TransmitSecurityControl, Ieee802154TxAbortEnableSet,
+    Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation, Ieee802154TxSecurityError,
+    Ieee802154TxSecurityErrorObservation, Ieee802154TxStateCode, Ieee802154TxStatus,
+    Ieee802154ValidationEdDurationState, Ieee802154ValidationEventEnableState,
+};
+use oer_ieee802154_pac::{
+    Ieee802154InterruptActivationPlan, Ieee802154InterruptTransitionPort,
+    execute_interrupt_activation, execute_interrupt_deactivation,
+};
+
+/// The shared observation of one chip `EVENT_ENABLE` or `EVENT_STATUS`
+/// readback.
+const fn event_observation(
+    readback: crate::ieee802154::ownership::Ieee802154EventReadback,
+) -> Ieee802154EventObservation {
+    let mut events = Ieee802154EventMask::NONE;
+    if readback.tx_done() {
+        events = events.with(Ieee802154Event::TxDone);
+    }
+    if readback.rx_done() {
+        events = events.with(Ieee802154Event::RxDone);
+    }
+    if readback.ack_tx_done() {
+        events = events.with(Ieee802154Event::AckTxDone);
+    }
+    if readback.ack_rx_done() {
+        events = events.with(Ieee802154Event::AckRxDone);
+    }
+    if readback.rx_abort() {
+        events = events.with(Ieee802154Event::RxAbort);
+    }
+    if readback.tx_abort() {
+        events = events.with(Ieee802154Event::TxAbort);
+    }
+    if readback.ed_done() {
+        events = events.with(Ieee802154Event::EdDone);
+    }
+    if readback.timer0_overflow() {
+        events = events.with(Ieee802154Event::Timer0Overflow);
+    }
+    if readback.timer1_overflow() {
+        events = events.with(Ieee802154Event::Timer1Overflow);
+    }
+    if readback.clock_count_match() {
+        events = events.with(Ieee802154Event::ClockCountMatch);
+    }
+    if readback.tx_sfd_done() {
+        events = events.with(Ieee802154Event::TxSfdDone);
+    }
+    if readback.rx_sfd_done() {
+        events = events.with(Ieee802154Event::RxSfdDone);
+    }
+    Ieee802154EventObservation::from_parts(events, readback.has_unclassified())
+}
+
+/// The shared observation of one affine `EVENT_STATUS` snapshot.
+fn snapshot_observation(
+    snapshot: &crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
+) -> Ieee802154EventObservation {
+    event_observation(
+        crate::ieee802154::ownership::Ieee802154EventReadback::from_event_status_snapshot(snapshot),
+    )
+}
+
+const fn operation_event_enable_observation(
+    readback: crate::ieee802154::ownership::OperationEventEnableReadback,
+) -> Ieee802154OperationEventEnableObservation {
+    use crate::ieee802154::ownership::OperationEventEnableReadback as Readback;
+    match readback {
+        Readback::AllMasked => Ieee802154OperationEventEnableObservation::AllMasked,
+        Readback::EdOperation => Ieee802154OperationEventEnableObservation::EdDoneAndRxAbortOnly,
+        Readback::Unexpected => Ieee802154OperationEventEnableObservation::Unexpected,
+    }
+}
+
+const fn operation_rx_abort_enable_observation(
+    readback: crate::ieee802154::ownership::OperationRxAbortEnableReadback,
+) -> Ieee802154OperationRxAbortEnableObservation {
+    use crate::ieee802154::ownership::OperationRxAbortEnableReadback as Readback;
+    match readback {
+        Readback::AllMasked => Ieee802154OperationRxAbortEnableObservation::AllMasked,
+        Readback::EdOperationReasons => {
+            Ieee802154OperationRxAbortEnableObservation::EdOperationReasonsOnly
+        }
+        Readback::Unexpected => Ieee802154OperationRxAbortEnableObservation::Unexpected,
+    }
+}
+
+#[cfg(feature = "validation-probes")]
+const fn validation_event_enable_state(
+    readback: crate::ieee802154::ownership::ValidationEventEnableReadback,
+) -> Ieee802154ValidationEventEnableState {
+    use crate::ieee802154::ownership::ValidationEventEnableReadback as Readback;
+    match readback {
+        Readback::AllMasked => Ieee802154ValidationEventEnableState::AllMasked,
+        Readback::TimerPair => Ieee802154ValidationEventEnableState::TimerPairOnly,
+        Readback::EdTimerAbort => Ieee802154ValidationEventEnableState::EdDoneTimer0RxAbortOnly,
+        Readback::Unexpected => Ieee802154ValidationEventEnableState::Unexpected,
+    }
+}
 
 /// Opaque seven-bit value accepted by the MAC frequency-code register.
 ///
@@ -42,143 +151,6 @@ impl Ieee802154FrequencyCode {
     }
 }
 
-/// One of the four source-confirmed MAC PAN contexts.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154MultipanIndex(u8);
-
-impl Ieee802154MultipanIndex {
-    pub const COUNT: u8 = 4;
-    pub const CONTEXT0: Self = Self(0);
-    pub const CONTEXT1: Self = Self(1);
-    pub const CONTEXT2: Self = Self(2);
-    pub const CONTEXT3: Self = Self(3);
-
-    pub const fn new(value: u8) -> Option<Self> {
-        if value < Self::COUNT {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-
-    const fn as_usize(self) -> usize {
-        self.0 as usize
-    }
-}
-
-/// Semantic enable state for the four source-confirmed Multi-PAN contexts.
-///
-/// Hardware bit positions are owned by generated PAC field accessors. This
-/// type stores one boolean per context and cannot represent a register image.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154MultipanEnableState([bool; 4]);
-
-impl Ieee802154MultipanEnableState {
-    pub const NONE: Self = Self([false; 4]);
-    pub const ALL: Self = Self([true; 4]);
-
-    /// Construct an explicit semantic state without exposing register bits.
-    pub const fn new(context0: bool, context1: bool, context2: bool, context3: bool) -> Self {
-        Self([context0, context1, context2, context3])
-    }
-
-    const fn enabled(self) -> [bool; 4] {
-        self.0
-    }
-
-    pub const fn contains(self, index: Ieee802154MultipanIndex) -> bool {
-        self.0[index.as_usize()]
-    }
-
-    pub const fn with(self, index: Ieee802154MultipanIndex) -> Self {
-        let mut enabled = self.0;
-        enabled[index.as_usize()] = true;
-        Self(enabled)
-    }
-
-    pub const fn without(self, index: Ieee802154MultipanIndex) -> Self {
-        let mut enabled = self.0;
-        enabled[index.as_usize()] = false;
-        Self(enabled)
-    }
-}
-
-/// Source-confirmed energy-detection sampling rate.
-///
-/// The discriminants are the two-bit PAC field values.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
-pub enum Ieee802154EdSampleRate {
-    OnePerMicrosecond = 0,
-    TwoPerMicrosecond = 1,
-    FourPerMicrosecond = 2,
-    EightPerMicrosecond = 3,
-}
-
-impl Ieee802154EdSampleRate {
-    pub const fn field_value(self) -> u8 {
-        self as u8
-    }
-
-    const fn from_field(value: u8) -> Self {
-        match value {
-            0 => Self::OnePerMicrosecond,
-            1 => Self::TwoPerMicrosecond,
-            2 => Self::FourPerMicrosecond,
-            3 => Self::EightPerMicrosecond,
-            _ => unreachable!(),
-        }
-    }
-}
-
-/// Seven-bit transmit-security payload offset.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154SecurityPayloadOffset(u8);
-
-impl Ieee802154SecurityPayloadOffset {
-    pub const MAX: u8 = 0x7f;
-
-    pub const fn new(value: u8) -> Option<Self> {
-        if value <= Self::MAX {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-}
-
-/// Readable transmit-security control state without write-only key material.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154TransmitSecurityControl {
-    enabled: bool,
-    payload_offset: Ieee802154SecurityPayloadOffset,
-}
-
-impl Ieee802154TransmitSecurityControl {
-    const fn new(enabled: bool, payload_offset: Ieee802154SecurityPayloadOffset) -> Self {
-        Self {
-            enabled,
-            payload_offset,
-        }
-    }
-
-    pub const fn enabled(self) -> bool {
-        self.enabled
-    }
-
-    pub const fn payload_offset(self) -> Ieee802154SecurityPayloadOffset {
-        self.payload_offset
-    }
-}
-
 /// One four-bit coexistence priority value.
 ///
 /// The value is intentionally not a complete PTI register image. The PAC
@@ -204,964 +176,9 @@ impl Ieee802154Pti {
     }
 }
 
-/// One source-confirmed clear-channel-assessment mode.
-///
-/// The discriminants are field values, not shifted register images.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
-pub enum Ieee802154CcaMode {
-    Carrier = 0,
-    EnergyDetection = 1,
-    CarrierOrEnergyDetection = 2,
-    CarrierAndEnergyDetection = 3,
-}
-
-impl Ieee802154CcaMode {
-    pub const fn field_value(self) -> u8 {
-        self as u8
-    }
-
-    const fn from_field(value: u8) -> Self {
-        match value {
-            0 => Self::Carrier,
-            1 => Self::EnergyDetection,
-            2 => Self::CarrierOrEnergyDetection,
-            3 => Self::CarrierAndEnergyDetection,
-            _ => unreachable!(),
-        }
-    }
-}
-
-/// Sixteen-bit ACK-timeout field value.
-///
-/// The PAC deliberately does not assign physical units. The HAL owns the
-/// source-confirmed conversion between microseconds and this field.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154AckTimeoutUnits(u16);
-
-impl Ieee802154AckTimeoutUnits {
-    pub const fn new(value: u16) -> Self {
-        Self(value)
-    }
-
-    pub const fn value(self) -> u16 {
-        self.0
-    }
-}
-
 impl Ieee802154EdDurationUnits {
     const fn from_field(value: u32) -> Option<Self> {
         Self::new(value)
-    }
-}
-
-/// One finite energy-detection command accepted by the narrow PAC lease.
-///
-/// `Stop` maps to the source-confirmed common MAC `STOP` opcode, but this type
-/// grants no generic STOP operation to callers outside the ED transaction.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154EdCommand {
-    /// Start one configured energy-detection/CCA sampling transaction.
-    Start,
-    /// Stop the active energy-detection transaction.
-    Stop,
-}
-
-/// Source-confirmed command images accepted by the IEEE 802.15.4 MAC.
-///
-/// Each variant maps to one complete generated `COMMAND` image. There is no
-/// integer constructor, so callers cannot publish test-only or unknown
-/// opcodes through the production task capability.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154MacCommand {
-    /// Start transmission from the published TX DMA address.
-    Transmit,
-    /// Start reception into the published RX DMA address.
-    Receive,
-    /// Perform CCA and transmit when the channel is clear.
-    ClearChannelThenTransmit,
-    /// Start one configured energy-detection transaction.
-    EnergyDetection,
-    /// Stop the current state-specific MAC operation.
-    Stop,
-}
-
-/// Semantic state of the source-12 CPU interrupt route.
-///
-/// Register words and field geometry remain private to this PAC domain. Every
-/// non-reset state is distinct from [`ResetDetached`](Self::ResetDetached), so
-/// callers can fail closed without receiving register images.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154RouteState {
-    /// The route retains the complete reset-detached state.
-    ResetDetached,
-    /// The route has a CPU-interrupt destination assigned.
-    DestinationAssigned,
-    /// No destination is assigned, but secure-world pass-through is selected.
-    PassLevelConfigured,
-    /// A non-reset bit outside the reviewed destination and pass-through fields
-    /// was observed.
-    UnclassifiedNonReset,
-}
-
-impl Ieee802154RouteState {
-    const fn from_observation(
-        both_reset: bool,
-        destination_assigned: bool,
-        pass_level_configured: bool,
-    ) -> Self {
-        if both_reset {
-            Self::ResetDetached
-        } else if destination_assigned {
-            Self::DestinationAssigned
-        } else if pass_level_configured {
-            Self::PassLevelConfigured
-        } else {
-            Self::UnclassifiedNonReset
-        }
-    }
-
-    /// Return whether the CPU route retains the complete reset-detached state.
-    pub const fn is_reset_detached(self) -> bool {
-        matches!(self, Self::ResetDetached)
-    }
-}
-
-/// One source-confirmed IEEE 802.15.4 MAC event.
-///
-/// Register positions remain an implementation detail of this PAC type. The
-/// enum itself is the semantic vocabulary consumed by the IRQ state machine.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154Event {
-    /// A transmission completed.
-    TxDone,
-    /// A reception completed.
-    RxDone,
-    /// Automatic ACK transmission completed.
-    AckTxDone,
-    /// ACK reception completed.
-    AckRxDone,
-    /// Receive processing aborted.
-    RxAbort,
-    /// Transmit processing aborted.
-    TxAbort,
-    /// Energy detection completed.
-    EdDone,
-    /// TIMER0 overflowed.
-    Timer0Overflow,
-    /// TIMER1 overflowed.
-    Timer1Overflow,
-    /// The MAC clock counter matched its configured value.
-    ClockCountMatch,
-    /// Transmission SFD processing completed.
-    TxSfdDone,
-    /// Reception SFD processing completed.
-    RxSfdDone,
-}
-
-impl Ieee802154Event {
-    /// Return this event as a validated semantic event set.
-    pub const fn mask(self) -> Ieee802154EventMask {
-        Ieee802154EventMask::NONE.with(self)
-    }
-}
-
-/// A sampled event field contained at least one event without a reviewed
-/// semantic identity.
-///
-/// The physical field image remains private to [`Ieee802154EventObservation`].
-/// This error deliberately exposes no raw positions while still forcing every
-/// consumer to reject an unclassified sample.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154EventObservationError;
-
-/// A semantic set containing only source-confirmed MAC events.
-///
-/// Unlike [`Ieee802154EventEnableState`], this value is not accepted by any PAC
-/// writer. It is suitable for executor-side classification without granting
-/// event-enable authority.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154EventMask {
-    tx_done: bool,
-    rx_done: bool,
-    ack_tx_done: bool,
-    ack_rx_done: bool,
-    rx_abort: bool,
-    tx_abort: bool,
-    ed_done: bool,
-    timer0_overflow: bool,
-    timer1_overflow: bool,
-    clock_count_match: bool,
-    tx_sfd_done: bool,
-    rx_sfd_done: bool,
-}
-
-impl Ieee802154EventMask {
-    pub const NONE: Self = Self {
-        tx_done: false,
-        rx_done: false,
-        ack_tx_done: false,
-        ack_rx_done: false,
-        rx_abort: false,
-        tx_abort: false,
-        ed_done: false,
-        timer0_overflow: false,
-        timer1_overflow: false,
-        clock_count_match: false,
-        tx_sfd_done: false,
-        rx_sfd_done: false,
-    };
-    pub const NAMED: Self = Self {
-        tx_done: true,
-        rx_done: true,
-        ack_tx_done: true,
-        ack_rx_done: true,
-        rx_abort: true,
-        tx_abort: true,
-        ed_done: true,
-        timer0_overflow: true,
-        timer1_overflow: true,
-        clock_count_match: true,
-        tx_sfd_done: true,
-        rx_sfd_done: true,
-    };
-    pub const VENDOR_HANDLED: Self = Self {
-        clock_count_match: false,
-        ..Self::NAMED
-    };
-    pub const HANDLED_BASELINE_NO_TIMER0: Self = Self {
-        timer0_overflow: false,
-        ..Self::VENDOR_HANDLED
-    };
-
-    const fn with(mut self, event: Ieee802154Event) -> Self {
-        match event {
-            Ieee802154Event::TxDone => self.tx_done = true,
-            Ieee802154Event::RxDone => self.rx_done = true,
-            Ieee802154Event::AckTxDone => self.ack_tx_done = true,
-            Ieee802154Event::AckRxDone => self.ack_rx_done = true,
-            Ieee802154Event::RxAbort => self.rx_abort = true,
-            Ieee802154Event::TxAbort => self.tx_abort = true,
-            Ieee802154Event::EdDone => self.ed_done = true,
-            Ieee802154Event::Timer0Overflow => self.timer0_overflow = true,
-            Ieee802154Event::Timer1Overflow => self.timer1_overflow = true,
-            Ieee802154Event::ClockCountMatch => self.clock_count_match = true,
-            Ieee802154Event::TxSfdDone => self.tx_sfd_done = true,
-            Ieee802154Event::RxSfdDone => self.rx_sfd_done = true,
-        }
-        self
-    }
-
-    const fn same_as(self, other: Self) -> bool {
-        self.tx_done == other.tx_done
-            && self.rx_done == other.rx_done
-            && self.ack_tx_done == other.ack_tx_done
-            && self.ack_rx_done == other.ack_rx_done
-            && self.rx_abort == other.rx_abort
-            && self.tx_abort == other.tx_abort
-            && self.ed_done == other.ed_done
-            && self.timer0_overflow == other.timer0_overflow
-            && self.timer1_overflow == other.timer1_overflow
-            && self.clock_count_match == other.clock_count_match
-            && self.tx_sfd_done == other.tx_sfd_done
-            && self.rx_sfd_done == other.rx_sfd_done
-    }
-
-    /// Return whether the semantic event set is empty.
-    pub const fn is_empty(self) -> bool {
-        self.same_as(Self::NONE)
-    }
-
-    /// Return whether this set contains `event`.
-    pub const fn contains(self, event: Ieee802154Event) -> bool {
-        match event {
-            Ieee802154Event::TxDone => self.tx_done,
-            Ieee802154Event::RxDone => self.rx_done,
-            Ieee802154Event::AckTxDone => self.ack_tx_done,
-            Ieee802154Event::AckRxDone => self.ack_rx_done,
-            Ieee802154Event::RxAbort => self.rx_abort,
-            Ieee802154Event::TxAbort => self.tx_abort,
-            Ieee802154Event::EdDone => self.ed_done,
-            Ieee802154Event::Timer0Overflow => self.timer0_overflow,
-            Ieee802154Event::Timer1Overflow => self.timer1_overflow,
-            Ieee802154Event::ClockCountMatch => self.clock_count_match,
-            Ieee802154Event::TxSfdDone => self.tx_sfd_done,
-            Ieee802154Event::RxSfdDone => self.rx_sfd_done,
-        }
-    }
-
-    /// Combine two already classified event sets.
-    pub const fn union(self, other: Self) -> Self {
-        Self {
-            tx_done: self.tx_done || other.tx_done,
-            rx_done: self.rx_done || other.rx_done,
-            ack_tx_done: self.ack_tx_done || other.ack_tx_done,
-            ack_rx_done: self.ack_rx_done || other.ack_rx_done,
-            rx_abort: self.rx_abort || other.rx_abort,
-            tx_abort: self.tx_abort || other.tx_abort,
-            ed_done: self.ed_done || other.ed_done,
-            timer0_overflow: self.timer0_overflow || other.timer0_overflow,
-            timer1_overflow: self.timer1_overflow || other.timer1_overflow,
-            clock_count_match: self.clock_count_match || other.clock_count_match,
-            tx_sfd_done: self.tx_sfd_done || other.tx_sfd_done,
-            rx_sfd_done: self.rx_sfd_done || other.rx_sfd_done,
-        }
-    }
-
-    /// Return events present in `self` but absent from `allowed`.
-    pub const fn difference(self, allowed: Self) -> Self {
-        Self {
-            tx_done: self.tx_done && !allowed.tx_done,
-            rx_done: self.rx_done && !allowed.rx_done,
-            ack_tx_done: self.ack_tx_done && !allowed.ack_tx_done,
-            ack_rx_done: self.ack_rx_done && !allowed.ack_rx_done,
-            rx_abort: self.rx_abort && !allowed.rx_abort,
-            tx_abort: self.tx_abort && !allowed.tx_abort,
-            ed_done: self.ed_done && !allowed.ed_done,
-            timer0_overflow: self.timer0_overflow && !allowed.timer0_overflow,
-            timer1_overflow: self.timer1_overflow && !allowed.timer1_overflow,
-            clock_count_match: self.clock_count_match && !allowed.clock_count_match,
-            tx_sfd_done: self.tx_sfd_done && !allowed.tx_sfd_done,
-            rx_sfd_done: self.rx_sfd_done && !allowed.rx_sfd_done,
-        }
-    }
-
-    /// Return events present in both semantic sets.
-    pub const fn intersection(self, other: Self) -> Self {
-        Self {
-            tx_done: self.tx_done && other.tx_done,
-            rx_done: self.rx_done && other.rx_done,
-            ack_tx_done: self.ack_tx_done && other.ack_tx_done,
-            ack_rx_done: self.ack_rx_done && other.ack_rx_done,
-            rx_abort: self.rx_abort && other.rx_abort,
-            tx_abort: self.tx_abort && other.tx_abort,
-            ed_done: self.ed_done && other.ed_done,
-            timer0_overflow: self.timer0_overflow && other.timer0_overflow,
-            timer1_overflow: self.timer1_overflow && other.timer1_overflow,
-            clock_count_match: self.clock_count_match && other.clock_count_match,
-            tx_sfd_done: self.tx_sfd_done && other.tx_sfd_done,
-            rx_sfd_done: self.rx_sfd_done && other.rx_sfd_done,
-        }
-    }
-
-    /// Return whether the set contains more than one semantic event.
-    pub const fn has_multiple(self) -> bool {
-        self.tx_done as u8
-            + self.rx_done as u8
-            + self.ack_tx_done as u8
-            + self.ack_rx_done as u8
-            + self.rx_abort as u8
-            + self.tx_abort as u8
-            + self.ed_done as u8
-            + self.timer0_overflow as u8
-            + self.timer1_overflow as u8
-            + self.clock_count_match as u8
-            + self.tx_sfd_done as u8
-            + self.rx_sfd_done as u8
-            > 1
-    }
-
-    /// Collapse this named set into the closed diagnostic vocabulary.
-    pub const fn state(self) -> Ieee802154ObservedEventState {
-        Ieee802154ObservedEventState::from_mask(self)
-    }
-}
-
-impl From<Ieee802154Event> for Ieee802154EventMask {
-    fn from(event: Ieee802154Event) -> Self {
-        event.mask()
-    }
-}
-
-/// Closed semantic summary of one complete MAC event observation.
-///
-/// Register positions remain private to the PAC. The two validation probes and
-/// production ED diagnostics need only these exact relations; every other
-/// source-confirmed combination is retained as `UnexpectedNamed`, while an
-/// unnamed physical event remains fail-closed as `Unclassified`.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154ObservedEventState {
-    #[default]
-    Clear,
-    Timer0Only,
-    Timer1Only,
-    Timer0AndTimer1,
-    EdDoneOnly,
-    EdDoneAndTimer0,
-    RxAbortOnly,
-    RxAbortWithOther,
-    EdDoneWithOther,
-    EdDoneAndRxAbortWithOther,
-    UnexpectedNamed,
-    Unclassified,
-}
-
-impl Ieee802154ObservedEventState {
-    const fn from_mask(events: Ieee802154EventMask) -> Self {
-        if events.is_empty() {
-            Self::Clear
-        } else if events.same_as(Ieee802154Event::Timer0Overflow.mask()) {
-            Self::Timer0Only
-        } else if events.same_as(Ieee802154Event::Timer1Overflow.mask()) {
-            Self::Timer1Only
-        } else if events.same_as(
-            Ieee802154Event::Timer0Overflow
-                .mask()
-                .union(Ieee802154Event::Timer1Overflow.mask()),
-        ) {
-            Self::Timer0AndTimer1
-        } else if events.same_as(Ieee802154Event::EdDone.mask()) {
-            Self::EdDoneOnly
-        } else if events.same_as(
-            Ieee802154Event::EdDone
-                .mask()
-                .union(Ieee802154Event::Timer0Overflow.mask()),
-        ) {
-            Self::EdDoneAndTimer0
-        } else if events.same_as(Ieee802154Event::RxAbort.mask()) {
-            Self::RxAbortOnly
-        } else if events.contains(Ieee802154Event::EdDone)
-            && events.contains(Ieee802154Event::RxAbort)
-        {
-            Self::EdDoneAndRxAbortWithOther
-        } else if events.contains(Ieee802154Event::RxAbort) {
-            Self::RxAbortWithOther
-        } else if events.contains(Ieee802154Event::EdDone) {
-            Self::EdDoneWithOther
-        } else {
-            Self::UnexpectedNamed
-        }
-    }
-
-    /// Return whether the observation is clear.
-    pub const fn is_clear(self) -> bool {
-        matches!(self, Self::Clear)
-    }
-
-    /// Return whether TIMER0 is part of this classified observation.
-    pub const fn has_timer0(self) -> bool {
-        matches!(
-            self,
-            Self::Timer0Only | Self::Timer0AndTimer1 | Self::EdDoneAndTimer0
-        )
-    }
-
-    /// Return whether TIMER1 is part of this classified observation.
-    pub const fn has_timer1(self) -> bool {
-        matches!(self, Self::Timer1Only | Self::Timer0AndTimer1)
-    }
-
-    /// Return whether ED-DONE is part of this classified observation.
-    pub const fn has_ed_done(self) -> bool {
-        matches!(
-            self,
-            Self::EdDoneOnly
-                | Self::EdDoneAndTimer0
-                | Self::EdDoneWithOther
-                | Self::EdDoneAndRxAbortWithOther
-        )
-    }
-
-    /// Return whether RX-ABORT is part of this classified observation.
-    pub const fn has_rx_abort(self) -> bool {
-        matches!(
-            self,
-            Self::RxAbortOnly | Self::RxAbortWithOther | Self::EdDoneAndRxAbortWithOther
-        )
-    }
-
-    /// Return whether this is exactly the classified RX-abort observation.
-    pub const fn is_rx_abort_only(self) -> bool {
-        matches!(self, Self::RxAbortOnly)
-    }
-
-    /// Combine observations without exposing their physical encoding.
-    pub fn union(self, other: Self) -> Self {
-        use Ieee802154ObservedEventState as State;
-        if matches!(self, State::Unclassified) || matches!(other, State::Unclassified) {
-            return State::Unclassified;
-        }
-        if self == State::Clear {
-            return other;
-        }
-        if other == State::Clear || self == other {
-            return self;
-        }
-
-        let ed_done = self.has_ed_done() || other.has_ed_done();
-        let rx_abort = self.has_rx_abort() || other.has_rx_abort();
-        let timer0 = self.has_timer0() || other.has_timer0();
-        let timer1 = self.has_timer1() || other.has_timer1();
-        let has_opaque_other = matches!(
-            self,
-            State::RxAbortWithOther
-                | State::EdDoneWithOther
-                | State::EdDoneAndRxAbortWithOther
-                | State::UnexpectedNamed
-        ) || matches!(
-            other,
-            State::RxAbortWithOther
-                | State::EdDoneWithOther
-                | State::EdDoneAndRxAbortWithOther
-                | State::UnexpectedNamed
-        );
-
-        if ed_done && rx_abort {
-            State::EdDoneAndRxAbortWithOther
-        } else if has_opaque_other && rx_abort {
-            State::RxAbortWithOther
-        } else if has_opaque_other && ed_done {
-            State::EdDoneWithOther
-        } else if has_opaque_other {
-            State::UnexpectedNamed
-        } else if ed_done && timer0 && !timer1 {
-            State::EdDoneAndTimer0
-        } else if rx_abort && !ed_done && !timer0 && !timer1 {
-            State::RxAbortOnly
-        } else if rx_abort {
-            State::RxAbortWithOther
-        } else if ed_done && !timer0 && !timer1 {
-            State::EdDoneOnly
-        } else if ed_done {
-            State::EdDoneWithOther
-        } else if timer0 && timer1 {
-            State::Timer0AndTimer1
-        } else if timer0 {
-            State::Timer0Only
-        } else if timer1 {
-            State::Timer1Only
-        } else {
-            State::UnexpectedNamed
-        }
-    }
-}
-
-/// Semantic readback of the validation-owned event-enable field.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Ieee802154ValidationEventEnableState {
-    #[default]
-    AllMasked,
-    TimerPairOnly,
-    EdDoneTimer0RxAbortOnly,
-    Unexpected,
-}
-
-impl Ieee802154ValidationEventEnableState {
-    #[cfg(feature = "validation-probes")]
-    const fn from_raw(
-        readback: crate::ieee802154::ownership::ValidationEventEnableReadback,
-    ) -> Self {
-        match readback {
-            crate::ieee802154::ownership::ValidationEventEnableReadback::AllMasked => {
-                Self::AllMasked
-            }
-            crate::ieee802154::ownership::ValidationEventEnableReadback::TimerPair => {
-                Self::TimerPairOnly
-            }
-            crate::ieee802154::ownership::ValidationEventEnableReadback::EdTimerAbort => {
-                Self::EdDoneTimer0RxAbortOnly
-            }
-            crate::ieee802154::ownership::ValidationEventEnableReadback::Unexpected => {
-                Self::Unexpected
-            }
-        }
-    }
-}
-
-/// Semantic readback of the fixed validation ED duration.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Ieee802154ValidationEdDurationState {
-    ValidationEight,
-    #[default]
-    Other,
-}
-
-impl Ieee802154ValidationEdDurationState {
-    #[cfg(feature = "validation-probes")]
-    const fn from_field(value: u32) -> Self {
-        if value == 8 {
-            Self::ValidationEight
-        } else {
-            Self::Other
-        }
-    }
-}
-
-/// One source-confirmed receive-abort reason.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154RxAbortReason {
-    /// Receive stop command.
-    RxStop,
-    /// SFD timeout.
-    SfdTimeout,
-    /// CRC failure.
-    CrcError,
-    /// Invalid frame length.
-    InvalidLength,
-    /// Address or filter rejection.
-    FilterFail,
-    /// RSS was not detected.
-    NoRss,
-    /// Coexistence interrupted reception.
-    CoexistenceBreak,
-    /// An ACK was received unexpectedly.
-    UnexpectedAck,
-    /// Receive processing restarted.
-    RxRestart,
-    /// ACK transmission timed out.
-    TxAckTimeout,
-    /// ACK transmission was stopped.
-    TxAckStop,
-    /// Coexistence interrupted ACK transmission.
-    TxAckCoexistenceBreak,
-    /// Enhanced-ACK security processing failed.
-    EnhancedAckSecurityError,
-    /// Energy detection was aborted.
-    EdAbort,
-    /// Energy detection was stopped.
-    EdStop,
-    /// Coexistence rejected energy detection.
-    EdCoexistenceReject,
-}
-
-impl Ieee802154RxAbortReason {
-    const fn from_code(code: u8) -> Option<Self> {
-        match code {
-            1 => Some(Self::RxStop),
-            2 => Some(Self::SfdTimeout),
-            3 => Some(Self::CrcError),
-            4 => Some(Self::InvalidLength),
-            5 => Some(Self::FilterFail),
-            6 => Some(Self::NoRss),
-            7 => Some(Self::CoexistenceBreak),
-            8 => Some(Self::UnexpectedAck),
-            9 => Some(Self::RxRestart),
-            16 => Some(Self::TxAckTimeout),
-            17 => Some(Self::TxAckStop),
-            18 => Some(Self::TxAckCoexistenceBreak),
-            19 => Some(Self::EnhancedAckSecurityError),
-            24 => Some(Self::EdAbort),
-            25 => Some(Self::EdStop),
-            26 => Some(Self::EdCoexistenceReject),
-            _ => None,
-        }
-    }
-}
-
-/// One source-confirmed transmit-abort reason.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154TxAbortReason {
-    /// ACK reception was stopped.
-    RxAckStop,
-    /// ACK SFD timed out.
-    RxAckSfdTimeout,
-    /// The received ACK had a CRC failure.
-    RxAckCrcError,
-    /// The received ACK had an invalid length.
-    RxAckInvalidLength,
-    /// The received ACK failed filtering.
-    RxAckFilterFail,
-    /// RSS was not detected for the ACK.
-    RxAckNoRss,
-    /// Coexistence interrupted ACK reception.
-    RxAckCoexistenceBreak,
-    /// The received frame was not an ACK.
-    RxAckTypeNotAck,
-    /// ACK receive processing restarted.
-    RxAckRestart,
-    /// ACK reception timed out.
-    RxAckTimeout,
-    /// Transmission was stopped.
-    TxStop,
-    /// Coexistence interrupted transmission.
-    TxCoexistenceBreak,
-    /// Transmission security processing failed.
-    TxSecurityError,
-    /// CCA failed.
-    CcaFailed,
-    /// CCA observed a busy channel.
-    CcaBusy,
-}
-
-impl Ieee802154TxAbortReason {
-    const fn from_code(code: u8) -> Option<Self> {
-        match code {
-            1 => Some(Self::RxAckStop),
-            2 => Some(Self::RxAckSfdTimeout),
-            3 => Some(Self::RxAckCrcError),
-            4 => Some(Self::RxAckInvalidLength),
-            5 => Some(Self::RxAckFilterFail),
-            6 => Some(Self::RxAckNoRss),
-            7 => Some(Self::RxAckCoexistenceBreak),
-            8 => Some(Self::RxAckTypeNotAck),
-            9 => Some(Self::RxAckRestart),
-            16 => Some(Self::RxAckTimeout),
-            17 => Some(Self::TxStop),
-            18 => Some(Self::TxCoexistenceBreak),
-            19 => Some(Self::TxSecurityError),
-            24 => Some(Self::CcaFailed),
-            25 => Some(Self::CcaBusy),
-            _ => None,
-        }
-    }
-}
-
-/// Semantic classification of one sampled RX-abort reason field.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154RxAbortReasonObservation {
-    /// The field matched a source-confirmed reason.
-    Named(Ieee802154RxAbortReason),
-    /// The field value has no reviewed semantic identity.
-    Unclassified,
-}
-
-impl Ieee802154RxAbortReasonObservation {
-    const fn from_field(code: u8) -> Self {
-        match Ieee802154RxAbortReason::from_code(code) {
-            Some(reason) => Self::Named(reason),
-            None => Self::Unclassified,
-        }
-    }
-}
-
-impl From<Ieee802154RxAbortReason> for Ieee802154RxAbortReasonObservation {
-    fn from(reason: Ieee802154RxAbortReason) -> Self {
-        Self::Named(reason)
-    }
-}
-
-/// Semantic classification of one sampled TX-abort reason field.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154TxAbortReasonObservation {
-    /// The field matched a source-confirmed reason.
-    Named(Ieee802154TxAbortReason),
-    /// The field value has no reviewed semantic identity.
-    Unclassified,
-}
-
-impl Ieee802154TxAbortReasonObservation {
-    const fn from_field(code: u8) -> Self {
-        match Ieee802154TxAbortReason::from_code(code) {
-            Some(reason) => Self::Named(reason),
-            None => Self::Unclassified,
-        }
-    }
-}
-
-impl From<Ieee802154TxAbortReason> for Ieee802154TxAbortReasonObservation {
-    fn from(reason: Ieee802154TxAbortReason) -> Self {
-        Self::Named(reason)
-    }
-}
-
-/// Closed semantic `EVENT_ENABLE` states accepted by finite polled operations.
-///
-/// Register geometry and physical images remain exclusively in generated PAC
-/// accessors. No integer conversion exists in either direction.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154EventEnableState {
-    #[default]
-    AllMasked,
-    EdOperation,
-}
-
-/// Closed semantic `RX_ABORT_ENABLE` states accepted by finite ED/CCA work.
-///
-/// The runtime interrupt baseline is owned by the complete activation
-/// transaction and is intentionally not constructible through this API.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Ieee802154RxAbortEnableState {
-    #[default]
-    AllMasked,
-    EdOperationReasons,
-}
-
-/// One closed production plan for activating the IEEE 802.15.4 IRQ owner.
-///
-/// Register images are selected only by generated accessors inside the raw PAC
-/// owner; this marker grants no field or integer authority.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Ieee802154InterruptActivationPlan;
-
-impl Ieee802154InterruptActivationPlan {
-    const SOURCE_CONFIRMED_BASELINE: Self = Self;
-}
-
-/// Semantic readback of the event-enable field owned by a polled ED/CCA
-/// operation.
-///
-/// `Unexpected` deliberately combines every other thirteen-bit image. It
-/// never projects an unexpected image into a writable mask.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154OperationEventEnableObservation {
-    /// Every event is masked.
-    AllMasked,
-    /// Exactly `ED_DONE` and `RX_ABORT` are enabled.
-    EdDoneAndRxAbortOnly,
-    /// A required event is missing or at least one other event is enabled.
-    Unexpected,
-}
-
-impl Ieee802154OperationEventEnableObservation {
-    const fn from_raw(
-        readback: crate::ieee802154::ownership::OperationEventEnableReadback,
-    ) -> Self {
-        match readback {
-            crate::ieee802154::ownership::OperationEventEnableReadback::AllMasked => {
-                Self::AllMasked
-            }
-            crate::ieee802154::ownership::OperationEventEnableReadback::EdOperation => {
-                Self::EdDoneAndRxAbortOnly
-            }
-            crate::ieee802154::ownership::OperationEventEnableReadback::Unexpected => {
-                Self::Unexpected
-            }
-        }
-    }
-}
-
-/// Semantic readback of the receive-abort-enable field owned by a polled
-/// ED/CCA operation.
-///
-/// The observation has no conversion to [`Ieee802154RxAbortEnableState`], so
-/// unexpected hardware state cannot accidentally become a writable image.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ieee802154OperationRxAbortEnableObservation {
-    /// Every receive-abort reason is masked.
-    AllMasked,
-    /// Exactly the three ED-operation reasons are enabled.
-    EdOperationReasonsOnly,
-    /// A required reason is missing or at least one other reason is enabled.
-    Unexpected,
-}
-
-impl Ieee802154OperationRxAbortEnableObservation {
-    const fn from_raw(
-        readback: crate::ieee802154::ownership::OperationRxAbortEnableReadback,
-    ) -> Self {
-        match readback {
-            crate::ieee802154::ownership::OperationRxAbortEnableReadback::AllMasked => {
-                Self::AllMasked
-            }
-            crate::ieee802154::ownership::OperationRxAbortEnableReadback::EdOperationReasons => {
-                Self::EdOperationReasonsOnly
-            }
-            crate::ieee802154::ownership::OperationRxAbortEnableReadback::Unexpected => {
-                Self::Unexpected
-            }
-        }
-    }
-}
-
-/// Copyable semantic `EVENT_ENABLE` or `EVENT_STATUS` observation.
-///
-/// Unlike [`Ieee802154EventEnableState`], this type preserves unnamed physical
-/// bits because observations must not erase unexpected hardware state. It has
-/// no public constructor and cannot be passed to a write. W1C acknowledgement
-/// consumes a separate affine snapshot.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154EventObservation {
-    events: Ieee802154EventMask,
-    has_unclassified: bool,
-}
-
-impl Ieee802154EventObservation {
-    const fn from_readback(
-        readback: crate::ieee802154::ownership::Ieee802154EventReadback,
-    ) -> Self {
-        let mut events = Ieee802154EventMask::NONE;
-        if readback.tx_done() {
-            events = events.with(Ieee802154Event::TxDone);
-        }
-        if readback.rx_done() {
-            events = events.with(Ieee802154Event::RxDone);
-        }
-        if readback.ack_tx_done() {
-            events = events.with(Ieee802154Event::AckTxDone);
-        }
-        if readback.ack_rx_done() {
-            events = events.with(Ieee802154Event::AckRxDone);
-        }
-        if readback.rx_abort() {
-            events = events.with(Ieee802154Event::RxAbort);
-        }
-        if readback.tx_abort() {
-            events = events.with(Ieee802154Event::TxAbort);
-        }
-        if readback.ed_done() {
-            events = events.with(Ieee802154Event::EdDone);
-        }
-        if readback.timer0_overflow() {
-            events = events.with(Ieee802154Event::Timer0Overflow);
-        }
-        if readback.timer1_overflow() {
-            events = events.with(Ieee802154Event::Timer1Overflow);
-        }
-        if readback.clock_count_match() {
-            events = events.with(Ieee802154Event::ClockCountMatch);
-        }
-        if readback.tx_sfd_done() {
-            events = events.with(Ieee802154Event::TxSfdDone);
-        }
-        if readback.rx_sfd_done() {
-            events = events.with(Ieee802154Event::RxSfdDone);
-        }
-        Self {
-            events,
-            has_unclassified: readback.has_unclassified(),
-        }
-    }
-
-    fn from_snapshot(
-        snapshot: &crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
-    ) -> Self {
-        Self::from_readback(
-            crate::ieee802154::ownership::Ieee802154EventReadback::from_event_status_snapshot(
-                snapshot,
-            ),
-        )
-    }
-
-    /// An observation of exactly the named `events`, as a register model
-    /// reports it. Observations grant no write authority.
-    pub const fn from_named(events: Ieee802154EventMask) -> Self {
-        Self {
-            events,
-            has_unclassified: false,
-        }
-    }
-
-    /// Return whether the complete observed event field is clear.
-    pub const fn is_clear(self) -> bool {
-        self.events.is_empty() && !self.has_unclassified
-    }
-
-    /// Return whether every named event in `required` was observed.
-    pub const fn contains(self, required: Ieee802154Event) -> bool {
-        self.events.contains(required)
-    }
-
-    /// Classify the complete observation as a semantic event set.
-    ///
-    /// Any unnamed physical event produces an opaque error. Neither branch
-    /// exposes the underlying register image, and the named set is not write
-    /// authority.
-    pub const fn classification(
-        self,
-    ) -> Result<Ieee802154EventMask, Ieee802154EventObservationError> {
-        if self.has_unclassified {
-            Err(Ieee802154EventObservationError)
-        } else {
-            Ok(self.events)
-        }
-    }
-
-    /// Collapse the complete observation into the closed semantic vocabulary.
-    pub const fn state(self) -> Ieee802154ObservedEventState {
-        match self.classification() {
-            Ok(events) => Ieee802154ObservedEventState::from_mask(events),
-            Err(_) => Ieee802154ObservedEventState::Unclassified,
-        }
     }
 }
 
@@ -1224,184 +241,6 @@ impl Ieee802154EdCcaSnapshot {
     pub const fn cca_busy(self) -> bool {
         self.cca_busy
     }
-}
-
-/// Source-confirmed MAC control fields programmed as one semantic policy.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154MacControl {
-    tx_auto_ack: bool,
-    rx_auto_ack: bool,
-    enhanced_ack_tx: bool,
-    coordinator: bool,
-    promiscuous: bool,
-    enhanced_pending: bool,
-}
-
-impl Ieee802154MacControl {
-    pub const fn new(
-        tx_auto_ack: bool,
-        rx_auto_ack: bool,
-        enhanced_ack_tx: bool,
-        coordinator: bool,
-        promiscuous: bool,
-        enhanced_pending: bool,
-    ) -> Self {
-        Self {
-            tx_auto_ack,
-            rx_auto_ack,
-            enhanced_ack_tx,
-            coordinator,
-            promiscuous,
-            enhanced_pending,
-        }
-    }
-
-    pub const fn tx_auto_ack(self) -> bool {
-        self.tx_auto_ack
-    }
-
-    pub const fn rx_auto_ack(self) -> bool {
-        self.rx_auto_ack
-    }
-
-    pub const fn enhanced_ack_tx(self) -> bool {
-        self.enhanced_ack_tx
-    }
-
-    pub const fn coordinator(self) -> bool {
-        self.coordinator
-    }
-
-    pub const fn promiscuous(self) -> bool {
-        self.promiscuous
-    }
-
-    pub const fn enhanced_pending(self) -> bool {
-        self.enhanced_pending
-    }
-}
-
-/// Address-filter identity for the public API's primary PAN context.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154PanIdentity {
-    pan_id: u16,
-    short_address: u16,
-    extended_address: [u8; 8],
-}
-
-impl Ieee802154PanIdentity {
-    pub const fn new(pan_id: u16, short_address: u16, extended_address: [u8; 8]) -> Self {
-        Self {
-            pan_id,
-            short_address,
-            extended_address,
-        }
-    }
-
-    pub const fn pan_id(self) -> u16 {
-        self.pan_id
-    }
-
-    pub const fn short_address(self) -> u16 {
-        self.short_address
-    }
-
-    pub const fn extended_address(self) -> [u8; 8] {
-        self.extended_address
-    }
-}
-
-/// Opaque three-bit receive-state observation.
-///
-/// Only the comparison around the publicly identified `RECEIVE_SFD` value is
-/// exposed. Zero is intentionally not named `idle` until lifecycle evidence
-/// proves that interpretation for the ESP32-C5.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154RxStateCode(u8);
-
-impl Ieee802154RxStateCode {
-    pub const MAX: u8 = 0x07;
-    pub const RECEIVE_SFD: u8 = 1;
-
-    pub const fn is_receive_sfd(self) -> bool {
-        self.0 == Self::RECEIVE_SFD
-    }
-
-    pub const fn is_after_receive_sfd(self) -> bool {
-        self.0 > Self::RECEIVE_SFD
-    }
-
-    pub const fn is_zero(self) -> bool {
-        self.0 == 0
-    }
-
-    /// Numeric read-only observation for diagnostics.
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-
-    const fn from_field(value: u8) -> Self {
-        Self(value)
-    }
-
-    /// A three-bit state observation, as a register model reports it.
-    pub const fn new(value: u8) -> Option<Self> {
-        if value <= Self::MAX {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub const fn for_validation(value: u8) -> Option<Self> {
-        if value <= Self::MAX {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-}
-
-/// Opaque four-bit transmit-state observation.
-///
-/// No individual value is assigned a lifecycle meaning by this foundation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154TxStateCode(u8);
-
-impl Ieee802154TxStateCode {
-    pub const MAX: u8 = 0x0f;
-
-    pub const fn is_zero(self) -> bool {
-        self.0 == 0
-    }
-
-    /// Numeric read-only observation for diagnostics.
-    pub const fn value(self) -> u8 {
-        self.0
-    }
-
-    const fn from_field(value: u8) -> Self {
-        Self(value)
-    }
-
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub const fn for_validation(value: u8) -> Option<Self> {
-        if value <= Self::MAX {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-}
-
-/// One paired receive/transmit state sample.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ieee802154StateSnapshot {
-    rx: Ieee802154RxStateCode,
-    tx: Ieee802154TxStateCode,
 }
 
 /// Read-back image of the interrupt-masked IEEE 802.15.4 MAC foundation.
@@ -1614,28 +453,6 @@ impl Ieee802154FoundationSnapshot {
 
     pub const fn ack_pti(self) -> Ieee802154Pti {
         self.ack_pti
-    }
-}
-
-impl Ieee802154StateSnapshot {
-    pub const fn new(rx: Ieee802154RxStateCode, tx: Ieee802154TxStateCode) -> Self {
-        Self { rx, tx }
-    }
-
-    pub const fn rx(self) -> Ieee802154RxStateCode {
-        self.rx
-    }
-
-    pub const fn tx(self) -> Ieee802154TxStateCode {
-        self.tx
-    }
-
-    /// Test only the observed numeric state codes.
-    ///
-    /// This is not a reset-readiness or quiescence claim. Those semantic
-    /// predicates require a reviewed lifecycle and shared-reset model.
-    pub const fn all_codes_zero(self) -> bool {
-        self.rx.is_zero() && self.tx.is_zero()
     }
 }
 
@@ -1900,7 +717,7 @@ impl Ieee802154RegisterLease<'_> {
 
     /// Read all four named multipan enable fields.
     pub fn multipan_enable_state(&self) -> Ieee802154MultipanEnableState {
-        Ieee802154MultipanEnableState(self.registers.multipan_enabled())
+        Ieee802154MultipanEnableState::from_enabled(self.registers.multipan_enabled())
     }
 
     /// Set the outgoing ACK frame-pending bit through a preserving update.
@@ -1963,7 +780,7 @@ impl Ieee802154RegisterLease<'_> {
         let control = self.registers.transmit_security_control();
         Ieee802154TransmitSecurityControl::new(
             control.enabled(),
-            Ieee802154SecurityPayloadOffset(control.payload_offset()),
+            Ieee802154SecurityPayloadOffset::from_field(control.payload_offset()),
         )
     }
 
@@ -1985,7 +802,7 @@ impl Ieee802154RegisterLease<'_> {
             frequency_code: Ieee802154FrequencyCode(readback.frequency_code()),
             cca_mode: Ieee802154CcaMode::from_field(readback.cca_mode()),
             cca_threshold_code: readback.cca_threshold_code() as i8,
-            ack_timeout: Ieee802154AckTimeoutUnits(readback.ack_timeout()),
+            ack_timeout: Ieee802154AckTimeoutUnits::new(readback.ack_timeout()),
             control: Ieee802154MacControl::new(
                 readback.auto_ack_tx(),
                 readback.auto_ack_rx(),
@@ -1994,7 +811,9 @@ impl Ieee802154RegisterLease<'_> {
                 readback.promiscuous(),
                 readback.pending_enhanced(),
             ),
-            multipan_enable_state: Ieee802154MultipanEnableState(readback.multipan_enabled()),
+            multipan_enable_state: Ieee802154MultipanEnableState::from_enabled(
+                readback.multipan_enabled(),
+            ),
             identity: Ieee802154PanIdentity::new(
                 identity.pan_id(),
                 identity.short_address(),
@@ -2023,7 +842,7 @@ impl Ieee802154RegisterLease<'_> {
             cca_mode: Ieee802154CcaMode::from_field(readback.cca_mode()),
             cca_threshold_code: readback.cca_threshold_code() as i8,
             ed_sample_rate: Ieee802154EdSampleRate::from_field(readback.ed_sample_rate()),
-            ack_timeout: Ieee802154AckTimeoutUnits(readback.ack_timeout()),
+            ack_timeout: Ieee802154AckTimeoutUnits::new(readback.ack_timeout()),
             control: Ieee802154MacControl::new(
                 readback.auto_ack_tx(),
                 readback.auto_ack_rx(),
@@ -2032,7 +851,9 @@ impl Ieee802154RegisterLease<'_> {
                 readback.promiscuous(),
                 readback.pending_enhanced(),
             ),
-            multipan_enable_state: Ieee802154MultipanEnableState(readback.multipan_enabled()),
+            multipan_enable_state: Ieee802154MultipanEnableState::from_enabled(
+                readback.multipan_enabled(),
+            ),
             identities,
             frame_pending: readback.frame_pending(),
         }
@@ -2122,9 +943,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     /// Classify the complete event-delivery field for a finite polled ED/CCA
     /// operation without sampling `EVENT_STATUS`.
     pub fn operation_event_enable_observation(&self) -> Ieee802154OperationEventEnableObservation {
-        Ieee802154OperationEventEnableObservation::from_raw(
-            self.task.registers.operation_event_enable_readback(),
-        )
+        operation_event_enable_observation(self.task.registers.operation_event_enable_readback())
     }
 
     /// Classify the complete RX-abort delivery field for a finite polled
@@ -2132,7 +951,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn operation_rx_abort_enable_observation(
         &self,
     ) -> Ieee802154OperationRxAbortEnableObservation {
-        Ieee802154OperationRxAbortEnableObservation::from_raw(
+        operation_rx_abort_enable_observation(
             self.task.registers.operation_rx_abort_enable_readback(),
         )
     }
@@ -2140,7 +959,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     /// Observe the complete thirteen-bit event field without acknowledging it.
     pub fn event_status_observation(&self) -> Ieee802154EventObservation {
         let snapshot = self.interrupt.sample_event_status();
-        Ieee802154EventObservation::from_snapshot(&snapshot)
+        snapshot_observation(&snapshot)
     }
 
     /// Classify the IRQ-owned RX-abort reason field without exporting the
@@ -2179,8 +998,8 @@ impl Ieee802154PolledRegisterLease<'_> {
         let event_status = self.interrupt.sample_event_status();
         Ieee802154EdCcaSnapshot::new(
             Ieee802154EdDurationUnits::from_field(self.task.registers.ed_duration()),
-            Ieee802154EventObservation::from_readback(self.task.registers.event_enable_readback()),
-            Ieee802154EventObservation::from_snapshot(&event_status),
+            event_observation(self.task.registers.event_enable_readback()),
+            snapshot_observation(&event_status),
             self.interrupt.ed_rss_code(),
             self.interrupt.cca_busy(),
         )
@@ -2201,7 +1020,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn acknowledge_pending_events(&mut self) -> Ieee802154EventObservation {
         crate::device_fence();
         let snapshot = self.interrupt.sample_event_status();
-        let events = Ieee802154EventObservation::from_snapshot(&snapshot);
+        let events = snapshot_observation(&snapshot);
         self.interrupt.acknowledge_event_status(snapshot);
         crate::device_fence();
         events
@@ -2224,9 +1043,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_enable_state(&self) -> Ieee802154ValidationEventEnableState {
-        Ieee802154ValidationEventEnableState::from_raw(
-            self.task.registers.validation_event_enable_readback(),
-        )
+        validation_event_enable_state(self.task.registers.validation_event_enable_readback())
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2244,8 +1061,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_status_state(&self) -> Ieee802154ObservedEventState {
-        Ieee802154EventObservation::from_readback(self.interrupt.validation_event_status_events())
-            .state()
+        event_observation(self.interrupt.validation_event_status_events()).state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2307,9 +1123,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_event_enable_state(&self) -> Ieee802154ValidationEventEnableState {
-        Ieee802154ValidationEventEnableState::from_raw(
-            self.task.registers.validation_event_enable_readback(),
-        )
+        validation_event_enable_state(self.task.registers.validation_event_enable_readback())
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2331,7 +1145,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn validation_ed_rx_abort_enable_state(
         &self,
     ) -> Ieee802154OperationRxAbortEnableObservation {
-        Ieee802154OperationRxAbortEnableObservation::from_raw(
+        operation_rx_abort_enable_observation(
             self.task.registers.operation_rx_abort_enable_readback(),
         )
     }
@@ -2351,10 +1165,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_event_status_state(&self) -> Ieee802154ObservedEventState {
-        Ieee802154EventObservation::from_readback(
-            self.interrupt.validation_ed_event_status_events(),
-        )
-        .state()
+        event_observation(self.interrupt.validation_ed_event_status_events()).state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2426,73 +1237,6 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn validation_write_ed_timer0_event(&mut self) {
         self.interrupt.validation_write_ed_timer0_event();
     }
-}
-
-/// Internal execution port shared by both PAC ownership transitions and their
-/// host ordering model.
-///
-/// The event snapshot is an associated affine type. An executor can therefore
-/// acknowledge only the value returned by `sample_events`; no integer event
-/// image can cross this boundary.
-trait Ieee802154InterruptTransitionPort {
-    type EventSnapshot;
-
-    fn stop_operation(&mut self);
-    fn stop_timer0(&mut self);
-    fn stop_timer1(&mut self);
-    fn mask_all_events(&mut self);
-    fn enable_runtime_events(&mut self);
-    fn mask_all_tx_aborts(&mut self);
-    fn enable_runtime_tx_aborts(&mut self);
-    fn mask_all_rx_aborts(&mut self);
-    fn enable_runtime_rx_aborts(&mut self);
-    fn order_device_accesses(&mut self);
-    fn sample_events(&mut self) -> Self::EventSnapshot;
-    fn acknowledge_events(&mut self, snapshot: Self::EventSnapshot);
-}
-
-/// Execute the complete activation while the platform CPU route is disabled.
-///
-/// `EVENT_ENABLE` remains zero while both abort fields and the stale affine
-/// W1C transaction are updated. The reviewed event baseline is published only
-/// after the exact sampled status has been consumed, and the final fence
-/// precedes transfer of the hard-IRQ owner.
-fn execute_interrupt_activation<Port>(port: &mut Port, _plan: Ieee802154InterruptActivationPlan)
-where
-    Port: Ieee802154InterruptTransitionPort,
-{
-    port.mask_all_events();
-    port.enable_runtime_tx_aborts();
-    port.enable_runtime_rx_aborts();
-    port.order_device_accesses();
-
-    let stale = port.sample_events();
-    port.acknowledge_events(stale);
-    port.enable_runtime_events();
-    port.order_device_accesses();
-}
-
-/// Execute the complete teardown after the platform CPU route is disabled.
-///
-/// The operation and both MAC timers are stopped before all three enable
-/// fields are replaced with their closed zero images. One final affine W1C
-/// sample is then consumed. Both ordering boundaries precede transfer back to
-/// inactive setup ownership.
-fn execute_interrupt_deactivation<Port>(port: &mut Port)
-where
-    Port: Ieee802154InterruptTransitionPort,
-{
-    port.stop_operation();
-    port.stop_timer0();
-    port.stop_timer1();
-    port.mask_all_events();
-    port.mask_all_tx_aborts();
-    port.mask_all_rx_aborts();
-    port.order_device_accesses();
-
-    let pending = port.sample_events();
-    port.acknowledge_events(pending);
-    port.order_device_accesses();
 }
 
 /// Borrowed task owner plus the disjoint raw interrupt partition for one
@@ -2611,7 +1355,7 @@ impl Ieee802154InterruptRegisters {
     /// `ieee802154_ll_get_events`: one read of the event field, without
     /// acknowledging it.
     pub fn events(&self) -> Ieee802154EventObservation {
-        Ieee802154EventObservation::from_readback(self.registers.event_readback())
+        event_observation(self.registers.event_readback())
     }
 
     /// `ieee802154_ll_clear_events`: clear the asserted events of `mask` and
@@ -2702,11 +1446,7 @@ mod single_field;
 
 pub use etm::{Ieee802154EtmChannel, Ieee802154EtmRoute};
 
-pub use single_field::{
-    Ieee802154DebugCounter, Ieee802154EdSampleMode, Ieee802154RxAbortEnableSet, Ieee802154RxStatus,
-    Ieee802154TxAbortEnableSet, Ieee802154TxSecurityError, Ieee802154TxSecurityErrorObservation,
-    Ieee802154TxStatus,
-};
+pub use single_field::{Ieee802154DebugCounter, Ieee802154RxStatus};
 
 #[cfg(test)]
 mod tests;

@@ -8,9 +8,10 @@ repository.workspace = true
 description = "Closed typed ESP32-C5 radio peripheral access crate"
 
 [features]
-validation-probes = ["oer-esp32c5-pac-raw/validation-probes"]
+validation-probes = ["oer-esp32c5-pac-raw/validation-probes", "oer-ieee802154-pac/validation-probes"]
 
 [dependencies]
+oer-ieee802154-pac = { path = "../../ieee802154/pac" }
 oer-esp32c5-pac-raw = { path = "raw", features = ["critical-section"] }
 
 [dev-dependencies]

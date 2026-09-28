@@ -8,9 +8,10 @@ repository.workspace = true
 description = "Closed typed ESP32-S31 radio peripheral access crate"
 
 [features]
-validation-probes = ["oer-esp32s31-pac-raw/validation-probes"]
+validation-probes = ["oer-esp32s31-pac-raw/validation-probes", "oer-ieee802154-pac/validation-probes"]
 
 [dependencies]
+oer-ieee802154-pac = { path = "../../ieee802154/pac" }
 oer-memory = { path = "../../../memory" }
 oer-ieee80211-pac = { path = "../../ieee80211/pac" }
 oer-esp32s31-pac-raw = { path = "raw", features = ["critical-section"] }

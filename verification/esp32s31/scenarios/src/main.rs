@@ -29,9 +29,9 @@ enum Scenario {
     Gain {
         #[command(flatten)]
         common: Common,
-        /// Authenticated `librftest.a`; without it the producer obligation stays unmet.
-        #[arg(long)]
-        rftest: Option<PathBuf>,
+        /// Authenticated `librftest.a`, by default the pinned one.
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("librftest"))]
+        rftest: PathBuf,
     },
     /// Channel restoration over installed ROM callbacks: full-root channel,
     /// temperature prefix over every sensor range and stuck-readiness containment.
@@ -159,17 +159,18 @@ enum Scenario {
         budget: Budget,
     },
     /// PHY I2C command memory and transport, harness call edges, calibration
-    /// leaves and PBus/DCODE prefix (`--sdk`) and RFPLL (`--phy-sdk`). Each
-    /// missing optional input is an unmet obligation.
+    /// leaves and PBus/DCODE prefix (`--sdk`) and RFPLL (`--phy-sdk`).
     I2c {
         #[command(flatten)]
         common: Common,
-        /// Authenticated linked SDK firmware (crystal-clock symbol companion).
-        #[arg(long)]
-        sdk: Option<PathBuf>,
-        /// Authenticated SDK firmware with the RFPLL diagnostics symbol; requires `--sdk`.
-        #[arg(long, requires = "sdk")]
-        phy_sdk: Option<PathBuf>,
+        /// Authenticated linked SDK firmware (crystal-clock symbol companion),
+        /// by default the pinned one.
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("sdk"))]
+        sdk: PathBuf,
+        /// Authenticated SDK firmware with the RFPLL diagnostics symbol, by
+        /// default the pinned one.
+        #[arg(long, default_value_os_t = oer_esp32s31_vendor_scenarios::artifacts::default_path("phy-sdk"))]
+        phy_sdk: PathBuf,
     },
 }
 
@@ -1012,7 +1013,7 @@ fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => {
             let shard = Shard::of("gain", &common);
-            single(shard, gain(common, rftest))
+            single(shard, gain(common, Some(rftest)))
         }
         Scenario::Channel { common } => {
             let shard = Shard::of("channel", &common);
@@ -1107,7 +1108,7 @@ fn main() -> ExitCode {
             phy_sdk,
         } => {
             let shard = Shard::of("i2c", &common);
-            single(shard, i2c(common, sdk, phy_sdk))
+            single(shard, i2c(common, Some(sdk), Some(phy_sdk)))
         }
     };
     result.unwrap_or_else(|error| {

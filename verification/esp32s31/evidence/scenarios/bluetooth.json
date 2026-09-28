@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "084c899ad82ae689ba2b90955737cab8a902b31439aa503af76cf353e57d940b",
+    "input-2": "9d8dd7904275a84f3629c9a17690b0b2fe352e68eeb487f5b218e4e882c03619",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -60,7 +60,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/Cargo.toml",
-      "sha256": "29e7a7c50b169bc9cef95269af31cada6806eb9f2dfa6570ca6876b6d82d783d"
+      "sha256": "824b72fcfd3c3202f7e63ddce26422185e7e7b2b12f671b40ef0fb8fe0cf79d6"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/Cargo.toml",
@@ -68,7 +68,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "b87b1e5b4964fc170887c373b34b4094bd9d53e7d13934e5e8e1516ea2e38e48"
+      "sha256": "cfcbbf8ade2e63e5854cd6aeacad34cace53ffd10f9aaf8ef07e90e834d9a7f8"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
@@ -137,6 +137,10 @@
     {
       "path": "crates/hardware/ieee802154/engine/Cargo.toml",
       "sha256": "f2578c90fcdeaf56049c9de461ea84488315066951942e68944cafa61ce6edfa"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/Cargo.toml",
+      "sha256": "324367f62d1e6ff1b8b82bc098fcdd43e2b6af2616f5373320618a635fc2ffe1"
     },
     {
       "path": "crates/hardware/radio/analog/Cargo.toml",
@@ -984,7 +988,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "9d232ad245aa1c1a8dd75bfcd383349a32ed7d9914d2cfb8a0bd8a2b38a7d0ba"
+      "sha256": "f54a00db7fdf94431b063b5317aff29ca96cac2e6304248443dafceb9eebf1ac"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -1072,7 +1076,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "fce72360be6861d46c983111515f81e09525dfc040fc9df2cbba01e55850c6cc"
+      "sha256": "06b5c05d264a2bd2bd53d9d4c3e0f6a542c55c63d06e7dbfe444e76ebf7b6a4c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1256,7 +1260,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "98b318860b86c48b395a62e93567e44dbaa6ae708f3d656d6a2c92b349488ac0"
+      "sha256": "eebc690d0b13c6f792667d284f6ae4cb43f5a3a50226882ccd92ddd14f466d59"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",

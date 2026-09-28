@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "156978b7571475bee1645740fd7d85020f4df16beced8eac9483c1d5823fed8d",
+    "input-2": "acaa317fc95072ec076443227d6c7920fdf16e32b9068afaaf52327dd6b20bd8",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "input-5": "e643ad6aef2d840fa605255dc3c773f328cd103ecbc93ef0047ebc9deea7dadc",
@@ -991,7 +991,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/Cargo.toml",
-      "sha256": "29e7a7c50b169bc9cef95269af31cada6806eb9f2dfa6570ca6876b6d82d783d"
+      "sha256": "824b72fcfd3c3202f7e63ddce26422185e7e7b2b12f671b40ef0fb8fe0cf79d6"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/Cargo.toml",
@@ -999,7 +999,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "b87b1e5b4964fc170887c373b34b4094bd9d53e7d13934e5e8e1516ea2e38e48"
+      "sha256": "cfcbbf8ade2e63e5854cd6aeacad34cace53ffd10f9aaf8ef07e90e834d9a7f8"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
@@ -1095,11 +1095,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154/mac/single_field.rs",
-      "sha256": "7a692a57085e7d26a332aacdf6a09de68d66ed4833408542af83e6a8a36ad15d"
+      "sha256": "3b9701bd55811221583093cd38aad09504afd171e8c4451b3f37cad47b7e9032"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154/mac.rs",
-      "sha256": "cae522fe33de8b46b3fdf187bb001114641a3843935e752837b5879fb1be02a8"
+      "sha256": "35f406a47758a4f1e94cd36b135f5022958a96e91a3b54e5b7498c31df7b0339"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ieee802154/ownership/single_field.rs",
@@ -1732,6 +1732,30 @@
     {
       "path": "crates/hardware/ieee802154/engine/src/types.rs",
       "sha256": "39541243c8ceeb5fea2705246eeb8af948f195b0be5cbc5ec524985344e63034"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/Cargo.toml",
+      "sha256": "324367f62d1e6ff1b8b82bc098fcdd43e2b6af2616f5373320618a635fc2ffe1"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/src/events.rs",
+      "sha256": "c7f01c405981b3bbd7226c4720c7e684e381a7555b09b331dbe67f2b1117b13a"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/src/lib.rs",
+      "sha256": "1f69cd15ad2a936a9863dbcb04660b790a0405e098b3ab961cc58da3228f9afa"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/src/status.rs",
+      "sha256": "524f6d7855895fc3360c38775753736bbc9c86d604b4d3109440cc7db75d10e6"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/src/transition.rs",
+      "sha256": "52a7a5d5373884b5c7bbe696858d65b4185bff58e19584b5886259e491b638f7"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/src/values.rs",
+      "sha256": "c77adde1d4bd4d66338bfb281dc2e0fc4ac3d451530f02c0e54bcaea82a448d1"
     },
     {
       "path": "crates/hardware/radio/analog/Cargo.toml",
@@ -4143,7 +4167,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "9d232ad245aa1c1a8dd75bfcd383349a32ed7d9914d2cfb8a0bd8a2b38a7d0ba"
+      "sha256": "f54a00db7fdf94431b063b5317aff29ca96cac2e6304248443dafceb9eebf1ac"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -4255,7 +4279,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "fce72360be6861d46c983111515f81e09525dfc040fc9df2cbba01e55850c6cc"
+      "sha256": "06b5c05d264a2bd2bd53d9d4c3e0f6a542c55c63d06e7dbfe444e76ebf7b6a4c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -4439,7 +4463,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "98b318860b86c48b395a62e93567e44dbaa6ae708f3d656d6a2c92b349488ac0"
+      "sha256": "eebc690d0b13c6f792667d284f6ae4cb43f5a3a50226882ccd92ddd14f466d59"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -4468,7 +4492,7 @@
   ],
   "dependence": {
     "read-data": "c9726b9afd6d60dbc99a0055b15afdc056978743d70a490586d23fb17013c6bb",
-    "fallback": "read data object _RNvNtCsacdfePzLIJ4_24oer_esp32s31_probe_radio12ampdu_resort8METADATA has no declaration file",
+    "fallback": "read data object _RNvNtCs9aFWkhIlGhP_24oer_esp32s31_probe_radio12ampdu_resort8METADATA has no declaration file",
     "coverage-decisions": {
       "path": "verification/esp32s31/decisions/coverage.toml",
       "sha256": "d609f967f41259c32bc77007fb9cd8ed83c1176a53bfbf3d1ff316c7a0f44332"

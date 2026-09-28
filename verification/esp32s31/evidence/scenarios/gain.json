@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "156978b7571475bee1645740fd7d85020f4df16beced8eac9483c1d5823fed8d",
+    "input-2": "acaa317fc95072ec076443227d6c7920fdf16e32b9068afaaf52327dd6b20bd8",
     "input-3": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
   },
   "sources": [
@@ -64,7 +64,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/Cargo.toml",
-      "sha256": "29e7a7c50b169bc9cef95269af31cada6806eb9f2dfa6570ca6876b6d82d783d"
+      "sha256": "824b72fcfd3c3202f7e63ddce26422185e7e7b2b12f671b40ef0fb8fe0cf79d6"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/Cargo.toml",
@@ -72,7 +72,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "b87b1e5b4964fc170887c373b34b4094bd9d53e7d13934e5e8e1516ea2e38e48"
+      "sha256": "cfcbbf8ade2e63e5854cd6aeacad34cace53ffd10f9aaf8ef07e90e834d9a7f8"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
@@ -129,6 +129,10 @@
     {
       "path": "crates/hardware/ieee802154/engine/Cargo.toml",
       "sha256": "f2578c90fcdeaf56049c9de461ea84488315066951942e68944cafa61ce6edfa"
+    },
+    {
+      "path": "crates/hardware/ieee802154/pac/Cargo.toml",
+      "sha256": "324367f62d1e6ff1b8b82bc098fcdd43e2b6af2616f5373320618a635fc2ffe1"
     },
     {
       "path": "crates/hardware/radio/analog/Cargo.toml",
@@ -1032,7 +1036,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "9d232ad245aa1c1a8dd75bfcd383349a32ed7d9914d2cfb8a0bd8a2b38a7d0ba"
+      "sha256": "f54a00db7fdf94431b063b5317aff29ca96cac2e6304248443dafceb9eebf1ac"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -1120,7 +1124,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "fce72360be6861d46c983111515f81e09525dfc040fc9df2cbba01e55850c6cc"
+      "sha256": "06b5c05d264a2bd2bd53d9d4c3e0f6a542c55c63d06e7dbfe444e76ebf7b6a4c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1304,7 +1308,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "98b318860b86c48b395a62e93567e44dbaa6ae708f3d656d6a2c92b349488ac0"
+      "sha256": "eebc690d0b13c6f792667d284f6ae4cb43f5a3a50226882ccd92ddd14f466d59"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",

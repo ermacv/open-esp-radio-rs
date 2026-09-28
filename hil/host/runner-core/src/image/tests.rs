@@ -450,12 +450,12 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
     };
     assert_eq!(
         classify_flashed_capabilities(&features),
-        Some(ImageClass::BluetoothDtm)
+        Some(ImageClass::BluetoothHci)
     );
     features.phy_rx_hot_sram = true;
     assert_eq!(
         classify_flashed_capabilities(&features),
-        Some(ImageClass::BluetoothDtm)
+        Some(ImageClass::BluetoothHci)
     );
     features.phy_fault_injection = true;
     assert_eq!(classify_flashed_capabilities(&features), None);
@@ -463,11 +463,11 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
     features.udp = true;
     assert_eq!(classify_flashed_capabilities(&features), None);
     assert!(
-        !ImageClass::BluetoothDtm
+        !ImageClass::BluetoothHci
             .runtime_features()
             .contains("open-radio-hil")
     );
-    assert!(!ImageClass::BluetoothDtm.requires_driver_observation());
+    assert!(!ImageClass::BluetoothHci.requires_driver_observation());
 }
 
 #[test]
@@ -562,7 +562,7 @@ fn a_console_image_classifies_as_the_class_that_declares_it() {
             );
         }
     }
-    let dtm = ImageClass::BluetoothDtm.console_capabilities().unwrap();
+    let dtm = ImageClass::BluetoothHci.console_capabilities().unwrap();
     assert!(dtm.bluetooth_dtm && dtm.bluetooth_hci);
     assert_eq!(ImageClass::Correctness.console_capabilities(), None);
 }

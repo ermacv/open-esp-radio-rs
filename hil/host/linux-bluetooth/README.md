@@ -133,7 +133,7 @@ cargo hil run bluetooth-dtm-bidirectional
 ```
 
 The runner reserves the board and adapter, builds and audits the separate
-`bluetooth-dtm` image, flashes it and drives framed, boot-correlated DTM
+`bluetooth-hci` image, flashes it and drives framed, boot-correlated DTM
 commands. This image composes the production Bluetooth controller without
 the Wi-Fi runtime. It provides Reset, Receive, Transmit and Test End on LE 1M,
 channel 0 with the same 37-byte PRBS9 payload as the helper. Active ESP tests

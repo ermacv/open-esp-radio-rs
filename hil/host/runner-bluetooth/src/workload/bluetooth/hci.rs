@@ -56,8 +56,8 @@ pub fn data(bytes: &[u8]) -> Result<[u8; 32]> {
     Ok(parameters)
 }
 
-/// The next LE Meta event of `subevent`, skipping other events, within
-/// `timeout`.
+/// The next LE Meta event of `subevent`, skipping other events and ACL data,
+/// within `timeout`.
 pub fn le_meta_event(capture: &SerialCapture, subevent: u8, timeout: Duration) -> Result<Vec<u8>> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
@@ -66,13 +66,15 @@ pub fn le_meta_event(capture: &SerialCapture, subevent: u8, timeout: Duration) -
             return Err(format!("no LE Meta subevent {subevent:#04x} within {timeout:?}").into());
         }
         let wait_ms = left.as_millis().min(1_000) as u16;
-        match capture.bluetooth_hci(BluetoothHciRequest::NextEvent { wait_ms })? {
+        match capture.bluetooth_hci(BluetoothHciRequest::NextPacket { wait_ms })? {
             BluetoothHciResponse::Event { packet, .. }
                 if packet[0] == 0x3e && packet.get(2) == Some(&subevent) =>
             {
                 return Ok(packet.to_vec());
             }
-            BluetoothHciResponse::Event { .. } | BluetoothHciResponse::NoEvent => {}
+            BluetoothHciResponse::Event { .. }
+            | BluetoothHciResponse::Acl { .. }
+            | BluetoothHciResponse::NoPacket => {}
             response => return Err(format!("HCI event wait failed: {response:?}").into()),
         }
     }

@@ -189,7 +189,7 @@ fn datapath_diagnostics_are_restricted_to_their_measurements() {
 
 #[test]
 fn images_accept_only_their_workloads() {
-    invalid(&UDP_RX.replace("correctness", "bluetooth-dtm"));
+    invalid(&UDP_RX.replace("correctness", "bluetooth-hci"));
     invalid(&UDP_RX.replace("correctness", "diagnostic-rx-ownership"));
     invalid(
         "image = 'performance'\n[workload]\nkind = 'station-reconnect'\nlink = { phy = 'ht40' }\ncycles = 1\nboots = 1\ntimeout_seconds = 30\n",

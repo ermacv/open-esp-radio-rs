@@ -107,19 +107,28 @@ pub enum BluetoothDtmResult {
 pub const BLUETOOTH_HCI_PARAMETER_BYTES: usize = 64;
 /// Longest HCI event packet: event code, length and parameters.
 pub const BLUETOOTH_HCI_EVENT_BYTES: usize = 2 + 255;
+/// Longest HCI ACL data packet: handle and flags, length and a 251-octet LE
+/// payload.
+pub const BLUETOOTH_HCI_ACL_BYTES: usize = 4 + 251;
 
 /// One raw HCI exchange with the image's Controller.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BluetoothHciRequest {
     /// Send one command and wait for its Command Complete or Command Status;
-    /// other events that arrive meanwhile stay queued for
-    /// [`Self::NextEvent`].
+    /// other packets that arrive meanwhile stay queued for
+    /// [`Self::NextPacket`]. Host Number Of Completed Packets, which the
+    /// Controller answers with no event, returns
+    /// [`BluetoothHciResponse::Accepted`] once written.
     Command {
         opcode: u16,
         parameters: heapless::Vec<u8, BLUETOOTH_HCI_PARAMETER_BYTES>,
     },
-    /// Return the oldest queued Controller event, waiting up to `wait_ms`.
-    NextEvent { wait_ms: u16 },
+    /// Send one ACL data packet, header included, to the Controller.
+    Acl {
+        packet: heapless::Vec<u8, BLUETOOTH_HCI_ACL_BYTES>,
+    },
+    /// Return the oldest queued Controller packet, waiting up to `wait_ms`.
+    NextPacket { wait_ms: u16 },
 }
 
 /// The image's answer to one [`BluetoothHciRequest`].
@@ -127,15 +136,24 @@ pub enum BluetoothHciRequest {
 pub enum BluetoothHciResponse {
     /// The command's Command Complete or Command Status event.
     Completed(heapless::Vec<u8, BLUETOOTH_HCI_EVENT_BYTES>),
+    /// The Controller transport accepted the ACL data packet, or the command
+    /// that has no completion event.
+    Accepted,
     /// One Controller event.
     Event {
         packet: heapless::Vec<u8, BLUETOOTH_HCI_EVENT_BYTES>,
-        /// Events dropped because the queue was full, since the last report.
+        /// Packets dropped because the queue was full, since the last report.
         dropped: u16,
     },
-    /// No event arrived in time.
-    NoEvent,
-    /// The command did not complete in time.
+    /// One Controller ACL data packet, header included.
+    Acl {
+        packet: heapless::Vec<u8, BLUETOOTH_HCI_ACL_BYTES>,
+        /// Packets dropped because the queue was full, since the last report.
+        dropped: u16,
+    },
+    /// No packet arrived in time.
+    NoPacket,
+    /// The command or ACL packet was not accepted in time.
     Timeout,
     /// The Host transport failed.
     TransportFailed,

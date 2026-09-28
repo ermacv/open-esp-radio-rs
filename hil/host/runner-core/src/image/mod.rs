@@ -94,7 +94,7 @@ pub fn classify_flashed_capabilities(
             psram_task_stack: true,
             ..FeatureCapabilities::default()
         };
-        return (*features == expected).then_some(ImageClass::BluetoothDtm);
+        return (*features == expected).then_some(ImageClass::BluetoothHci);
     }
     if features.phy_fault_injection {
         return None;
@@ -1295,7 +1295,7 @@ fn audit_radio_observers<'a>(
         ImageClass::SystemWatchdog
             | ImageClass::BluetoothGatt
             | ImageClass::BluetoothSecureGatt
-            | ImageClass::BluetoothDtm
+            | ImageClass::BluetoothHci
             | ImageClass::BootSmoke
             | ImageClass::DiagnosticMemoryBenchmark
     ) {

@@ -393,7 +393,7 @@ pub enum FirmwareSet {
     Correctness,
     /// Wi-Fi with only the Wi-Fi system's diagnostics.
     DiagnosticStationExit,
-    BluetoothDtm,
+    BluetoothHci,
     BluetoothGatt,
     BluetoothSecureGatt,
     /// Wi-Fi and Bluetooth together.
@@ -412,7 +412,7 @@ impl FirmwareSet {
         Self::WifiBleCoex,
     ];
     const BLUETOOTH: [Self; 4] = [
-        Self::BluetoothDtm,
+        Self::BluetoothHci,
         Self::BluetoothGatt,
         Self::BluetoothSecureGatt,
         Self::WifiBleCoex,
@@ -426,7 +426,7 @@ impl FirmwareSet {
             Self::Performance => ImageClass::Performance,
             Self::Correctness => ImageClass::Correctness,
             Self::DiagnosticStationExit => ImageClass::DiagnosticStationExit,
-            Self::BluetoothDtm => ImageClass::BluetoothDtm,
+            Self::BluetoothHci => ImageClass::BluetoothHci,
             Self::BluetoothGatt => ImageClass::BluetoothGatt,
             Self::BluetoothSecureGatt => ImageClass::BluetoothSecureGatt,
             Self::WifiBleCoex => ImageClass::WifiBleCoex,
@@ -593,7 +593,7 @@ mod tests {
         assert_eq!(
             sets("hil/targets/esp32s31/runtime/src/bluetooth/gatt.rs"),
             [
-                BluetoothDtm,
+                BluetoothHci,
                 BluetoothGatt,
                 BluetoothSecureGatt,
                 WifiBleCoex

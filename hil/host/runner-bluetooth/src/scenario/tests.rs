@@ -14,13 +14,13 @@ fn each_workload_selects_its_image() {
         ),
         (
             "kind = 'dtm'\nboots = 1\nminimum_packets = 10",
-            ImageClass::BluetoothDtm,
+            ImageClass::BluetoothHci,
         ),
-        ("kind = 'scannable-advertising'", ImageClass::BluetoothDtm),
-        ("kind = 'directed-advertising'", ImageClass::BluetoothDtm),
+        ("kind = 'scannable-advertising'", ImageClass::BluetoothHci),
+        ("kind = 'directed-advertising'", ImageClass::BluetoothHci),
         (
             "kind = 'dtm-peer'\nminimum_packets = 100",
-            ImageClass::BluetoothDtm,
+            ImageClass::BluetoothHci,
         ),
     ] {
         let scenario = parse(text);

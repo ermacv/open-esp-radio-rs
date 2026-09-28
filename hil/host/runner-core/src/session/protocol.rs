@@ -914,10 +914,11 @@ impl SerialCapture {
         request: oer_hil_protocol::BluetoothHciRequest,
     ) -> Result<oer_hil_protocol::BluetoothHciResponse> {
         let wait = match &request {
-            oer_hil_protocol::BluetoothHciRequest::NextEvent { wait_ms } => {
+            oer_hil_protocol::BluetoothHciRequest::NextPacket { wait_ms } => {
                 Duration::from_millis(u64::from(*wait_ms))
             }
-            oer_hil_protocol::BluetoothHciRequest::Command { .. } => Duration::ZERO,
+            oer_hil_protocol::BluetoothHciRequest::Command { .. }
+            | oer_hil_protocol::BluetoothHciRequest::Acl { .. } => Duration::ZERO,
         };
         match self
             .send_command(

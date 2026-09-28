@@ -140,7 +140,7 @@ bindings hold; unrelated dirty files do not silently invalidate the observation.
 sources to the current reviewed inputs. Numeric throughput/silence checks also
 require equal application bytes, even with the functional kind. Whole scenarios declare `transfer = "identical-image"` when their guarantee includes
 timing, memory or RF bounds. This includes the GATT headroom, memory benchmark,
-timebase, boot-placement, maintenance-deadline and watchdog scenarios. The default
+timebase, boot-placement and watchdog scenarios. The default
 `unchanged-functional-contract` permits only a reviewed functional transfer;
 check contracts declare their own image sensitivity independently of units. Selecting
 published functional checks binds only those checks, while still requiring a

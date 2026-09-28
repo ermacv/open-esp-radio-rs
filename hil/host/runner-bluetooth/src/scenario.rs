@@ -92,7 +92,7 @@ impl BluetoothScenario {
             Self::Dtm { .. }
             | Self::DtmPeer { .. }
             | Self::ScannableAdvertising {}
-            | Self::DirectedAdvertising {} => ImageClass::BluetoothDtm,
+            | Self::DirectedAdvertising {} => ImageClass::BluetoothHci,
         }
     }
 

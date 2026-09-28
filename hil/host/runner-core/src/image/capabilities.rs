@@ -149,7 +149,7 @@ mod tests {
             },
             FeatureCapabilities {
                 udp: true,
-                ..ImageClass::BluetoothDtm.capabilities().unwrap()
+                ..ImageClass::BluetoothHci.capabilities().unwrap()
             },
         ] {
             assert_eq!(crate::image::classify_flashed_capabilities(&foreign), None);
@@ -172,7 +172,7 @@ mod tests {
         assert!(correctness.driver_observation_evidence);
         let coex = ImageClass::WifiBleCoex.capabilities().unwrap();
         assert!(coex.bluetooth_gatt && coex.udp);
-        let dtm = ImageClass::BluetoothDtm.capabilities().unwrap();
+        let dtm = ImageClass::BluetoothHci.capabilities().unwrap();
         assert!(dtm.bluetooth_dtm && dtm.bluetooth_hci && !dtm.udp);
         assert!(
             ImageClass::SystemWatchdog

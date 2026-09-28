@@ -25,7 +25,7 @@ fn boot_smoke_preflight_never_opens_a_serial_capture() {
 #[test]
 fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
     let catalog = catalog();
-    let dtm = ImageClass::BluetoothDtm.console_capabilities().unwrap();
+    let dtm = ImageClass::BluetoothHci.console_capabilities().unwrap();
     check_flashed_capabilities(catalog.get("bluetooth-dtm-bidirectional").unwrap(), &dtm).unwrap();
     let scannable = catalog.get("bluetooth-scannable-advertising").unwrap();
     check_flashed_capabilities(scannable, &dtm).unwrap();

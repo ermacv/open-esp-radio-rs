@@ -181,11 +181,11 @@ fn memory_benchmark_bounds_and_worst_case_evidence_fit_the_wire() {
 #[test]
 fn command_envelope_remains_small_enough_for_embedded_queues() {
     let size = core::mem::size_of::<Envelope<Command>>();
-    // The largest command owns two independent WPA2 credential sets for
-    // one atomic STA+AP request. Keep the complete decoded queue element
-    // within an explicit embedded budget instead of splitting that
-    // ownership across hidden compatibility state.
-    assert!(size <= 288, "command envelope occupies {size} bytes");
+    // The largest command is one raw HCI ACL data packet with a 251-octet
+    // LE payload; the atomic STA+AP request with its two WPA2 credential sets
+    // is close behind. Keep the complete decoded queue element within an
+    // explicit embedded budget instead of splitting either across requests.
+    assert!(size <= 304, "command envelope occupies {size} bytes");
 }
 
 #[test]
@@ -1992,6 +1992,43 @@ fn the_largest_hci_exchange_fits_one_frame_each_way() {
             dropped: u16::MAX,
         }),
     );
+    let frame = encoder.encode(&event).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(event));
+}
+
+#[test]
+fn the_largest_acl_packet_fits_one_frame_each_way() {
+    let mut encoder = FrameEncoder::new();
+    let packet = heapless::Vec::from_slice(&[0xa5; crate::BLUETOOTH_HCI_ACL_BYTES]).unwrap();
+    let command = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Command::BluetoothHci(crate::BluetoothHciRequest::Acl {
+            packet: packet.clone(),
+        }),
+    );
+    let event = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Event::BluetoothHci(crate::BluetoothHciResponse::Acl {
+            packet,
+            dropped: u16::MAX,
+        }),
+    );
+    let frame = encoder.encode(&command).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(command));
     let frame = encoder.encode(&event).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();

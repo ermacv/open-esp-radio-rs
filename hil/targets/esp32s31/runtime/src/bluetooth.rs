@@ -6,7 +6,7 @@
 //! schedule, starts the Bluetooth client on it, runs the radio's periodic PHY
 //! tracking on its own task, which reports a tracking failure, and serves the
 //! typed HIL console. The
-//! `bluetooth-hil` image drives Direct Test Mode with HCI commands and the
+//! `bluetooth-hil` image serves Direct Test Mode and raw HCI packets and the
 //! `bluetooth-gatt` image runs the Trouble Host and the GATT application; both
 //! run the radio runner and the HCI service on their own tasks. The
 //! `bluetooth-secure-gatt` image runs them beside its Host and restarts the
@@ -19,10 +19,10 @@
 
 #[cfg(feature = "bluetooth-radio")]
 mod console;
-#[cfg(feature = "bluetooth-hil")]
-mod dtm;
 #[cfg(any(feature = "bluetooth-gatt", feature = "wifi-ble-coex"))]
 mod gatt;
+#[cfg(feature = "bluetooth-hil")]
+mod hci;
 #[cfg(feature = "bluetooth-secure-gatt")]
 mod secure;
 #[cfg(feature = "wifi-ble-coex")]
@@ -137,7 +137,7 @@ async fn image(
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot: u64,
 ) -> ! {
-    dtm::run(spawner, host, usb, boot).await
+    hci::run(spawner, host, usb, boot).await
 }
 
 #[cfg(feature = "bluetooth-gatt")]

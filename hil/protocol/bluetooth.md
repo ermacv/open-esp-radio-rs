@@ -71,8 +71,9 @@ counters mean Host queue acceptance; the independent peer must receive the value
 
 ## Direct Test Mode and raw HCI
 
-The `bluetooth-dtm` image declares `bluetooth_dtm` and `bluetooth_hci` and
-runs the production Controller behind an in-image HCI Host.
+The `bluetooth-hci` image declares `bluetooth_dtm` and `bluetooth_hci` and
+runs the production Controller behind an in-image HCI passthrough; the host
+runner is the HCI Host.
 `BluetoothDtm(operation)` runs one fixed LE 1M, channel 0, 37-byte PRBS9
 Receiver Test, Transmitter Test, Test End or Reset and returns
 `BluetoothDtmEvidence` with the boot's reset reason and the counted packets.
@@ -80,9 +81,22 @@ Receiver Test, Transmitter Test, Test End or Reset and returns
 `BluetoothHci(Command { opcode, parameters })` sends one HCI command with at
 most `BLUETOOTH_HCI_PARAMETER_BYTES` parameter octets and returns its Command
 Complete or Command Status packet (`Completed`), `Timeout` or
-`TransportFailed`. Other events that arrive meanwhile are queued.
-`BluetoothHci(NextEvent { wait_ms })` returns the oldest queued event, or the
-next one within `wait_ms` (`Event { packet, dropped }`), or `NoEvent`;
-`dropped` counts events lost to the bounded queue since the last returned one.
-Host workloads drive advertising, scanning and connections through these two
-requests with standard HCI.
+`TransportFailed`; Host Number Of Completed Packets, which has no completion
+event, returns `Accepted` once written. Other packets that arrive meanwhile are
+queued.
+`BluetoothHci(Acl { packet })` sends one ACL data packet of at most
+`BLUETOOTH_HCI_ACL_BYTES` octets, its four-octet header included, and returns
+`Accepted` once the Controller transport holds it, or `Timeout` or
+`TransportFailed`. The Host must respect the Controller's ACL credits.
+`BluetoothHci(NextPacket { wait_ms })` returns the oldest queued Controller
+packet, or the next one within `wait_ms`, as `Event { packet, dropped }` or
+`Acl { packet, dropped }`, or `NoPacket`. Events and ACL data share one queue
+in arrival order, so data received before a Disconnection Complete is returned
+before it; `dropped` counts packets lost to the bounded queue since the last
+returned one. A Host that enables Controller-to-Host flow control bounds the
+queued ACL data by the credits it grants.
+
+Host workloads drive advertising, scanning, connections and ACL data through
+these requests with standard HCI. ACL timing observed this way includes the
+HIL console link, so it supports no throughput or latency claim without a
+reference measurement of that link.

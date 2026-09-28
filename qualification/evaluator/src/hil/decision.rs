@@ -10,7 +10,7 @@ use std::borrow::Cow;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(super) enum Exclusion {
+pub(crate) enum Exclusion {
     EvaluatorDirty,
     ProducerDirty,
     DifferentCommit,
@@ -22,6 +22,25 @@ pub(super) enum Exclusion {
     /// project onto today's observer inputs.
     ObserverGraphNotProjectable,
     CurrentObserverConfigurationUnavailable,
+}
+
+impl Exclusion {
+    /// The exclusion's kebab-case identifier.
+    pub(crate) fn id(&self) -> &'static str {
+        match self {
+            Self::EvaluatorDirty => "evaluator-dirty",
+            Self::ProducerDirty => "producer-dirty",
+            Self::DifferentCommit => "different-commit",
+            Self::ReplaySubjectNotBound => "replay-subject-not-bound",
+            Self::SourceBindingNotEstablished => "source-binding-not-established",
+            Self::ProcedureMismatch => "procedure-mismatch",
+            Self::ObserverIdentityNotEstablished => "observer-identity-not-established",
+            Self::ObserverGraphNotProjectable => "observer-graph-not-projectable",
+            Self::CurrentObserverConfigurationUnavailable => {
+                "current-observer-configuration-unavailable"
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

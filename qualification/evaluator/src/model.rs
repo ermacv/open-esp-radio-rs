@@ -247,12 +247,13 @@ impl Qualification {
     }
 
     /// Record the program's qualifying HIL observations as tracked shards.
+    /// With `runs`, also explain what became of each scenario they observed.
     /// Record the qualifying observations of `runs`, or of every run.
     pub(crate) fn record_hil_evidence(
         path: &Path,
         root: &Path,
         runs: Option<&BTreeSet<String>>,
-    ) -> Result<Vec<String>> {
+    ) -> Result<RecordedEvidence> {
         ManifestDocument::load_and_validate(path, root)?.record_hil_evidence(root, runs)
     }
 
@@ -576,7 +577,7 @@ impl ValidatedProgram {
         self,
         root: &Path,
         runs: Option<&BTreeSet<String>>,
-    ) -> Result<Vec<String>> {
+    ) -> Result<RecordedEvidence> {
         let document = self.document;
         let hil_target = slug(&document.hil.target, "HIL target")?;
         let evidence = document
@@ -595,7 +596,15 @@ impl ValidatedProgram {
         )?;
         let sources =
             crate::hil::shard::tracked_sources(root, &crate::hil::shard::observers(&index))?;
-        crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources, runs)
+        let recorded =
+            crate::hil::shard::distill(root, &index, evidence, &hil_target, &sources, runs)?;
+        let verdicts = match runs {
+            Some(runs) => {
+                crate::hil::shard::explain(root, &index, runs, &recorded, evidence, &sources)?
+            }
+            None => Vec::new(),
+        };
+        Ok(RecordedEvidence { recorded, verdicts })
     }
 
     fn evaluate(self, root: &Path) -> Result<Qualification> {
@@ -1283,3 +1292,10 @@ impl NativeEvidence {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// The scenarios a recording wrote, and, for requested runs, what became of
+/// each scenario they observed: `(run, scenario, verdict)`.
+pub(crate) struct RecordedEvidence {
+    pub(crate) recorded: Vec<String>,
+    pub(crate) verdicts: Vec<(String, String, crate::hil::shard::RunVerdict)>,
+}

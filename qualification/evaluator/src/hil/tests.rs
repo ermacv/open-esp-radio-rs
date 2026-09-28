@@ -925,5 +925,48 @@ fn a_recorded_run_binds_its_own_snapshot_and_touches_only_its_scenarios() {
     };
     assert_eq!(recorded["sources"][0]["path"], "firmware");
     assert_eq!(recorded["sources"][0]["sha256"], snapshot_digest);
+
+    // Each requested run explains what became of each scenario it observed.
+    let explain = |run: &str, commit: &str| {
+        let only = BTreeSet::from([run.to_owned()]);
+        let repository = RepositoryState {
+            commit: commit.to_owned(),
+            dirty: false,
+        };
+        let index = HilEvidenceIndex::load_selected(
+            &root,
+            runs,
+            evidence,
+            "esp32s31",
+            &repository,
+            Some(&only),
+        )
+        .unwrap();
+        let sources = [PathBuf::from("firmware")];
+        let recorded =
+            shard::distill(&root, &index, evidence, "esp32s31", &sources, Some(&only)).unwrap();
+        shard::explain(&root, &index, &only, &recorded, evidence, &sources).unwrap()
+    };
+    assert_eq!(
+        explain("run-1", "abc123"),
+        [(
+            "run-1".to_owned(),
+            "station-reconnect".to_owned(),
+            shard::RunVerdict::Recorded
+        )]
+    );
+    // At another commit, the run names the sources that differ from its snapshot.
+    let verdicts = explain("run-1", "def456");
+    assert_eq!(verdicts.len(), 1);
+    let verdict = &verdicts[0].2;
+    assert_eq!(verdict.id(), "different-commit");
+    assert_eq!(
+        verdict.detail(),
+        "run inputs differ from the checkout in: firmware"
+    );
+    assert_eq!(
+        explain("missing-run", "abc123")[0].2,
+        shard::RunVerdict::NotFound
+    );
     fs::remove_dir_all(root).unwrap();
 }

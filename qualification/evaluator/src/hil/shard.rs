@@ -616,6 +616,153 @@ pub(crate) fn distill(
     Ok(recorded)
 }
 
+/// What recording did with one scenario of one requested run, and why.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RunVerdict {
+    /// Its observation is now the scenario's shard.
+    Recorded,
+    /// A newer qualifying run of the scenario was recorded instead.
+    NewerRunRecorded { run: String },
+    /// Only passed observations are recorded.
+    NotPassed { outcome: Outcome },
+    /// Its firmware was built with inherited compiler flags.
+    InheritedFlags { flags: &'static str },
+    /// The observation does not qualify on this checkout. For a source
+    /// exclusion, `differing` names the observation's recorded sources whose
+    /// checkout bytes differ from the run's snapshot; `None` without a
+    /// snapshot to compare.
+    Excluded {
+        exclusion: decision::Exclusion,
+        differing: Option<Vec<PathBuf>>,
+    },
+    /// The run is not in the store, or observed no scenario.
+    NotFound,
+}
+
+impl RunVerdict {
+    /// The verdict's kebab-case identifier.
+    pub(crate) fn id(&self) -> &'static str {
+        match self {
+            Self::Recorded => "recorded",
+            Self::NewerRunRecorded { .. } => "newer-run-recorded",
+            Self::NotPassed { .. } => "not-passed",
+            Self::InheritedFlags { .. } => "inherited-flags",
+            Self::Excluded { exclusion, .. } => exclusion.id(),
+            Self::NotFound => "not-found",
+        }
+    }
+
+    /// The verdict's detail, empty when it has none.
+    pub(crate) fn detail(&self) -> String {
+        match self {
+            Self::NewerRunRecorded { run } => format!("recorded run {run}"),
+            Self::NotPassed { outcome } => format!("outcome {}", outcome.id()),
+            Self::InheritedFlags { flags } => format!("built with inherited {flags}"),
+            Self::Excluded {
+                differing: Some(differing),
+                ..
+            } if differing.is_empty() => String::from(
+                "its recorded sources match the checkout; files outside them changed since the run",
+            ),
+            Self::Excluded {
+                differing: Some(differing),
+                ..
+            } => format!(
+                "run inputs differ from the checkout in: {}",
+                differing
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            _ => String::new(),
+        }
+    }
+}
+
+/// Explain, for every scenario each of `runs` observed, what recording did
+/// with it; `recorded` are the scenarios [`distill`] wrote.
+pub(crate) fn explain(
+    root: &Path,
+    index: &HilEvidenceIndex,
+    runs: &BTreeSet<String>,
+    recorded: &[String],
+    directory: &Path,
+    sources: &[PathBuf],
+) -> Result<Vec<(String, String, RunVerdict)>> {
+    let mut verdicts = Vec::new();
+    for run in runs {
+        let mut observed = false;
+        for (scenario, observations) in &index.scenarios {
+            for observation in observations.iter().filter(|o| &o.run_id == run) {
+                observed = true;
+                let verdict = if observation.outcome != Outcome::Passed {
+                    RunVerdict::NotPassed {
+                        outcome: observation.outcome,
+                    }
+                } else if let Some(exclusion) = observation.exclusions.first() {
+                    RunVerdict::Excluded {
+                        exclusion: exclusion.clone(),
+                        differing: differing_sources(root, observation, sources)?,
+                    }
+                } else if let Some(flags) = inherited_flags(observation)? {
+                    RunVerdict::InheritedFlags { flags }
+                } else if recorded.contains(scenario) {
+                    let shard: Value =
+                        read_json(&root.join(directory).join(format!("{scenario}.{EXTENSION}")))?;
+                    match shard["run_id"].as_str() {
+                        Some(id) if id == run => RunVerdict::Recorded,
+                        Some(id) => RunVerdict::NewerRunRecorded { run: id.to_owned() },
+                        None => RunVerdict::Recorded,
+                    }
+                } else {
+                    RunVerdict::NotFound
+                };
+                verdicts.push((run.clone(), scenario.clone(), verdict));
+            }
+        }
+        if !observed {
+            verdicts.push((run.clone(), String::new(), RunVerdict::NotFound));
+        }
+    }
+    Ok(verdicts)
+}
+
+/// The observation's recorded sources whose checkout bytes differ from its
+/// run's snapshot, at most [`DIFFERING_SHOWN`]; `None` without a snapshot.
+fn differing_sources(
+    root: &Path,
+    observation: &ScenarioEvidence,
+    sources: &[PathBuf],
+) -> Result<Option<Vec<PathBuf>>> {
+    let Some(run) = observation.run_directory.as_ref() else {
+        return Ok(None);
+    };
+    // The same sources a shard of this observation would bind.
+    let paths = observation_sources(root, observation)?.unwrap_or_else(|| sources.to_vec());
+    let Some(snapshot) = Snapshot::load(run)? else {
+        return Ok(None);
+    };
+    let mut differing = Vec::new();
+    for path in paths {
+        let checkout = if root.join(&path).exists() {
+            Some(digest(root, &path)?)
+        } else {
+            None
+        };
+        if checkout.as_deref() != snapshot.digest(&path).ok().as_deref() {
+            differing.push(path);
+            if differing.len() == DIFFERING_SHOWN {
+                break;
+            }
+        }
+    }
+    Ok(Some(differing))
+}
+
+/// Differing sources named per observation.
+const DIFFERING_SHOWN: usize = 10;
+
 /// Remove the observer builds of `directory` that none of its shards names,
 /// so replacing or removing a shard leaves no orphaned build behind.
 fn collect_observers(directory: &Path) -> Result<()> {

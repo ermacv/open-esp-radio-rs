@@ -338,10 +338,19 @@ fn record_hil_evidence(
             .cloned()
             .collect::<std::collections::BTreeSet<_>>()
     });
-    let recorded = Qualification::record_hil_evidence(manifest, root, runs.as_ref())?;
-    println!("HIL-EVIDENCE\tshards={}", recorded.len());
-    for scenario in recorded {
+    let evidence = Qualification::record_hil_evidence(manifest, root, runs.as_ref())?;
+    println!("HIL-EVIDENCE\tshards={}", evidence.recorded.len());
+    for scenario in &evidence.recorded {
         println!("HIL-SHARD\t{scenario}");
+    }
+    // One line per scenario of each requested run: what became of it and why.
+    for (run, scenario, verdict) in &evidence.verdicts {
+        println!(
+            "HIL-EVIDENCE-RUN\t{run}\t{}\t{}\t{}",
+            if scenario.is_empty() { "-" } else { scenario },
+            verdict.id(),
+            verdict.detail()
+        );
     }
     Ok(())
 }

@@ -5,6 +5,7 @@ pub mod directed;
 pub mod dtm_peer;
 pub mod gatt;
 mod hci;
+pub mod peripheral;
 pub mod scannable;
 pub mod secure_gatt;
 

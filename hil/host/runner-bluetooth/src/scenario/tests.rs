@@ -22,6 +22,10 @@ fn each_workload_selects_its_image() {
             "kind = 'dtm-peer'\nminimum_packets = 100",
             ImageClass::BluetoothHci,
         ),
+        (
+            "kind = 'peripheral'\nconnections = 2\nhold_millis = 100\ntermination = 'peer-reset'",
+            ImageClass::BluetoothHci,
+        ),
     ] {
         let scenario = parse(text);
         scenario.validate().unwrap();
@@ -73,4 +77,24 @@ fn out_of_range_or_retired_workloads_are_rejected() {
     ] {
         assert!(toml::from_str::<BluetoothScenario>(text).is_err(), "{text}");
     }
+}
+
+#[test]
+fn peripheral_scenarios_bound_their_cycles_and_name_the_termination() {
+    let valid =
+        "kind = 'peripheral'\nconnections = 100\nhold_millis = 0\ntermination = 'target-reset'";
+    parse(valid).validate().unwrap();
+    for invalid in [
+        "kind = 'peripheral'\nconnections = 0\nhold_millis = 0\ntermination = 'peer-reset'",
+        "kind = 'peripheral'\nconnections = 101\nhold_millis = 0\ntermination = 'peer-reset'",
+        "kind = 'peripheral'\nconnections = 1\nhold_millis = 5001\ntermination = 'peer-reset'",
+    ] {
+        assert!(parse(invalid).validate().is_err(), "{invalid}");
+    }
+    assert!(
+        toml::from_str::<BluetoothScenario>(
+            "kind = 'peripheral'\nconnections = 1\nhold_millis = 0\ntermination = 'peer-sleep'"
+        )
+        .is_err()
+    );
 }

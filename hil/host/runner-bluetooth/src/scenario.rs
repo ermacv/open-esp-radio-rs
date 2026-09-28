@@ -10,7 +10,7 @@ use hil_core::{
     lab::requirements::Requirements,
     scenario::{Plan, bounded},
 };
-use oer_hil_protocol::FeatureCapabilities;
+use oer_hil_protocol::{BluetoothPeripheralTermination, FeatureCapabilities};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -52,6 +52,15 @@ pub enum BluetoothScenario {
     /// receives LE 1M, 2M and Coded (S=8 and S=2) and transmits LE 1M and
     /// 2M, with a silence control on each receiver.
     DtmPeer { minimum_packets: u16 },
+    /// LE peripheral connections with the runner as the HCI Host and the
+    /// Linux helper as central: two backpressured 251-octet ACL echoes around
+    /// its Connection and Channel Map Updates, then the termination, and
+    /// advertising again for the next connection.
+    Peripheral {
+        connections: u8,
+        hold_millis: u16,
+        termination: BluetoothPeripheralTermination,
+    },
 }
 
 /// Mutually exclusive terminal proofs; neither substitutes for the other.
@@ -81,6 +90,14 @@ impl BluetoothScenario {
             Self::DtmPeer { minimum_packets } => {
                 bounded(*minimum_packets, 1, 1000, "minimum_packets")
             }
+            Self::Peripheral {
+                connections,
+                hold_millis,
+                ..
+            } => {
+                bounded(*connections, 1, 100, "connections")?;
+                bounded(*hold_millis, 0, 5000, "hold_millis")
+            }
             _ => Ok(()),
         }
     }
@@ -92,7 +109,8 @@ impl BluetoothScenario {
             Self::Dtm { .. }
             | Self::DtmPeer { .. }
             | Self::ScannableAdvertising {}
-            | Self::DirectedAdvertising {} => ImageClass::BluetoothHci,
+            | Self::DirectedAdvertising {}
+            | Self::Peripheral { .. } => ImageClass::BluetoothHci,
         }
     }
 
@@ -123,9 +141,10 @@ impl BluetoothScenario {
     pub fn served_by(&self, features: &FeatureCapabilities) -> bool {
         match self {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
-            Self::ScannableAdvertising {} | Self::DirectedAdvertising {} | Self::DtmPeer { .. } => {
-                features.bluetooth_hci
-            }
+            Self::ScannableAdvertising {}
+            | Self::DirectedAdvertising {}
+            | Self::DtmPeer { .. }
+            | Self::Peripheral { .. } => features.bluetooth_hci,
             Self::Dtm { .. } => features.bluetooth_dtm,
         }
     }
@@ -139,6 +158,7 @@ impl BluetoothScenario {
             | Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {} => fixture::att::preflight,
             Self::Dtm { .. } => fixture::preflight,
+            Self::Peripheral { .. } => fixture::preflight_connect_reset,
             Self::DtmPeer { .. } => return None,
         })
     }
@@ -160,6 +180,19 @@ impl BluetoothScenario {
             Self::DtmPeer { minimum_packets } => {
                 workload::dtm_peer::run(*minimum_packets, output, context)
             }
+            Self::Peripheral {
+                connections,
+                hold_millis,
+                termination,
+            } => workload::peripheral::run(
+                workload::peripheral::Config {
+                    connections: *connections,
+                    hold_millis: *hold_millis,
+                    termination: *termination,
+                },
+                output,
+                context,
+            ),
         }
     }
 }

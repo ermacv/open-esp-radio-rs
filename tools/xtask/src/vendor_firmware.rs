@@ -34,7 +34,10 @@ const IDF_SOURCE: &str = "esp-idf";
 pub const CACHE_ENV: &str = "OER_IDF_CACHE";
 /// IDF tool installation below the cache.
 const TOOLS: &str = "idf-tools";
-/// Marker of a completed tool installation for one IDF revision.
+/// The ESP-IDF tree that configured a project's build directory.
+const CONFIGURED_TREE: &str = "configured-tree";
+
+/// Marker of a completed tool installation for one ESP-IDF tree and chip.
 const TOOLS_MARKER: &str = ".oer-installed";
 /// Vendor firmware projects of a chip, below `verification/<chip>/`.
 const PROJECTS: &str = "hil-vendor";
@@ -270,10 +273,22 @@ fn remove_checkout_copies(root: &Path) {
     }
 }
 
-/// Install the IDF tools of `tree` for `chip` once per revision.
+/// The marker of the tool installation of `tree` for `chip`. ESP-IDF records
+/// the targets it installed per tree path, and export demands every target's
+/// tools for a path it has no record of, so each tree (one per set of pins)
+/// runs its own installation.
+fn tools_marker(tools: &Path, tree: &Path, chip: &str) -> Result<PathBuf> {
+    let tree_name = tree
+        .file_name()
+        .ok_or("the ESP-IDF tree has no directory name")?
+        .to_string_lossy();
+    Ok(tools.join(format!("{TOOLS_MARKER}-{tree_name}-{chip}")))
+}
+
+/// Install the IDF tools of `tree` for `chip` once per tree.
 fn install_tools(cache: &Path, tree: &Path, chip: &str, revision: &str) -> Result<PathBuf> {
     let tools = cache.join(TOOLS);
-    let marker = tools.join(format!("{TOOLS_MARKER}-{revision}-{chip}"));
+    let marker = tools_marker(&tools, tree, chip)?;
     if !marker.is_file() {
         std::fs::create_dir_all(&tools)?;
         bash(
@@ -401,6 +416,16 @@ pub fn run(ctx: &Context, chip: &str, project: Option<&str>) -> Result<()> {
 /// `build.json`. An image linking an archive named like a pinned artifact but
 /// differing from it is refused.
 /// The ESP-IDF revision and tree of the previous build in `output`, if any.
+/// Whether the build directory below `output` was configured by another
+/// ESP-IDF tree than `tree` at `revision`. CMake rejects such a cache, and the
+/// generated sdkconfig follows that tree. The configuring tree is recorded
+/// before each build, so a failed build is recognised too.
+fn configured_by_another_tree(output: &Path, revision: &str, tree: &Path) -> bool {
+    built_tree(output).is_some_and(|built| built != (revision.to_owned(), Some(tree.to_owned())))
+        || std::fs::read_to_string(output.join(CONFIGURED_TREE))
+            .is_ok_and(|previous| Path::new(&previous) != tree)
+}
+
 fn built_tree(output: &Path) -> Option<(String, Option<PathBuf>)> {
     let record: Build =
         serde_json::from_slice(&std::fs::read(output.join(BUILD_RECORD)).ok()?).ok()?;
@@ -445,14 +470,15 @@ pub fn build(ctx: &Context, pins: &str, projects: &[Project]) -> Result<Vec<Buil
         let chip = &project.chip;
         let output = output(&ctx.root, project);
         let build = output.join("build");
-        // A build configured by another ESP-IDF tree cannot be reused: CMake
-        // rejects its cache, and the generated sdkconfig follows that tree.
-        if built_tree(&output).is_some_and(|built| built != (revision.clone(), Some(tree.clone())))
-        {
+        if configured_by_another_tree(&output, &revision, &tree) {
             remove_if_present(&build)?;
             remove_if_present(&output.join("sdkconfig"))?;
         }
         std::fs::create_dir_all(&output)?;
+        std::fs::write(
+            output.join(CONFIGURED_TREE),
+            tree.to_string_lossy().as_bytes(),
+        )?;
         // `--preview`: the pinned IDF lists the chip as a preview target.
         bash(
             r#". "$IDF_PATH/export.sh" >/dev/null
@@ -548,6 +574,30 @@ mod tests {
             normalize("https://github.com/espressif/esp-phy-lib/"),
             "https://github.com/espressif/esp-phy-lib"
         );
+    }
+
+    #[test]
+    fn each_tree_installs_its_own_tools() {
+        let tools = Path::new("/cache/idf-tools");
+        let marker = |tree: &str| tools_marker(tools, Path::new(tree), "esp32c5").unwrap();
+        assert_ne!(marker("/cache/abc-01"), marker("/cache/abc-02"));
+        assert_eq!(marker("/cache/abc-01"), marker("/cache/abc-01"));
+        assert_ne!(
+            marker("/cache/abc-01"),
+            tools_marker(tools, Path::new("/cache/abc-01"), "esp32s31").unwrap()
+        );
+    }
+
+    #[test]
+    fn a_failed_build_of_another_tree_is_reconfigured() {
+        let directory = tempfile::tempdir().unwrap();
+        let tree = Path::new("/cache/abc-02");
+        assert!(!configured_by_another_tree(directory.path(), "abc", tree));
+        // A build that failed left no record, only the tree that configured it.
+        std::fs::write(directory.path().join(CONFIGURED_TREE), "/cache/abc-01").unwrap();
+        assert!(configured_by_another_tree(directory.path(), "abc", tree));
+        std::fs::write(directory.path().join(CONFIGURED_TREE), "/cache/abc-02").unwrap();
+        assert!(!configured_by_another_tree(directory.path(), "abc", tree));
     }
 
     #[test]

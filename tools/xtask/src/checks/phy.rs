@@ -31,8 +31,10 @@ const PHY_PACKAGES: &[&str] = &[
     "oer-ieee802154-pac",
     // Portable IEEE 802.15.4 frame values the MAC engine is typed over.
     "oer-ieee802154",
-    // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive.
+    // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive,
+    // and the portable trace events it records.
     "oer-ieee802154-engine",
+    "oer-ieee802154-trace",
     // The chip-neutral modem clock planner behind the HAL's clock owners.
     "oer-radio-analog",
     "oer-radio-clock",

@@ -4,7 +4,7 @@ use super::*;
 fn linux_fixture_requires_explicit_radio_and_network_settings() {
     use std::io::Write;
     let mut raw: toml::Value =
-        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+        toml::from_str(include_str!("../../../../../lab.example.toml")).unwrap();
     raw["station_fixture"] = toml::from_str("kind='local-linux'\ninterface='wlan0'\nphys=['ht20','ht40','he20']\ncountry='DE'\nchannel=13\naddress='10.42.0.1/24'\n").unwrap();
     for (key, value, valid) in [
         ("country", toml::Value::String("DE".into()), true),
@@ -82,7 +82,7 @@ fn openwrt_config(phys: &[&str]) -> tempfile::NamedTempFile {
     use std::io::Write;
 
     let mut config: toml::Value =
-        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+        toml::from_str(include_str!("../../../../../lab.example.toml")).unwrap();
     config["station_fixture"]["phys"] = toml::Value::Array(
         phys.iter()
             .map(|phy| toml::Value::String((*phy).into()))
@@ -158,7 +158,7 @@ fn physical_identity_is_stable_and_path_safe() {
 fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
     use std::io::Write;
     let mut raw: toml::Value =
-        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+        toml::from_str(include_str!("../../../../../lab.example.toml")).unwrap();
     raw.as_table_mut().unwrap().insert(
         "air_observer".into(),
         toml::from_str("ssh_target='lab-observer'\nphy='phy0'\ninterface='observe0'\n").unwrap(),
@@ -183,8 +183,7 @@ fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
 #[test]
 fn the_peer_board_is_optional_and_needs_an_identity() {
     use std::io::Write;
-    let raw: toml::Value =
-        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    let raw: toml::Value = toml::from_str(include_str!("../../../../../lab.example.toml")).unwrap();
     let load = |value: &toml::Value| {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(toml::to_string(value).unwrap().as_bytes())
@@ -216,8 +215,7 @@ fn the_peer_board_is_optional_and_needs_an_identity() {
 #[test]
 fn devices_are_named_by_serial_port_or_by_registered_board() {
     use std::io::Write;
-    let raw: toml::Value =
-        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    let raw: toml::Value = toml::from_str(include_str!("../../../../../lab.example.toml")).unwrap();
     let resolve = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
         match (board, chip) {
             ("esp32s31", Some("esp32s31")) => Ok("/dev/ttyACM0".into()),
@@ -307,8 +305,7 @@ fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
 #[test]
 fn devices_under_test_are_keyed_by_chip_and_device_is_the_esp32s31() {
     use std::io::Write;
-    let raw: toml::Value =
-        toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
+    let raw: toml::Value = toml::from_str(include_str!("../../../../../lab.example.toml")).unwrap();
     let resolve = |board: &str, chip: Option<&str>| -> crate::Result<std::path::PathBuf> {
         match (board, chip) {
             ("esp32c5", Some("esp32c5")) => Ok("/dev/ttyACM1".into()),

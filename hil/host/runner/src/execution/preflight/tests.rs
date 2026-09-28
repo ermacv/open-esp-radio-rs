@@ -23,7 +23,7 @@ fn scheduler_selection_applies_only_to_standalone_access_points() {
 
 #[test]
 fn boot_smoke_preflight_never_opens_a_serial_capture() {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local.example.toml");
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../lab.example.toml");
     let private = tempfile::tempdir().unwrap();
     let lab_path = private.path().join("local.toml");
     std::fs::copy(source, &lab_path).unwrap();

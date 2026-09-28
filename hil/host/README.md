@@ -61,7 +61,7 @@ Run the host interface through the workspace alias:
 
 ```console
 mkdir -p ~/.config/open-esp-radio
-cp hil/local.example.toml ~/.config/open-esp-radio/lab.toml
+cp hil/lab.example.toml ~/.config/open-esp-radio/lab.toml
 chmod 0600 ~/.config/open-esp-radio/lab.toml
 cargo hil doctor
 ```

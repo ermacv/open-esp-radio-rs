@@ -842,7 +842,6 @@ impl ConnectedControlCore {
         !self.left
     }
 
-    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
     pub fn has_immediate_work(&self, control_event_pending: bool) -> bool {
         let transmit_work = self.individual_twt_kick
             || self.initial_tx_block_ack.into_iter().any(|pending| pending);
@@ -850,7 +849,7 @@ impl ConnectedControlCore {
             || control_event_pending
             || (transmit_work && !self.power.blocks_tx())
             || self.power.has_input()
-    }}
+    }
 
     oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
       /// Return the first owned control deadline without allocating executor state.

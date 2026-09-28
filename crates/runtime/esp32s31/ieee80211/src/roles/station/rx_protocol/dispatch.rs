@@ -377,7 +377,6 @@ impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
         self.sink.wants_power_save_data()
     }
 
-    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         let ConnectedRxEvent::Ethernet {
             frame,
@@ -417,7 +416,7 @@ impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
             self.callback_started = callback_started;
             self.callback_ended = crate::diagnostics::core0_rx_cycles::cycle_count();
         }
-    }}
+    }
 
     fn supports_esp_now_v2(&self) -> bool {
         self.sink.supports_esp_now_v2()

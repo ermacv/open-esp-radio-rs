@@ -27,10 +27,12 @@ pub enum DiagnosticFeature {
     /// evidence, without the other driver observers: a performance-like
     /// image whose timing still reproduces saturated-traffic failures.
     StationExit,
+    /// The program-counter profile: a sampling interrupt on each hart.
+    PcProfile,
 }
 
 impl DiagnosticFeature {
-    pub const ALL: [Self; 2] = [Self::RxOwnership, Self::StationExit];
+    pub const ALL: [Self; 3] = [Self::RxOwnership, Self::StationExit, Self::PcProfile];
 
     const fn bit(self) -> u16 {
         1 << self as u16

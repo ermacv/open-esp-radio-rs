@@ -84,10 +84,7 @@ use embassy_executor::SendSpawner;
 use embassy_time::{Duration, Timer};
 #[cfg(feature = "open-radio-hil")]
 use esp_hal::system::{CpuControl, Stack};
-use esp_hal::{
-    interrupt::software::SoftwareInterrupt,
-    timer::{OneShotTimer, timg::TimerGroup},
-};
+use esp_hal::timer::{OneShotTimer, timg::TimerGroup};
 use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
@@ -112,6 +109,7 @@ mod memory_benchmark;
 mod pc_profile;
 #[cfg(feature = "open-radio-hil")]
 mod phy_fault;
+mod software_interrupt;
 #[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
 mod stack_evidence;
 #[cfg(any(
@@ -386,7 +384,7 @@ extern "C" fn runtime_main() -> ! {
     #[cfg(feature = "open-radio-hil")]
     let _app_spawner = {
         let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
-        let app_interrupt = SoftwareInterrupt::new(peripherals.FROM_CPU_INTR1);
+        let app_interrupt = software_interrupt::executor1(peripherals.FROM_CPU_INTR1);
         let guard = cpu_control
             .start_app_core(
                 unsafe { &mut *ptr::addr_of_mut!(APP_CORE_STACK) },
@@ -422,7 +420,7 @@ extern "C" fn runtime_main() -> ! {
         }
     };
 
-    let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
+    let executor = EXECUTOR.init(Executor::<0>::new(software_interrupt::executor0(
         peripherals.FROM_CPU_INTR0,
     )));
 
@@ -537,7 +535,12 @@ extern "C" fn runtime_main() -> ! {
 }
 
 #[cfg(feature = "open-radio-hil")]
-fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
+fn run_app_core(
+    app_interrupt: esp_hal::interrupt::software::SoftwareInterrupt<
+        'static,
+        { software_interrupt::Line::Executor1 as u8 },
+    >,
+) -> ! {
     #[cfg(feature = "psram-task-stack")]
     unsafe {
         psram_task_stack::install_current_hart_interrupt_stack();
@@ -572,8 +575,7 @@ fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
 extern "C" fn runtime_cpu1_psram_main() -> ! {
     // The original singleton was consumed and forgotten by the bootstrap
     // closure immediately before the non-returning stack switch.
-    let app_interrupt =
-        SoftwareInterrupt::new(unsafe { esp_hal::peripherals::FROM_CPU_INTR1::steal() });
+    let app_interrupt = software_interrupt::executor1_after_stack_switch();
     run_app_core(app_interrupt)
 }
 

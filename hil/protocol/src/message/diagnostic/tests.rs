@@ -28,7 +28,8 @@ fn a_feature_set_round_trips_as_its_features() {
 #[test]
 fn an_unknown_or_repeated_feature_fails_closed() {
     // A sequence of one feature whose variant index this host does not know.
-    assert!(postcard::from_bytes::<DiagnosticFeatures>(&[1, 2]).is_err());
+    let unknown = DiagnosticFeature::ALL.len() as u8;
+    assert!(postcard::from_bytes::<DiagnosticFeatures>(&[1, unknown]).is_err());
     // The same feature twice.
     assert!(postcard::from_bytes::<DiagnosticFeatures>(&[2, 1, 1]).is_err());
 }

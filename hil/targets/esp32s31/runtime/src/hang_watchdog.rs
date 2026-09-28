@@ -32,7 +32,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use critical_section::Mutex;
 use esp_hal::{
     Blocking,
-    interrupt::{Priority, software::SoftwareInterrupt},
+    interrupt::Priority,
     time::Duration,
     timer::{PeriodicTimer, systimer::Alarm},
 };
@@ -147,18 +147,12 @@ pub(super) fn start(alarm: Alarm<'static>) {
 /// Bind the sampling interrupt on core 1; call on core 1 before its
 /// executor enables interrupts.
 pub(super) fn bind_core1_sampler() {
-    // SAFETY: FROM_CPU_INTR2 is used by nothing else; the watchdog raises it
-    // through `raise_core1_sample`.
-    #[allow(unsafe_code, reason = "the sampling interrupt is shared by two cores")]
-    let mut interrupt =
-        SoftwareInterrupt::new(unsafe { esp_hal::peripherals::FROM_CPU_INTR2::steal() });
+    let mut interrupt = crate::software_interrupt::hang_watchdog();
     interrupt.set_interrupt_handler(sample_core1);
 }
 
 fn raise_core1_sample() {
-    // SAFETY: raising only sets the interrupt's pending bit.
-    #[allow(unsafe_code, reason = "the sampling interrupt is shared by two cores")]
-    SoftwareInterrupt::new(unsafe { esp_hal::peripherals::FROM_CPU_INTR2::steal() }).raise();
+    crate::software_interrupt::hang_watchdog().raise();
 }
 
 /// This hart's interrupted context, as the running handler sees it.
@@ -199,9 +193,7 @@ fn hart(responded: bool, [mepc, ra, sp, mcause, mstatus]: [u32; 5]) -> HartState
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
 fn sample_core1() {
-    // SAFETY: clearing only resets the interrupt's pending bit.
-    #[allow(unsafe_code, reason = "the sampling interrupt is shared by two cores")]
-    SoftwareInterrupt::new(unsafe { esp_hal::peripherals::FROM_CPU_INTR2::steal() }).reset();
+    crate::software_interrupt::hang_watchdog().reset();
     for (slot, value) in CORE1_CONTEXT.iter().zip(interrupted()) {
         slot.store(value, Ordering::Relaxed);
     }

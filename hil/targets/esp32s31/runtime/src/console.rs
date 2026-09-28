@@ -1129,6 +1129,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         queue_event_reliably(session_id, request_id, response).await;
                     }
+                    // The program-counter profile: served by images that
+                    // compile the sampler (`pc-profile`).
+                    Command::ProfileControl(_) | Command::GetProfileSamples { .. } => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
                     Command::PhyAnalogImage(request) => {
                         let response = if session_id != 0 {
                             Event::Rejected(RejectReason::InvalidState)

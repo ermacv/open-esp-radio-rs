@@ -9,7 +9,7 @@ qualification are separate contracts.
 - [Wi-Fi](wifi.md): role ownership, traffic sessions and retained results.
 - [Bluetooth](bluetooth.md): GATT and secure GATT lifecycle, Direct Test Mode and raw HCI.
 - [PHY](phy.md): fault injection, placement and delivery continuity.
-- [Platform and memory diagnostics](diagnostics.md): watchdog, event trace and stack/copy measurements.
+- [Platform and memory diagnostics](diagnostics.md): watchdog, event trace, program-counter profile and stack/copy measurements.
 
 Source types define the accepted wire layout; these references explain its
 meaning and limits. Host scenario execution belongs to the
@@ -25,7 +25,7 @@ Mode, HCI, GATT and secure GATT), `ieee802154` (probes, air check, peer
 sessions and Thread) and `system` (the memory copy benchmark). The shared
 core is always compiled: framing, the envelope and its `Command`, `Event`
 and `EvidenceRecord` sets, capabilities, boot and post-mortem evidence, the
-event trace, PHY diagnostics and startup artifacts. The host enables every
+event trace, the program-counter profile, PHY diagnostics and startup artifacts. The host enables every
 family, the default; an image enables only the families it serves, so its
 build, and the evidence bound to its sources, reads only their files.
 

@@ -71,6 +71,7 @@ mod io;
 mod message;
 mod phy_fault;
 mod phy_register_image;
+mod profile;
 mod system;
 mod trace;
 #[allow(unused_imports, reason = "empty while every family is on")]
@@ -89,6 +90,9 @@ pub use phy_fault::{
 };
 pub use phy_register_image::{
     PHY_REGISTER_IMAGE_WORDS, PhyAnalogImageBytes, PhyRegisterImageRequest, PhyRegisterImageWords,
+};
+pub use profile::{
+    PROFILE_SAMPLE_PAGE, ProfileControl, ProfileHarts, ProfileSamplesPage, ProfileStatus,
 };
 pub use system::{
     BootEvidence, CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HangTarget, HartState,

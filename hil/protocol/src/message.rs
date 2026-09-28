@@ -389,6 +389,14 @@ pub enum Command {
     PhyRegisterImage(crate::PhyRegisterImageRequest),
     /// Read a window of the analog image: one analog-I2C read per register.
     PhyAnalogImage(crate::PhyRegisterImageRequest),
+    /// Arm, disarm or query the program-counter profile.
+    ProfileControl(crate::ProfileControl),
+    /// Read retained profile samples of one hart from `first`; only a closed
+    /// window has pages.
+    GetProfileSamples {
+        hart: u8,
+        first: u32,
+    },
 }
 
 impl WireBody for Command {
@@ -637,6 +645,10 @@ pub enum Event {
     PhyRegisterImage(crate::PhyRegisterImageWords),
     /// Correlated response to [`Command::PhyAnalogImage`].
     PhyAnalogImage(crate::PhyAnalogImageBytes),
+    /// Correlated response to [`Command::ProfileControl`].
+    ProfileStatus(crate::ProfileStatus),
+    /// Correlated response to [`Command::GetProfileSamples`].
+    ProfileSamples(crate::ProfileSamplesPage),
 }
 
 impl WireBody for Event {

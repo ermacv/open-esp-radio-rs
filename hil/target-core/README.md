@@ -10,7 +10,7 @@ compiled code the firmware links.
 
 | Feature | Modules |
 | --- | --- |
-| none | `console`, `liveness`, `postmortem`, `trace` |
+| none | `console`, `liveness`, `postmortem`, `profile`, `trace` |
 | `wifi` (default) | `network::progress`, `traffic` |
 | `system` (default) | `memory_benchmark` |
 | `secure-gatt` | `bluetooth_gatt::secure`, with the protocol's `bluetooth` family |

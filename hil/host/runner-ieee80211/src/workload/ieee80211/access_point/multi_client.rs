@@ -593,7 +593,7 @@ pub(super) fn validate_multi_client_fairness(
         )
         .unwrap_or(u64::MAX);
         let skew = Measurement::observed(
-            &name("flow-skew"),
+            name("flow-skew"),
             skew_basis_points,
             MeasurementUnit::BasisPoints,
         );

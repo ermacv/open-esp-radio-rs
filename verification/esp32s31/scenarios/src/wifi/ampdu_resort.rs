@@ -21,11 +21,12 @@ use blobray_domain::{
 pub const ROOTS: &[&str] = &[VENDOR];
 /// Evidence claims: the vendor resort with the production completion and
 /// retry retention, and the vendor protection-failure leaf with the
-/// production aggregate republication. The acknowledgement-timeout
-/// sequences compare too, but end at different attempts pending a decision.
+/// production aggregate republication, and the acknowledgement-timeout leaf
+/// with the production aggregate retry.
 pub const CLAIMS: &[(&str, &str, &str)] = &[
     ("archive", VENDOR, RESORT_PROBE),
     ("archive", "lmacProcessCtsTimeout", TIMEOUT_STEP_PROBE),
+    ("archive", "lmacProcessAckTimeout", TIMEOUT_STEP_PROBE),
 ];
 const VENDOR: &str = "ppResortTxAMPDU";
 const LAYOUT_PROBE: &str = "open_libpp_ampdu_trace_layout";
@@ -172,9 +173,8 @@ struct Completion {
     bitmap: u64,
     retain_single: bool,
     bar_pending: bool,
-    /// Production's aggregate publication limit; the vendor's MPDU
-    /// publication and short counters in each transmit descriptor.
-    attempt_limit: u8,
+    /// The vendor's MPDU publication and short counters in each transmit
+    /// descriptor.
     vendor_attempts: u8,
     /// How the vendor's own `lmacMSDUAged` sees the MPDUs, after `lmacInit`
     /// installed its lifetimes; answered as never aged when absent.
@@ -213,15 +213,12 @@ const fn completion(
         bitmap,
         retain_single: true,
         bar_pending: false,
-        attempt_limit: PRODUCTION_ATTEMPT_LIMIT,
         vendor_attempts: 0,
         aging: None,
         difference: None,
     }
 }
 
-/// The station's aggregate publication limit: its unicast attempt limit.
-const PRODUCTION_ATTEMPT_LIMIT: u8 = 4;
 /// Transmit descriptor bytes: the MPDU publication and short counters, and
 /// the enqueue timestamp `lmacMSDUAged` measures from.
 const DESCRIPTOR_PUBLICATIONS: usize = 5;
@@ -232,12 +229,6 @@ const DESCRIPTOR_RECORD: usize = 0x1c;
 const ENQUEUED_US: u32 = 0x0100_0000;
 /// Beyond the vendor lifetime by more than its own 1024-microsecond margin.
 const EXPIRED_MARGIN_US: u32 = 4096;
-/// Pending decisions: whether production bounds a retained aggregate by a
-/// publication count or, as the vendor, by the MSDU lifetime.
-const PENDING_BOUND: &str = "unclassified, pending decision: the vendor retries a missing MPDU \
-    inside the aggregate until its MSDU lifetime expires, without an attempt count; production \
-    ends the aggregate after its publication limit and hands the MPDU to the ordinary retry \
-    owner";
 
 const COMPLETIONS: &[Completion] = &[
     completion("all-acknowledged", 4, 100, 100, 0b1111),
@@ -277,28 +268,14 @@ const COMPLETIONS: &[Completion] = &[
         vendor_attempts: u8::MAX,
         ..completion("vendor-counters-exhausted", 4, 100, 100, 0b0101)
     },
-    // Production at its publication limit ends the aggregate.
-    Completion {
-        attempt_limit: 1,
-        difference: Some(Difference {
-            reason: PENDING_BOUND,
-            mpdu: 1,
-            vendor_retry: true,
-        }),
-        ..completion("attempt-limit", 4, 100, 100, 0b0101)
-    },
-    // The vendor's own aging keeps a fresh MPDU and discards an expired one.
+    // Both sides keep a fresh MPDU and discard an expired one: the vendor
+    // by its own aging after lmacInit, production by the same lifetime.
     Completion {
         aging: Some(Aging::Fresh),
         ..completion("lifetime-fresh", 4, 100, 100, 0b0101)
     },
     Completion {
         aging: Some(Aging::Expired),
-        difference: Some(Difference {
-            reason: PENDING_BOUND,
-            mpdu: 1,
-            vendor_retry: false,
-        }),
         ..completion("lifetime-expired", 4, 100, 100, 0b0101)
     },
 ];
@@ -613,11 +590,11 @@ fn case_rows(
         crate::mac::call_boundary(&image, "GetAccess"),
         ARENA_ACCESS,
     ));
-    if let Some(aging) = completion.aging {
-        let elapsed = match aging {
-            Aging::Fresh => 0,
-            Aging::Expired => lifetime + EXPIRED_MARGIN_US,
-        };
+    let elapsed = match completion.aging {
+        None | Some(Aging::Fresh) => 0,
+        Some(Aging::Expired) => lifetime + EXPIRED_MARGIN_US,
+    };
+    if completion.aging.is_some() {
         vendor.calls.push(answered(
             "hal_now",
             symbol("hal_now")?,
@@ -662,10 +639,8 @@ fn case_rows(
                 Arg::Word(Some(i64::from((completion.bitmap >> 32) as u32))),
             ),
             ("received", Arg::Word(Some(1))),
-            (
-                "attempt_limit",
-                Arg::Word(Some(i64::from(completion.attempt_limit))),
-            ),
+            ("lifetime_micros", Arg::Word(Some(i64::from(lifetime)))),
+            ("elapsed_micros", Arg::Word(Some(i64::from(elapsed)))),
             (
                 "retain_single",
                 Arg::Word(Some(i64::from(completion.retain_single))),
@@ -819,9 +794,8 @@ struct Timeout {
     status: u32,
     continuing: u32,
     /// Whether the vendor's rate record limit bounds it besides the short
-    /// retry limit, and the pending decision when production ends first.
+    /// retry limit.
     record_bounded: bool,
-    pending: Option<&'static str>,
 }
 
 const TIMEOUTS: [Timeout; 2] = [
@@ -831,17 +805,15 @@ const TIMEOUTS: [Timeout; 2] = [
         status: 5,
         continuing: STEP_RETAIN,
         record_bounded: true,
-        pending: Some(PENDING_TIMEOUT_BOUND),
     },
-    // A protection failure sent no MPDU: neither side sets the Retry bit,
-    // and both end at the vendor's short retry limit.
+    // A protection failure sent no MPDU: neither side sets the Retry bit.
+    // Both kinds end at the vendor's limits.
     Timeout {
         label: "cts-timeout",
         leaf: "lmacProcessCtsTimeout",
         status: 2,
         continuing: STEP_REPUBLISH,
         record_bounded: false,
-        pending: None,
     },
 ];
 /// The production entries of a timeout sequence.
@@ -871,11 +843,6 @@ const STEP_REPUBLISH: u32 = 3;
 const STEP_NONE: u32 = 9;
 /// The publication-limit byte of a rate schedule record.
 const RECORD_PUBLICATION_LIMIT: usize = 8;
-/// Pending decision: how many acknowledgement timeouts end an aggregate.
-const PENDING_TIMEOUT_BOUND: &str = "unclassified, pending decision: without a BlockAck the vendor \
-    republishes the whole aggregate, every MPDU with the Retry bit, until its short retry limit or \
-    its rate record's publication limit ends it through lmacEndFrameExchangeSequence; production \
-    ends it at its aggregate publication limit";
 /// Vendor callees a timeout phase answers: the continuations it chooses
 /// between, and callees outside the compared frame state.
 const TIMEOUT_CONTINUATIONS: &[&str] = &[
@@ -932,6 +899,7 @@ fn reached(
 fn timeout_rows(
     ctx: &mut Mac,
     frames: &[u32],
+    lifetime: u32,
     timeout: Timeout,
     descriptor_flags: u32,
     phases: usize,
@@ -970,10 +938,7 @@ fn timeout_rows(
             ("frames", Arg::Word(Some(i64::from(PRODUCTION_FRAMES)))),
             ("count", Arg::Word(Some(TIMEOUT_MPDUS as i64))),
             ("first_sequence", Arg::Word(Some(100))),
-            (
-                "attempt_limit",
-                Arg::Word(Some(i64::from(PRODUCTION_ATTEMPT_LIMIT))),
-            ),
+            ("lifetime_micros", Arg::Word(Some(i64::from(lifetime)))),
         ],
         vec![],
         vec![],
@@ -1097,7 +1062,8 @@ pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
         .record(crate::mac::RateArena::Ht, HT_MCS0)?
         .get(RECORD_PUBLICATION_LIMIT)
         .ok_or_else(|| invalid("the HT record has no publication limit"))?;
-    let short_limit = vendor_conf(ctx)?.short_limit;
+    let conf = vendor_conf(ctx)?;
+    let (short_limit, lifetime) = (conf.short_limit, conf.aggregate_lifetime);
     for timeout in TIMEOUTS {
         // The vendor ends the aggregate at the first limit its counters
         // reach; production at its own limit.
@@ -1108,7 +1074,7 @@ pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
         });
         for flags in [0, DESCRIPTOR_LONG] {
             let phases = vendor_attempts;
-            let rows = timeout_rows(ctx, &frames, timeout, flags, phases)?;
+            let rows = timeout_rows(ctx, &frames, lifetime, timeout, flags, phases)?;
             let first = rows.len() - phases;
             let label = format!("ampdu-{}-{flags:x}", timeout.label);
             let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
@@ -1142,17 +1108,10 @@ pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
                     )));
                 }
             }
-            match (production_attempts, timeout.pending) {
-                (Some(attempts), None) if attempts == vendor_attempts => {}
-                (Some(attempts), Some(pending)) if attempts < vendor_attempts => println!(
-                    "{label}: {pending}: the vendor ends after {vendor_attempts} completions, \
-                     production after {attempts}"
-                ),
-                (attempts, _) => {
-                    return Err(invalid(format!(
-                        "{label}: production ended after {attempts:?} completions, the vendor after {vendor_attempts}"
-                    )));
-                }
+            if production_attempts != Some(vendor_attempts) {
+                return Err(invalid(format!(
+                    "{label}: production ended after {production_attempts:?} completions, the vendor after {vendor_attempts}"
+                )));
             }
         }
     }

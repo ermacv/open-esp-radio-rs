@@ -498,25 +498,26 @@ production hands a single missing HT MPDU to its ordinary retry owner. One
 known gap is checked: the vendor sends a BlockAckReq after a resort whose
 station has one pending for the TID, and production sends none.
 
-The retry bound is compared too. The vendor keeps a missing MPDU in the
-aggregate whatever its descriptor counters say (MATCH with them exhausted);
-its only bound is the MSDU lifetime, which cases check by executing its own
-`lmacMSDUAged` after `lmacInit` installed the lifetimes, reported by the run:
-a fresh MPDU is kept (MATCH), an expired one discarded. Production instead
-ends the aggregate at its publication limit. The expired and the limit cases
-must DIFF at the first missing MPDU; they stay unclassified until the Wi-Fi
-owner decides which bound production takes.
+The retry bound is compared too. Both sides keep a missing MPDU in the
+aggregate without counting publications (MATCH with the vendor's descriptor
+counters exhausted), bounded only by the MSDU lifetime: cases execute the
+vendor's own `lmacMSDUAged` after `lmacInit` installed its lifetimes, which
+the run reports, and give production the same lifetime; a fresh MPDU is kept
+and an expired one discarded on both sides. One reviewed difference remains
+outside the cases: production starts an MSDU's lifetime when its aggregate is
+committed, the moment the MSDU enters the radio, while the vendor starts it at
+the pp queue enqueue timestamp; frames waiting in production's software queue
+before commit do not age, so under queueing delay a production MSDU is
+discarded later than the vendor's by that delay.
 
 Completions without a BlockAck compare as sequences: after the vendor's
 `lmacInit`, each warm phase applies one timeout to the vendor aggregate and
 to the production aggregate the probe keeps in flight, compares every MPDU
 header, and checks that the vendor retries exactly while production continues.
-A CTS timeout sends no MPDU: neither side sets the Retry bit and both end at
-the vendor's short retry limit (MATCH). An acknowledgement timeout sets the
-Retry bit of every MPDU on both sides, but the vendor republishes the
-aggregate until its short retry limit or its rate record's publication limit,
-while production ends it at its publication limit; that difference stays
-unclassified pending the same decision.
+A CTS timeout sends no MPDU and neither side sets the Retry bit; an
+acknowledgement timeout sets it on every MPDU on both sides. Both end at the
+vendor's short retry limit, which its rate record's publication limit does
+not undercut for the compared rate (MATCH).
 
 The comparison does not cover the HE one-member conversion
 (`ppHEAMPDU2Normal`) or the all-acknowledged shortcut of a terminated

@@ -108,6 +108,24 @@ fn the_next_boot_holds_what_the_previous_one_left_until_restarted() {
 }
 
 #[test]
+fn domain_channel_ranges_partition_the_mask() {
+    let domains = [
+        Domain::Platform,
+        Domain::Phy,
+        Domain::Ieee80211,
+        Domain::Bluetooth,
+        Domain::Ieee802154,
+    ];
+    let mut next = 0;
+    for domain in domains {
+        let (first, count) = domain.channels();
+        assert_eq!(first, next, "{domain:?}");
+        next = first + count;
+    }
+    assert_eq!(next, 64);
+}
+
+#[test]
 fn storage_never_written_by_a_trace_reports_nothing() {
     let (_, trace) = trace::<4, 1, 4>();
     assert_eq!(trace.hold().previous, None);
@@ -147,7 +165,7 @@ mod recording {
 
     impl Event for Beacon {
         const KIND: Kind = Kind::new(Domain::Ieee80211, 1);
-        const CHANNEL: Channel = Channel::new(40);
+        const CHANNEL: Channel = Channel::new(Domain::Ieee80211, 3);
 
         fn encode(&self) -> [u32; 2] {
             [
@@ -177,7 +195,7 @@ mod recording {
         assert!(crate::install(&TRACE).previous.is_none());
         crate::set_mask(Beacon::CHANNEL.mask());
         assert_eq!(crate::mask(), 0, "a held trace records nothing");
-        crate::start(Channel::new(3).mask());
+        crate::start(Channel::new(Domain::Phy, 0).mask());
         crate::emit(&beacon);
         assert_eq!(TRACE.records().count(), 0);
 
@@ -196,7 +214,7 @@ mod recording {
 
     impl Event for Other {
         const KIND: Kind = Kind::new(Domain::Platform, 1);
-        const CHANNEL: Channel = Channel::new(0);
+        const CHANNEL: Channel = Channel::new(Domain::Platform, 0);
 
         fn encode(&self) -> [u32; 2] {
             [0; 2]

@@ -13,6 +13,17 @@ pub enum Domain {
 }
 
 impl Domain {
+    /// The first mask bit and number of channels this domain owns.
+    pub const fn channels(self) -> (u8, u8) {
+        match self {
+            Self::Platform => (0, 8),
+            Self::Phy => (8, 12),
+            Self::Ieee80211 => (20, 20),
+            Self::Bluetooth => (40, 12),
+            Self::Ieee802154 => (52, 12),
+        }
+    }
+
     pub const fn from_raw(raw: u8) -> Option<Self> {
         Some(match raw {
             1 => Self::Platform,
@@ -49,15 +60,23 @@ impl Kind {
     }
 }
 
-/// A host-controlled enable bit; an image has at most 64.
+/// A host-controlled enable bit. The 64 bits of the mask are split into
+/// fixed per-domain ranges, so domains allocate channels independently.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Channel(u8);
 
 impl Channel {
-    /// Fails to compile in a constant when `bit` is 64 or more.
-    pub const fn new(bit: u8) -> Self {
-        assert!(bit < 64, "a trace channel is a bit of a u64 mask");
-        Self(bit)
+    /// The `index`th channel of `domain`; fails to compile in a constant
+    /// when the domain's range has no such channel.
+    pub const fn new(domain: Domain, index: u8) -> Self {
+        let (first, count) = domain.channels();
+        assert!(index < count, "the domain has no such trace channel");
+        Self(first + index)
+    }
+
+    /// The mask bit of this channel.
+    pub const fn bit_index(self) -> u8 {
+        self.0
     }
 
     pub const fn mask(self) -> u64 {

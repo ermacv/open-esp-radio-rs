@@ -89,3 +89,16 @@ pub(crate) async fn read_analog(request: PhyRegisterImageRequest) -> Event {
         values,
     })
 }
+
+/// Debug: the analog TX capacitor bank byte, or 0xee.
+pub(crate) async fn debug_tx_cap() -> u32 {
+    let Some(radio) = RADIO.try_get() else {
+        return 0xef;
+    };
+    let mut guard = radio.lock().await;
+    let mut lease = guard.lease();
+    match lease.phy_analog_image(12, ANALOG_READ_POLLS) {
+        Some(Ok(value)) => u32::from(value),
+        _ => 0xee,
+    }
+}

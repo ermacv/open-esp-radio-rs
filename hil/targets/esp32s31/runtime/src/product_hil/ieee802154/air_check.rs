@@ -147,9 +147,11 @@ async fn run_cycle(
         interface: Interface::PRIMARY,
         time_sync: None,
     }))?;
+    trace(0xc000 | super::super::phy_register_image::debug_tx_cap().await);
     trace(0xb004);
     cycle.direct = transmitted(system, requested_at_micros).await?;
     trace(0xb005);
+    trace(0xc100 | super::super::phy_register_image::debug_tx_cap().await);
 
     for scheduled in &mut cycle.scheduled {
         let at = now_micros() + u64::from(request.scheduled_lead_micros);

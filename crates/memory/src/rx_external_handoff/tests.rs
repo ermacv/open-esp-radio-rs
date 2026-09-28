@@ -66,3 +66,49 @@ fn dma_buffer_releases_before_handoff_credit_becomes_free() {
     assert_eq!(probe.calls.load(Ordering::Relaxed), 1);
     assert_eq!(pool.claimed_slots(), 0);
 }
+
+#[test]
+fn an_adopted_network_slot_exposes_its_view_and_returns_on_release() {
+    let pool = ExternalRxHandoffPool::<64, 1>::new();
+    let probe = ReleaseProbe {
+        slot: core::ptr::addr_of!(pool.slots[0]),
+        calls: AtomicU8::new(0),
+    };
+    let mut bytes = [0_u8; 64];
+    let pointer = NonNull::new(bytes.as_mut_ptr()).unwrap();
+    let owner = NonNull::from(&probe).cast::<()>();
+    #[allow(
+        unsafe_code,
+        reason = "test owns stable bytes and the exact callback context"
+    )]
+    // SAFETY: the stack allocation remains stable and exclusively owned
+    // until the adopted slot is released exactly once.
+    let buffer =
+        unsafe { ExternalRxBuffer::new(pointer, 48, bytes.len(), owner, 0, observe_release_state) };
+    let Ok(radio) = pool.try_claim_radio(buffer, 0) else {
+        panic!("fresh handoff slot must accept one buffer");
+    };
+    let index = radio.republish(10, 30);
+    let adoption = pool.claim_network(index).into_adoption();
+    #[allow(unsafe_code, reason = "test compares the adopted address")]
+    // SAFETY: offset 10 lies inside the 64-byte test allocation.
+    let expected = unsafe { pointer.add(10) };
+    assert_eq!(
+        adoption,
+        ExternalRxAdoption {
+            index,
+            data: expected,
+            length: 30,
+            available: 54,
+        }
+    );
+    assert_eq!(pool.network_slots(), 1);
+    assert_eq!(probe.calls.load(Ordering::Relaxed), 0);
+    #[allow(unsafe_code, reason = "test returns its one adoption")]
+    // SAFETY: the adoption above is released exactly once and not accessed after.
+    unsafe {
+        pool.release_adopted(adoption.index)
+    };
+    assert_eq!(probe.calls.load(Ordering::Relaxed), 1);
+    assert_eq!(pool.claimed_slots(), 0);
+}

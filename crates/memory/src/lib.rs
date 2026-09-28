@@ -27,7 +27,8 @@ pub use pinned_tx::{
     PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,
 };
 pub use rx_external_handoff::{
-    ExternalRxBuffer, ExternalRxHandoffPool, ExternalRxNetworkLease, ExternalRxRadioLease,
+    ExternalRxAdoption, ExternalRxBuffer, ExternalRxHandoffPool, ExternalRxNetworkLease,
+    ExternalRxRadioLease,
 };
 pub use rx_handoff::{RxHandoffPool, RxNetworkLease, RxRadioLease};
 

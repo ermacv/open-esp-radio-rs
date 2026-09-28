@@ -98,6 +98,18 @@ impl ExternalRxBuffer {
         }
     }
 
+    /// Start of `offset` and the bytes from there to the allocation end.
+    fn raw_from(&self, offset: usize) -> (NonNull<u8>, usize) {
+        assert!(
+            offset <= self.length,
+            "external RX adoption starts inside initialized bytes"
+        );
+        // SAFETY: `offset` lies inside the stable allocation checked above.
+        #[allow(unsafe_code, reason = "affine external buffer owns this range")]
+        let pointer = unsafe { self.pointer.add(offset) };
+        (pointer, self.capacity - offset)
+    }
+
     fn release_once(&mut self) {
         if !self.live {
             return;
@@ -242,6 +254,28 @@ impl ExternalRxHandoffSlot {
         }
     }
 
+    fn adoption(&self, index: u8) -> ExternalRxAdoption {
+        // SAFETY: the network lease being consumed uniquely owns this
+        // non-free slot and its range metadata.
+        #[allow(unsafe_code, reason = "live lease retains external slot ownership")]
+        let (offset, length, buffer) = unsafe {
+            (
+                *self.offset.get(),
+                *self.length.get(),
+                (*self.buffer.get())
+                    .as_ref()
+                    .expect("claimed external slot contains a buffer"),
+            )
+        };
+        let (data, available) = buffer.raw_from(offset);
+        ExternalRxAdoption {
+            index,
+            data,
+            length,
+            available,
+        }
+    }
+
     fn release(&self, owner: u8) {
         assert_eq!(
             self.state.compare_exchange(
@@ -340,6 +374,24 @@ impl<const FRAME_CAPACITY: usize, const SLOT_COUNT: usize>
         }
     }
 
+    /// Return the storage of an adopted network slot to its DMA owner.
+    ///
+    /// # Safety
+    ///
+    /// `index` must come from [`ExternalRxNetworkLease::into_adoption`] on
+    /// this pool, be released exactly once per adoption, and nothing may
+    /// access the adopted bytes after this call.
+    #[allow(
+        unsafe_code,
+        reason = "an adopter returns the slot it took out of its affine lease"
+    )]
+    pub unsafe fn release_adopted(&self, index: u8) {
+        self.slots
+            .get(usize::from(index))
+            .expect("adopted external RX index belongs to its pool")
+            .release(SLOT_NETWORK);
+    }
+
     pub fn claimed_slots(&self) -> usize {
         self.slots
             .iter()
@@ -432,6 +484,28 @@ impl<const FRAME_CAPACITY: usize> ExternalRxNetworkLease<'_, FRAME_CAPACITY> {
         self.live = false;
         self.index
     }
+
+    /// Hand the slot's storage to an owner that holds it by raw pointer, such
+    /// as a network stack packet. The slot stays network-owned until
+    /// [`ExternalRxHandoffPool::release_adopted`] returns it.
+    pub fn into_adoption(mut self) -> ExternalRxAdoption {
+        self.live = false;
+        self.slot.adoption(self.index)
+    }
+}
+
+/// Storage of a network slot taken out of its affine lease.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ExternalRxAdoption {
+    /// Slot index to pass to [`ExternalRxHandoffPool::release_adopted`].
+    pub index: u8,
+    /// First byte of the published view.
+    pub data: NonNull<u8>,
+    /// Bytes of the published view.
+    pub length: usize,
+    /// Bytes from `data` to the end of the stable allocation, which the
+    /// adopter owns in full until release.
+    pub available: usize,
 }
 
 impl<const FRAME_CAPACITY: usize> Drop for ExternalRxNetworkLease<'_, FRAME_CAPACITY> {

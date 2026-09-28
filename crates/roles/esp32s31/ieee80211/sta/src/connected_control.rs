@@ -7,13 +7,14 @@
 //! reorder-command sink and the shared TX owner.  No mailbox, executor timer
 //! or task wakeup is part of this state machine.
 
+use oer_ieee80211_trace::{BeaconMonitorOp, BeaconMonitorTrace, ExitReason};
+
 use crate::{
     connected_rx::{AssociatedHeControlIdentity, ConnectedRxControlEvent},
     ftm::{StationFtmHardwareError, station_ftm_request_frontier},
     hardware::control::{ConnectedControlHardware, StationIndividualTwtHardwareError},
     modem_sleep::{PmActions, PmBeacon, PmTim},
     single_mpdu_tx::{ActionTxConfig, SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome},
-    trace::{BeaconMonitorOp, BeaconMonitorTrace},
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
@@ -102,6 +103,24 @@ pub enum ConnectedDisconnectReason {
     /// The access point did not answer the SA Query that an unprotected
     /// disconnect started, so the association no longer holds.
     SaQueryTimeout,
+}
+
+impl From<ConnectedDisconnectReason> for ExitReason {
+    fn from(reason: ConnectedDisconnectReason) -> Self {
+        match reason {
+            ConnectedDisconnectReason::BeaconLoss => Self::BeaconLoss,
+            ConnectedDisconnectReason::PeerDeauthentication { reason_code } => {
+                Self::PeerDeauthentication { reason_code }
+            }
+            ConnectedDisconnectReason::PeerDisassociation { reason_code } => {
+                Self::PeerDisassociation { reason_code }
+            }
+            ConnectedDisconnectReason::ControlMailboxOverflow => Self::ControlMailboxOverflow,
+            ConnectedDisconnectReason::ActiveStateRestoreFailed => Self::ActiveStateRestoreFailed,
+            ConnectedDisconnectReason::GroupKeyHandshakeFailed => Self::GroupKeyHandshakeFailed,
+            ConnectedDisconnectReason::SaQueryTimeout => Self::SaQueryTimeout,
+        }
+    }
 }
 
 impl ConnectedDisconnectReason {

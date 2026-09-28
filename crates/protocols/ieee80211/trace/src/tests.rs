@@ -37,13 +37,13 @@ fn every_station_event_decodes_to_what_it_encoded() {
         deadline_micros_low: 6_000_000,
     });
     for reason in [
-        ConnectedDisconnectReason::BeaconLoss,
-        ConnectedDisconnectReason::PeerDeauthentication { reason_code: 7 },
-        ConnectedDisconnectReason::PeerDisassociation { reason_code: 0 },
-        ConnectedDisconnectReason::ControlMailboxOverflow,
-        ConnectedDisconnectReason::ActiveStateRestoreFailed,
-        ConnectedDisconnectReason::GroupKeyHandshakeFailed,
-        ConnectedDisconnectReason::SaQueryTimeout,
+        ExitReason::BeaconLoss,
+        ExitReason::PeerDeauthentication { reason_code: 7 },
+        ExitReason::PeerDisassociation { reason_code: 0 },
+        ExitReason::ControlMailboxOverflow,
+        ExitReason::ActiveStateRestoreFailed,
+        ExitReason::GroupKeyHandshakeFailed,
+        ExitReason::SaQueryTimeout,
     ] {
         round_trip(ControlExit { reason });
     }

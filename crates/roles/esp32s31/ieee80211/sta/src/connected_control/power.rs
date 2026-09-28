@@ -13,13 +13,14 @@ use oer_ieee80211_mac::station_power_save::StaPowerManagement;
 
 use oer_esp32s31_ieee80211::datapath::{DatapathControlContext, DatapathControlProgress};
 
+use oer_ieee80211_trace::{NetworkTxPowerTrace, PowerInputKind, PowerInputTrace};
+
 use crate::{
     hardware::control::ConnectedControlHardware,
     modem_sleep::{
         CoexPhaseView, CoexView, ModemSleep, PmAction, PmActions, PmBeacon, PmClock, PmCoexEvent,
         PmState, PmTimer, PmTraffic, SleepType,
     },
-    trace::{NetworkTxPowerTrace, PowerInputKind, PowerInputTrace},
 };
 
 use super::{

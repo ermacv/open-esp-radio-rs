@@ -1,3 +1,6 @@
+#![no_std]
+#![forbid(unsafe_code)]
+
 //! Trace points of the connected station.
 //!
 //! Every event the station records into [`oer_trace`] is defined here with
@@ -18,8 +21,6 @@
 use core::fmt;
 
 use oer_trace::{Channel, Domain, Event, Kind};
-
-use crate::connected_control::ConnectedDisconnectReason;
 
 const fn kind(event: u8) -> Kind {
     Kind::new(Domain::Ieee80211, event)
@@ -131,24 +132,6 @@ impl ControlEventKind {
             9 => Self::PowerSaveData,
             _ => return None,
         })
-    }
-}
-
-impl From<&crate::connected_rx::ConnectedRxControlEvent> for ControlEventKind {
-    fn from(event: &crate::connected_rx::ConnectedRxControlEvent) -> Self {
-        use crate::connected_rx::ConnectedRxControlEvent as Event;
-        match event {
-            Event::Beacon(_) => Self::Beacon,
-            Event::ProbeResponse => Self::ProbeResponse,
-            Event::Trigger { .. } => Self::Trigger,
-            Event::Ndpa { .. } => Self::Ndpa,
-            Event::BlockAck(_) => Self::BlockAck,
-            Event::IndividualTwt(_) => Self::IndividualTwt,
-            Event::PeerDisconnect(_) => Self::PeerDisconnect,
-            Event::UnprotectedDisconnect(_) => Self::UnprotectedDisconnect,
-            Event::SaQuery(_) => Self::SaQuery,
-            Event::PowerSaveData(_) => Self::PowerSaveData,
-        }
     }
 }
 
@@ -372,10 +355,22 @@ impl fmt::Display for BeaconMonitorTrace {
     }
 }
 
+/// Why a connected epoch ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExitReason {
+    BeaconLoss,
+    PeerDeauthentication { reason_code: u16 },
+    PeerDisassociation { reason_code: u16 },
+    ControlMailboxOverflow,
+    ActiveStateRestoreFailed,
+    GroupKeyHandshakeFailed,
+    SaQueryTimeout,
+}
+
 /// A connected epoch ended; recording freezes a window after it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ControlExit {
-    pub reason: ConnectedDisconnectReason,
+    pub reason: ExitReason,
 }
 
 impl ControlExit {
@@ -388,7 +383,7 @@ impl Event for ControlExit {
     const CHANNEL: Channel = channel(5);
 
     fn encode(&self) -> [u32; 2] {
-        use ConnectedDisconnectReason as Reason;
+        use ExitReason as Reason;
         match self.reason {
             Reason::BeaconLoss => [0, 0],
             Reason::PeerDeauthentication { reason_code } => [1, u32::from(reason_code)],
@@ -401,7 +396,7 @@ impl Event for ControlExit {
     }
 
     fn decode(words: [u32; 2]) -> Option<Self> {
-        use ConnectedDisconnectReason as Reason;
+        use ExitReason as Reason;
         let reason_code = u16::try_from(words[1]).ok()?;
         let reason = match (words[0], reason_code) {
             (0, 0) => Reason::BeaconLoss,
@@ -422,6 +417,15 @@ impl fmt::Display for ControlExit {
         write!(f, "connected exit {:?}", self.reason)
     }
 }
+
+oer_trace::event_set!(
+    pub StationTrace: BeaconDispatch,
+    ControlMailbox,
+    PowerInputTrace,
+    NetworkTxPowerTrace,
+    BeaconMonitorTrace,
+    ControlExit,
+);
 
 #[cfg(test)]
 mod tests;

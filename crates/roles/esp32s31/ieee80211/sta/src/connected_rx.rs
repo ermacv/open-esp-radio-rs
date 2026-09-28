@@ -49,7 +49,7 @@ use oer_ieee80211_softmac::{
 use oer_ieee80211_softmac::{MacRxCryptoStatus, MacRxEvidence};
 use static_cell::StaticCell;
 
-use crate::trace::{BeaconDispatch, BeaconVerdict};
+use oer_ieee80211_trace::{BeaconDispatch, BeaconVerdict, ControlEventKind};
 
 use oer_esp32s31_ieee80211_mac::{
     rx::ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
@@ -1168,6 +1168,23 @@ pub struct PowerSaveData {
     pub group: bool,
     /// The access point buffers more frames for the station.
     pub more_data: bool,
+}
+
+impl From<&ConnectedRxControlEvent> for ControlEventKind {
+    fn from(event: &ConnectedRxControlEvent) -> Self {
+        match event {
+            ConnectedRxControlEvent::Beacon(_) => Self::Beacon,
+            ConnectedRxControlEvent::ProbeResponse => Self::ProbeResponse,
+            ConnectedRxControlEvent::Trigger { .. } => Self::Trigger,
+            ConnectedRxControlEvent::Ndpa { .. } => Self::Ndpa,
+            ConnectedRxControlEvent::BlockAck(_) => Self::BlockAck,
+            ConnectedRxControlEvent::IndividualTwt(_) => Self::IndividualTwt,
+            ConnectedRxControlEvent::PeerDisconnect(_) => Self::PeerDisconnect,
+            ConnectedRxControlEvent::UnprotectedDisconnect(_) => Self::UnprotectedDisconnect,
+            ConnectedRxControlEvent::SaQuery(_) => Self::SaQuery,
+            ConnectedRxControlEvent::PowerSaveData(_) => Self::PowerSaveData,
+        }
+    }
 }
 
 impl ConnectedRxEvent<'_> {

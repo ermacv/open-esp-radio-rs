@@ -1120,6 +1120,7 @@ dependencies = [
  "oer-ieee80211-runtime",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-ieee80211-trace",
  "oer-memory",
  "oer-network-interface",
  "oer-trace",
@@ -1140,6 +1141,7 @@ dependencies = [
  "oer-ieee80211-rsn",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-ieee80211-trace",
  "oer-trace",
  "static_cell",
 ]
@@ -1339,6 +1341,13 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
+]
+
+[[package]]
+name = "oer-ieee80211-trace"
+version = "0.1.0"
+dependencies = [
+ "oer-trace",
 ]
 
 [[package]]

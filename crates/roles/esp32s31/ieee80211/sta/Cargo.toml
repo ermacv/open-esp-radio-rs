@@ -19,6 +19,7 @@ oer-ieee80211-softmac = { path = "../../../../protocols/ieee80211/softmac" }
 oer-ieee80211-rsn = { path = "../../../../protocols/ieee80211/security/rsn" }
 oer-ieee80211-sta = { path = "../../../../protocols/ieee80211/sta" }
 oer-trace = { path = "../../../../trace" }
+oer-ieee80211-trace = { path = "../../../../protocols/ieee80211/trace" }
 static_cell = "2.1.1"
 
 [features]

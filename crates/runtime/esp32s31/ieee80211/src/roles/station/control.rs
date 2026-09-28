@@ -22,7 +22,7 @@ use embassy_time::{Instant, Timer};
 pub use oer_esp32s31_ieee80211_mac::rx::ampdu::{RxReorderCommand, RxReorderCommandError};
 
 use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxControlEvent;
-use oer_esp32s31_ieee80211_sta::trace::{ControlEventKind, ControlExit, ControlMailbox, MailboxOp};
+use oer_ieee80211_trace::{ControlEventKind, ControlExit, ControlMailbox, MailboxOp};
 
 use oer_ieee80211_mac::twt::IndividualTwtFlowId;
 
@@ -736,7 +736,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     {
         let progress = self.service_step(hardware, tx, context).await;
         if let Ok(DatapathControlProgress::Exit(reason)) = progress {
-            oer_trace::emit(&ControlExit { reason });
+            oer_trace::emit(&ControlExit {
+                reason: reason.into(),
+            });
             oer_trace::freeze(
                 <ControlExit as oer_trace::Event>::KIND,
                 ControlExit::POST_TRIGGER_ENTRIES,

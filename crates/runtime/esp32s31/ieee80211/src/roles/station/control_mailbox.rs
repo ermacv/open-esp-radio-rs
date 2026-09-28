@@ -14,9 +14,9 @@ use oer_esp32s31_ieee80211_sta::connected::management_protection::ProtectedManag
 use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
-use oer_esp32s31_ieee80211_sta::trace::{ControlEventKind, ControlMailbox, MailboxOp};
 use oer_ieee80211_mac::station::StaDisconnect;
 use oer_ieee80211_rsn::{OwnedEapolFrame, RsnInterface};
+use oer_ieee80211_trace::{ControlEventKind, ControlMailbox, MailboxOp};
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 

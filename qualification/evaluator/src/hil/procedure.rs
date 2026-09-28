@@ -94,4 +94,24 @@ mod tests {
             for_requirement(&changed, &requirement)
         );
     }
+
+    /// A sampled repetition runs a different procedure: the profiler's
+    /// interrupts perturb timing, so it never stands in for the catalog's.
+    #[test]
+    fn a_profiled_procedure_is_not_the_catalog_procedure() {
+        let original = json!({"id":"rx","wifi":{"image":"correctness","workload":{"kind":"station-udp",
+            "offer":{"rx_bps":100_000},"duration_seconds":30,
+            "criteria":{"minimum_rx_bps":1000,"maximum_rx_silence_ms":10}}}});
+        let requirement = super::super::HilRequirement {
+            scenario: "rx".into(),
+            checks: vec!["udp.rx.target-rate".into()],
+            minimum_repetitions: 1,
+        };
+        let mut profiled = original.clone();
+        profiled["profile"] = json!({"harts":"both","period_us":1000});
+        assert_ne!(
+            for_requirement(&original, &requirement),
+            for_requirement(&profiled, &requirement)
+        );
+    }
 }

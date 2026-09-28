@@ -113,11 +113,16 @@ impl ControlledClient {
         control.record_to(std::fs::File::create(output.join("control.jsonl"))?);
         let result = control.wait_connected();
         let state = crate::fixture::local::wpa_control::field(&control.last_status, "wpa_state");
+        // The address the station associated with; the interface may carry a
+        // different, randomized address while it is not associated.
+        let station_address =
+            crate::fixture::local::wpa_control::field(&control.last_status, "address");
         let stage = connection_stage(state);
         std::fs::write(
             output.join("connection.json"),
             serde_json::to_vec_pretty(&serde_json::json!({
-                "schema": 1, "connected": result.is_ok(), "last_state": state,
+                "schema": 2, "connected": result.is_ok(), "last_state": state,
+                "station_address": station_address,
                 "last_observed_stage": stage, "last_event": control.last_event,
                 "last_failure_event": control.last_failure_event,
                 "error": result.as_ref().err().map(|error| error.to_string()),
@@ -150,6 +155,34 @@ impl ControlledClient {
         self.restored = true;
         Ok(())
     }
+}
+
+/// The station address of every controlled-client connection recorded under
+/// `output`, as the `linux-client` directories of its cycles hold them.
+pub fn connected_station_addresses(output: &Path) -> Result<Vec<String>> {
+    let mut addresses = Vec::new();
+    let mut pending = vec![output.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let connection = path.join("connection.json");
+            if path.file_name().is_some_and(|name| name == "linux-client") && connection.is_file() {
+                let record: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&connection)?)?;
+                if let Some(address) = record["station_address"].as_str() {
+                    addresses.push(address.to_ascii_lowercase());
+                }
+            } else {
+                pending.push(path);
+            }
+        }
+    }
+    addresses.sort_unstable();
+    addresses.dedup();
+    Ok(addresses)
 }
 
 fn parse_bssid(link: &str) -> Result<String> {

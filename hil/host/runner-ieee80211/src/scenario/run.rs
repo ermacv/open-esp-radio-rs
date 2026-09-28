@@ -172,18 +172,34 @@ fn access_point(
     let Some(protection) = workload.protection else {
         return ieee80211::access_point::run(config, output, context);
     };
-    let peer = laptop_address()?;
     let bound = config.timeout * u32::from(workload.boots) * u32::from(workload.cycles)
         + Duration::from_secs(180);
     let capture = ProtectionCapture::start(context.lab, false, bound, output)?;
     let traffic = ieee80211::access_point::run(config, output, context);
+    // The capture stops even when the laptop's address is unknown.
+    let peer = associated_laptop_address(output);
     let assessed = assess_protection(
         capture,
         protection.minimum_protected_ppdu_percent,
-        Some(peer),
+        peer.as_ref().ok().copied(),
         context,
     );
+    let assessed = peer.and(assessed);
     traffic.and(assessed)
+}
+
+/// The address the laptop associated with the target AP: its interface
+/// address before the workload may be a randomized one it never associates
+/// with.
+fn associated_laptop_address(output: &Path) -> Result<MacAddress> {
+    match crate::fixture::local::client::connected_station_addresses(output)?.as_slice() {
+        [address] => Ok(address.parse()?),
+        [] => Err("the laptop client recorded no associated station address".into()),
+        addresses => Err(format!(
+            "the laptop client associated with several station addresses: {addresses:?}"
+        )
+        .into()),
+    }
 }
 
 /// The laptop radio's station address.

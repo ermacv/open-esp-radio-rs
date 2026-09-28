@@ -174,6 +174,17 @@ queueing and executes all scenarios in one run bundle under one lease, in the
 given order within each image class. With `--firmware-from` every named
 scenario must use the replayed image class. Prefer it to a shell loop under
 `lease`, where each nested run builds while the stand is held.
+
+`run`, `run-all` and `run-plan` with `--baseline REV` run a clean commit as
+an A/B reference without touching the working tree: `cargo hil` checks REV
+out, detached, in the checkout's baseline worktree
+`target/hil/baseline/checkout` and builds the runner and firmware there, so
+both speak REV's protocol and the run is a clean run of REV. The worktree keeps
+its own `target/`, so later baselines build incrementally; one baseline of a
+checkout runs at a time. A revision whose stand state schema differs from the
+checkout's is refused before anything is built, because its runner could not
+share the stand. The lease is held for the checkout's owner, and a baseline
+run records no evidence.
 `lease` runs one command under one lease; every `cargo hil` command inside it
 joins that lease when the lease already holds what it needs, so no other owner
 can flash between the runs of a series. `--board NAME|MAC` (repeatable) and

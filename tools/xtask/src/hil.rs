@@ -88,7 +88,30 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     // The runner has no lease options: take them from after the command
     // too, before the runner is built.
     let (options, args) = options.with_late(args)?;
+    let (baseline, args) = crate::hil_baseline::take(args)?;
     let args = args.as_slice();
+    let baseline = match baseline {
+        None => None,
+        Some(_) if !produces_runs(args) => {
+            return Err("--baseline applies to run, run-all and run-plan".into());
+        }
+        Some(_) if record_forced => {
+            return Err(format!(
+                "a baseline run records no evidence; {RECORD_EVIDENCE} cannot accompany --baseline"
+            )
+            .into());
+        }
+        Some(revision) => {
+            let (baseline, lock) = crate::hil_baseline::checkout(ctx, &revision)?;
+            use_shared_store(&baseline)?;
+            Some((baseline, lock))
+        }
+    };
+    // A baseline runs for this checkout's owner, not its worktree's name.
+    let options = LeaseOptions {
+        owner: Some(options.owner(ctx)),
+    };
+    let ctx = baseline.as_ref().map_or(ctx, |(baseline, _)| baseline);
     let (runner, receipt_path) = prepare(ctx)?;
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised
@@ -121,7 +144,11 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         std::time::Duration::from_secs(300),
     )?;
     let status = child.wait_forwarding_cancellation()?;
-    if produces_runs(args) {
+    if produces_runs(args) && baseline.is_some() {
+        eprintln!(
+            "hil: a baseline run is a reference, not evidence of this checkout: none recorded"
+        );
+    } else if produces_runs(args) {
         let run_ids = std::fs::read_to_string(run_receipt.path())?
             .lines()
             .map(str::to_owned)
@@ -175,6 +202,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil runs history SCENARIO [--measurement TEXT]
   cargo hil runs pin RUN --reason TEXT | unpin RUN
   cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
+  cargo hil run SCENARIO... --baseline REV   build and run a clean revision in this checkout's
+                                      baseline worktree (target/hil/baseline); the tree is untouched
   cargo hil evidence record [--run ID ...] [--since REV]   write runs' qualifying observations as tracked shards;
                                       default: this checkout's pending clean runs
   cargo hil evidence pending          clean runs whose evidence is not recorded yet

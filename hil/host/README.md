@@ -190,8 +190,10 @@ an A/B reference without touching the working tree: `cargo hil` checks REV
 out, detached, in the checkout's baseline worktree
 `target/hil/baseline/checkout` and builds the runner and firmware there, so
 both speak REV's protocol and the run is a clean run of REV. The worktree keeps
-its own `target/`, so later baselines build incrementally; one baseline of a
-checkout runs at a time. A revision whose stand state schema differs from the
+its own `target/`, so later baselines build incrementally, and its images
+compile into the checkout's own warm image caches (`OER_HIL_BUILD_CACHE`, which
+a baseline runner that predates it ignores): registry packages are reused
+from the first baseline on; one baseline of a checkout runs at a time. A revision whose stand state schema differs from the
 checkout's is refused before anything is built, because its runner could not
 share the stand. The lease is held for the checkout's owner, and a baseline
 run records no evidence.
@@ -420,7 +422,10 @@ qualification. `wait` follows a run's `events.jsonl`, printing each step,
 until the run ends or its runner is gone, and exits with its outcome: 0
 passed, 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or on a
 quarantined board; an agent that started a run in the background waits on it
-instead of polling its log. `why`, `wait`, `compare` and `pin` read only the
+instead of polling its log. `run`, `run-all` and `run-plan` accept `--brief`: the
+runner's output goes to a log under `target/hil/brief/`, and the command
+prints only each created run's line and, for one that did not pass, its
+`why` with the last 5 `uart.log` lines, then the log's path. `why`, `wait`, `compare` and `pin` read only the
 runs they name.
 
 When a repetition fails, the runner attaches to the target without resetting
@@ -670,6 +675,9 @@ For an explicit source snapshot, use:
 cargo hil image snapshot --source-include crates/path/to/new.rs
 cargo hil image build performance --source-snapshot target/hil/esp32s31/source-snapshots/<snapshot-id>
 ```
+
+`image build` takes several classes; from one source snapshot they share one
+materialization of it and are built one after the other.
 
 Snapshot capture is offline and does not load fixture secrets, build firmware or
 access a device. Tracked regular files are captured automatically. Every

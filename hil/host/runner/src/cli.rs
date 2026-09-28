@@ -242,7 +242,10 @@ pub(crate) enum ImageCommand {
     /// Capture rustc mono estimates and the exact diagnostic ELF; never flash.
     Mono { class: hil_core::image::ImageClass },
     Build {
-        class: hil_core::image::ImageClass,
+        /// Image classes, built one after the other; with a source snapshot
+        /// they share one materialization of it.
+        #[arg(required = true, num_args = 1..)]
+        classes: Vec<hil_core::image::ImageClass>,
         /// Build only from a verified source snapshot directory, not the live checkout.
         #[arg(long)]
         source_snapshot: Option<PathBuf>,

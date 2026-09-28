@@ -699,3 +699,20 @@ fn a_seeded_build_has_artifacts_of_its_own() {
     assert_eq!(seven, "-seed7");
     assert_ne!(seven, eleven);
 }
+
+#[test]
+fn the_shared_compile_caches_move_only_when_overridden() {
+    let root = Path::new("/checkout");
+    assert_eq!(
+        compile_cache_base(root, None),
+        Path::new("/checkout/target/hil/esp32s31/build-cache")
+    );
+    assert_eq!(
+        compile_cache_base(root, Some("".into())),
+        Path::new("/checkout/target/hil/esp32s31/build-cache")
+    );
+    assert_eq!(
+        compile_cache_base(root, Some("/main/target/hil/esp32s31/build-cache".into())),
+        Path::new("/main/target/hil/esp32s31/build-cache")
+    );
+}

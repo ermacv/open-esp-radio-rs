@@ -552,12 +552,28 @@ pub fn check(root: &Path, class: crate::image::ImageClass, network: Integration)
 }
 
 /// The shared compile cache of the repository at `root`.
+/// Overrides the directory of the shared compile caches, so a baseline
+/// worktree compiles into its checkout's warm caches: registry packages are
+/// reused, while the worktree's own packages, at other paths, are units of
+/// their own.
+pub const BUILD_CACHE_ENV: &str = "OER_HIL_BUILD_CACHE";
+
+/// The directory of the shared compile caches of the repository at `root`.
+fn compile_cache_base(root: &Path, overridden: Option<std::ffi::OsString>) -> PathBuf {
+    overridden
+        .filter(|directory| !directory.is_empty())
+        .map_or_else(
+            || root.join("target/hil/esp32s31/build-cache"),
+            PathBuf::from,
+        )
+}
+
 pub(crate) fn shared_compile_cache(
     root: &Path,
     class: crate::image::ImageClass,
     network: Integration,
 ) -> PathBuf {
-    root.join("target/hil/esp32s31/build-cache").join(format!(
+    compile_cache_base(root, std::env::var_os(BUILD_CACHE_ENV)).join(format!(
         "{}-{}-{}",
         class.runtime_profile(),
         class.id(),

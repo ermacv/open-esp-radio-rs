@@ -192,24 +192,35 @@ pub(crate) fn run() -> Result<()> {
             }
             ImageCommand::Mono { class } => image::mono::capture(&root, class),
             ImageCommand::Build {
-                class,
+                classes,
                 network,
                 source_snapshot,
                 layout_seed,
             } => {
-                let artifacts = match source_snapshot {
-                    Some(snapshot) => {
-                        let artifacts =
-                            image::snapshot::build(&root, &snapshot, class, network, layout_seed)?;
-                        let record = hil_core::evidence::build_record::publish(
-                            &root, &snapshot, class, &artifacts,
-                        )?;
-                        eprintln!("build_record={}", record.display());
-                        artifacts
-                    }
-                    None => image::build(&root, class, network, layout_seed)?,
-                };
-                image::print_artifacts(class, &artifacts, false)
+                let frozen = source_snapshot
+                    .as_deref()
+                    .map(|snapshot| {
+                        image::snapshot::FrozenSources::open_in_free_workspace(
+                            snapshot,
+                            &root.join("target/hil/esp32s31/source-build"),
+                        )
+                    })
+                    .transpose()?;
+                for class in classes {
+                    let artifacts = match (&frozen, &source_snapshot) {
+                        (Some(frozen), Some(snapshot)) => {
+                            let artifacts = frozen.build(&root, class, network, layout_seed)?;
+                            let record = hil_core::evidence::build_record::publish(
+                                &root, snapshot, class, &artifacts,
+                            )?;
+                            eprintln!("build_record={}", record.display());
+                            artifacts
+                        }
+                        _ => image::build(&root, class, network, layout_seed)?,
+                    };
+                    image::print_artifacts(class, &artifacts, false)?;
+                }
+                Ok(())
             }
             ImageCommand::VerifyRebuild { class, trim_paths } => {
                 image::verify_rebuild(&root, class, trim_paths)

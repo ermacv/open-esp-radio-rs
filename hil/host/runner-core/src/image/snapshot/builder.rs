@@ -8,8 +8,11 @@ pub fn build(
     class: crate::image::ImageClass,
     network: crate::image::Integration,
 ) -> Result<crate::image::Artifacts> {
-    FrozenSources::open_in_workspace(directory, &root.join("target/hil/esp32s31/source-build"))?
-        .build(root, class, network)
+    FrozenSources::open_in_free_workspace(
+        directory,
+        &root.join("target/hil/esp32s31/source-build"),
+    )?
+    .build(root, class, network)
 }
 
 impl FrozenSources {

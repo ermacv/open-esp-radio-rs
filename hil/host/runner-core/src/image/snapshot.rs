@@ -85,6 +85,10 @@ impl Checkout {
     }
 }
 
+/// Persistent build workspaces per checkout: one per build that can run at
+/// the same time before later ones fall back to a temporary directory.
+const WORKSPACE_SLOTS: usize = 3;
+
 impl FrozenSources {
     pub fn open(directory: &Path) -> Result<Self> {
         let checkout = Checkout::Temporary(
@@ -101,16 +105,48 @@ impl FrozenSources {
     /// loses anything the snapshot does not contain.
     pub fn open_in_workspace(directory: &Path, workspace: &Path) -> Result<Self> {
         use fs2::FileExt as _;
+        let lock = Self::workspace_lock(workspace)?;
+        lock.lock_exclusive()?;
+        Self::open_locked(directory, workspace, lock)
+    }
+
+    /// Materialize into the first free slot of the per-checkout build
+    /// workspaces `<base>-<n>`, without waiting. The slots persist, so an
+    /// unchanged source file keeps its bytes and modification time and Cargo
+    /// rebuilds only the packages whose sources changed; a run that holds its
+    /// slot for its whole session never blocks another build of the same
+    /// checkout. When every slot is busy the sources go to a temporary
+    /// directory, as a cold build.
+    pub fn open_in_free_workspace(directory: &Path, base: &Path) -> Result<Self> {
+        use fs2::FileExt as _;
+        let name = base
+            .file_name()
+            .ok_or("source build workspace has no name")?
+            .to_string_lossy()
+            .into_owned();
+        for slot in 0..WORKSPACE_SLOTS {
+            let workspace = base.with_file_name(format!("{name}-{slot}"));
+            let lock = Self::workspace_lock(&workspace)?;
+            if lock.try_lock_exclusive().is_ok() {
+                return Self::open_locked(directory, &workspace, lock);
+            }
+        }
+        Self::open(directory)
+    }
+
+    fn workspace_lock(workspace: &Path) -> Result<fs::File> {
         let parent = workspace
             .parent()
             .ok_or("source build workspace has no parent")?;
         fs::create_dir_all(parent)?;
-        let lock = fs::OpenOptions::new()
+        Ok(fs::OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
-            .open(workspace.with_extension("lock"))?;
-        lock.lock_exclusive()?;
+            .open(workspace.with_extension("lock"))?)
+    }
+
+    fn open_locked(directory: &Path, workspace: &Path, lock: fs::File) -> Result<Self> {
         let staging = workspace.with_extension("staging");
         if fs::symlink_metadata(&staging).is_ok() {
             fs::remove_dir_all(&staging)?;

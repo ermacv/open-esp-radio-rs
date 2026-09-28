@@ -259,3 +259,33 @@ fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
     );
     reopened.verify_unchanged().unwrap();
 }
+
+#[test]
+fn concurrent_builds_take_free_workspace_slots_without_waiting() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let snapshot = capture_roots(&roots, &[], output.path()).unwrap();
+    let build = tempfile::tempdir().unwrap();
+    let base = build.path().join("source-build");
+    let held = (0..super::WORKSPACE_SLOTS)
+        .map(|slot| {
+            let sources =
+                FrozenSources::open_in_free_workspace(&snapshot.directory, &base).unwrap();
+            assert_eq!(
+                sources.repository(),
+                build.path().join(format!("source-build-{slot}/repository"))
+            );
+            sources
+        })
+        .collect::<Vec<_>>();
+    // Every slot is held: the next build falls back to a temporary checkout.
+    let overflow = FrozenSources::open_in_free_workspace(&snapshot.directory, &base).unwrap();
+    assert!(!overflow.repository().starts_with(build.path()));
+    drop(held);
+    let reused = FrozenSources::open_in_free_workspace(&snapshot.directory, &base).unwrap();
+    assert_eq!(
+        reused.repository(),
+        build.path().join("source-build-0/repository")
+    );
+}

@@ -190,9 +190,9 @@ sequenceDiagram
         Run-->>STA: Channel progress and retained owner
     end
     alt Candidate selected
-        STA->>Run: Open Authentication, then Association
+        STA->>Run: Authentication (Open System or SAE), then Association
         Run->>HW: Management frame exchanges
-        Run->>HW: WPA2 handshake and key installation
+        Run->>HW: Four-way handshake and key installation
         Run-->>App: Connected radio / data path
         App->>Net: Drive selected network stack
         Net->>Run: Data frames including DHCP
@@ -203,8 +203,8 @@ sequenceDiagram
 ```
 
 The sequence locates operations; it does not promise that every hardware path
-is qualified. IEEE 802.11 Open Authentication precedes Association; WPA2 key
-establishment is a later security exchange. DHCP belongs to the application's
+is qualified. IEEE 802.11 Authentication (Open System, or SAE for WPA3)
+precedes Association; the four-way handshake then establishes the keys. DHCP belongs to the application's
 network stack and uses the established data path. Reconnection repeats parts
 of this lifecycle while preserving the resource-return rules. Follow the
 [station example](../examples/esp32s31/station/README.md) for the implemented

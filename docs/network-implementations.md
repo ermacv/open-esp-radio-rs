@@ -35,10 +35,9 @@ storage. The UDP send path gates a device-blocked wake on the current route's
 capacity. Pool retry policy is not redesigned, and RX capacity is not reserved
 separately from the shared pool.
 
-The upstream Xarxa, minimally patched Xarxa and released Embassy/smoltcp
-integrations were removed so that every build and measurement exercises the
-stack the product ships. Archived HIL runs keep their recorded network names;
-new builds reject them.
+Every build and measurement exercises the stack the product ships. A HIL run
+archived under another network name keeps that name, and a build that
+selects it is rejected.
 
 The [product composition](../crates/composition/esp32s31/embassy/ieee80211/README.md)
 selects the adapter and static resources; the shared radio runner is

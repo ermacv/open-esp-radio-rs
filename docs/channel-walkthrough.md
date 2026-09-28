@@ -27,12 +27,12 @@ a reset value or how long the hardware takes to become ready.
 
 The source identity matters even when two libraries use the same function name.
 The model's `BLOB_LIBPHY_PHY_RFPLL_CHANNEL` evidence entry identifies one archive;
-the gain-table comment in the current channel implementation identifies another
+the gain-table comment in the channel implementation identifies another
 archive and profile. Follow each claim's own
 [evidence catalog](../registers/esp32s31/evidence/vendor-radio-libraries.toml)
 and source comment. Do not treat these as one authenticated capture or silently
 apply an older review to a new binary. The
-[current PHY research instructions](../verification/esp32s31/README.md#captured-phy-research-with-next)
+[PHY research instructions](../verification/esp32s31/README.md#captured-phy-research-with-next)
 explain repeatable analysis with caller-supplied inputs.
 
 **Handoff:** observations and identified source context support a review. They
@@ -93,11 +93,11 @@ adds the RF algorithm: it issues actions and consumes typed completions.
 `FrequencyReadyTimedOut` selects cleanup and a failure outcome. The transition
 itself does not sleep or spin. The
 [target port](../crates/hardware/esp32s31/phy/src/target_port.rs) executes the
-actions, uses the supplied delay for timer actions, and enforces the current
+actions, uses the supplied delay for timer actions, and enforces
 `CHANNEL_READY_SAMPLE_LIMIT`. This implementation bounds samples; do not
 reinterpret the sample limit as a measured elapsed-time guarantee.
 
-Run the existing cleanup regression from the repository root:
+Run the cleanup regression from the repository root:
 
 ```console
 cargo test -p oer-esp32s31-phy channel::tests::frequency_timeout_runs_full_radio_cleanup --locked --offline
@@ -168,8 +168,8 @@ the channel visit only after the associated RX/TX and dwell work.
 
 ## 6. Continue from a scan to an application
 
-A selected AP is input to the station join lifecycle. Open Authentication and
-Association precede WPA2 key establishment. The radio data path then carries
+A selected AP is input to the station join lifecycle. Authentication (Open
+System or SAE) and Association precede the four-way handshake. The radio data path then carries
 network traffic; the application's selected network stack owns DHCP and sockets.
 See the [station lifecycle sequence](binary-to-station.md#from-finding-an-ap-to-an-ip-application)
 and [buildable station example](../examples/esp32s31/station/README.md).

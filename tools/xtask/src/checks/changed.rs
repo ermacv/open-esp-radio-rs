@@ -394,6 +394,8 @@ pub enum FirmwareSet {
     /// Wi-Fi with only the Wi-Fi system's diagnostics.
     DiagnosticStationExit,
     BluetoothHci,
+    /// The HCI image with Controller epoch restart and retirement.
+    BluetoothHciDiagnostics,
     BluetoothGatt,
     BluetoothSecureGatt,
     /// Wi-Fi and Bluetooth together.
@@ -411,8 +413,9 @@ impl FirmwareSet {
         Self::DiagnosticStationExit,
         Self::WifiBleCoex,
     ];
-    const BLUETOOTH: [Self; 4] = [
+    const BLUETOOTH: [Self; 5] = [
         Self::BluetoothHci,
+        Self::BluetoothHciDiagnostics,
         Self::BluetoothGatt,
         Self::BluetoothSecureGatt,
         Self::WifiBleCoex,
@@ -427,6 +430,7 @@ impl FirmwareSet {
             Self::Correctness => ImageClass::Correctness,
             Self::DiagnosticStationExit => ImageClass::DiagnosticStationExit,
             Self::BluetoothHci => ImageClass::BluetoothHci,
+            Self::BluetoothHciDiagnostics => ImageClass::BluetoothHciDiagnostics,
             Self::BluetoothGatt => ImageClass::BluetoothGatt,
             Self::BluetoothSecureGatt => ImageClass::BluetoothSecureGatt,
             Self::WifiBleCoex => ImageClass::WifiBleCoex,
@@ -594,6 +598,7 @@ mod tests {
             sets("hil/targets/esp32s31/runtime/src/bluetooth/gatt.rs"),
             [
                 BluetoothHci,
+                BluetoothHciDiagnostics,
                 BluetoothGatt,
                 BluetoothSecureGatt,
                 WifiBleCoex
@@ -620,7 +625,10 @@ mod tests {
             ]
         );
         // A shared file can break every image.
-        assert_eq!(sets("hil/targets/esp32s31/runtime/src/console.rs").len(), 9);
+        assert_eq!(
+            sets("hil/targets/esp32s31/runtime/src/console.rs").len(),
+            10
+        );
     }
 
     #[test]

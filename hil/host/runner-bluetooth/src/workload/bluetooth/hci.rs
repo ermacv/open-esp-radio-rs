@@ -1,7 +1,9 @@
 //! Raw HCI commands to the Controller of the `bluetooth_hci` image.
 use crate::Result;
 use hil_core::session::SerialCapture;
-use oer_hil_protocol::{BluetoothHciRequest, BluetoothHciResponse};
+use oer_hil_protocol::{
+    BluetoothHciLifecycle, BluetoothHciLifecycleEvidence, BluetoothHciRequest, BluetoothHciResponse,
+};
 use std::time::Duration;
 
 pub const RESET: u16 = 0x0c03;
@@ -138,6 +140,18 @@ pub fn acl(capture: &SerialCapture, packet: &[u8]) -> Result<()> {
     match capture.bluetooth_hci(request)? {
         BluetoothHciResponse::Accepted => Ok(()),
         response => Err(format!("HCI ACL packet was not accepted: {response:?}").into()),
+    }
+}
+
+/// End the Controller epoch: Reset, retire the Host end and stop the
+/// Controller, then start the next epoch for [`BluetoothHciLifecycle::Restart`].
+pub fn lifecycle(
+    capture: &SerialCapture,
+    operation: BluetoothHciLifecycle,
+) -> Result<BluetoothHciLifecycleEvidence> {
+    match capture.bluetooth_hci(BluetoothHciRequest::Lifecycle(operation))? {
+        BluetoothHciResponse::Lifecycle(evidence) => Ok(evidence),
+        response => Err(format!("Controller {operation:?} failed: {response:?}").into()),
     }
 }
 

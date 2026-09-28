@@ -38,6 +38,9 @@ use oer_hil_protocol::{
 
 use super::console;
 
+#[cfg(feature = "bluetooth-hci-lifecycle")]
+mod lifecycle;
+
 const RESET: Opcode = Opcode::new(OpcodeGroup::CONTROL_BASEBAND, 0x0003);
 const RECEIVER_TEST: Opcode = Opcode::new(OpcodeGroup::LE, 0x001d);
 const TRANSMITTER_TEST: Opcode = Opcode::new(OpcodeGroup::LE, 0x001e);
@@ -93,6 +96,7 @@ static QUEUE: Mutex<CriticalSectionRawMutex, RefCell<Queue>> = Mutex::new(RefCel
     dropped: 0,
 }));
 
+#[cfg(not(feature = "bluetooth-hci-lifecycle"))]
 pub(super) async fn run(
     spawner: embassy_executor::Spawner,
     host: BluetoothHostTransport,
@@ -103,6 +107,31 @@ pub(super) async fn run(
     console::run(usb, boot, &Profile).await
 }
 
+/// Serve the console and the HCI task while one owner runs the Controller
+/// and ends its epochs on request.
+#[cfg(feature = "bluetooth-hci-lifecycle")]
+pub(super) async fn run_with_lifecycle(
+    spawner: embassy_executor::Spawner,
+    radio: &'static super::Radio,
+    system: oer_esp32s31_bluetooth_system::BluetoothSystem,
+    hci: oer_esp32s31_bluetooth_system::BluetoothHci,
+    public_address: oer_bluetooth_hci::BluetoothPublicDeviceAddress,
+    usb: esp_hal::peripherals::USB_DEVICE<'static>,
+    boot: u64,
+) -> ! {
+    use core::pin::pin;
+    use embassy_futures::select::{Either, select};
+
+    let oer_esp32s31_bluetooth_system::BluetoothHci { host, service } = hci;
+    spawner.spawn(tester(host).expect("Bluetooth HCI task"));
+    let owner = pin!(lifecycle::run(radio, system, service, public_address));
+    let console = pin!(console::run(usb, boot, &Profile));
+    match select(owner, console).await {
+        Either::First(never) => match never {},
+        Either::Second(never) => never,
+    }
+}
+
 struct Profile;
 
 impl console::Profile for Profile {
@@ -110,6 +139,7 @@ impl console::Profile for Profile {
         FeatureCapabilities {
             bluetooth_dtm: true,
             bluetooth_hci: true,
+            bluetooth_hci_lifecycle: cfg!(feature = "bluetooth-hci-lifecycle"),
             phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
             ..FeatureCapabilities::default()
         }
@@ -122,6 +152,11 @@ impl console::Profile for Profile {
     async fn command(&self, command: Command) -> Event {
         let request = match command {
             Command::BluetoothDtm(operation) => Request::Dtm(operation),
+            Command::BluetoothHci(BluetoothHciRequest::Lifecycle(_))
+                if !cfg!(feature = "bluetooth-hci-lifecycle") =>
+            {
+                return Event::Rejected(RejectReason::InvalidState);
+            }
             Command::BluetoothHci(request) => Request::Hci(request),
             Command::PhyTracking(control) => return crate::phy_tracking::control(control),
             _ => return Event::Rejected(RejectReason::InvalidState),
@@ -272,10 +307,29 @@ async fn tester(transport: BluetoothHostTransport) {
         crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-reset\r\n");
     }
     let mut received = 0;
+    // `None` once the Controller was retired.
+    #[cfg_attr(not(feature = "bluetooth-hci-lifecycle"), allow(unused_mut))]
+    let mut current = Some(host);
     loop {
-        let reply = match REQUESTS.receive().await {
+        let request = REQUESTS.receive().await;
+        #[cfg(feature = "bluetooth-hci-lifecycle")]
+        if let Request::Hci(BluetoothHciRequest::Lifecycle(operation)) = request {
+            let response = lifecycle::end_epoch(&mut current, operation).await;
+            REPLIES.send(Reply::Hci(response)).await;
+            continue;
+        }
+        let Some(host) = current.as_ref() else {
+            REPLIES
+                .send(match request {
+                    Request::Dtm(_) => Reply::Dtm(BluetoothDtmResult::HciRejected, received),
+                    Request::Hci(_) => Reply::Hci(BluetoothHciResponse::TransportFailed),
+                })
+                .await;
+            continue;
+        };
+        let reply = match request {
             Request::Dtm(operation) => {
-                let result = with_timeout(OPERATION_TIMEOUT, execute(&host, operation))
+                let result = with_timeout(OPERATION_TIMEOUT, execute(host, operation))
                     .await
                     .unwrap_or(BluetoothDtmResult::Timeout);
                 if let BluetoothDtmResult::Complete {
@@ -315,6 +369,11 @@ async fn tester(transport: BluetoothHostTransport) {
                 host.next_packet(Duration::from_millis(u64::from(wait_ms)))
                     .await,
             ),
+            // Served above by an image that ends Controller epochs; the
+            // console rejects it for every other image.
+            Request::Hci(BluetoothHciRequest::Lifecycle(_)) => {
+                Reply::Hci(BluetoothHciResponse::TransportFailed)
+            }
         };
         REPLIES.send(reply).await;
     }

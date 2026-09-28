@@ -180,6 +180,7 @@ pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 phy_register_image: false,
                 bluetooth_dtm: false,
                 bluetooth_hci: false,
+                bluetooth_hci_lifecycle: false,
                 system_watchdog: false,
                 udp: true,
                 tcp: true,

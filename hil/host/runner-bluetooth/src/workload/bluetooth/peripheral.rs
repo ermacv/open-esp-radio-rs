@@ -19,6 +19,11 @@
 //!   disconnects, the Controller terminates on a key failure, or the target
 //!   Host disconnects or resets its Controller after both echoes.
 //!
+//! A diagnostic image can also end the Controller epoch between connections
+//! (Reset, retirement of the Host end, powered stop and a restart on the same
+//! storage) and retire the Controller after the last one; each requires both
+//! directions of the old Host end to report the transport closed.
+//!
 //! ACL timing observed here includes the HIL console link and supports no
 //! throughput or latency claim.
 
@@ -34,6 +39,7 @@ use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
     BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK,
     BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV, BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
+    BluetoothHciLifecycle, BluetoothHciLifecycleEvidence,
     BluetoothPeripheralTermination as Termination, BluetoothSecurityFailure, PhyTrackingCommand,
     PhyTrackingEvidence,
 };
@@ -107,6 +113,10 @@ pub enum Config {
         termination: Termination,
         security: Security,
         phy_tracking: bool,
+        /// Restart the Controller epoch between connections.
+        restart_between_connections: bool,
+        /// Retire the Controller after the last connection.
+        retire_after: bool,
     },
     /// One connection whose encryption fails as `failure` asks, then one
     /// encrypted connect-reset connection that must succeed.
@@ -206,12 +216,21 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
             scenario: format!("{config:?}"),
             address: None,
             cycles: Vec::new(),
+            lifecycle: Vec::new(),
+            retired: false,
             passed: false,
             error: None,
             cleanup_error: None,
         };
         let result = exercise(capture, adapter, config, output, &mut report);
-        let cleanup = oer_process::cleanup(|| hci::command(capture, hci::RESET, &[]).map(|_| ()));
+        // A retired Controller serves no further command.
+        let cleanup = oer_process::cleanup(|| {
+            if report.retired {
+                Ok(())
+            } else {
+                hci::command(capture, hci::RESET, &[]).map(|_| ())
+            }
+        });
         report.passed = result.is_ok() && cleanup.is_ok();
         report.error = result.as_ref().err().map(ToString::to_string);
         report.cleanup_error = cleanup.as_ref().err().map(ToString::to_string);
@@ -274,6 +293,7 @@ fn plan(config: Config) -> Result<Vec<(Central, Profile)>> {
             termination,
             security,
             phy_tracking,
+            ..
         } => (0..connections)
             .map(|_| {
                 (
@@ -320,9 +340,27 @@ fn exercise(
     report: &mut Report,
 ) -> Result<()> {
     hci::require(capture)?;
+    let (restart_between, retire_after) = match config {
+        Config::Connections {
+            restart_between_connections,
+            retire_after,
+            ..
+        } => (restart_between_connections, retire_after),
+        Config::SecurityFailure { .. } => (false, false),
+    };
+    if (restart_between || retire_after)
+        && !capture
+            .request_capabilities(Duration::from_secs(10))?
+            .features
+            .bluetooth_hci_lifecycle
+    {
+        return Err("firmware lacks Controller epoch restart and retirement".into());
+    }
     let host = Host::start(capture)?;
     report.address = Some(host.address.to_string());
-    for (index, (central, profile)) in plan(config)?.into_iter().enumerate() {
+    let plan = plan(config)?;
+    let last = plan.len();
+    for (index, (central, profile)) in plan.into_iter().enumerate() {
         let directory = output.join(format!("connection-{:03}", index + 1));
         host.advertise()?;
         let mut observed = Cycle {
@@ -340,21 +378,43 @@ fn exercise(
         observed.error = result.as_ref().err().map(ToString::to_string);
         report.cycles.push(observed);
         result.map_err(|error| format!("connection {}: {error}", index + 1))?;
-        if profile.local == Some(Termination::TargetReset) {
+        if restart_between && index + 1 < last {
+            let evidence = hci::lifecycle(capture, BluetoothHciLifecycle::Restart)?;
+            report.lifecycle.push(evidence);
+            ended(BluetoothHciLifecycle::Restart, evidence)?;
+            host.initialize()?;
+        } else if profile.local == Some(Termination::TargetReset) {
             host.initialize()?;
         }
+    }
+    if retire_after {
+        let evidence = hci::lifecycle(capture, BluetoothHciLifecycle::Retire)?;
+        report.lifecycle.push(evidence);
+        report.retired = true;
+        ended(BluetoothHciLifecycle::Retire, evidence)?;
     }
     Ok(())
 }
 
+/// The epoch ended cleanly: the old Host end is closed both ways, and a
+/// restart started the next epoch while a retirement did not.
+fn ended(operation: BluetoothHciLifecycle, evidence: BluetoothHciLifecycleEvidence) -> Result<()> {
+    let restarted = operation == BluetoothHciLifecycle::Restart;
+    if evidence.old_host_closed && evidence.restarted == restarted {
+        Ok(())
+    } else {
+        Err(format!("Controller {operation:?} ended as {evidence:?}").into())
+    }
+}
+
 /// The Host end of one image's Controller.
-struct Host<'a> {
+pub(super) struct Host<'a> {
     capture: &'a SerialCapture,
-    address: PeerAddress,
+    pub(super) address: PeerAddress,
 }
 
 impl<'a> Host<'a> {
-    fn start(capture: &'a SerialCapture) -> Result<Self> {
+    pub(super) fn start(capture: &'a SerialCapture) -> Result<Self> {
         let host = Self {
             capture,
             address: PeerAddress([0; 6]),
@@ -371,7 +431,7 @@ impl<'a> Host<'a> {
 
     /// Reset the Controller and configure flow control; the Controller's
     /// own ACL buffers must carry one whole frame.
-    fn initialize(&self) -> Result<()> {
+    pub(super) fn initialize(&self) -> Result<()> {
         let capture = self.capture;
         hci::command(capture, hci::RESET, &[])?;
         hci::command(capture, hci::SET_EVENT_MASK, &hci::EVENT_MASK_WITH_LE_META)?;
@@ -396,7 +456,7 @@ impl<'a> Host<'a> {
     }
 
     /// Connectable undirected advertising from the public address.
-    fn advertise(&self) -> Result<()> {
+    pub(super) fn advertise(&self) -> Result<()> {
         let mut parameters = [0; 15];
         parameters[0..2].copy_from_slice(&ADVERTISING_INTERVAL.to_le_bytes());
         parameters[2..4].copy_from_slice(&ADVERTISING_INTERVAL.to_le_bytes());
@@ -863,6 +923,8 @@ struct Report {
     scenario: String,
     address: Option<String>,
     cycles: Vec<Cycle>,
+    lifecycle: Vec<BluetoothHciLifecycleEvidence>,
+    retired: bool,
     passed: bool,
     error: Option<String>,
     cleanup_error: Option<String>,

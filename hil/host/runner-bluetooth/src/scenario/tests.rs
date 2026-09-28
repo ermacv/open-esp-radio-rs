@@ -18,6 +18,7 @@ fn each_workload_selects_its_image() {
         ),
         ("kind = 'scannable-advertising'", ImageClass::BluetoothHci),
         ("kind = 'directed-advertising'", ImageClass::BluetoothHci),
+        ("kind = 'acl-backpressure'", ImageClass::BluetoothHci),
         (
             "kind = 'dtm-peer'\nminimum_packets = 100",
             ImageClass::BluetoothHci,
@@ -33,6 +34,10 @@ fn each_workload_selects_its_image() {
         (
             "kind = 'security-failure'\nfailure = 'missing-key'\nread_version_before_disconnect = true",
             ImageClass::BluetoothHci,
+        ),
+        (
+            "kind = 'peripheral'\nconnections = 3\nhold_millis = 100\ntermination = 'peer-reset'\nrestart_between_connections = true\nretire_after = true",
+            ImageClass::BluetoothHciDiagnostics,
         ),
     ] {
         let scenario = parse(text);

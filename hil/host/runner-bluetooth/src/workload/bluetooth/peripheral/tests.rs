@@ -348,3 +348,17 @@ fn phy_tracking_must_complete_a_pass_without_a_skip_or_suspension() {
         );
     }
 }
+
+#[test]
+fn an_epoch_ends_only_with_a_closed_old_host_and_the_requested_restart() {
+    let evidence = |old_host_closed, restarted| BluetoothHciLifecycleEvidence {
+        old_host_closed,
+        restarted,
+    };
+    assert!(ended(BluetoothHciLifecycle::Restart, evidence(true, true)).is_ok());
+    assert!(ended(BluetoothHciLifecycle::Retire, evidence(true, false)).is_ok());
+    assert!(ended(BluetoothHciLifecycle::Restart, evidence(false, false)).is_err());
+    assert!(ended(BluetoothHciLifecycle::Restart, evidence(true, false)).is_err());
+    assert!(ended(BluetoothHciLifecycle::Retire, evidence(false, false)).is_err());
+    assert!(ended(BluetoothHciLifecycle::Retire, evidence(true, true)).is_err());
+}

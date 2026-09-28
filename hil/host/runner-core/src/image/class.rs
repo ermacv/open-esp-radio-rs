@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 pub enum ImageClass {
     SystemWatchdog,
     BluetoothHci,
+    /// The HCI passthrough image that also restarts and retires its
+    /// Controller epoch on request.
+    BluetoothHciDiagnostics,
     BluetoothGatt,
     BluetoothSecureGatt,
     BootSmoke,
@@ -47,6 +50,7 @@ impl ImageClass {
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothHci
+                | Self::BluetoothHciDiagnostics
         ) {
             self.runtime_features().to_owned()
         } else {
@@ -54,11 +58,12 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
         Self::BluetoothHci,
+        Self::BluetoothHciDiagnostics,
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
@@ -85,6 +90,7 @@ impl ImageClass {
         match self {
             Self::SystemWatchdog => "system-watchdog",
             Self::BluetoothHci => "bluetooth-hci",
+            Self::BluetoothHciDiagnostics => "bluetooth-hci-diagnostics",
             Self::BluetoothGatt => "bluetooth-gatt",
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::BootSmoke => "boot-smoke",
@@ -142,6 +148,12 @@ impl ImageClass {
                 bluetooth_hci: true,
                 ..dtm
             },
+            Self::BluetoothHciDiagnostics => FeatureCapabilities {
+                phy_rx_hot_sram: true,
+                bluetooth_hci: true,
+                bluetooth_hci_lifecycle: true,
+                ..dtm
+            },
             _ => return None,
         })
     }
@@ -161,6 +173,9 @@ impl ImageClass {
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
             Self::SystemWatchdog => "system-watchdog",
             Self::BluetoothHci => "bluetooth-hil,phy-rx-hot-sram",
+            Self::BluetoothHciDiagnostics => {
+                "bluetooth-hil,phy-rx-hot-sram,bluetooth-hci-lifecycle"
+            }
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "open-radio-hil",
             Self::WifiBleCoex => "wifi-ble-coex",
@@ -202,6 +217,7 @@ impl ImageClass {
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothHci
+                | Self::BluetoothHciDiagnostics
                 | Self::BootSmoke
                 | Self::Performance
                 | Self::WifiBleCoex

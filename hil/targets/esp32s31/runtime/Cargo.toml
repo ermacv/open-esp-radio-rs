@@ -52,6 +52,10 @@ bluetooth-radio = [
     "dep:critical-section",
 ]
 bluetooth-hil = ["bluetooth-radio"]
+# The HCI passthrough image with diagnostic Controller epoch restart and
+# retirement: the Controller and its HCI service run in one lifecycle owner
+# instead of their own tasks.
+bluetooth-hci-lifecycle = ["bluetooth-hil"]
 bluetooth-gatt = ["bluetooth-radio", "dep:gatt-application", "dep:trouble-host"]
 # The secure GATT image restarts the Controller epoch around one retained bond
 # store and serves the `bluetooth-secure-gatt` scenario.

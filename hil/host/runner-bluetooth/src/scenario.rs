@@ -68,7 +68,18 @@ pub enum BluetoothScenario {
         /// connection.
         #[serde(default)]
         phy_tracking: bool,
+        /// Restart the Controller epoch between connections; needs the
+        /// diagnostic image.
+        #[serde(default)]
+        restart_between_connections: bool,
+        /// Retire the Controller after the last connection; needs the
+        /// diagnostic image.
+        #[serde(default)]
+        retire_after: bool,
     },
+    /// The Host keeps its only ACL credit until the link's supervision
+    /// expires, then a second connection delivers in order without Reset.
+    AclBackpressure {},
     /// One peripheral connection whose encryption fails as `failure` asks,
     /// then an encrypted connection that must succeed.
     SecurityFailure {
@@ -131,8 +142,14 @@ impl BluetoothScenario {
             | Self::DtmPeer { .. }
             | Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
-            | Self::Peripheral { .. }
-            | Self::SecurityFailure { .. } => ImageClass::BluetoothHci,
+            | Self::Peripheral {
+                restart_between_connections: false,
+                retire_after: false,
+                ..
+            }
+            | Self::SecurityFailure { .. }
+            | Self::AclBackpressure {} => ImageClass::BluetoothHci,
+            Self::Peripheral { .. } => ImageClass::BluetoothHciDiagnostics,
         }
     }
 
@@ -166,8 +183,17 @@ impl BluetoothScenario {
             Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
             | Self::DtmPeer { .. }
-            | Self::Peripheral { .. }
-            | Self::SecurityFailure { .. } => features.bluetooth_hci,
+            | Self::SecurityFailure { .. }
+            | Self::AclBackpressure {} => features.bluetooth_hci,
+            Self::Peripheral {
+                restart_between_connections,
+                retire_after,
+                ..
+            } => {
+                features.bluetooth_hci
+                    && (features.bluetooth_hci_lifecycle
+                        || !(*restart_between_connections || *retire_after))
+            }
             Self::Dtm { .. } => features.bluetooth_dtm,
         }
     }
@@ -179,7 +205,8 @@ impl BluetoothScenario {
             Self::Gatt {}
             | Self::SecureGatt { .. }
             | Self::ScannableAdvertising {}
-            | Self::DirectedAdvertising {} => fixture::att::preflight,
+            | Self::DirectedAdvertising {}
+            | Self::AclBackpressure {} => fixture::att::preflight,
             Self::Dtm { .. } => fixture::preflight,
             Self::Peripheral { .. } => fixture::preflight_connect_reset,
             Self::SecurityFailure { .. } => |adapter| {
@@ -213,6 +240,8 @@ impl BluetoothScenario {
                 termination,
                 security,
                 phy_tracking,
+                restart_between_connections,
+                retire_after,
             } => workload::peripheral::run(
                 workload::peripheral::Config::Connections {
                     connections: *connections,
@@ -220,10 +249,13 @@ impl BluetoothScenario {
                     termination: *termination,
                     security: *security,
                     phy_tracking: *phy_tracking,
+                    restart_between_connections: *restart_between_connections,
+                    retire_after: *retire_after,
                 },
                 output,
                 context,
             ),
+            Self::AclBackpressure {} => workload::backpressure::run(output, context),
             Self::SecurityFailure {
                 failure,
                 read_version_before_disconnect,

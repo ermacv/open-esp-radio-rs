@@ -129,6 +129,31 @@ pub enum BluetoothHciRequest {
     },
     /// Return the oldest queued Controller packet, waiting up to `wait_ms`.
     NextPacket { wait_ms: u16 },
+    /// Reset the Controller through HCI, retire the drained Host end, stop
+    /// the Controller on the shared radio and, for
+    /// [`BluetoothHciLifecycle::Restart`], start it again on the same
+    /// storage with a fresh Host end. Only an image declaring
+    /// `bluetooth_hci_lifecycle` serves it.
+    Lifecycle(BluetoothHciLifecycle),
+}
+
+/// The end of one Controller epoch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BluetoothHciLifecycle {
+    /// Stop, then start the next epoch; later requests reach it.
+    Restart,
+    /// Stop for good; the image serves no further HCI exchange.
+    Retire,
+}
+
+/// What one [`BluetoothHciRequest::Lifecycle`] observed after the
+/// Controller stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BluetoothHciLifecycleEvidence {
+    /// Both directions of the retired Host end report the transport closed.
+    pub old_host_closed: bool,
+    /// A new epoch started with a fresh Host end.
+    pub restarted: bool,
 }
 
 /// The image's answer to one [`BluetoothHciRequest`].
@@ -151,6 +176,8 @@ pub enum BluetoothHciResponse {
         /// Packets dropped because the queue was full, since the last report.
         dropped: u16,
     },
+    /// The Controller epoch ended as requested.
+    Lifecycle(BluetoothHciLifecycleEvidence),
     /// No packet arrived in time.
     NoPacket,
     /// The command or ACL packet was not accepted in time.

@@ -18,9 +18,9 @@ pub use bluetooth::{
     BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS, BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK,
     BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV, BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
     BluetoothDtmEvidence, BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
-    BluetoothHciRequest, BluetoothHciResponse, BluetoothPeripheralTermination,
-    BluetoothSecurityFailure, bluetooth_peripheral_acl_payload,
-    bluetooth_peripheral_acl_payload_for_sequence,
+    BluetoothHciLifecycle, BluetoothHciLifecycleEvidence, BluetoothHciRequest,
+    BluetoothHciResponse, BluetoothPeripheralTermination, BluetoothSecurityFailure,
+    bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
 };
 #[cfg(feature = "bluetooth")]
 pub use bluetooth_gatt::BluetoothGattEvidence;

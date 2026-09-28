@@ -218,7 +218,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 24);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 25);
     assert_eq!(crate::image::ImageClass::Performance.id(), "performance");
     assert_eq!(crate::image::ImageClass::Correctness.id(), "correctness");
     assert_eq!(
@@ -468,6 +468,35 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
             .contains("open-radio-hil")
     );
     assert!(!ImageClass::BluetoothHci.requires_driver_observation());
+}
+
+#[test]
+fn the_lifecycle_flag_alone_tells_the_diagnostic_hci_image_apart() {
+    let plain = ImageClass::BluetoothHci.console_capabilities().unwrap();
+    let diagnostic = ImageClass::BluetoothHciDiagnostics
+        .console_capabilities()
+        .unwrap();
+    assert_eq!(
+        diagnostic,
+        FeatureCapabilities {
+            bluetooth_hci_lifecycle: true,
+            ..plain
+        }
+    );
+    assert_eq!(
+        classify_flashed_capabilities(&plain),
+        Some(ImageClass::BluetoothHci)
+    );
+    assert_eq!(
+        classify_flashed_capabilities(&diagnostic),
+        Some(ImageClass::BluetoothHciDiagnostics)
+    );
+    assert!(
+        ImageClass::BluetoothHciDiagnostics
+            .runtime_features()
+            .contains("bluetooth-hci-lifecycle")
+    );
+    assert!(!ImageClass::BluetoothHciDiagnostics.requires_driver_observation());
 }
 
 #[test]

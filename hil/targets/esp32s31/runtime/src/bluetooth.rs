@@ -9,6 +9,8 @@
 //! `bluetooth-hil` image serves Direct Test Mode and raw HCI packets and the
 //! `bluetooth-gatt` image runs the Trouble Host and the GATT application; both
 //! run the radio runner and the HCI service on their own tasks. The
+//! `bluetooth-hci-diagnostics` image (`bluetooth-hci-lifecycle`) runs them in
+//! one owner that stops, restarts or retires the Controller on request. The
 //! `bluetooth-secure-gatt` image runs them beside its Host and restarts the
 //! Controller epoch on request. All reach the radio only through the HCI
 //! transport.
@@ -29,11 +31,14 @@ mod secure;
 pub(crate) mod shared;
 
 use oer_bluetooth_controller::LeVersionInformation;
-#[cfg(any(feature = "bluetooth-hil", feature = "bluetooth-gatt"))]
+#[cfg(any(
+    all(feature = "bluetooth-hil", not(feature = "bluetooth-hci-lifecycle")),
+    feature = "bluetooth-gatt"
+))]
 use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
 #[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_bluetooth_system::{BluetoothEntropy, BluetoothParked, start_bluetooth_hci};
-#[cfg(not(feature = "bluetooth-secure-gatt"))]
+#[cfg(not(any(feature = "bluetooth-secure-gatt", feature = "bluetooth-hci-lifecycle")))]
 use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothSystem};
 #[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_hal::root::ConcurrentPartitions;
@@ -53,7 +58,11 @@ pub(super) type Radio = oer_esp32s31_radio_system::SharedRadio;
 #[cfg(feature = "wifi-ble-coex")]
 pub(super) type Radio = oer_esp32s31_ieee80211_system::SharedRadio;
 
-#[cfg(all(feature = "bluetooth-radio", not(feature = "bluetooth-secure-gatt")))]
+#[cfg(all(
+    feature = "bluetooth-radio",
+    not(feature = "bluetooth-secure-gatt"),
+    not(feature = "bluetooth-hci-lifecycle")
+))]
 static SYSTEM: StaticCell<BluetoothSystem> = StaticCell::new();
 #[cfg(feature = "bluetooth-radio")]
 static ENTROPY: StaticCell<BluetoothEntropy<'static>> = StaticCell::new();
@@ -122,7 +131,9 @@ async fn main(
     spawner.spawn(tracking(radio).expect("PHY tracking task"));
     #[cfg(feature = "bluetooth-secure-gatt")]
     secure::run(spawner, radio, system, hci, public_address, usb, boot).await;
-    #[cfg(not(feature = "bluetooth-secure-gatt"))]
+    #[cfg(feature = "bluetooth-hci-lifecycle")]
+    hci::run_with_lifecycle(spawner, radio, system, hci, public_address, usb, boot).await;
+    #[cfg(not(any(feature = "bluetooth-secure-gatt", feature = "bluetooth-hci-lifecycle")))]
     {
         spawner.spawn(runner(radio, SYSTEM.init(system)).expect("Bluetooth runner task"));
         spawner.spawn(service(hci.service).expect("Bluetooth HCI task"));
@@ -130,7 +141,7 @@ async fn main(
     }
 }
 
-#[cfg(feature = "bluetooth-hil")]
+#[cfg(all(feature = "bluetooth-hil", not(feature = "bluetooth-hci-lifecycle")))]
 async fn image(
     spawner: embassy_executor::Spawner,
     host: BluetoothHostTransport,
@@ -179,14 +190,14 @@ async fn tracking(radio: &'static Radio) {
     }
 }
 
-#[cfg(not(feature = "bluetooth-secure-gatt"))]
+#[cfg(not(any(feature = "bluetooth-secure-gatt", feature = "bluetooth-hci-lifecycle")))]
 #[embassy_executor::task]
 async fn runner(radio: &'static Radio, system: &'static mut BluetoothSystem) {
     let _fault = system.run(radio).await;
     super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-runner-fault\r\n");
 }
 
-#[cfg(not(feature = "bluetooth-secure-gatt"))]
+#[cfg(not(any(feature = "bluetooth-secure-gatt", feature = "bluetooth-hci-lifecycle")))]
 #[embassy_executor::task]
 async fn service(mut service: BluetoothHciService) {
     let _exit = service.run().await;

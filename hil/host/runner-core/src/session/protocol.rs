@@ -919,6 +919,8 @@ impl SerialCapture {
             }
             oer_hil_protocol::BluetoothHciRequest::Command { .. }
             | oer_hil_protocol::BluetoothHciRequest::Acl { .. } => Duration::ZERO,
+            // Stopping and starting the Controller on the shared radio.
+            oer_hil_protocol::BluetoothHciRequest::Lifecycle(_) => Duration::from_secs(15),
         };
         match self
             .send_command(

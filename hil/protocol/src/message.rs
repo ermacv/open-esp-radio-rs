@@ -104,6 +104,10 @@ pub struct FeatureCapabilities {
     /// Raw HCI exchanges with the image's Controller.
     #[serde(default)]
     pub bluetooth_hci: bool,
+    /// Controller epoch restart and retirement through raw HCI
+    /// ([`crate::BluetoothHciLifecycle`]); a diagnostic image only.
+    #[serde(default)]
+    pub bluetooth_hci_lifecycle: bool,
     pub udp: bool,
     pub tcp: bool,
     pub rx: bool,

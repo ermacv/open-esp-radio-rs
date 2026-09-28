@@ -88,13 +88,19 @@ pub fn classify_flashed_capabilities(
         let expected = FeatureCapabilities {
             bluetooth_dtm: true,
             bluetooth_hci: features.bluetooth_hci,
+            bluetooth_hci_lifecycle: features.bluetooth_hci_lifecycle,
             // Sealed older Bluetooth images retain their original placement.
             phy_rx_hot_sram: features.phy_rx_hot_sram,
             structured_evidence: true,
             psram_task_stack: true,
             ..FeatureCapabilities::default()
         };
-        return (*features == expected).then_some(ImageClass::BluetoothHci);
+        let class = if features.bluetooth_hci_lifecycle {
+            ImageClass::BluetoothHciDiagnostics
+        } else {
+            ImageClass::BluetoothHci
+        };
+        return (*features == expected).then_some(class);
     }
     if features.phy_fault_injection {
         return None;
@@ -1296,6 +1302,7 @@ fn audit_radio_observers<'a>(
             | ImageClass::BluetoothGatt
             | ImageClass::BluetoothSecureGatt
             | ImageClass::BluetoothHci
+            | ImageClass::BluetoothHciDiagnostics
             | ImageClass::BootSmoke
             | ImageClass::DiagnosticMemoryBenchmark
     ) {

@@ -152,6 +152,7 @@ async fn run_cycle(
     trace(0xb004);
     cycle.direct = transmitted(system, requested_at_micros).await?;
     trace(0xb005);
+    trace(0xd000 | bod_raw());
     trace(0xc100 | super::super::phy_register_image::debug_tx_cap().await);
 
     for scheduled in &mut cycle.scheduled {
@@ -173,6 +174,7 @@ async fn run_cycle(
         trace(0xb006);
         *scheduled = transmitted(system, at).await?;
         trace(0xb007);
+        trace(0xd100 | bod_raw());
     }
 
     trace(0xb008);
@@ -313,11 +315,20 @@ fn debug_vendor_brownout() {
         mode1.write_volatile(mode1.read_volatile() & !(1 << 31));
         let mut value = mode0.read_volatile();
         value &= !((0x3ff << 8) | (0x3ff << 18));
-        value |= (1 << 6) | (1 << 7) | (2 << 8) | (0x3ff << 18) | (1 << 30) | (1 << 31);
+        value &= !(1 << 31);
+        value |= (1 << 6) | (1 << 7) | (2 << 8) | (0x3ff << 18) | (1 << 30);
         mode0.write_volatile(value | (1 << 28));
         mode0.write_volatile(value);
         mode0.write_volatile(value | (1 << 29));
         trace(mode0.read_volatile());
         trace(mode1.read_volatile());
+        (0x2070_202c as *mut u32).write_volatile(1 << 31);
     }
+}
+
+#[allow(unsafe_code, reason = "debug brownout observation")]
+fn bod_raw() -> u32 {
+    let raw = unsafe { (0x2070_2020 as *const u32).read_volatile() } >> 31;
+    unsafe { (0x2070_202c as *mut u32).write_volatile(1 << 31) };
+    raw
 }

@@ -729,6 +729,28 @@ enum StationLinkEdge {
     },
 }
 
+/// Report where a connected epoch's beacons stopped: the MAC's receive
+/// counters at its exit and the beacons that reached the control mailbox.
+fn log_connected_exit_evidence() {
+    let beacons = oer_esp32s31_ieee80211_runtime::roles::station::beacon_path::beacon_path_counts();
+    runtime_log(format_args!(
+        "OEXB published={} overflowed={} consumed={}",
+        beacons.published, beacons.overflowed, beacons.consumed,
+    ));
+    if let Some(rx) = oer_esp32s31_ieee80211_system::exit_evidence::take_connected_exit_rx() {
+        runtime_log(format_args!(
+            "OEXR mpdu={} data={} other_unicast={} fcs={} abort={} buffer_full={} fifo_overflow={}",
+            rx.mpdu,
+            rx.data_success,
+            rx.other_unicast,
+            rx.fcs_error,
+            rx.abort,
+            rx.buffer_full,
+            rx.fifo_overflow,
+        ));
+    }
+}
+
 #[cfg(feature = "station-exit-evidence")]
 fn observe_station_attempt(observation: StationAttemptObservation) {
     log_station_rx_frontier(observation);
@@ -1344,6 +1366,7 @@ async fn station_lifecycle_task(mut status: StationStatus) {
             }
             StationLinkEdge::Disconnected(reason) => {
                 if connected {
+                    log_connected_exit_evidence();
                     publish_station_lifecycle(StationLifecycleEvent::Disconnected {
                         generation,
                         reason,

@@ -1922,6 +1922,14 @@ pub(crate) async fn run_connected<'state, 'security>(
                         .first_buffer_address_mismatch()
                 );
             }
+            if let Ok(statistics) = _runner
+                .services()
+                .hardware()
+                .register_access()
+                .try_receive_statistics_snapshot()
+            {
+                crate::exit_evidence::record(statistics);
+            }
             #[cfg(feature = "diagnostics")]
             {
                 let control = _runner.services().control();

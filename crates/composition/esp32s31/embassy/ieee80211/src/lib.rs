@@ -108,6 +108,7 @@ mod composition;
 mod diagnostics;
 #[cfg(target_arch = "riscv32")]
 mod esp_now;
+pub mod exit_evidence;
 #[cfg(target_arch = "riscv32")]
 mod facade;
 #[cfg(target_arch = "riscv32")]

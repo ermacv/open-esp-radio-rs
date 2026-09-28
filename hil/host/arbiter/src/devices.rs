@@ -55,6 +55,18 @@ pub struct AttachedPort {
     pub product: Option<String>,
 }
 
+/// Whether the USB serial number `serial` is the reset bridge of a
+/// registered board: part of that board, not a board itself.
+pub fn is_reset_bridge(serial: &str, devices: &[Device]) -> bool {
+    devices.iter().any(|device| {
+        device
+            .control
+            .as_ref()
+            .and_then(|control| control.reset.as_ref())
+            .is_some_and(|reset| reset.serial == serial)
+    })
+}
+
 /// USB serial ports currently attached to the host.
 pub fn attached_ports() -> Vec<AttachedPort> {
     serialport::available_ports()
@@ -271,6 +283,18 @@ pub fn normalize_mac(text: &str) -> crate::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_registered_reset_bridge_is_part_of_its_board() {
+        let devices: Vec<Device> = serde_json::from_value(serde_json::json!([{
+            "mac": "3C:DC:75:84:D0:34", "chip": "esp32c5", "name": "esp32c5",
+            "control": {"reset": {"via": "uart-rts-dtr", "serial": "5B90165754", "en": "rts", "boot": "dtr"}}
+        }]))
+        .unwrap();
+        assert!(is_reset_bridge("5B90165754", &devices));
+        assert!(!is_reset_bridge("3C:DC:75:84:D0:34", &devices));
+        assert!(!is_reset_bridge("5B90165754", &[]));
+    }
 
     #[test]
     fn macs_are_normalized_and_invalid_ones_refused() {

@@ -491,6 +491,49 @@ pub(crate) enum CompileCache<'a> {
     Isolated,
 }
 
+/// Type-check the runtime of `class` against the committed pins, with the
+/// image build's target, features and compiler configuration but without
+/// code generation, in the class's shared compile cache. A pre-push check:
+/// lints that need monomorphization (`large_assignments`) and the link-time
+/// placement and stack audits still need `cargo hil image build`.
+pub fn check(root: &Path, class: crate::image::ImageClass, network: Integration) -> Result<()> {
+    let cache = shared_compile_cache(root, class, network);
+    let lock = oer_esp32s31_firmware::network::BuildLock::prepare(
+        &root.join("hil/targets/esp32s31"),
+        &cache.join("check-lock"),
+    )?;
+    let stack_budget =
+        oer_memory_report::StackBudget::load(&root.join("hil/targets/esp32s31/stack.toml"))?;
+    let mut command = cargo_command();
+    command
+        .current_dir(root)
+        .arg("check")
+        .arg("--manifest-path")
+        .arg(root.join("hil/targets/esp32s31/Cargo.toml"))
+        .args([
+            "-p",
+            RUNTIME_BIN,
+            "--release",
+            "--target",
+            TARGET,
+            "--locked",
+        ])
+        .args([
+            "--no-default-features",
+            "--features",
+            &class.build_features(network),
+        ])
+        .env("CARGO_TARGET_DIR", cache.join("runtime"));
+    lock.configure(&mut command);
+    network.configure(&mut command, root);
+    crate::image::stack::configure_image_compiler(&mut command, &stack_budget);
+    let status = command.status()?;
+    if !status.success() {
+        return Err(format!("the {} runtime does not type-check", class.id()).into());
+    }
+    Ok(())
+}
+
 /// The shared compile cache of the repository at `root`.
 pub(crate) fn shared_compile_cache(
     root: &Path,

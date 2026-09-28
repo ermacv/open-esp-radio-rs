@@ -29,6 +29,9 @@ pub struct Plan {
     pub clippy: bool,
     /// Markdown, qualification catalogs or programs changed.
     pub docs: bool,
+    /// HIL target, protocol or target-core sources changed: type-check the
+    /// firmware for its main feature sets.
+    pub firmware: bool,
     /// A Cargo manifest or lockfile changed.
     pub metadata: bool,
     /// Code, register models, vendor docs or provenance facts changed: vendor
@@ -68,6 +71,12 @@ pub fn plan(
         let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if extension == "md" || path.starts_with("qualification") {
             plan.docs = true;
+        }
+        if ["hil/targets", "hil/protocol", "hil/target-core"]
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+        {
+            plan.firmware = true;
         }
         if name == "Cargo.toml" || name == "Cargo.lock" {
             plan.metadata = true;
@@ -237,6 +246,9 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             }
         }
     }
+    if plan.firmware {
+        check_firmware(ctx)?;
+    }
     if plan.docs {
         super::docs::run(ctx)?;
     }
@@ -279,6 +291,34 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
         Err(error) => println!("check changed: pending HIL evidence unreadable: {error}"),
     }
     println!("check changed passed; the CI jobs remain the full checkpoint");
+    Ok(())
+}
+
+/// The feature sets the firmware check covers: production-like, with driver
+/// observation, and with only the Wi-Fi system's diagnostics.
+const FIRMWARE_SETS: [oer_hil_runner_core::image::ImageClass; 3] = [
+    oer_hil_runner_core::image::ImageClass::Performance,
+    oer_hil_runner_core::image::ImageClass::Correctness,
+    oer_hil_runner_core::image::ImageClass::DiagnosticStationExit,
+];
+
+/// Type-check the HIL firmware for each of [`FIRMWARE_SETS`], one after the
+/// other, in their shared compile caches.
+fn check_firmware(ctx: &Context) -> Result<()> {
+    let network = oer_hil_runner_core::image::Integration::OwnedXarxa;
+    for class in FIRMWARE_SETS {
+        println!(
+            "check changed: type-checking the HIL firmware ({}: {})",
+            class.id(),
+            class.build_features(network)
+        );
+        oer_hil_runner_core::image::check(&ctx.root, class, network)?;
+    }
+    println!(
+        "check changed: HIL firmware type-checks for {}; monomorphization lints and the \
+         placement and stack audits need `cargo hil image build`",
+        FIRMWARE_SETS.map(|class| class.id()).join(", ")
+    );
     Ok(())
 }
 
@@ -334,6 +374,18 @@ mod tests {
             plan.other_workspaces,
             BTreeSet::from([PathBuf::from("/r/hil/targets/Cargo.toml")])
         );
+    }
+
+    #[test]
+    fn hil_target_protocol_and_target_core_changes_select_the_firmware_check() {
+        for path in [
+            "hil/targets/esp32s31/runtime/src/console.rs",
+            "hil/protocol/src/system.rs",
+            "hil/target-core/src/liveness.rs",
+        ] {
+            assert!(run(&[path]).firmware, "{path}");
+        }
+        assert!(!run(&["hil/host/runner/src/cli.rs"]).firmware);
     }
 
     #[test]

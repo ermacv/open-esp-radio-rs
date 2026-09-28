@@ -1641,6 +1641,12 @@ code = "b0c66878d4340ffe71c93c455923f35a91b0ac52ba3e2798a0f4e6e98ba675df"
 
 [[function]]
 artifact = "libnet80211"
+member = "ieee80211_api.o"
+symbol = "esp_wifi_set_inactive_time"
+code = "7c050f1cea86a37301fc1ec15c17ab0e2d39602e251181b0b4309b5ebaa6a53a"
+
+[[function]]
+artifact = "libnet80211"
 member = "ieee80211_crypto.o"
 symbol = "ieee80211_crypto_encap"
 code = "7de583bfcf3f96f7ae53972aef94d6338368b2c956f748db18829ed2e834a0ab"
@@ -1962,6 +1968,12 @@ code = "b17cfa401ed09fb627bed007cd1821785b892591df16d54af22857ac38a42fc5"
 [[function]]
 artifact = "libnet80211"
 member = "wl_cnx.o"
+symbol = "cnx_beacon_timeout_process"
+code = "388086afdea225cee37949322eed0fafa1acc69839fd61bb85361175f9e72159"
+
+[[function]]
+artifact = "libnet80211"
+member = "wl_cnx.o"
 symbol = "cnx_connect_to_bss"
 code = "0945a8892e9b1dc2cf90e17e8db962e50cf985e4f8b9a5ec5669c391da918a5f"
 
@@ -1970,6 +1982,12 @@ artifact = "libnet80211"
 member = "wl_cnx.o"
 symbol = "ic_set_sta"
 code = "d15f3e1c630ae2f30b90f7393bebcdb2485512803fc4ace145a1a09a8162c115"
+
+[[function]]
+artifact = "libnet80211"
+member = "wl_cnx.o"
+symbol = "sta_reset_beacon_timeout"
+code = "c10aa5e94d6858ddb0cfd83d248d60793e14c944e39be3306bce4b763a053458"
 
 [[function]]
 artifact = "libphy"
@@ -2185,6 +2203,12 @@ member = "phy_rfpll.o"
 symbol = "phy_rfpll_cap_correct_track"
 code = "005e1944b5f7dde36a5853727f8321a20a6d06e4b91b95e65217682eb9c6192d"
 decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_rfpll.o"
+symbol = "phy_rfpll_cap_init_cal_new"
+code = "2e6b5d3fcd2a47d7b432ff0bc06c18919843cbef838d8a922000bc0dba01afae"
 
 [[function]]
 artifact = "libphy"
@@ -5508,6 +5532,12 @@ code = "3e318e299ba1e89fde558097a4dfa7f60bc82bd3861fefdb067f1d49a83bb28d"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_i2c_writeReg_Mask"
+code = "acbebf5aa7aece26272023b2cdd23db29accde1ddc199e8e39385b56f45517ba"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_i2cmst_reg_init"
 code = "4e9336b52ceda74d2bda280d46b2baeff0050b994766d0e50faf7513d8901201"
 
@@ -6013,6 +6043,12 @@ code = "bb025145c3c28d1bf2b9d7d773fabd8d62bee31f95b86d436d3bba2e36556503"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_write_pll_cap"
+code = "67e605d5382158a598805ed102368b94b9199f9d6af32c390ee2d8df43768f4f"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_write_rfpll_sdm"
 code = "0d02a883de59bdf700b58f05a9c7e52f8c3d52e7ce4db0c7fb72aa2ee90e3132"
 decisions = ["coverage.rs"]
@@ -6239,6 +6275,12 @@ artifact = "rom"
 member = ""
 symbol = "sta_input"
 code = "ebeac87b2f6a7be50c9cd3b561c12fe2d17f4f0de02e904886f80632d85575ce"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "sta_reset_beacon_timeout"
+code = "f2e7b19a4a18c0bc68f6b9c169770a39093716dd8e4f4dca7c476fe67c97a122"
 
 [[function]]
 artifact = "rom"

@@ -128,12 +128,17 @@ fn opposite_direction_status_does_not_terminate_a_phase() {
 }
 
 #[test]
-fn search_preserves_signed_candidate_and_wrapping_accumulation() {
+fn search_writes_signed_candidates_and_averages_the_programmed_codes() {
+    // Downward candidates go below zero; the helper programs zero for them.
     let (outcome, writes) = run_search(0, &[Status::Accepted; 2 * DIRECTION]);
     assert_eq!(&writes[..3], &[0, -1, -2]);
-    assert_eq!(outcome.selected_cap, 0);
-    // Vendor accumulates the requested u16 candidate, even when the helper
-    // clamps the signed write to zero. It does not average the clamped value.
+    // Thirty zeros down, then one through thirty up.
+    assert_eq!(
+        outcome.selected_cap,
+        (1..=DIRECTION as u16).sum::<u16>() / 60
+    );
+    // A wrapped negative candidate counts as the zero ROM programs, unlike
+    // the vendor's average of the requested sixteen-bit value.
     let (outcome, _) = run_search(
         0,
         &[
@@ -144,10 +149,22 @@ fn search_preserves_signed_candidate_and_wrapping_accumulation() {
             Status::Decrease,
         ],
     );
-    assert_eq!(outcome.selected_cap, u16::MAX);
-    assert_eq!(outcome.delta(), -1);
+    assert_eq!(outcome.selected_cap, 0);
+    assert_eq!(outcome.delta(), 0);
 }
 
+#[test]
+fn upward_search_ends_at_the_nine_bit_capacitor_bound() {
+    let initial = 0x1f0;
+    let up = (crate::analog::rfpll::RfpllCapacitorCode::MAX - initial) as usize;
+    let mut statuses = std::vec![Status::Other; DIRECTION];
+    statuses.extend(std::iter::repeat_n(Status::Accepted, up));
+    let (outcome, writes) = run_search(initial, &statuses);
+    assert!(writes.iter().all(|&cap| cap <= 0x1ff));
+    assert_eq!(writes[writes.len() - 2], 0x1ff);
+    assert_eq!(outcome.accepted_samples as usize, up);
+    assert_eq!(outcome.selected_cap, (initial + 1 + 0x1ff) / 2);
+}
 #[test]
 fn stale_or_misordered_completion_leaves_search_unchanged() {
     let mut search = search::Search::new();

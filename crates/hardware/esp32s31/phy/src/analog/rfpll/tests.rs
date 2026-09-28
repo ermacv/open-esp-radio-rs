@@ -371,3 +371,92 @@ fn channel_readiness_counts_every_not_ready_sample_until_the_deadline() {
         })
     );
 }
+
+fn finish_cap_search(transition: &mut RfpllFrequencyTransition) -> RfpllFrequencyOutcome {
+    advance_writes(transition, 2);
+    transition
+        .advance(RfpllFrequencyCompletion::DelayElapsed(5))
+        .unwrap();
+    let RfpllFrequencyAction::Complete(outcome) = transition.action() else {
+        panic!("expected completion");
+    };
+    outcome
+}
+
+fn cap_transition() -> RfpllFrequencyTransition {
+    RfpllFrequencyTransition::new(RfpllFrequencyRequest {
+        crystal_selector: 0x31,
+        frequency_code: 0x983,
+        offset: 0,
+    })
+}
+
+#[test]
+fn upward_cap_search_ends_at_the_nine_bit_bound_without_touching_bit_seven() {
+    let mut transition = cap_transition();
+    // Initial capacitor 0x1f0: low byte 0xf0, high bit 1.
+    enter_cap_search(&mut transition, 0xf0, 1);
+    for _ in 0..CAP_SEARCH_SAMPLES_PER_DIRECTION {
+        complete_cap_candidate(&mut transition, 3);
+    }
+    let mut accepted = 0;
+    loop {
+        let RfpllFrequencyAction::WriteByte { .. } = transition.action() else {
+            panic!("expected cap low write");
+        };
+        advance_writes(&mut transition, 1);
+        let RfpllFrequencyAction::WriteMasked { field, value } = transition.action() else {
+            panic!("expected cap high write");
+        };
+        assert_eq!(field, analog_registers::RFPLL_CAPACITOR_HIGH);
+        assert!(
+            value <= 1,
+            "the high write never reaches the neighboring bit"
+        );
+        let completion = complete_write(transition.action());
+        transition.advance(completion).unwrap();
+        transition
+            .advance(RfpllFrequencyCompletion::DelayElapsed(5))
+            .unwrap();
+        let RfpllFrequencyAction::ReadMasked { field } = transition.action() else {
+            break;
+        };
+        transition
+            .advance(RfpllFrequencyCompletion::MaskedRead { field, value: 0 })
+            .unwrap();
+        accepted += 1;
+    }
+    let RfpllFrequencyAction::Complete(outcome) = transition.action() else {
+        panic!("expected completion");
+    };
+    assert_eq!(u16::from(accepted), 0x1ff - 0x1f0);
+    assert_eq!(outcome.accepted_cap_samples, accepted);
+    assert_eq!(outcome.final_cap, (0x1f1 + 0x1ff) / 2);
+}
+
+#[test]
+fn cap_search_averages_programmed_codes_below_zero() {
+    let mut transition = cap_transition();
+    enter_cap_search(&mut transition, 2, 0);
+    // Down: 2, 1, 0, then wrapped candidates the helper programs as zero.
+    let mut down = std::vec::Vec::new();
+    for _ in 0..CAP_SEARCH_SAMPLES_PER_DIRECTION {
+        down.push(complete_cap_candidate(&mut transition, 0));
+    }
+    assert_eq!(&down[..4], &[2, 1, 0, 0]);
+    for _ in 0..CAP_SEARCH_SAMPLES_PER_DIRECTION {
+        complete_cap_candidate(&mut transition, 0);
+    }
+    let outcome = finish_cap_search(&mut transition);
+    let programmed_down: u16 = 2 + 1;
+    let up: u16 = (3..3 + u16::from(CAP_SEARCH_SAMPLES_PER_DIRECTION)).sum();
+    assert_eq!(
+        outcome.accepted_cap_samples,
+        2 * CAP_SEARCH_SAMPLES_PER_DIRECTION
+    );
+    assert_eq!(
+        outcome.final_cap,
+        (programmed_down + up) / (2 * u16::from(CAP_SEARCH_SAMPLES_PER_DIRECTION))
+    );
+    assert!(outcome.final_cap <= 0x1ff);
+}

@@ -77,20 +77,21 @@ fn complete<D: PhyAsyncDelay>(
         }
         Action::WriteCap(requested) => {
             // Complete ROM phy_write_pll_cap clamps a negative signed input;
-            // the search retains the requested value for its own arithmetic.
-            let programmed = requested.max(0) as u16;
+            // the search bounds every other input to a nine-bit code.
+            let programmed = crate::analog::rfpll::RfpllCapacitorCode::from_request(requested)
+                .ok_or(PhyTargetPortError::HardwareInvariant)?;
             i2c(
                 registers,
                 I2cAction::WriteByte {
                     address: analog_registers::RFPLL_CAPACITOR_LOW,
-                    value: programmed as u8,
+                    value: programmed.low_byte(),
                 },
             )?;
             i2c(
                 registers,
                 I2cAction::WriteMasked {
                     field: analog_registers::RFPLL_CAPACITOR_HIGH,
-                    value: (programmed >> 8) as u8,
+                    value: programmed.high_bit(),
                 },
             )?;
             Ok(Completion::CapWritten(requested))

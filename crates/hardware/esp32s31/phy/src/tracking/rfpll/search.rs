@@ -14,8 +14,8 @@ pub enum Status {
 pub enum Action {
     ReadInitialCap,
     EnableSearch,
-    /// Signed helper input. The helper's clamping does not change the value
-    /// accumulated by the search when the status subsequently accepts it.
+    /// Signed helper input. The search accumulates the code the helper
+    /// programs, zero for a negative input, when the status accepts it.
     WriteCap(i16),
     DelayMicros(u32),
     ReadStatus,
@@ -114,6 +114,19 @@ impl Search {
         }
     }
 
+    /// Program the next candidate, or end the upward phase at the nine-bit
+    /// capacitor bound as if its samples were exhausted; see
+    /// [`RfpllCapacitorCode`](crate::analog::rfpll::RfpllCapacitorCode).
+    const fn next_candidate(&self) -> Step {
+        if matches!(self.phase, Phase::Up)
+            && self.candidate() > crate::analog::rfpll::RfpllCapacitorCode::MAX
+        {
+            Step::WriteFinal
+        } else {
+            Step::WriteCandidate
+        }
+    }
+
     const fn outcome(&self) -> Outcome {
         Outcome {
             initial_cap: self.initial,
@@ -153,7 +166,9 @@ impl Search {
             (Step::Settle, Completion::DelayElapsed(5)) => Step::ReadStatus,
             (Step::ReadStatus, Completion::Status(status)) => {
                 if status == Status::Accepted {
-                    self.sum = self.sum.wrapping_add(self.candidate());
+                    self.sum +=
+                        crate::analog::rfpll::RfpllCapacitorCode::programmed(self.candidate())
+                            .get();
                     self.accepted += 1;
                 } else if matches!(
                     (self.phase, status),
@@ -168,12 +183,12 @@ impl Search {
                             self.phase = Phase::Up;
                             self.offset = 0;
                             self.boundaries = 0;
-                            Step::WriteCandidate
+                            self.next_candidate()
                         }
                         Phase::Up => Step::WriteFinal,
                     }
                 } else {
-                    Step::WriteCandidate
+                    self.next_candidate()
                 }
             }
             (Step::WriteFinal, Completion::CapWritten(cap))

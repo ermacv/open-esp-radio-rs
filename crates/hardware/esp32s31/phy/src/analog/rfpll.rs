@@ -39,6 +39,74 @@ const CAP_STATUS_ACCEPTED: u8 = 0;
 const CAP_STATUS_INCREASE: u8 = 1;
 const CAP_STATUS_DECREASE: u8 = 2;
 
+/// A programmable RFPLL capacitor code: nine bits, the low byte at
+/// `RFPLL_CAPACITOR_LOW` and bit 8 in `RFPLL_CAPACITOR_HIGH`.
+///
+/// SOURCE(esp32s31): rev0 ROM `phy_write_pll_cap` clamps a negative request to
+/// zero, writes the low byte, then writes `cap >> 8` through
+/// `phy_i2c_writeReg_Mask(0x62, 0x02, 6, 6)` without masking the value, so a
+/// code above `0x1ff` leaks into bit 7 of that byte,
+/// `RFPLL_INITIAL_CONFIGURATION_HIGH`. The pinned archive search
+/// `phy_rfpll_cap_init_cal_new` does not bound its upward candidates, so an
+/// initial capacitor of `0x1e2` or more reaches that leak. The archive also
+/// averages the requested sixteen-bit candidates, including downward ones
+/// wrapped below zero that ROM programs as zero, so an initial capacitor
+/// below 30 can average far above `0x1ff`. Production never writes the
+/// neighboring field: the code is bounded here, an upward search ends at the
+/// bound as if its samples were exhausted, and both searches average the
+/// codes actually programmed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfpllCapacitorCode(u16);
+
+impl RfpllCapacitorCode {
+    /// The largest nine-bit code.
+    pub const MAX: u16 = 0x1ff;
+
+    /// The code `value`, or `None` above [`Self::MAX`].
+    pub const fn new(value: u16) -> Option<Self> {
+        if value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// The code a signed search request programs: ROM clamps a negative
+    /// request to zero; a request above [`Self::MAX`] is not programmable.
+    pub const fn from_request(requested: i16) -> Option<Self> {
+        if requested < 0 {
+            Some(Self(0))
+        } else {
+            Self::new(requested as u16)
+        }
+    }
+
+    /// The code a search candidate programs; a downward candidate wrapped
+    /// below zero programs zero. The searches keep every candidate within
+    /// [`Self::MAX`], and the average of codes is a code.
+    pub const fn programmed(candidate: u16) -> Self {
+        match Self::from_request(candidate as i16) {
+            Some(code) => code,
+            None => Self(Self::MAX),
+        }
+    }
+
+    /// The code as a number.
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+
+    /// The low byte, for `RFPLL_CAPACITOR_LOW`.
+    pub const fn low_byte(self) -> u8 {
+        self.0 as u8
+    }
+
+    /// Bit 8, for the one-bit `RFPLL_CAPACITOR_HIGH`.
+    pub const fn high_bit(self) -> u8 {
+        (self.0 >> 8) as u8
+    }
+}
+
 /// SDM bytes `phy_write_rfpll_sdm` programs, least significant first. The ROM
 /// also stores bit 27 into a fifth byte of its caller's scratch buffer, which
 /// neither `phy_write_rfpll_sdm` nor any caller reads.
@@ -238,9 +306,8 @@ impl CapWriteContinuation {
         }
     }
 
-    const fn programmed_value(self) -> u16 {
-        let value = self.value();
-        if value & 0x8000 == 0 { value } else { 0 }
+    const fn programmed_value(self) -> RfpllCapacitorCode {
+        RfpllCapacitorCode::programmed(self.value())
     }
 }
 
@@ -420,11 +487,11 @@ impl RfpllFrequencyTransition {
             },
             RfpllFrequencyStep::CapWriteLow(continuation) => RfpllFrequencyAction::WriteByte {
                 address: analog_registers::RFPLL_CAPACITOR_LOW,
-                value: continuation.programmed_value() as u8,
+                value: continuation.programmed_value().low_byte(),
             },
             RfpllFrequencyStep::CapWriteHigh(continuation) => RfpllFrequencyAction::WriteMasked {
                 field: analog_registers::RFPLL_CAPACITOR_HIGH,
-                value: (continuation.programmed_value() >> 8) as u8,
+                value: continuation.programmed_value().high_bit(),
             },
             RfpllFrequencyStep::CapDelay(_) => RfpllFrequencyAction::DelayMicros(5),
             RfpllFrequencyStep::CapStatusRead(_) => RfpllFrequencyAction::ReadMasked {
@@ -449,15 +516,24 @@ impl RfpllFrequencyTransition {
         }
     }
 
+    /// Program the next candidate, or end an upward phase at the nine-bit
+    /// bound as if its samples were exhausted.
+    fn continue_cap_search(&mut self, search: CapSearchState) {
+        if search.phase == CapSearchPhase::Up && search.candidate() > RfpllCapacitorCode::MAX {
+            self.finish_cap_phase(search);
+        } else {
+            self.step = RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(search));
+        }
+    }
+
     fn finish_cap_phase(&mut self, search: CapSearchState) {
         if search.phase == CapSearchPhase::Down {
-            self.step =
-                RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(CapSearchState {
-                    phase: CapSearchPhase::Up,
-                    phase_attempts: 0,
-                    boundaries: 0,
-                    ..search
-                }));
+            self.continue_cap_search(CapSearchState {
+                phase: CapSearchPhase::Up,
+                phase_attempts: 0,
+                boundaries: 0,
+                ..search
+            });
         } else {
             let final_cap = if search.accepted == 0 {
                 search.initial
@@ -664,7 +740,7 @@ impl RfpllFrequencyTransition {
                 },
             ) => {
                 if value == CAP_STATUS_ACCEPTED {
-                    search.sum = search.sum.wrapping_add(search.candidate());
+                    search.sum += RfpllCapacitorCode::programmed(search.candidate()).get();
                     search.accepted = search.accepted.wrapping_add(1);
                 } else if matches!(
                     (search.phase, value),
@@ -679,8 +755,7 @@ impl RfpllFrequencyTransition {
                 {
                     self.finish_cap_phase(search);
                 } else {
-                    self.step =
-                        RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(search));
+                    self.continue_cap_search(search);
                 }
                 return Ok(());
             }

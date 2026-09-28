@@ -59,6 +59,36 @@ model/API validation and independently check each configured output.
 `project publish` remains the investigation workflow requiring structural review
 scopes; an absent review is not silently replaced by model-only publication.
 
+## Words shared with ESP-HAL
+
+Several owned ranges are single fields of 32-bit words that ESP-HAL also
+writes through the upstream `esp-pacs` chain. The two chains do not share a
+lock, so a word both write at runtime would lose updates. A shared bit
+therefore has one runtime owner.
+
+| Word | ESP-HAL writes | Radio writes | Why it is safe |
+| --- | --- | --- | --- |
+| `HP_SYS_CLKRST.REF_160M_CTRL0` | Clock-tree divider and gate | Nothing; the radio takes a `PlatformClockProvider` reference | Not published here |
+| `MODEM_LPCON.CLK_CONF` `CLK_I2C_MST_EN` | Reference-counted around every regi2c access | Nothing; the radio takes a `PlatformClockProvider` reference | Not published here |
+| `MODEM_LPCON.CLK_CONF` coexistence, low-power-timer and Wi-Fi power gates | Only `CLK_I2C_MST_EN` and, in `esp_hal::init`, the Wi-Fi power gate | These gates at runtime | Current limitation: the word is still shared at runtime with ESP-HAL's `CLK_I2C_MST_EN` updates |
+| `PMU.HP_ACTIVE_HP_CK_POWER` | MPLL power when the MPLL reference count crosses zero | Front-end baseband power at runtime | PSRAM holds MPLL for the whole run, so ESP-HAL writes the word only during `esp_hal::init` |
+| `PMU.IMM_MODEM_ICG`, `PMU.IMM_SLEEP_SYSCLK` | Trigger-bit writes in `esp_hal::init` | Trigger-bit writes | Both sides write whole words; no read-modify-write |
+
+ESP-HAL writes the following owned words only inside `esp_hal::init`, which
+completes before any radio route or the radio arbiter exists. Their later
+radio read-modify-writes therefore have no concurrent ESP-HAL writer:
+
+- `MODEM_SYSCON.CLK_CONF_POWER_ST` and `MODEM_LPCON.CLK_CONF_POWER_ST`, whose
+  modem clock state maps ESP-HAL ORs in;
+- `MODEM_LPCON.WIFI_LP_CLK_CONF`, `MODEM_32K_CLK_CONF` and the Wi-Fi power
+  gate in `CLK_CONF`, set by its Wi-Fi low-power clock selection;
+- `PMU.HP_ACTIVE_ICG_MODEM` and `PMU.ANA_PERI_PWR_CTRL`;
+- `LP_AON_CLKRST.ROOT_CLK_CONF`, whose slow and fast clock selectors the
+  radio only reads.
+
+An image must not start a radio before `esp_hal::init` returns, and a change
+to ESP-HAL that writes one of these words at runtime reopens the race.
+
 ## Upstream and evidence boundaries
 
 `upstream/platform-radio-deps.svd` describes official-PAC registers reached by

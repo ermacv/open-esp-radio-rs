@@ -57,6 +57,16 @@ nor replaces this radio PAC.
 The two chains use their reviewed dependency revisions. A capability exposed
 by either PAC is not itself hardware qualification of a radio operation.
 
+Some owned ranges share 32-bit words with registers ESP-HAL writes. Shared
+bits that ESP-HAL reference-counts, the 160 MHz reference gate and the
+analog-I2C master clock gate, are not published here; the radio reaches them
+through `PlatformClockProvider`. The remaining shared words rely on ESP-HAL
+writing them only inside `esp_hal::init`, before any radio exists.
+`PMU.HP_ACTIVE_HP_CK_POWER` is the one runtime exception: ESP-HAL powers MPLL
+there, and PSRAM keeps the MPLL reference held for the whole run. The
+[shared-word list](../../../../registers/esp32s31/README.md#words-shared-with-esp-hal)
+names each word and its guarantee.
+
 ## Validation
 
 `cargo registers generate --check`, `cargo xtask check architecture` and

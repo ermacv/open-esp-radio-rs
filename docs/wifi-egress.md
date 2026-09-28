@@ -123,7 +123,7 @@ acquires its affine release. Publication rechecks the association generation
 and awake state; resleep restores the original owner and queue position.
 PS-Poll keeps its explicitly requested single-frame release, and DTIM keeps its
 group-release policy. These protocol releases remain separate from the common
-voluntary destination cursor. Awake PS frames currently use ordinary MPDU
+voluntary destination cursor. Awake PS frames use ordinary MPDU
 publication. Default selection is destination round-robin. The optional deficit
 mode below includes awake buffered heads in its candidate set; it does not
 combine buffered PS packets into aggregates.
@@ -418,11 +418,12 @@ transmitted energy or observed channel occupation.
 
 Response basic-rate selection must come from the peer/BSS contract or measurement.
 The published RTS-rate field alone does not establish ACK/BlockAck rate. The
-model's RTS/CTS option predicts an explicitly described exchange; it does not
-enable the currently unsupported hardware protection path. The production
-receipt currently accumulates the supported PPDU component, not an assumed
-complete exchange charge. `MacTxStatus::airtime_micros` remains unavailable.
-No live scheduling or contention policy consumes these estimates yet.
+model's RTS/CTS option predicts an explicitly described exchange; the MAC
+[protection policy](../crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs)
+selects the control frame each publication actually carries. The production
+receipt accumulates the PPDU component, not an assumed complete exchange
+charge. `MacTxStatus::airtime_micros` is unavailable. No live scheduling or
+contention policy consumes these estimates.
 
 `MacTxWork::estimated_exchange_micros` adds an explicitly supplied uniform
 response/protection overhead to every publication, including software retries.
@@ -458,14 +459,14 @@ batch is published, without a separate full flag. Its diagnostic stop is
 prefix ahead of that frontier, preserving order. When a
 fresh pair exceeds the current geometry limit, both owners are preserved and
 ordinary transmission remains available. This is geometry fallback under the
-current packet scheduler, not permission to bypass a future airtime grant.
+packet scheduler, not an airtime grant.
 The length snapshot reserves no DMA and does not replace peer/key/backing checks.
 
-These are planned single-publication exchange bounds. They exclude AIFS/backoff,
-CCA freezes and executor/CPU residence; they do not limit a complete retry
-transaction, enable hardware protection or acquire a multi-PPDU TXOP. A future
-integration must separately settle committed retry work and validate the applicable
-PHY/publication constraints. No live airtime fairness is enabled by these
+These are single-publication exchange bounds for a planned publication. They
+exclude AIFS/backoff, CCA freezes and executor/CPU residence; they do not
+limit a complete retry transaction, select protection or acquire a
+multi-PPDU TXOP. An integration must separately settle committed retry work
+and validate the applicable PHY/publication constraints. No live airtime fairness is enabled by these
 helpers, and no new queue or DMA ownership layer is introduced.
 
 Response timing remains an explicit assumption. The current AP advertisement
@@ -590,7 +591,7 @@ STA frame interface. That shared interface does not make the research engine
 a selectable production network adapter or establish its on-air performance.
 There is no product supervisor connecting this engine to the fused hardware
 runner, no native HIL composition and no split-core batch transport. The shared
-physical interface currently exposes Ethernet geometry; it is not a general
+physical interface exposes Ethernet geometry; it is not a general
 native-MSDU or scatter-gather contract.
 
 Check dependency boundaries with `cargo xtask check network`; CI compiles the

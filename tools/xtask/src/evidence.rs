@@ -8,9 +8,9 @@
 #[path = "../../../verification/schema/scenario-evidence.rs"]
 #[allow(
     dead_code,
-    reason = "this task reads only shard identities and source digests"
+    reason = "this task reads only shard identities, digests and claims"
 )]
-mod scenario_evidence;
+pub(crate) mod scenario_evidence;
 
 use crate::{Context, Result};
 use std::ffi::OsString;
@@ -98,12 +98,16 @@ pub fn run(
     } else {
         scenarios
     };
+    let before: Vec<(String, Option<scenario_evidence::Index>)> = selected
+        .iter()
+        .map(|name| (name.clone(), read_shard(&ctx.root.join(directory), name)))
+        .collect();
     if selected.is_empty() {
         println!("every evidence shard is current");
         return Ok(ExitCode::SUCCESS);
     }
     println!("regenerating evidence shards: {}", selected.join(", "));
-    regenerate(
+    let code = regenerate(
         ctx,
         chip,
         selected,
@@ -111,7 +115,72 @@ pub fn run(
         &resolve(&linker)?,
         &limit_mode,
         &output,
-    )
+    )?;
+    if code == ExitCode::SUCCESS {
+        for (name, old) in before {
+            let new = read_shard(&ctx.root.join(directory), &name);
+            print!("{}", summary(&name, old.as_ref(), new.as_ref()));
+        }
+    }
+    Ok(code)
+}
+
+/// Repository files that differ between `revision` and the worktree.
+fn changed_files(ctx: &Context, revision: &str) -> Result<Vec<PathBuf>> {
+    let output = crate::process::capture(ctx.command("git").args([
+        "diff",
+        "--name-only",
+        "-z",
+        revision,
+        "--",
+    ]))?;
+    let untracked = crate::process::capture(ctx.command("git").args([
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+    ]))?;
+    Ok(output
+        .stdout
+        .split(|b| *b == 0)
+        .chain(untracked.stdout.split(|b| *b == 0))
+        .filter(|path| !path.is_empty())
+        .map(|path| PathBuf::from(String::from_utf8_lossy(path).into_owned()))
+        .collect())
+}
+
+/// Whether `shard` records one of `changed`: a recorded file itself, or a
+/// file below a recorded directory.
+fn records_any(shard: &scenario_evidence::Index, changed: &[PathBuf]) -> bool {
+    shard.sources.iter().any(|source| {
+        changed
+            .iter()
+            .any(|path| path == &source.path || path.starts_with(&source.path))
+    })
+}
+
+/// The committed shard `name` in `directory`, when it parses.
+fn read_shard(directory: &Path, name: &str) -> Option<scenario_evidence::Index> {
+    let file = format!("{name}.{}", scenario_evidence::SHARD_EXTENSION);
+    std::fs::read_to_string(directory.join(file))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+}
+
+/// What changed between two versions of shard `name`: its claims first,
+/// then the recorded sources.
+fn summary(
+    name: &str,
+    old: Option<&scenario_evidence::Index>,
+    new: Option<&scenario_evidence::Index>,
+) -> String {
+    match (old, new) {
+        (Some(old), Some(new)) => {
+            crate::evidence_diff::render(name, &crate::evidence_diff::differences(old, new))
+        }
+        (None, Some(_)) => format!("{name}:\n  new shard\n"),
+        (_, None) => format!("{name}:\n  no readable shard\n"),
+    }
 }
 
 /// Rerun every Blobray scenario shard of `chip` into `output` and fail
@@ -120,6 +189,8 @@ pub fn run(
 pub fn check(
     ctx: &Context,
     chip: &str,
+    scenarios: Vec<String>,
+    changed_since: Option<String>,
     linker: PathBuf,
     limit_mode: String,
     output: PathBuf,
@@ -138,6 +209,36 @@ pub fn check(
         }
     }
     committed.sort();
+    // Named scenarios narrow the check; each must have a committed shard.
+    if !scenarios.is_empty() {
+        if let Some(unknown) = scenarios.iter().find(|s| !committed.contains(s)) {
+            return Err(
+                format!("{unknown} has no committed Blobray evidence shard for {chip}").into(),
+            );
+        }
+        committed.retain(|name| scenarios.contains(name));
+    }
+    if let Some(revision) = &changed_since {
+        let changed = changed_files(ctx, revision)?;
+        let (touched, skipped): (Vec<String>, Vec<String>) =
+            committed
+                .into_iter()
+                .partition(|name| match read_shard(&directory, name) {
+                    // An unreadable shard is checked: skipping fails closed.
+                    None => true,
+                    Some(shard) => records_any(&shard, &changed),
+                });
+        for name in &skipped {
+            println!(
+                "{name}: skipped, no recorded source changed in {revision}..HEAD or the worktree"
+            );
+        }
+        committed = touched;
+        if committed.is_empty() {
+            println!("every evidence shard skipped: no recorded source changed");
+            return Ok(ExitCode::SUCCESS);
+        }
+    }
     // Per chip, so checks of different chips keep their reruns apart.
     let rerun = ctx.root.join(&output).join(CHECK_INDEX).join(chip);
     if rerun.exists() {
@@ -159,16 +260,12 @@ pub fn check(
     let differing: Vec<&String> = committed
         .iter()
         .filter(|name| {
-            let file = format!("{name}.{}", scenario_evidence::SHARD_EXTENSION);
-            let read = |dir: &Path| {
-                std::fs::read_to_string(dir.join(&file))
-                    .ok()
-                    .and_then(|text| serde_json::from_str::<scenario_evidence::Index>(&text).ok())
-            };
-            match (read(&directory), read(&rerun)) {
-                (Some(committed), Some(rerun)) => committed != rerun,
-                _ => true,
+            let (old, new) = (read_shard(&directory, name), read_shard(&rerun, name));
+            let differs = !matches!((&old, &new), (Some(a), Some(b)) if a == b);
+            if differs {
+                eprint!("{}", summary(name, old.as_ref(), new.as_ref()));
             }
+            differs
         })
         .collect();
     if differing.is_empty() {

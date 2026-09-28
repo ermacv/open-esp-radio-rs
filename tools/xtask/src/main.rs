@@ -75,12 +75,19 @@ enum Task {
         /// Ignored output root of the scenario runs.
         #[arg(long, default_value = "target/blobray-research/evidence")]
         output: std::path::PathBuf,
-        /// Rerun every scenario into the output root and fail unless each
-        /// committed shard equals its rerun, without rewriting any: catches
-        /// probe data edits the source digests cannot see.
+        /// Rerun the named scenarios, or every one, into the output root and
+        /// fail unless each committed shard equals its rerun, without
+        /// rewriting any: catches probe data edits the source digests cannot
+        /// see. A differing shard reports its changed claims and sources.
         #[arg(long)]
         check: bool,
-        /// Scenarios to rewrite; every stale shard when empty.
+        /// With `--check`, rerun only shards that record a file changed
+        /// since this revision, in the worktree or untracked; a shard that
+        /// does not parse is always rerun.
+        #[arg(long, requires = "check")]
+        changed_since: Option<String>,
+        /// Scenarios to rewrite, or with `--check` to rerun; every stale shard,
+        /// or with `--check` every shard, when empty.
         scenarios: Vec<String>,
     },
     VendorProvenance {
@@ -255,10 +262,19 @@ fn run() -> Result<std::process::ExitCode> {
             limit_mode,
             output,
             check,
+            changed_since,
             scenarios,
         } => {
             if check {
-                return oer_xtask::evidence::check(&ctx, &chip, linker, limit_mode, output);
+                return oer_xtask::evidence::check(
+                    &ctx,
+                    &chip,
+                    scenarios,
+                    changed_since,
+                    linker,
+                    limit_mode,
+                    output,
+                );
             }
             return oer_xtask::evidence::run(&ctx, &chip, scenarios, linker, limit_mode, output);
         }

@@ -86,3 +86,36 @@ fn a_shard_of_the_previous_schema_is_rejected() {
         "observed":[],"unprojected":[]}"#;
     assert!(serde_json::from_str::<scenario_evidence::Index>(text).is_err());
 }
+
+#[test]
+fn a_shard_records_a_changed_file_or_one_below_a_recorded_directory() {
+    let shard = scenario_evidence::Index {
+        schema: scenario_evidence::SCHEMA,
+        command: scenario_evidence::COMMAND.into(),
+        target: "esp32s31".into(),
+        scenario: "i2c".into(),
+        inputs: Default::default(),
+        sources: ["crates/phy/src/lib.rs", "verification/schema"]
+            .map(|path| scenario_evidence::SourceDigest {
+                path: PathBuf::from(path),
+                sha256: String::new(),
+            })
+            .to_vec(),
+        dependence: scenario_evidence::Dependence::whole_closure("test"),
+        entries: vec![],
+        untriaged: vec![],
+        functions: vec![],
+        unobserved: vec![],
+        observed: vec![],
+        unprojected: vec![],
+    };
+    let records =
+        |paths: &[&str]| records_any(&shard, &paths.iter().map(PathBuf::from).collect::<Vec<_>>());
+    assert!(records(&["crates/phy/src/lib.rs"]));
+    assert!(records(&[
+        "hil/README.md",
+        "verification/schema/scenario-evidence.rs"
+    ]));
+    assert!(!records(&["crates/phy/src/lib.rs.orig", "hil/README.md"]));
+    assert!(!records(&[]));
+}

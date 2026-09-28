@@ -13,6 +13,7 @@ pub mod chips;
 pub mod compare_images;
 pub mod doc;
 pub mod evidence;
+pub mod evidence_diff;
 pub mod firmware;
 pub mod firmware_catalog;
 pub mod graph;

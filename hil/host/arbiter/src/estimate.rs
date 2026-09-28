@@ -145,6 +145,7 @@ mod tests {
             charged_ms: 0,
             balance_after_ms: 0,
             reason: None,
+            preempted: None,
             scenarios: Vec::new(),
             unknown: Default::default(),
         }

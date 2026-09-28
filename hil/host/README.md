@@ -219,7 +219,11 @@ continues its remaining scenarios in the same run bundle after flashing its
 image again. A single scenario and a `lease` command run to their end. Every
 lease ends at one hour: it is stopped with `SIGTERM`, which runs the ordinary
 cancellation and fixture cleanup, a `lease` stopped this way exits with status
-124, and `SIGKILL` follows five minutes later. Estimates from earlier leases of
+124, and `SIGKILL` follows five minutes later. `cargo hil preempt ID --reason
+TEXT` stops another owner's lease the same way at once: its owner is charged
+no longer from that moment, the holder prints who preempted it and why when it
+releases, the history records it as `preempted-on-request`, and the user is
+notified. Estimates from earlier leases of
 the same work only predict when a waiting request starts. A top-level run
 given `--record-evidence` records its evidence shards after its lease is
 released; otherwise `cargo hil evidence record` does. `cargo hil doctor`

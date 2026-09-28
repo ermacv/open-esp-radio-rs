@@ -32,6 +32,10 @@ journal.
   `SIGKILL` after the shutdown grace. `cargo hil lease` stops its command at
   the same limit. Nothing is requested in advance; the retired budget options
   and variables are refused.
+- `Arbiter::preempt` (`cargo hil preempt ID --reason TEXT`) marks a holder
+  preempted, which stops its charge in the next settlement, then signals its
+  verified process `SIGTERM` and `SIGKILL` after the grace. The holder's
+  release, or the reaping of a killed holder, records the preemption.
 - The runner's fixture lock and the firmware flash command take the lease before
   their device and fixture `flock`s, which remain the final exclusion.
 
@@ -53,7 +57,7 @@ Every change happens under `arbiter.lock`:
 | File | Content |
 | --- | --- |
 | `state.json` | Schema 3: queue tickets and holders with their claims, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Schema 2 is read with each budget as the estimate and every balance zero; schema 1 (one whole-stand holder) is migrated once its holder and waiting processes have ended; newer requests wait until then |
-| `history.jsonl` | Completed leases: owner, work, scenarios, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit` or `abandoned` (older records also `yielded`, `preempted`, `budget-exceeded`) |
+| `history.jsonl` | Completed leases: owner, work, scenarios, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit`, `preempted-on-request` (with who preempted it and why) or `abandoned` (older records also `yielded`, `preempted`, `budget-exceeded`) |
 | `board.jsonl` | Flashes and startup-artifact uploads and writes, with owner, checkout and board MAC |
 | `devices.json` | Schema 1: board MAC to chip and name; boards have no fixed role |
 

@@ -26,6 +26,8 @@ pub enum LeaseOutcome {
     YieldedToBalance,
     /// Terminated at the hard limit every lease has.
     HardLimit,
+    /// Stopped by `cargo hil preempt`; the record names who and why.
+    PreemptedOnRequest,
 }
 
 /// Why a lease was granted: its owner's balance against the other owners
@@ -58,6 +60,9 @@ pub struct LeaseRecord {
     pub balance_after_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<GrantReason>,
+    /// Who stopped the lease with `cargo hil preempt`, and why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preempted: Option<crate::preempt::Preemption>,
     /// HIL scenarios the lease executed, when its holder named them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenarios: Vec<String>,
@@ -144,6 +149,7 @@ mod tests {
             charged_ms: 60_000,
             balance_after_ms: -60_000,
             reason: None,
+            preempted: None,
             scenarios: Vec::new(),
             unknown: Default::default(),
         };

@@ -151,6 +151,7 @@ mod tests {
             token: "t".into(),
             granted_unix: 1000,
             reason: None,
+            preempted: None,
             unknown: Default::default(),
         }
     }

@@ -69,6 +69,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
         Some("peer") => return crate::hil_board::peer(options.owner(ctx), &args[1..]),
+        Some("preempt") => return preempt(&options.owner(ctx), &args[1..]),
         Some("devices") => return devices(ctx, &options, &args[1..]),
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
         Some("flash") => {
@@ -185,6 +186,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
   cargo hil board console BOARD [--for 10s] [--until TEXT]       the console without a reset, under a lease
   cargo hil peer send BOARD LINE... [--for 5s]                   one peer text-protocol command and its answer
+  cargo hil preempt ID --reason TEXT   stop another owner's lease: charged no longer, SIGTERM with
+                                      cleanup, SIGKILL after 5m; the history and the owner see why
   cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1
   cargo hil lease [OPTIONS] -- CMD    run CMD under one lease; nested cargo hil joins it
       --board NAME|MAC                boards CMD uses (repeatable)
@@ -351,6 +354,38 @@ impl LeaseOptions {
     fn environment(&self, ctx: &Context) -> Vec<(&'static str, String)> {
         vec![(oer_hil_arbiter::OWNER_ENV, self.owner(ctx))]
     }
+}
+
+/// Time a preempted holder gets for cancellation and cleanup, as at the hard
+/// limit.
+const PREEMPT_GRACE: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// `cargo hil preempt ID --reason TEXT`.
+fn preempt(owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
+    const USAGE: &str = "usage: cargo hil preempt ID --reason TEXT";
+    let args = args
+        .iter()
+        .map(|arg| arg.to_str().ok_or("arguments must be UTF-8"))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let (id, reason) = match args.as_slice() {
+        [id, "--reason", reason] | ["--reason", reason, id] => (*id, *reason),
+        _ => return Err(USAGE.into()),
+    };
+    let id = id
+        .trim_start_matches('#')
+        .parse::<u64>()
+        .map_err(|_| format!("{id} is not a lease number\n{USAGE}"))?;
+    let end = oer_hil_arbiter::Arbiter::open()?.preempt(id, owner, reason, PREEMPT_GRACE)?;
+    println!(
+        "lease #{id} {}",
+        match end {
+            oer_hil_arbiter::preempt::PreemptEnd::Released => "released after SIGTERM",
+            oer_hil_arbiter::preempt::PreemptEnd::Killed => {
+                "did not release within the grace and was killed"
+            }
+        }
+    );
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// Print the stand's holder, queue, board state and recent leases.

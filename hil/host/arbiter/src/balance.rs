@@ -65,7 +65,12 @@ pub(crate) fn settle(state: &mut State, now_ms: u64) {
         balance.balance_ms += elapsed;
         balance.last_active_unix_ms = now_ms;
     }
-    for holder in &state.holders {
+    // A preempted lease is charged only up to its preemption.
+    for holder in state
+        .holders
+        .iter()
+        .filter(|holder| holder.preempted.is_none())
+    {
         let balance = state
             .balances
             .entry(holder.ticket.owner.clone())
@@ -142,6 +147,7 @@ mod tests {
             token: String::from("t"),
             granted_unix: 0,
             reason: None,
+            preempted: None,
             unknown: Default::default(),
         }
     }

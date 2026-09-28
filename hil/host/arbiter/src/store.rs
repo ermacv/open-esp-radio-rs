@@ -166,12 +166,20 @@ impl Arbiter {
                     work: holder.ticket.work.clone(),
                     granted_unix: holder.granted_unix,
                     released_unix: crate::unix_now(),
-                    outcome: LeaseOutcome::Abandoned,
-                    charged_ms: crate::unix_now()
-                        .saturating_sub(holder.granted_unix)
-                        .saturating_mul(1000),
+                    outcome: if holder.preempted.is_some() {
+                        LeaseOutcome::PreemptedOnRequest
+                    } else {
+                        LeaseOutcome::Abandoned
+                    },
+                    charged_ms: crate::preempt::charged_ms(
+                        &holder,
+                        crate::unix_now()
+                            .saturating_sub(holder.granted_unix)
+                            .saturating_mul(1000),
+                    ),
                     balance_after_ms: crate::balance::of(&state.balances, &holder.ticket.owner),
                     reason: holder.reason.clone(),
+                    preempted: holder.preempted.clone(),
                     scenarios: Vec::new(),
                     unknown: Default::default(),
                 },

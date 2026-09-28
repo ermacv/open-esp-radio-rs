@@ -194,6 +194,10 @@ pub(crate) struct Holder {
     /// The balances the grant was decided by.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) reason: Option<crate::history::GrantReason>,
+    /// Set once `cargo hil preempt` stopped the lease; it is charged no
+    /// longer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) preempted: Option<crate::preempt::Preemption>,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub(crate) unknown: crate::Unknown,

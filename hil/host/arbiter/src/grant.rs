@@ -313,6 +313,7 @@ impl Arbiter {
                         balance_ms: balance,
                         over,
                     }),
+                    preempted: None,
                     unknown: Default::default(),
                 });
                 balance::normalize(state, crate::unix_now_ms());
@@ -599,6 +600,14 @@ impl Drop for Grant {
                 return Ok(None);
             };
             let holder = state.holders.remove(index);
+            if let Some(preemption) = &holder.preempted {
+                eprintln!(
+                    "hil-arbiter: lease #{} was preempted by {}: {}",
+                    held.id, preemption.by, preemption.reason
+                );
+            }
+            let charged_ms =
+                crate::preempt::charged_ms(&holder, held.held_since.elapsed().as_millis() as u64);
             history::append(
                 &history_path,
                 &LeaseRecord {
@@ -608,9 +617,14 @@ impl Drop for Grant {
                     work: holder.ticket.work,
                     granted_unix: holder.granted_unix,
                     released_unix: crate::unix_now(),
-                    outcome,
-                    charged_ms: held.held_since.elapsed().as_millis() as u64,
+                    outcome: if holder.preempted.is_some() {
+                        LeaseOutcome::PreemptedOnRequest
+                    } else {
+                        outcome
+                    },
+                    charged_ms,
                     reason: holder.reason,
+                    preempted: holder.preempted,
                     scenarios: held.scenarios.clone(),
                     unknown: Default::default(),
                 },

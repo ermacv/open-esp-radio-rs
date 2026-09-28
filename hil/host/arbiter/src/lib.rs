@@ -23,6 +23,7 @@ mod grant;
 mod history;
 pub mod maintenance;
 mod notify;
+pub mod preempt;
 mod process;
 mod queue;
 pub mod spectrum;

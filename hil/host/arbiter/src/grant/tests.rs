@@ -55,6 +55,7 @@ fn hold(arbiter: &Arbiter, ticket: Ticket) {
                 token: "other".into(),
                 granted_unix: crate::unix_now(),
                 reason: None,
+                preempted: None,
                 unknown: Default::default(),
             });
             Ok(())

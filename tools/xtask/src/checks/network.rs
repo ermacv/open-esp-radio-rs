@@ -89,14 +89,15 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             .is_some_and(|source| source.repr.starts_with("registry+"));
         let forbidden = match boundary {
             Boundary::Neutral => true,
+            // The owned adapter may declare the portable `oer-memory`
+            // handoff contract, whose detached DMA slots it adopts for
+            // zero-copy RX, but never a chip or hardware owner.
             Boundary::Owned => {
                 name.starts_with("oer-esp32s31")
-                    || name == "oer-memory"
                     || (name == "embassy-net-driver" && released)
                     || dependency.path.as_ref().is_some_and(|path| {
-                        ["crates/hardware", "crates/memory"]
-                            .iter()
-                            .any(|owner| path.as_std_path().starts_with(repository.join(owner)))
+                        path.as_std_path()
+                            .starts_with(repository.join("crates/hardware"))
                     })
             }
             Boundary::Research | Boundary::Datapath => stack(name),
@@ -158,19 +159,10 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
                 &|p| p.name == "embassy-net-driver" && official_registry(p),
                 "owned adapter acquired the released driver contract",
             )?;
+            // Reachability also covers a chip owner behind `oer-memory`.
             reject(
                 &|p| physical(p, repository),
                 "owned adapter acquired physical radio ownership",
-            )?;
-            reject(
-                &|p| {
-                    paths[&p.id].len() == 2
-                        && (p.name == "oer-memory"
-                            || p.manifest_path
-                                .as_std_path()
-                                .starts_with(repository.join("crates/memory")))
-                },
-                "owned adapter acquired a direct physical-memory dependency",
             )?;
         }
         Boundary::Research | Boundary::Datapath => {

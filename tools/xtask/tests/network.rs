@@ -75,6 +75,37 @@ fn normal_edge_stays_forbidden_when_also_dev() {
     assert!(audit(&f, f.metadata(), Boundary::Owned).is_err());
 }
 #[test]
+fn owned_adapter_may_declare_the_portable_memory_contract() {
+    let f = Fixture::new();
+    f.package("crates/memory", "oer-memory", "");
+    f.package(
+        "adapter",
+        "network-adapter-fixture",
+        "[dependencies]\noer-memory = { path = \"../crates/memory\" }\n",
+    );
+    audit(&f, f.metadata(), Boundary::Owned).unwrap();
+}
+#[test]
+fn memory_contract_cannot_carry_chip_ownership_into_the_owned_adapter() {
+    let f = Fixture::new();
+    f.package(
+        "crates/memory",
+        "oer-memory",
+        "[dependencies]\nregisters = { package = \"device-registers\", path = \"../hardware/test-radio\" }\n",
+    );
+    f.package(
+        "adapter",
+        "network-adapter-fixture",
+        "[dependencies]\noer-memory = { path = \"../crates/memory\" }\n",
+    );
+    assert!(
+        audit(&f, f.metadata(), Boundary::Owned)
+            .unwrap_err()
+            .to_string()
+            .contains("network-adapter-fixture -> oer-memory -> device-registers")
+    );
+}
+#[test]
 fn unreachable_workspace_member_is_not_a_production_dependency() {
     let f = Fixture::new();
     audit(&f, f.metadata(), Boundary::Owned).unwrap();

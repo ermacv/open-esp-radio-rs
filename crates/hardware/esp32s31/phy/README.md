@@ -16,6 +16,14 @@ the caller must provide independent termination. Default builds omit its code.
 See the [HIL checkpoint contract](../../../../hil/targets/esp32s31/README.md)
 for the exact injected boundaries and evidence limits.
 
+The opt-in `trace` feature records the shared domain's lifecycle as
+[PHY trace](../../radio/trace/README.md) events: registration, the periodic
+tracking tick, RF close and wake, client changes, committed temperature
+references and Wi-Fi channel selection. A poison also freezes the trace and
+captures a snapshot that survives the following reset; its PBus and
+analog-I2C sample runs only where the poisoning operation held the PHY clock.
+Without the feature, the trace points and the snapshot compile to nothing.
+
 ## Terminology and phases
 
 | Term | Meaning in this module |

@@ -141,6 +141,7 @@ mod domain;
 pub use domain::{PhyDomainRegisterFailure, PhyDomainRegistered, PhyRegisterConfig};
 
 mod radio_lifecycle;
+mod trace;
 pub(crate) use radio_lifecycle::PhyRfCloseTemperatureFailure;
 #[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub(crate) use radio_lifecycle::reset_wake_i2c_master;

@@ -17,9 +17,13 @@ lifecycle-fault-injection = []
 rx-gain-hot-sram = []
 # Retain value-only RF measurements in registration and role start reports.
 registration-diagnostics = []
+# Record the PHY trace points and the poison snapshot into `oer-trace`.
+trace = ["oer-trace/record"]
 
 [dependencies]
 oer-radio-analog = { path = "../../radio/analog" }
+oer-phy-trace = { path = "../../radio/trace" }
+oer-trace = { path = "../../../trace" }
 oer-esp32s31-hal = { path = "../hal" }
 
 [dev-dependencies]

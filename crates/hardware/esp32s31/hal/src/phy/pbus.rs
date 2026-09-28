@@ -104,6 +104,51 @@ pub fn read_result(registers: &mut impl SharedPhyAccess, selector: u8, path: u8)
     registers.read_pbus_result(selector, path)
 }
 
+/// The PBus and analog-I2C host state a post-mortem records.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PhyBusObservation {
+    pub pbus_busy: bool,
+    pub analog_i2c_busy: [bool; 2],
+    /// The packed results of [`read_result`], selectors 0 to 4 on path 1
+    /// and on the other path, then selector 5.
+    pub pbus_results: [u16; 11],
+}
+
+/// Sample the PBus busy bit, both analog-I2C host busy bits and every PBus
+/// result window once, without publishing or clearing anything.
+///
+/// The caller must know that the PHY clock and power domain are on: a read
+/// of a gated peripheral may not return.
+#[cfg(target_arch = "riscv32")]
+pub fn observe_bus(registers: &mut impl SharedPhyAccess) -> PhyBusObservation {
+    let registers = phy_pac_mut(registers);
+    let mut pbus_results = [0; 11];
+    let windows = [
+        (0, 1),
+        (0, 0),
+        (1, 1),
+        (1, 0),
+        (2, 1),
+        (2, 0),
+        (3, 1),
+        (3, 0),
+        (4, 1),
+        (4, 0),
+        (5, 0),
+    ];
+    for (result, (selector, path)) in pbus_results.iter_mut().zip(windows) {
+        *result = registers.read_pbus_result(selector, path).unwrap_or(0);
+    }
+    PhyBusObservation {
+        pbus_busy: registers.pbus_is_busy(),
+        analog_i2c_busy: [
+            registers.phy_i2c_master_is_busy(oer_esp32s31_pac::PhyI2cHost::Host0),
+            registers.phy_i2c_master_is_busy(oer_esp32s31_pac::PhyI2cHost::Host1),
+        ],
+        pbus_results,
+    }
+}
+
 /// Enable or disable both recovered RX clock bits as one indivisible pair.
 ///
 /// Basis: complete rev0 ROM `phy_set_rxclk_en` at `0x2f827cf6`, size

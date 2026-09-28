@@ -1171,7 +1171,9 @@ name = "oer-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+ "oer-phy-trace",
  "oer-radio-analog",
+ "oer-trace",
 ]
 
 [[package]]
@@ -1372,6 +1374,13 @@ version = "0.1.0"
 [[package]]
 name = "oer-network-interface"
 version = "0.1.0"
+
+[[package]]
+name = "oer-phy-trace"
+version = "0.1.0"
+dependencies = [
+ "oer-trace",
+]
 
 [[package]]
 name = "oer-probe-codegen"

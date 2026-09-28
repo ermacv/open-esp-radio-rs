@@ -390,10 +390,12 @@ pub fn acquire_client(
     match clients.acquire(client, clock) {
         Ok(outcome) => match outcome.into_owner() {
             Ok(clients) => {
+                emit_client_change(client, true, clients.snapshot());
                 phy.slot = Slot::Registered(PhyDomain::new(registered, clients));
                 Ok(ConcurrentAcquire::Settled)
             }
             Err(pending) => {
+                emit_client_change(client, true, pending.snapshot());
                 phy.slot = Slot::Pending {
                     registered,
                     pending,
@@ -427,7 +429,9 @@ pub fn release_client(
     match clients.release(client) {
         Ok(outcome) => {
             let is_last = outcome.is_last();
-            phy.slot = Slot::Registered(PhyDomain::new(registered, outcome.into_owner()));
+            let clients = outcome.into_owner();
+            emit_client_change(client, false, clients.snapshot());
+            phy.slot = Slot::Registered(PhyDomain::new(registered, clients));
             Ok(is_last)
         }
         Err(failure) => {
@@ -436,6 +440,14 @@ pub fn release_client(
             Err(ConcurrentPhyError::Release(error))
         }
     }
+}
+
+fn emit_client_change(client: PhyModemClient, acquired: bool, active: PhyClientSnapshot) {
+    oer_trace::emit(&oer_phy_trace::ClientChange {
+        client: crate::trace::client(client),
+        acquired,
+        active: crate::trace::clients(active),
+    });
 }
 
 /// Run one periodic tracking evaluation. Returns whether tracking is now due.

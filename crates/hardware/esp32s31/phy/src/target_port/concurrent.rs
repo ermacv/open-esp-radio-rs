@@ -14,6 +14,10 @@ use crate::{
 use oer_esp32s31_hal::shared_radio::{
     ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
 };
+use oer_phy_trace::{
+    ChannelResult, PoisonedBy, Registration, RfLifecycle, RfOperation, RfResult, TrackingTick,
+    WifiChannel,
+};
 
 /// Outputs of the shared domain's registration.
 #[must_use = "the registration cache and outcome describe the new epoch"]
@@ -149,6 +153,43 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
+    let result =
+        register_concurrent_phy_untraced::<P, D, O>(lease, platform, clocks, config, observer)
+            .await;
+    oer_trace::emit(&match &result {
+        Ok(registration) => Registration::Calibrated(crate::trace::calibration_path(
+            registration.outcome.calibration_path,
+        )),
+        Err(ConcurrentPhyRegisterFailure::Rejected(error)) => {
+            Registration::Refused(crate::trace::refusal(*error))
+        }
+        Err(ConcurrentPhyRegisterFailure::Failed { failure, .. }) => {
+            Registration::Failed(trace::register_fault(&failure.error()))
+        }
+        Err(ConcurrentPhyRegisterFailure::CalibrationClock { registration, .. }) => {
+            Registration::Calibrated(crate::trace::calibration_path(
+                registration.outcome.calibration_path,
+            ))
+        }
+    });
+    result
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "fail-stop error retains the allocation-free PHY transition"
+)]
+async fn register_concurrent_phy_untraced<P, D, O>(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    platform: &mut P,
+    clocks: &mut impl PlatformClockProvider,
+    config: PhyRegisterConfig,
+    observer: O,
+) -> Result<ConcurrentPhyRegistration, ConcurrentPhyRegisterFailure>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
     match lease.attachment_mut().slot_mut() {
         Slot::Empty => {}
         Slot::Poisoned => {
@@ -165,6 +206,7 @@ where
     enable_phy_clocks(lease, clocks).map_err(|error| {
         ConcurrentPhyRegisterFailure::Rejected(ConcurrentPhyError::Clock(error))
     })?;
+    oer_trace::emit(&Registration::Started);
     let (mut registers, phy) = lease.phy_hal_with_attachment();
     match PhyDomain::register::<P, _, D, O>(platform, &mut registers, config, observer).await {
         Ok(registered) => {
@@ -219,6 +261,19 @@ pub async fn close_concurrent_rf<P, D>(
 where
     D: PhyAsyncDelay,
 {
+    let result = close_concurrent_rf_untraced::<P, D>(lease, platform, clocks).await;
+    emit_rf(RfOperation::Close, &result);
+    result
+}
+
+async fn close_concurrent_rf_untraced<P, D>(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    platform: &mut P,
+    clocks: &mut impl PlatformClockProvider,
+) -> Result<(), ConcurrentRfError>
+where
+    D: PhyAsyncDelay,
+{
     let mut domain = lease
         .attachment_mut()
         .idle_domain()
@@ -260,6 +315,14 @@ where
             Err(ConcurrentRfError::Recoverable(error))
         }
         Err(PhyRfCloseTemperatureFailure::HardwareAmbiguous(error)) => {
+            trace::record_poison(
+                PoisonedBy::RfClose,
+                trace::port_fault(error),
+                oer_phy_trace::Slot::Registered,
+                domain.client_snapshot(),
+                domain.phy_state(),
+                &mut registers,
+            );
             *phy.slot_mut() = Slot::Poisoned;
             Err(ConcurrentRfError::Failed(error))
         }
@@ -292,6 +355,18 @@ pub async fn wake_concurrent_rf<D>(
 where
     D: PhyAsyncDelay,
 {
+    let result = wake_concurrent_rf_untraced::<D>(lease, clocks).await;
+    emit_rf(RfOperation::Wake, &result);
+    result
+}
+
+async fn wake_concurrent_rf_untraced<D>(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    clocks: &mut impl PlatformClockProvider,
+) -> Result<(), ConcurrentRfError>
+where
+    D: PhyAsyncDelay,
+{
     let domain = lease
         .attachment_mut()
         .closed_domain()
@@ -316,6 +391,14 @@ where
     if let Err(error) =
         radio_lifecycle::execute_rf_wake_with_hal::<D>(&mut registers, domain.phy_state()).await
     {
+        trace::record_poison(
+            PoisonedBy::RfWake,
+            trace::port_fault(error),
+            oer_phy_trace::Slot::RfClosed,
+            domain.client_snapshot(),
+            domain.phy_state(),
+            &mut registers,
+        );
         *phy.slot_mut() = Slot::Poisoned;
         return Err(ConcurrentRfError::Failed(error));
     }
@@ -383,14 +466,22 @@ where
             ));
         }
     };
+    let clients_before = pending.snapshot();
     let mut tracking = pending.begin_tracking(registered.tracking_policy());
 
     let (mut registers, phy, mut grant) = lease.phy_hal_with_attachment_and_grant();
     if !tracking.describes(&registers) {
+        let error = TargetPhyParamTrackingError::EpochMismatch;
+        trace::record_poison(
+            PoisonedBy::Tracking,
+            trace::tracking_fault(&error),
+            oer_phy_trace::Slot::Pending,
+            clients_before,
+            registered.target_state_mut(),
+            &mut registers,
+        );
         *phy.slot_mut() = Slot::Poisoned;
-        return Err(ConcurrentPhyTrackingError::Failed(
-            TargetPhyParamTrackingError::EpochMismatch,
-        ));
+        return Err(ConcurrentPhyTrackingError::Failed(error));
     }
     let result = {
         let state = registered.target_state_mut();
@@ -418,6 +509,14 @@ where
     let outcome = match result {
         Ok(outcome) => outcome,
         Err(error) => {
+            trace::record_poison(
+                PoisonedBy::Tracking,
+                trace::tracking_fault(&error),
+                oer_phy_trace::Slot::Pending,
+                clients_before,
+                registered.target_state_mut(),
+                &mut registers,
+            );
             *phy.slot_mut() = Slot::Poisoned;
             return Err(ConcurrentPhyTrackingError::Failed(error));
         }
@@ -428,10 +527,17 @@ where
             Ok(outcome)
         }
         Err(_) => {
+            let error = TargetPhyParamTrackingError::MissingCompletedOwner;
+            trace::record_poison(
+                PoisonedBy::Tracking,
+                trace::tracking_fault(&error),
+                oer_phy_trace::Slot::Pending,
+                clients_before,
+                registered.target_state_mut(),
+                &mut registers,
+            );
             *phy.slot_mut() = Slot::Poisoned;
-            Err(ConcurrentPhyTrackingError::Failed(
-                TargetPhyParamTrackingError::MissingCompletedOwner,
-            ))
+            Err(ConcurrentPhyTrackingError::Failed(error))
         }
     }
 }
@@ -471,6 +577,42 @@ pub enum ConcurrentTrackingTick {
 /// cancellation then leaves hardware partially updated and requires reset.
 // CAPABILITY: phy-calibration-state-and-tracking-periodic-tracking-service, whole-radio-active-operation-power-saving-and-shutdown-shared-phy-tracking, phy-protocol-consumer-periodic-parameter-calibration-tracking-wifi, phy-protocol-consumer-periodic-parameter-calibration-tracking-ieee802154, bluetooth-idle-phy-maintenance, bluetooth-periodic-phy-maintenance
 pub async fn track_concurrent_phy<P, D, O>(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    platform: &mut P,
+    clock: &mut impl PhyPllTrackClock,
+    observer: O,
+) -> Result<ConcurrentTrackingTick, ConcurrentPhyTrackingError>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let result = track_concurrent_phy_untraced::<P, D, O>(lease, platform, clock, observer).await;
+    oer_trace::emit(&match &result {
+        Ok(ConcurrentTrackingTick::NotDue) => TrackingTick::NotDue,
+        Ok(ConcurrentTrackingTick::Tracked(outcome)) => {
+            TrackingTick::Tracked(crate::trace::progress(outcome))
+        }
+        Ok(ConcurrentTrackingTick::Unavailable(error)) => {
+            TrackingTick::Unavailable(crate::trace::refusal(*error))
+        }
+        Ok(ConcurrentTrackingTick::AwaitingQuiescence) => TrackingTick::AwaitingQuiescence,
+        Err(ConcurrentPhyTrackingError::Rejected(error)) => {
+            TrackingTick::Refused(crate::trace::refusal(*error))
+        }
+        Err(ConcurrentPhyTrackingError::Failed(error)) => {
+            TrackingTick::Failed(trace::tracking_fault(error))
+        }
+    });
+    if let Ok(ConcurrentTrackingTick::Tracked(outcome)) = &result
+        && crate::trace::committed_reference(outcome)
+        && let Ok(state) = lease.attachment().phy_state()
+    {
+        oer_trace::emit(&crate::trace::temperatures(state));
+    }
+    result
+}
+
+async fn track_concurrent_phy_untraced<P, D, O>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
     clock: &mut impl PhyPllTrackClock,
@@ -555,10 +697,15 @@ pub async fn select_concurrent_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
     channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
     observer: &mut O,
 ) -> Result<(), ConcurrentWifiChannelError> {
-    let state = wifi_channel_state(phy, channel)?;
-    select_phy_channel_with_hal::<D, _, _>(state, channel_or_frequency, cbw, channel, observer)
-        .await
-        .map_err(ConcurrentWifiChannelError::Failed)
+    let result = async {
+        let state = wifi_channel_state(phy, channel)?;
+        select_phy_channel_with_hal::<D, _, _>(state, channel_or_frequency, cbw, channel, observer)
+            .await
+            .map_err(ConcurrentWifiChannelError::Failed)
+    }
+    .await;
+    emit_wifi_channel(channel_or_frequency, cbw, &result);
+    result
 }
 
 /// Stop the Wi-Fi MAC, retune the shared domain and restart the MAC, as the
@@ -579,14 +726,58 @@ pub async fn switch_concurrent_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
     channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
     observer: &mut O,
 ) -> Result<(), ConcurrentWifiChannelError> {
-    let state = wifi_channel_state(phy, channel)?;
-    switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
-        state,
+    let result = async {
+        let state = wifi_channel_state(phy, channel)?;
+        switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
+            state,
+            channel_or_frequency,
+            cbw,
+            channel,
+            observer,
+        )
+        .await
+        .map_err(ConcurrentWifiChannelError::Failed)
+    }
+    .await;
+    emit_wifi_channel(channel_or_frequency, cbw, &result);
+    result
+}
+
+/// Record an RF close or wake.
+fn emit_rf(operation: RfOperation, result: &Result<(), ConcurrentRfError>) {
+    let result = match result {
+        Ok(()) => RfResult::Done,
+        Err(ConcurrentRfError::Rejected(error)) => RfResult::Refused(crate::trace::refusal(*error)),
+        Err(ConcurrentRfError::Recoverable(error)) => {
+            RfResult::Recoverable(trace::port_fault(*error))
+        }
+        Err(ConcurrentRfError::Failed(error)) => RfResult::Failed(trace::port_fault(*error)),
+        Err(ConcurrentRfError::Clock(_)) => RfResult::Failed(oer_phy_trace::Fault {
+            stage: oer_phy_trace::FaultStage::Clock,
+            detail: 0,
+        }),
+    };
+    oer_trace::emit(&RfLifecycle { operation, result });
+}
+
+/// Record a Wi-Fi channel selection.
+fn emit_wifi_channel(
+    channel_or_frequency: u16,
+    bandwidth: u8,
+    result: &Result<(), ConcurrentWifiChannelError>,
+) {
+    let result = match result {
+        Ok(()) => ChannelResult::Done,
+        Err(ConcurrentWifiChannelError::Rejected(error)) => {
+            ChannelResult::Refused(crate::trace::refusal(*error))
+        }
+        Err(ConcurrentWifiChannelError::Failed(error)) => {
+            ChannelResult::Failed(trace::port_fault(*error))
+        }
+    };
+    oer_trace::emit(&WifiChannel {
         channel_or_frequency,
-        cbw,
-        channel,
-        observer,
-    )
-    .await
-    .map_err(ConcurrentWifiChannelError::Failed)
+        bandwidth,
+        result,
+    });
 }

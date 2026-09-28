@@ -135,6 +135,16 @@ impl Default for PhyConfig {
     }
 }
 
+/// The tracking reference temperatures of one registration, in °C.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PhyTemperatureReferences {
+    pub(crate) rfpll: i16,
+    pub(crate) calibration: i16,
+    pub(crate) transmit: i16,
+    pub(crate) power: i16,
+    pub(crate) observed: i16,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CommonPhyState {
     temperature: i16,
@@ -978,6 +988,18 @@ impl PhyState {
         crate::tracking::temperature::Observation {
             value: self.common.temperature,
             acquisition: self.common.temperature_acquisition.get(),
+        }
+    }
+
+    /// The committed tracking reference temperatures and the last observed
+    /// one, in °C.
+    pub(crate) const fn temperature_references(&self) -> PhyTemperatureReferences {
+        PhyTemperatureReferences {
+            rfpll: self.common.rfpll_tracking_temperature,
+            calibration: self.common.calibration_tracking_temperature,
+            transmit: self.common.txdc_tracking_temperature,
+            power: self.common.power_reference_temperature,
+            observed: self.common.temperature,
         }
     }
 

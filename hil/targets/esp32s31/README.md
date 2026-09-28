@@ -391,6 +391,21 @@ and the [focused capability program](../../../qualification/targets/esp32s31/wif
 Fresh runs capture build sources; explicitly include reviewed untracked inputs
 with `--source-include` as described in the [host guide](../../host/README.md).
 
+## Protocol families per image
+
+Each image enables only the HIL protocol families it serves
+([radio families](../../protocol/README.md#radio-families)), so its build, and
+the evidence bound to its sources, reads only their protocol modules: the
+Bluetooth images the `bluetooth` family, the radio-free `system-watchdog`
+image the `system` family, and the Wi-Fi images the `wifi` family, each with
+the shared core. The IEEE 802.15.4 images and the memory benchmark image are
+built on the Wi-Fi runtime (`product_hil`, its console and target-core's
+`wifi` modules), so they also compile the `wifi` family and about thirty
+Wi-Fi runtime files: a Wi-Fi source change stales their evidence, while an
+IEEE 802.15.4 change leaves Wi-Fi evidence valid. Separating them needs an
+IEEE 802.15.4 console and entry of their own, as the Bluetooth and system
+images have.
+
 ## Event trace
 
 Every image links one `oer-trace` trace in RTC fast memory beside the

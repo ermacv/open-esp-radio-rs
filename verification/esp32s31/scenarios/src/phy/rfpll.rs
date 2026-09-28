@@ -725,9 +725,9 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         );
     for (records, case, (label, cap, statuses, candidates, selected), side) in checked {
         let (case, cap, selected) = (case as u32, *cap, *selected);
-        let low = returned_low(&records, case, side);
+        let low = returned_low(records, case, side);
         assert_eq!(low, Some((selected - cap) as u32), "{label} {side}");
-        let observed = events(&records, case, side);
+        let observed = events(records, case, side);
         let commands: Vec<_> = observed
             .iter()
             .filter_map(|e| match e {
@@ -746,7 +746,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         );
         let waits = delays_of(&observed);
         assert_eq!(waits, vec![5; statuses.len()], "{label} {side}");
-        assert!(all_complete(&records, case, side), "{label} {side}");
+        assert!(all_complete(records, case, side), "{label} {side}");
     }
     let program_effects = ctx.review_pair(
         "rfpll-program",

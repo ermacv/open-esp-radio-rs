@@ -283,7 +283,7 @@ mod tests {
             original: vec![0; 4],
             replacement: vec![0; 4],
         };
-        let lines = report(&[patch.clone()], &BTreeSet::from([0x102]));
+        let lines = report(std::slice::from_ref(&patch), &BTreeSet::from([0x102]));
         assert!(lines[0].contains("executed and survived"), "{lines:?}");
         let lines = report(&[patch], &BTreeSet::from([0x104]));
         assert!(lines[0].contains("NOT REACHED"), "{lines:?}");

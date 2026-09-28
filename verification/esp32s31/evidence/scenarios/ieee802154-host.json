@@ -61,7 +61,7 @@
     },
     {
       "path": "crates/hardware/ieee802154/engine",
-      "sha256": "a1180905442eb1dc962c4377b2d69f8565bddaca613f74a07c01f65ae8a3b382"
+      "sha256": "60adbeb765f8a078da12ac8829c259bfd00a99e5795593f123aee72134801f1d"
     },
     {
       "path": "crates/hardware/radio/clock",

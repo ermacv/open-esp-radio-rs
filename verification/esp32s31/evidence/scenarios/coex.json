@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "f679b5df793022a0c8b89ebbf10b5a94807f1155a209dcfb5d0a611e849f4810"
+    "input-2": "ff2137d3c7ea7bb3ebad126f03b93329bfcd64754d0a7858b1448789597de8d6"
   },
   "sources": [
     {
@@ -1019,7 +1019,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/coexistence/coex.rs",
-      "sha256": "c9a8dea450a76359446691e6e738f6dec4d3fdf8b892d8b916b7a770908b6439"
+      "sha256": "b2a088d3dc6b4369514eac0c305b728f2061a1d8c18d5bdbe7a7df940b8354ea"
     },
     {
       "path": "verification/esp32s31/scenarios/src/coexistence/coex_hw.rs",
@@ -1031,7 +1031,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "e8ab7503b8e9968fc0b7fc19afc2768741da850dfef23f0646a93dc03baaae6c"
+      "sha256": "d5c69465a033576b851590e4d9c5f01eaf0dd8ef64e6b44243835255db8b7e9d"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",
@@ -1380,6 +1380,74 @@
         "reviewed": 0,
         "untriaged": 0
       }
+    },
+    {
+      "suite": "coex",
+      "source": "archive",
+      "symbol": "coex_schm_status_change",
+      "production": "open_coex_schm_trace_step",
+      "verdict": "match",
+      "cases": 2520,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 218,
+          "total": 219
+        },
+        "directions": {
+          "reached": 227,
+          "total": 230
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 4
+      },
+      "observation": {
+        "executed": 47,
+        "observed": 47,
+        "reviewed": 0,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 4,
+        "compared": 4,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "coex",
+      "source": "archive",
+      "symbol": "coex_schm_timeout_process",
+      "production": "open_coex_schm_trace_step",
+      "verdict": "match",
+      "cases": 1412,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 38,
+          "total": 42
+        },
+        "directions": {
+          "reached": 38,
+          "total": 46
+        },
+        "open": 7,
+        "excluded": 0,
+        "untriaged": 19
+      },
+      "observation": {
+        "executed": 30,
+        "observed": 23,
+        "reviewed": 7,
+        "untriaged": 0
+      },
+      "state": {
+        "written": 1,
+        "compared": 1,
+        "reviewed": 0,
+        "untriaged": 0
+      }
     }
   ],
   "untriaged": [
@@ -1520,1551 +1588,11 @@
     },
     {
       "function": "coex_schm_status_change",
-      "offset": 88,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 92,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 144,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 146,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 162,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 164,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 180,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 182,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 198,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 212,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 216,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 216,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 218,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 230,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 234,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 234,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 236,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 248,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 250,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 250,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 252,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 264,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 300,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 302,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 318,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 332,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 336,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 336,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 338,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 350,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 354,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 354,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 356,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 368,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 372,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 372,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 374,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 386,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 390,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 390,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 392,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 404,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 406,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 406,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 408,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 420,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 456,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 458,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 474,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 476,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 492,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 494,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 510,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 524,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 528,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 528,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 530,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 542,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 546,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 546,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 548,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 560,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 562,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 562,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 564,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 576,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 598,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 612,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 616,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 616,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 618,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 630,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 634,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 634,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 636,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 648,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 652,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 652,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 654,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 666,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 670,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 670,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 672,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 684,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 686,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 686,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 688,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 700,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 718,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 732,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 736,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 736,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 738,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 750,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 754,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 754,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 756,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 768,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 772,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 772,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 774,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 786,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 790,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 790,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 792,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 804,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 806,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 806,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 808,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 820,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 838,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 852,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 856,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 856,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 858,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 870,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 874,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 874,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 876,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 888,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 892,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 892,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 894,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 906,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 910,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 910,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 912,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 924,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 926,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 926,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 928,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 940,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 956,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 966,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 970,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 970,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 970,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 972,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 972,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 972,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 974,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 986,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 990,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 990,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 992,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1004,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1008,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1008,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1010,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1022,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1026,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1026,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1028,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1040,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1044,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1044,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1046,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1058,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1060,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1060,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1062,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1074,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1086,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1090,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1090,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1092,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1092,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1092,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1094,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1106,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1110,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1110,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1112,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1124,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1128,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1128,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1130,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1142,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1146,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1146,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1148,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1160,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1164,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1164,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1166,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1178,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1180,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1180,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1182,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1194,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1206,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1208,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1208,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1212,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1212,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1212,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1214,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1226,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1230,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1230,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1232,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1244,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1248,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1248,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1250,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1262,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1266,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1266,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1268,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1280,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1284,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1284,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1286,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1298,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1300,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1300,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1302,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1314,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1330,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1334,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1334,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1334,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1336,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1336,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1336,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1338,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1350,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1354,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1354,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1356,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1368,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1372,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1372,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1374,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1386,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1390,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1390,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1392,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1404,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1408,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1408,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1410,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1422,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1424,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1424,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1426,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1438,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1450,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1454,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1454,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1456,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1456,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1456,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1458,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1470,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1474,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1474,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1476,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1488,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1492,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1492,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1494,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1506,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1510,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1510,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1512,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1524,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1528,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1528,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1530,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1542,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1544,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1544,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1546,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1558,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1570,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1572,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1572,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1576,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1576,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1576,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1578,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1590,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1594,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1594,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1596,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1608,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1612,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1612,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1614,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1626,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1630,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1630,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1632,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1644,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1648,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1648,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1650,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1662,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1664,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1664,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1666,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1678,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
       "offset": 1696,
       "kind": "taken"
     },
     {
       "function": "coex_schm_status_change",
-      "offset": 1754,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1768,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1780,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1800,
-      "kind": "taken"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1814,
-      "kind": "block"
-    },
-    {
-      "function": "coex_schm_status_change",
       "offset": 1826,
       "kind": "block"
     },
@@ -3077,11 +1605,6 @@
       "function": "coex_schm_status_change",
       "offset": 1826,
       "kind": "fallthrough"
-    },
-    {
-      "function": "coex_schm_status_change",
-      "offset": 1838,
-      "kind": "taken"
     },
     {
       "function": "coex_schm_unlock",
@@ -3108,6 +1631,7 @@
     "coex_schm_status_bit_clear",
     "coex_schm_status_bit_set",
     "coex_schm_status_change",
+    "coex_schm_timeout_process",
     "coex_schm_unlock"
   ],
   "unobserved": [],
@@ -3190,7 +1714,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 215
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
       "line": 217
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 218
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
@@ -3234,6 +1766,26 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 287
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 289
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 291
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 293
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 295
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
       "line": 308
     },
     {
@@ -3255,6 +1807,10 @@
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
       "line": 354
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 360
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
@@ -3283,6 +1839,18 @@
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
       "line": 400
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 402
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 408
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",
+      "line": 410
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/schedule.rs",

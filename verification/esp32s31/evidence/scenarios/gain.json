@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "f679b5df793022a0c8b89ebbf10b5a94807f1155a209dcfb5d0a611e849f4810",
+    "input-2": "ff2137d3c7ea7bb3ebad126f03b93329bfcd64754d0a7858b1448789597de8d6",
     "input-3": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
   },
   "sources": [
@@ -96,11 +96,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/pbus.rs",
-      "sha256": "9191240def6282332a0851e44d33c70421bf961a14a9f0f973bb2f6421780aa7"
+      "sha256": "05ec0831ae20af7940c237f1e98527ee4af0a8f912ec4c043bdfcc40d18df5c8"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/calibration/bluetooth.rs",
-      "sha256": "420e28affce5972aa73b9c99ce7e3825e004d557487017bdb444aa0f607be14a"
+      "sha256": "74b890f5f24ed2f6c1747b6539a11478584bd82e370cc32e548e00178a72c3ce"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/calibration/math.rs",
@@ -108,7 +108,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "sha256": "41fac66b0025af9b41c218150a3ab29fe5692263d3c240a2695d6f565baedd45"
+      "sha256": "28c769e784e3a86cb431a262aedf3d302e627fb3dcc65476748e0cf67c76f56d"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/hardware.rs",
@@ -1072,7 +1072,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/coexistence/coex.rs",
-      "sha256": "c9a8dea450a76359446691e6e738f6dec4d3fdf8b892d8b916b7a770908b6439"
+      "sha256": "b2a088d3dc6b4369514eac0c305b728f2061a1d8c18d5bdbe7a7df940b8354ea"
     },
     {
       "path": "verification/esp32s31/scenarios/src/coexistence/coex_hw.rs",
@@ -1084,7 +1084,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "e8ab7503b8e9968fc0b7fc19afc2768741da850dfef23f0646a93dc03baaae6c"
+      "sha256": "d5c69465a033576b851590e4d9c5f01eaf0dd8ef64e6b44243835255db8b7e9d"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",
@@ -1683,27 +1683,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/pbus.rs",
-      "line": 468
+      "line": 469
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/pbus.rs",
-      "line": 497
+      "line": 498
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/pbus.rs",
-      "line": 546
+      "line": 547
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/pbus.rs",
-      "line": 564
+      "line": 565
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/pbus.rs",
-      "line": 606
+      "line": 607
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/pbus.rs",
-      "line": 627
+      "line": 628
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/calibration/bluetooth.rs",
@@ -2047,15 +2047,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1015
+      "line": 1016
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1020
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1067
+      "line": 1021
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -2063,7 +2059,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1085
+      "line": 1069
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/channel.rs",
+      "line": 1086
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/hardware.rs",

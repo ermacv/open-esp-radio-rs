@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "510c506ac50b6119393daeeffe19607ad48caed7326cce59b2c9cedb7da5e6a0",
+    "input-2": "bbbe4cc48f68126f00196772547e17459953e225ef1ae3e2ba27f2462cd1a2ec",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -32,7 +32,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/Cargo.toml",
-      "sha256": "da40f067272311227b16329d945916b84e25b6ccec8314a988af4699e3e4d376"
+      "sha256": "eb92093d8e3751763acaa151b6480d828ab6242cc82190ecbe4c33260b349de3"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_lock.rs",
@@ -124,7 +124,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/Cargo.toml",
-      "sha256": "946877abc73f8d4e5e368ca8186878ebf06f5fa51fde936fd9d61326e35415ee"
+      "sha256": "d98f4ea3516ed8042407b82d4739c75f8fb28f243978a75376e1c6bda370f821"
     },
     {
       "path": "crates/hardware/ieee80211/pac/Cargo.toml",
@@ -137,6 +137,10 @@
     {
       "path": "crates/hardware/ieee802154/engine/Cargo.toml",
       "sha256": "f2578c90fcdeaf56049c9de461ea84488315066951942e68944cafa61ce6edfa"
+    },
+    {
+      "path": "crates/hardware/radio/analog/Cargo.toml",
+      "sha256": "dcc05924f4db41f2807950c8a03b7bb378ff0cda6baca210b2d6cf968ce9e524"
     },
     {
       "path": "crates/hardware/radio/clock/Cargo.toml",
@@ -976,7 +980,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "25c165101a588ac4cc078d0fe9cd01de7dce597e705560d66f956ec677c3fb4d"
+      "sha256": "dd4b296880692f33babb76c1f3b6448fb9ace530bfe0d9309b9bda1c8c360843"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -1008,11 +1012,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/Cargo.toml",
-      "sha256": "65c84a5324d0cb598b426f091d7c0652f71b00533bfc4e82fcf37438cf0dfe1a"
+      "sha256": "791d018148d5d7e817d6db4cb716a99130b206433a38d2d3e6f5be1cdb89bb7c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/bluetooth/ble.rs",
-      "sha256": "e8238b66a058f11d23b30a8a9aafde32849e316adb9e73611cf49042392951d3"
+      "sha256": "fd973b35d14f2ef0cffab73ba45f33101189f9641f9925acde37145bc95a4a55"
     },
     {
       "path": "verification/esp32s31/scenarios/src/bluetooth/mod.rs",
@@ -1040,7 +1044,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/state.rs",
-      "sha256": "61ff5b1fbc2013b2ec336bea2fe2a77d10766c3af28051804e23c496ac3648e8"
+      "sha256": "48505aca355b3d3a5a21dd377ef1d2e537c31e0930919cb76828e1fdcd42acb1"
     },
     {
       "path": "verification/esp32s31/scenarios/src/engine/contracts.rs",
@@ -1060,11 +1064,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/lib.rs",
-      "sha256": "5ed3a96c376e77d60919c646c2392017065594ad1dcaae972942b329cce49b56"
+      "sha256": "863d8813be12a463e5b7868f736d489d145960a96464a09c6873172974defa3a"
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "2b33a2a31fef335dd022b33793ef5ac23dc4a7a14fe339a4812ce8e0bb1c6a9e"
+      "sha256": "fce72360be6861d46c983111515f81e09525dfc040fc9df2cbba01e55850c6cc"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1131,12 +1135,16 @@
       "sha256": "6ac42376dac7c5329fa47e74845c0be79339ebbfd110170662d005a8e00a7b33"
     },
     {
+      "path": "verification/esp32s31/scenarios/src/wifi/low_power_clock.rs",
+      "sha256": "5f7f6f584cd98c15e39e2928e61fc8ae6cc82a40d20fe85eedd13bd3bb00b072"
+    },
+    {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
-      "sha256": "f15bbcb7a367f671f34e123059b6c40130365b72a4d970793c3048c32aad6f7c"
+      "sha256": "a4e331d7a464f2fc45ecfc74bb04603eacf08c289409353325d662996911e167"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mod.rs",
-      "sha256": "dca9edbd31bbbd7c066c39f82c87931ce78f6a8b6fd494e62737ff26f6fdfd49"
+      "sha256": "c1c8e0db737735484ace611464eec88f7df584d2c04b6e16c0df4f40d496e419"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/retry.rs",
@@ -1172,7 +1180,7 @@
     },
     {
       "path": "verification/harness/scenarios/Cargo.toml",
-      "sha256": "39b30445775eab8094c36fe0125cdf565b9e0b163771a97bc1837ad64bae1441"
+      "sha256": "87799967a4a3f16ecbd1b2c054a8713972b2bc4e0ab7ba3c395caa798198c275"
     },
     {
       "path": "verification/harness/scenarios/src/artifacts.rs",
@@ -1276,7 +1284,7 @@
     "fallback": null,
     "coverage-decisions": {
       "path": "verification/esp32s31/decisions/coverage.toml",
-      "sha256": "aa62393fd042669efc1cb568770d6d743c3896d7e90f81dd2b47d092448c6505"
+      "sha256": "8815cc94641f2c53959986f5fb3491e38a0331252d3ce58a06e2766c036dca11"
     }
   },
   "entries": [
@@ -1622,8 +1630,8 @@
           "total": 462
         },
         "open": 17,
-        "excluded": 792,
-        "untriaged": 61
+        "excluded": 840,
+        "untriaged": 13
       },
       "observation": {
         "executed": 51,
@@ -1744,246 +1752,6 @@
     {
       "function": "modem_clock_hal_enable_wifipwr_clock",
       "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 4,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 4,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 8,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 10,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 10,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 14,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 14,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 14,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 18,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 20,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 20,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 24,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 26,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 26,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 30,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 30,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 30,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 32,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 42,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 46,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 82,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 84,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 84,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 88,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 90,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 90,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 94,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 118,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 130,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 142,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 166,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 186,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 224,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 224,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 226,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 242,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 242,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 244,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 256,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 264,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 264,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 268,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 272,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 286,
-      "kind": "taken"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 286,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 288,
-      "kind": "block"
-    },
-    {
-      "function": "modem_clock_hal_select_wifi_lpclk_source",
-      "offset": 302,
       "kind": "block"
     },
     {

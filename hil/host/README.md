@@ -451,7 +451,9 @@ refused with the reason, and the user is notified. What the stand saw stays in
 the repetition's `post-mortem/`, which the quarantine names. After pressing
 the board's reset button or power-cycling it, `cargo hil devices release
 BOARD --confirm reset|power-cycle` returns it once an RTS reset shows it
-booting from flash; the release is journaled.
+booting from flash; the release is journaled. `--confirm rom-answers` returns
+a board nobody touched, such as one an older runner quarantined although its
+ROM answered: the same RTS check must show the ROM booting.
 
 ### Operational commands without a rebuild
 

@@ -1098,6 +1098,9 @@ fn firmware(
 enum ConfirmArg {
     Reset,
     PowerCycle,
+    /// No person acted: the release check's RTS reset shows the ROM
+    /// answering, so the board never needed one.
+    RomAnswers,
 }
 
 /// `cargo hil devices [--json]` and `cargo hil devices set MAC ...`.
@@ -1262,10 +1265,12 @@ fn devices(
             if arbiter.is_quarantined(&mac)? {
                 let confirmation = match confirm.ok_or(
                     "the board is quarantined: reset or power-cycle it, then pass \
-                     --confirm reset|power-cycle",
+                     --confirm reset|power-cycle; --confirm rom-answers returns a board whose \
+                     ROM answers the stand's reset without a person",
                 )? {
                     ConfirmArg::Reset => oer_hil_arbiter::Confirmation::Reset,
                     ConfirmArg::PowerCycle => oer_hil_arbiter::Confirmation::PowerCycle,
+                    ConfirmArg::RomAnswers => oer_hil_arbiter::Confirmation::RomAnswers,
                 };
                 let answer =
                     arbiter.release_quarantine(&mac, &options.owner(ctx), confirmation, || {

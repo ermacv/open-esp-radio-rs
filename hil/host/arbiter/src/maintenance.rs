@@ -45,12 +45,17 @@ pub enum QuarantineTrigger {
     Flaky,
 }
 
-/// What a person did to a quarantined board before returning it.
+/// Why a quarantined board may return: what a person did to it, or that
+/// nobody needed to.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Confirmation {
     Reset,
     PowerCycle,
+    /// Nobody touched it: its ROM answers the stand's own reset, so it was
+    /// never beyond a script's reach, and a quarantine an older runner set
+    /// on such a board is lifted in software.
+    RomAnswers,
 }
 
 /// One board out of service.
@@ -322,6 +327,38 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn a_board_whose_rom_answers_returns_without_a_person_only_after_it_answers() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        arbiter
+            .quarantine(
+                "AA",
+                QuarantineTrigger::Unreachable,
+                "old runner".into(),
+                None,
+            )
+            .unwrap();
+        assert!(
+            arbiter
+                .release_quarantine("AA", "stand", Confirmation::RomAnswers, || {
+                    Err("no ROM line".into())
+                })
+                .is_err()
+        );
+        assert!(arbiter.is_quarantined("AA").unwrap());
+        arbiter
+            .release_quarantine("AA", "stand", Confirmation::RomAnswers, || {
+                Ok(String::from("rst:0x17 (CHIP_USB_UART_RESET),boot:0x58"))
+            })
+            .unwrap();
+        assert!(!arbiter.is_quarantined("AA").unwrap());
+        assert_eq!(
+            serde_json::to_value(Confirmation::RomAnswers).unwrap(),
+            "rom-answers"
+        );
     }
 
     #[test]

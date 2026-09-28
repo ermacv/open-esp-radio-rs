@@ -501,7 +501,10 @@ station has one pending for the TID, and production sends none.
 The comparison does not cover the vendor's aged-MSDU discard, the HE
 one-member conversion (`ppHEAMPDU2Normal`), or the all-acknowledged shortcut
 of a terminated aggregate; the aggregate attempt limit belongs to the retry
-leaves, not to the resort.
+leaves, not to the resort. Production writes zero in the metadata bits the
+vendor fills with the sequence number's low byte: the vendor writer of that
+byte and whether hardware reads it are not established, so it stays an
+unexplained difference.
 
 ## Inputs and probes
 

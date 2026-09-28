@@ -623,6 +623,11 @@ spins after its output, an early return (behavior, not diagnostics), or
 another path; a candidate shows its whole block. The report proposes; the
 decision stays reviewed.
 
+`functions-<scenario>.txt` shows each function with untriaged locations in
+full, marking every uncovered location `U` untriaged, `E<n>` excluded by the
+numbered decision whose reason follows the listing, or `C` reached only
+through excluded functions; unmarked code is covered.
+
 Beside it, `gateways-<scenario>.txt` names, per claim, the closure functions
 no execution entered that alone lead to untriaged code, with how many
 locations and functions each leads to: a boundary to declare, a decision to

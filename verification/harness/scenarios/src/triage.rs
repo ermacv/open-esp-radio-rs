@@ -793,4 +793,34 @@ mod tests {
             Some(Ending::Spins)
         );
     }
+
+    #[test]
+    fn the_function_view_marks_every_location_by_its_triage() {
+        let at = |offset, kind| Location {
+            function: "probe".into(),
+            offset,
+            kind,
+        };
+        let untriaged = BTreeSet::from([at(0xc, LocationKind::Taken)]);
+        let uncovered = BTreeSet::from([
+            at(0xc, LocationKind::Taken),
+            at(0x10, LocationKind::Block),
+            at(0x20, LocationKind::Block),
+        ]);
+        let consequential = BTreeSet::from([at(0x20, LocationKind::Block)]);
+        let view = functions(&code(&[]), &untriaged, &uncovered, &consequential, |l| {
+            (l.offset == 0x10).then_some("reviewed path")
+        });
+        let line = |offset: &str| {
+            view.lines()
+                .find(|l| l.contains(offset))
+                .unwrap()
+                .to_owned()
+        };
+        assert!(line("+000c").contains("U taken"), "{view}");
+        assert!(line("+0010").contains("E1 block"), "{view}");
+        assert!(line("+0020").contains("C block"), "{view}");
+        assert!(!line("+0000").contains("U "), "{view}");
+        assert!(view.contains("E1: reviewed path"), "{view}");
+    }
 }

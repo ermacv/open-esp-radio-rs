@@ -202,7 +202,7 @@ fn a_waiter_is_granted_when_the_holder_dies() {
     let waiter = {
         let arbiter = arbiter.clone();
         std::thread::spawn(move || {
-            let grant = arbiter.acquire_within(&request("bt", "run b"), None);
+            let grant = arbiter.acquire_within(&request("bluetooth", "run b"), None);
             grant.map(|grant| grant.is_nested())
         })
     };
@@ -213,7 +213,7 @@ fn a_waiter_is_granted_when_the_holder_dies() {
     let history = arbiter.history().unwrap();
     assert_eq!(history[0].id, 7);
     assert_eq!(history[0].outcome, LeaseOutcome::Abandoned);
-    assert_eq!(history[1].owner, "bt");
+    assert_eq!(history[1].owner, "bluetooth");
 }
 
 #[test]
@@ -227,7 +227,11 @@ fn waiting_follows_arrival_order_and_dead_waiters_are_reaped() {
     stop(dead);
     let waiter = {
         let arbiter = arbiter.clone();
-        std::thread::spawn(move || arbiter.acquire_within(&request("bt", "run"), None).is_ok())
+        std::thread::spawn(move || {
+            arbiter
+                .acquire_within(&request("bluetooth", "run"), None)
+                .is_ok()
+        })
     };
     std::thread::sleep(Duration::from_millis(700));
     let waiting = state(&arbiter);
@@ -506,4 +510,16 @@ fn a_waiting_request_reports_again_only_when_its_position_or_holders_change() {
         key,
         waiting_report(4, "board:AA", 1, "no conflicting holder", 61_000, 0).0
     );
+}
+
+#[test]
+fn a_lease_owned_by_no_agent_is_refused() {
+    let directory = tempfile::tempdir().unwrap();
+    let arbiter = Arbiter::at(directory.path()).unwrap();
+    let Err(error) = arbiter.acquire_within(&request("open-esp-radio-rs-wifi", "run a"), None)
+    else {
+        panic!("a lease of no agent was granted");
+    };
+    assert!(error.is::<crate::NotAnOwner>(), "{error}");
+    assert!(state(&arbiter).queue.is_empty() && state(&arbiter).holders.is_empty());
 }

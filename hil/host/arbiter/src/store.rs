@@ -246,7 +246,10 @@ impl Arbiter {
         device: Option<String>,
         kind: crate::BoardEventKind,
     ) -> crate::Result<()> {
-        self.record_board_by(crate::grant::owner_from_environment(), device, kind)
+        // A journal entry is not a lease: it names an unregistered owner as such.
+        let owner =
+            crate::grant::owner_from_environment().unwrap_or_else(|_| String::from("unregistered"));
+        self.record_board_by(owner, device, kind)
     }
 
     /// [`Self::record_board`] attributed to `owner`.

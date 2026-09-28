@@ -68,13 +68,14 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         }
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
-        Some("peer") => return crate::hil_board::peer(options.owner(ctx), &args[1..]),
-        Some("preempt") => return preempt(&options.owner(ctx), &args[1..]),
+        Some("peer") => return crate::hil_board::peer(options.owner(ctx)?, &args[1..]),
+        Some("preempt") => return preempt(&options.owner(ctx)?, &args[1..]),
+        Some("owner") => return owner(ctx, &args[1..]),
         Some("devices") => return devices(ctx, &options, &args[1..]),
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
         Some("flash") => {
             let request = oer_hil_arbiter::Request {
-                owner: options.owner(ctx),
+                owner: options.owner(ctx)?,
                 work: String::new(),
                 scenarios: Vec::new(),
                 claims: Vec::new(),
@@ -108,9 +109,13 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             Some((baseline, lock))
         }
     };
-    // A baseline runs for this checkout's owner, not its worktree's name.
-    let options = LeaseOptions {
-        owner: Some(options.owner(ctx)),
+    // A baseline runs for this checkout's owner, which its worktree has
+    // none of.
+    let options = match &baseline {
+        Some(_) => LeaseOptions {
+            owner: Some(options.owner(ctx)?),
+        },
+        None => options,
     };
     let ctx = baseline.as_ref().map_or(ctx, |(baseline, _)| baseline);
     let (runner, receipt_path) = prepare(ctx)?;
@@ -125,7 +130,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             let error = ctx
                 .command(&runner)
                 .args(args)
-                .envs(options.environment(ctx))
+                .envs(options.environment(ctx)?)
                 .env("OER_OBSERVER_RECEIPT", &receipt_path)
                 .exec();
             return Err(format!("cannot hand the terminal to the HIL runner: {error}").into());
@@ -139,7 +144,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         ctx.command(&runner)
             .args(args)
-            .envs(options.environment(ctx))
+            .envs(options.environment(ctx)?)
             .env("OER_OBSERVER_RECEIPT", &receipt_path)
             .env(RUN_RECEIPT_ENV, run_receipt.path()),
         std::time::Duration::from_secs(300),
@@ -165,7 +170,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             &created,
         ) {
             None if record_forced => record_evidence(ctx, &receipt_path, &run_ids)?,
-            None => remember_pending(ctx, &options.owner(ctx), &run_ids)?,
+            None => remember_pending(ctx, options.owner(ctx).ok(), &run_ids)?,
             // A runner that created no run has said why itself.
             Some(_) if created.is_empty() => {}
             Some(reason) => eprintln!(
@@ -189,6 +194,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil board console BOARD [--for 10s] [--until TEXT]       the console without a reset, under a lease
   cargo hil board soak BOARD --cycles N|--for 8h [--via rts,jtag,en]   reset again and again; journal the result
   cargo hil peer send BOARD LINE... [--for 5s]                   one peer text-protocol command and its answer
+  cargo hil owner [set NAME]          this checkout's owner: stand, wifi, phy, bluetooth, blobray, infra, 802154, esp32c5
   cargo hil preempt ID --reason TEXT   stop another owner's lease: charged no longer, SIGTERM with
                                       cleanup, SIGKILL after 5m; the history and the owner see why
   cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1
@@ -338,26 +344,76 @@ impl LeaseOptions {
     }
 
     /// Explicit options win; otherwise an enclosing lease's owner, otherwise
-    /// this checkout's directory name.
-    fn owner(&self, ctx: &Context) -> String {
-        self.owner
-            .clone()
-            .or_else(|| {
-                std::env::var(oer_hil_arbiter::OWNER_ENV)
-                    .ok()
-                    .filter(|owner| !owner.is_empty())
-            })
-            .or_else(|| {
-                ctx.root
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
-            .unwrap_or_else(oer_hil_arbiter::default_owner)
+    /// the owner registered for this checkout. Nothing is derived from the
+    /// checkout's directory name.
+    fn owner(&self, ctx: &Context) -> Result<String> {
+        if let Some(owner) = self.owner.clone().or_else(|| {
+            std::env::var(oer_hil_arbiter::OWNER_ENV)
+                .ok()
+                .filter(|owner| !owner.is_empty())
+        }) {
+            return Ok(owner);
+        }
+        let owner = oer_hil_arbiter::Arbiter::open()?
+            .checkout_owner(&ctx.root)?
+            .ok_or_else(|| oer_hil_arbiter::NoOwner(ctx.root.clone()))?;
+        Ok(owner.id().to_owned())
     }
 
-    fn environment(&self, ctx: &Context) -> Vec<(&'static str, String)> {
-        vec![(oer_hil_arbiter::OWNER_ENV, self.owner(ctx))]
+    /// The owner for the runner, when one is known; a runner that leases
+    /// without one is refused by the arbiter, one that does not lease needs
+    /// none.
+    fn environment(&self, ctx: &Context) -> Result<Vec<(&'static str, String)>> {
+        Ok(self
+            .owner(ctx)
+            .ok()
+            .map(|owner| (oer_hil_arbiter::OWNER_ENV, owner))
+            .into_iter()
+            .collect())
     }
+}
+
+/// `cargo hil owner [set NAME | merge OLD NEW | forget NAME]`.
+fn owner(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
+    const USAGE: &str = "usage: cargo hil owner                 this checkout's owner
+       cargo hil owner set NAME        register this checkout's owner
+       cargo hil owner merge OLD NEW   charge OLD's balance and history to NEW
+       cargo hil owner forget NAME     drop a balance that is no agent's";
+    let args = args
+        .iter()
+        .map(|arg| arg.to_str().ok_or("arguments must be UTF-8"))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let parse = |name: &str| oer_hil_arbiter::Owner::parse(name);
+    match args.as_slice() {
+        [] => match arbiter.checkout_owner(&ctx.root)? {
+            Some(owner) => println!("{owner}"),
+            None => return Err(oer_hil_arbiter::NoOwner(ctx.root.clone()).into()),
+        },
+        ["set", name] => {
+            let owner = parse(name)?;
+            arbiter.set_checkout_owner(&ctx.root, owner)?;
+            println!("{} is owned by {owner}", ctx.root.display());
+        }
+        ["merge", old, new] => {
+            let new = parse(new)?;
+            arbiter.merge_owner(old, new)?;
+            println!("{old}'s balance and history are {new}'s");
+        }
+        ["forget", name] => {
+            let forgotten = arbiter.forget_owner(name)?;
+            println!(
+                "{name}: {}",
+                if forgotten {
+                    "balance dropped"
+                } else {
+                    "no balance"
+                }
+            );
+        }
+        _ => return Err(USAGE.into()),
+    }
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// Time a preempted holder gets for cancellation and cleanup, as at the hard
@@ -616,7 +672,7 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         .join(" ");
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let request = oer_hil_arbiter::Request {
-        owner: options.owner(ctx),
+        owner: options.owner(ctx)?,
         work,
         scenarios: Vec::new(),
         claims: lease_claims(&cli.boards, cli.air, cli.stand, &arbiter.devices()?)?,
@@ -692,7 +748,7 @@ fn board(
     let flashed = match BoardCli::try_parse_from(args)? {
         BoardCli::Flashed(flashed) => flashed,
         BoardCli::Access(command) => {
-            return crate::hil_board::board(ctx, options.owner(ctx), command);
+            return crate::hil_board::board(ctx, options.owner(ctx)?, command);
         }
     };
     if flashed.image.is_none() {
@@ -700,7 +756,7 @@ fn board(
     }
     flashed.record(
         &oer_hil_arbiter::Arbiter::open()?,
-        options.owner(ctx),
+        options.owner(ctx)?,
         String::from("cargo hil board flashed"),
     )?;
     Ok(std::process::ExitCode::SUCCESS)
@@ -790,7 +846,7 @@ fn perf(
                 &run,
                 &scenarios,
                 &reason,
-                &options.owner(ctx),
+                &options.owner(ctx)?,
                 now,
             )?;
             println!("baseline {} for {}", run.id, set.join(", "));
@@ -987,7 +1043,7 @@ fn runs(
                 &store,
                 &run,
                 Some(
-                    serde_json::json!({"by": options.owner(ctx), "reason": reason, "unix_millis": now}),
+                    serde_json::json!({"by": options.owner(ctx)?, "reason": reason, "unix_millis": now}),
                 ),
             )?;
         }
@@ -1083,7 +1139,7 @@ fn firmware(
             if_changed,
         } => {
             let request = oer_hil_arbiter::Request {
-                owner: options.owner(ctx),
+                owner: options.owner(ctx)?,
                 work: format!("firmware flash {image} --board {board}"),
                 scenarios: Vec::new(),
                 claims: Vec::new(),
@@ -1210,7 +1266,7 @@ fn devices(
                     format!("board `{board}` has no reset path; see `cargo hil devices set --reset-uart`")
                 })?;
             let request = oer_hil_arbiter::Request {
-                owner: options.owner(ctx),
+                owner: options.owner(ctx)?,
                 work: format!(
                     "devices reset {board}{}",
                     if download { " --download" } else { "" }
@@ -1238,7 +1294,7 @@ fn devices(
         }
         Some(DevicesCommand::Maintenance { board, reason }) => {
             let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
-            let owner = options.owner(ctx);
+            let owner = options.owner(ctx)?;
             arbiter.set_maintenance(oer_hil_arbiter::Maintenance {
                 mac: mac.clone(),
                 owner: owner.clone(),
@@ -1273,7 +1329,7 @@ fn devices(
                     ConfirmArg::RomAnswers => oer_hil_arbiter::Confirmation::RomAnswers,
                 };
                 let answer =
-                    arbiter.release_quarantine(&mac, &options.owner(ctx), confirmation, || {
+                    arbiter.release_quarantine(&mac, &options.owner(ctx)?, confirmation, || {
                         crate::hil_board::boots(&board)
                     })?;
                 println!("{board} ({mac}) is back in service; it booted: {answer}");
@@ -1432,14 +1488,14 @@ fn evidence_skip_reason(
 
 /// Note clean runs as pending evidence of this checkout: a run never writes
 /// tracked files unless asked to with `--record-evidence`.
-fn remember_pending(ctx: &Context, owner: &str, run_ids: &[String]) -> Result<()> {
+fn remember_pending(ctx: &Context, owner: Option<String>, run_ids: &[String]) -> Result<()> {
     let store = crate::hil_store::shared_runs(HIL_TARGET)?;
     let pending = run_ids
         .iter()
         .map(|run| crate::hil_evidence::Pending {
             run: run.clone(),
             scenarios: crate::hil_evidence::passed_scenarios(&store.join(run)),
-            owner: Some(owner.to_owned()),
+            owner: owner.clone(),
         })
         .collect::<Vec<_>>();
     crate::hil_evidence::remember(&ctx.root, &pending)?;
@@ -1646,7 +1702,7 @@ mod tests {
         let arbiter = oer_hil_arbiter::Arbiter::at(directory.path()).unwrap();
         let grant = arbiter
             .acquire(&oer_hil_arbiter::Request {
-                owner: "test".into(),
+                owner: "stand".into(),
                 work: "sleep".into(),
                 scenarios: Vec::new(),
                 claims: Vec::new(),

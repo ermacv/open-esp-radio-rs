@@ -24,6 +24,7 @@ pub mod health;
 mod history;
 pub mod maintenance;
 mod notify;
+pub mod owners;
 pub mod preempt;
 mod process;
 mod queue;
@@ -43,6 +44,7 @@ pub use estimate::{DEFAULT_ESTIMATE, EstimateSource, format_duration, parse_dura
 pub use grant::{Grant, LEASE_ENV, NO_BUDGETS, OWNER_ENV, Request, default_owner};
 pub use history::{GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance};
 pub use maintenance::{Confirmation, Maintenance, QuarantineTrigger, ServiceKind};
+pub use owners::{NoOwner, NotAnOwner, Owner};
 pub use process::process_started_unix_millis;
 pub use state::{AIR, Claim, Mode, STAND};
 pub use status::{HolderStatus, QueuedStatus, Status};

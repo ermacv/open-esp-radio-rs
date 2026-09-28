@@ -42,22 +42,24 @@ const NOTIFY_AFTER_WAIT: Duration = Duration::from_secs(30);
 
 /// The name of the current directory, which is the checkout for Cargo
 /// commands run from a repository root.
-pub fn default_owner() -> String {
-    std::env::current_dir()
-        .ok()
-        .and_then(|directory| {
-            directory
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| String::from("unknown"))
+/// The owner registered for the checkout this process runs in; see
+/// [`crate::owners`].
+pub fn default_owner() -> crate::Result<String> {
+    let directory = std::env::current_dir()?;
+    let owner = Arbiter::open()?
+        .checkout_owner(&directory)?
+        .ok_or(crate::NoOwner(directory))?;
+    Ok(owner.id().to_owned())
 }
 
-pub(crate) fn owner_from_environment() -> String {
-    std::env::var(OWNER_ENV)
+pub(crate) fn owner_from_environment() -> crate::Result<String> {
+    match std::env::var(OWNER_ENV)
         .ok()
         .filter(|owner| !owner.trim().is_empty())
-        .unwrap_or_else(default_owner)
+    {
+        Some(owner) => Ok(owner),
+        None => default_owner(),
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -78,7 +80,7 @@ impl Request {
             return Err(format!("{variable} is set, but {NO_BUDGETS}").into());
         }
         Ok(Self {
-            owner: owner_from_environment(),
+            owner: owner_from_environment()?,
             work: work.into(),
             scenarios: Vec::new(),
             claims: Vec::new(),
@@ -165,6 +167,8 @@ impl Arbiter {
         request: &Request,
         enclosing: Option<String>,
     ) -> crate::Result<Grant> {
+        // Every lease is charged to one agent under its one name.
+        crate::Owner::parse(&request.owner)?;
         let me = ProcessIdentity::current()?;
         let claims = normalize(&request.claims);
         if let Some(nested) = self.join_enclosing(me, enclosing, &claims)? {

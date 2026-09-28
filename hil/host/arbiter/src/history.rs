@@ -88,6 +88,31 @@ pub(crate) fn append(path: &Path, record: &LeaseRecord) -> crate::Result<()> {
 }
 
 /// Records in append order; lines another version cannot parse are skipped.
+/// Rename the owner `old` to `new` in every record. Callers hold the state
+/// lock. Lines this build cannot read are kept as they are.
+pub(crate) fn rename_owner(path: &Path, old: &str, new: &str) -> crate::Result<()> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut renamed = String::with_capacity(text.len());
+    for line in text.lines() {
+        match serde_json::from_str::<LeaseRecord>(line) {
+            Ok(mut record) if record.owner == old => {
+                record.owner = new.to_owned();
+                renamed.push_str(&serde_json::to_string(&record)?);
+            }
+            _ => renamed.push_str(line),
+        }
+        renamed.push('\n');
+    }
+    let temporary = path.with_extension("jsonl.tmp");
+    fs::write(&temporary, renamed)?;
+    fs::rename(&temporary, path)?;
+    Ok(())
+}
+
 pub(crate) fn read(path: &Path) -> crate::Result<Vec<LeaseRecord>> {
     read_lines(path)
 }

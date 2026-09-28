@@ -200,9 +200,17 @@ arguments before `--`, and refuses two different owners:
 
 | Option | Meaning |
 | --- | --- |
-| `--owner NAME` | Who holds the lease; defaults to an enclosing lease's owner, then the checkout directory name |
+| `--owner NAME` | Who holds the lease; defaults to an enclosing lease's owner, then the owner registered for the checkout |
 
-The environment variable `OER_HIL_OWNER` carries the same choice. A request
+The environment variable `OER_HIL_OWNER` carries the same choice. A lease
+belongs to one of the agents that use the stand: `stand`, `wifi`, `phy`,
+`bluetooth`, `blobray`, `infra`, `802154` or `esp32c5`. Each checkout
+registers its owner once with `cargo hil owner set NAME`, kept in
+`owners.json` of the arbiter directory; `cargo hil owner` prints it. Nothing
+is derived from the checkout's directory name: a lease requested for no
+agent is refused with an error naming `cargo hil owner set`. `cargo hil owner
+merge OLD NEW` charges an old name's balance and history to its agent, and
+`cargo hil owner forget NAME` drops a balance that belongs to no agent. A request
 names no duration: the stand charges the time a lease holds, as follows.
 
 Every lease charges its owner's balance the time it holds, and an owner whose

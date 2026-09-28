@@ -195,6 +195,13 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         .envs(options.environment(ctx)?)
         .env("OER_OBSERVER_RECEIPT", &receipt_path)
         .env(RUN_RECEIPT_ENV, run_receipt.path());
+    // The runner escalates a bootloader loop to a JTAG reset, through the
+    // OpenOCD of the ESP-IDF tools only this wrapper can locate.
+    if let Ok((program, scripts)) = crate::hil_jtag::openocd() {
+        command
+            .env(oer_hil_arbiter::control::OPENOCD_ENV, program)
+            .env(oer_hil_arbiter::control::OPENOCD_SCRIPTS_ENV, scripts);
+    }
     if baseline.is_some() {
         // The baseline's images compile into this checkout's warm caches.
         command.env(

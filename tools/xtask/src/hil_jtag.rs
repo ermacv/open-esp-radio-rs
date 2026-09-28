@@ -111,27 +111,12 @@ pub fn program(chip: &str, mac: &str, files: &[(u64, PathBuf)]) -> Result<()> {
     )
 }
 
-/// Reset the CPU of the board of `chip` with USB serial number `mac` through
-/// its debug module and let it run.
+/// Reset the board of `chip` with USB serial number `mac` through its
+/// builtin USB-JTAG and let it run: the reset the runner also escalates to
+/// for a bootloader loop.
 pub fn reset(chip: &str, mac: &str) -> Result<()> {
-    let (_, scripts) = openocd()?;
-    run_openocd(
-        &[
-            String::from("-s"),
-            scripts.display().to_string(),
-            String::from("-f"),
-            format!("board/{chip}-builtin.cfg"),
-            String::from("-c"),
-            format!("adapter serial {mac}"),
-            String::from("-c"),
-            String::from("init"),
-            String::from("-c"),
-            String::from("reset run"),
-            String::from("-c"),
-            String::from("shutdown"),
-        ],
-        SESSION_TIMEOUT,
-    )
+    let (program, scripts) = openocd()?;
+    oer_hil_arbiter::control::Openocd { program, scripts }.reset(chip, mac, SESSION_TIMEOUT)
 }
 
 #[cfg(test)]

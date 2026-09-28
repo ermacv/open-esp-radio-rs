@@ -159,6 +159,106 @@ impl ResetControl {
     }
 }
 
+impl PowerControl {
+    /// Power the board's hub port off and on again with `uhubctl`.
+    pub fn cycle(&self) -> crate::Result<()> {
+        let PowerVia::Uhubctl = self.via;
+        let output = oer_process::output(
+            std::process::Command::new("uhubctl")
+                .args(["--location", &self.location, "--ports"])
+                .arg(self.port.to_string())
+                .args(["--action", "cycle", "--delay", "2"]),
+            Some(Duration::from_secs(30)),
+        )?;
+        if !output.status.success() {
+            return Err(format!(
+                "uhubctl could not cycle {} port {}: {}",
+                self.location,
+                self.port,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )
+            .into());
+        }
+        Ok(())
+    }
+}
+
+/// Names the OpenOCD executable of the ESP-IDF tools; the stand's wrapper
+/// passes it to the runner, which cannot locate the tools itself.
+pub const OPENOCD_ENV: &str = "OER_HIL_OPENOCD";
+/// Names OpenOCD's script directory.
+pub const OPENOCD_SCRIPTS_ENV: &str = "OER_HIL_OPENOCD_SCRIPTS";
+
+/// The OpenOCD build that reaches a chip's builtin USB-JTAG.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Openocd {
+    pub program: std::path::PathBuf,
+    pub scripts: std::path::PathBuf,
+}
+
+impl Openocd {
+    /// The build the stand's wrapper named, if any.
+    pub fn from_environment() -> Option<Self> {
+        Some(Self {
+            program: std::env::var_os(OPENOCD_ENV)?.into(),
+            scripts: std::env::var_os(OPENOCD_SCRIPTS_ENV)?.into(),
+        })
+    }
+
+    /// The arguments of a `reset run` of the board of `chip` whose USB
+    /// serial number is `mac`.
+    pub fn reset_arguments(&self, chip: &str, mac: &str) -> Vec<String> {
+        vec![
+            String::from("-s"),
+            self.scripts.display().to_string(),
+            String::from("-f"),
+            format!("board/{chip}-builtin.cfg"),
+            String::from("-c"),
+            format!("adapter serial {mac}"),
+            String::from("-c"),
+            String::from("init"),
+            String::from("-c"),
+            String::from("reset run"),
+            String::from("-c"),
+            String::from("shutdown"),
+        ]
+    }
+
+    /// Reset the chip through its builtin USB-JTAG and let it run. On the
+    /// esp32s31 this is a software system reset (`rst:0x3`) that also clears
+    /// low-power and PMU state which an RTS reset through the USB
+    /// Serial/JTAG port, and a reflash, leave in place (a powered-down MPLL
+    /// kept the second-stage bootloader in a watchdog loop until it).
+    pub fn reset(&self, chip: &str, mac: &str, timeout: Duration) -> crate::Result<()> {
+        let output = oer_process::output(
+            std::process::Command::new(&self.program).args(self.reset_arguments(chip, mac)),
+            Some(timeout),
+        )
+        .map_err(|error| {
+            if error.is::<oer_process::owned::DeadlineExceeded>() {
+                format!(
+                    "OpenOCD did not finish within {}s and was stopped",
+                    timeout.as_secs()
+                )
+                .into()
+            } else {
+                error
+            }
+        })?;
+        if !output.status.success() {
+            let log = String::from_utf8_lossy(&output.stderr);
+            let tail = log.lines().rev().take(20).collect::<Vec<_>>();
+            return Err(format!(
+                "OpenOCD failed with {}:\n{}",
+                output.status,
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            )
+            .into());
+        }
+        Ok(())
+    }
+}
+
 /// The ROM's last `rst:... boot:...` line in `banner`.
 pub fn reset_line(banner: &str) -> Option<&str> {
     banner

@@ -193,6 +193,207 @@ pub fn recover(
     })
 }
 
+/// A bootloader that keeps resetting the same way: the ROM answers, but no
+/// image starts, whatever the stand flashes.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BootLoop {
+    /// The repeated ROM reset line.
+    pub reset_line: String,
+    /// How many consecutive resets of that kind the console shows.
+    pub resets: usize,
+}
+
+/// The reset code of a ROM line, `rst:0x7` of `rst:0x7 (HP_SYS_HP_WDT0_RESET),boot:0x..`.
+fn reset_code(line: &str) -> Option<&str> {
+    line.split([' ', '(', ','])
+        .next()
+        .filter(|code| code.starts_with("rst:"))
+}
+
+/// The boot loop `console` ends in, if any: at least two consecutive ROM
+/// reset lines with the same reset code at its end.
+pub fn boot_loop(console: &str) -> Option<BootLoop> {
+    let lines = console
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("rst:") && line.contains("boot:"))
+        .collect::<Vec<_>>();
+    let last = *lines.last()?;
+    let code = reset_code(last)?;
+    let resets = lines
+        .iter()
+        .rev()
+        .take_while(|line| reset_code(line) == Some(code))
+        .count();
+    (resets >= 2).then(|| BootLoop {
+        reset_line: last.to_owned(),
+        resets,
+    })
+}
+
+/// One reset the stand tried against a boot loop.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EscalationStep {
+    pub step: RecoveryStep,
+    /// The ROM line after it, or why the step could not run.
+    pub outcome: std::result::Result<Option<String>, String>,
+    /// Whether the console stopped looping after it.
+    pub cleared: bool,
+}
+
+/// What the stand did about a boot loop, recorded as the repetition's
+/// `reset-escalation.json`.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ResetEscalation {
+    pub boot_loop: BootLoop,
+    pub steps: Vec<EscalationStep>,
+    /// Whether a step cleared the loop; when none did, the board is
+    /// quarantined for a person.
+    pub cleared: bool,
+}
+
+/// The file a repetition records its reset escalation in.
+pub const RESET_ESCALATION_FILE: &str = "reset-escalation.json";
+
+/// How long the console is read for the ROM's line after an escalation step
+/// that does not return one itself.
+const BANNER_WATCH: Duration = Duration::from_secs(2);
+
+/// Climb past the RTS reset that did not clear `found`: a system reset
+/// through the builtin USB-JTAG, then EN and the hub port's power when the
+/// board has them, stopping at the first step after which `boots` sees the
+/// image answer. When none clears it the board is quarantined for a person.
+pub fn escalate_boot_loop(
+    port: &Path,
+    mac: Option<&str>,
+    chip: &str,
+    found: BootLoop,
+    output: &Path,
+    origin: &str,
+    mut boots: impl FnMut() -> bool,
+) -> ResetEscalation {
+    let mac = mac.map(str::to_owned).or_else(|| board_mac(port));
+    let arbiter = Arbiter::open().ok();
+    let control = mac.as_deref().and_then(|mac| {
+        arbiter
+            .as_ref()?
+            .devices()
+            .ok()?
+            .into_iter()
+            .find(|device| device.mac == mac)?
+            .control
+    });
+    let mut steps = Vec::new();
+    let mut try_step = |step: RecoveryStep, reset: &dyn Fn() -> crate::Result<Option<String>>| {
+        let outcome = reset().map_err(|error| error.to_string());
+        let console = match &outcome {
+            Ok(None) => post_mortem::current_port(port, mac.as_deref(), Duration::from_secs(10))
+                .and_then(|port| read_console(&port, BANNER_WATCH).ok())
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        let reset_line = outcome.clone().map(|banner| {
+            banner
+                .as_deref()
+                .and_then(oer_hil_arbiter::control::reset_line)
+                .or_else(|| oer_hil_arbiter::control::reset_line(&console))
+                .map(str::to_owned)
+        });
+        // Only an image that answers shows the loop is gone: a console read
+        // across the port's re-enumeration may simply have missed it.
+        let cleared = outcome.is_ok() && boots();
+        steps.push(EscalationStep {
+            step,
+            outcome: reset_line,
+            cleared,
+        });
+        cleared
+    };
+    let openocd = oer_hil_arbiter::control::Openocd::from_environment();
+    let mut cleared = match (&openocd, mac.as_deref()) {
+        (Some(openocd), Some(mac)) => try_step(RecoveryStep::JtagReset, &|| {
+            openocd.reset(chip, mac, Duration::from_secs(60))?;
+            Ok(None)
+        }),
+        _ => try_step(RecoveryStep::JtagReset, &|| {
+            Err("no OpenOCD was passed to the runner or the board's MAC is unknown".into())
+        }),
+    };
+    if !cleared && let Some(reset) = control.as_ref().and_then(|control| control.reset.clone()) {
+        cleared = try_step(RecoveryStep::EnReset, &|| {
+            Ok(Some(reset.reset(oer_hil_arbiter::BootMode::Normal)?))
+        });
+    }
+    if !cleared && let Some(power) = control.as_ref().and_then(|control| control.power.clone()) {
+        cleared = try_step(RecoveryStep::PowerCycle, &|| {
+            power.cycle()?;
+            Ok(None)
+        });
+    }
+    let escalation = ResetEscalation {
+        boot_loop: found,
+        steps,
+        cleared,
+    };
+    let _ = crate::durable::atomic_json(&output.join(RESET_ESCALATION_FILE), &escalation);
+    if let (Some(arbiter), Some(mac)) = (&arbiter, mac.as_deref()) {
+        match escalation.steps.iter().find(|step| step.cleared) {
+            Some(step) => {
+                let _ = arbiter.record_board_by(
+                    String::from("stand"),
+                    Some(mac.to_owned()),
+                    oer_hil_arbiter::BoardEventKind::Recovered {
+                        step: step.step,
+                        hardware: true,
+                        reset_line: step.outcome.clone().ok().flatten(),
+                        origin: origin.to_owned(),
+                    },
+                );
+            }
+            None => {
+                let _ = quarantine(
+                    arbiter,
+                    mac,
+                    QuarantineTrigger::BootLoop,
+                    format!(
+                        "its bootloader resets in a loop ({}) that {} did not clear",
+                        escalation.boot_loop.reset_line,
+                        escalation
+                            .steps
+                            .iter()
+                            .map(|step| format!("{:?}", step.step))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    output,
+                );
+            }
+        }
+    }
+    escalation
+}
+
+/// Read the console at `port` for `watch` without resetting the chip.
+fn read_console(port: &Path, watch: Duration) -> crate::Result<String> {
+    use std::io::Read as _;
+    let mut serial = serialport::new(port.to_string_lossy(), 115_200)
+        .timeout(Duration::from_millis(100))
+        .open()?;
+    serial.write_data_terminal_ready(false)?;
+    serial.write_request_to_send(false)?;
+    let started = std::time::Instant::now();
+    let mut console = Vec::new();
+    let mut buffer = [0_u8; 1024];
+    while started.elapsed() < watch {
+        match serial.read(&mut buffer) {
+            Ok(read) => console.extend_from_slice(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(_) => break,
+        }
+    }
+    Ok(String::from_utf8_lossy(&console).into_owned())
+}
+
 /// Whether a ROM reset line shows a ROM that answers, booting from flash or
 /// waiting for a download: the stand can load firmware into the board.
 fn rom_answers(line: &str) -> bool {
@@ -352,6 +553,60 @@ mod tests {
             Some("38:44:BE:AA:25:64")
         );
         assert_eq!(board_mac(Path::new("/dev/ttyACM9")), None);
+    }
+
+    #[test]
+    fn a_bootloader_that_resets_the_same_way_again_is_a_boot_loop() {
+        let looping = "ESP-ROM:esp32s31\nrst:0x1 (POWERON),boot:0x58 (SPI_FAST_FLASH_BOOT)\n\
+            I (48) boot: Multicore bootloader\n\
+            rst:0x7 (HP_SYS_HP_WDT0_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)\n\
+            Core0 Saved PC:0x2f06f5f6\nI (48) boot: Multicore bootloader\n\
+            rst:0x7 (HP_SYS_HP_WDT0_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)\n\
+            I (48) boot: Multicore bootloader\n";
+        assert_eq!(
+            boot_loop(looping),
+            Some(BootLoop {
+                reset_line: String::from(
+                    "rst:0x7 (HP_SYS_HP_WDT0_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)"
+                ),
+                resets: 2,
+            })
+        );
+        // One reset, then the image: no loop.
+        assert_eq!(
+            boot_loop("rst:0x3 (SW_SYS_RESET),boot:0x58 (SPI_FAST_FLASH_BOOT)\nOER_BOOT\n"),
+            None
+        );
+        // A different reset before the last one: no loop yet.
+        assert_eq!(
+            boot_loop(
+                "rst:0x3 (SW_SYS_RESET),boot:0x58\nrst:0x7 (HP_SYS_HP_WDT0_RESET),boot:0x58\n"
+            ),
+            None
+        );
+        assert_eq!(boot_loop(""), None);
+    }
+
+    #[test]
+    fn a_reset_escalation_records_every_step_it_tried() {
+        let escalation = ResetEscalation {
+            boot_loop: BootLoop {
+                reset_line: String::from("rst:0x7 (HP_SYS_HP_WDT0_RESET),boot:0x58"),
+                resets: 3,
+            },
+            steps: vec![EscalationStep {
+                step: RecoveryStep::JtagReset,
+                outcome: Ok(Some(String::from("rst:0x3 (SW_SYS_RESET),boot:0x58"))),
+                cleared: true,
+            }],
+            cleared: true,
+        };
+        let json = serde_json::to_value(&escalation).unwrap();
+        assert_eq!(json["steps"][0]["step"], "jtag-reset");
+        assert_eq!(
+            serde_json::from_value::<ResetEscalation>(json).unwrap(),
+            escalation
+        );
     }
 
     #[test]

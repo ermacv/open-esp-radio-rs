@@ -159,6 +159,9 @@ pub enum RecoveryStep {
     EnReset,
     /// Its switchable hub port was powered off and on.
     PowerCycle,
+    /// A system reset through the chip's builtin USB-JTAG (OpenOCD `reset
+    /// run`), which clears low-power state an RTS reset leaves.
+    JtagReset,
 }
 
 fn short_hash(hash: &str) -> &str {

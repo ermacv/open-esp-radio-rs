@@ -48,6 +48,9 @@ pub enum QuarantineTrigger {
     /// An older runner's quarantine of a board it recovered often; no build
     /// sets it now, since a board the stand recovers needs no person.
     Flaky,
+    /// Its ROM answers, but its bootloader resets in a loop that no reset
+    /// the stand has (RTS, JTAG, EN, power) cleared.
+    BootLoop,
 }
 
 /// Why a quarantined board may return: what a person did to it, or that

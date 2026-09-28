@@ -471,6 +471,20 @@ there are any. A board whose USB bridge dropped off the bus mid-session thus
 shows as such rather than as a silent target. When the kernel log cannot be
 read, the runner says so and the repetition's result stands.
 
+When the image preflight gets no hello and the console ends in a boot loop
+(at least two consecutive ROM resets of the same kind, such as `rst:0x7
+(HP_SYS_HP_WDT0_RESET)` right after the second-stage bootloader), the RTS
+reset and the reflash have not cleared it: firmware can leave low-power and
+PMU state (a powered-down MPLL) that survives both. The runner escalates: a
+system reset through the chip's builtin USB-JTAG (OpenOCD `reset run`, whose
+executable the `cargo hil` wrapper passes to the runner), then EN and the hub
+port's power when the board has them, and after each step asks the image for
+its capabilities again; the first step after which it answers clears the loop
+and the repetition continues. Every step and its ROM line are recorded in the
+repetition's `reset-escalation.json` and a clearing step in the board journal.
+When no step clears it, the board is quarantined with trigger `boot-loop` for
+a person, and runs and `cargo hil wait --service` wait for its release.
+
 A target that does not answer within those 20 s climbs the recovery ladder:
 an EN pulse through the board's registered reset path, or an RTS pulse on its
 own USB Serial/JTAG port when it has none, then the same query again. No

@@ -7,7 +7,9 @@ transmit and key-install requests.
 
 | Module | Responsibility |
 | --- | --- |
-| `akm` | `Akm`, the negotiated suite: selector, key descriptor version, PTK expansion and EAPOL-Key MIC |
+| `akm` | Key descriptor version, PTK expansion and EAPOL-Key MIC of each `oer_ieee80211_mac::security::rsn::Akm` |
+| `sae` | SAE commit/confirm, hunting-and-pecking and hash-to-element password elements, anti-clogging tokens |
+| `bip`, `management_ccmp` | BIP-CMAC-128 for group-addressed and CCMP for individually addressed robust management frames |
 | `element` | Association RSN element policy and selection of its first supported suite; wire syntax is `oer_ieee80211_mac::security::rsn` |
 | `crypto` | Zeroizing PMK/PTK owners, PSK passphrase derivation and the association security binding |
 | `eapol` | Validated borrowed/owned EAPOL-Key packets and MIC verification |
@@ -23,8 +25,8 @@ validated Association element; the supplicant takes it from its own
 Association element. Both reject EAPOL-Key frames whose descriptor version
 differs from that suite.
 
-PSK (`00-0F-AC:2`) is the only implemented suite. Adding one (for example SAE,
-`00-0F-AC:8`) means adding an `Akm` variant; every property is an exhaustive
-match, so the compiler lists each decision the new suite must make. PMK
-establishment that is not a passphrase derivation, such as the SAE exchange,
-and management-frame protection are separate additions.
+The implemented suites are PSK (`00-0F-AC:2`), PSK-SHA256 (`00-0F-AC:6`) and
+SAE (`00-0F-AC:8`). The MAC package names them and the negotiated
+association (`oer_ieee80211_mac::security::AssociationSecurity`); this crate
+owns only their cryptography, each property an exhaustive match over the
+suite.

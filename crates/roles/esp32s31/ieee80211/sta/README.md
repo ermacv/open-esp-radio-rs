@@ -23,6 +23,10 @@ Module map:
 - `connected`, `connected_rx`, `connected_control`: association-scoped data,
   security, receive admission and control ownership;
 - `profile`: local capability advertisement and channel lowering;
+- `modem_sleep`: the station's power-save manager and its TBTT, TIM and
+  coexistence decisions;
+- `connection_coex`: the coexistence status the station publishes;
+- `standalone_esp_now_rx`: ESP-NOW reception while no station is connected;
 - `ftm`, `hardware/beacon_monitor`: bounded hardware admission frontiers whose
   physical activation limitations are stated in [FEATURES.md](../../../../hardware/esp32s31/driver/ieee80211/FEATURES.md).
 

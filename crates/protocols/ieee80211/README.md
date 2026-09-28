@@ -17,7 +17,8 @@ protocol that owns them:
 | `ap/profile` | Explicit advertisement values; the chip AP profile selects rates, capabilities and WMM parameters |
 | `station/association` | Association capability types, validation and encoding |
 | `station/management` | Probe/authentication management codecs |
-| `security/rsn` | RSN element wire syntax shared by station selection and the RSN crate; no suite policy |
+| `security` | Link protection, station and access point security policies, and the negotiated `AssociationSecurity` both roles meet at |
+| `security/rsn` | RSN element wire syntax and the `Akm` suite vocabulary shared by station selection and the RSN crate |
 | `station/security` | Station RSN candidate policy and the selected association element |
 | `station/data` | Data codecs, with A-MSDU framing in `data/amsdu` |
 | `sequence` | `SequenceNumber`: the twelve-bit value and its modulo-4096 window arithmetic |
@@ -35,11 +36,11 @@ at construction and raw register fields convert at the chip boundary.
 Consumers use `qos` for traffic intent, `extensions::wmm` for WMM elements and
 `extensions::espressif::esp_now` for vendor MAC framing.
 
-QoS classification includes the existing DSCP mapping and downgrade helpers.
-The actual admission/downgrade loop still belongs to chip MAC TX runtime;
-parsing an advertised WMM Parameter Set neither acquires admission nor selects
-a hardware queue. AP encoders take an explicit `Advertisement`;
-`roles/esp32s31/ieee80211/ap/src/profile.rs` selects the existing hardware
+QoS classification includes the DSCP mapping and downgrade helpers. The
+admission/downgrade loop belongs to the chip MAC TX runtime; parsing an
+advertised WMM Parameter Set neither acquires admission nor selects a
+hardware queue. AP encoders take an explicit `Advertisement`;
+`roles/esp32s31/ieee80211/ap/src/profile.rs` selects the hardware
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
 
 `softmac/src/contract` describes operation ownership, service capabilities,
@@ -49,10 +50,13 @@ in `softmac/src/extensions/espressif/esp_now/protocol`; secrets, peer generation
 and replay state live in its `security` sibling. They use lower MAC codecs.
 The MAC package must not depend back on SoftMAC peer or security policy.
 
-WPA2 `crypto` retains secret ownership, derivation and zeroization; `eapol`
-holds packet views and MIC handling. `frames/{security_ies,key_data,transmit}`
-separates wire formats, while `state/{supplicant,authenticator}` retains the
-complete handshake owners. Existing root exports preserve the caller contract.
+The [RSN crate](security/rsn/README.md) separates secret ownership and
+derivation (`crypto`), packet views and MIC handling (`eapol`), wire formats
+(`frames/{security_ies,key_data,transmit}`) and the complete handshake owners
+(`state/{supplicant,authenticator}`).
+
+`trace` holds the station's trace points and their `StationTrace` event set,
+which a host decodes without linking the chip stack.
 
 Portable AP `service` retains one peer storage owner and separates `peer`,
 `security`, `block_ack` and `power_save` operations into child modules.

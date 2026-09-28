@@ -7,11 +7,13 @@ edge.
 
 Module map:
 
-- `join`: Open Authentication and Association retry/deadline transactions;
+- `join`: Open System and SAE authentication and Association
+  retry/deadline transactions;
+- `association`: association capability selection from the scan record;
 - `scan`: channel-plan progress and candidate-selection lifecycle;
 - `station`: outer attempt, reconnect, backoff, disconnect and stop policy;
 - `link_monitor`: beacon-loss decisions;
-- `power_save`: STA power-state decisions and their safety preconditions;
+- `pmksa`: the SAE PMKSA cache a reconnect resumes;
 - `ftm`, `twt`: bounded requester state and deadlines; their presence does not
   establish a chip timestamp or wake-schedule implementation;
 - `request`: caller-visible station configuration and selection values.

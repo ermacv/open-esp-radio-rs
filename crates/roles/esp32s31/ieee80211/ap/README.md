@@ -15,7 +15,7 @@ It is independent of the executor and network stack.
 The transaction owner composes these parts; the hardware contract does not
 acquire another radio. The runtime supplies timers, DMA/IRQ progress and
 network handoffs. Publication is not successful transmission: resources are
-released only through the existing completion or terminal recovery path.
+released only through the completion or terminal recovery path.
 
 Probe discovery accepts broadcast or AP-addressed requests with a wildcard or
 matching SSID. The response uses the current beacon advertisement, excludes TIM,

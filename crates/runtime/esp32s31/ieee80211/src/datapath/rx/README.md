@@ -40,7 +40,7 @@ selector. Performance builds do not read diagnostic clocks.
 
 A pass that has just published owners yields before discarding another valid
 bulk unit for lack of staging credit. The fused post-DMA protocol phase can
-then release those owners; its existing `StageCapacityBlocked` continuation
+then release those owners; its `StageCapacityBlocked` continuation
 keeps the retained DMA tail runnable. A pass that starts blocked and publishes
 nothing still applies discard/recycle admission, so a persistently blocked
 consumer cannot hide critical traffic behind bulk frames. Critical frames may

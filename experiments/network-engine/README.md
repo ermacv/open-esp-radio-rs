@@ -5,7 +5,7 @@ materializer for radio research. Host tests compose its physical owners with
 the shared STA encoder and retry path. A product supervisor or native HIL
 target does not compose this engine.
 
-The current engine is allocation-free and synchronous. It owns bounded
+The engine is allocation-free and synchronous. It owns bounded
 general-memory UDP/control work, parses Ethernet/ARP/IPv4/ICMP/UDP, reports
 durable `EgressDemand`, and writes only radio-selected work into a caller-owned
 `ReservedTxBatch`. The deferred-egress contracts (`FixedEgressQueue`,
@@ -27,7 +27,7 @@ not allocate or decide where that pool lives.
 - `enqueue_udp_owned` transfers the payload owner into the queue. With an
   external pool lease, admission transfers only the lease; final construction
   copies the payload once into the reserved frame. Passing an inline array
-  still moves that array and does not promise copy-free admission.
+  moves that array and does not promise copy-free admission.
 
 Payload contents and length must remain stable while queued. Every admission
 failure returns `TxEnqueueFailure { error, payload }` with the original owner.
@@ -47,7 +47,7 @@ must bound admission to its physical frame limit or supply a larger destination;
 waiting for more slots of the same size cannot help. Per-datagram cancellation
 is not exposed; dropping the engine releases its entire retained backlog. No IP fragmentation or path-MTU discovery is
 provided. ICMP work
-still occupies inline storage in the shared work enum, so selecting a small
+occupies inline storage in the shared work enum, so selecting a small
 UDP lease alone does not remove that storage from every queue slot. Work and
 flow capacities are compile-time bounds; changing active queue occupancy does
 not release statically reserved memory.
@@ -99,12 +99,12 @@ materialization, the shared encoder, BA and retry owners govern the physical
 frame. This crate's `station_tx` host tests exercise this entry with the real
 research engine over the runtime's `test-support` hardware models; the
 production runtime does not depend on this crate. The
-product scheduler still requires complete software-frame requests; a native
+product scheduler requires complete software-frame requests; a native
 network owner, its selection tickets and supervisor composition are not wired.
 
 ## Protocol and integration scope
 
-Current source scope:
+Source scope:
 
 - resolved IPv4 UDP TX with software IPv4/UDP checksums;
 - synchronous UDP RX delivery from contiguous frames or borrowed decoded parts;

@@ -17,6 +17,11 @@ const PHY_PACKAGES: &[&str] = &[
     "oer-esp32s31-pac",
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-phy",
+    // Portable PHY trace events and the typed trace ring they are recorded
+    // in. The graph is audited with default features, so `oer-trace` brings
+    // no timer: `embassy-time` comes only with the opt-in PHY `trace` feature.
+    "oer-phy-trace",
+    "oer-trace",
     // Shared register layouts and reviewed transactions of the Wi-Fi MAC that
     // the chip PAC places; closed register PACs, no vendor code.
     "oer-ieee80211-pac",

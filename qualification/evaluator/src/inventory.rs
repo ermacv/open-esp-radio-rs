@@ -767,12 +767,61 @@ mod tests {
         );
     }
 
-    #[test]
-    fn full_static_render_is_deterministic_and_has_no_runtime_identity() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+    /// The invariants every rendered view keeps, whatever the catalogs
+    /// declare: each item and reference renders once, in its own block; an
+    /// item shows its source status and, when it projects a source fact,
+    /// names the fact; a reference shows its kind and no status; the
+    /// coverage table counts every item and the summary every row.
+    fn assert_view_invariants(catalog: &CatalogView, rendered: &str) {
+        let block = |id: &str| {
+            let heading = format!("#### {}\n", escape_heading(id));
+            assert_eq!(rendered.matches(&heading).count(), 1, "{id}");
+            let start = rendered.find(&heading).unwrap() + heading.len();
+            let tail = &rendered[start..];
+            &tail[..tail.find("\n#### ").unwrap_or(tail.len())]
+        };
+        for item in &catalog.items {
+            let text = block(&item.id);
+            assert!(text.contains("- Source status: `"), "{}", item.id);
+            if let Some(fact) = &item.source_fact {
+                assert!(
+                    text.contains(&format!("- Canonical source fact: `{fact}`")),
+                    "{}",
+                    item.id
+                );
+            }
+        }
+        for reference in &catalog.references {
+            let text = block(&reference.id);
+            assert!(text.contains(&format!("- Reference kind: `{}`", reference.kind.label())));
+            assert!(!text.contains("Source status"), "{}", reference.id);
+        }
+        let counted = rendered
+            .split("## Coverage counts")
+            .nth(1)
+            .unwrap()
+            .lines()
+            .skip_while(|line| !line.starts_with('|'))
+            .take_while(|line| line.starts_with('|'))
+            .filter_map(|line| line.strip_prefix("| ")?.rsplit(" | ").next())
+            .filter_map(|cell| cell.trim_end_matches(" |").parse::<usize>().ok())
+            .sum::<usize>();
+        assert_eq!(counted, catalog.items.len());
+        assert!(rendered.contains(&format!("Displayed rows: {}.", catalog.items.len())));
+    }
+
+    fn repository() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .canonicalize()
-            .unwrap();
+            .unwrap()
+    }
+
+    /// The real catalogs change with every declared feature, so their
+    /// renders are held to invariants, not to counts.
+    #[test]
+    fn full_static_render_is_deterministic_and_has_no_runtime_identity() {
+        let root = repository();
         let catalog = CatalogView::load(
             &root,
             &[PathBuf::from(
@@ -780,30 +829,11 @@ mod tests {
             )],
         )
         .unwrap();
-        let wifi_items = catalog
-            .items
-            .iter()
-            .filter(|item| item.id.starts_with("wifi-"))
-            .count();
-        let phy_items = catalog
-            .items
-            .iter()
-            .filter(|item| item.id.starts_with("phy-"))
-            .count();
-        let matrix_cells = catalog
-            .items
-            .iter()
-            .filter(|item| item.id.starts_with("phy-protocol-consumer-"))
-            .count();
-        assert_eq!((wifi_items, phy_items, matrix_cells), (62, 78, 27));
-        assert_eq!(catalog.items.len(), 140);
         let output = root.join("target/qualification/catalog/test-render");
         let first = render_domain(&catalog, &output, &root).unwrap();
         let second = render_domain(&catalog, &output, &root).unwrap();
         assert_eq!(first, second);
-        assert!(first.contains("SoftAP"));
-        assert!(first.contains("WPA3-Personal"));
-        assert!(first.contains("Resume after RF sleep — Bluetooth"));
+        assert_view_invariants(&catalog, &first);
         assert!(!first.contains(&root.display().to_string()));
         assert!(!first.contains("Generated at"));
     }
@@ -903,16 +933,14 @@ scope-and-limitations = "No composition"
     }
 
     #[test]
-    fn migrated_coex_and_whole_radio_views_keep_references_separate_from_status() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap();
+    fn combined_real_catalogs_render_alike_in_any_order() {
+        let root = repository();
         let paths = [
             "qualification/catalog/esp32s31/wifi-phy.toml",
             "qualification/catalog/esp32s31/coex.toml",
             "qualification/catalog/esp32s31/bluetooth.toml",
             "qualification/catalog/esp32s31/whole-radio.toml",
+            "qualification/catalog/esp32s31/ieee802154.toml",
         ]
         .map(PathBuf::from);
         let catalog = CatalogView::load(&root, &paths).unwrap();
@@ -921,63 +949,67 @@ scope-and-limitations = "No composition"
         let output = root.join("target/qualification/catalog/test-whole-radio-render");
         let rendered = render_domain(&catalog, &output, &root).unwrap();
         assert_eq!(rendered, render_domain(&reversed, &output, &root).unwrap());
-        assert!(rendered.contains("## Domain: `coexistence`"));
-        assert!(rendered.contains("## Domain: `whole-radio`"));
-        assert!(
-            rendered.contains(
-                "Displayed rows: 358. Unique source facts: 351. Explicit projections: 17."
-            )
-        );
-        assert!(rendered.contains("- Canonical source fact: `coex-timer-validation-bridge`"));
-        assert!(rendered.contains("- Canonical source fact: `bluetooth-initial-phy-handoff`"));
-
-        let reference_id = "coex-official-coexistence-scenario-scope-wifi-sta-scan-connecting-connected-ble-scan-advertising-connected";
-        let reference_start = rendered.find(&format!("#### {reference_id}\n")).unwrap();
-        let reference_tail = &rendered[reference_start..];
-        let reference_end = reference_tail[5..]
-            .find("\n#### ")
-            .map_or(reference_tail.len(), |index| index + 5);
-        let reference = &reference_tail[..reference_end];
-        assert!(reference.contains("- Reference kind: `source-reference`"));
-        assert!(reference.contains("Vendor classification: `Y`"));
-        assert!(!reference.contains("Source status"));
+        assert_view_invariants(&catalog, &rendered);
     }
 
     #[test]
-    fn migrated_ieee802154_view_keeps_host_and_reference_boundaries() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap();
-        let catalog = CatalogView::load(
-            &root,
-            &[PathBuf::from(
-                "qualification/catalog/esp32s31/ieee802154.toml",
-            )],
-        )
-        .unwrap();
-        let output = root.join("target/qualification/catalog/test-ieee802154-render");
-        let rendered = render_domain(&catalog, &output, &root).unwrap();
-        assert!(rendered.contains("## Domain: `ieee802154`"));
-        assert!(rendered.contains("| ieee802154 | HOST-ONLY | 4 |"));
+    fn a_view_counts_rows_facts_and_projections_and_keeps_references_apart() {
+        let root = RenderRoot::new("projections");
+        root.write_catalog(
+            "facts",
+            "facts",
+            r#"
+[[sections]]
+id = "radio"
+domain = "radio"
+title = "Radio"
+source-document = "FEATURES.md"
+
+[[source-facts]]
+id = "shared-entry"
+status = "implemented"
+level = "lower-primitive"
+
+[source-facts.source-contract]
+id = "shared-entry"
+composition = "production"
+scope = "One entry"
+limits = "None stated"
+source-paths = ["FEATURES.md"]
+
+[[items]]
+id = "plain"
+section = "radio"
+title = "Plain item"
+status = "absent"
+level = "native-silicon"
+scope-and-limitations = "Not composed"
+
+[[items]]
+id = "shared-entry-projection"
+section = "radio"
+title = "Projection of the shared entry"
+source-fact = "shared-entry"
+
+[[references]]
+id = "vendor-scenario"
+section = "radio"
+title = "A vendor scenario"
+kind = "source-reference"
+details = "Vendor classification: `Y`."
+"#,
+        );
+        let catalog =
+            CatalogView::load(&root.path, &[PathBuf::from("catalog/facts.toml")]).unwrap();
+        let rendered =
+            render_domain(&catalog, &root.path.join("target/render"), &root.path).unwrap();
+        assert_view_invariants(&catalog, &rendered);
         assert!(
             rendered
-                .contains("Displayed rows: 45. Unique source facts: 45. Explicit projections: 2.")
+                .contains("Displayed rows: 2. Unique source facts: 2. Explicit projections: 1.")
         );
-        assert!(rendered.contains("- Canonical source fact: `ieee802154-registered-timing-entry`"));
-        assert!(rendered.contains("- Canonical source fact: `ieee802154-mac-operation-subset`"));
-
-        let mapping_id =
-            "ieee802154-qualification-scope-mapping-clocks-reset-and-masked-foundation";
-        let mapping_start = rendered.find(&format!("#### {mapping_id}\n")).unwrap();
-        let mapping_tail = &rendered[mapping_start..];
-        let mapping_end = mapping_tail[5..]
-            .find("\n#### ")
-            .map_or(mapping_tail.len(), |index| index + 5);
-        let mapping = &mapping_tail[..mapping_end];
-        assert!(mapping.contains("- Reference kind: `qualification-mapping`"));
-        assert!(mapping.contains("`clock-reset-foundation`"));
-        assert!(!mapping.contains("Source status"));
+        assert!(rendered.contains("| radio | ABSENT | 1 |"));
+        assert!(rendered.contains("| radio | IMPLEMENTED | 1 |"));
     }
 
     #[test]

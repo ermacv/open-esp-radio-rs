@@ -56,6 +56,28 @@ pub enum BoardEventKind {
         /// What the board answered to the release check.
         check: String,
     },
+    /// A reset soak: `cycles` rounds of a reset through each of `paths`,
+    /// ending at the first reset after which the board did not boot.
+    Soaked {
+        paths: Vec<ResetPath>,
+        cycles: u32,
+        resets: u32,
+        /// The reset that failed and what the console showed; `None` when
+        /// every reset booted.
+        failure: Option<String>,
+    },
+}
+
+/// A way the stand resets a board.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ResetPath {
+    /// RTS on the chip's own USB Serial/JTAG port.
+    Rts,
+    /// The CPU reset through the chip's JTAG.
+    Jtag,
+    /// EN through the board's registered UART bridge.
+    En,
 }
 
 impl std::fmt::Display for BoardEvent {
@@ -112,6 +134,16 @@ impl std::fmt::Display for BoardEvent {
                 confirmation,
                 check,
             } => write!(f, "{who} returned it after a {confirmation:?}: {check}"),
+            BoardEventKind::Soaked {
+                paths,
+                cycles,
+                resets,
+                failure,
+            } => write!(
+                f,
+                "{who} soaked it with {resets} resets in {cycles} cycles via {paths:?}: {}",
+                failure.as_deref().unwrap_or("every reset booted")
+            ),
         }
     }
 }
@@ -169,7 +201,8 @@ impl BoardEvent {
             | BoardEventKind::StartupArtifactWritten { path, .. } => Some(path),
             BoardEventKind::Flashed { .. }
             | BoardEventKind::Recovered { .. }
-            | BoardEventKind::QuarantineReleased { .. } => None,
+            | BoardEventKind::QuarantineReleased { .. }
+            | BoardEventKind::Soaked { .. } => None,
         }
     }
 }

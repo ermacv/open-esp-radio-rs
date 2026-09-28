@@ -298,7 +298,12 @@ bridge port itself can reset the chip or pull its boot strap.
 reports. `board check` reports, without resetting, whether the board is
 attached, its last flash, maintenance, its reset paths and whether it answers
 the peer text protocol. `board console --for DUR [--until TEXT]` prints and
-saves the console under `target/hil/console/<mac>/`. `cargo hil peer send
+saves the console under `target/hil/console/<mac>/`. `board soak --cycles N
+| --for DUR [--via rts,jtag,en] [--batch 10]` resets the board through each
+path once per cycle, `--batch` cycles per lease so other owners may use the
+board between batches, and stops at the first reset after which the ROM does
+not boot from flash, saving the console that follows; the board journal
+records the paths, cycles, resets and any failure. `cargo hil peer send
 BOARD LINE` sends one peer command and prints the output up to that command's
 `@OK` or `@ERR`; it also claims the air shared, since a peer command may
 transmit. Every OpenOCD session the stand starts is stopped when it outlives
@@ -316,6 +321,7 @@ cargo hil devices reset esp32c5       # rst:0x1 (POWERON),boot:0x18 (SPI_FAST_FL
 cargo hil board check esp32c5
 cargo hil board reset esp32c5 --via jtag
 cargo hil board console esp32c5 --for 30s --until @READY
+cargo hil board soak esp32c5 --for 8h --via rts,jtag,en
 cargo hil peer send esp32c5 SYNC
 cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
     --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \

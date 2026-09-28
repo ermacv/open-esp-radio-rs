@@ -1,4 +1,4 @@
-//! `cargo hil board reset|check|console` and `cargo hil peer send`: the
+//! `cargo hil board reset|check|console|soak` and `cargo hil peer send`: the
 //! stand's own ways to reach a board's port.
 //!
 //! Opening a USB serial port with the default modem lines resets an
@@ -61,6 +61,25 @@ pub(crate) enum BoardCommand {
         /// End at the first line containing this text; fail when none does.
         #[arg(long)]
         until: Option<String>,
+    },
+    /// Reset a board again and again through each path, stopping at the
+    /// first reset after which it does not boot; the result is journaled.
+    #[command(group(clap::ArgGroup::new("length").required(true).args(["cycles", "duration"])))]
+    Soak {
+        #[arg(value_name = "NAME|MAC")]
+        board: String,
+        /// Cycles to run; one cycle resets through each path once.
+        #[arg(long)]
+        cycles: Option<u32>,
+        /// How long to run, e.g. 8h.
+        #[arg(long = "for", value_parser = parse_duration)]
+        duration: Option<Duration>,
+        /// Reset paths, each once per cycle.
+        #[arg(long, value_enum, value_delimiter = ',', default_value = "rts")]
+        via: Vec<Via>,
+        /// Cycles per lease; other owners may use the board between them.
+        #[arg(long, default_value_t = 10)]
+        batch: u32,
     },
 }
 
@@ -175,8 +194,112 @@ pub(crate) fn board(
                 return Ok(std::process::ExitCode::FAILURE);
             }
         }
+        BoardCommand::Soak {
+            board,
+            cycles,
+            duration,
+            via,
+            batch,
+        } => return soak(ctx, owner, &board, cycles, duration, &via, batch.max(1)),
     }
     Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// Whether a reset's ROM line shows the board booting from flash, or why not.
+fn booted(line: Option<&str>) -> std::result::Result<(), String> {
+    match line {
+        None => Err(String::from("no ROM reset line on its console")),
+        Some(line) if line.contains("DOWNLOAD") => {
+            Err(format!("its ROM waits for a download: {line}"))
+        }
+        Some(_) => Ok(()),
+    }
+}
+
+fn reset_path(via: Via) -> oer_hil_arbiter::ResetPath {
+    match via {
+        Via::Rts => oer_hil_arbiter::ResetPath::Rts,
+        Via::Jtag => oer_hil_arbiter::ResetPath::Jtag,
+        Via::En => oer_hil_arbiter::ResetPath::En,
+    }
+}
+
+/// `cargo hil board soak`: batches of cycles under their own leases, ending
+/// at `cycles`, after `duration`, or at the first reset that did not boot.
+fn soak(
+    ctx: &Context,
+    owner: String,
+    board: &str,
+    cycles: Option<u32>,
+    duration: Option<Duration>,
+    via: &[Via],
+    batch: u32,
+) -> Result<std::process::ExitCode> {
+    let target = target(board)?;
+    let started = Instant::now();
+    let done = |cycle: u32| {
+        cycles.is_some_and(|cycles| cycle >= cycles)
+            || duration.is_some_and(|duration| started.elapsed() >= duration)
+    };
+    let (mut cycle, mut resets, mut failure) = (0_u32, 0_u32, None);
+    'soak: while !done(cycle) {
+        let _grant = lease(
+            &target,
+            owner.clone(),
+            format!("board soak {board} cycles {}..", cycle + 1),
+            false,
+        )?;
+        for _ in 0..batch {
+            if done(cycle) {
+                break;
+            }
+            cycle += 1;
+            for &path in via {
+                resets += 1;
+                let line = reset(&target, path, false)?;
+                let name = format!("{path:?}").to_lowercase();
+                match booted(line.as_deref()) {
+                    Ok(()) => println!("{cycle} {name}: {}", line.unwrap_or_default()),
+                    Err(why) => {
+                        println!("{cycle} {name}: FAILED: {why}");
+                        // What the board prints next is the evidence.
+                        let log = ctx
+                            .root
+                            .join("target/hil/console")
+                            .join(target.mac.replace(':', ""))
+                            .join(format!("soak-failure-{}.log", unix_seconds()));
+                        std::fs::create_dir_all(log.parent().ok_or("no parent")?)?;
+                        if let Ok(serial) = hil_flash::open_without_reset(&target.port) {
+                            let lines = hil_flash::serial_lines(serial);
+                            let _ = hil_flash::capture(lines, Duration::from_secs(5), None, &log);
+                            eprintln!("hil: console after the failure in {}", log.display());
+                        }
+                        failure = Some(format!("cycle {cycle} via {name}: {why}"));
+                        break 'soak;
+                    }
+                }
+            }
+        }
+    }
+    target.arbiter.record_board_by(
+        owner,
+        Some(target.mac.clone()),
+        oer_hil_arbiter::BoardEventKind::Soaked {
+            paths: via.iter().copied().map(reset_path).collect(),
+            cycles: cycle,
+            resets,
+            failure: failure.clone(),
+        },
+    )?;
+    println!(
+        "{board}: {resets} resets in {cycle} cycles: {}",
+        failure.as_deref().unwrap_or("every reset booted")
+    );
+    Ok(if failure.is_some() {
+        std::process::ExitCode::FAILURE
+    } else {
+        std::process::ExitCode::SUCCESS
+    })
 }
 
 pub(crate) fn peer(owner: String, args: &[OsString]) -> Result<std::process::ExitCode> {
@@ -240,9 +363,12 @@ fn answer(
 /// again when the reset made the port re-enumerate.
 fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
     let lines = match via {
-        Via::Rts => hil_flash::serial_lines(hil_flash::reset_into_application(&target.port)?),
+        Via::Rts => hil_flash::serial_lines(retrying(|| {
+            hil_flash::reset_into_application(&target.port)
+        })?),
         Via::Jtag => {
-            let lines = hil_flash::serial_lines(hil_flash::open_without_reset(&target.port)?);
+            let lines =
+                hil_flash::serial_lines(retrying(|| hil_flash::open_without_reset(&target.port))?);
             let chip = target.chip.as_deref().ok_or(
                 "the board has no registered chip; `cargo hil devices set MAC --chip CHIP`",
             )?;
@@ -279,6 +405,20 @@ fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
         std::thread::sleep(Duration::from_millis(200));
     }
     Ok(None)
+}
+
+/// Open a board's port, retrying for two seconds: the console reader of the
+/// previous reset releases the port only at its next read timeout.
+fn retrying<T, E>(
+    mut open: impl FnMut() -> std::result::Result<T, E>,
+) -> std::result::Result<T, E> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match open() {
+            Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
+            result => return result,
+        }
+    }
 }
 
 /// Whether `board` boots from flash after an RTS reset: its ROM reset line,
@@ -375,6 +515,22 @@ fn unix_seconds() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_soak_counts_only_resets_that_boot_from_flash() {
+        assert!(
+            booted(Some(
+                "rst:0x15 (USB_UART_HPSYS),boot:0x18 (SPI_FAST_FLASH_BOOT)"
+            ))
+            .is_ok()
+        );
+        assert!(
+            booted(Some("rst:0x1 (POWERON),boot:0x4 (DOWNLOAD(USB/UART0))"))
+                .unwrap_err()
+                .contains("download")
+        );
+        assert!(booted(None).is_err());
+    }
 
     fn lines(text: &[&str]) -> mpsc::Receiver<Vec<u8>> {
         let (sender, received) = mpsc::channel();

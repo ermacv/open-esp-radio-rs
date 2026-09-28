@@ -34,7 +34,7 @@ mod store;
 mod unknown;
 
 pub use balance::HARD_LIMIT;
-pub use board::{BoardEvent, BoardEventKind, RecoveryStep};
+pub use board::{BoardEvent, BoardEventKind, RecoveryStep, ResetPath};
 pub use control::{BootMode, Control, ResetControl};
 pub use devices::{
     AttachedPort, Device, attached_ports, board_mac, device_label, normalize_mac, port_mac,

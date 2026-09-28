@@ -58,6 +58,14 @@ id = "BLOB_LIBPP_HAL_TSF_TIMER"
 description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_tsf.o hal_tsf_timer_set_target size 0x22, hal_tsf_timer_get_target size 0x20, hal_enable_tsf_timer_wakeup size 0x18, hal_disable_tsf_timer_wakeup size 0x1a, hal_enable_tsf_timer size 0x3a and hal_disable_tsf_timer size 0x30."
 
 [[sources]]
+id = "BLOB_LIBPP_HAL_PWR_LPCLK_SYNC"
+description = "libpp.a sha256 0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4; complete hal_pwr.o pwr_hal_set_lpclk_sync_enable size 0x14 ORs 0x08000000 into 0x2010d830 and pwr_hal_set_lpclk_sync_disable size 0x16 ANDs it with 0xf7ffffff, each touching only bit 27; complete hal_tsf.o hal_timer_update_by_rtc size 0x38 sets the same bit and replaces bits 17:0 of 0x2010d878 from its second argument when its first argument is nonzero, and clears the bit otherwise."
+
+[[sources]]
+id = "BLOB_LIBPP_PM_TWT_TSF_TARGET"
+description = "libpp.a sha256 0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4; complete pm_twt.o pm_on_isr_twt_wake size 0x74 loads the low and high words of an eight-byte wake TSF slot and passes them as the second and third arguments of hal_tsf_timer_set_target, whose size-0x22 body stores the second argument as the 32-bit target and the low three bits of the third into the control word; complete pm_twt.o pm_twt_set_target_tsf size 0x17c parks a timer with the arguments all ones and seven. The ESP32-S31 rev0 ROM copies pm_on_isr_twt_wake size 0x90 and pm_twt_set_target_tsf size 0x254 pass the same (index, low, high) and (index, all ones, seven) arguments to the timer-target entry at offset 0x4e0 of their function table."
+
+[[sources]]
 id = "BLOB_LIBPP_HAL_TSF_RUNTIME"
 description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_tsf.o hal_enable_nan_tsf size 0x26, hal_disable_nan_tsf size 0x22, hal_disable_softap_tsf size 0x12, hal_set_sta_tbtt size 0x6e, hal_set_sta_tbtt_interval size 0x18, hal_set_sta_light_sleep_wake_ahead_time size 0x16, hal_is_sta_tsf_active size 0x0c and hal_tsf_clear_soc_wakeup_request size 0x14; complete hal_mac.o hal_enable_sta_btwt_tsf size 0x3e."
 

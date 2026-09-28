@@ -46,7 +46,7 @@ impl WifiRadioRegisters {
 
         let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         rtc.control()
-            .modify(|_, w| w.rtc_update_enable_opaque().set_bit());
+            .modify(|_, w| w.lp_clock_sync_enable().set_bit());
         rtc.slow_clock_calibration()
             .modify(|_, w| w.value().set(slow_clock_calibration));
         true

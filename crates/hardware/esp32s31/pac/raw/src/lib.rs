@@ -27329,20 +27329,20 @@ pub mod wifi_mac_rtc_timer_update {
         pub type StaTsfWakeupEnableR = crate::BitReader;
         #[doc = "Field `STA_TSF_WAKEUP_ENABLE` writer - Project-assigned name. hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
         pub type StaTsfWakeupEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `RTC_UPDATE_ENABLE_OPAQUE` reader - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
-        pub type RtcUpdateEnableOpaqueR = crate::BitReader;
-        #[doc = "Field `RTC_UPDATE_ENABLE_OPAQUE` writer - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
-        pub type RtcUpdateEnableOpaqueW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LP_CLOCK_SYNC_ENABLE` reader - Project-assigned name. Low-power clock synchronization enable. The dedicated pwr_hal_set_lpclk_sync_enable and pwr_hal_set_lpclk_sync_disable leaves set and clear only this bit; hal_timer_update_by_rtc sets it when its enable argument is nonzero and clears it otherwise."]
+        pub type LpClockSyncEnableR = crate::BitReader;
+        #[doc = "Field `LP_CLOCK_SYNC_ENABLE` writer - Project-assigned name. Low-power clock synchronization enable. The dedicated pwr_hal_set_lpclk_sync_enable and pwr_hal_set_lpclk_sync_disable leaves set and clear only this bit; hal_timer_update_by_rtc sets it when its enable argument is nonzero and clears it otherwise."]
+        pub type LpClockSyncEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 21 - Project-assigned name. hal_set_sta_tsf_wakeup sets or clears this bit in the same branch as STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE."]
             #[inline(always)]
             pub fn sta_tsf_wakeup_enable(&self) -> StaTsfWakeupEnableR {
                 StaTsfWakeupEnableR::new(((self.bits >> 21) & 1) != 0)
             }
-            #[doc = "Bit 27 - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
+            #[doc = "Bit 27 - Project-assigned name. Low-power clock synchronization enable. The dedicated pwr_hal_set_lpclk_sync_enable and pwr_hal_set_lpclk_sync_disable leaves set and clear only this bit; hal_timer_update_by_rtc sets it when its enable argument is nonzero and clears it otherwise."]
             #[inline(always)]
-            pub fn rtc_update_enable_opaque(&self) -> RtcUpdateEnableOpaqueR {
-                RtcUpdateEnableOpaqueR::new(((self.bits >> 27) & 1) != 0)
+            pub fn lp_clock_sync_enable(&self) -> LpClockSyncEnableR {
+                LpClockSyncEnableR::new(((self.bits >> 27) & 1) != 0)
             }
         }
         impl W {
@@ -27351,10 +27351,10 @@ pub mod wifi_mac_rtc_timer_update {
             pub fn sta_tsf_wakeup_enable(&mut self) -> StaTsfWakeupEnableW<'_, ControlSpec> {
                 StaTsfWakeupEnableW::new(self, 21)
             }
-            #[doc = "Bit 27 - Opaque: meaning not established. Set when the leaf's enable argument is nonzero."]
+            #[doc = "Bit 27 - Project-assigned name. Low-power clock synchronization enable. The dedicated pwr_hal_set_lpclk_sync_enable and pwr_hal_set_lpclk_sync_disable leaves set and clear only this bit; hal_timer_update_by_rtc sets it when its enable argument is nonzero and clears it otherwise."]
             #[inline(always)]
-            pub fn rtc_update_enable_opaque(&mut self) -> RtcUpdateEnableOpaqueW<'_, ControlSpec> {
-                RtcUpdateEnableOpaqueW::new(self, 27)
+            pub fn lp_clock_sync_enable(&mut self) -> LpClockSyncEnableW<'_, ControlSpec> {
+                LpClockSyncEnableW::new(self, 27)
             }
         }
         #[doc = "Project-assigned name. Enabled hal_timer_update_by_rtc sets bit 27. hal_set_sta_tsf_wakeup sets or clears bit 21 together with the STA TSF wakeup bit at 0x2010d858.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -30900,7 +30900,7 @@ pub mod wifi_mac_tsf_timer {
         target: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x10 - Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31."]
+        #[doc = "0x00..0x10 - Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits, bits 34:32 of the 64-bit TSF target. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31."]
         #[inline(always)]
         pub const fn control(&self, n: usize) -> &Control {
             #[allow(clippy::no_effect)]
@@ -30908,7 +30908,7 @@ pub mod wifi_mac_tsf_timer {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(8 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x10 - Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31."]
+        #[doc = "0x00..0x10 - Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits, bits 34:32 of the 64-bit TSF target. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31."]
         #[inline(always)]
         pub fn control_iter(&self) -> impl Iterator<Item = &Control> {
             (0..4)
@@ -30940,19 +30940,19 @@ pub mod wifi_mac_tsf_timer {
             })
         }
     }
-    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits, bits 34:32 of the 64-bit TSF target. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31."]
+    #[doc = "Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits, bits 34:32 of the 64-bit TSF target. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31."]
     pub mod control {
         #[doc = "Register `CONTROL%s` reader"]
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL%s` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `LOW_CONTROL_OPAQUE` reader - Opaque: meaning not established. Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer."]
-        pub type LowControlOpaqueR = crate::FieldReader;
-        #[doc = "Field `LOW_CONTROL_OPAQUE` writer - Opaque: meaning not established. Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer."]
-        pub type LowControlOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `TARGET_HIGH` reader - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
+        pub type TargetHighR = crate::FieldReader;
+        #[doc = "Field `TARGET_HIGH` writer - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
+        pub type TargetHighW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         #[doc = "Field `WAKEUP_ENABLE` reader - Project-assigned name. Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup."]
         pub type WakeupEnableR = crate::BitReader;
         #[doc = "Field `WAKEUP_ENABLE` writer - Project-assigned name. Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup."]
@@ -30962,10 +30962,10 @@ pub mod wifi_mac_tsf_timer {
         #[doc = "Field `TIMER_ENABLE` writer - Project-assigned name. Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."]
         pub type TimerEnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:2 - Opaque: meaning not established. Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer."]
+            #[doc = "Bits 0:2 - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
             #[inline(always)]
-            pub fn low_control_opaque(&self) -> LowControlOpaqueR {
-                LowControlOpaqueR::new((self.bits & 7) as u8)
+            pub fn target_high(&self) -> TargetHighR {
+                TargetHighR::new((self.bits & 7) as u8)
             }
             #[doc = "Bit 30 - Project-assigned name. Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup."]
             #[inline(always)]
@@ -30979,10 +30979,10 @@ pub mod wifi_mac_tsf_timer {
             }
         }
         impl W {
-            #[doc = "Bits 0:2 - Opaque: meaning not established. Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer."]
+            #[doc = "Bits 0:2 - Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven."]
             #[inline(always)]
-            pub fn low_control_opaque(&mut self) -> LowControlOpaqueW<'_, ControlSpec> {
-                LowControlOpaqueW::new(self, 0)
+            pub fn target_high(&mut self) -> TargetHighW<'_, ControlSpec> {
+                TargetHighW::new(self, 0)
             }
             #[doc = "Bit 30 - Project-assigned name. Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup."]
             #[inline(always)]
@@ -30995,7 +30995,7 @@ pub mod wifi_mac_tsf_timer {
                 TimerEnableW::new(self, 31)
             }
         }
-        #[doc = "Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits, bits 34:32 of the 64-bit TSF target. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;

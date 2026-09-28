@@ -3567,6 +3567,18 @@ code = "d73abad28ea76119d2e1b2069a6a554897d65da5ceaf9fb4e8152007008e9051"
 [[function]]
 artifact = "libpp"
 member = "hal_pwr.o"
+symbol = "pwr_hal_set_lpclk_sync_disable"
+code = "5eede6f338190c15a2ca31e4e1ac272f2b934725bc064379e45fdfce79d36fb9"
+
+[[function]]
+artifact = "libpp"
+member = "hal_pwr.o"
+symbol = "pwr_hal_set_lpclk_sync_enable"
+code = "342cb428227815aeb6fb77f75f9504366cbbf1797f5dccb3d4c99d86b1e77714"
+
+[[function]]
+artifact = "libpp"
+member = "hal_pwr.o"
 symbol = "pwr_hal_set_mac_modem_beacon_miss_limit"
 code = "33a82291c470e9e422dba874b24875bf11031181664b833c12bc428210e268b5"
 
@@ -4193,6 +4205,18 @@ artifact = "libpp"
 member = "pm_coex.o"
 symbol = "pm_coex_update_rx_beacon_pti"
 code = "691a63dcd367cda33f4f8541075dda8bd69a481effcfa611d3b86a5f7fd705eb"
+
+[[function]]
+artifact = "libpp"
+member = "pm_twt.o"
+symbol = "pm_on_isr_twt_wake"
+code = "fec0d70fce79f25808a9cce596a9aa752844fc4cc71a7c623da7bde4a557cd6f"
+
+[[function]]
+artifact = "libpp"
+member = "pm_twt.o"
+symbol = "pm_twt_set_target_tsf"
+code = "25be7a296146fdd57258729a7220926f9e0b1957934cbc6ec5f6fc0e70aa25e4"
 
 [[function]]
 artifact = "libpp"
@@ -6191,8 +6215,20 @@ code = "f1acb79b7a0ce22a05069e9ae7e9dd192b8e35f95c764cedffcfc769ad2f4d1d"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "pm_on_isr_twt_wake"
+code = "2cd1163707f162174df9581af932f647e3f66033fc92b162980b94ccf2fac6c8"
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "pm_on_tbtt"
 code = "b4fba893ada15b01751b183416befe2fb0d4d0399a2e8468c603e0f29149d35e"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "pm_twt_set_target_tsf"
+code = "ea31a60204d92f4fe1b99bfad5390f1cc5d85686bc672f11468ab2bd31192d2a"
 
 [[function]]
 artifact = "rom"

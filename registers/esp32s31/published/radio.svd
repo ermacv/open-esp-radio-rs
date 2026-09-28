@@ -12127,8 +12127,8 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>RTC_UPDATE_ENABLE_OPAQUE</name>
-              <description>Opaque: meaning not established. Set when the leaf's enable argument is nonzero.</description>
+              <name>LP_CLOCK_SYNC_ENABLE</name>
+              <description>Project-assigned name. Low-power clock synchronization enable. The dedicated pwr_hal_set_lpclk_sync_enable and pwr_hal_set_lpclk_sync_disable leaves set and clear only this bit; hal_timer_update_by_rtc sets it when its enable argument is nonzero and clears it otherwise.</description>
               <bitOffset>27</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -13793,14 +13793,14 @@
           <dimIncrement>0x8</dimIncrement>
           <dimIndex>0-3</dimIndex>
           <name>CONTROL%s</name>
-          <description>Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31.</description>
+          <description>Project-assigned name. Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits, bits 34:32 of the 64-bit TSF target. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>LOW_CONTROL_OPAQUE</name>
-              <description>Opaque: meaning not established. Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer.</description>
+              <name>TARGET_HIGH</name>
+              <description>Project-assigned name. Bits 34:32 of the 64-bit TSF target. Complete hal_tsf_timer_set_target replaces them from its third argument and hal_tsf_timer_get_target returns them through its second output pointer; pm_on_isr_twt_wake passes the high word of the stored 64-bit wake TSF there, and pm_twt_set_target_tsf parks a timer with an all-ones low word and seven.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
             </field>

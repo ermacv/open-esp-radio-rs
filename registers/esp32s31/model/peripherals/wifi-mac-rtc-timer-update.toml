@@ -21,8 +21,8 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RTC_UPDATE_ENABLE_OPAQUE"
-description = "Set when the leaf's enable argument is nonzero."
+name = "LP_CLOCK_SYNC_ENABLE"
+description = "Low-power clock synchronization enable. The dedicated pwr_hal_set_lpclk_sync_enable and pwr_hal_set_lpclk_sync_disable leaves set and clear only this bit; hal_timer_update_by_rtc sets it when its enable argument is nonzero and clears it otherwise."
 bitOffset = 27
 bitWidth = 1
 
@@ -308,9 +308,12 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.RTC_UPDATE_ENABLE_OPAQUE"
-naming = "opaque"
-sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.LP_CLOCK_SYNC_ENABLE"
+naming = "descriptive"
+sources = [
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+    "BLOB_LIBPP_HAL_PWR_LPCLK_SYNC",
+]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

@@ -41321,8 +41321,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RTC_UPDATE_ENABLE_OPAQUE"
-method = "rtc_update_enable_opaque"
+svd-name = "LP_CLOCK_SYNC_ENABLE"
+method = "lp_clock_sync_enable"
 bit-offset = 27
 bit-width = 1
 access = "read-write"
@@ -41731,8 +41731,8 @@ register-method = "control"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_OPAQUE"
-method = "low_control_opaque"
+svd-name = "TARGET_HIGH"
+method = "target_high"
 bit-offset = 0
 bit-width = 3
 access = "read-write"
@@ -41783,8 +41783,8 @@ register-method = "control"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_OPAQUE"
-method = "low_control_opaque"
+svd-name = "TARGET_HIGH"
+method = "target_high"
 bit-offset = 0
 bit-width = 3
 access = "read-write"
@@ -41835,8 +41835,8 @@ register-method = "control"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_OPAQUE"
-method = "low_control_opaque"
+svd-name = "TARGET_HIGH"
+method = "target_high"
 bit-offset = 0
 bit-width = 3
 access = "read-write"
@@ -41887,8 +41887,8 @@ register-method = "control"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_OPAQUE"
-method = "low_control_opaque"
+svd-name = "TARGET_HIGH"
+method = "target_high"
 bit-offset = 0
 bit-width = 3
 access = "read-write"

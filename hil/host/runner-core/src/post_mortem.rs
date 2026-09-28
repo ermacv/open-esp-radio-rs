@@ -177,18 +177,24 @@ fn decode_trace(
             "of the current boot"
         }
     );
-    for record in records {
+    for record in &records {
         text.push_str(&format!(
-            "{:>12} us  tag {:>5}  {:<28} {:#010x} {:#010x}\n",
+            "{:>12} us  tag {:>5}  {}\n",
             record.t_us,
             record.tag,
-            event_name(record.kind),
-            record.words[0],
-            record.words[1]
+            oer_trace::Described {
+                record,
+                sets: TRACE_EVENT_SETS,
+            }
         ));
     }
     text
 }
+
+/// The event sets a drained trace is described with; an event of another
+/// domain is shown as its domain, id and words.
+const TRACE_EVENT_SETS: &[oer_trace::Describer] =
+    &[<oer_hil_target_core::trace::PlatformTrace as oer_trace::EventSet>::describe];
 
 /// A trace kind's name: the platform's own, else its domain and event id.
 fn event_name(kind: u16) -> String {
@@ -464,7 +470,8 @@ mod tests {
             tag,
             kind,
             t_us,
-            words: [1, 2],
+            // The platform's events carry no words.
+            words: if kind == hang { [0, 0] } else { [1, 2] },
         };
         let status = oer_hil_protocol::TraceStatus {
             installed: true,
@@ -484,7 +491,10 @@ mod tests {
         let lines = text.lines().collect::<Vec<_>>();
         assert!(lines[0].contains("frozen by platform.hang"), "{text}");
         assert!(lines[0].contains("previous boot"), "{text}");
-        assert!(lines[1].contains("ieee80211.5"), "{text}");
+        assert!(
+            lines[1].contains("ieee80211.5 [0x00000001, 0x00000002]"),
+            "{text}"
+        );
         assert!(lines[2].contains("platform.hang"), "{text}");
     }
 

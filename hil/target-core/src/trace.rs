@@ -2,6 +2,8 @@
 //! when a boot ends badly. They carry no words; the post-mortem record holds
 //! the details, and the trace holds what happened before.
 
+use core::fmt;
+
 use oer_trace::{Channel, Domain, Event, Kind};
 
 /// The hang watchdog found a stall and is about to reset the chip.
@@ -37,6 +39,20 @@ impl Event for Panic {
         (words == [0; 2]).then_some(Self)
     }
 }
+
+impl fmt::Display for Hang {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("platform.hang")
+    }
+}
+
+impl fmt::Display for Panic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("platform.panic")
+    }
+}
+
+oer_trace::event_set!(pub PlatformTrace: Hang, Panic);
 
 /// The name of a platform trace kind, for the host's decoded trace.
 pub fn platform_name(kind: Kind) -> Option<&'static str> {

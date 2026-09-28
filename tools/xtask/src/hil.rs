@@ -484,8 +484,17 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
     for node in &mut runner_nodes {
         if matches!(node.path.as_slice(), [one] if ["run", "run-all", "run-plan"].contains(&one.as_str()))
         {
-            node.flags
-                .extend(["--record-evidence", "--baseline", "--owner"].map(String::from));
+            node.flags.extend(
+                [
+                    "--record-evidence",
+                    "--baseline",
+                    "--owner",
+                    "--brief",
+                    "--enqueue",
+                    "--after",
+                ]
+                .map(String::from),
+            );
         }
         node.path.insert(0, String::from("hil"));
     }
@@ -505,6 +514,8 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         "owner",
         "preempt",
         "profile",
+        "bisect",
+        "wait",
     ];
     let mut root = node(&["hil"], &stand, &["--owner"]);
     root.subcommands.extend(runner_top);
@@ -521,6 +532,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         node(&["hil", "owner", "merge"], &[], &[]),
         node(&["hil", "owner", "forget"], &[], &[]),
         node(&["hil", "preempt"], &[], &["--reason"]),
+        node(&["hil", "wait"], &[], &[]),
     ];
     for (name, command) in [
         ("lease", LeaseCli::command()),
@@ -532,6 +544,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         ("peer", crate::hil_board::PeerCli::command()),
         ("flash", crate::hil_flash::FlashCli::command()),
         ("profile", ProfileCli::command()),
+        ("bisect", crate::hil_bisect::BisectCli::command()),
     ] {
         nodes.extend(walk(&command, &path(&["hil", name])));
     }

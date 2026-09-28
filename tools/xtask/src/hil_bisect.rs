@@ -36,7 +36,7 @@ const REPORT_SCHEMA: u16 = 1;
 
 #[derive(clap::Parser)]
 #[command(name = "cargo hil bisect")]
-struct BisectCli {
+pub(crate) struct BisectCli {
     /// A commit at which the scenario passes.
     #[arg(long)]
     good: String,

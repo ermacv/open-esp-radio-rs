@@ -40,8 +40,7 @@ pointer of the code the running interrupt handler preempted, from the trap frame
 the vector stub passes to the dispatcher; the HIL hang watchdog reports both
 harts' stalled context with it.
 S31 Ethernet is enabled explicitly through HAL's `__ethernet` feature, so a
-radio-only or compatibility-network build does not acquire its network-driver
-dependencies. The Ethernet implementation remains available in the fork.
+radio build does not acquire its network-driver dependencies. The Ethernet implementation remains available in the fork.
 
 Cargo manifests pin immutable dependency revisions, and each workspace lockfile
 records the resolved graph. All workspace islands use the same S31 PAC

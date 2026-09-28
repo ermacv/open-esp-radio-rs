@@ -71,7 +71,8 @@ protocol compositions are clients of the system:
   status; its MAC priorities follow its own operation scenes.
 
 The Wi-Fi, Bluetooth and IEEE 802.15.4 compositions are all clients of the
-system.
+system. Under Embassy, [`oer-esp32s31-radio-system`](../../../composition/esp32s31/embassy/radio/README.md)
+creates it once and spawns `run_tracking` and `run_coex_schedule`.
 
 ## Limits
 
@@ -79,6 +80,7 @@ Persisting the calibration cache across resets is the caller's policy. Wi-Fi
 publishes its coexistence status and reacts to its phases. Bluetooth LE
 publishes its status (advertising, scanning, connection) and enables
 coexistence for each Controller epoch, but does not react to phases: the
-vendor BLE Controller only logs them. IEEE 802.15.4 publishes no status. There is no modem retention or light
+vendor BLE Controller only logs them. IEEE 802.15.4 publishes its enabled
+status and follows its own operation scenes, not the phases. There is no modem retention or light
 sleep: RF close keeps the registration and calibration, nothing else. A tracking failure
 leaves the domain poisoned; the chip must be reset.

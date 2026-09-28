@@ -112,6 +112,10 @@ target/hil/esp32s31/
     └── integrity.json
 ```
 
+`runs/` is a link to the run store all checkouts of this user share
+([find and compare runs](../hil/host/README.md#find-and-compare-runs)); the
+object store and reproducibility reports stay with the checkout.
+
 Subjects are ordinary files. A local content-addressed store permits hard-link
 deduplication; copying is the fallback when linking is unavailable. Copying a
 sealed run produces a self-contained bundle. Firmware binaries and generated

@@ -10,8 +10,10 @@ turn development measurements into current hardware qualification.
 - Git stores scenarios, analysis implementations, data contracts and identities
   of baselines actively consumed by a tool. It does not store a growing history
   of measurement tables, firmware binaries or generated reports.
-- `target/hil/esp32s31/` is the local working store. It may be reconstructed from
-  archived evidence. Export and import never delete original runs.
+- `target/hil/esp32s31/` is the checkout's working directory; its `runs/` links
+  to the run store every checkout of this user shares. Both may be
+  reconstructed from archived evidence. Export and import never delete
+  original runs.
 
 The runs of every checkout of this user share one store (see
 [find and compare runs](../hil/host/README.md#find-and-compare-runs)); an

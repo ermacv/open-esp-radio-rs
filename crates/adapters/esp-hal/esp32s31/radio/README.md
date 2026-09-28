@@ -22,10 +22,9 @@ master clock shared with ESP-HAL's regi2c accesses
 (`clock::ll::acquire_analog_i2c_master_clock`/`release_analog_i2c_master_clock`,
 added by the pinned fork).
 
-Bluetooth uses this coordinator. The Wi-Fi ESP-HAL adapter owns the same
-singleton types independently, so the production APIs cannot safely compose
-simultaneous Wi-Fi and Bluetooth. Neither adapter grants a second claim of
-those platform resources.
+Every protocol composition reaches these singletons through the one shared
+radio system that owns this platform; the Wi-Fi ESP-HAL adapter owns only the
+`WIFI` singleton. No adapter grants a second claim of the platform resources.
 
 The pinned ESP32-S31 PAC names all three Controller sources as `BT_MAC`,
 `MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter routes those typed identities

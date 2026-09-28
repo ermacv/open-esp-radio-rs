@@ -6,7 +6,7 @@ and peripherals. HIL scenarios, traffic generators, UART test protocols,
 vendor artifacts and qualification policy live outside this tree. See the
 [source policy](../docs/source-policy.md). The
 [network implementation guide](../docs/network-implementations.md) explains
-stack choices, their crates, defaults and reasons for patches.
+the owned Xarxa/Embassy integration, its crates and its dependency pins.
 
 The [ESP32-S31 radio capability map](hardware/esp32s31/driver/FEATURES.md) indexes shared
 lifecycle, PHY, coexistence and protocol inventories alongside their current
@@ -28,7 +28,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |
 | `protocols/bluetooth/le/ll/` | Portable LE PDU codecs, protocol-role state and the Direct Test Mode session planner |
 | `protocols/bluetooth/le/radio/` | Portable LE radio event contract: configured roles, timed event requests and their outcomes in physical values |
-| `protocols/bluetooth/le/controller/` | Sans-IO LE Controller core: HCI command service, concurrent Link Layer roles (legacy advertising, one peripheral connection with control procedures, encryption and ACL, passive scanning, Direct Test Mode) and the radio event arbiter |
+| `protocols/bluetooth/le/controller/` | Sans-IO LE Controller core: HCI command service, concurrent Link Layer roles (advertising, scanning, one peripheral connection with control procedures, encryption and ACL, Direct Test Mode) and the radio event arbiter |
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` holds reset-scoped bootstrap state, command classification and the `le` codecs |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
@@ -43,13 +43,13 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/esp32s31/driver/{bluetooth,coex}/` | Chip radio drivers; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler) and its `memory/` holds its lower ownership boundary; `ieee802154/` keeps only the ESP32-S31 IEEE 802.15.4 capability page |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
-| `adapters/embassy/esp32s31/` | Executor/time platform ABI and coexistence mailbox |
+| `adapters/embassy/esp32s31/executor/` | Scheduler-free Embassy executor and time driver |
 | `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/bluetooth/` | Portable service loop joining the in-process HCI transport, the LE Controller core and a radio port |
 | `runtime/esp32s31/{ieee80211,bluetooth,ieee802154}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners, the Bluetooth LE radio role driving scheduler list zero and the IEEE 802.15.4 acknowledged-IRQ handoff with cancellation-safe operation/DMA owners |
 | `adapters/embassy-net/owned/` | Owned-packet network adapter over the pinned Embassy/Xarxa forks |
 | `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |
-| `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` is the shared radio system (arbiter, PHY domain and periodic tracking); Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
+| `composition/esp32s31/embassy/{ieee80211,bluetooth,ieee802154,radio}/` | Static resources, one-time claims, final bindings and the concrete lifecycle runners; `radio` starts the shared radio system (arbiter, PHY domain) with its periodic PHY tracking and coexistence schedule; Wi-Fi, Bluetooth and IEEE 802.15.4 start and stop as its clients, and Bluetooth adds its HCI Controller over the radio runtime |
 
 `memory` owns backing stability, range proofs and affine handoff; chip DMA
 modules own hardware descriptors and controller transitions. `network/interface`
@@ -106,7 +106,7 @@ one-megahertz timebase check and fail-stop on an unrepresentable deadline.
 Chip PHY stays executor-independent, and the executor/time ABI backend owns no
 PHY policy.
 
-AP `roles/access_point/network_tx` retains one TX owner. Its `queue`,
+AP `runtime/esp32s31/ieee80211/src/roles/access_point/network_tx` retains one TX owner. Its `queue`,
 `power_save`, `aggregate` and `completion` modules operate on that same arena
 and state; publication and cancellation remain at the owner boundary.
 The Bluetooth LE Controller core, Link Layer and HCI live in
@@ -149,7 +149,7 @@ code outside the restricted PAC uses typed accessors; missing fields must be
 reviewed and published through the SVD/PAC. A Rust ownership proof does not
 establish the meaning of a recovered register.
 
-PHY borrows an opaque `PhyHal`; role code uses finite HAL/MAC capabilities.
+PHY borrows an opaque `SharedPhyHal`; role code uses finite HAL/MAC capabilities.
 Do not expose PAC callbacks, `Deref` escapes or owner re-exports above these
 boundaries. Shared task-side handles remain tied to the HAL arena's explicit
 serialization; a copyable handle grants no unsynchronized cross-thread MMIO
@@ -180,8 +180,8 @@ association tears down the pair before reuse. Monitor and standalone ESP-NOW
 use explicit role composition rather than borrowing an unrelated active role.
 
 Applications own `embassy-net::Stack`, DHCP, sockets and network tasks. The
-Wi-Fi integration exposes a persistent network driver and selects the
-upstream, owned or compatibility leaf at compile time. Idle, scanning, monitor
+Wi-Fi integration exposes a persistent network driver for the owned
+Xarxa/Embassy stack. Idle, scanning, monitor
 and disconnected states publish link down; role boundaries flush stale queue
 state. Network adapters do not acquire radio policy or physical DMA ownership.
 
@@ -191,9 +191,7 @@ terminal completion or proven abort returns that storage. The experimental
 research engine uses the shared egress and DMA contracts; its current
 repository consumer is a driver test.
 See the [egress architecture](../docs/wifi-egress.md) for queue,
-materialization, dependency and transport contracts. The released network
-dependencies of the compatibility profile do not remove the product's
-`esp-hal` and `esp-pacs` hardware forks.
+materialization, dependency and transport contracts.
 
 Ordinary code and task stacks may execute from PSRAM. DMA-visible storage,
 interrupt/trap stacks and the audited hot/interrupt call graph remain in

@@ -58,14 +58,14 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-bluetooth` | `hardware/esp32s31/driver/bluetooth/` |
 | `esp32s31-hal` | `hardware/esp32s31/hal/` |
 | `esp32s31-pac` | `hardware/esp32s31/pac/` |
-| `esp32s31-soc` | `adapters/esp-hal/esp32s31/soc/` |
+| `esp32s31-soc-esp-hal` | `adapters/esp-hal/esp32s31/soc/` |
 | `esp32s31-phy` | `hardware/esp32s31/phy/` |
 | `ieee802154-engine` | `hardware/ieee802154/engine/` |
-| `esp32s31-wifi-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
-| `esp32s31-radio-platform-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
+| `esp32s31-ieee80211-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
+| `esp32s31-radio-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
 | `esp32s31-executor-embassy` | `adapters/embassy/esp32s31/executor/` |
 | `esp32s31-bluetooth-system` | `composition/esp32s31/embassy/bluetooth/` |
-| `esp32s31-embassy-wifi` | `composition/esp32s31/embassy/ieee80211/` |
+| `esp32s31-ieee80211-system` | `composition/esp32s31/embassy/ieee80211/` |
 | `esp32s31-ieee802154-system` | `composition/esp32s31/embassy/ieee802154/` |
 | `esp32c5-pac` | `hardware/esp32c5/pac/` |
 
@@ -77,9 +77,10 @@ smallest operation; a safe state machine in an audited crate remains safe.
 ## PAC dependency authority
 
 Direct dependencies on the semantic radio PAC are restricted independently
-of unsafe syntax. The only allowed paths are `pac/raw`, `pac` and `hal`
-under `hardware/esp32s31/`: drivers and adapters reach registers through HAL
-owners. Check the executable list when changing this boundary.
+of unsafe syntax. The only allowed consumers are the chip's `pac/raw`, `pac`
+and `hal` under `hardware/esp32s31/`, and the chip-neutral Wi-Fi MAC register
+crates under `hardware/ieee80211/pac/` that those PACs place: drivers and
+adapters reach registers through HAL owners. Check the executable list when changing this boundary.
 
 Upper layers use opaque, finite capabilities rather than raw pointers,
 unchecked lifetimes, generic PAC callbacks or independently reusable interrupt

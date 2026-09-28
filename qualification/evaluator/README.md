@@ -17,6 +17,8 @@ in [qualification](../README.md). Its package name is
 | `catalog check --manifest PATH` | Statically validate catalogs, program selection, dependency closure and the declared required-set policy without evidence outputs |
 | `catalog render --catalog PATH --out DIRECTORY` | Write deterministic static domain and declaration views |
 | `catalog render --manifest PATH --out DIRECTORY` | Write static views plus a separate evaluator-derived program view |
+| `catalog anchors --catalog PATH ... [--changed FILE ...]` | Check the `// CAPABILITY:` code anchors against every loaded catalog entry and list the entries anchored in changed files ([code anchors](../README.md#code-anchors)) |
+| `hil-evidence (--manifest PATH \| --hil-target TARGET) [--run ID ...]` | Record the qualifying HIL observations of the program's runs as tracked shards bound to their firmware and observer sources |
 
 Schema-4 programs declare implementation, host and async status. Vendor/HIL
 status is derived from independently checked external evidence. Declarations

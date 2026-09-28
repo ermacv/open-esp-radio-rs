@@ -75,10 +75,7 @@ unclassified HIL gaps require review rather than interpretation of their names.
 Actions are deterministic candidates with reasons, not a priority ranking or an
 automatic execution plan. Choose the goal first, then inspect its owners and
 checks. Current captured-input research is described in the
-[Blobray task map](../tools/blobray/README.md#choose-a-task). The selected
-verification projects also retain legacy `project status` and `project research
-next` contracts; these commands are unavailable in current `cargo blobray` and
-are not replaced by the declarations-only qualification map.
+[Blobray task map](../tools/blobray/README.md#choose-a-task).
 
 ### Linking knowledge and focused checks
 
@@ -107,7 +104,7 @@ These links never alter readiness requirements. Source contracts continue to
 own implementation paths and limits; vendor roots, evidence rows and HIL
 requirements retain their existing owners.
 
-The initial focused links cover Wi-Fi DMA, calibration/RFPLL and peripheral BLE
+Focused links cover Wi-Fi DMA, calibration/RFPLL and peripheral BLE
 maintenance/security. Other declarations remain visible with missing links;
 missing navigation is not an absent implementation or an unexplored chip.
 
@@ -133,8 +130,8 @@ Canonical capability declarations may live below `catalog/`. A qualification
 program names one or more catalog files with `catalogs` and selects stable IDs
 with `catalog-capabilities`. Resolution adds the selected declaration and its
 catalog-owned dependency closure to the program before the schema-4 evaluator
-runs. Inline capabilities remain supported while domains migrate; a capability
-ID cannot be declared both inline and in a loaded catalog.
+runs. Every program selects its capabilities from catalogs; a capability ID
+cannot be declared both inline and in a loaded catalog.
 
 Catalogs declare shared inputs with `imports = ["qualification/catalog/…"]`.
 Paths are relative to the repository root. Imports resolve transitively; a shared
@@ -357,10 +354,12 @@ Every capability has five independent axes:
 - `host` is the reviewed declaration `covered` or `incomplete`. The evaluator
   checks consistency with declared gaps; it does not find or run Rust tests.
   Workspace testing remains a separate repository check;
-- `vendor` is derived from Blobray's compact evidence index with independently completed suites. Only a
-  fresh, baseline-accepted, release-eligible `production-trace` for every
-  declared root with matching production source hashes can qualify the axis;
-- `hil` is derived from immutable schema-2 HIL bundles. Every required scenario
+- `vendor` is derived from the vendor evidence shards. It qualifies only when
+  every declared root has an evidence reference with a MATCH entry in a current
+  shard (one whose recorded sources match the checkout) and no source-only
+  anchor remains;
+- `hil` is derived from sealed schema-2 HIL run bundles and the tracked HIL
+  evidence shards recorded from them. Every required scenario
   must pass with enough repetitions in an independently sealed attempt or run,
   bound to the current source inputs or admitted by an explicit property/build
   applicability review;
@@ -491,7 +490,7 @@ criterion likewise does not turn a failed lifecycle into PASS. A completed
 observation below the requested criterion is an unresolved failure; an absent
 measurement is missing evidence, not an invented failure.
 
-The initial named checks cover station UDP RX rates, configured maximum RX
+Named checks cover station UDP RX rates, configured maximum RX
 silence, a validated maintenance transaction, and absence of station lifecycle
 change through that transaction's traffic session. Semantic checks are recorded
 only when attempted. They do not establish RF quality, a qualified PHY execution
@@ -552,10 +551,12 @@ instead. The evaluator reads shards next to run bundles. A shard whose
 recorded sources all match the checkout supports its scenario whatever else the
 repository changed, and those digests stand for the observer's identity; a
 changed source makes it stale until the scenario runs again and is recorded.
-`cargo xtask hil` runs it after every command that executes scenarios, with
-the observer receipt of the run; `--hil-target` selects the programs naming
-that HIL target, which must agree on their run and evidence directories.
-Commit the shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
+Running scenarios never writes tracked files: recording is an explicit step,
+`cargo hil evidence record` (this checkout's pending clean runs, or `--run
+ID`), which calls `hil-evidence` with the run's observer receipt, and `cargo hil
+evidence pending` lists what is not recorded yet. `--hil-target` selects the
+programs naming that HIL target, which must agree on their run and evidence
+directories. Commit the shards. `INPUT` reports `hil-shards` and `hil-current-shards`.
 
 The HIL runner writes bundles below `target/hil/<target>/runs/<run-id>/`.
 Qualification independently checks `integrity.json`, every indexed file hash,

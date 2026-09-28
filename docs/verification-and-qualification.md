@@ -191,10 +191,10 @@ production engine, over the pinned `esp-idf` sources. Its entries carry no
 Blobray coverage, observation or state counts.
 
 `cargo xtask evidence --chip <chip>` rewrites every stale shard, or the shards of the
-scenarios it names. Git merges shards as binary files, so a conflicting merge
-keeps one side intact instead of inserting markers; the task then regenerates
-the shard from the scenarios. After a rebase that touched shards, run it and
-stage the result.
+scenarios it names. The verification owner runs it; other changes leave shards
+alone, and a shard their sources made stale stays stale until then. Git merges
+shards as binary files, so a conflicting merge keeps one side intact instead of
+inserting markers, and the next regeneration replaces it.
 
 The qualification manifest names vendor roots and explicit evidence rows:
 
@@ -218,8 +218,12 @@ derives:
 
 ## HIL evidence path
 
-Qualification manifests name exact scenario requirements rather than dated
-narrative files:
+Qualification reads sealed run bundles from the shared run store and tracked
+HIL evidence shards (`hil/evidence/<target>`), which `cargo hil evidence record`
+writes explicitly from qualifying runs; running a scenario never writes tracked
+files. The [qualification reference](../qualification/README.md) describes the
+shard binding. Qualification manifests name exact scenario requirements rather
+than dated narrative files:
 
 ```toml
 hil-requirements = [

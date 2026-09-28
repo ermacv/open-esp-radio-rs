@@ -83,7 +83,7 @@ section = "whole-radio-exclusive-ownership-and-client-handoff"
 title = "Shared RF/analog borrow"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "`PhyHal` / `SharedPhyHal` provide narrow access bounded by an owning protocol route. A borrow cannot acquire, release or recover its underlying PAC owner."
+scope-and-limitations = "`SharedPhyHal` provides narrow access bounded by an owning protocol route. A borrow cannot acquire, release or recover its underlying PAC owner."
 
 [[items]]
 id = "whole-radio-exclusive-ownership-and-client-handoff-phy-client-acquire-release-state"

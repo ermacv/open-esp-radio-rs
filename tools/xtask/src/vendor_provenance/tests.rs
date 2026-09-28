@@ -233,3 +233,22 @@ fn the_registry_round_trips_decision_citations() {
     }];
     assert_eq!(parse_registry(&render_registry(&entries)).unwrap(), entries);
 }
+
+#[test]
+fn accepted_functions_take_the_printed_form() {
+    assert_eq!(
+        accepted_function("phy_write_pll_cap"),
+        (None, "phy_write_pll_cap")
+    );
+    assert_eq!(
+        accepted_function("libnet80211[wl_cnx.o]::sta_reset_beacon_timeout"),
+        (
+            Some(("libnet80211", "wl_cnx.o")),
+            "sta_reset_beacon_timeout"
+        )
+    );
+    assert_eq!(
+        accepted_function("rom[]::sta_reset_beacon_timeout"),
+        (Some(("rom", "")), "sta_reset_beacon_timeout")
+    );
+}

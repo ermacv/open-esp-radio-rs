@@ -10,7 +10,9 @@
 //! changed, disappeared or is not registered, so a pin update cannot leave a
 //! recovered fact silently describing older code. After reviewing a changed
 //! function, `cargo xtask vendor-provenance --accept NAME` records its pinned
-//! fingerprint; the registry diff is the review record.
+//! fingerprint; the registry diff is the review record. `NAME` is a symbol,
+//! or the `artifact[member]::symbol` form the check prints, which narrows it
+//! to that member; a name neither registered nor pinned is an error.
 use crate::vendor_fingerprint::Function;
 use crate::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -663,11 +665,25 @@ pub fn update(
             }
         }
     }
-    for symbol in accept {
-        entries.retain(|e| &e.symbol != symbol);
-        let current = current_entries(symbol);
+    for accepted in accept {
+        let (place, symbol) = accepted_function(accepted);
+        let selected = |e: &Entry| {
+            e.symbol == symbol && place.is_none_or(|(a, m)| e.artifact == a && e.member == m)
+        };
+        let registered = entries.iter().any(selected);
+        entries.retain(|e| !selected(e));
+        let current: Vec<Entry> = current_entries(symbol)
+            .into_iter()
+            .filter(|e| selected(e))
+            .collect();
         if current.is_empty() {
-            println!("{symbol}: no pinned definition; its registration is removed");
+            if !registered {
+                return Err(format!(
+                    "{accepted}: neither registered nor defined by a pinned artifact"
+                )
+                .into());
+            }
+            println!("{accepted}: no pinned definition; its registration is removed");
         }
         for entry in &current {
             if !entry.decisions.is_empty() {
@@ -686,6 +702,22 @@ pub fn update(
     )?;
     println!("{} registered functions", entries.len());
     Ok(())
+}
+
+/// The function an `--accept` argument names: a bare symbol, or the
+/// `artifact[member]::symbol` form the check prints, which narrows it to
+/// that artifact member.
+fn accepted_function(accepted: &str) -> (Option<(&str, &str)>, &str) {
+    let Some((place, symbol)) = accepted.rsplit_once("::") else {
+        return (None, accepted);
+    };
+    match place
+        .strip_suffix(']')
+        .and_then(|place| place.split_once('['))
+    {
+        Some((artifact, member)) => (Some((artifact, member)), symbol),
+        None => (None, accepted),
+    }
 }
 
 mod docs;

@@ -86,7 +86,8 @@ enum Task {
     VendorProvenance {
         #[arg(long)]
         chip: String,
-        /// Functions whose pinned code was reviewed.
+        /// Functions whose pinned code was reviewed: symbols, or the
+        /// `artifact[member]::symbol` form `check provenance` prints.
         #[arg(long, value_delimiter = ',')]
         accept: Vec<String>,
         /// Recompute the registry from the current citations.

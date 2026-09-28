@@ -578,8 +578,8 @@ fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
     )
 }
 
-/// The rows of one case: the cold start, the list and adapter patches, and
-/// the compared append.
+/// The rows of one case: the compared append, whose vendor side preloads
+/// the receive list and ring.
 fn case_rows(
     ctx: &mut Mac,
     layout: &Layout,
@@ -590,10 +590,7 @@ fn case_rows(
 ) -> Result<Vec<ExecutionCase>> {
     let image = ctx.image_symbols()?;
     let symbol = |name: &str| ctx.symbol_address(&image, name);
-    let memcpy = memcpy(ctx)?;
     let label = format!("rx-append-{unit}-{}-{fill:02x}", cursor.label);
-    let noop = || direct(memcpy, &[PATCH, PATCH, 0], vec![], vec![], vec![]);
-    let cold = crate::harness::setup(format!("{label}-cold"), noop(), noop(), SessionReset::Cold);
     let head = layout.descriptor(0);
     let old_tail = layout.descriptor(layout.buffers.len() - 1);
     let list_head = if cursor.empty { 0 } else { head };
@@ -602,27 +599,10 @@ fn case_rows(
         .flat_map(|w| w.to_le_bytes())
         .collect();
     // The ring lives in the production probe's DMA arena, which the session
-    // maps for both sides: the vendor's ring is written into it.
+    // maps for both sides: the vendor's ring is preloaded into it.
     let (descriptors, buffers) = ring(layout, unit, cursor.later as usize);
-    let mut patches = vec![(symbol(LIST)?, list), (layout.base, descriptors.clone())];
-    patches.extend(buffers);
-    let mut rows = vec![cold];
-    for (index, (address, bytes)) in patches.iter().enumerate() {
-        let length = bytes.len() as u32;
-        let row = crate::harness::setup(
-            format!("{label}-patch-{index}"),
-            direct(
-                memcpy,
-                &[*address, PATCH, length],
-                vec![known(PATCH, length, bytes)?],
-                vec![],
-                vec![],
-            ),
-            noop(),
-            SessionReset::Warm,
-        );
-        rows.push(row);
-    }
+    let mut preload = vec![(symbol(LIST)?, list), (layout.base, descriptors.clone())];
+    preload.extend(buffers);
     let named = |name: String, address: u32, length: u32| blobray_domain::MemorySelection {
         name,
         address,
@@ -674,6 +654,10 @@ fn case_rows(
         registers(layout, unit, cursor, false),
         observed.clone(),
     );
+    vendor.preload = preload
+        .into_iter()
+        .map(|(address, bytes)| blobray_domain::MemoryPreload { address, bytes })
+        .collect();
     for name in QUIET {
         vendor.calls.push(quiet(
             name,
@@ -700,7 +684,7 @@ fn case_rows(
         observed.clone(),
     )?;
     production.arguments.resize(8, Some(0));
-    let mut row = case(label, vendor, Some(production), SessionReset::Warm, false);
+    let mut row = case(label, vendor, Some(production), SessionReset::Cold, false);
     let relation = row.relation.as_mut().expect("a compared case");
     relation.effects = Some(effects.clone());
     relation.memory = (0..observed.len() as u16)
@@ -709,11 +693,8 @@ fn case_rows(
             replacement: index,
         })
         .collect();
-    rows.push(row);
-    for row in &mut rows {
-        row.stack_fill = Some(fill);
-    }
-    Ok(rows)
+    row.stack_fill = Some(fill);
+    Ok(vec![row])
 }
 
 /// Compare the append of every unit size under every cursor state; each

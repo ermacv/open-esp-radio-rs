@@ -181,7 +181,7 @@ fn independent_observer_accepts_only_safe_identifiers_and_managed_ap() {
 }
 
 #[test]
-fn the_ieee802154_peer_is_optional_and_needs_an_identity() {
+fn the_peer_board_is_optional_and_needs_an_identity() {
     use std::io::Write;
     let raw: toml::Value =
         toml::from_str(include_str!("../../../../../local.example.toml")).unwrap();
@@ -193,18 +193,24 @@ fn the_ieee802154_peer_is_optional_and_needs_an_identity() {
     };
     let lab = load(&raw).unwrap();
     assert_eq!(
-        lab.ieee802154_peer,
-        Some(Ieee802154PeerConfig::new(
+        lab.peer,
+        Some(PeerBoardConfig::new(
             String::from("esp32c5-peer-01"),
             std::path::PathBuf::from("/dev/ttyUSB0"),
         ))
     );
     let mut absent = raw.clone();
-    absent.as_table_mut().unwrap().remove("ieee802154_peer");
-    assert_eq!(load(&absent).unwrap().ieee802154_peer, None);
+    absent.as_table_mut().unwrap().remove("peer");
+    assert_eq!(load(&absent).unwrap().peer, None);
     let mut anonymous = raw.clone();
-    anonymous["ieee802154_peer"]["id"] = toml::Value::String(String::from(" "));
+    anonymous["peer"]["id"] = toml::Value::String(String::from(" "));
     assert!(load(&anonymous).is_err());
+    // The table's earlier name names the same board.
+    let mut earlier = raw.clone();
+    let table = earlier.as_table_mut().unwrap();
+    let peer = table.remove("peer").unwrap();
+    table.insert(String::from("ieee802154_peer"), peer);
+    assert_eq!(load(&earlier).unwrap().peer, lab.peer);
 }
 
 #[test]
@@ -229,15 +235,15 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
     let device = boards["device"].as_table_mut().unwrap();
     device.remove("serial");
     device.insert("board".into(), "esp32s31".into());
-    let peer = boards["ieee802154_peer"].as_table_mut().unwrap();
+    let peer = boards["peer"].as_table_mut().unwrap();
     peer.remove("serial");
     peer.remove("id");
     peer.insert("board".into(), "esp32c5".into());
     let lab = load(&boards).unwrap();
     assert_eq!(lab.device.serial, std::path::PathBuf::from("/dev/ttyACM0"));
     assert_eq!(
-        lab.ieee802154_peer,
-        Some(Ieee802154PeerConfig::new(
+        lab.peer,
+        Some(PeerBoardConfig::new(
             String::from("esp32c5"),
             std::path::PathBuf::from("/dev/ttyACM1"),
         ))
@@ -254,7 +260,7 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
         .unwrap();
     let lab = LabConfig::load_resolving(file.path(), &detached).unwrap();
     assert_eq!(lab.device.serial, std::path::PathBuf::from("/dev/ttyACM0"));
-    let error = lab.ieee802154_peer.unwrap().serial().unwrap_err();
+    let error = lab.peer.unwrap().serial().unwrap_err();
     assert!(error.to_string().contains("not attached"), "{error}");
     let mut both = boards.clone();
     both["device"]

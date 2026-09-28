@@ -215,10 +215,18 @@ impl BluetoothScenario {
         }
     }
 
+    /// The catalog image the reference peer board must carry, when the
+    /// scenario uses the peer; [`crate::fixture::dtm_peer`] drives the
+    /// Direct Test Mode peer.
+    pub fn peer_image(&self) -> Option<hil_core::fixture::peer_line::PeerImage> {
+        None
+    }
+
     pub fn plan(&self) -> Plan {
         Plan {
             requirements: Requirements {
                 bluetooth_adapter: true,
+                peer: self.peer_image().is_some(),
                 ..Requirements::default()
             },
             ..Plan::target_only(self.image())

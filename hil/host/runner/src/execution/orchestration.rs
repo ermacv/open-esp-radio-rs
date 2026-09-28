@@ -78,6 +78,7 @@ pub(crate) fn run_all(
             lease: Some(lease),
             flashed: None,
             peer_image: None,
+            peer_flash: None,
         };
         execute_selected(&mut session, &mut operations, selected)?
     };
@@ -119,6 +120,7 @@ pub(crate) fn run_one(
             lease: Some(lease),
             flashed: None,
             peer_image: None,
+            peer_flash: None,
         };
         let results = execute_one(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -161,6 +163,7 @@ pub(crate) fn run_many(
             lease: Some(lease),
             flashed: None,
             peer_image: None,
+            peer_flash: None,
         };
         let results = execute_selected(&mut session, &mut operations, selected)?;
         operations.run_then(then.as_deref(), &mut session)?;
@@ -392,6 +395,8 @@ struct LiveSuite<'a> {
     flashed: Option<(ImageClass, Option<Box<hil_core::image::Artifacts>>)>,
     /// The peer image this run brought up to its current catalog build.
     peer_image: Option<&'static str>,
+    /// What the board journal recorded for that image's flash.
+    peer_flash: Option<hil_core::lab::lock::PeerImageRecord>,
 }
 
 trait SuiteEffects {
@@ -429,10 +434,10 @@ impl SuiteEffects for LiveSuite<'_> {
             return Some(Failure::new(
                 FailureKind::Precondition,
                 format!(
-                    "cannot restore `{}` on the 802.15.4 peer: {error}",
+                    "cannot restore `{}` on the peer board: {error}",
                     scenario
                         .family
-                        .ieee802154_peer_image()
+                        .peer_image()
                         .map_or("the peer image", |image| image.name)
                 ),
             ));
@@ -476,6 +481,13 @@ impl SuiteEffects for LiveSuite<'_> {
         scenario: &Scenario,
         session: &RunSession,
     ) -> Result<ScenarioResult> {
+        if scenario.family.peer_image().is_some()
+            && let Some(record) = &self.peer_flash
+        {
+            let directory = session.scenario_directory(scenario.id());
+            fs::create_dir_all(&directory)?;
+            hil_core::durable::atomic_json(&directory.join("peer-image.json"), record)?;
+        }
         run_scenario(self.lab, scenario, session)
     }
 
@@ -551,10 +563,8 @@ impl LiveSuite<'_> {
     /// the peer board. The flash joins this run's lease, which holds the
     /// peer board, and is journaled like any catalog flash.
     fn restore_peer(&mut self, scenario: &Scenario) -> Result<()> {
-        let (Some(peer), Some(image)) = (
-            self.lab.ieee802154_peer.as_ref(),
-            scenario.family.ieee802154_peer_image(),
-        ) else {
+        let (Some(peer), Some(image)) = (self.lab.peer.as_ref(), scenario.family.peer_image())
+        else {
             return Ok(());
         };
         let image = image.name;
@@ -581,6 +591,7 @@ impl LiveSuite<'_> {
             .envs(lease.environment());
         oer_process::run(&mut command)?;
         self.peer_image = Some(image);
+        self.peer_flash = hil_core::lab::lock::peer_flash(&board, image)?;
         Ok(())
     }
 }

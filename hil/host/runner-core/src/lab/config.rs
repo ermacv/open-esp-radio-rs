@@ -30,7 +30,7 @@ pub struct LabConfig {
     pub device: DeviceConfig,
     pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
     /// The IEEE 802.15.4 reference peer (`hil/peers/esp32c5-ieee802154`).
-    pub ieee802154_peer: Option<Ieee802154PeerConfig>,
+    pub peer: Option<PeerBoardConfig>,
     pub station: StationConfig,
     pub access_point: AccessPointConfig,
     pub station_fixture: StationFixtureConfig,
@@ -57,7 +57,10 @@ struct RawLabConfig {
     #[serde(default)]
     targets: std::collections::BTreeMap<String, RawDeviceConfig>,
     bluetooth: Option<RawBluetoothConfig>,
-    ieee802154_peer: Option<RawIeee802154PeerConfig>,
+    /// The reference peer board; `[ieee802154_peer]`, its earlier name, is
+    /// read the same.
+    #[serde(alias = "ieee802154_peer")]
+    peer: Option<RawPeerBoardConfig>,
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
     station_fixture: RawStationFixtureConfig,
@@ -73,7 +76,7 @@ struct RawBluetoothConfig {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawIeee802154PeerConfig {
+struct RawPeerBoardConfig {
     /// Defaults to `board`.
     id: Option<String>,
     serial: Option<PathBuf>,
@@ -81,16 +84,17 @@ struct RawIeee802154PeerConfig {
     board: Option<String>,
 }
 
-/// The IEEE 802.15.4 reference peer: a stable identity and its serial port.
+/// The reference peer board: a stable identity and its serial port. Each
+/// scenario that uses it names the catalog image it must carry.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Ieee802154PeerConfig {
+pub struct PeerBoardConfig {
     pub id: String,
     /// The peer's port, or why its board has none: a board that is not
     /// attached fails only the runs that use the peer.
     port: std::result::Result<PathBuf, String>,
 }
 
-impl Ieee802154PeerConfig {
+impl PeerBoardConfig {
     pub fn new(id: String, serial: PathBuf) -> Self {
         Self {
             id,
@@ -102,7 +106,7 @@ impl Ieee802154PeerConfig {
     pub fn serial(&self) -> Result<PathBuf> {
         self.port
             .clone()
-            .map_err(|error| format!("IEEE 802.15.4 peer: {error}").into())
+            .map_err(|error| format!("peer board: {error}").into())
     }
 }
 
@@ -592,8 +596,8 @@ impl LabConfig {
                 .bluetooth
                 .map(|config| config.adapter.parse())
                 .transpose()?,
-            ieee802154_peer: raw
-                .ieee802154_peer
+            peer: raw
+                .peer
                 .map(|config| -> Result<_> {
                     let id = config
                         .id
@@ -607,11 +611,9 @@ impl LabConfig {
                     // that use the peer; a malformed section still fails.
                     let port = match (config.serial, config.board.as_deref()) {
                         (None, Some(board)) => resolve(board, None).map_err(|e| e.to_string()),
-                        (serial, board) => {
-                            Ok(board_port("ieee802154_peer", serial, board, None, resolve)?)
-                        }
+                        (serial, board) => Ok(board_port("peer", serial, board, None, resolve)?),
                     };
-                    Ok(Ieee802154PeerConfig { id, port })
+                    Ok(PeerBoardConfig { id, port })
                 })
                 .transpose()?,
             target,
@@ -801,7 +803,7 @@ impl LabConfig {
             legacy_bss: None,
             cell_id: String::from("test-cell"),
             bluetooth_adapter: None,
-            ieee802154_peer: None,
+            peer: None,
             target: DEFAULT_TARGET.to_owned(),
             targets: std::collections::BTreeMap::new(),
             device: DeviceConfig {

@@ -197,6 +197,57 @@ pub fn board_identity(port: &Path) -> String {
     })
 }
 
+/// The catalog image the reference peer board carried during a scenario,
+/// from the board journal's newest flash of the board. Written into the
+/// scenario's directory, so the scenario's seal binds the peer firmware.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PeerImageRecord {
+    pub schema: u8,
+    pub board: String,
+    pub image: String,
+    pub application_sha256: String,
+    pub commit: Option<String>,
+    pub dirty: Option<bool>,
+}
+
+/// The newest journaled flash of `board`, when it is `image`.
+pub fn peer_flash(board: &str, image: &str) -> Result<Option<PeerImageRecord>> {
+    let events = oer_hil_arbiter::Arbiter::open()?.board_events()?;
+    Ok(newest_flash(&events, board, image))
+}
+
+fn newest_flash(
+    events: &[oer_hil_arbiter::BoardEvent],
+    board: &str,
+    image: &str,
+) -> Option<PeerImageRecord> {
+    events
+        .iter()
+        .rev()
+        .filter(|event| event.device.as_deref() == Some(board))
+        .find_map(|event| match &event.kind {
+            oer_hil_arbiter::BoardEventKind::Flashed {
+                image: flashed,
+                application_sha256,
+                commit,
+                dirty,
+                ..
+            } => Some((flashed, application_sha256, commit, dirty)),
+            _ => None,
+        })
+        .filter(|(flashed, ..)| flashed.as_str() == image)
+        .map(
+            |(image, application_sha256, commit, dirty)| PeerImageRecord {
+                schema: 1,
+                board: board.to_owned(),
+                image: image.clone(),
+                application_sha256: application_sha256.clone(),
+                commit: commit.clone(),
+                dirty: *dirty,
+            },
+        )
+}
+
 /// The stand resources of a lease: its boards, fixtures and the air.
 fn claims(
     lab: &super::config::LabConfig,
@@ -211,9 +262,9 @@ fn claims(
     // A peer whose board is not attached is claimed by no port; the run's
     // preflight reports it.
     if let Some(serial) = lab
-        .ieee802154_peer
+        .peer
         .as_ref()
-        .filter(|_| request.required.ieee802154_peer)
+        .filter(|_| request.required.peer)
         .and_then(|peer| peer.serial().ok())
     {
         claims.push(Claim::board(&board_identity(&serial)));
@@ -485,9 +536,9 @@ fn resource_keys(
                 .ok_or("missing Bluetooth fixture adapter")?,
         )?);
     }
-    if required.ieee802154_peer {
-        keys.push(ieee802154_peer_key(
-            lab.ieee802154_peer
+    if required.peer {
+        keys.push(peer_key(
+            lab.peer
                 .as_ref()
                 .ok_or("missing IEEE 802.15.4 peer fixture")?,
         )?);
@@ -606,7 +657,7 @@ fn bluetooth_key(adapter: oer_hil_fixture::bluetooth::model::Adapter) -> Result<
 
 /// The peer's serial device, resolved through symlinks such as
 /// `/dev/serial/by-id`, identifies it across aliases.
-fn ieee802154_peer_key(peer: &super::config::Ieee802154PeerConfig) -> Result<String> {
+fn peer_key(peer: &super::config::PeerBoardConfig) -> Result<String> {
     Ok(format!(
         "ieee802154-peer:{}",
         peer.serial()?.canonicalize()?.display()

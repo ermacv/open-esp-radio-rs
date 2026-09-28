@@ -28,10 +28,12 @@ startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
 [bluetooth]
 adapter = "hci0"
 
-# Optional, used only by IEEE 802.15.4 peer workloads: the ESP32-C5 flashed
-# with hil/peers/esp32c5-ieee802154. Prefer a stable /dev/serial/by-id path,
-# or `board = "NAME-or-MAC"` instead of serial; `id` then defaults to it.
-[ieee802154_peer]
+# Optional, used only by peer workloads: the reference peer board, an
+# ESP32-C5 that each such scenario brings up to the catalog image it needs
+# (hil/peers/*). Prefer a stable /dev/serial/by-id path, or
+# `board = "NAME-or-MAC"` instead of serial; `id` then defaults to it. The
+# earlier table name `[ieee802154_peer]` is read the same.
+[peer]
 id = "esp32c5-peer-01"
 serial = "/dev/ttyUSB0"
 

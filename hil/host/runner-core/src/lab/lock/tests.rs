@@ -262,3 +262,33 @@ fn claims_of(
 ) -> Vec<oer_hil_arbiter::Claim> {
     claims(lab, request, &[])
 }
+
+#[test]
+fn the_peer_record_is_the_boards_newest_flash_when_it_is_the_image() {
+    let flash = |unix, device: &str, image: &str, sha: &str| oer_hil_arbiter::BoardEvent {
+        unix,
+        owner: String::from("stand"),
+        checkout: None,
+        device: Some(device.to_owned()),
+        kind: oer_hil_arbiter::BoardEventKind::Flashed {
+            image: image.to_owned(),
+            application_sha256: sha.to_owned(),
+            commit: Some(String::from("abc")),
+            dirty: Some(false),
+            origin: String::from("firmware flash"),
+        },
+    };
+    let events = [
+        flash(1, "C5", "ble-dtm-peer", "11"),
+        flash(2, "S31", "performance", "22"),
+        flash(3, "C5", "ieee802154-peer", "33"),
+    ];
+    let record = super::newest_flash(&events, "C5", "ieee802154-peer").unwrap();
+    assert_eq!(
+        (record.image.as_str(), record.application_sha256.as_str()),
+        ("ieee802154-peer", "33")
+    );
+    // Another image flashed since: the board no longer carries it.
+    assert!(super::newest_flash(&events, "C5", "ble-dtm-peer").is_none());
+    assert!(super::newest_flash(&events, "S31", "ble-dtm-peer").is_none());
+}

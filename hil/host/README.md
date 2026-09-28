@@ -88,17 +88,23 @@ Their first boot may create or replace it; every later boot must report
 `Restored` before the station lifecycle can qualify. This makes cold PHY cache
 replay an asserted transition rather than an informational UART message.
 
-IEEE 802.15.4 peer scenarios exchange frames with a reference ESP32-C5 flashed
-with [the peer firmware](../peers/esp32c5-ieee802154/README.md). Name its
-stable identity and serial port in the `[ieee802154_peer]` table; the runner
-leases that port for the scenario and returns the running peer to its
-defaults with its `SYNC` command before each use, without resetting the
-chip: a USB Serial/JTAG reset of an ESP32-C5 whose radio runs can leave it in
-ROM download. The
-Thread exchange uses the same board with the
-[Thread peer firmware](../peers/esp32c5-openthread/README.md) instead: each
-scenario names the image it needs, and the runner flashes that catalog image
-first when the board carries another.
+Peer scenarios run against a reference peer board, an ESP32-C5 with an
+ESP-IDF catalog image: the [IEEE 802.15.4 peer](../peers/esp32c5-ieee802154/README.md),
+the [Thread peer](../peers/esp32c5-openthread/README.md) or the
+[Bluetooth LE Direct Test Mode peer](../peers/esp32c5-ble-dtm/README.md).
+Name the board's stable identity and serial port, or its registered board
+name, in the `[peer]` table (`[ieee802154_peer]`, its earlier name, is read
+the same). A run of a peer scenario claims the peer board beside the device
+under test and the air in its one lease. Before the first scenario that
+needs an image, the runner brings the board to that image's current catalog
+build with `cargo hil firmware flash IMAGE --if-changed`, and writes the
+image, application digest and commit the board journal recorded for it into
+the scenario's `peer-image.json`, which the scenario's seal covers. Each
+workload takes the running peer over with its `SYNC` command instead of a
+reset: a USB Serial/JTAG reset of an ESP32-C5 whose radio runs can leave it in
+ROM download. The peer drivers share one console transport,
+`hil_core::fixture::peer_line`, which also records the transcript of every
+exchange.
 
 ## Share the stand
 

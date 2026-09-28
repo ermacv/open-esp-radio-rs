@@ -64,14 +64,7 @@ pub struct LiveRssi {
     pub low_power_dbm: i8,
 }
 
-/// A catalog image of the reference peer board.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PeerImage {
-    /// The board-journal and catalog image name.
-    pub name: &'static str,
-    /// How to restore it when another consumer replaced it.
-    pub reflash: &'static str,
-}
+pub use hil_core::fixture::peer_line::PeerImage;
 
 /// A Thread exchange between the device's OpenThread radio and the Thread
 /// reference peer.
@@ -284,7 +277,7 @@ impl Ieee802154Scenario {
             | Self::LiveRssi(_) => ImageClass::DiagnosticIeee802154Radio,
             Self::ThreadExchange(_) => ImageClass::DiagnosticIeee802154Thread,
         });
-        plan.requirements.ieee802154_peer = self.peer_image().is_some();
+        plan.requirements.peer = self.peer_image().is_some();
         plan
     }
 
@@ -420,7 +413,7 @@ mod tests {
         scenario.validate().unwrap();
         let plan = scenario.plan();
         assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
-        assert!(plan.requirements.ieee802154_peer);
+        assert!(plan.requirements.peer);
         for invalid in ["frames = 0", "frames = 17"] {
             let scenario: Ieee802154Scenario =
                 toml::from_str(&table.replace("frames = 4", invalid)).unwrap();
@@ -435,7 +428,7 @@ mod tests {
         scenario.validate().unwrap();
         let plan = scenario.plan();
         assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
-        assert!(plan.requirements.ieee802154_peer);
+        assert!(plan.requirements.peer);
         for invalid in ["channel = 27", "frames = 0", "low_power_dbm = 20"] {
             let key = invalid.split(' ').next().unwrap();
             let original = table.lines().find(|line| line.starts_with(key)).unwrap();
@@ -452,7 +445,7 @@ mod tests {
         scenario.validate().unwrap();
         let plan = scenario.plan();
         assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Radio);
-        assert!(plan.requirements.ieee802154_peer);
+        assert!(plan.requirements.peer);
         for invalid in [
             "far_channel = 18",
             "far_channel = 27",
@@ -485,7 +478,7 @@ mod tests {
         );
         let plan = thread.plan();
         assert_eq!(plan.image, ImageClass::DiagnosticIeee802154Thread);
-        assert!(plan.requirements.ieee802154_peer);
+        assert!(plan.requirements.peer);
         for invalid in ["datagrams = 0", "datagrams = 4"] {
             let scenario: Ieee802154Scenario =
                 toml::from_str(&table.replace("datagrams = 2", invalid)).unwrap();
@@ -493,7 +486,7 @@ mod tests {
         }
         let air_check: Ieee802154Scenario = toml::from_str("kind = 'air-check'\nboots = 1\nchannel = 15\ncycles = 2\nenergy_scan_micros = 5000\nreceive_window_millis = 200\nscheduled_lead_micros = 20000\nscheduled_window_micros = 50000").unwrap();
         assert_eq!(air_check.peer_image(), None);
-        assert!(!air_check.plan().requirements.ieee802154_peer);
+        assert!(!air_check.plan().requirements.peer);
     }
 
     #[test]

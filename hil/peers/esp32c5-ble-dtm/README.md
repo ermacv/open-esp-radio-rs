@@ -53,3 +53,13 @@ where the reason is `invalid`, `timeout` or the HCI status as
 | `END` | LE Test End: prints `@END packets=<n>` before the reply. After a receiver test `n` is the received packet count; after a transmitter test this Controller reports the packets it sent. |
 | `RESET` | HCI Reset, which also ends a test without a count. |
 | `SYNC` | HCI Reset, then print `@READY` again: the host takes over a running peer without resetting the chip. |
+
+## Host driver
+
+`hil_bluetooth::fixture::dtm_peer::DtmPeer` drives this protocol from a
+scenario: it takes the running peer over with `SYNC`, checks the protocol
+version, refuses arguments outside the table above before sending them, and
+returns the `@END` packet count. A scenario that uses the peer names
+`ble-dtm-peer` as its peer image, so the runner claims the peer board from
+the lab configuration's `[peer]` table in the run's lease and brings it to
+the current catalog build first.

@@ -163,11 +163,7 @@ struct BootReport {
 
 pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
     fs::create_dir_all(output)?;
-    let peer_config = context
-        .lab
-        .ieee802154_peer
-        .clone()
-        .ok_or("the lab has no [ieee802154_peer]")?;
+    let peer_config = context.lab.peer.clone().ok_or("the lab has no [peer]")?;
     let mut reports = Vec::new();
     for boot in 1..=config.boots {
         let boot_output = output.join(format!("boot-{boot:03}"));

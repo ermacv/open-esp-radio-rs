@@ -10,7 +10,7 @@ const INTEGRATION_PACKAGE: &str = "oer-esp32s31-ieee80211-system";
 const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
 
 pub fn run(ctx: &Context) -> Result<()> {
-    // The Blobray workspace names its own packages under its completion plan.
+    // The Blobray workspace names its own packages.
     let blobray = ctx.root.join("tools/blobray").canonicalize()?;
     for package in source_packages(ctx)? {
         if package.manifest.starts_with(&blobray) {

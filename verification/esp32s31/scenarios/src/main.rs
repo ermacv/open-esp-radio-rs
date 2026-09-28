@@ -196,15 +196,23 @@ struct Common {
     output: PathBuf,
     #[command(flatten)]
     budget: Budget,
-    /// Point mutant of the loaded production probe image in every comparison,
-    /// `ADDRESS:ORIGINAL:REPLACEMENT` in hexadecimal bytes; repeat for several.
-    /// The probe is not rebuilt; a failing scenario kills the mutant.
-    #[arg(long = "patch", value_parser = parse_patch)]
-    patches: Vec<blobray_application::in_process::ImagePatch>,
+    /// Point mutant of the loaded radio probe image in every comparison that
+    /// loads it, `TARGET[:ORIGINAL]:REPLACEMENT`: TARGET a hexadecimal
+    /// address or `symbol+OFFSET`, ORIGINAL the bytes there (the instruction
+    /// the probe holds when omitted), REPLACEMENT hexadecimal bytes, `nop` or
+    /// `ret`; repeat for several. The probe is not rebuilt; a failing
+    /// scenario kills the mutant, and a passing one reports whether it ran.
+    #[arg(long = "patch", value_parser = oer_vendor_scenario_engine::mutant::parse)]
+    mutants: Vec<oer_vendor_scenario_engine::mutant::Spec>,
     /// Point mutant of the Bluetooth production probe image, in the same
     /// form: the Bluetooth comparisons load that image instead of the radio
-    /// probe, so they take only these patches.
-    #[arg(long = "bluetooth-patch", value_parser = parse_patch)]
+    /// probe, so they take only these.
+    #[arg(long = "bluetooth-patch", value_parser = oer_vendor_scenario_engine::mutant::parse)]
+    bluetooth_mutants: Vec<oer_vendor_scenario_engine::mutant::Spec>,
+    /// The resolved radio and Bluetooth mutants.
+    #[arg(skip)]
+    patches: Vec<blobray_application::in_process::ImagePatch>,
+    #[arg(skip)]
     bluetooth_patches: Vec<blobray_application::in_process::ImagePatch>,
     /// Write the scenario's shard of the native evidence index qualification
     /// reads into this directory; `all` writes every scenario's shard.
@@ -212,62 +220,17 @@ struct Common {
     index: Option<PathBuf>,
 }
 
-/// `ADDRESS:ORIGINAL:REPLACEMENT`, the bytes as hexadecimal strings.
-fn parse_patch(
-    text: &str,
-) -> std::result::Result<blobray_application::in_process::ImagePatch, String> {
-    let bytes = |hex: &str| -> std::result::Result<Vec<u8>, String> {
-        if hex.is_empty() || !hex.len().is_multiple_of(2) {
-            return Err(format!(
-                "`{hex}` is not a whole number of hexadecimal bytes"
-            ));
-        }
-        (0..hex.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
-            .collect()
-    };
-    let parts: Vec<&str> = text.split(':').collect();
-    let [address, original, replacement] = parts[..] else {
-        return Err("expected ADDRESS:ORIGINAL:REPLACEMENT".into());
-    };
-    Ok(blobray_application::in_process::ImagePatch {
-        address: u32::from_str_radix(address.trim_start_matches("0x"), 16)
-            .map_err(|e| e.to_string())?,
-        original: bytes(original)?,
-        replacement: bytes(replacement)?,
-    })
-}
-
-/// Every patch replaces bytes it names correctly in an executable segment of
-/// the production ELF, so a failing run means a killed mutant, not a bad patch.
-fn check_patches(
-    production: &Path,
-    patches: &[blobray_application::in_process::ImagePatch],
-) -> Result<()> {
-    use object::{Object, ObjectSegment, SegmentFlags};
-    /// ELF program header flag of an executable segment.
-    const PF_X: u32 = 1;
-    let bytes = std::fs::read(production)?;
-    let file = object::File::parse(&*bytes)?;
-    for patch in patches {
-        let start = u64::from(patch.address);
-        let end = start + patch.original.len() as u64;
-        let found = file.segments().find(|segment| {
-            matches!(segment.flags(), SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0)
-                && segment.address() <= start
-                && end <= segment.address() + segment.size()
-        });
-        let data = found
-            .ok_or_else(|| format!("patch at {:#x} is outside executable code", patch.address))?
-            .data_range(start, patch.original.len() as u64)?;
-        if data != Some(&patch.original[..]) {
-            return Err(format!(
-                "patch at {:#x} does not match the probe bytes",
-                patch.address
-            )
-            .into());
-        }
+/// Resolve `common`'s mutants against the radio probe and, for the
+/// comparisons that load it, the Bluetooth probe.
+fn resolve_mutants(common: &mut Common, bluetooth: Option<&Path>) -> Result<()> {
+    use oer_vendor_scenario_engine::mutant::resolve;
+    if !common.mutants.is_empty() {
+        common.patches = resolve(&std::fs::read(&common.production)?, &common.mutants)?;
+    }
+    if !common.bluetooth_mutants.is_empty() {
+        let production =
+            bluetooth.ok_or("only the Bluetooth comparisons take Bluetooth mutants")?;
+        common.bluetooth_patches = resolve(&std::fs::read(production)?, &common.bluetooth_mutants)?;
     }
     Ok(())
 }
@@ -594,7 +557,6 @@ fn wifi_mac(
 }
 
 fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Outcome> {
-    check_patches(&production, &common.bluetooth_patches)?;
     let options = mac::MacOptions {
         binary: common.binary,
         suite: &ble::BLUETOOTH,
@@ -801,8 +763,6 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
         if common.index.is_some() {
             return Err("a point-mutant run writes no evidence index".into());
         }
-        check_patches(&common.production, &common.patches)?;
-        check_patches(&bluetooth_production, &common.bluetooth_patches)?;
         println!(
             "{} point-mutant patches applied to every radio comparison, {} to every Bluetooth comparison",
             common.patches.len(),
@@ -1008,9 +968,42 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+impl Scenario {
+    /// Resolve the mutants of the scenario's inputs against their probes.
+    fn resolve_mutants(&mut self) -> Result<()> {
+        match self {
+            Scenario::Bluetooth {
+                common,
+                bluetooth_production,
+                ..
+            }
+            | Scenario::All {
+                common,
+                bluetooth_production,
+                ..
+            } => resolve_mutants(common, Some(bluetooth_production)),
+            Scenario::Gain { common, .. }
+            | Scenario::Channel { common }
+            | Scenario::RxGain { common, .. }
+            | Scenario::TxDc { common, .. }
+            | Scenario::CoexHw { common, .. }
+            | Scenario::Coex { common, .. }
+            | Scenario::WifiMac { common, .. }
+            | Scenario::Tracking { common, .. }
+            | Scenario::I2c { common, .. } => resolve_mutants(common, None),
+            Scenario::Research { .. } => Ok(()),
+        }
+    }
+}
+
 fn main() -> ExitCode {
     oer_esp32s31_vendor_scenarios::install();
-    let result = match Cli::parse().scenario {
+    let mut scenario = Cli::parse().scenario;
+    if let Err(error) = scenario.resolve_mutants() {
+        eprintln!("error: {error}");
+        return ExitCode::FAILURE;
+    }
+    let result = match scenario {
         Scenario::Gain { common, rftest } => {
             let shard = Shard::of("gain", &common);
             single(shard, gain(common, Some(rftest)))

@@ -550,16 +550,22 @@ defect on a line, not a sufficient one.
 ## Point mutants
 
 A point mutant confirms one finding without rebuilding the probe: each
-`--patch ADDRESS:ORIGINAL:REPLACEMENT` (hexadecimal address and bytes in
-memory order) replaces bytes of the loaded radio probe image in every
-comparison that loads it. The Bluetooth comparisons load the Bluetooth probe
-instead and take only `--bluetooth-patch`, in the same form. `all` and
-`bluetooth` first check every patch against an executable segment of its
-probe ELF, so a failing run means a killed mutant, not a bad patch; a mutant
-run writes no evidence index.
+`--patch TARGET[:ORIGINAL]:REPLACEMENT` replaces bytes of the loaded radio
+probe image in every comparison that loads it. TARGET is a hexadecimal
+address or `symbol+OFFSET`; ORIGINAL the bytes there in memory order, the
+instruction the probe holds when omitted; REPLACEMENT hexadecimal bytes,
+`nop` (no-operations over the original length) or `ret` (a return at the
+target). The Bluetooth comparisons load the Bluetooth probe instead and take
+only `--bluetooth-patch`, in the same form. Every mutant resolves against an
+executable segment of its probe ELF before any scenario runs, so a failing
+run means a killed mutant, not a bad patch; a mutant run writes no evidence
+index. A passing run reports, per mutant, whether any comparison executed
+it: a mutant that survives unexecuted says nothing about the comparisons.
 
 ```console
 cargo xtask vendor-scenario --chip esp32s31 all ... --patch 1001c6bc:a30aed00:13000000
+cargo xtask vendor-scenario --chip esp32s31 bluetooth ... \
+    --bluetooth-patch open_bluetooth_trace_deselect_low_power_clock:ret
 ```
 
 A mutant of an unobserved line that survives confirms the finding; one that a

@@ -14,6 +14,7 @@ pub mod evidence;
 pub mod failure;
 pub mod harness;
 pub mod leaf;
+pub mod mutant;
 pub mod observation;
 pub mod phy;
 pub mod registers;

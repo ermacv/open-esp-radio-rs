@@ -1061,6 +1061,9 @@ impl Session {
             .iter()
             .flat_map(|a| a.observed.reads.iter().copied())
             .collect();
+        for line in crate::mutant::report(&self.patches, &executed) {
+            println!("{suite} {line}");
+        }
         let root = crate::observation::root()?;
         let dependencies =
             crate::dependencies::of(&self.inputs[PROBE_INPUT], &executed, &reads, &root)?;

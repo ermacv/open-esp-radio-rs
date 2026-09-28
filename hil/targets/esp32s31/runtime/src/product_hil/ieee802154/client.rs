@@ -31,6 +31,9 @@ fn calibration_identity() -> PhyCalibrationIdentity {
 
 type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 
+/// The image's one radio; the images are terminal, so it is claimed once.
+static RADIO: static_cell::StaticCell<Radio> = static_cell::StaticCell::new();
+
 /// The concurrently split radio and the IEEE 802.15.4 client's owners. The
 /// images are terminal: the radio stays split. The radio is placed by the
 /// PHY register-image reader, which reads it under its lease.
@@ -49,7 +52,8 @@ impl Client {
             EspHalRadioClocks::new(),
             calibration_identity(),
         );
-        let radio: &'static Radio = crate::product_hil::phy_register_image::adopt(radio);
+        let radio: &'static Radio = RADIO.try_init(radio)?;
+        crate::product_hil::phy_register_image::adopt(radio);
         let defaults = Ieee802154PibDefaults::default();
         let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)?;
         Some((Self { radio, defaults }, parked))

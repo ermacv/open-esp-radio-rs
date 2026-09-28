@@ -15,10 +15,10 @@ use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::GenericAtomicWaker;
 use embassy_time::Instant;
-use owned_embassy_net_driver::{
+use xarxa_driver::{
     Capabilities, ChecksumCapabilities, Driver, HardwareAddress, LinkState as DriverLinkState,
+    NotSupported, PacketBuf, PacketBufAllocator, PacketPoolWaiter,
 };
-use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPoolWaiter};
 
 use oer_ieee80211_datapath::{DestinationTxHead, DestinationTxQueues};
 
@@ -314,8 +314,9 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> Driv
         }
     }
 
-    fn register_waker(&mut self, waker: &Waker) {
+    fn register_waker(&mut self, waker: &Waker) -> Result<(), NotSupported> {
         OwnedNetworkDevice::register_waker(self, waker);
+        Ok(())
     }
 
     fn receive(&mut self) -> Option<PacketBuf> {

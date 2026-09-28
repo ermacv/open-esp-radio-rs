@@ -421,7 +421,7 @@ checkout for one build or run. The variable names the checkout's root:
 | Variable | Checkout | Packages patched |
 | --- | --- | --- |
 | `ESP_HAL_ROOT` | esp-hal | `esp-hal`, `esp-sync`, `esp-bootloader-esp-idf` |
-| `EMBASSY_ROOT` | embassy | `embassy-net`, `embassy-net-driver` |
+| `EMBASSY_ROOT` | embassy | `embassy-net` |
 | `OPEN_RADIO_XARXA_ROOT` | xarxa | `xarxa`, `xarxa-driver` |
 
 The runtime build patches them in and resolves a private copy of its lock

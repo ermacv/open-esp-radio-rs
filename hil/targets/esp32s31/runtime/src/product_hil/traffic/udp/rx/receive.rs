@@ -12,7 +12,7 @@ use oer_hil_target_core::traffic::payload::PayloadFillCheck;
 use crate::{
     console::{ActiveSession, runtime_log_reliably},
     product_hil::{
-        network::sockets::{IpEndpoint, Ipv4Address, UdpSocket, recv_from_with},
+        network::sockets::{Ipv4Addr, SocketAddr, UdpSocket, recv_from_with},
         traffic::{UdpSequenceEvidence, iperf2_udp_sequence},
     },
 };
@@ -32,7 +32,7 @@ pub(super) struct Outcome {
 }
 
 struct Flow {
-    peer: Option<IpEndpoint>,
+    peer: Option<SocketAddr>,
     payload_identity: Option<UdpSessionPayloadIdentity>,
     payload: usize,
     terminal: bool,
@@ -57,7 +57,7 @@ pub(super) async fn run(
             // flows have independently configured, fixed peer endpoints.
             peer: (!single_flow).then(|| {
                 let peer = flow.peer.expect("validated multi-flow peer");
-                (Ipv4Address::from_octets(peer.address), peer.port).into()
+                (Ipv4Addr::from(peer.address), peer.port).into()
             }),
             payload_identity: flow.payload_identity,
             payload: usize::from(flow.target_rx.expect("validated RX flow").payload_bytes),
@@ -109,7 +109,7 @@ pub(super) async fn run(
                 (
                     packet.len(),
                     iperf2_udp_sequence(packet),
-                    metadata.endpoint,
+                    metadata.remote_addr,
                     UdpSessionPayloadIdentity::from_payload(packet),
                     payload_fill.fill_matches(packet),
                 )

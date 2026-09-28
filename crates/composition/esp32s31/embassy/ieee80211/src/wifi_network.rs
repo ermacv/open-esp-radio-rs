@@ -23,27 +23,30 @@ impl WifiNetworkRunner<'_> {
 }
 
 impl<'resources> WifiNetworkRunner<'resources> {
-    /// Construct the role-neutral IP stack and its sole production runner.
+    /// Construct the role-neutral IP stack, its Wi-Fi interface and the sole
+    /// production runner.
     ///
-    /// IP policy and socket capacity remain application choices. The same
+    /// IP policy and socket capacity remain application choices: configure
+    /// addresses, routes and DHCPv4 through the returned interface. The same
     /// stack owner is used by station and access-point epochs.
     pub fn new(
         device: WifiDevice,
-        config: embassy_net::Config,
-        resources: &'resources mut WifiStackResources,
+        resources: &'resources mut WifiStackResources<'resources>,
         random_seed: u64,
-    ) -> (embassy_net::Stack<'resources>, Self) {
+    ) -> (embassy_net::iface::Iface<'resources>, Self) {
+        let WifiStackResources {
+            stack,
+            device: device_slot,
+        } = resources;
         #[cfg(feature = "owned-network")]
-        let (stack, mut inner) = embassy_net::new(
-            device.inner,
-            config,
-            resources,
-            random_seed,
-            device.packet_allocator,
-        );
+        let (stack, mut inner) =
+            embassy_net::Stack::new(stack, random_seed, device.packet_allocator);
         #[cfg(feature = "owned-network")]
         inner.set_poll_budget(embassy_net::PollBudget::new(32, 32));
+        let iface = stack
+            .add_iface_borrowed(device_slot.write(device.inner))
+            .expect("a new stack has room for its Wi-Fi interface");
 
-        (stack, Self { inner })
+        (iface, Self { inner })
     }
 }

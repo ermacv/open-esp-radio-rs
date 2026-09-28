@@ -42,6 +42,8 @@ fn network_api(name: &str) -> bool {
 fn xarxa_api(name: &str) -> bool {
     name == "xarxa" || name.starts_with("xarxa-")
 }
+/// The packet driver contract between a radio and the owned stack.
+const DRIVER: &str = "xarxa-driver";
 fn owned_api(p: &Package) -> bool {
     network_api(p.name.as_str()) || xarxa_api(p.name.as_str())
 }
@@ -94,7 +96,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
             // zero-copy RX, but never a chip or hardware owner.
             Boundary::Owned => {
                 name.starts_with("oer-esp32s31")
-                    || (name == "embassy-net-driver" && released)
+                    || (name == DRIVER && released)
                     || dependency.path.as_ref().is_some_and(|path| {
                         path.as_std_path()
                             .starts_with(repository.join("crates/hardware"))
@@ -156,7 +158,7 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
         )?,
         Boundary::Owned => {
             reject(
-                &|p| p.name == "embassy-net-driver" && official_registry(p),
+                &|p| p.name == DRIVER && official_registry(p),
                 "owned adapter acquired the released driver contract",
             )?;
             // Reachability also covers a chip owner behind `oer-memory`.
@@ -184,20 +186,35 @@ pub fn audit(graph: &Graph, manifest: &Path, boundary: Boundary, repository: &Pa
         Boundary::OwnedProduct => {
             required(&|p| p.name == OWNED, "owned network adapter")?;
             required(
-                &|p| p.name == "embassy-net-driver" && pinned_git(p),
-                "owned Embassy driver contract",
+                &|p| p.name == DRIVER && pinned_git(p),
+                "owned Xarxa driver contract",
             )?;
+            required(&|p| p.name == "xarxa" && pinned_git(p), "owned Xarxa stack")?;
             required(
                 &|p| p.name == "embassy-net" && pinned_git(p),
                 "owned Embassy network stack",
             )?;
-            let embassy_sources = dependencies
-                .iter()
-                .filter(|p| network_api(p.name.as_str()))
-                .filter_map(|p| p.source.as_ref().map(|source| source.repr.as_str()))
-                .collect::<BTreeSet<_>>();
-            if embassy_sources.len() != 1 {
-                return Err("owned-product: Embassy network stack and driver must resolve to the same pinned source".into());
+            // One Xarxa revision pins both the stack and its driver contract, so
+            // a radio and the stack can never disagree about packet ownership.
+            let sources = |api: fn(&str) -> bool| {
+                dependencies
+                    .iter()
+                    .filter(|p| api(p.name.as_str()))
+                    .filter_map(|p| p.source.as_ref().map(|source| source.repr.as_str()))
+                    .collect::<BTreeSet<_>>()
+                    .len()
+            };
+            if sources(xarxa_api) != 1 {
+                return Err(
+                    "owned-product: Xarxa stack and driver must resolve to the same pinned source"
+                        .into(),
+                );
+            }
+            if sources(network_api) != 1 {
+                return Err(
+                    "owned-product: Embassy network packages must resolve to one pinned source"
+                        .into(),
+                );
             }
         }
     }

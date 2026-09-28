@@ -135,15 +135,12 @@ fn device_constructs_the_owned_embassy_stack() {
     let rx = allocator::<1>();
     let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 1>::new()));
     let (device, _radio) = endpoint.split(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1], rx);
-    let stack_resources = Box::leak(Box::new(owned_embassy_net::StackResources::new()));
+    let storage = Box::leak(Box::new(owned_embassy_net::StackStorage::new()));
 
-    let (_stack, mut runner) = owned_embassy_net::new(
-        device,
-        owned_embassy_net::Config::default(),
-        stack_resources,
-        0x1234,
-        general,
-    );
+    let (stack, mut runner) = owned_embassy_net::Stack::new(storage, 0x1234, general);
+    stack
+        .add_iface_borrowed(Box::leak(Box::new(device)))
+        .unwrap();
     runner.set_poll_budget(owned_embassy_net::PollBudget::new(4, 7));
 }
 

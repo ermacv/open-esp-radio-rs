@@ -36,8 +36,8 @@ embedded-io-async = { version = "0.7.0", optional = true }
 gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../examples/bluetooth-gatt", optional = true, features = ["secure"] }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
 # The same stack pins and features as the HIL target workspace.
-embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "bcdbb858e81be23f96e1bee6040785575c79cd02", optional = true, default-features = false, features = ["auto-icmp-echo-reply", "dhcpv4", "medium-ethernet", "proto-ipv4", "tcp", "udp"] }
-xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "ea9385ecb83da195c6cfe6a66160b2b01572837b", optional = true, default-features = false, features = ["udp-rx-queue-count-16"] }
+embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "4868fd9acfd4191173cd6531b537d6009d3ae5d0", optional = true, default-features = false, features = ["icmp-ping-reply", "dhcpv4", "medium-ethernet", "ipv4", "ipv4-fragmentation", "ipv4-reassembly", "tcp", "tcp-listener", "udp"] }
+xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "9e0e3293724c30c5892e6af56150c849f5231eb2", optional = true, default-features = false, features = ["udp-rx-queue-count-16"] }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

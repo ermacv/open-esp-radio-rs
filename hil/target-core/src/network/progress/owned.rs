@@ -11,7 +11,7 @@ impl<D: Driver> Driver for Device<D> {
     fn link_state(&mut self) -> driver::LinkState {
         self.inner.link_state()
     }
-    fn register_waker(&mut self, waker: &Waker) {
+    fn register_waker(&mut self, waker: &Waker) -> Result<(), driver::NotSupported> {
         self.inner.register_waker(waker)
     }
     fn receive(&mut self) -> Option<PacketBuf> {

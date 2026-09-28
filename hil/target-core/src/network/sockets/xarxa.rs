@@ -18,7 +18,7 @@ pub fn new_udp<'a, const RX: usize, const TX: usize>(
     _storage: &'a mut UdpStorage<RX, TX>,
 ) -> UdpSocket<'a> {
     #[cfg(feature = "owned-network")]
-    UdpSocket::new(stack)
+    UdpSocket::new(stack).expect("a HIL UDP socket slot must be free")
 }
 pub async fn recv_from_with<R>(
     socket: &mut UdpSocket<'_>,
@@ -28,14 +28,15 @@ pub async fn recv_from_with<R>(
 }
 pub fn listen(stack: Stack<'_>, port: u16) -> embassy_net::tcp::TcpListener<'_> {
     #[cfg(feature = "owned-network")]
-    let mut listener = embassy_net::tcp::TcpListener::new(stack);
+    let mut listener =
+        embassy_net::tcp::TcpListener::new(stack).expect("a HIL TCP listener slot must be free");
     listener.listen(port).expect("HIL TCP port must be free");
     listener
 }
 pub async fn accept(
     listener: &mut embassy_net::tcp::TcpListener<'_>,
-    socket: &mut TcpSocket<'_>,
+    socket: &mut TcpSocket<'_, '_>,
 ) -> Result<(), embassy_net::tcp::AcceptError> {
     #[cfg(feature = "owned-network")]
-    listener.accept(socket).await
+    socket.accept(listener.accept().await?).await
 }

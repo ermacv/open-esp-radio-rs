@@ -23,7 +23,7 @@ use crate::resources::profile::{
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
 #[cfg(feature = "owned-network")]
-use embassy_net_owned::{PacketBufAllocator, PacketPool, PacketPoolStorage};
+use embassy_net_owned::driver::{PacketBufAllocator, PacketPool, PacketPoolStorage};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[cfg(feature = "owned-network")]
@@ -121,36 +121,52 @@ impl WifiDevice {
 impl WifiDevice {
     /// Select software IPv4/UDP validation for received packets.
     pub fn with_software_ipv4_udp_rx_checksum_validation(mut self, enabled: bool) -> Self {
-        use embassy_net::driver::{Checksum, ChecksumCapabilities};
+        use embassy_net::driver::ChecksumCapabilities;
 
+        // Without software validation the device is trusted to have verified
+        // received IPv4 and UDP checksums.
         let mut checksum = ChecksumCapabilities::default();
-        if !enabled {
-            checksum.ipv4 = Checksum::Tx;
-            checksum.udp = Checksum::Tx;
-        }
+        checksum.ipv4.rx = !enabled;
+        checksum.udp.rx = !enabled;
         self.inner = self.inner.with_checksum_capabilities(checksum);
         self
     }
 
     /// Select software generation of IPv4 UDP checksums.
     pub fn with_software_ipv4_udp_tx_checksum_generation(mut self, enabled: bool) -> Self {
-        use embassy_net::driver::{Checksum, Driver as _};
+        use embassy_net::driver::Driver as _;
 
+        // Without software generation the device fills in UDP checksums.
         let mut checksum = self.inner.capabilities().checksum;
-        let validate_rx = matches!(checksum.udp, Checksum::Both | Checksum::Rx);
-        checksum.udp = match (validate_rx, enabled) {
-            (true, true) => Checksum::Both,
-            (true, false) => Checksum::Rx,
-            (false, true) => Checksum::Tx,
-            (false, false) => Checksum::None,
-        };
+        checksum.udp.tx = !enabled;
         self.inner = self.inner.with_checksum_capabilities(checksum);
         self
     }
 }
 
+/// Storage for one Wi-Fi IP stack: the stack state and the device it borrows.
 #[cfg(feature = "owned-network")]
-pub type WifiStackResources = embassy_net::StackResources<WifiNetworkDevice>;
+pub struct WifiStackResources<'d> {
+    pub(crate) stack: embassy_net::StackStorage<'d>,
+    pub(crate) device: core::mem::MaybeUninit<WifiNetworkDevice>,
+}
+
+#[cfg(feature = "owned-network")]
+impl WifiStackResources<'_> {
+    pub const fn new() -> Self {
+        Self {
+            stack: embassy_net::StackStorage::new(),
+            device: core::mem::MaybeUninit::uninit(),
+        }
+    }
+}
+
+#[cfg(feature = "owned-network")]
+impl Default for WifiStackResources<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Permanent application-side devices for the two logical Wi-Fi interfaces.
 /// Each device owns independent IP/link/RX state while both publish into the

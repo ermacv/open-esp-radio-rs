@@ -88,7 +88,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
 ) -> ! {
     let mut socket = new_udp(stack, storage);
     socket
-        .bind(config.local_port)
+        .bind(
+            config.local_port,
+            embassy_net::wire::ListenSocketAddr::UNSPECIFIED,
+        )
         .unwrap_or_else(|error| panic!("production UDP RX socket bind failed: {error:?}"));
     publish_event_reliably(
         0,

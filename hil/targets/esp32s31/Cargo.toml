@@ -26,8 +26,8 @@ disallowed_methods = "deny"
 oer-ieee80211-softmac = { path = "../../../crates/protocols/ieee80211/softmac" }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "bcdbb858e81be23f96e1bee6040785575c79cd02", default-features = false, features = ["auto-icmp-echo-reply", "dhcpv4", "medium-ethernet", "proto-ipv4", "tcp", "udp"] }
-xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "ea9385ecb83da195c6cfe6a66160b2b01572837b", default-features = false, features = ["udp-rx-queue-count-16"] }
+embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "4868fd9acfd4191173cd6531b537d6009d3ae5d0", default-features = false, features = ["icmp-ping-reply", "dhcpv4", "medium-ethernet", "ipv4", "ipv4-fragmentation", "ipv4-reassembly", "tcp", "tcp-listener", "udp"] }
+xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "9e0e3293724c30c5892e6af56150c849f5231eb2", default-features = false, features = ["udp-rx-queue-count-16"] }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"] }

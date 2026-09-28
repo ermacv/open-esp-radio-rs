@@ -19,21 +19,27 @@ the default of the product library, the examples and every HIL image.
 
 | Crate | Source |
 | --- | --- |
-| `embassy-net`, `embassy-net-driver` | The [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91) |
-| `xarxa` | The [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc) |
-| `xarxa-driver` and its packet pool | [The driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) |
+| `embassy-net` | The [owned Embassy fork](https://github.com/ermacv/embassy/tree/4868fd9acfd4191173cd6531b537d6009d3ae5d0) |
+| `xarxa`, `xarxa-driver` and its packet pool | The [owned Xarxa fork](https://github.com/ermacv/xarxa/tree/9e0e3293724c30c5892e6af56150c849f5231eb2); one revision pins both crates |
 
-These Git revisions are reviewed pins, not tracking branches. Dependency
+These Git revisions are reviewed pins, not tracking branches. Each fork
+follows upstream by periodic merges into its `oer/main` branch, never by
+rebasing; the `UPSTREAM.md` at each fork's root names the last merged upstream
+commit and the upstream changes the fork does not take. Dependency
 aliases such as `embassy-net-owned` in application manifests name the package
 `embassy-net`; the alias helps Rust source identify the contract and is not a
 separate published crate. `cargo xtask check network` rejects any other network
 stack source in the product, example and HIL graphs.
 
-The forks expose explicit RX/TX packet pools, packet-owner handoff to the
-driver, credit-return wakes, bounded polling and construction in resource
-storage. The UDP send path gates a device-blocked wake on the current route's
-capacity. Pool retry policy is not redesigned, and RX capacity is not reserved
-separately from the shared pool.
+`embassy-net` is upstream's multi-interface API: `Stack::new` takes the
+stack storage, a seed and the general `PacketBufAllocator`, and the Wi-Fi
+device is lent to it with `add_iface_borrowed`; IP configuration is set on
+the returned interface. The forks expose explicit RX/TX packet pools,
+packet-owner handoff to the driver, credit-return wakes, bounded polling and
+construction in resource storage. A UDP or raw send blocked on the device is
+woken when its interface has room, and one blocked on an empty pool when the
+pool has a buffer again; the stack never busy-retries a pool. RX capacity is
+not reserved separately from the shared pool.
 
 Every build and measurement exercises the stack the product ships. A HIL run
 archived under another network name keeps that name, and a build that

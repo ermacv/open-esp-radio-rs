@@ -37,7 +37,10 @@ pub async fn run(stack: Stack<'static>) -> ! {
     let options = ServerOptions::new(SERVER_ADDRESS, Some(&mut gateway));
     let mut socket = new_udp(stack, UDP_STORAGE.take());
     socket
-        .bind(DHCP_SERVER_PORT)
+        .bind(
+            DHCP_SERVER_PORT,
+            embassy_net::wire::ListenSocketAddr::UNSPECIFIED,
+        )
         .expect("DHCP port must be free");
     let request_buffer = REQUEST.init_with(|| [0; DATAGRAM_CAPACITY]);
     let reply_buffer = REPLY.init_with(|| [0; DATAGRAM_CAPACITY]);

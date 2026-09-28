@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use crate::product_hil::network::sockets::{Ipv4Address, Stack, UdpSocket, UdpTxStorage, new_udp};
+use crate::product_hil::network::sockets::{Ipv4Addr, Stack, UdpSocket, UdpTxStorage, new_udp};
 use core::sync::atomic::{AtomicU8, Ordering};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -107,7 +107,7 @@ async fn transmit_multi_flow(
                 let send = sockets[index].send_to_with(
                     publication.payload_bytes,
                     (
-                        Ipv4Address::from_octets(publication.peer.address),
+                        Ipv4Addr::from(publication.peer.address),
                         publication.peer.port,
                     ),
                     |payload| {
@@ -176,10 +176,14 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 .source_port
                 .checked_add(1)
                 .expect("second UDP source port"),
+            embassy_net::wire::ListenSocketAddr::UNSPECIFIED,
         )
         .unwrap_or_else(|error| panic!("secondary UDP TX socket bind failed: {error:?}"));
     socket
-        .bind(config.source_port)
+        .bind(
+            config.source_port,
+            embassy_net::wire::ListenSocketAddr::UNSPECIFIED,
+        )
         .unwrap_or_else(|error| panic!("production UDP TX socket bind failed: {error:?}"));
     for source_port in [config.source_port, config.source_port + 1] {
         publish_event_reliably(
@@ -262,7 +266,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 unreachable!("protocol owner accepts only duration-completed sessions")
             }
         };
-        let server = Ipv4Address::from_octets(peer.address);
+        let server = Ipv4Addr::from(peer.address);
         let server_port = peer.port;
         let payload_bytes = usize::from(flow.payload_bytes);
         let duration = Duration::from_millis(u64::from(duration_millis));

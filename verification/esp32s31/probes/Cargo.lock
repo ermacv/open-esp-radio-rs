@@ -399,14 +399,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "embassy-net-driver"
-version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=bcdbb858e81be23f96e1bee6040785575c79cd02#bcdbb858e81be23f96e1bee6040785575c79cd02"
-dependencies = [
- "xarxa-driver",
-]
-
-[[package]]
 name = "embassy-sync"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1000,7 +992,6 @@ dependencies = [
 name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver",
  "embassy-sync 0.8.0",
  "embassy-time",
  "oer-ieee80211-datapath",
@@ -1936,11 +1927,10 @@ dependencies = [
 [[package]]
 name = "xarxa-driver"
 version = "0.1.0"
-source = "git+https://github.com/ermacv/xarxa.git?rev=3953379094ae1d90f1a89d8bb85dfe3ebd8a9d19#3953379094ae1d90f1a89d8bb85dfe3ebd8a9d19"
+source = "git+https://github.com/ermacv/xarxa.git?rev=9e0e3293724c30c5892e6af56150c849f5231eb2#9e0e3293724c30c5892e6af56150c849f5231eb2"
 dependencies = [
  "atomic-waker",
  "document-features",
- "portable-atomic",
 ]
 
 [[package]]

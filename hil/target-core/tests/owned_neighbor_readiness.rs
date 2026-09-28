@@ -8,8 +8,8 @@ use xarxa_owned::{
     },
     time::Instant,
     wire::{
-        EthernetAddress, EthernetFrame, IpCidr, IpEndpoint, IpListenEndpoint, Ipv4Address,
-        Ipv4Packet, UdpPacket,
+        EthernetAddress, EthernetFrame, IpCidr, Ipv4Addr, Ipv4Packet, ListenSocketAddr, SocketAddr,
+        UdpPacket,
     },
 };
 
@@ -45,10 +45,10 @@ fn burst(resolve_before: bool) -> Vec<u32> {
     let iface = stack.add_iface_borrowed(&mut device).unwrap();
     stack
         .iface(iface)
-        .add_ip_addr(IpCidr::new(Ipv4Address::new(10, 43, 0, 1).into(), 24))
+        .add_ip_addr(IpCidr::new(Ipv4Addr::new(10, 43, 0, 1).into(), 24))
         .unwrap();
     stack.poll(Instant::ZERO);
-    let peer = Ipv4Address::new(10, 43, 0, 2);
+    let peer = Ipv4Addr::new(10, 43, 0, 2);
     let resolve = |stack: &mut Stack<'_>| {
         // Model receipt of the ARP mapping, without any radio or host UDP queue.
         stack.neighbor_cache_mut().insert(
@@ -64,12 +64,12 @@ fn burst(resolve_before: bool) -> Vec<u32> {
     let socket = stack.add_udp_socket().unwrap();
     stack
         .udp_socket(socket)
-        .bind(4324, IpListenEndpoint::UNSPECIFIED)
+        .bind(4324, ListenSocketAddr::UNSPECIFIED)
         .unwrap();
     for sequence in 0_u32..128 {
         stack
             .udp_socket(socket)
-            .send_slice(&sequence.to_be_bytes(), IpEndpoint::new(peer.into(), 9002))
+            .send_slice(&sequence.to_be_bytes(), SocketAddr::new(peer.into(), 9002))
             .unwrap();
     }
     resolve(&mut stack);

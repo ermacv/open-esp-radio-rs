@@ -9,6 +9,7 @@ use support::Fixture;
 
 const REGISTRY: &str = "registry+https://github.com/rust-lang/crates.io-index";
 const EMBASSY: &str = "git+https://example.invalid/embassy?rev=1111111111111111111111111111111111111111#1111111111111111111111111111111111111111";
+const XARXA: &str = "git+https://example.invalid/xarxa?rev=3333333333333333333333333333333333333333#3333333333333333333333333333333333333333";
 const PLATFORM: &str = "git+https://example.invalid/esp-hal?rev=2222222222222222222222222222222222222222#2222222222222222222222222222222222222222";
 
 fn audit(fixture: &Fixture, metadata: Value, boundary: Boundary) -> oer_xtask::Result<()> {
@@ -40,7 +41,8 @@ fn product() -> Fixture {
         r#"
 [dependencies]
 api = { package = "embassy-net", path = "../stack" }
-device = { package = "embassy-net-driver", path = "../helper" }
+network = { package = "xarxa", path = "../xarxa" }
+device = { package = "xarxa-driver", path = "../helper" }
 platform = { package = "esp-hal", path = "../crates/hardware/test-radio" }
 owned = { package = "oer-embassy-net-owned", path = "../owned", optional = true }
 [features]
@@ -48,11 +50,12 @@ default = ["owned-network"]
 owned-network = ["dep:owned"]
 "#,
     );
-    fixture.package("helper", "embassy-net-driver", "");
+    fixture.package("helper", "xarxa-driver", "");
     fixture.write(
         "helper/Cargo.toml",
-        "[package]\nname = \"embassy-net-driver\"\nversion = \"0.2.0\"\nedition = \"2024\"\n",
+        "[package]\nname = \"xarxa-driver\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
     );
+    fixture.package("xarxa", "xarxa", "");
     fixture.package("stack", "embassy-net", "");
     fixture.package("crates/hardware/test-radio", "esp-hal", "");
     fixture.package("owned", "oer-embassy-net-owned", "");
@@ -60,21 +63,22 @@ owned-network = ["dep:owned"]
 }
 
 #[test]
-fn owned_product_requires_one_pinned_embassy_contract_but_allows_platform_forks() {
+fn owned_product_requires_one_pinned_xarxa_contract_but_allows_platform_forks() {
     let fixture = product();
     let mut metadata = fixture.metadata();
     source(&mut metadata, "embassy-net", EMBASSY);
-    source(&mut metadata, "embassy-net-driver", EMBASSY);
+    source(&mut metadata, "xarxa", XARXA);
+    source(&mut metadata, "xarxa-driver", XARXA);
     source(&mut metadata, "esp-hal", PLATFORM);
     audit(&fixture, metadata.clone(), Boundary::OwnedProduct).unwrap();
     for replacement in [
         REGISTRY,
-        "git+https://example.invalid/embassy?branch=owned#1111111111111111111111111111111111111111",
-        "git+https://example.invalid/embassy?rev=1111111#1111111111111111111111111111111111111111",
-        "git+https://example.invalid/embassy?rev=2222222222222222222222222222222222222222#2222222222222222222222222222222222222222",
+        "git+https://example.invalid/xarxa?branch=owned#3333333333333333333333333333333333333333",
+        "git+https://example.invalid/xarxa?rev=3333333#3333333333333333333333333333333333333333",
+        "git+https://example.invalid/xarxa?rev=4444444444444444444444444444444444444444#4444444444444444444444444444444444444444",
     ] {
         let mut changed = metadata.clone();
-        source(&mut changed, "embassy-net-driver", replacement);
+        source(&mut changed, "xarxa-driver", replacement);
         assert!(audit(&fixture, changed, Boundary::OwnedProduct).is_err());
     }
 }

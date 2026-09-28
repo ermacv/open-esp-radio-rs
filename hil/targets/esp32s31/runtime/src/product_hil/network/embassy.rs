@@ -2,7 +2,7 @@
 #[cfg(feature = "task-poll-telemetry")]
 use super::{observation, progress};
 
-use embassy_net::Config;
+use core::mem::MaybeUninit;
 
 use oer_esp32s31_ieee80211_system::{WifiDevice, WifiNetworkDevice};
 
@@ -13,8 +13,21 @@ type Device = progress::Device<WifiNetworkDevice>;
 type Device = WifiNetworkDevice;
 #[cfg(feature = "owned-network")]
 pub(crate) type Runner<'a> = embassy_net::Runner<'a>;
+/// One role's IP stack state and the device the stack borrows.
 #[cfg(feature = "owned-network")]
-pub(crate) type Resources = embassy_net::StackResources<Device>;
+pub(crate) struct Resources {
+    stack: embassy_net::StackStorage<'static>,
+    device: MaybeUninit<Device>,
+}
+#[cfg(feature = "owned-network")]
+impl Resources {
+    pub(crate) const fn new() -> Self {
+        Self {
+            stack: embassy_net::StackStorage::new(),
+            device: MaybeUninit::uninit(),
+        }
+    }
+}
 
 use oer_hil_target_core::network::embassy_ipv4 as ipv4;
 
@@ -36,11 +49,19 @@ pub(crate) fn new(
     let (device, allocator) = device.into_owned();
     #[cfg(feature = "task-poll-telemetry")]
     let device = progress::Device::new(device, observation::counters(_role));
-    let mut config = Config::default();
-    config.ipv4 = ipv4::config(settings.ipv4);
+    let Resources {
+        stack,
+        device: device_slot,
+    } = resources;
     #[cfg(feature = "owned-network")]
-    let (stack, mut runner) = embassy_net::new(device, config, resources, settings.seed, allocator);
+    let (stack, mut runner) = embassy_net::Stack::new(stack, settings.seed, allocator);
     #[cfg(feature = "owned-network")]
     runner.set_poll_budget(embassy_net::PollBudget::new(32, 32));
-    (Iface(stack), runner)
+    let iface = Iface(
+        stack
+            .add_iface_borrowed(device_slot.write(device))
+            .expect("a new stack has room for its Wi-Fi interface"),
+    );
+    configure(iface, settings.ipv4);
+    (iface, runner)
 }

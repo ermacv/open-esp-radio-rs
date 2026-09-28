@@ -21,7 +21,7 @@ trait Connection {
     async fn drain(&mut self) -> bool;
 }
 
-impl Connection for TcpSocket<'_> {
+impl Connection for TcpSocket<'_, '_> {
     async fn read(&mut self, bytes: &mut [u8]) -> Result<usize, ()> {
         TcpSocket::read(self, bytes).await.map_err(|_| ())
     }
@@ -43,7 +43,7 @@ impl Connection for TcpSocket<'_> {
     }
 }
 
-pub(super) async fn serve(socket: &mut TcpSocket<'_>, packet: &mut [u8]) -> Completion {
+pub(super) async fn serve(socket: &mut TcpSocket<'_, '_>, packet: &mut [u8]) -> Completion {
     session(socket, packet).await
 }
 

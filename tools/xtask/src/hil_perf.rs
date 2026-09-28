@@ -516,6 +516,7 @@ mod tests {
                 id: "udp-tx".into(),
                 image: "performance".into(),
                 outcome: Outcome::Passed,
+                failure: None,
                 repetitions: values
                     .iter()
                     .enumerate()

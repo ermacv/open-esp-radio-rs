@@ -82,6 +82,9 @@ pub struct ScenarioRun {
     pub id: String,
     pub image: String,
     pub outcome: Outcome,
+    /// Why the scenario as a whole did not run or finish, such as a failed
+    /// image build that blocked it before any repetition.
+    pub failure: Option<(FailureKind, String)>,
     pub repetitions: Vec<Repetition>,
 }
 
@@ -160,6 +163,13 @@ pub fn load(directory: &Path) -> Option<Run> {
                 id: text(&scenario["scenario"])?,
                 image: text(&scenario["image"]).unwrap_or_default(),
                 outcome: typed(&scenario["outcome"])?,
+                failure: match &scenario["failure"] {
+                    Value::Null => None,
+                    failure => Some((
+                        typed(&failure["kind"])?,
+                        failure.get("message").and_then(text).unwrap_or_default(),
+                    )),
+                },
                 repetitions: scenario["repetitions"]
                     .as_array()
                     .into_iter()
@@ -444,6 +454,12 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
             "  {} [{}]: {}\n",
             scenario.id, scenario.image, scenario.outcome
         ));
+        if let Some((kind, message)) = &scenario.failure {
+            text.push_str(&format!("    failure ({kind}):\n"));
+            for line in message.lines() {
+                text.push_str(&format!("      {}\n", printable(line)));
+            }
+        }
         for repetition in &scenario.repetitions {
             if repetition.outcome.is_passed() {
                 continue;
@@ -1003,5 +1019,35 @@ mod tests {
             .collect::<Vec<_>>();
         // The two newest failures are `recent` and `baseline`.
         assert_eq!(deleted, ["new-pass", "fail-1", "fail-2", "fail-3"]);
+    }
+
+    #[test]
+    fn why_shows_the_failure_that_blocked_a_scenario_before_any_repetition() {
+        let run = Run {
+            id: "r".into(),
+            directory: PathBuf::from("/nonexistent"),
+            started_millis: 0,
+            state: State::Completed,
+            outcome: Some(Outcome::Blocked),
+            commit: None,
+            dirty: false,
+            checkout: None,
+            images: Vec::new(),
+            replayed: Vec::new(),
+            scenarios: vec![ScenarioRun {
+                id: "coex".into(),
+                image: "wifi-ble-coex".into(),
+                outcome: Outcome::Blocked,
+                failure: Some((
+                    FailureKind::ImageBuild,
+                    "stack audit failed\nframe grew to 9248 bytes".into(),
+                )),
+                repetitions: Vec::new(),
+            }],
+            observer: None,
+        };
+        let text = why(&run, 0);
+        assert!(text.contains("failure (image-build):"), "{text}");
+        assert!(text.contains("      frame grew to 9248 bytes"), "{text}");
     }
 }

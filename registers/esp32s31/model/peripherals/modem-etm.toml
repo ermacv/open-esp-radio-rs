@@ -237,6 +237,7 @@ completeness = "partial"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE"
+naming = "descriptive"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -248,6 +249,7 @@ completeness = "partial"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE.CH0"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -258,6 +260,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE.CH1"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -268,6 +271,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE.CH4"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -279,6 +283,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE.CH5"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -290,6 +295,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE.CH6"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -301,6 +307,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE.CH7"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -312,6 +319,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET"
+naming = "descriptive"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -326,6 +334,7 @@ completeness = "partial"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH0"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -337,6 +346,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH1"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -348,6 +358,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH2"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "BLOB_LIBBLE_PHY_INIT_REGISTERS",
@@ -358,6 +369,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH4"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -372,6 +384,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH5"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -386,6 +399,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH6"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -400,6 +414,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_SET.CH7"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -414,6 +429,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR"
+naming = "descriptive"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -426,6 +442,7 @@ completeness = "partial"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH0"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -437,6 +454,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH1"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -448,6 +466,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH4"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -460,6 +479,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH5"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -472,6 +492,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH6"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -484,6 +505,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH7"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_SOC_ETM",
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
@@ -496,6 +518,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CH%s_EVENT"
+naming = "descriptive"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -507,6 +530,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CH%s_EVENT.ID"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -518,6 +542,7 @@ completeness = "partial"
 
 [[review]]
 entity = "MODEM_ETM.CH%s_TASK"
+naming = "descriptive"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -529,6 +554,7 @@ completeness = "complete"
 
 [[review]]
 entity = "MODEM_ETM.CH%s_TASK.ID"
+naming = "vendor"
 sources = [
     "ESP_IDF_7B9CC1AC_S31_IEEE802154_REG",
     "ESP_IDF_7B9CC1AC_IEEE802154_DRIVER_ETM",
@@ -537,3 +563,7 @@ sources = [
 provenance = "imported"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "MODEM_ETM.CHANNEL_ENABLE_CLEAR.CH2"
+naming = "descriptive"

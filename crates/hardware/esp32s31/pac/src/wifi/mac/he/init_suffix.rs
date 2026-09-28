@@ -155,7 +155,7 @@ impl WifiRadioRegisters {
             .peripherals
             .phy_frequency_channel_oracle
             .channel_tx_offset_control()
-            .modify(|_, w| w.he_parent_enable_unknown().set_bit());
+            .modify(|_, w| w.he_parent_enable_opaque().set_bit());
         init.dump_complete_hesigb()
             .modify(|_, w| w.enable().clear_bit());
         init.ersu_and_vht_control()

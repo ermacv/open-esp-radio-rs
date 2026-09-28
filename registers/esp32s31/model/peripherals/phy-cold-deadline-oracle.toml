@@ -11,7 +11,7 @@ baseAddress = 0x2010D800
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "DEADLINE_COUNTER_UNKNOWN"
+name = "DEADLINE_COUNTER_OPAQUE"
 description = "Complete phy_wait_i2c_sdm_stable samples this full word before and after each independently completed PHY-I2C read."
 addressOffset = 0x0
 size = 32
@@ -31,14 +31,16 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN"
+entity = "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN.VALUE"
+entity = "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_OPAQUE.VALUE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
 provenance = "observed"
 accuracy = "exact"

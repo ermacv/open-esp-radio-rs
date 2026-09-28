@@ -21,7 +21,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "GAIN_COMMAND_LOW_ZERO_UNKNOWN"
+name = "GAIN_COMMAND_LOW_ZERO_OPAQUE"
 description = "Gain-memory writes clear bits 10:0; their individual meanings are unknown."
 bitOffset = 0
 bitWidth = 11
@@ -177,6 +177,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_WRITE_PBUS_MEM",
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
@@ -187,7 +188,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_MEMORY.COMMAND.GAIN_COMMAND_LOW_ZERO_UNKNOWN"
+entity = "PHY_MEMORY.COMMAND.GAIN_COMMAND_LOW_ZERO_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 provenance = "observed"
 accuracy = "exact"
@@ -195,6 +197,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.MEMORY_INDEX"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_WRITE_PBUS_MEM",
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
@@ -206,6 +209,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.GAIN_WRITE_OR_PBUS_COMMAND_BIT_8"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_WRITE_PBUS_MEM",
     "ROM_REV0_PHY_WRITE_GAIN_MEM",
@@ -216,6 +220,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.PBUS_COMMAND_BIT_9"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM"]
 provenance = "observed"
 accuracy = "exact"
@@ -223,6 +228,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.TX_CFR_COMMIT"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_PHY_SET_TX_CFR_MEM"]
 provenance = "observed"
 accuracy = "exact"
@@ -230,6 +236,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_MEMORY.DATA_0"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_WRITE_PBUS_MEM",
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
@@ -241,6 +248,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.DATA_1"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 provenance = "observed"
 accuracy = "exact"
@@ -248,6 +256,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.DATA_2"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 provenance = "observed"
 accuracy = "exact"
@@ -255,6 +264,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.GROUP_BOUNDARY%s"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_SET_PBUS_MEM",
     "ROM_REV0_PHY_WRITE_PBUS_MEM",
@@ -263,3 +273,31 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "PHY_MEMORY.DATA_0.OPAQUE_DATA"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_MEMORY.DATA_1.OPAQUE_DATA"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_MEMORY.DATA_2.OPAQUE_DATA"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_MEMORY.GROUP_BOUNDARY%s.EVEN_GROUP_FIRST_ENTRY"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_MEMORY.GROUP_BOUNDARY%s.EVEN_GROUP_LAST_ENTRY"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_MEMORY.GROUP_BOUNDARY%s.ODD_GROUP_FIRST_ENTRY"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_MEMORY.GROUP_BOUNDARY%s.ODD_GROUP_LAST_ENTRY"
+naming = "descriptive"

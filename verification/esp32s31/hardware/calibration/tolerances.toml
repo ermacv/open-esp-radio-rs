@@ -131,7 +131,7 @@ reason = "live state: baseband watchdog status"
 excluded = true
 reason = "live state: varies between production boots with the running AGC"
 
-[registers."PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN"]
+[registers."PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_OPAQUE"]
 excluded = true
 reason = "live state: a free-running deadline counter"
 

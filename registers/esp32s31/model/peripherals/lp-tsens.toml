@@ -86,13 +86,13 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "PHY_CONVERSION_ENABLE_UNKNOWN"
+name = "PHY_CONVERSION_ENABLE_OPAQUE"
 description = "Blob-evidenced conversion-path enable; the individual hardware meaning remains unknown."
 bitOffset = 9
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "PHY_READOUT_ENABLE_UNKNOWN"
+name = "PHY_READOUT_ENABLE_OPAQUE"
 description = "Blob-evidenced readout-path enable; the individual hardware meaning remains unknown."
 bitOffset = 23
 bitWidth = 1
@@ -106,6 +106,7 @@ completeness = "partial"
 
 [[review]]
 entity = "LP_TSENS.CTRL"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_TSENS"]
 provenance = "observed"
 accuracy = "exact"
@@ -113,6 +114,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CLK_CONF"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -120,6 +122,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.OUT"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_TSENS"]
 provenance = "observed"
 accuracy = "exact"
@@ -127,6 +130,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.READY"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -134,6 +138,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.SAMPLE_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -141,6 +146,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.WAKEUP_MASK"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -148,6 +154,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.INT_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -155,6 +162,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.IN_INV"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -162,6 +170,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.CLK_DIV"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -169,6 +178,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.POWER_UP"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_TSENS"]
 provenance = "observed"
 accuracy = "exact"
@@ -176,6 +186,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CTRL.POWER_UP_FORCE"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -183,20 +194,23 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_TSENS.CLK_CONF.CLK_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "LP_TSENS.CLK_CONF.PHY_CONVERSION_ENABLE_UNKNOWN"
+entity = "LP_TSENS.CLK_CONF.PHY_CONVERSION_ENABLE_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "LP_TSENS.CLK_CONF.PHY_READOUT_ENABLE_UNKNOWN"
+entity = "LP_TSENS.CLK_CONF.PHY_READOUT_ENABLE_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"
 accuracy = "exact"

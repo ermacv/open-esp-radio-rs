@@ -106,6 +106,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_I2C_COMMAND_RAM.COMMAND_MEMORY%s"
+naming = "descriptive"
 sources = [
     "ESP_IDF_ESP32S31_MODEM_REG_BASE",
     "BLOB_LIBPHY_PHY_I2C",
@@ -116,7 +117,16 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_I2C_COMMAND_RAM.COMMAND_MEMORY%s.BLOCK"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_PHY_DEBUG_I2C"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "PHY_I2C_COMMAND_RAM.COMMAND_MEMORY%s.REGISTER"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_I2C_COMMAND_RAM.COMMAND_MEMORY%s.DATA"
+naming = "descriptive"

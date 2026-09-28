@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "WIFI_INIT_LOW_IMAGE_UNKNOWN"
+name = "WIFI_INIT_LOW_IMAGE_OPAQUE"
 description = "Complete mac_txrx_init replaces this field with the finite image 0x0F0 while preserving bits 31:12."
 bitOffset = 0
 bitWidth = 12
@@ -25,7 +25,7 @@ minimum = 0x0
 maximum = 0xFFF
 
 [[peripherals.registers.register.fields]]
-name = "BT_RX_SETUP_BIT_31_UNKNOWN"
+name = "BT_RX_SETUP_BIT_31_OPAQUE"
 description = "Complete bt_bb_rx_set clears this bit through a fresh-read RMW while preserving bits 30:0. Its hardware meaning remains unknown."
 bitOffset = 31
 bitWidth = 1
@@ -42,6 +42,7 @@ completeness = "partial"
 
 [[review]]
 entity = "SHARED_RADIO_INIT_CONTROL.CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX",
     "BLOB_LIBBTBB_BT_RX_SETUP",
@@ -51,14 +52,16 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "SHARED_RADIO_INIT_CONTROL.CONTROL.WIFI_INIT_LOW_IMAGE_UNKNOWN"
+entity = "SHARED_RADIO_INIT_CONTROL.CONTROL.WIFI_INIT_LOW_IMAGE_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "SHARED_RADIO_INIT_CONTROL.CONTROL.BT_RX_SETUP_BIT_31_UNKNOWN"
+entity = "SHARED_RADIO_INIT_CONTROL.CONTROL.BT_RX_SETUP_BIT_31_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"

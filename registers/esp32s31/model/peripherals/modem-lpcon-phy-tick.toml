@@ -29,14 +29,16 @@ completeness = "partial"
 
 [[review]]
 entity = "MODEM_LPCON_PHY_TICK.TICK_CONF"
-sources = ["S31_MODEM_LPCON_STRUCT", "BLOB_LIBPHY_PHY_GET_XTAL_FREQ"]
+naming = "vendor"
+sources = ["S31_MODEM_LPCON_STRUCT", "BLOB_LIBPHY_PHY_GET_XTAL_FREQ", "S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "MODEM_LPCON_PHY_TICK.TICK_CONF.MODEM_PWR_TICK_TARGET"
-sources = ["S31_MODEM_LPCON_STRUCT", "BLOB_LIBPHY_PHY_GET_XTAL_FREQ"]
+naming = "vendor"
+sources = ["S31_MODEM_LPCON_STRUCT", "BLOB_LIBPHY_PHY_GET_XTAL_FREQ", "S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

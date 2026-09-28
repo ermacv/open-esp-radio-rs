@@ -35,6 +35,7 @@ completeness = "partial"
 
 [[review]]
 entity = "LP_PERICLKRST.TSENS_CTRL"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -42,6 +43,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_PERICLKRST.TSENS_CTRL.LP_TSENS_CLK_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD", "BLOB_LIBPHY_PHY_TSENS_READ_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -49,6 +51,7 @@ completeness = "complete"
 
 [[review]]
 entity = "LP_PERICLKRST.TSENS_CTRL.LP_TSENS_RST_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"

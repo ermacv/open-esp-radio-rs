@@ -74,6 +74,7 @@ completeness = "partial"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CTRL0"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -81,6 +82,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CTRL0.MODEM_CLK_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -88,6 +90,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CONF"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -95,6 +98,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CONF.MODEM_APB_CLK_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -102,6 +106,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CONF.MODEM_RST_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -109,6 +114,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CONF.MODEM_CLK_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -116,6 +122,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CONF.MODEM_CLK_SOURCE_SEL"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -123,6 +130,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CONF.MODEM_PLL_CLK_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
@@ -130,6 +138,7 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CONF.MODEM_XTAL_CLK_EN"
+naming = "vendor"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"

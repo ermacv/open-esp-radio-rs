@@ -71,6 +71,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE.TX_RX_RESET_BIT_25"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -78,6 +79,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE.TX_RX_RESET_BIT_26"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 provenance = "observed"
 accuracy = "exact"

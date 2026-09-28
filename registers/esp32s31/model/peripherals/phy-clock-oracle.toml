@@ -104,7 +104,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ROM_FE_BB_ENABLE_UNKNOWN"
+name = "ROM_FE_BB_ENABLE_OPAQUE"
 description = "Two-bit open/close mask; individual meanings are unknown."
 bitOffset = 0
 bitWidth = 2
@@ -124,7 +124,7 @@ name = "OPEN"
 value = 3
 
 [[peripherals.registers.register.fields]]
-name = "PHY_CALIBRATION_CLOCK_UNKNOWN"
+name = "PHY_CALIBRATION_CLOCK_OPAQUE"
 description = "The phy_bb_init parent sets bit 2 before calibration; the individual hardware meaning remains unknown."
 bitOffset = 2
 bitWidth = 1
@@ -182,6 +182,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.FE_CLOCK_GATE_OPAQUE.STATE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
     "BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK",
@@ -192,6 +193,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_FE_REG_INIT",
     "ROM_REV0_PHY_FORCE_PWR_INDEX",
@@ -204,6 +206,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCED_POWER_INDEX"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX"]
 provenance = "observed"
 accuracy = "exact"
@@ -211,6 +214,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCE_POWER_ENABLE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX"]
 provenance = "observed"
 accuracy = "exact"
@@ -218,6 +222,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.BASE_INDEX"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_FE_REG_INIT",
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
@@ -239,7 +244,8 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE.ROM_FE_BB_ENABLE_UNKNOWN"
+entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE.ROM_FE_BB_ENABLE_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
     "BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK",
@@ -249,7 +255,8 @@ accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE.PHY_CALIBRATION_CLOCK_UNKNOWN"
+entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE.PHY_CALIBRATION_CLOCK_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_BB_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -268,6 +275,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.BB_CLOCK_GATE_OPAQUE.STATE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
     "BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK",
@@ -278,6 +286,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCED_DIGITAL_GAIN_0"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
 provenance = "observed"
 accuracy = "exact"
@@ -285,6 +294,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCED_DIGITAL_GAIN_1"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
 provenance = "observed"
 accuracy = "exact"
@@ -292,6 +302,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE.FORCE_DIGITAL_GAIN_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_CALIBRATION_20260907"]
 provenance = "observed"
 accuracy = "exact"

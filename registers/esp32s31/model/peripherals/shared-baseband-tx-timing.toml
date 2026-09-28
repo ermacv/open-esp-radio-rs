@@ -37,6 +37,7 @@ completeness = "partial"
 
 [[review]]
 entity = "SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -44,6 +45,7 @@ completeness = "partial"
 
 [[review]]
 entity = "SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY.ENCODED_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT"]
 provenance = "observed"
 accuracy = "exact"

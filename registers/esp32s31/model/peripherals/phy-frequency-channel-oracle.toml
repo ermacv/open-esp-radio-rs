@@ -33,7 +33,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "MEMORY_ADDRESS_LOW_UNKNOWN"
+name = "MEMORY_ADDRESS_LOW_OPAQUE"
 description = "Low ten bits of the eleven-bit address selected by phy_freq_i2c_mem_write."
 bitOffset = 8
 bitWidth = 10
@@ -43,7 +43,7 @@ minimum = 0x0
 maximum = 0x3FF
 
 [[peripherals.registers.register.fields]]
-name = "MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN"
+name = "MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_OPAQUE"
 description = "High address bit during frequency-memory writes; independently cleared then set by complete phy_freq_module_resetn."
 bitOffset = 18
 bitWidth = 1
@@ -61,7 +61,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "REGISTER_MODE_UNKNOWN"
+name = "REGISTER_MODE_OPAQUE"
 description = "Complete phy_freq_reg_init replaces bits 29:22 with its two input nibbles; the electrical encoding is unknown."
 bitOffset = 22
 bitWidth = 8
@@ -71,7 +71,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "MODULE_ENABLE_UNKNOWN"
+name = "MODULE_ENABLE_OPAQUE"
 description = "Complete phy_freq_reg_init sets bit 30."
 bitOffset = 30
 bitWidth = 1
@@ -125,7 +125,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BASEBAND_MODE_UNKNOWN"
+name = "BASEBAND_MODE_OPAQUE"
 description = "Complete phy_bb_init writes encoding two before calibration and zero after the initial channel setup."
 bitOffset = 0
 bitWidth = 2
@@ -135,7 +135,7 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "INIT_LOW_UNKNOWN"
+name = "INIT_LOW_OPAQUE"
 description = "Bits 7:2 of the complete initialization image."
 bitOffset = 2
 bitWidth = 6
@@ -152,7 +152,7 @@ bitWidth = 1
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_HIGH_UNKNOWN"
+name = "INIT_HIGH_OPAQUE"
 description = "Bits 31:9 of the complete initialization image."
 bitOffset = 9
 bitWidth = 23
@@ -208,7 +208,7 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_0_UNKNOWN"
+name = "NUMBER_ADDRESS_0_OPAQUE"
 bitOffset = 8
 bitWidth = 5
 
@@ -217,7 +217,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_1_UNKNOWN"
+name = "NUMBER_ADDRESS_1_OPAQUE"
 bitOffset = 13
 bitWidth = 5
 
@@ -238,7 +238,7 @@ size = 32
 access = "write-only"
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_0_UNKNOWN"
+name = "NUMBER_ADDRESS_0_OPAQUE"
 bitOffset = 0
 bitWidth = 5
 
@@ -247,7 +247,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_1_UNKNOWN"
+name = "NUMBER_ADDRESS_1_OPAQUE"
 bitOffset = 5
 bitWidth = 5
 
@@ -256,7 +256,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_2_UNKNOWN"
+name = "NUMBER_ADDRESS_2_OPAQUE"
 bitOffset = 10
 bitWidth = 5
 
@@ -265,7 +265,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_3_UNKNOWN"
+name = "NUMBER_ADDRESS_3_OPAQUE"
 bitOffset = 15
 bitWidth = 5
 
@@ -274,7 +274,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_4_UNKNOWN"
+name = "NUMBER_ADDRESS_4_OPAQUE"
 bitOffset = 20
 bitWidth = 5
 
@@ -283,7 +283,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "NUMBER_ADDRESS_5_UNKNOWN"
+name = "NUMBER_ADDRESS_5_OPAQUE"
 bitOffset = 25
 bitWidth = 5
 
@@ -292,7 +292,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 description = "High two bits of the complete caller-prepared word; the recovered producer normally leaves them zero."
 bitOffset = 30
 bitWidth = 2
@@ -326,12 +326,12 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FBW_CLEAR_LOW_UNKNOWN"
+name = "FBW_CLEAR_LOW_OPAQUE"
 bitOffset = 16
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "FBW_SELECT_MID_UNKNOWN"
+name = "FBW_SELECT_MID_OPAQUE"
 bitOffset = 17
 bitWidth = 2
 
@@ -340,12 +340,12 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "FBW_CLEAR_HIGH_UNKNOWN"
+name = "FBW_CLEAR_HIGH_OPAQUE"
 bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "FBW_SELECT_HIGH_UNKNOWN"
+name = "FBW_SELECT_HIGH_OPAQUE"
 bitOffset = 20
 bitWidth = 2
 
@@ -354,12 +354,12 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "BT_FILTER_LOW_UNKNOWN"
+name = "BT_FILTER_LOW_OPAQUE"
 bitOffset = 22
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "BT_FILTER_MODE_UNKNOWN"
+name = "BT_FILTER_MODE_OPAQUE"
 bitOffset = 23
 bitWidth = 2
 
@@ -368,7 +368,7 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "BT_FILTER_ENABLE_UNKNOWN"
+name = "BT_FILTER_ENABLE_OPAQUE"
 bitOffset = 25
 bitWidth = 1
 
@@ -382,7 +382,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CHANNEL_OFFSET_LOW_UNKNOWN"
+name = "CHANNEL_OFFSET_LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 4
 
@@ -411,7 +411,7 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "HE_PARENT_ENABLE_UNKNOWN"
+name = "HE_PARENT_ENABLE_OPAQUE"
 description = "The complete HE init parent sets bit 17 through a separate fresh-read RMW."
 bitOffset = 17
 bitWidth = 1
@@ -426,7 +426,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN"
+name = "FREQUENCY_QUOTIENT_OR_INIT_LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 24
 
@@ -435,7 +435,7 @@ minimum = 0x0
 maximum = 0xFFFFFF
 
 [[peripherals.registers.register.fields]]
-name = "SHIFT_LOW_OR_INIT_HIGH_UNKNOWN"
+name = "SHIFT_LOW_OR_INIT_HIGH_OPAQUE"
 bitOffset = 24
 bitWidth = 5
 
@@ -444,7 +444,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "SHIFT_HIGH_UNKNOWN"
+name = "SHIFT_HIGH_OPAQUE"
 bitOffset = 29
 bitWidth = 3
 
@@ -462,7 +462,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CBW_LOW_UNKNOWN"
+name = "CBW_LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 2
 
@@ -480,7 +480,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CBW_LOW_UNKNOWN"
+name = "CBW_LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 2
 
@@ -489,7 +489,7 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "CBW_HIGH_UNKNOWN"
+name = "CBW_HIGH_OPAQUE"
 bitOffset = 2
 bitWidth = 3
 
@@ -515,6 +515,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPHY_REGISTER_CHIPV7_PHY",
@@ -525,20 +526,23 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.CHANNEL_INDEX"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_ADDRESS_LOW_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_ADDRESS_LOW_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -546,6 +550,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.CHANNEL_SWITCH_PULSE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -553,20 +558,23 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_WRITE_PULSE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.REGISTER_MODE_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.REGISTER_MODE_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MODULE_ENABLE_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MODULE_ENABLE_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -574,6 +582,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.HARDWARE_FREQUENCY_DISABLE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPHY_REGISTER_CHIPV7_PHY",
@@ -592,6 +601,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_CONTROL"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -599,6 +609,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_CONTROL.READ_PULSE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -606,6 +617,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPHY_PHY_BB_INIT",
@@ -615,14 +627,16 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.BASEBAND_MODE_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.BASEBAND_MODE_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPHY_PHY_BB_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.INIT_LOW_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.INIT_LOW_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -630,13 +644,15 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.FREQUENCY_READY"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_PHY_RFPLL_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.INIT_HIGH_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.INIT_HIGH_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -644,6 +660,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_DATA"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -651,6 +668,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -658,6 +676,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL.MEMORY_READ_MODE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -665,13 +684,15 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.HIGH_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.HIGH_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -679,6 +700,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_RESULT"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -686,6 +708,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -693,6 +716,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
@@ -702,7 +726,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL.HE_PARENT_ENABLE_UNKNOWN"
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL.HE_PARENT_ENABLE_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -710,6 +735,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -717,6 +743,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_0"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"
@@ -724,6 +751,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
@@ -731,3 +759,119 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_0_OPAQUE.OPAQUE_VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_DATA.DATA"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_DATA.MODE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL.NUMBER_ADDRESS_0_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL.NUMBER_ADDRESS_1_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.NUMBER_ADDRESS_0_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.NUMBER_ADDRESS_1_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.NUMBER_ADDRESS_2_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.NUMBER_ADDRESS_3_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.NUMBER_ADDRESS_4_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.NUMBER_ADDRESS_5_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_READ_RESULT.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL.FBW_CLEAR_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL.FBW_SELECT_MID_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL.FBW_CLEAR_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL.FBW_SELECT_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL.BT_FILTER_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL.BT_FILTER_MODE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL.BT_FILTER_ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL.CHANNEL_OFFSET_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL.MINIMUM_POWER_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL.MINIMUM_POWER_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL.FREQUENCY_QUOTIENT_OR_INIT_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL.SHIFT_LOW_OR_INIT_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL.SHIFT_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_0.CBW_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1.CBW_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1.CBW_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1.VHT_SUPPORT"
+naming = "descriptive"

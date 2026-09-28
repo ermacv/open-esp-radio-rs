@@ -35,8 +35,8 @@ pub struct SignalPowerSnapshot {
 /// `phy_iq_est_enable`.
 ///
 /// The body at `0x2f82_89d4`, size `0xb4`, first replaces
-/// `ESTIMATOR_CONFIG.CONFIG_MODE_UNKNOWN` with one, then replaces
-/// `ESTIMATOR_CONTROL.MODE_UNKNOWN` with two, and finally publishes the
+/// `ESTIMATOR_CONFIG.CONFIG_MODE_OPAQUE` with one, then replaces
+/// `ESTIMATOR_CONTROL.MODE_OPAQUE` with two, and finally publishes the
 /// caller's low fifteen control bits. The diagnostic halfword write, delays
 /// and readiness loop are deliberately owned by the PHY transition.
 #[cfg(target_arch = "riscv32")]

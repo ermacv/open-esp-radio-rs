@@ -87,7 +87,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FORCE_TXRX_MODE_UNKNOWN"
+name = "FORCE_TXRX_MODE_OPAQUE"
 description = "phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown."
 bitOffset = 8
 bitWidth = 4
@@ -119,13 +119,13 @@ description = "Second force-TX/RX disable write in complete phy_force_txrx_off."
 value = 0
 
 [[peripherals.registers.register.fields]]
-name = "RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN"
+name = "RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_OPAQUE"
 description = "phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it first at root entry. The shared electrical identity remains unknown."
 bitOffset = 14
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN"
+name = "RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_OPAQUE"
 description = "phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it at root entry and clears it during the successful cleanup suffix. The shared electrical identity remains unknown."
 bitOffset = 15
 bitWidth = 1
@@ -173,13 +173,13 @@ bitWidth = 9
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_UNKNOWN"
+name = "RESULT_WINDOW_1_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "FE_INIT_ENABLE_UNKNOWN"
+name = "FE_INIT_ENABLE_OPAQUE"
 description = "First complete phy_fe_reg_init RMW sets bit 20."
 bitOffset = 20
 bitWidth = 1
@@ -194,7 +194,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_UNKNOWN"
+name = "RESULT_WINDOW_0_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
@@ -208,17 +208,17 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_UNKNOWN"
+name = "RESULT_WINDOW_0_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_UNKNOWN"
+name = "RESULT_WINDOW_1_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_2_UNKNOWN"
+name = "RESULT_WINDOW_2_OPAQUE"
 bitOffset = 18
 bitWidth = 9
 
@@ -232,17 +232,17 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_UNKNOWN"
+name = "RESULT_WINDOW_0_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_UNKNOWN"
+name = "RESULT_WINDOW_1_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_2_UNKNOWN"
+name = "RESULT_WINDOW_2_OPAQUE"
 bitOffset = 18
 bitWidth = 9
 
@@ -256,17 +256,17 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_0_UNKNOWN"
+name = "RESULT_WINDOW_0_OPAQUE"
 bitOffset = 0
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_1_UNKNOWN"
+name = "RESULT_WINDOW_1_OPAQUE"
 bitOffset = 9
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "RESULT_WINDOW_2_UNKNOWN"
+name = "RESULT_WINDOW_2_OPAQUE"
 bitOffset = 18
 bitWidth = 9
 
@@ -282,6 +282,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_RX_DCO",
@@ -292,6 +293,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND.SELECTOR"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_PHY_DEBUG_PBUS"]
 provenance = "observed"
 accuracy = "exact"
@@ -299,6 +301,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND.TEST_VALUE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_RX_DCO",
@@ -309,6 +312,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND.PATH"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_RX_DCO",
@@ -320,6 +324,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.MODE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_PBUS"]
 provenance = "observed"
 accuracy = "exact"
@@ -327,6 +332,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.STATUS_CLOCK_FORCE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_CLOCK_FORCE",
@@ -336,14 +342,16 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_PBUS.STATUS_CLOCK_FORCE.FORCE_TXRX_MODE_UNKNOWN"
+entity = "PHY_PBUS.STATUS_CLOCK_FORCE.FORCE_TXRX_MODE_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_CLOCK_FORCE"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN"
+entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_CLOCK_FORCE",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
@@ -353,7 +361,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN"
+entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_CLOCK_FORCE",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
@@ -364,6 +373,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.STATUS_CLOCK_FORCE.TX_CLOCK_ENABLE_PAIR"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_CLOCK_FORCE"]
 provenance = "observed"
 accuracy = "exact"
@@ -371,6 +381,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_0"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_FE_REG_INIT",
@@ -380,7 +391,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "PHY_PBUS.READ_RESULT_0.FE_INIT_ENABLE_UNKNOWN"
+entity = "PHY_PBUS.READ_RESULT_0.FE_INIT_ENABLE_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -388,6 +400,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_1"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_PBUS"]
 provenance = "observed"
 accuracy = "exact"
@@ -395,6 +408,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_2"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_PBUS"]
 provenance = "observed"
 accuracy = "exact"
@@ -402,6 +416,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_3"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_PBUS"]
 provenance = "observed"
 accuracy = "exact"
@@ -409,7 +424,72 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_4"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_PBUS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "PHY_PBUS.COMMAND.DEBUG_MODE_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_PBUS.COMMAND.TRANSACTION_START"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_PBUS.MODE.WORK_MODE_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_PBUS.STATUS_CLOCK_FORCE.BUSY"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_0.RESULT_WINDOW_0_RX_DCO"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_0.RESULT_WINDOW_1_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_1.RESULT_WINDOW_0_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_2.RESULT_WINDOW_0_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_2.RESULT_WINDOW_1_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_2.RESULT_WINDOW_2_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_3.RESULT_WINDOW_0_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_3.RESULT_WINDOW_1_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_3.RESULT_WINDOW_2_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_4.RESULT_WINDOW_0_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_4.RESULT_WINDOW_1_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_PBUS.READ_RESULT_4.RESULT_WINDOW_2_OPAQUE"
+naming = "opaque"

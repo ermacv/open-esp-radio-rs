@@ -94,7 +94,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BIT_27_CONTROL_UNKNOWN"
+name = "BIT_27_CONTROL_OPAQUE"
 bitOffset = 27
 bitWidth = 1
 
@@ -185,3 +185,7 @@ sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 entity = "PHY_AGC_RECOVERED_GAPS.CFO_CONFIG_WORD_3_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.CFO_CONFIG_WORD_1_OPAQUE.BIT_27_CONTROL_OPAQUE"
+naming = "opaque"

@@ -268,7 +268,7 @@ impl PhyI2cCommandMemoryInputs {
             auxiliary,
             self.parameter_f0,
             self.parameter_f0,
-            analog_registers::FILTER_DCAP_HIGH_ENABLE_UNKNOWN.replace(self.parameter_f0, 1),
+            analog_registers::FILTER_DCAP_HIGH_ENABLE_OPAQUE.replace(self.parameter_f0, 1),
             self.parameter_f0,
         ]
     }
@@ -310,7 +310,7 @@ impl PhyI2cCommandMemoryInputs {
             4 => self.parameter_ed,
             5 | 6 => auxiliary,
             7 | 8 | 10 => self.parameter_f0,
-            9 => analog_registers::FILTER_DCAP_HIGH_ENABLE_UNKNOWN.replace(self.parameter_f0, 1),
+            9 => analog_registers::FILTER_DCAP_HIGH_ENABLE_OPAQUE.replace(self.parameter_f0, 1),
             11 | 12 | 15 | 16 => self.parameter_e9,
             13 | 14 | 17 | 18 => self.parameter_ea,
             19..=21 => 0,
@@ -452,7 +452,7 @@ impl PhyFilterDcapInputs {
             8 => Some((
                 0x67,
                 0x1e,
-                analog_registers::FILTER_DCAP_HIGH_ENABLE_UNKNOWN.replace(self.parameter_f0, 1),
+                analog_registers::FILTER_DCAP_HIGH_ENABLE_OPAQUE.replace(self.parameter_f0, 1),
             )),
             9 => Some((0x67, 0x1f, self.parameter_f0)),
             10 => Some((0x67, 0x04, self.parameter_e9)),

@@ -51,7 +51,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_MODE_UNKNOWN"
+name = "HIGH_MODE_OPAQUE"
 bitOffset = 29
 bitWidth = 3
 
@@ -103,3 +103,7 @@ sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 entity = "PHY_NRX_RECOVERED_GAPS.CHANNEL_FILTER_CONTROL_OPAQUE"
 naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
+
+[[review]]
+entity = "PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE.HIGH_MODE_OPAQUE"
+naming = "opaque"

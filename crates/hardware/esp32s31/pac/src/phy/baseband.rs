@@ -24,13 +24,13 @@ pub struct TxDcPwdetFields {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct TxIqToneControlFields {
     selector_high: u8,
-    low_reserved_clear_unknown: u8,
+    low_reserved_clear_opaque: u8,
     negated_step_or_attenuation: u8,
     tone_enable_or_arm: bool,
-    txiq_mismatch_mode_unknown: u8,
-    middle_reserved_clear_unknown: u8,
+    txiq_mismatch_mode_opaque: u8,
+    middle_reserved_clear_opaque: u8,
     txiq_polarity_image: u8,
-    high_nibble_unknown: u8,
+    high_nibble_opaque: u8,
 }
 
 /// Opaque capture of the two-bit RX-DCO calibration control field.
@@ -555,25 +555,25 @@ impl RadioPhyRegisters {
     pub fn capture_txiq_tone_control(&self) -> TxIqToneControlFields {
         let (
             selector_high,
-            low_reserved_clear_unknown,
+            low_reserved_clear_opaque,
             negated_step_or_attenuation,
             tone_enable_or_arm,
-            txiq_mismatch_mode_unknown,
-            middle_reserved_clear_unknown,
+            txiq_mismatch_mode_opaque,
+            middle_reserved_clear_opaque,
             txiq_polarity_image,
-            high_nibble_unknown,
+            high_nibble_opaque,
         ) = crate::svd::field_snapshot_read::capture_phy_txiq_tone_control(
             &self.peripherals.phy_baseband_config_oracle,
         );
         TxIqToneControlFields {
             selector_high,
-            low_reserved_clear_unknown,
+            low_reserved_clear_opaque,
             negated_step_or_attenuation,
             tone_enable_or_arm,
-            txiq_mismatch_mode_unknown,
-            middle_reserved_clear_unknown,
+            txiq_mismatch_mode_opaque,
+            middle_reserved_clear_opaque,
             txiq_polarity_image,
-            high_nibble_unknown,
+            high_nibble_opaque,
         }
     }
 
@@ -582,13 +582,13 @@ impl RadioPhyRegisters {
         crate::svd::zero_based_field_write::restore_phy_txiq_tone_control(
             &self.peripherals.phy_baseband_config_oracle,
             fields.selector_high,
-            fields.low_reserved_clear_unknown,
+            fields.low_reserved_clear_opaque,
             fields.negated_step_or_attenuation,
             fields.tone_enable_or_arm,
-            fields.txiq_mismatch_mode_unknown,
-            fields.middle_reserved_clear_unknown,
+            fields.txiq_mismatch_mode_opaque,
+            fields.middle_reserved_clear_opaque,
             fields.txiq_polarity_image,
-            fields.high_nibble_unknown,
+            fields.high_nibble_opaque,
         );
     }
 

@@ -141,7 +141,7 @@ impl WifiRadioRegisters {
             .shared_radio
             .shared_radio_init_control
             .control()
-            .modify(|_, w| w.wifi_init_low_image_unknown().set(0x0f0));
+            .modify(|_, w| w.wifi_init_low_image_opaque().set(0x0f0));
         init.field_control().modify(|_, w| w.field_opaque().set(4));
         init.gate_control()
             .modify(|_, w| w.low_gate_group_opaque().set(0x7fff));

@@ -298,6 +298,7 @@ completeness = "partial"
 
 [[review]]
 entity = "I2C_ANA_MST.ANA_CONF2.PHY_HOST_MAP"
+naming = "descriptive"
 sources = ["BLOB_LIBPHY_PHY_I2C"]
 provenance = "observed"
 accuracy = "exact"
@@ -305,14 +306,161 @@ completeness = "complete"
 
 [[review]]
 entity = "I2C_ANA_MST.I2C0_CTRL.BUSY"
-sources = ["ROM_REV0_PHY_I2C"]
+naming = "vendor"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
 entity = "I2C_ANA_MST.I2C1_CTRL.BUSY"
-sources = ["ROM_REV0_PHY_I2C"]
+naming = "vendor"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL.SLAVE_ADDR"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL.SLAVE_REG_ADDR"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL.DATA"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL.READ_WRITE"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL.START_OR_RESET"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL.SLAVE_ADDR"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL.SLAVE_REG_ADDR"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL.DATA"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL.READ_WRITE"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL.START_OR_RESET"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF0"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF0.BBPLL_CAL_MODE"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF0.PHY_REGISTER_ENABLE"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF0.PHY_REGISTER_MODE"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF0.ANA_STATUS0"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF1"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF1.READ_MASK_COMPLEMENT_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF1.READ_MASK_COMPLEMENT_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.ANA_CONF2"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL1"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL1.SCL_PULSE_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.I2C0_CTRL1.SDA_SIDE_GUARD"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL1"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL1.SCL_PULSE_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.I2C1_CTRL1.SDA_SIDE_GUARD"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.HW_I2C_CTRL"
+naming = "vendor"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[review]]
+entity = "I2C_ANA_MST.HW_I2C_CTRL.SCL_PULSE_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.HW_I2C_CTRL.SDA_SIDE_GUARD"
+naming = "descriptive"
+
+[[review]]
+entity = "I2C_ANA_MST.HW_I2C_CTRL.ARBITER_DISABLE"
+naming = "descriptive"

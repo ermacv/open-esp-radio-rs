@@ -2855,7 +2855,7 @@ pub mod phy_i2c_fields {
     /// Six-bit field in the first high Bluetooth transmit-power analog register.
     pub const BLUETOOTH_TX_POWER_HIGH_0: PhyI2cField = PhyI2cField::generated(0x67, 0x1e, 0x3f, 0);
     /// Bit six forced in the high filter-DCAP command-memory and initialization value.
-    pub const FILTER_DCAP_HIGH_ENABLE_UNKNOWN: PhyI2cField =
+    pub const FILTER_DCAP_HIGH_ENABLE_OPAQUE: PhyI2cField =
         PhyI2cField::generated(0x67, 0x1e, 0x40, 6);
     /// Six-bit field in the second high Bluetooth transmit-power analog register.
     pub const BLUETOOTH_TX_POWER_HIGH_1: PhyI2cField = PhyI2cField::generated(0x67, 0x1f, 0x3f, 0);

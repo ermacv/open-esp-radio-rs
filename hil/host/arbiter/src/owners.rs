@@ -28,10 +28,11 @@ pub enum Owner {
     #[serde(rename = "802154")]
     Ieee802154,
     Esp32c5,
+    Network,
 }
 
 impl Owner {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Stand,
         Self::Wifi,
         Self::Phy,
@@ -40,6 +41,7 @@ impl Owner {
         Self::Infra,
         Self::Ieee802154,
         Self::Esp32c5,
+        Self::Network,
     ];
 
     /// The owner's name in leases, balances and history.
@@ -53,6 +55,7 @@ impl Owner {
             Self::Infra => "infra",
             Self::Ieee802154 => "802154",
             Self::Esp32c5 => "esp32c5",
+            Self::Network => "network",
         }
     }
 

@@ -210,7 +210,7 @@ arguments before `--`, and refuses two different owners:
 
 The environment variable `OER_HIL_OWNER` carries the same choice. A lease
 belongs to one of the agents that use the stand: `stand`, `wifi`, `phy`,
-`bluetooth`, `blobray`, `infra`, `802154` or `esp32c5`. Each checkout
+`bluetooth`, `blobray`, `infra`, `802154`, `esp32c5` or `network`. Each checkout
 registers its owner once with `cargo hil owner set NAME`, kept in
 `owners.json` of the arbiter directory; `cargo hil owner` prints it. Nothing
 is derived from the checkout's directory name: a lease requested for no

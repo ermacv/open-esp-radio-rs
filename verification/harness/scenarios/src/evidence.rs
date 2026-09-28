@@ -8,6 +8,11 @@ use blobray_domain::{
 
 /// All selected bytes of the first final-memory selection of one case side.
 pub fn output(records: &[ExecutionEvidence], case: u32, side: bool) -> Vec<u8> {
+    selection(records, case, side, 0)
+}
+
+/// All bytes of final-memory selection `index` of one case side.
+pub fn selection(records: &[ExecutionEvidence], case: u32, side: bool, index: u16) -> Vec<u8> {
     let chunks: Vec<_> = records
         .iter()
         .filter_map(|r| match r {
@@ -15,25 +20,25 @@ pub fn output(records: &[ExecutionEvidence], case: u32, side: bool) -> Vec<u8> {
                 case: c,
                 replacement,
                 chunk,
-            } if *c == case && *replacement == side => Some(chunk),
+            } if *c == case && *replacement == side && chunk.selection == index => Some(chunk),
             _ => None,
         })
         .collect();
     assert!(
         !chunks.is_empty(),
-        "case {case} side {side} has no final memory"
+        "case {case} side {side} has no final memory in selection {index}"
     );
     let mut offset = 0;
     let mut bytes = vec![];
     for chunk in chunks {
         assert!(
-            chunk.selection == 0 && chunk.offset == offset,
-            "noncontiguous final memory in case {case}"
+            chunk.offset == offset,
+            "noncontiguous final memory in case {case} selection {index}"
         );
         let mask = chunk.mask().expect("valid chunk length");
         assert!(
             chunk.known == mask && chunk.available == mask,
-            "unknown or unavailable final memory in case {case}"
+            "unknown or unavailable final memory in case {case} selection {index}"
         );
         bytes.extend_from_slice(&chunk.bytes[..usize::from(chunk.length)]);
         offset += u32::from(chunk.length);
@@ -140,6 +145,34 @@ pub fn calls(observations: &[ExecutionEvent], target: u32) -> Vec<Vec<u32>> {
                 })
                 .collect(),
         );
+    }
+    found
+}
+
+/// Argument words of each modeled call to `target`, by word index: `None`
+/// for a word the call did not capture or captured as unknown.
+pub fn modeled_calls(observations: &[ExecutionEvent], target: u32) -> Vec<Vec<Option<u32>>> {
+    let mut found: Vec<Vec<Option<u32>>> = vec![];
+    let mut current = false;
+    for event in observations {
+        match event {
+            ExecutionEvent::ModeledCall { target: t, .. } => {
+                current = *t == target;
+                if current {
+                    found.push(vec![]);
+                }
+            }
+            ExecutionEvent::CallArgument { word, value } if current => {
+                let words = found.last_mut().expect("an open modeled call");
+                let word = usize::from(*word);
+                if words.len() <= word {
+                    words.resize(word + 1, None);
+                }
+                words[word] = *value;
+            }
+            ExecutionEvent::CallArgument { .. } => {}
+            _ => current = false,
+        }
     }
     found
 }

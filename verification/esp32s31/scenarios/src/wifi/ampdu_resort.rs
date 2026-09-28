@@ -894,70 +894,6 @@ const DECISION_TRIGGER: u32 = 4;
 /// transmission.
 const DECISION_UNAGGREGATE: u32 = 5;
 
-/// The first four argument words of the vendor's first modeled call to
-/// `target` in `case`.
-fn call_words(
-    records: &[blobray_domain::ExecutionEvidence],
-    case: u32,
-    target: u32,
-) -> Option<[Option<u32>; 4]> {
-    let mut words = None;
-    for event in crate::evidence::events(records, case, false) {
-        match event {
-            blobray_domain::ExecutionEvent::ModeledCall { target: t, .. } => {
-                if words.is_some() {
-                    break;
-                }
-                if t == target {
-                    words = Some([None; 4]);
-                }
-            }
-            blobray_domain::ExecutionEvent::CallArgument { word, value } => {
-                if let Some(words) = words.as_mut()
-                    && let Some(slot) = words.get_mut(word as usize)
-                {
-                    *slot = value;
-                }
-            }
-            _ => {}
-        }
-    }
-    words
-}
-
-/// Final bytes of observed selection `selection` of one case side.
-fn observed(
-    records: &[blobray_domain::ExecutionEvidence],
-    case: u32,
-    side: bool,
-    selection: u16,
-) -> Result<Vec<u8>> {
-    let mut bytes = vec![];
-    for record in records {
-        if let blobray_domain::ExecutionEvidence::FinalMemory {
-            case: c,
-            replacement,
-            chunk,
-        } = record
-            && *c == case
-            && *replacement == side
-            && chunk.selection == selection
-        {
-            let mask = chunk
-                .mask()
-                .ok_or_else(|| invalid("a final-memory chunk with an invalid length"))?;
-            if chunk.known != mask || chunk.available != mask || chunk.offset != bytes.len() as u32
-            {
-                return Err(invalid(format!(
-                    "case {case}: selection {selection} is not wholly known"
-                )));
-            }
-            bytes.extend_from_slice(&chunk.bytes[..usize::from(chunk.length)]);
-        }
-    }
-    Ok(bytes)
-}
-
 fn read_word(bytes: &[u8], offset: u32) -> Result<u32> {
     let offset = offset as usize;
     bytes
@@ -973,7 +909,7 @@ fn dispositions(
     case: u32,
     count: usize,
 ) -> Result<(Disposition, Disposition)> {
-    let queue = observed(records, case, false, count as u16)?;
+    let queue = crate::evidence::selection(records, case, false, count as u16);
     let vendor = match (
         read_word(&queue, QUEUE_AGGREGATE)?,
         read_word(&queue, QUEUE_ORDINARY)?,
@@ -982,7 +918,10 @@ fn dispositions(
         (0, _) => Disposition::Ordinary,
         _ => Disposition::Aggregate,
     };
-    let decision = read_word(&observed(records, case, true, count as u16)?, 0)?;
+    let decision = read_word(
+        &crate::evidence::selection(records, case, true, count as u16),
+        0,
+    )?;
     let production = match decision {
         STEP_RETAIN => Disposition::Aggregate,
         STEP_FINISH | DECISION_TRIGGER => Disposition::Finished,
@@ -1089,13 +1028,18 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
             )));
         }
         let bar = called(request_bar)
-            .then(|| call_words(&records, compared, fill_bar))
+            .then(|| {
+                crate::evidence::modeled_calls(
+                    &crate::evidence::events(&records, compared, false),
+                    fill_bar,
+                )
+                .into_iter()
+                .next()
+            })
             .flatten()
             .map(|words| {
-                (
-                    words[usize::from(FILL_BAR_TID)],
-                    words[usize::from(FILL_BAR_SEQUENCE)],
-                )
+                let word = |index: u16| words.get(usize::from(index)).copied().flatten();
+                (word(FILL_BAR_TID), word(FILL_BAR_SEQUENCE))
             });
         let expected_bar = completion
             .bar

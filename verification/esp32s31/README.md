@@ -623,6 +623,11 @@ spins after its output, an early return (behavior, not diagnostics), or
 another path; a candidate shows its whole block. The report proposes; the
 decision stays reviewed.
 
+Beside it, `gateways-<scenario>.txt` names, per claim, the closure functions
+no execution entered that alone lead to untriaged code, with how many
+locations and functions each leads to: a boundary to declare, a decision to
+review or a case to add removes what it leads to.
+
 ## Observation decisions
 
 Every compared request also reports, through Blobray observation dependence,

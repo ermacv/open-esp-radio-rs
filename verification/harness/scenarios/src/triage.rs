@@ -574,6 +574,72 @@ pub fn report(code: &Code, untriaged: &BTreeSet<Location>) -> String {
     text
 }
 
+/// Every function of `untriaged` in full, each instruction marked by the
+/// locations at its offset: `U` untriaged, `E` excluded by a reviewed
+/// decision (its reason follows the listing, by number), `C` reached only
+/// through excluded functions; unmarked code is covered.
+pub fn functions(
+    code: &Code,
+    untriaged: &BTreeSet<Location>,
+    uncovered: &BTreeSet<Location>,
+    consequential: &BTreeSet<Location>,
+    reason: impl Fn(&Location) -> Option<&'static str>,
+) -> String {
+    let mut text = String::new();
+    let names: BTreeSet<&str> = untriaged.iter().map(|l| l.function.as_str()).collect();
+    for function in names {
+        let Some(lines) = code.lines(function) else {
+            continue;
+        };
+        let mut reasons: Vec<&'static str> = vec![];
+        let at = |offset: u32| {
+            uncovered
+                .iter()
+                .filter(move |l| l.function == function && l.offset == offset)
+        };
+        text.push_str(&format!("\n== {function}\n"));
+        for line in &lines {
+            let mut marks = vec![];
+            for location in at(line.offset) {
+                let kind = match location.kind {
+                    LocationKind::Block => "block",
+                    LocationKind::Taken => "taken",
+                    LocationKind::Fallthrough => "fallthrough",
+                    LocationKind::Followed => "followed",
+                    LocationKind::Unresolved => "unresolved",
+                };
+                let mark = if untriaged.contains(location) {
+                    format!("U {kind}")
+                } else if consequential.contains(location) {
+                    format!("C {kind}")
+                } else if let Some(reason) = reason(location) {
+                    let number = reasons
+                        .iter()
+                        .position(|r| *r == reason)
+                        .unwrap_or_else(|| {
+                            reasons.push(reason);
+                            reasons.len() - 1
+                        });
+                    format!("E{} {kind}", number + 1)
+                } else {
+                    format!("? {kind}")
+                };
+                marks.push(mark);
+            }
+            text.push_str(&format!(
+                "  {:<24} +{:04x}  {}\n",
+                marks.join(", "),
+                line.offset,
+                line.text
+            ));
+        }
+        for (number, reason) in reasons.iter().enumerate() {
+            text.push_str(&format!("  E{}: {reason}\n", number + 1));
+        }
+    }
+    text
+}
+
 /// Write the report of `untriaged` below `run`; its path.
 pub fn write(
     run: &Path,

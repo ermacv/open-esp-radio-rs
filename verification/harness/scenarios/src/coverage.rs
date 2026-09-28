@@ -60,6 +60,14 @@ pub struct Decision {
     pub places: &'static [Place],
 }
 
+/// The reason of the first decision that excludes `location`.
+pub fn reason(decisions: &[Decision], location: &Location) -> Option<&'static str> {
+    decisions
+        .iter()
+        .find(|d| d.places.iter().any(|p| p.excludes(location)))
+        .map(|d| d.reason)
+}
+
 /// Functions `decisions` review as diagnostic output.
 pub fn diagnostic(decisions: &[Decision]) -> BTreeSet<String> {
     decisions
@@ -72,13 +80,72 @@ pub fn diagnostic(decisions: &[Decision]) -> BTreeSet<String> {
         .collect()
 }
 
-/// Uncovered locations of one scenario's claimed closures, and the functions
-/// those closures contain.
+/// Uncovered locations of one scenario's claimed closures, the functions
+/// those closures contain, and each claim's gateway lines.
 #[derive(Default)]
 pub struct Observed {
     pub uncovered: BTreeSet<Location>,
     pub functions: BTreeSet<String>,
     pub closures: Vec<Closure>,
+    pub gateways: Vec<String>,
+}
+
+/// One closure function no execution entered, and what the closure reaches
+/// only through it: untriaged locations and functions.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Gateway {
+    pub function: String,
+    pub locations: usize,
+    pub functions: usize,
+}
+
+/// The closure functions no execution entered that alone lead to untriaged
+/// code, most untriaged locations first: declaring one as a boundary, or
+/// excluding it with a reviewed decision, removes what it leads to.
+pub fn gateways(
+    root: &str,
+    graph: &BTreeMap<String, CallNode>,
+    untriaged: &BTreeMap<String, usize>,
+) -> Vec<Gateway> {
+    let reach = |without: Option<&str>| {
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![root];
+        while let Some(function) = pending.pop() {
+            if Some(function) == without || !seen.insert(function) {
+                continue;
+            }
+            if let Some(node) = graph.get(function) {
+                pending.extend(node.callees.iter().map(String::as_str));
+            }
+        }
+        seen
+    };
+    let all = reach(None);
+    let mut found: Vec<Gateway> = graph
+        .iter()
+        .filter(|(name, node)| {
+            name.as_str() != root && !node.entered && all.contains(name.as_str())
+        })
+        .filter_map(|(name, _)| {
+            let kept = reach(Some(name));
+            let lost: Vec<&&str> = all.iter().filter(|f| !kept.contains(**f)).collect();
+            let locations = lost
+                .iter()
+                .map(|f| untriaged.get(**f).copied().unwrap_or(0))
+                .sum();
+            (locations > 0).then(|| Gateway {
+                function: name.clone(),
+                locations,
+                functions: lost.len(),
+            })
+        })
+        .collect();
+    found.sort_by(|a, b| {
+        b.locations
+            .cmp(&a.locations)
+            .then(a.function.cmp(&b.function))
+    });
+    found
 }
 
 impl Observed {
@@ -317,6 +384,44 @@ mod tests {
         let mut entered = graph;
         entered.get_mut("inner").unwrap().entered = true;
         assert!(consequences(DECISIONS, "root", &entered).is_empty());
+    }
+
+    #[test]
+    fn a_gateway_counts_the_untriaged_code_only_it_leads_to() {
+        // root -> gate -> deep; root -> live -> shared; gate -> shared.
+        let graph = graph(&[
+            ("root", true, &["gate", "live"]),
+            ("gate", false, &["deep", "shared"]),
+            ("deep", false, &[]),
+            ("live", true, &["shared"]),
+            ("shared", false, &[]),
+        ]);
+        let untriaged = BTreeMap::from([
+            ("gate".to_owned(), 2),
+            ("deep".to_owned(), 5),
+            ("shared".to_owned(), 7),
+        ]);
+        let found = gateways("root", &graph, &untriaged);
+        assert_eq!(
+            found,
+            [
+                Gateway {
+                    function: "gate".into(),
+                    locations: 7,
+                    functions: 2,
+                },
+                Gateway {
+                    function: "shared".into(),
+                    locations: 7,
+                    functions: 1,
+                },
+                Gateway {
+                    function: "deep".into(),
+                    locations: 5,
+                    functions: 1,
+                },
+            ]
+        );
     }
 
     #[test]

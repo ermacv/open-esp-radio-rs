@@ -1088,6 +1088,20 @@ impl Session {
             untriaged: untriaged.len() as u64,
         };
         observed.uncovered.extend(locations.iter().cloned());
+        let mut per_function = BTreeMap::<String, usize>::new();
+        for location in &untriaged {
+            *per_function.entry(location.function.clone()).or_default() += 1;
+        }
+        const GATEWAYS: usize = 5;
+        for gateway in crate::coverage::gateways(&root_name, &graph, &per_function)
+            .into_iter()
+            .take(GATEWAYS)
+        {
+            observed.gateways.push(format!(
+                "{symbol} -> {entry}: {} leads alone to {} untriaged locations in {} functions",
+                gateway.function, gateway.locations, gateway.functions
+            ));
+        }
         observed.closures.push(crate::coverage::Closure {
             functions,
             uncovered: locations,
@@ -1339,6 +1353,32 @@ impl Session {
                 crate::coverage::uncovered_everywhere(&observed.closures, untriaged.clone());
             let path = crate::triage::write(self.runner.run_directory(), suite, &code, &listed)?;
             println!("{suite} untriaged locations: {}", path.display());
+            let consequential: std::collections::BTreeSet<_> = observed
+                .closures
+                .iter()
+                .flat_map(|closure| closure.consequential.iter().cloned())
+                .collect();
+            let view = crate::triage::functions(
+                &code,
+                &listed,
+                &observed.uncovered,
+                &consequential,
+                |location| crate::coverage::reason(decisions, location),
+            );
+            let path = self
+                .runner
+                .run_directory()
+                .join(format!("functions-{suite}.txt"));
+            fs::write(&path, view)?;
+            println!("{suite} untriaged functions: {}", path.display());
+        }
+        if !observed.gateways.is_empty() {
+            let path = self
+                .runner
+                .run_directory()
+                .join(format!("gateways-{suite}.txt"));
+            fs::write(&path, observed.gateways.join("\n") + "\n")?;
+            println!("{suite} closure gateways: {}", path.display());
         }
         let rules = crate::rule_use::check(self.runner.run_directory(), suite, &self.reviewed)?;
         println!("{suite} effect rule selections: {}", rules.display());

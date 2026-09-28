@@ -11,6 +11,7 @@ fn job(id: &str, state: JobState) -> Job {
         command: vec![String::from("run"), String::from("icmp-latency")],
         checkout: PathBuf::from("/checkout"),
         after: None,
+        after_any: false,
         enqueued_unix_millis: unix_millis(),
         pid: Some(std::process::id()),
         pid_started_unix_millis: oer_hil_arbiter::process_started_unix_millis(std::process::id()),
@@ -32,11 +33,26 @@ fn enqueue_and_after_are_taken_before_a_double_dash() {
     ]))
     .unwrap();
     assert!(enqueue);
-    assert_eq!(after.as_deref(), Some("12-a"));
+    assert_eq!(
+        after,
+        Some(After {
+            job: String::from("12-a"),
+            any: false
+        })
+    );
     assert_eq!(rest, args(&["run", "s", "--", "--enqueue"]));
     let (enqueue, after, _) = take(args(&["run", "--after=7-b"])).unwrap();
     assert!(!enqueue);
-    assert_eq!(after.as_deref(), Some("7-b"));
+    assert_eq!(after.map(|after| after.job), Some(String::from("7-b")));
+    let (_, after, _) = take(args(&["run", "--after-any", "8-c"])).unwrap();
+    assert_eq!(
+        after,
+        Some(After {
+            job: String::from("8-c"),
+            any: true
+        })
+    );
+    assert!(take(args(&["run", "--after", "a", "--after-any", "b"])).is_err());
     assert!(take(args(&["run", "--after"])).is_err());
     assert!(take(args(&["run", "--after", "a", "--after=b"])).is_err());
 }
@@ -175,4 +191,67 @@ fn a_job_whose_process_is_gone_is_recorded_abandoned_and_left_out() {
     jobs.write(&gone).unwrap();
     assert!(jobs.unfinished().is_empty());
     assert_eq!(jobs.settled("9-a").unwrap(), Some(JobOutcome::Abandoned));
+}
+
+#[test]
+fn only_a_judged_run_lets_a_dependent_start() {
+    assert!(JobOutcome::Passed.lets_dependents_start());
+    assert!(JobOutcome::Failed.lets_dependents_start());
+    for outcome in [
+        JobOutcome::NoRun,
+        JobOutcome::Blocked,
+        JobOutcome::Broken,
+        JobOutcome::Interrupted,
+        JobOutcome::Abandoned,
+    ] {
+        assert!(!outcome.lets_dependents_start(), "{outcome}");
+    }
+}
+
+#[test]
+fn the_queue_shows_recent_jobs_that_ended_without_a_judged_run() {
+    let directory = tempfile::tempdir().unwrap();
+    let jobs = Jobs::at(directory.path().to_owned());
+    let log = directory.path().join("x.log");
+    std::fs::write(&log, "building\nerror: unknown HIL scenario 'a b'\n\n").unwrap();
+    let mut lost = job(
+        "1-a",
+        JobState::Finished {
+            outcome: JobOutcome::NoRun,
+            runs: Vec::new(),
+        },
+    );
+    lost.log = Some(log);
+    jobs.write(&lost).unwrap();
+    jobs.write(&job(
+        "2-a",
+        JobState::Finished {
+            outcome: JobOutcome::Passed,
+            runs: vec![String::from("r")],
+        },
+    ))
+    .unwrap();
+    let mut old = job(
+        "0-a",
+        JobState::Finished {
+            outcome: JobOutcome::NoRun,
+            runs: Vec::new(),
+        },
+    );
+    old.enqueued_unix_millis = 1;
+    jobs.write(&old).unwrap();
+    let ended = jobs.recently_ended_unjudged(Duration::from_secs(3600), 5);
+    assert_eq!(
+        ended.iter().map(|job| job.id.as_str()).collect::<Vec<_>>(),
+        ["1-a"]
+    );
+    // A week-old record is gone.
+    assert!(jobs.read("0-a").is_err());
+    assert!(
+        describe_ended(&ended).contains(
+            "1-a stand `cargo hil run icmp-latency` no-run: error: unknown HIL scenario 'a b'"
+        ),
+        "{}",
+        describe_ended(&ended)
+    );
 }

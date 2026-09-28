@@ -579,8 +579,13 @@ directory's `jobs/`, start the same command detached in its own process group
 (output in `target/hil/jobs/<id>.log`), print the job's id and return. The job
 moves its record from pending to started to finished, with the typed outcome
 of its runs (the worst of them) and their ids. `--after JOB` makes a run,
-enqueued or in the foreground, start only once that job has ended, whatever
-its outcome. `wait JOB` blocks until the job ends and exits with its outcome:
+enqueued or in the foreground, start once that job has ended with a judged
+run, passed or failed; after one that ended without (no run, blocked, broken,
+interrupted, abandoned) it does not start and ends no-run itself, saying why,
+so a broken chain stops at its first link. `--after-any JOB` starts it
+whatever the outcome. `--enqueue` first has the runner check a `run`'s
+scenarios, target and options (`run --validate-only`), so a mistake such as
+an unknown scenario fails in the terminal instead of in the job. `wait JOB` blocks until the job ends and exits with its outcome:
 0 passed, 1 failed, 2 interrupted (or on a quarantined board), 3 blocked or
 skipped, 4 broken, 5 no run created, 6 abandoned (its process is gone without
 finishing, told by its PID and start time). Every `run`, `run-all` and
@@ -590,8 +595,10 @@ the stand: each with its phase, from the arbiter's holders and queue matched
 by the job's process or its runner child (waits for a job, building images,
 waiting for the stand, holding the stand). Building costs no balance and
 takes no place in the queue. A job whose process is gone is recorded as
-abandoned when the list is read. `queue --json` has the jobs, with `phase`,
-under `jobs`; the dashboard also shows a whole-stand maintenance. An agent waits
+abandoned when the list is read. `queue` also lists the jobs that ended
+without a judged run within the last hour (at most 5) with the last line of
+their log, under `ended_jobs` in `queue --json`; job records are kept for a
+week. `queue --json` has the jobs, with `phase`, under `jobs`; the dashboard also shows a whole-stand maintenance. An agent waits
 with `wait`, never by looking for process names.
 
 ### Bisecting a scenario

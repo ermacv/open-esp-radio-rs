@@ -20,6 +20,10 @@ use crate::{Context, Result};
 pub const JOB_ENV: &str = "OER_HIL_JOB";
 pub const ENQUEUE: &str = "--enqueue";
 pub const AFTER: &str = "--after";
+pub const AFTER_ANY: &str = "--after-any";
+/// How long a job's record is kept.
+const RECORD_RETENTION: Duration = Duration::from_secs(7 * 24 * 3600);
+
 /// How often a waiting process reads the job it waits for.
 const POLL: Duration = Duration::from_secs(2);
 
@@ -30,8 +34,11 @@ pub struct Job {
     /// The `cargo hil` arguments the job runs.
     pub command: Vec<String>,
     pub checkout: PathBuf,
-    /// The job this one starts after, whatever its outcome.
+    /// The job this one starts after.
     pub after: Option<String>,
+    /// Whether it starts after that job whatever its outcome.
+    #[serde(default)]
+    pub after_any: bool,
     pub enqueued_unix_millis: u64,
     /// The detached process and its start time, which survive PID reuse.
     pub pid: Option<u32>,
@@ -206,6 +213,24 @@ impl std::fmt::Display for JobOutcome {
     }
 }
 
+/// The job a run starts after, and whether it starts whatever that job's
+/// outcome.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct After {
+    pub job: String,
+    /// `--after-any`: start even when the job created no judged run.
+    pub any: bool,
+}
+
+impl JobOutcome {
+    /// Whether a job with `--after` (not `--after-any`) starts after one
+    /// that ended so: after a judged run, passed or failed, not after one
+    /// that created none, was blocked, broken, interrupted or abandoned.
+    pub const fn lets_dependents_start(self) -> bool {
+        matches!(self, Self::Passed | Self::Failed)
+    }
+}
+
 /// The jobs of the stand, in its arbiter directory.
 pub struct Jobs {
     directory: PathBuf,
@@ -273,6 +298,37 @@ impl Jobs {
         jobs
     }
 
+    /// Jobs that ended without a judged run within the last `window`,
+    /// newest first, at most `limit`: what `queue` shows so a lost chain is
+    /// seen. Records older than a week are removed.
+    pub fn recently_ended_unjudged(&self, window: Duration, limit: usize) -> Vec<Job> {
+        let now = unix_millis();
+        let mut jobs = fs::read_dir(&self.directory)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().into_string().ok()?;
+                let job = self.read(name.strip_suffix(".json")?).ok()?;
+                let age = now.saturating_sub(job.enqueued_unix_millis);
+                if age > RECORD_RETENTION.as_millis() as u64 {
+                    let _ = fs::remove_file(entry.path());
+                    return None;
+                }
+                Some(job)
+            })
+            .filter(|job| {
+                matches!(
+                    job.state,
+                    JobState::Finished { outcome, .. } if !outcome.lets_dependents_start()
+                ) && now.saturating_sub(job.enqueued_unix_millis) <= window.as_millis() as u64
+            })
+            .collect::<Vec<_>>();
+        jobs.sort_by(|a, b| (b.enqueued_unix_millis, &b.id).cmp(&(a.enqueued_unix_millis, &a.id)));
+        jobs.truncate(limit);
+        jobs
+    }
+
     /// The job's outcome once it has one: finished, or abandoned by its
     /// process.
     pub fn settled(&self, id: &str) -> Result<Option<JobOutcome>> {
@@ -318,31 +374,42 @@ fn unix_millis() -> u64 {
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
-/// `--enqueue` and `--after JOB` taken from `cargo hil` arguments, up to a
-/// `--`.
-pub fn take(args: Vec<OsString>) -> Result<(bool, Option<String>, Vec<OsString>)> {
+/// `--enqueue` and `--after JOB` (or `--after-any JOB`) taken from `cargo
+/// hil` arguments, up to a `--`.
+pub fn take(args: Vec<OsString>) -> Result<(bool, Option<After>, Vec<OsString>)> {
     let mut enqueue = false;
     let mut after = None;
     let mut remaining = Vec::new();
     let mut rest = args.into_iter();
     while let Some(argument) = rest.next() {
         let text = argument.to_str().unwrap_or_default();
+        let dependency = [(AFTER, false), (AFTER_ANY, true)]
+            .into_iter()
+            .find_map(|(flag, any)| {
+                if text == flag {
+                    Some((flag, any, None))
+                } else {
+                    text.strip_prefix(flag)
+                        .and_then(|value| value.strip_prefix('='))
+                        .map(|value| (flag, any, Some(value.to_owned())))
+                }
+            });
         if text == "--" {
             remaining.push(argument);
             remaining.extend(rest.by_ref());
             break;
         } else if text == ENQUEUE {
             enqueue = true;
-        } else if text == AFTER || text.starts_with("--after=") {
-            let value = match text.strip_prefix("--after=") {
-                Some(value) => value.to_owned(),
+        } else if let Some((flag, any, value)) = dependency {
+            let job = match value {
+                Some(value) => value,
                 None => rest
                     .next()
                     .and_then(|value| value.into_string().ok())
-                    .ok_or("--after requires a job id")?,
+                    .ok_or_else(|| format!("{flag} requires a job id"))?,
             };
-            if after.replace(value).is_some() {
-                return Err("--after is given twice".into());
+            if after.replace(After { job, any }).is_some() {
+                return Err("--after or --after-any is given twice".into());
             }
         } else {
             remaining.push(argument);
@@ -356,11 +423,11 @@ pub fn enqueue(
     ctx: &Context,
     owner: &str,
     args: &[OsString],
-    after: Option<String>,
+    after: Option<After>,
 ) -> Result<String> {
     let jobs = Jobs::open()?;
     if let Some(after) = &after {
-        jobs.read(after)?;
+        jobs.read(&after.job)?;
     }
     let enqueued = unix_millis();
     let id = new_id(enqueued);
@@ -375,7 +442,8 @@ pub fn enqueue(
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect(),
         checkout: ctx.root.clone(),
-        after: after.clone(),
+        after: after.as_ref().map(|after| after.job.clone()),
+        after_any: after.as_ref().is_some_and(|after| after.any),
         enqueued_unix_millis: enqueued,
         pid: None,
         pid_started_unix_millis: None,
@@ -389,7 +457,12 @@ pub fn enqueue(
         .current_dir(&ctx.root)
         .arg("hil")
         .args(args)
-        .args(after.iter().flat_map(|after| [AFTER, after.as_str()]))
+        .args(after.iter().flat_map(|after| {
+            [
+                if after.any { AFTER_ANY } else { AFTER },
+                after.job.as_str(),
+            ]
+        }))
         .env(JOB_ENV, &id)
         .env(oer_hil_arbiter::OWNER_ENV, owner)
         .stdin(std::process::Stdio::null())
@@ -425,7 +498,7 @@ impl Running {
         ctx: &Context,
         owner: &str,
         args: &[OsString],
-        after: Option<&str>,
+        after: Option<&After>,
     ) -> Result<Self> {
         let jobs = Jobs::open()?;
         let id = match std::env::var(JOB_ENV) {
@@ -441,7 +514,8 @@ impl Running {
                         .map(|argument| argument.to_string_lossy().into_owned())
                         .collect(),
                     checkout: ctx.root.clone(),
-                    after: after.map(str::to_owned),
+                    after: after.map(|after| after.job.clone()),
+                    after_any: after.is_some_and(|after| after.any),
                     enqueued_unix_millis: enqueued,
                     pid: Some(pid),
                     pid_started_unix_millis: oer_hil_arbiter::process_started_unix_millis(pid),
@@ -457,10 +531,17 @@ impl Running {
             id: Some(id.clone()),
             finished: false,
         };
-        if let Some(after) = after {
-            eprintln!("hil: waiting for job {after}");
-            let outcome = running.jobs.wait(after)?;
-            eprintln!("hil: job {after} ended {outcome}; starting");
+        if let Some(After { job, any }) = after {
+            eprintln!("hil: waiting for job {job}");
+            let outcome = running.jobs.wait(job)?;
+            if !any && !outcome.lets_dependents_start() {
+                return Err(format!(
+                    "job {job} ended {outcome} without a judged run; not starting (pass \
+                     {AFTER_ANY} to start after it whatever its outcome)"
+                )
+                .into());
+            }
+            eprintln!("hil: job {job} ended {outcome}; starting");
         }
         let mut job = running.jobs.read(&id)?;
         job.state = JobState::Started;
@@ -515,6 +596,36 @@ pub fn wait_command(args: &[OsString]) -> Result<std::process::ExitCode> {
             .unwrap_or_default()
     );
     Ok(std::process::ExitCode::from(outcome.exit_code()))
+}
+
+/// The last line of a job's log, its reason when it ended without a run.
+fn last_log_line(job: &Job) -> Option<String> {
+    let text = fs::read_to_string(job.log.as_ref()?).ok()?;
+    text.lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_owned)
+}
+
+/// Jobs that ended without a judged run, for `cargo hil queue`.
+pub fn describe_ended(jobs: &[Job]) -> String {
+    let mut text = String::new();
+    for job in jobs {
+        let JobState::Finished { outcome, .. } = &job.state else {
+            continue;
+        };
+        text.push_str(&format!(
+            "ended:   {} {} `cargo hil {}` {outcome}{}\n",
+            job.id,
+            job.owner,
+            job.command.join(" "),
+            last_log_line(job)
+                .map(|line| format!(": {line}"))
+                .unwrap_or_default()
+        ));
+    }
+    text
 }
 
 /// A job with its phase, as `queue --json` and the dashboard show it.

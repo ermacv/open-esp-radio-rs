@@ -109,6 +109,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .cloned()
             .chain(record_forced.then(|| OsString::from(RECORD_EVIDENCE)))
             .collect::<Vec<_>>();
+        validate_enqueued(ctx, &args)?;
         let id = crate::hil_jobs::enqueue(ctx, &options.owner(ctx)?, &forwarded, after)?;
         eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
         println!("{id}");
@@ -123,7 +124,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             ctx,
             &owner,
             &args,
-            after.as_deref(),
+            after.as_ref(),
         )?)
     } else {
         None
@@ -674,14 +675,18 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
         _ => return Err("usage: cargo hil queue [--json]".into()),
     };
     let status = oer_hil_arbiter::Arbiter::open()?.status()?;
-    let jobs = crate::hil_jobs::Jobs::open()?.unfinished();
+    let store = crate::hil_jobs::Jobs::open()?;
+    let jobs = store.unfinished();
+    let ended = store.recently_ended_unjudged(std::time::Duration::from_secs(3600), 5);
     if json {
         let mut value = serde_json::to_value(&status)?;
         value["jobs"] = serde_json::to_value(crate::hil_jobs::views(&jobs, &status))?;
+        value["ended_jobs"] = serde_json::to_value(&ended)?;
         println!("{}", serde_json::to_string_pretty(&value)?);
     } else {
         println!("{status}");
         print!("{}", crate::hil_jobs::describe(&jobs, &status));
+        print!("{}", crate::hil_jobs::describe_ended(&ended));
     }
     Ok(std::process::ExitCode::SUCCESS)
 }
@@ -1580,6 +1585,32 @@ fn brief_summary_in<'a>(
     }
     text.push_str(&format!("runner output: {}\n", log.display()));
     text
+}
+
+/// Check an enqueued `run`'s scenarios and options with the runner now, so
+/// a mistake shows in the terminal instead of in a job that ends no-run
+/// minutes later. A baseline run is checked by its own runner when it starts.
+fn validate_enqueued(ctx: &Context, args: &[OsString]) -> Result<()> {
+    if args.first().and_then(|arg| arg.to_str()) != Some("run") {
+        return Ok(());
+    }
+    let (baseline, args) = crate::hil_baseline::take(args.to_vec())?;
+    if baseline.is_some() {
+        return Ok(());
+    }
+    let (runner, _) = prepare(ctx)?;
+    let output = oer_process::output(
+        ctx.command(&runner).args(&args).arg("--validate-only"),
+        Some(std::time::Duration::from_secs(120)),
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "not enqueued: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// The runner's run receipt variable; see oer-hil-runner-core.

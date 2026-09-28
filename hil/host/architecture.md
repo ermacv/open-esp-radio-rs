@@ -436,7 +436,10 @@ inconsistent run bundle makes rebuilding fail closed.
 
 Publication of a new run directory and history snapshots share a short-lived
 index lock. History writers hold it through snapshot and publication, so a
-slower writer cannot overwrite a newer snapshot. Firmware builds and hardware
+slower writer cannot overwrite a newer snapshot. The holder writes its PID
+into the lock file; a runner that finds the lock taken waits up to ten
+minutes (a history rebuild over a large store takes that long), saying after
+a second whom it waits for, instead of failing. Firmware builds and hardware
 workloads run outside that lock. A malformed unrelated bundle still makes
 `report rebuild` fail explicitly. It cannot revoke a completed run: the run's
 completion JSON retains its outcome and artifact paths, sets `history_report`

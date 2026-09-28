@@ -301,6 +301,7 @@ pub(crate) fn run() -> Result<()> {
             layout_seed,
             then,
             target,
+            validate_only,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let mut selected = orchestration::named_scenarios(&catalog, &scenarios)?;
@@ -310,6 +311,17 @@ pub(crate) fn run() -> Result<()> {
             )?;
             for scenario in &mut selected {
                 preflight::configure_run_selection(scenario, ap_scheduler.map(Into::into))?;
+            }
+            if validate_only {
+                println!(
+                    "valid: {} on {target}",
+                    selected
+                        .iter()
+                        .map(|scenario| scenario.id())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+                return Ok(());
             }
             let snapshot = match (&firmware_from, source_snapshot) {
                 (Some(_), _) => None,

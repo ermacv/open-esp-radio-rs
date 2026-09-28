@@ -138,6 +138,10 @@ pub(crate) enum CliCommand {
         /// every selected scenario names, the esp32s31 first.
         #[arg(long, value_name = "CHIP")]
         target: Option<String>,
+        /// Check the scenarios, target and options, then exit without a
+        /// snapshot, a build or a run: what `--enqueue` checks at once.
+        #[arg(long, hide = true)]
+        validate_only: bool,
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     /// The whole catalog runs only with an explicit `--all`.

@@ -12,7 +12,7 @@ use crate::contracts::{
     OutputField, omitted_read_before, output_projection, phy_contract, transport,
 };
 use crate::evidence::{PhyEffect, events, output, phy_effects, steps};
-use crate::harness::{Buffer, Result, case, selection, with_stack_fill};
+use crate::harness::{Buffer, Result, case, selection, setup, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
@@ -752,12 +752,13 @@ impl RxGain {
                 ),
                 // Production builds its arbiter at boot, not in the compared
                 // root, whose step budget therefore excludes the construction.
-                case(
+                // The two sides prepare different state, so nothing of it is
+                // compared or claimed.
+                setup(
                     "install-captured-callbacks",
                     self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
-                    Some(self.arbiter_init()?),
+                    self.arbiter_init()?,
                     SessionReset::Warm,
-                    false,
                 ),
                 root,
             ],

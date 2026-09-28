@@ -86,11 +86,15 @@ pub trait BluetoothRadioHardware {
     /// Sample the scheduler work state, then the head of list zero.
     fn observe(&mut self) -> Result<SchedulerHardwareView, SchedulerHardwareError>;
 
-    /// Disable the BLE PHY ETM route before a Direct Test Mode event.
-    fn disable_phy_etm_route(&mut self);
+    /// Owner of a disabled BLE PHY ETM route; only
+    /// [`Self::restore_phy_etm_route`] consumes it.
+    type DisabledPhyRoute;
+
+    /// Disable the BLE PHY ETM route for a Direct Test Mode session.
+    fn disable_phy_etm_route(&mut self) -> Self::DisabledPhyRoute;
 
     /// Route and enable the BLE PHY ETM channel again after a test.
-    fn restore_phy_etm_route(&mut self);
+    fn restore_phy_etm_route(&mut self, route: Self::DisabledPhyRoute);
 
     /// Publish the insertion's head and start the idle scheduler.
     fn start(
@@ -163,6 +167,7 @@ mod live {
 
     impl<S: SchedulerRunInterruptStorage> BluetoothRadioHardware for LiveBluetoothHardware<'_, S> {
         type StartError = S::Error;
+        type DisabledPhyRoute = oer_esp32s31_hal::bluetooth::BlePhyEtmRouteDisabled;
 
         fn scheduler_config(&self) -> SchedulerSoftwareConfig {
             self.task.scheduler_config()
@@ -232,12 +237,12 @@ mod live {
             self.task.observe_scheduler_hardware(self.storage)
         }
 
-        fn disable_phy_etm_route(&mut self) {
-            self.task.disable_ble_phy_etm_route();
+        fn disable_phy_etm_route(&mut self) -> Self::DisabledPhyRoute {
+            self.task.disable_ble_phy_etm_route()
         }
 
-        fn restore_phy_etm_route(&mut self) {
-            self.task.restore_ble_phy_etm_route();
+        fn restore_phy_etm_route(&mut self, route: Self::DisabledPhyRoute) {
+            self.task.restore_ble_phy_etm_route(route);
         }
 
         fn start(

@@ -165,13 +165,18 @@ impl ControllerPoweredTaskRuntime<'_> {
     }
 
     /// Disable the BLE PHY ETM route for one Direct Test Mode event.
-    pub fn disable_ble_phy_etm_route(&mut self) {
-        self.task.controller().disable_ble_phy_etm_route();
+    pub fn disable_ble_phy_etm_route(
+        &mut self,
+    ) -> oer_esp32s31_hal::bluetooth::BlePhyEtmRouteDisabled {
+        self.task.controller().disable_ble_phy_etm_route()
     }
 
     /// Route and enable the BLE PHY ETM channel again after a test.
-    pub fn restore_ble_phy_etm_route(&mut self) {
-        self.task.controller().restore_ble_phy_etm_route();
+    pub fn restore_ble_phy_etm_route(
+        &mut self,
+        route: oer_esp32s31_hal::bluetooth::BlePhyEtmRouteDisabled,
+    ) {
+        self.task.controller().restore_ble_phy_etm_route(route);
     }
 
     /// Capture the finished lists of a stopped scheduler into this epoch's

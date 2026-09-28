@@ -111,7 +111,7 @@ type Radio<
 > = BluetoothRadio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>;
 
 struct Installed<
-    H,
+    H: BluetoothRadioHardware,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -123,11 +123,41 @@ struct Installed<
     radio: Radio<LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>,
     hardware: H,
     awaiting: Option<SchedulerWait>,
+    /// The BLE PHY ETM route a test session disabled; restored when the
+    /// session ends, when the runtime faults and when the radio leaves.
+    phy_route: Option<H::DisabledPhyRoute>,
     faulted: bool,
 }
 
 /// What one locked pass left to do.
+impl<
+    H: BluetoothRadioHardware,
+    const LEGACY: usize,
+    const CONNECTABLE: usize,
+    const SCANNERS: usize,
+    const CONNECTIONS: usize,
+    const SCAN_PACKETS: usize,
+    const RX_PACKETS: usize,
+    const ITEMS: usize,
+> Installed<H, LEGACY, CONNECTABLE, SCANNERS, CONNECTIONS, SCAN_PACKETS, RX_PACKETS, ITEMS>
+{
+    /// Restore the BLE PHY ETM route if a test session still holds it.
+    fn restore_phy_route(&mut self) {
+        if let Some(route) = self.phy_route.take() {
+            self.hardware.restore_phy_etm_route(route);
+        }
+    }
+
+    /// Stop driving the radio after a hardware fault.
+    fn fault(&mut self) {
+        self.faulted = true;
+        self.restore_phy_route();
+    }
+}
+
 enum Pass {
+    /// The radio asked for a scheduler stop.
+    Stop,
     /// More work is ready now.
     Continue,
     /// A hardware wait is pending.
@@ -168,7 +198,7 @@ impl<M: RawMutex, const EVENTS: usize> BluetoothRadioSink for QueueSink<'_, M, E
 )]
 pub struct BluetoothRuntime<
     M: RawMutex,
-    H,
+    H: BluetoothRadioHardware,
     const LEGACY: usize,
     const CONNECTABLE: usize,
     const SCANNERS: usize,
@@ -332,6 +362,7 @@ impl<
             radio,
             hardware,
             awaiting: None,
+            phy_route: None,
             faulted: false,
         });
         drop(installed);
@@ -457,25 +488,26 @@ impl<
                 {
                     installed.radio.observe_time(&sample);
                 }
-                // A cancelled test event leaves its list once the scheduler
-                // stopped; resuming restarts at the remaining events.
-                if !installed.faulted
-                    && installed.radio.stop_requested()
-                    && let Err(fault) = self.quiesce_installed(installed, |_| ()).await
-                {
-                    installed.faulted = true;
-                    return fault;
-                }
                 match self.pass(installed) {
+                    // A test event is published only on an idle scheduler, and
+                    // a listed one leaves its list only after a stop; resuming
+                    // restarts at the remaining events.
+                    Ok(Pass::Stop) => match self.quiesce_installed(installed, |_| ()).await {
+                        Ok(()) => Pass::Continue,
+                        Err(fault) => {
+                            installed.fault();
+                            return fault;
+                        }
+                    },
                     Ok(pass) => pass,
                     Err(fault) => {
-                        installed.faulted = true;
+                        installed.fault();
                         return fault;
                     }
                 }
             };
             match pass {
-                Pass::Continue => budget.spend().await,
+                Pass::Stop | Pass::Continue => budget.spend().await,
                 Pass::Recheck => {
                     budget.refill();
                     select(self.work.wait(), Timer::after(HARDWARE_RECHECK)).await;
@@ -509,7 +541,7 @@ impl<
             .ok_or(BluetoothRuntimeFault::NotInstalled)?;
         let result = self.quiesce_installed(installed, maintenance).await;
         if result.is_err() {
-            installed.faulted = true;
+            installed.fault();
         }
         self.work.signal(());
         result
@@ -546,9 +578,11 @@ impl<
         let mut slot = self.installed.lock().await;
         let installed = slot.as_mut().ok_or(BluetoothRuntimeFault::NotInstalled)?;
         if let Err(fault) = self.stop_scheduler(installed).await {
-            installed.faulted = true;
+            installed.fault();
             return Err(fault);
         }
+        // The hardware leaves with its PHY routed as initialization left it.
+        installed.restore_phy_route();
         // A cancelled runner may have left a controller-time request in
         // flight; the task owner retires only once it completed.
         loop {
@@ -556,7 +590,7 @@ impl<
                 Ok(ControllerTimeEventStep::Waiting) => Timer::after(HARDWARE_RECHECK).await,
                 Ok(_) => break,
                 Err(error) => {
-                    installed.faulted = true;
+                    installed.fault();
                     return Err(BluetoothRuntimeFault::Time(BluetoothTimeError::Event(
                         error,
                     )));
@@ -712,16 +746,18 @@ impl<
                     .map_err(BluetoothRuntimeFault::Start)?;
                 Ok(Pass::Continue)
             }
-            RadioStep::StartTest(insertion) => {
-                installed.hardware.disable_phy_etm_route();
+            RadioStep::StopScheduler => Ok(Pass::Stop),
+            RadioStep::EnterTest(insertion) => {
+                let route = installed.hardware.disable_phy_etm_route();
+                installed.phy_route = Some(route);
                 installed
                     .hardware
                     .start(&installed.radio.item_space(), insertion)
                     .map_err(BluetoothRuntimeFault::Start)?;
                 Ok(Pass::Continue)
             }
-            RadioStep::RestorePhyRoute => {
-                installed.hardware.restore_phy_etm_route();
+            RadioStep::LeaveTest => {
+                installed.restore_phy_route();
                 Ok(Pass::Continue)
             }
             RadioStep::Transaction(step) => {

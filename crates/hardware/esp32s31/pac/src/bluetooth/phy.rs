@@ -163,6 +163,16 @@ impl BluetoothPhyRegisterInitInputs {
     }
 }
 
+/// Owner of a disabled BLE PHY ETM route. Only
+/// [`BluetoothTaskRegisters::restore_ble_phy_etm_route`] consumes it, so a
+/// path that loses it leaves visible evidence rather than a silently
+/// unrouted PHY.
+#[derive(Debug)]
+#[must_use = "a disabled BLE PHY ETM route must be restored"]
+pub struct BlePhyEtmRouteDisabled {
+    _private: (),
+}
+
 impl BluetoothTaskRegisters {
     /// Disable the BLE PHY ETM route for one Direct Test Mode event.
     ///
@@ -171,8 +181,9 @@ impl BluetoothTaskRegisters {
     /// `sym_dtm_C15YAGhOCEEdWMnhjaY3.part.1` disable, for a test without CTE,
     /// the vendor channel carrying the route that PHY register initialization
     /// installs; this owner carries that route on channel two.
-    pub fn disable_ble_phy_etm_route(&mut self) {
+    pub fn disable_ble_phy_etm_route(&mut self) -> BlePhyEtmRouteDisabled {
         self.etm.disable();
+        BlePhyEtmRouteDisabled { _private: () }
     }
 
     /// Route and enable the BLE PHY ETM channel again after a test.
@@ -180,7 +191,8 @@ impl BluetoothTaskRegisters {
     /// SOURCE: pinned Test End `sym_dtm_NsbldBIeGraE2wg0AVy7` calls
     /// `r_ble_phy_init`, which leads to the PHY register initialization
     /// that routes and enables the channel.
-    pub fn restore_ble_phy_etm_route(&mut self) {
+    pub fn restore_ble_phy_etm_route(&mut self, route: BlePhyEtmRouteDisabled) {
+        let BlePhyEtmRouteDisabled { _private: () } = route;
         self.etm.route_and_enable();
     }
 

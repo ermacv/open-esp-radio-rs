@@ -67,8 +67,8 @@ pub use bluetooth::{
         BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerRegisters,
     },
     phy::{
-        BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
-        BluetoothPhyRegisterInitInputs,
+        BlePhyEtmRouteDisabled, BluetoothPhyEnvironmentAddress,
+        BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
     },
     scan::BluetoothScanStartPublished,
     scheduler::{

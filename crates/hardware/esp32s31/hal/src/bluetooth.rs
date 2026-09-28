@@ -51,7 +51,7 @@ pub use scheduler_stop::{BluetoothSchedulerStop, BluetoothSchedulerStopStep};
 pub use shutdown::{BluetoothControllerReset, BluetoothShutdownError, BluetoothShutdownFailure};
 
 pub use oer_esp32s31_pac::{
-    BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
+    BlePhyEtmRouteDisabled, BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
     BluetoothControllerOutputReleaseError, BluetoothControllerSramAddress,
     BluetoothControllerSramAddressError, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
     BluetoothHalInitScale, BluetoothLowPowerClockObservation,
@@ -1485,13 +1485,13 @@ impl ControllerHal<'_> {
 
     /// Disable the BLE PHY ETM route for one Direct Test Mode event without
     /// CTE, as the pinned DTM event bodies do.
-    pub fn disable_ble_phy_etm_route(&mut self) {
-        self.registers.disable_ble_phy_etm_route();
+    pub fn disable_ble_phy_etm_route(&mut self) -> BlePhyEtmRouteDisabled {
+        self.registers.disable_ble_phy_etm_route()
     }
 
     /// Route and enable the BLE PHY ETM channel again after a test.
-    pub fn restore_ble_phy_etm_route(&mut self) {
-        self.registers.restore_ble_phy_etm_route();
+    pub fn restore_ble_phy_etm_route(&mut self, route: BlePhyEtmRouteDisabled) {
+        self.registers.restore_ble_phy_etm_route(route);
     }
 
     /// Remove every published scheduler hardware-list head.

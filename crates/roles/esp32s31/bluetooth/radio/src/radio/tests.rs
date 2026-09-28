@@ -545,7 +545,7 @@ fn a_test_receiver_reports_before_its_end() {
         radio.request(RadioRequest::EndTest, &mut sink),
         Err(RequestError::Busy)
     );
-    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
+    let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the test starts")
     };
     execute_all(&radio, 0);
@@ -581,23 +581,24 @@ fn cancelling_a_running_test_stops_the_scheduler_instead_of_skipping_it() {
             &mut sink,
         )
         .unwrap();
-    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
+    let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the test starts")
     };
     radio
         .request(RadioRequest::Cancel(EventId::new(4)), &mut sink)
         .unwrap();
-    assert!(radio.stop_requested());
-    // While hardware runs the test, no cancellation hold starts.
-    assert!(matches!(
-        radio.drive(view(true), &mut sink),
-        RadioStep::Idle
-    ));
+    // While hardware runs the test, no cancellation hold starts: the
+    // scheduler stops first, however often the radio is driven.
+    for _ in 0..2 {
+        assert!(matches!(
+            radio.drive(view(true), &mut sink),
+            RadioStep::StopScheduler
+        ));
+    }
     assert!(sink.0.is_empty());
     radio
         .enter_stopped(oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped::for_validation())
         .unwrap();
-    assert!(!radio.stop_requested());
     radio
         .resume(&ControllerTimeSample::for_validation(0))
         .unwrap();
@@ -630,7 +631,7 @@ fn a_test_disables_the_phy_route_and_its_end_restores_it() {
             &mut sink,
         )
         .unwrap();
-    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
+    let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("a test event starts with the route disabled")
     };
     execute_all(&radio, 0);
@@ -643,7 +644,7 @@ fn a_test_disables_the_phy_route_and_its_end_restores_it() {
     radio.request(RadioRequest::EndTest, &mut sink).unwrap();
     assert!(matches!(
         radio.drive(view(false), &mut sink),
-        RadioStep::RestorePhyRoute
+        RadioStep::LeaveTest
     ));
     assert!(matches!(
         radio.drive(view(false), &mut sink),
@@ -671,16 +672,15 @@ fn a_test_event_stops_a_busy_scheduler_and_starts_as_the_list_head() {
     // A busy scheduler takes no live insertion of a test event.
     assert!(matches!(
         radio.drive(view(true), &mut sink),
-        RadioStep::Idle
+        RadioStep::StopScheduler
     ));
-    assert!(radio.stop_requested());
     radio
         .enter_stopped(oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped::for_validation())
         .unwrap();
     radio
         .resume(&ControllerTimeSample::for_validation(0))
         .unwrap();
-    let RadioStep::StartTest(_) = radio.drive(view(false), &mut sink) else {
+    let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
         panic!("the stopped scheduler starts at the test event")
     };
     assert!(sink.0.is_empty());
@@ -865,4 +865,83 @@ fn a_reset_controller_returns_pools_free_for_the_next_epoch() {
         panic!("the next epoch starts from free pools")
     };
     assert_eq!(next.executor.list().len(), 3);
+}
+
+fn test_receive(id: u32, recurring: bool) -> RadioRequest<'static> {
+    RadioRequest::TestReceive(TestReceive {
+        id: EventId::new(id),
+        channel: TestChannel::new(19).unwrap(),
+        phy: TestPhy::Le1M,
+        window: window(10_000, 1_000),
+        recurring,
+        tx_power: TxPower::from_dbm(0),
+    })
+}
+
+#[test]
+fn a_test_session_owns_the_link_layer_until_test_end() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    configure_legacy(&mut radio, &mut sink);
+    radio.request(test_receive(4, false), &mut sink).unwrap();
+    assert_eq!(
+        radio.request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink),
+        Err(RequestError::Busy)
+    );
+    let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
+        panic!("the test starts")
+    };
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    // Until the route is restored the session still owns the Link Layer.
+    assert_eq!(
+        radio.request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink),
+        Err(RequestError::Busy)
+    );
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::LeaveTest
+    ));
+    radio
+        .request(advertise(1, 10_000, AdvertisingChannels::ALL), &mut sink)
+        .unwrap();
+}
+
+#[test]
+fn only_the_first_event_of_a_session_disables_the_route() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio.request(test_receive(4, false), &mut sink).unwrap();
+    let RadioStep::EnterTest(_) = radio.drive(view(false), &mut sink) else {
+        panic!("the first test event disables the route")
+    };
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    radio.request(test_receive(5, true), &mut sink).unwrap();
+    let RadioStep::Start(_) = radio.drive(view(false), &mut sink) else {
+        panic!("a recurring test event keeps the disabled route")
+    };
+    execute_all(&radio, 0);
+    radio.complete(&mut sink);
+    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::LeaveTest
+    ));
+}
+
+#[test]
+fn a_session_without_a_published_event_has_no_route_to_restore() {
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio.request(test_receive(4, false), &mut sink).unwrap();
+    radio
+        .request(RadioRequest::Cancel(EventId::new(4)), &mut sink)
+        .unwrap();
+    radio.request(RadioRequest::EndTest, &mut sink).unwrap();
+    assert!(matches!(
+        radio.drive(view(false), &mut sink),
+        RadioStep::Idle
+    ));
 }

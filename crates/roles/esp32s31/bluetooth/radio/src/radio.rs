@@ -89,12 +89,19 @@ pub enum RadioStep<const ITEMS: usize> {
     Idle,
     /// The scheduler is idle: publish this head and start the scheduler.
     Start(SchedulerIdleInsertion),
-    /// The scheduler is idle and the head is a Direct Test Mode event:
-    /// disable the BLE PHY ETM route, then publish the head and start the
+    /// Stop the scheduler and hand the stopped receipt to
+    /// [`BluetoothRadio::enter_stopped`]: a test event is published only as
+    /// the head of an idle scheduler, and a listed test event leaves its list
+    /// only after a stop.
+    StopScheduler,
+    /// The first event of a test session is ready on an idle scheduler:
+    /// disable the BLE PHY ETM route, keep its owner until
+    /// [`RadioStep::LeaveTest`], then publish the head and start the
     /// scheduler.
-    StartTest(SchedulerIdleInsertion),
-    /// A test ended: route and enable the BLE PHY ETM channel again.
-    RestorePhyRoute,
+    EnterTest(SchedulerIdleInsertion),
+    /// The test session ended: restore the BLE PHY ETM route with the owner
+    /// taken at [`RadioStep::EnterTest`].
+    LeaveTest,
     /// Perform the actions of a list transaction and deliver the awaited
     /// observation to [`BluetoothRadio::advance`].
     Transaction(SchedulerStep<SchedulerItemId, ITEMS>),
@@ -248,21 +255,63 @@ pub struct BluetoothRadio<
     scanners: [Option<Slot<ScannerId>>; SCANNERS],
     connections: [Option<(Slot<ConnectionId>, ConnectionFacts)>; CONNECTIONS],
     dtm: Option<Slot<()>>,
-    /// The test instance already carried an event, so the next one is a
-    /// recurring event.
-    dtm_recurring: bool,
-    /// A test event disabled the BLE PHY ETM route.
-    phy_route_disabled: bool,
-    /// A test ended while the route was disabled; the next drive restores it.
-    phy_route_restore: bool,
+    mode: SchedulerMode,
     clock: RadioClock,
     timing: RadioTiming,
     policy: SchedulerTimingPolicy,
     faulted: bool,
-    /// A listed Direct Test Mode event was cancelled: the scheduler must
-    /// stop before the event can leave its list.
-    stop_requested: bool,
     coexistence: CoexistenceProfile,
+}
+
+/// Who owns the scheduler: every role, or a Direct Test Mode session, which
+/// owns the Link Layer exclusively (Core Specification Vol 6, Part F).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SchedulerMode {
+    Shared,
+    Test(TestPhase),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestPhase {
+    /// The session holds its instance; no event was published yet and the
+    /// BLE PHY ETM route is live.
+    Opened,
+    /// A test event was published; the route stays disabled until the
+    /// session ends.
+    Running,
+    /// The scheduler must stop before the session continues in the phase
+    /// it names.
+    Stopping(TestResume),
+    /// Test End released the instance; the route restore is due.
+    Restoring,
+}
+
+/// The phase a stopped test session continues in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestResume {
+    Opened,
+    Running,
+}
+
+impl TestResume {
+    const fn phase(self) -> TestPhase {
+        match self {
+            Self::Opened => TestPhase::Opened,
+            Self::Running => TestPhase::Running,
+        }
+    }
+}
+
+impl TestPhase {
+    /// The phase a stop returns to, from a phase that owns a live session.
+    const fn resume(self) -> TestResume {
+        match self {
+            Self::Running | Self::Stopping(TestResume::Running) => TestResume::Running,
+            Self::Opened | Self::Stopping(TestResume::Opened) | Self::Restoring => {
+                TestResume::Opened
+            }
+        }
+    }
 }
 
 impl<
@@ -303,9 +352,7 @@ impl<
             scanners: [const { None }; SCANNERS],
             connections: [const { None }; CONNECTIONS],
             dtm: None,
-            dtm_recurring: false,
-            phy_route_disabled: false,
-            phy_route_restore: false,
+            mode: SchedulerMode::Shared,
             clock: RadioClock {
                 now: u64::from(epoch.project_without_reanchor(sample)),
                 epoch,
@@ -320,7 +367,6 @@ impl<
             },
             policy: SchedulerTimingPolicy::from_scheduler_config(config, scale),
             faulted: false,
-            stop_requested: false,
             coexistence: CoexistenceProfile::Standalone,
         }
     }
@@ -391,6 +437,20 @@ impl<
         if self.faulted {
             return Err(RequestError::Unavailable);
         }
+        // A test session owns the Link Layer: no other role schedules air
+        // activity until Test End.
+        if matches!(self.mode, SchedulerMode::Test(_))
+            && matches!(
+                request,
+                RadioRequest::Advertise(_)
+                    | RadioRequest::Scan(_)
+                    | RadioRequest::OpenConnection(_)
+                    | RadioRequest::ConnectionEvent(_)
+                    | RadioRequest::Transmit { .. }
+            )
+        {
+            return Err(RequestError::Busy);
+        }
         match request {
             RadioRequest::ConfigureAdvertising(configuration) => {
                 self.configure_advertising(configuration)
@@ -430,15 +490,18 @@ impl<
         if self.faulted || self.inserting.is_some() {
             return RadioStep::Idle;
         }
-        if core::mem::take(&mut self.phy_route_restore) {
-            return RadioStep::RestorePhyRoute;
+        match self.mode {
+            SchedulerMode::Test(TestPhase::Restoring) => {
+                self.mode = SchedulerMode::Shared;
+                return RadioStep::LeaveTest;
+            }
+            SchedulerMode::Test(TestPhase::Stopping(_)) => return RadioStep::StopScheduler,
+            SchedulerMode::Shared | SchedulerMode::Test(_) => {}
         }
         let mut cancelled = [None; ITEMS];
         let mut count = 0;
         for (id, _) in self.executor.list().iter() {
-            if self.event_of(id).is_some_and(|event| event.cancel)
-                && !(self.stop_requested && view.busy.is_busy())
-            {
+            if self.event_of(id).is_some_and(|event| event.cancel) {
                 cancelled[count] = Some(id);
                 count += 1;
             }
@@ -469,9 +532,12 @@ impl<
         // The vendor test event bodies stop the scheduler
         // (`r_sym_bt_74l62ZLsZuXg67pPHSd7`), publish the item as the list-zero
         // head and run it; a test event never enters a running list.
-        if view.busy.is_busy() && id.kind() == SchedulerRoleKind::DirectTestMode {
-            self.stop_requested = true;
-            return RadioStep::Idle;
+        if view.busy.is_busy()
+            && id.kind() == SchedulerRoleKind::DirectTestMode
+            && let SchedulerMode::Test(phase) = self.mode
+        {
+            self.mode = SchedulerMode::Test(TestPhase::Stopping(phase.resume()));
+            return RadioStep::StopScheduler;
         }
         if !view.busy.is_busy() {
             let mut head = None;
@@ -499,10 +565,11 @@ impl<
             }
             return match head {
                 // The vendor event bodies disable the route on every test
-                // event without CTE (`r_sym_ble_YpJTETFGhduIAMkkBKjc`).
-                Some(head) if test => {
-                    self.phy_route_disabled = true;
-                    RadioStep::StartTest(head)
+                // event without CTE (`r_sym_ble_YpJTETFGhduIAMkkBKjc`); it
+                // stays disabled until Test End reinitializes the PHY.
+                Some(head) if test && self.mode == SchedulerMode::Test(TestPhase::Opened) => {
+                    self.mode = SchedulerMode::Test(TestPhase::Running);
+                    RadioStep::EnterTest(head)
                 }
                 Some(head) => RadioStep::Start(head),
                 None => RadioStep::Idle,
@@ -577,15 +644,10 @@ impl<
         stopped: BluetoothSchedulerStopped,
     ) -> Result<(), oer_esp32s31_bluetooth::scheduler::SchedulerStopRejected> {
         self.executor.enter_stopped(stopped)?;
-        self.stop_requested = false;
+        if let SchedulerMode::Test(TestPhase::Stopping(resume)) = self.mode {
+            self.mode = SchedulerMode::Test(resume.phase());
+        }
         Ok(())
-    }
-
-    /// Whether a cancelled event needs the scheduler stopped and resumed
-    /// before it can leave its list; [`Self::drive`] leaves it listed until
-    /// then.
-    pub const fn stop_requested(&self) -> bool {
-        self.stop_requested
     }
 
     /// The stopped receipt the executor holds.
@@ -1405,8 +1467,11 @@ impl<
             Some(slot) if slot.event.is_some() => Err(RequestError::Busy),
             Some(_) => Ok(()),
             None => {
+                if self.mode != SchedulerMode::Shared {
+                    return Err(RequestError::Busy);
+                }
                 let instance = self.memory.dtm.acquire().ok_or(RequestError::NoInstance)?;
-                self.dtm_recurring = false;
+                self.mode = SchedulerMode::Test(TestPhase::Opened);
                 self.dtm = Some(Slot {
                     id: (),
                     instance,
@@ -1492,7 +1557,8 @@ impl<
         event_type: DtmSchedulerItemEventType,
         tx_power: LeTxPower,
     ) -> Result<(), RequestError> {
-        let recurring = self.dtm_recurring;
+        // Every event after the first of a session is a recurring event.
+        let recurring = matches!(self.mode, SchedulerMode::Test(phase) if phase.resume() == TestResume::Running);
         let sequence_start = self.clock.round_trip(window.start());
         let role = event_type.role();
         let slot = self.dtm.as_mut().expect("the test holds its instance");
@@ -1530,7 +1596,6 @@ impl<
         event.receiver = matches!(role, DtmRole::Receiver);
         slot.event = Some(event);
         self.push_pending(item, window);
-        self.dtm_recurring = true;
         Ok(())
     }
 
@@ -1545,7 +1610,12 @@ impl<
                 Ok(()) => {
                     // Vendor Test End reinitializes the PHY, which routes
                     // the channel again (`r_ble_phy_init`).
-                    self.phy_route_restore = core::mem::take(&mut self.phy_route_disabled);
+                    self.mode = match self.mode {
+                        SchedulerMode::Test(phase) if phase.resume() == TestResume::Running => {
+                            SchedulerMode::Test(TestPhase::Restoring)
+                        }
+                        _ => SchedulerMode::Shared,
+                    };
                     Ok(())
                 }
                 Err(failure) => {
@@ -1583,8 +1653,11 @@ impl<
         };
         // The vendor ends a test by stopping the scheduler rather than
         // cancelling its running event (`sym_dtm_NsbldBIeGraE2wg0AVy7`).
-        if found.is_none() && owner.kind() == SchedulerRoleKind::DirectTestMode {
-            self.stop_requested = true;
+        if found.is_none()
+            && owner.kind() == SchedulerRoleKind::DirectTestMode
+            && let SchedulerMode::Test(phase) = self.mode
+        {
+            self.mode = SchedulerMode::Test(TestPhase::Stopping(phase.resume()));
         }
         let mut dropped = [None; ITEMS];
         let mut count = 0;

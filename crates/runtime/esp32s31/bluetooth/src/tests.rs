@@ -10,7 +10,8 @@ use embassy_time::Timer;
 use oer_bluetooth_radio::{
     AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingPdu, AdvertisingSetId, CoexistenceLevel, EventId, EventResult, RadioDuration,
-    RadioFault, RadioInstant, RadioOutcome, RadioRequest, ReceivedPdu, RequestError, TxPower,
+    RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu, RequestError,
+    TestChannel, TestPhy, TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -52,7 +53,14 @@ struct State {
     running: bool,
     finished: Option<BluetoothSchedulerFinishedListObservation>,
     wake: SchedulerWakeCell,
+    routes_disabled: usize,
+    routes_restored: usize,
+    refuse_start: bool,
 }
+
+/// The model's owner of a disabled BLE PHY ETM route.
+#[must_use]
+struct ModelRoute;
 
 /// Hardware that executes the head item at once when it starts.
 #[derive(Clone, Default)]
@@ -60,6 +68,7 @@ struct Model(Rc<RefCell<State>>);
 
 impl BluetoothRadioHardware for Model {
     type StartError = ();
+    type DisabledPhyRoute = ModelRoute;
 
     fn scheduler_config(&self) -> SchedulerSoftwareConfig {
         SchedulerSoftwareConfig::reviewed_standalone()
@@ -156,9 +165,15 @@ impl BluetoothRadioHardware for Model {
         })
     }
 
-    fn disable_phy_etm_route(&mut self) {}
+    fn disable_phy_etm_route(&mut self) -> ModelRoute {
+        self.0.borrow_mut().routes_disabled += 1;
+        ModelRoute
+    }
 
-    fn restore_phy_etm_route(&mut self) {}
+    fn restore_phy_etm_route(&mut self, route: ModelRoute) {
+        let ModelRoute = route;
+        self.0.borrow_mut().routes_restored += 1;
+    }
 
     fn start(
         &mut self,
@@ -169,6 +184,9 @@ impl BluetoothRadioHardware for Model {
             .listed_item(insertion.head)
             .ok_or(SchedulerStartError::ForeignItem(insertion.head))?;
         let mut state = self.0.borrow_mut();
+        if state.refuse_start {
+            return Err(SchedulerStartError::Interrupts(()));
+        }
         state.started.push(insertion.head);
         if state.defer_execution {
             state.running = true;
@@ -460,4 +478,69 @@ fn uninstall_stops_the_scheduler_and_a_reset_radio_installs_again() {
         .unwrap_or_else(|_| panic!("the next epoch installs"));
     assert!(model.0.borrow().chains_published);
     block_on(runtime.request(configure())).unwrap();
+}
+
+fn test_receive(id: u32) -> RadioRequest<'static> {
+    RadioRequest::TestReceive(TestReceive {
+        id: EventId::new(id),
+        channel: TestChannel::new(19).unwrap(),
+        phy: TestPhy::Le1M,
+        window: RadioWindow::new(
+            RadioInstant::from_micros(10_000),
+            RadioDuration::from_micros(1_000),
+        )
+        .unwrap(),
+        recurring: false,
+        tx_power: TxPower::from_dbm(0),
+    })
+}
+
+fn routes(model: &Model) -> (usize, usize) {
+    let state = model.0.borrow();
+    (state.routes_disabled, state.routes_restored)
+}
+
+/// Run the runtime until it is idle for a moment.
+fn settle(runtime: &Runtime) {
+    block_on(async {
+        let Either::Second(()) = select(runtime.run(), Timer::after_millis(1)).await else {
+            panic!("the runtime keeps running")
+        };
+    });
+}
+
+#[test]
+fn a_test_session_holds_the_route_until_test_end() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(runtime.request(test_receive(4))).unwrap();
+    settle(&runtime);
+    assert_eq!(routes(&model), (1, 0));
+    block_on(runtime.request(RadioRequest::EndTest)).unwrap();
+    settle(&runtime);
+    assert_eq!(routes(&model), (1, 1));
+}
+
+#[test]
+fn uninstall_restores_the_route_of_an_open_test() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(runtime.request(test_receive(4))).unwrap();
+    settle(&runtime);
+    assert_eq!(routes(&model), (1, 0));
+    let _ = block_on(runtime.uninstall()).unwrap();
+    assert_eq!(routes(&model), (1, 1));
+}
+
+#[test]
+fn a_fault_restores_the_route_of_an_open_test() {
+    let model = Model::default();
+    model.0.borrow_mut().refuse_start = true;
+    let runtime = installed(&model);
+    block_on(runtime.request(test_receive(4))).unwrap();
+    assert!(matches!(
+        block_on(runtime.run()),
+        crate::BluetoothRuntimeFault::Start(_)
+    ));
+    assert_eq!(routes(&model), (1, 1));
 }

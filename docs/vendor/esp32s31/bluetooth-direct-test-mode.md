@@ -135,10 +135,14 @@ no overlap check or lock/modify request: while a test runs, it owns list zero.
 The DTM item carries allocation kind five and a private chain at link-state
 `+0x64`, so the scheduler item is always the single head.
 
-The open radio role follows that order. A test event that finds the scheduler
-busy asks the runtime to stop it; the runtime stops the scheduler with the
-common lifecycle sequence, resumes it, and the idle scheduler then takes the
-event as the list-zero head and runs. An idle scheduler takes it directly. The
+The open radio role follows that order with an explicit test mode. Opening a
+test instance moves the role from shared scheduling to a test session, which
+owns the Link Layer exclusively (Core Specification Vol 6, Part F):
+advertising, scanning and connection requests are refused as busy until the
+session has ended. A test event that finds the scheduler busy returns the
+`StopScheduler` step; the runtime stops the scheduler with the common
+lifecycle sequence, resumes it, and the idle scheduler then takes the event as
+the list-zero head and runs. An idle scheduler takes it directly. The
 executor's idle insertion also writes the unexecuted status and clears the
 list-state bytes the executor itself uses for its mirror.
 
@@ -160,10 +164,14 @@ which marks the PHY for reinitialization and thereby restores the route.
 
 This repository gives channels zero and one to IEEE 802.15.4 and runs the BLE
 PHY route on channel two (see the modem ETM PAC), so it follows the vendor
-semantically rather than by channel number. Every test event disables channel
-two through `MODEM_ETM.CHANNEL_ENABLE_CLEAR` immediately before the list head
-is published and the scheduler runs; releasing the test instance at Test End
-routes and enables channel two again. Channel one has no counterpart because
+semantically rather than by channel number. The first event of a test session
+returns the `EnterTest` step: the runtime disables channel two through
+`MODEM_ETM.CHANNEL_ENABLE_CLEAR` immediately before the list head is published
+and the scheduler runs, and keeps the PAC's `BlePhyEtmRouteDisabled` owner.
+The channel stays disabled for the later events of the session, as nothing
+between them reinitializes the PHY. Test End returns the `LeaveTest` step,
+whose restore consumes that owner and routes and enables channel two again;
+a runtime fault or an uninstall restores it as well. Channel one has no counterpart because
 the open implementation has no CTE route. The vendor also disables its
 channels before its scheduler stop, while here the stop, when needed, happens
 first; the two operations touch disjoint hardware.
@@ -257,8 +265,8 @@ reports one test result per receiver event before the event ends.
 `sym_dtm_NsbldBIeGraE2wg0AVy7` serializes the shared count as the Test End
 result. When a test is active, it stops the scheduler with
 `r_btdm_sched_stop`, unregisters the DTM event, calls `r_ble_phy_init` and
-frees the graph. Cancelling a listed test event in the open radio role asks
-the runtime to stop the scheduler instead of opening the cancellation hold;
+frees the graph. Cancelling a listed test event in the open radio role
+returns the `StopScheduler` step instead of opening the cancellation hold;
 after the stop and resume the event leaves its list through the idle path and
 ends as not executed. A test event that is still waiting for insertion leaves
 at once.

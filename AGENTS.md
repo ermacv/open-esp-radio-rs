@@ -67,9 +67,13 @@ cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.
 Before every push to `main`, run `cargo xtask check changed`: it formats every
 workspace a changed file belongs to, runs workspace Clippy, and tests and
 documents the changed root packages, plus the docs and metadata checks when
-prose or manifests changed. Other workspaces (HIL target, examples) still need
-their own target build. If `main` CI turns red after a push, fixing it comes
-before other work.
+prose or manifests changed, and the capability anchors when Rust sources or
+catalogs changed. Other workspaces (HIL target, examples) still need their own
+target build. A qualification catalog entry that claims support names its
+owning code with a `// CAPABILITY: <id>` comment above that item (see
+[code anchors](qualification/README.md#code-anchors)); keep the anchor and the
+entry's status in step when the code changes. If `main` CI turns red after a
+push, fixing it comes before other work.
 
 Use `cargo xtask check docs` for Markdown/catalog changes and `cargo xtask doc`
 for API changes: it runs `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`

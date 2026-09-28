@@ -51,6 +51,8 @@ jobs:
         run: cargo xtask doc
       - name: Markdown links and qualification catalogs
         run: cargo xtask check docs
+      - name: Capability anchors in code
+        run: cargo xtask check capabilities
       - name: Install mdBook
         run: |
           mdbook --version | grep -q "v$MDBOOK_VERSION" || cargo install --locked mdbook --version "$MDBOOK_VERSION"

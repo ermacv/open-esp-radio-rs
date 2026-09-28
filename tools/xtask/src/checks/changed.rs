@@ -40,6 +40,10 @@ pub struct Plan {
     /// A production crate manifest changed: the source-only PHY graph may
     /// have gained a package.
     pub phy_graph: bool,
+    /// Rust sources or capability catalogs changed: a code anchor or the
+    /// entry it names may have gone. The changed Rust files, to list the
+    /// catalog entries anchored in them.
+    pub capabilities: Option<BTreeSet<PathBuf>>,
     /// Changed workspaces other than the root, which need their own target
     /// and feature profile to build.
     pub other_workspaces: BTreeSet<PathBuf>,
@@ -88,6 +92,12 @@ pub fn plan(
         }
         if name == "Cargo.toml" && path.starts_with("crates") {
             plan.phy_graph = true;
+        }
+        if extension == "rs" || path.starts_with("qualification/catalog") {
+            let anchored = plan.capabilities.get_or_insert_default();
+            if extension == "rs" {
+                anchored.insert(path.clone());
+            }
         }
         if (extension == "rs" && (path.starts_with("crates") || path.starts_with("verification")))
             || path.starts_with("registers")
@@ -259,6 +269,9 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     }
     if plan.phy_graph {
         super::phy::run(ctx, "esp32s31")?;
+    }
+    if let Some(anchored) = &plan.capabilities {
+        super::docs::capabilities(ctx, &anchored.iter().cloned().collect::<Vec<_>>())?;
     }
     if plan.provenance {
         for chip in crate::chips::supported(&ctx.root)? {

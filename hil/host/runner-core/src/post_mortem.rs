@@ -224,6 +224,7 @@ const TRACE_EVENT_SETS: &[oer_trace::Describer] = &[
     <oer_hil_target_core::trace::PlatformTrace as oer_trace::EventSet>::describe,
     <oer_ieee80211_trace::StationTrace as oer_trace::EventSet>::describe,
     <oer_phy_trace::PhyTrace as oer_trace::EventSet>::describe,
+    <oer_ieee802154_trace::Ieee802154Trace as oer_trace::EventSet>::describe,
 ];
 
 /// A trace kind's name: the platform's own, else its domain and event id.
@@ -588,6 +589,25 @@ mod tests {
         }
         .to_string();
         assert!(!described.starts_with("ieee80211."), "{described}");
+        // So is an IEEE 802.15.4 driver event, by the driver's event set.
+        let change = oer_ieee802154_trace::StateChange {
+            from: oer_ieee802154_trace::MacState::Rx,
+            to: oer_ieee802154_trace::MacState::Tx,
+        };
+        let record = oer_trace::Record {
+            tag: 1,
+            kind: <oer_ieee802154_trace::StateChange as oer_trace::Event>::KIND.raw(),
+            t_us: 0,
+            words: oer_trace::Event::encode(&change),
+        };
+        assert_eq!(
+            oer_trace::Described {
+                record: &record,
+                sets: TRACE_EVENT_SETS,
+            }
+            .to_string(),
+            change.to_string()
+        );
     }
 
     #[test]

@@ -6207,13 +6207,6 @@ exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT", "ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP"]
 
 [[field-snapshot-reads]]
-name = "observe_shared_modem_clock_gates"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = ["CLK_COEX_EN", "CLK_LP_TIMER_EN"]
-sources = ["S31_MODEM_LPCON_STRUCT"]
-
-[[field-snapshot-reads]]
 name = "observe_shared_modem_power_state_map"
 peripheral = "MODEM_LPCON_SHARED_CLOCK"
 register = "CLK_CONF_POWER_ST"
@@ -6259,42 +6252,6 @@ fields = [
     "CLK_LP_TIMER_SEL_XTAL32K",
     "CLK_LP_TIMER_DIV_NUM",
 ]
-sources = ["S31_MODEM_LPCON_STRUCT"]
-
-[[field-replace-modifies]]
-name = "enable_shared_modem_coexistence_clock"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = [{ field = "CLK_COEX_EN", source-bit-offset = 0 }]
-value = 1
-exposure = "facade"
-sources = ["S31_MODEM_LPCON_STRUCT"]
-
-[[field-replace-modifies]]
-name = "disable_shared_modem_coexistence_clock"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = [{ field = "CLK_COEX_EN", source-bit-offset = 0 }]
-value = 0
-exposure = "facade"
-sources = ["S31_MODEM_LPCON_STRUCT"]
-
-[[field-replace-modifies]]
-name = "enable_shared_modem_low_power_timer_clock"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = [{ field = "CLK_LP_TIMER_EN", source-bit-offset = 0 }]
-value = 1
-exposure = "facade"
-sources = ["S31_MODEM_LPCON_STRUCT"]
-
-[[field-replace-modifies]]
-name = "disable_shared_modem_low_power_timer_clock"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = [{ field = "CLK_LP_TIMER_EN", source-bit-offset = 0 }]
-value = 0
-exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT"]
 
 [[field-replace-modifies]]
@@ -6415,15 +6372,6 @@ exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
 
 [[field-replace-modifies]]
-name = "enable_wifi_power_clock"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = [{ field = "CLK_WIFIPWR_EN", source-bit-offset = 0 }]
-value = 1
-exposure = "facade"
-sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
-
-[[field-replace-modifies]]
 name = "set_wifi_low_power_clock_divider"
 peripheral = "MODEM_LPCON_SHARED_CLOCK"
 register = "WIFI_LP_CLK_CONF"
@@ -6444,13 +6392,6 @@ fields = [
     "CLK_WIFIPWR_LP_DIV_NUM",
 ]
 sources = ["S31_MODEM_LPCON_STRUCT", "ESP_IDF_4D59230D_S31_WIFI_LOW_POWER_CLOCK"]
-
-[[field-reads]]
-name = "read_wifi_power_clock_enable"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-field = "CLK_WIFIPWR_EN"
-sources = ["S31_MODEM_LPCON_STRUCT"]
 
 [[field-reads]]
 name = "read_rtc_slow_clock_source"

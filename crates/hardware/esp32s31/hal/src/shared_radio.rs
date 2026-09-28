@@ -36,8 +36,7 @@ use core::{
 
 use oer_esp32s31_pac::{
     BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER, BluetoothSchedulerStopped, BluetoothTaskRegisters,
-    Ieee802154TaskRegisters, RadioPhyRegisters, SharedModemClockGate, SharedRadioRegisters,
-    WifiRadioRegisters,
+    Ieee802154TaskRegisters, RadioPhyRegisters, SharedRadioRegisters, WifiRadioRegisters,
 };
 
 pub use crate::clock::{CommonRadioPowerError, RadioClient};
@@ -49,7 +48,7 @@ use crate::power::clock::{
     ModemClockLease, ModemClockModule, ModemClockPlanner, ModemClockPlannerIdentity,
     PoisonedModemClockAcquire, PoisonedModemClockRelease, execute_acquire, execute_release,
 };
-pub use crate::power::{PlatformClockError, PlatformClockProvider};
+pub use crate::power::{PlatformClock, PlatformClockError, PlatformClockProvider};
 use crate::{
     clock::CommonRadioPower,
     owner::{PhyRegistrationEpoch, SharedPhyHal, route},
@@ -176,6 +175,8 @@ pub enum LowPowerClockError {
     AlreadySelected,
     /// Bluetooth does not select its low-power timer clock.
     NotSelected,
+    /// The platform clock owner refused the timer gate reference.
+    PlatformClock(PlatformClockError),
 }
 
 /// Why a module's modem clocks cannot change.
@@ -792,21 +793,27 @@ impl<T> SharedRadioLease<'_, T> {
     /// writes in the same order: every source is deselected, the main
     /// crystal is selected, the S31 Bluetooth divider is written and the
     /// timer clock gate is enabled. ESP32-S31 has neither the BLE RTC-timer
-    /// nor the Wi-Fi power-clock workaround. The fields belong to Bluetooth
-    /// alone.
+    /// nor the Wi-Fi power-clock workaround. The selector fields belong to
+    /// Bluetooth alone; the timer gate shares its word with other platform
+    /// gates, so its reference comes from `clocks`.
     ///
     /// # Errors
     ///
-    /// Bluetooth already selects its clock; nothing is written.
+    /// Bluetooth already selects its clock, or the platform refused the timer
+    /// gate after the selector writes.
     pub fn select_bluetooth_low_power_clock(
         &mut self,
         _owner: &BluetoothTaskRegisters,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<(), LowPowerClockError> {
         let state = self.state_mut();
         if state.bluetooth_low_power_clock {
             return Err(LowPowerClockError::AlreadySelected);
         }
         select_bluetooth_low_power_clock(state.registers.radio_phy_mut());
+        clocks
+            .acquire(PlatformClock::ModemLowPowerTimer)
+            .map_err(LowPowerClockError::PlatformClock)?;
         state.bluetooth_low_power_clock = true;
         Ok(())
     }
@@ -814,21 +821,26 @@ impl<T> SharedRadioLease<'_, T> {
     /// Deselect the Bluetooth low-power timer clock.
     ///
     /// This is `modem_clock_deselect_lp_clock_source(PERIPH_BT_MODULE)` of the
-    /// same source: every source is deselected and the timer clock gate is
-    /// disabled; the divider keeps its value.
+    /// same source: every source is deselected and the timer clock gate
+    /// reference is released; the divider keeps its value.
     ///
     /// # Errors
     ///
-    /// Bluetooth does not select its clock; nothing is written.
+    /// Bluetooth does not select its clock, or the platform refused the
+    /// release after the selector writes; the clock then stays selected.
     pub fn deselect_bluetooth_low_power_clock(
         &mut self,
         _owner: &BluetoothTaskRegisters,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<(), LowPowerClockError> {
         let state = self.state_mut();
         if !state.bluetooth_low_power_clock {
             return Err(LowPowerClockError::NotSelected);
         }
         deselect_bluetooth_low_power_clock(state.registers.radio_phy_mut());
+        clocks
+            .release(PlatformClock::ModemLowPowerTimer)
+            .map_err(LowPowerClockError::PlatformClock)?;
         state.bluetooth_low_power_clock = false;
         Ok(())
     }
@@ -1183,13 +1195,11 @@ impl<T> SharedRadioLease<'_, T> {
 /// Register transaction of [`SharedRadioLease::select_bluetooth_low_power_clock`].
 pub(crate) fn select_bluetooth_low_power_clock(phy: &mut RadioPhyRegisters) {
     phy.select_bluetooth_low_power_timer_main_crystal(BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER);
-    phy.set_shared_modem_clock_gate(SharedModemClockGate::LowPowerTimer, true);
 }
 
 /// Register transaction of [`SharedRadioLease::deselect_bluetooth_low_power_clock`].
 pub(crate) fn deselect_bluetooth_low_power_clock(phy: &mut RadioPhyRegisters) {
     phy.deselect_bluetooth_low_power_timer_sources();
-    phy.set_shared_modem_clock_gate(SharedModemClockGate::LowPowerTimer, false);
 }
 
 impl<T> Drop for SharedRadioLease<'_, T> {

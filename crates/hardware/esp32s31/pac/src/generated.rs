@@ -5608,36 +5608,6 @@ pub(crate) fn initialize_shared_modem_power_state_map(
     crate::svd::field_replace_modify::initialize_shared_modem_power_state_map(registers);
 }
 
-/// Typed bridge for the reviewed `enable_shared_modem_coexistence_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn enable_shared_modem_coexistence_clock(registers: &crate::svd::ModemLpconSharedClock) {
-    crate::svd::field_replace_modify::enable_shared_modem_coexistence_clock(registers);
-}
-
-/// Typed bridge for the reviewed `disable_shared_modem_coexistence_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn disable_shared_modem_coexistence_clock(
-    registers: &crate::svd::ModemLpconSharedClock,
-) {
-    crate::svd::field_replace_modify::disable_shared_modem_coexistence_clock(registers);
-}
-
-/// Typed bridge for the reviewed `enable_shared_modem_low_power_timer_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn enable_shared_modem_low_power_timer_clock(
-    registers: &crate::svd::ModemLpconSharedClock,
-) {
-    crate::svd::field_replace_modify::enable_shared_modem_low_power_timer_clock(registers);
-}
-
-/// Typed bridge for the reviewed `disable_shared_modem_low_power_timer_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn disable_shared_modem_low_power_timer_clock(
-    registers: &crate::svd::ModemLpconSharedClock,
-) {
-    crate::svd::field_replace_modify::disable_shared_modem_low_power_timer_clock(registers);
-}
-
 /// Typed bridge for the reviewed `deselect_bluetooth_low_power_timer_slow_oscillator` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn deselect_bluetooth_low_power_timer_slow_oscillator(
@@ -5737,12 +5707,6 @@ pub(crate) fn select_wifi_low_power_clock_crystal_32khz(
 #[inline]
 pub(crate) fn select_modem_32khz_clock_crystal(registers: &crate::svd::ModemLpconSharedClock) {
     crate::svd::field_replace_modify::select_modem_32khz_clock_crystal(registers);
-}
-
-/// Typed bridge for the reviewed `enable_wifi_power_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn enable_wifi_power_clock(registers: &crate::svd::ModemLpconSharedClock) {
-    crate::svd::field_replace_modify::enable_wifi_power_clock(registers);
 }
 
 /// Typed bridge for the reviewed `set_wifi_low_power_clock_divider` field-replacement transaction.

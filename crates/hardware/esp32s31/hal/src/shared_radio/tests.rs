@@ -191,16 +191,16 @@ fn an_until_proof_needs_a_non_empty_window() {
 struct NoPlatform;
 
 impl crate::power::PlatformClockProvider for NoPlatform {
-    fn acquire_pll_f160m(&mut self) -> Result<(), crate::power::PlatformClockError> {
+    fn acquire(
+        &mut self,
+        _clock: crate::power::PlatformClock,
+    ) -> Result<(), crate::power::PlatformClockError> {
         Err(crate::power::PlatformClockError)
     }
-    fn release_pll_f160m(&mut self) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-    fn acquire_analog_i2c_clock(&mut self) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-    fn release_analog_i2c_clock(&mut self) -> Result<(), crate::power::PlatformClockError> {
+    fn release(
+        &mut self,
+        _clock: crate::power::PlatformClock,
+    ) -> Result<(), crate::power::PlatformClockError> {
         Err(crate::power::PlatformClockError)
     }
 }

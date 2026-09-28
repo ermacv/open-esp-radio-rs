@@ -26,7 +26,6 @@ pub enum ModemClockDevice {
     ModemPrivateFe,
     /// Modem PLL-source gate (`HP_SYS_CLKRST.MODEM_CONF` images).
     PllSourceGate,
-    Coexistence,
     WifiApb,
     WifiBaseband44m,
     WifiMac,
@@ -81,14 +80,6 @@ impl RadioPhyRegisters {
                     crate::svd::fixed_register_image::open_modem_pll_source_gate(clkrst);
                 } else {
                     crate::svd::fixed_register_image::close_modem_pll_source_gate(clkrst);
-                }
-            }
-            ModemClockDevice::Coexistence => {
-                let lpcon = &self.peripherals.modem_lpcon_shared_clock;
-                if enable {
-                    generated::enable_shared_modem_coexistence_clock(lpcon);
-                } else {
-                    generated::disable_shared_modem_coexistence_clock(lpcon);
                 }
             }
             ModemClockDevice::WifiApb => generated::set_modem_wifi_apb_clock(syscon, gate(enable)),

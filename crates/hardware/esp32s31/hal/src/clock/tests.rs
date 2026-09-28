@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, vec::Vec};
 
 use oer_esp32s31_pac::{WifiPowerBaseline, WifiPowerRestoreReadback};
 
-use crate::power::{PlatformClockError, PlatformClockProvider, PowerEntry};
+use crate::power::{PlatformClock, PlatformClockError, PlatformClockProvider, PowerEntry};
 
 use super::{
     ClockPort, CommonRadioPower, CommonRadioPowerError, PlatformClockRefs, PowerEpoch, RadioClient,
@@ -11,10 +11,8 @@ use super::{
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    AcquirePll160m,
-    ReleasePll160m,
-    AcquireAnalogI2c,
-    ReleaseAnalogI2c,
+    Acquire(PlatformClock),
+    Release(PlatformClock),
     RestorePower(WifiPowerBaseline),
     PowerSequence(PowerEntry),
 }
@@ -60,11 +58,13 @@ impl ClockPort for Port {
         entry: PowerEntry,
     ) -> Result<(), crate::power::PowerError> {
         self.log.borrow_mut().push(Operation::PowerSequence(entry));
-        refs.acquire_pll_f160m(platform).unwrap();
+        refs.acquire(PlatformClock::Mpll, platform).unwrap();
+        refs.acquire(PlatformClock::Pll160m, platform).unwrap();
         if let Some(error) = self.power_sequence_failure {
             return Err(error);
         }
-        refs.acquire_analog_i2c(platform).unwrap();
+        refs.acquire(PlatformClock::AnalogI2cMaster, platform)
+            .unwrap();
         Ok(())
     }
 }
@@ -84,23 +84,15 @@ impl Platform {
 }
 
 impl PlatformClockProvider for Platform {
-    fn acquire_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
-        self.log.borrow_mut().push(Operation::AcquirePll160m);
+    fn acquire(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
+        self.log.borrow_mut().push(Operation::Acquire(clock));
         Ok(())
     }
-    fn release_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
-        self.log.borrow_mut().push(Operation::ReleasePll160m);
-        Ok(())
-    }
-    fn acquire_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
-        self.log.borrow_mut().push(Operation::AcquireAnalogI2c);
-        Ok(())
-    }
-    fn release_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
-        if self.refuse_analog_i2c_release {
+    fn release(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
+        if self.refuse_analog_i2c_release && clock == PlatformClock::AnalogI2cMaster {
             return Err(PlatformClockError);
         }
-        self.log.borrow_mut().push(Operation::ReleaseAnalogI2c);
+        self.log.borrow_mut().push(Operation::Release(clock));
         Ok(())
     }
 }
@@ -171,8 +163,9 @@ fn common_power_holds_one_platform_reference_of_each_shared_gate() {
         *log.borrow(),
         [
             Operation::PowerSequence(PowerEntry::FirstSinceBoot),
-            Operation::AcquirePll160m,
-            Operation::AcquireAnalogI2c,
+            Operation::Acquire(PlatformClock::Mpll),
+            Operation::Acquire(PlatformClock::Pll160m),
+            Operation::Acquire(PlatformClock::AnalogI2cMaster),
         ]
     );
     assert_eq!(
@@ -191,13 +184,14 @@ fn common_power_holds_one_platform_reference_of_each_shared_gate() {
         Ok(())
     );
     // The last client closes the analog-I2C gate, restores the baseline
-    // captured before the first edge, then drops the 160 MHz source.
+    // captured before the first edge, then drops the 160 MHz source and MPLL.
     assert_eq!(
         *log.borrow(),
         [
-            Operation::ReleaseAnalogI2c,
+            Operation::Release(PlatformClock::AnalogI2cMaster),
             Operation::RestorePower(cold),
-            Operation::ReleasePll160m,
+            Operation::Release(PlatformClock::Pll160m),
+            Operation::Release(PlatformClock::Mpll),
         ]
     );
     assert_eq!(
@@ -234,7 +228,7 @@ fn a_failed_power_sequence_admits_no_client_and_retries_without_a_second_referen
     let acquisitions = log
         .borrow()
         .iter()
-        .filter(|operation| **operation == Operation::AcquirePll160m)
+        .filter(|operation| **operation == Operation::Acquire(PlatformClock::Pll160m))
         .count();
     assert_eq!(acquisitions, 1);
 }
@@ -263,7 +257,7 @@ fn a_failed_restore_keeps_the_last_client_for_retry() {
     let releases = log
         .borrow()
         .iter()
-        .filter(|operation| **operation == Operation::ReleaseAnalogI2c)
+        .filter(|operation| **operation == Operation::Release(PlatformClock::AnalogI2cMaster))
         .count();
     assert_eq!(releases, 1);
 }

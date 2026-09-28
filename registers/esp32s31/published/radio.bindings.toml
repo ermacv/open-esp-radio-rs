@@ -42469,38 +42469,6 @@ bit-width = 2
 access = "read-write"
 
 [[registers]]
-address = 537980952
-width = 32
-access = "read-write"
-identity = "MODEM_LPCON_SHARED_CLOCK.CLK_CONF"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-peripheral-type = "ModemLpconSharedClock"
-peripheral-module = "modem_lpcon_shared_clock"
-scope = []
-register-method = "clk_conf"
-
-[[registers.fields]]
-svd-name = "CLK_WIFIPWR_EN"
-method = "clk_wifipwr_en"
-bit-offset = 0
-bit-width = 1
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "CLK_COEX_EN"
-method = "clk_coex_en"
-bit-offset = 1
-bit-width = 1
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "CLK_LP_TIMER_EN"
-method = "clk_lp_timer_en"
-bit-offset = 3
-bit-width = 1
-access = "read-write"
-
-[[registers]]
 address = 537980960
 width = 32
 access = "read-write"

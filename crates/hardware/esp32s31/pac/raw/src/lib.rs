@@ -14948,8 +14948,7 @@ pub mod modem_lpcon_shared_clock {
         wifi_lp_clk_conf: WifiLpClkConf,
         _reserved3: [u8; 0x04],
         modem_32k_clk_conf: Modem32kClkConf,
-        clk_conf: ClkConf,
-        _reserved5: [u8; 0x04],
+        _reserved4: [u8; 0x08],
         clk_conf_power_st: ClkConfPowerSt,
     }
     impl RegisterBlock {
@@ -14972,11 +14971,6 @@ pub mod modem_lpcon_shared_clock {
         #[inline(always)]
         pub const fn modem_32k_clk_conf(&self) -> &Modem32kClkConf {
             &self.modem_32k_clk_conf
-        }
-        #[doc = "0x18 - Shared MODEM_LPCON clock gates used by radio lifecycles."]
-        #[inline(always)]
-        pub const fn clk_conf(&self) -> &ClkConf {
-            &self.clk_conf
         }
         #[doc = "0x20 - Four shared clock power-state map fields programmed with the reviewed active-state image."]
         #[inline(always)]
@@ -15335,75 +15329,6 @@ pub mod modem_lpcon_shared_clock {
         }
         #[doc = "`reset()` method sets MODEM_32K_CLK_CONF to value 0"]
         impl crate::Resettable for Modem32kClkConfSpec {}
-    }
-    #[doc = "CLK_CONF (rw) register accessor: Shared MODEM_LPCON clock gates used by radio lifecycles.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf`] module"]
-    #[doc(alias = "CLK_CONF")]
-    pub type ClkConf = crate::Reg<clk_conf::ClkConfSpec>;
-    #[doc = "Shared MODEM_LPCON clock gates used by radio lifecycles."]
-    pub mod clk_conf {
-        #[doc = "Register `CLK_CONF` reader"]
-        pub type R = crate::R<ClkConfSpec>;
-        #[doc = "Register `CLK_CONF` writer"]
-        pub type W = crate::W<ClkConfSpec>;
-        #[doc = "Field `CLK_WIFIPWR_EN` reader - Wi-Fi power clock gate."]
-        pub type ClkWifipwrEnR = crate::BitReader;
-        #[doc = "Field `CLK_WIFIPWR_EN` writer - Wi-Fi power clock gate."]
-        pub type ClkWifipwrEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CLK_COEX_EN` reader - Coexistence clock gate."]
-        pub type ClkCoexEnR = crate::BitReader;
-        #[doc = "Field `CLK_COEX_EN` writer - Coexistence clock gate."]
-        pub type ClkCoexEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CLK_LP_TIMER_EN` reader - Bluetooth low-power timer clock gate."]
-        pub type ClkLpTimerEnR = crate::BitReader;
-        #[doc = "Field `CLK_LP_TIMER_EN` writer - Bluetooth low-power timer clock gate."]
-        pub type ClkLpTimerEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bit 0 - Wi-Fi power clock gate."]
-            #[inline(always)]
-            pub fn clk_wifipwr_en(&self) -> ClkWifipwrEnR {
-                ClkWifipwrEnR::new((self.bits & 1) != 0)
-            }
-            #[doc = "Bit 1 - Coexistence clock gate."]
-            #[inline(always)]
-            pub fn clk_coex_en(&self) -> ClkCoexEnR {
-                ClkCoexEnR::new(((self.bits >> 1) & 1) != 0)
-            }
-            #[doc = "Bit 3 - Bluetooth low-power timer clock gate."]
-            #[inline(always)]
-            pub fn clk_lp_timer_en(&self) -> ClkLpTimerEnR {
-                ClkLpTimerEnR::new(((self.bits >> 3) & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bit 0 - Wi-Fi power clock gate."]
-            #[inline(always)]
-            pub fn clk_wifipwr_en(&mut self) -> ClkWifipwrEnW<'_, ClkConfSpec> {
-                ClkWifipwrEnW::new(self, 0)
-            }
-            #[doc = "Bit 1 - Coexistence clock gate."]
-            #[inline(always)]
-            pub fn clk_coex_en(&mut self) -> ClkCoexEnW<'_, ClkConfSpec> {
-                ClkCoexEnW::new(self, 1)
-            }
-            #[doc = "Bit 3 - Bluetooth low-power timer clock gate."]
-            #[inline(always)]
-            pub fn clk_lp_timer_en(&mut self) -> ClkLpTimerEnW<'_, ClkConfSpec> {
-                ClkLpTimerEnW::new(self, 3)
-            }
-        }
-        #[doc = "Shared MODEM_LPCON clock gates used by radio lifecycles.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct ClkConfSpec;
-        impl crate::RegisterSpec for ClkConfSpec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`clk_conf::R`](R) reader structure"]
-        impl crate::Readable for ClkConfSpec {}
-        #[doc = "`write(|w| ..)` method takes [`clk_conf::W`](W) writer structure"]
-        impl crate::Writable for ClkConfSpec {
-            type Safety = crate::Unsafe;
-        }
-        #[doc = "`reset()` method sets CLK_CONF to value 0"]
-        impl crate::Resettable for ClkConfSpec {}
     }
     #[doc = "CLK_CONF_POWER_ST (rw) register accessor: Four shared clock power-state map fields programmed with the reviewed active-state image.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf_power_st`] module"]
     #[doc(alias = "CLK_CONF_POWER_ST")]
@@ -60486,12 +60411,6 @@ pub mod field_read {
             .bits()
     }
 
-    /// Read `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF`.`CLK_WIFIPWR_EN` without exposing its register block.
-    #[inline]
-    pub fn read_wifi_power_clock_enable(registers: &crate::ModemLpconSharedClock) -> bool {
-        registers.clk_conf().read().clk_wifipwr_en().bit()
-    }
-
     /// Read `LP_AON_CLKRST`.`ROOT_CLK_CONF`.`SLOW_CLK_SEL` without exposing its register block.
     #[inline]
     pub fn read_rtc_slow_clock_source(registers: &crate::LpAonClkrst) -> u8 {
@@ -60978,16 +60897,6 @@ pub mod field_snapshot_read {
             sample.pass_level().bits(),
             sample.bits_10_31_opaque().bits(),
         )
-    }
-
-    /// Read `CLK_COEX_EN`, `CLK_LP_TIMER_EN` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF` sample.
-    #[allow(clippy::type_complexity)]
-    #[inline]
-    pub fn observe_shared_modem_clock_gates(
-        registers: &crate::ModemLpconSharedClock,
-    ) -> (bool, bool) {
-        let sample = registers.clk_conf().read();
-        (sample.clk_coex_en().bit(), sample.clk_lp_timer_en().bit())
     }
 
     /// Read `CLK_WIFIPWR_ST_MAP_BIT_ONE`, `CLK_WIFIPWR_ST_MAP_BIT_TWO`, `CLK_COEX_ST_MAP_BIT_ONE`, `CLK_COEX_ST_MAP_BIT_TWO`, `CLK_I2C_MST_ST_MAP_BIT_ONE`, `CLK_I2C_MST_ST_MAP_BIT_TWO`, `CLK_LP_APB_ST_MAP_BIT_ONE`, `CLK_LP_APB_ST_MAP_BIT_TWO` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF_POWER_ST` sample.
@@ -62810,7 +62719,7 @@ pub mod register_image_write {
 pub mod partition_image_read {
 
     /// Registers of `RadioPhyPeripherals` that [`radio_phy_register_image`] observes.
-    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 211;
+    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 210;
 
     /// Read register `index` of the `RadioPhyPeripherals` image; `None` past its end.
     pub fn radio_phy_register_image(
@@ -63614,33 +63523,32 @@ pub mod partition_image_read {
                 .modem_32k_clk_conf()
                 .read()
                 .bits(),
-            188 => registers.modem_lpcon_shared_clock.clk_conf().read().bits(),
-            189 => registers
+            188 => registers
                 .modem_lpcon_shared_clock
                 .clk_conf_power_st()
                 .read()
                 .bits(),
-            190 => registers.modem_lpcon_phy_tick.tick_conf().read().bits(),
-            191 => registers.i2c_ana_mst.i2c0_ctrl().read().bits(),
-            192 => registers.i2c_ana_mst.i2c1_ctrl().read().bits(),
-            193 => registers.i2c_ana_mst.ana_conf0().read().bits(),
-            194 => registers.i2c_ana_mst.ana_conf1().read().bits(),
-            195 => registers.i2c_ana_mst.ana_conf2().read().bits(),
-            196 => registers.i2c_ana_mst.i2c0_ctrl1().read().bits(),
-            197 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
-            198 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
-            199 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
-            200 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
-            201 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
-            202 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
-            203 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
-            204 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
-            205 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
-            206 => registers.pmu_radio.rf_pwc().read().bits(),
-            207 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
-            208 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
-            209 => registers.lp_tsens.ctrl().read().bits(),
-            210 => registers.lp_tsens.clk_conf().read().bits(),
+            189 => registers.modem_lpcon_phy_tick.tick_conf().read().bits(),
+            190 => registers.i2c_ana_mst.i2c0_ctrl().read().bits(),
+            191 => registers.i2c_ana_mst.i2c1_ctrl().read().bits(),
+            192 => registers.i2c_ana_mst.ana_conf0().read().bits(),
+            193 => registers.i2c_ana_mst.ana_conf1().read().bits(),
+            194 => registers.i2c_ana_mst.ana_conf2().read().bits(),
+            195 => registers.i2c_ana_mst.i2c0_ctrl1().read().bits(),
+            196 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
+            197 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
+            198 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
+            199 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
+            200 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
+            201 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
+            202 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
+            203 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
+            204 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
+            205 => registers.pmu_radio.rf_pwc().read().bits(),
+            206 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
+            207 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
+            208 => registers.lp_tsens.ctrl().read().bits(),
+            209 => registers.lp_tsens.clk_conf().read().bits(),
             _ => return None,
         })
     }
@@ -69565,50 +69473,6 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_COEX_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn enable_shared_modem_coexistence_clock(registers: &crate::ModemLpconSharedClock) {
-        registers.clk_conf().modify(|_, writer| {
-            let input = 0x00000001_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.clk_coex_en().bit((input & 0x00000001) != 0)
-        });
-    }
-
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_COEX_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn disable_shared_modem_coexistence_clock(registers: &crate::ModemLpconSharedClock) {
-        registers.clk_conf().modify(|_, writer| {
-            let input = 0x00000000_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.clk_coex_en().bit((input & 0x00000001) != 0)
-        });
-    }
-
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_LP_TIMER_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn enable_shared_modem_low_power_timer_clock(registers: &crate::ModemLpconSharedClock) {
-        registers.clk_conf().modify(|_, writer| {
-            let input = 0x00000001_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.clk_lp_timer_en().bit((input & 0x00000001) != 0)
-        });
-    }
-
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_LP_TIMER_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn disable_shared_modem_low_power_timer_clock(registers: &crate::ModemLpconSharedClock) {
-        registers.clk_conf().modify(|_, writer| {
-            let input = 0x00000000_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.clk_lp_timer_en().bit((input & 0x00000001) != 0)
-        });
-    }
-
     /// Replace MODEM_LPCON_SHARED_CLOCK.LP_TIMER_CONF fields `[CLK_LP_TIMER_SEL_OSC_SLOW]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn deselect_bluetooth_low_power_timer_slow_oscillator(
@@ -69783,17 +69647,6 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.clk_modem_32k_sel().bits((input & 0x00000003) as u8) }
-        });
-    }
-
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_WIFIPWR_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn enable_wifi_power_clock(registers: &crate::ModemLpconSharedClock) {
-        registers.clk_conf().modify(|_, writer| {
-            let input = 0x00000001_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.clk_wifipwr_en().bit((input & 0x00000001) != 0)
         });
     }
 

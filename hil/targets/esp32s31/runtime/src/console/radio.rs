@@ -319,6 +319,7 @@ pub async fn complete_session(
     radio: Option<oer_hil_protocol::RadioEvidence>,
     tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
+    rx_zero_copy: Option<oer_hil_protocol::RxZeroCopyEvidence>,
     passed: bool,
 ) {
     let evidence = TransportEvidence::from_flows(flow_evidence);
@@ -330,6 +331,7 @@ pub async fn complete_session(
             radio,
             tx_timing,
             rx_delivery,
+            rx_zero_copy,
             passed,
         })
         .await;

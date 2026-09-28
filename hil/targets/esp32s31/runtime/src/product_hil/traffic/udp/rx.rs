@@ -573,7 +573,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                     .saturating_add(pipeline_interval.frontier_thirty_two_plus_services),
                 mac_irq_entries,
                 mac_irq_classified_entries: mac_irq_entries,
-                zero_copy,
             }),
             tx: None,
         });
@@ -588,6 +587,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 radio,
                 None,
                 rx_delivery,
+                zero_copy,
                 passed,
             ),
         )

@@ -7,7 +7,7 @@ use oer_hil_protocol::{
 
 use crate::session::{
     ProtocolHealth, SessionEvidence, beacon_loss_count_in, command_response_matches,
-    session_ready_covers, validate_stack_usage,
+    session_ready_covers, validate_stack_usage, validation::validate_rx_zero_copy,
 };
 
 #[test]
@@ -57,6 +57,7 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         tx_timing: None,
         rx_delivery: None,
         network_scheduler: None,
+        rx_zero_copy: None,
         stack: StackUsage {
             cpu0_irq: None,
             cpu1_irq: None,
@@ -173,7 +174,7 @@ fn typed_rx_radio_enforces_order_and_provenance_without_text() {
 }
 
 #[test]
-fn typed_rx_radio_rejects_zero_copy_holdings_above_the_cap() {
+fn zero_copy_evidence_rejects_holdings_above_the_cap() {
     let within = RxZeroCopyEvidence {
         cap: 16,
         adopted: 90,
@@ -182,21 +183,21 @@ fn typed_rx_radio_rejects_zero_copy_holdings_above_the_cap() {
         peak_held: 16,
         ..RxZeroCopyEvidence::default()
     };
-    let mut rx = healthy_he_rx();
-    rx.zero_copy = Some(within);
-    assert!(session_with_rx(rx).require_rx_radio_health(4).is_ok());
-
-    rx.zero_copy = Some(RxZeroCopyEvidence {
-        peak_held: 17,
-        ..within
-    });
-    assert!(session_with_rx(rx).require_rx_radio_health(4).is_err());
-    rx.zero_copy = Some(RxZeroCopyEvidence {
-        held_at_end: 5,
-        peak_held: 4,
-        ..within
-    });
-    assert!(session_with_rx(rx).require_rx_radio_health(4).is_err());
+    assert!(validate_rx_zero_copy(within).is_ok());
+    for invalid in [
+        RxZeroCopyEvidence {
+            peak_held: 17,
+            ..within
+        },
+        RxZeroCopyEvidence {
+            held_at_end: 5,
+            peak_held: 4,
+            ..within
+        },
+        RxZeroCopyEvidence { cap: 0, ..within },
+    ] {
+        assert!(validate_rx_zero_copy(invalid).is_err(), "{invalid:?}");
+    }
 }
 
 #[test]

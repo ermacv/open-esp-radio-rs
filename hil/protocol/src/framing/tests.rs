@@ -1182,6 +1182,34 @@ fn maximum_network_scheduler_evidence_fits_and_round_trips() {
 }
 
 #[test]
+fn maximum_zero_copy_evidence_fits_and_round_trips() {
+    use crate::{EvidenceRecord, RxZeroCopyEvidence};
+
+    let expected = Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        Event::Evidence(EvidenceRecord::RxZeroCopy(RxZeroCopyEvidence {
+            cap: u16::MAX,
+            adopted: u32::MAX,
+            copied_over_cap: u32::MAX,
+            copied_unfit: u32::MAX,
+            dropped: u32::MAX,
+            held_at_end: u16::MAX,
+            peak_held: u16::MAX,
+        })),
+    );
+    let mut encoder = FrameEncoder::new();
+    let frame = encoder.encode(&expected).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(expected));
+}
+
+#[test]
 fn maximum_radio_evidence_fits_and_round_trips() {
     use crate::{EvidenceRecord, RadioEvidence, RxRadioEvidence, TxRadioEvidence};
 
@@ -1235,15 +1263,6 @@ fn maximum_radio_evidence_fits_and_round_trips() {
                 rx_frontier_histogram_samples: u32::MAX,
                 mac_irq_entries: u32::MAX,
                 mac_irq_classified_entries: u32::MAX,
-                zero_copy: Some(crate::RxZeroCopyEvidence {
-                    cap: u16::MAX,
-                    adopted: u32::MAX,
-                    copied_over_cap: u32::MAX,
-                    copied_unfit: u32::MAX,
-                    dropped: u32::MAX,
-                    held_at_end: u16::MAX,
-                    peak_held: u16::MAX,
-                }),
             }),
             tx: Some(TxRadioEvidence {
                 station_terminal: crate::StationTxTerminalEvidence {
@@ -1383,7 +1402,8 @@ fn evidence_digest_is_order_and_value_sensitive() {
             | EvidenceRecord::RxDelivery(_)
             | EvidenceRecord::NetworkScheduler(_)
             | EvidenceRecord::Link(_)
-            | EvidenceRecord::Stack(_) => unreachable!(),
+            | EvidenceRecord::Stack(_)
+            | EvidenceRecord::RxZeroCopy(_) => unreachable!(),
         }
     });
 

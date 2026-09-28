@@ -5,7 +5,7 @@ use crate::absent::stand_ins::*;
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 194;
+pub const PROTOCOL_VERSION: u16 = 195;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -509,6 +509,7 @@ pub enum EvidenceRecord {
     NetworkScheduler(NetworkSchedulerEvidence),
     Link(LinkHealth),
     Stack(StackUsage),
+    RxZeroCopy(RxZeroCopyEvidence),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

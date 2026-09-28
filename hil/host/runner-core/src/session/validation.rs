@@ -93,13 +93,6 @@ impl SessionEvidence {
         {
             return Err(format!("incomplete typed RX accounting: {rx:?}").into());
         }
-        if let Some(zero_copy) = rx.zero_copy
-            && (zero_copy.cap == 0
-                || zero_copy.held_at_end > zero_copy.peak_held
-                || zero_copy.peak_held > zero_copy.cap)
-        {
-            return Err(format!("zero-copy RX exceeded its credit cap: {zero_copy:?}").into());
-        }
         Ok(rx)
     }
 
@@ -329,3 +322,15 @@ pub(super) fn validate_bluetooth_irq_stack(
 #[cfg(test)]
 #[path = "validation/tests.rs"]
 mod tests;
+
+/// A zero-copy RX session never holds more DMA slots than its credit cap,
+/// and its peak covers its final holding.
+pub(crate) fn validate_rx_zero_copy(zero_copy: RxZeroCopyEvidence) -> Result<()> {
+    if zero_copy.cap == 0
+        || zero_copy.held_at_end > zero_copy.peak_held
+        || zero_copy.peak_held > zero_copy.cap
+    {
+        return Err(format!("zero-copy RX exceeded its credit cap: {zero_copy:?}").into());
+    }
+    Ok(())
+}

@@ -647,12 +647,25 @@ impl SerialCapture {
                 Event::Evidence(EvidenceRecord::NetworkScheduler(evidence)) => evidence,
                 _ => unreachable!("scheduler predicate accepted only scheduler evidence"),
             });
+        let rx_zero_copy = self
+            .wait_for_session_event(session, Duration::ZERO, |message| {
+                message.session_id == session.session_id
+                    && matches!(message.body, Event::Evidence(EvidenceRecord::RxZeroCopy(_)))
+            })?
+            .map(|event| match event.body {
+                Event::Evidence(EvidenceRecord::RxZeroCopy(evidence)) => evidence,
+                _ => unreachable!("zero-copy predicate accepted only zero-copy evidence"),
+            });
+        if let Some(zero_copy) = rx_zero_copy {
+            super::validation::validate_rx_zero_copy(zero_copy)?;
+        }
         let expected_records = 3
             + u16::try_from(flow_transport.iter().flatten().count())?
             + u16::from(radio.is_some())
             + u16::from(tx_timing.is_some())
             + u16::from(rx_delivery.is_some())
-            + u16::from(network_scheduler.is_some());
+            + u16::from(network_scheduler.is_some())
+            + u16::from(rx_zero_copy.is_some());
         if finished.summary.evidence_records != expected_records {
             return Err(format!(
                 "device reported {} evidence records but published {expected_records} typed records",
@@ -677,6 +690,9 @@ impl SerialCapture {
         if let Some(scheduler) = network_scheduler {
             records.push(EvidenceRecord::NetworkScheduler(scheduler));
         }
+        if let Some(zero_copy) = rx_zero_copy {
+            records.push(EvidenceRecord::RxZeroCopy(zero_copy));
+        }
         records.push(EvidenceRecord::Link(link));
         records.push(EvidenceRecord::Stack(stack));
         let checksum = evidence_crc32c(&records)
@@ -695,6 +711,7 @@ impl SerialCapture {
             tx_timing,
             rx_delivery,
             network_scheduler,
+            rx_zero_copy,
             stack,
             link,
             finished,

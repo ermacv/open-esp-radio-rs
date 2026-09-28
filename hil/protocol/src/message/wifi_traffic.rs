@@ -424,12 +424,12 @@ pub struct RxRadioEvidence {
     pub rx_frontier_histogram_samples: u32,
     pub mac_irq_entries: u32,
     pub mac_irq_classified_entries: u32,
-    /// Zero-copy network publication of detached DMA slots, when the image
-    /// publishes RX through a handoff-pool origin.
-    pub zero_copy: Option<RxZeroCopyEvidence>,
 }
 
-/// Zero-copy RX accounting of one measured interval.
+/// Zero-copy RX accounting of one measured UDP RX session.
+///
+/// Published for every UDP RX session of an image whose network stack
+/// adopts detached DMA slots, independently of driver observation.
 ///
 /// Event counts cover the interval; `held_at_end` and `peak_held` are DMA
 /// slots retained by the network stack, bounded by `cap`.

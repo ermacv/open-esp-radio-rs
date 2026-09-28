@@ -491,6 +491,7 @@ struct SessionResult {
     radio: Option<oer_hil_protocol::RadioEvidence>,
     tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
+    rx_zero_copy: Option<oer_hil_protocol::RxZeroCopyEvidence>,
     passed: bool,
 }
 
@@ -2671,7 +2672,7 @@ async fn publish_result(retained: RetainedSessionResult, request_id: u32) {
         link,
         stack,
     } = retained;
-    let mut evidence = heapless::Vec::<EvidenceRecord, 8>::new();
+    let mut evidence = heapless::Vec::<EvidenceRecord, 9>::new();
     evidence
         .push(EvidenceRecord::Transport(result.evidence))
         .expect("session evidence has fixed capacity");
@@ -2693,6 +2694,11 @@ async fn publish_result(retained: RetainedSessionResult, request_id: u32) {
     if let Some(rx_delivery) = result.rx_delivery {
         evidence
             .push(EvidenceRecord::RxDelivery(rx_delivery))
+            .expect("session evidence has fixed capacity");
+    }
+    if let Some(zero_copy) = result.rx_zero_copy {
+        evidence
+            .push(EvidenceRecord::RxZeroCopy(zero_copy))
             .expect("session evidence has fixed capacity");
     }
     evidence

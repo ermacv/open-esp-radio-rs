@@ -45,6 +45,7 @@ fn target_evidence(rx_units: u64, tx_units: u64, passed: bool) -> SessionEvidenc
         tx_timing: None,
         rx_delivery: None,
         network_scheduler: None,
+        rx_zero_copy: None,
         stack: StackUsage {
             cpu0_irq: None,
             cpu1_irq: None,

@@ -561,6 +561,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 aggregate_evidence.map(|(radio, _)| radio),
                 aggregate_evidence.map(|(_, timing)| timing),
                 None,
+                None,
                 send_errors == 0,
             ),
         )

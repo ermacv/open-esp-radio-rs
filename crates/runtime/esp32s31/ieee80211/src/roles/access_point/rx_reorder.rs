@@ -17,7 +17,7 @@ use oer_esp32s31_ieee80211_mac::{
         RxSegment,
         ampdu::{
             RX_BLOCK_ACK_BANK_COUNT, RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckIdentity,
-            RxBlockAckMpduKey, RxBlockAckReorderBanks, RxBlockAckSnapshot,
+            RxBlockAckMpduKey, RxBlockAckReorderBanks, RxBlockAckRequestKey, RxBlockAckSnapshot,
         },
     },
 };
@@ -370,6 +370,43 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
             .expire_gap();
         self.update_deadline(bank, now_micros);
         self.dispatch_retained_release(release, identity, &mut dispatch)
+    }
+
+    /// Move a client's receive window to a BlockAckReq's starting sequence.
+    ///
+    /// Frames released by the move join the ordered pending-release queue,
+    /// which [`Self::dispatch_pending`] drains before any newer MPDU. Returns
+    /// how many frames were released, or `None` when the peer has no
+    /// agreement for the TID or the sequence is at or behind the window
+    /// start. The hardware window is not touched, as the vendor's
+    /// `ieee80211_process_bar_info` moves only the software window.
+    pub(super) fn move_window(
+        &mut self,
+        request: RxBlockAckRequestKey,
+        now_micros: u64,
+    ) -> Option<u8> {
+        let bank = self
+            .banks
+            .find(MacInterface::AccessPoint, request.peer, request.tid)?;
+        let identity = self
+            .banks
+            .identity(bank)
+            .expect("a found reorder bank owns one identity");
+        let release = self
+            .banks
+            .state_mut(bank)
+            .expect("a found reorder bank owns one state")
+            .move_window_to(request.starting_sequence)?;
+        self.update_deadline(bank, now_micros);
+        let mut released = 0_u8;
+        for frame in release.iter() {
+            let frame = self.retained[usize::from(frame.slot)]
+                .take()
+                .expect("a released reorder slot owns its retained backing");
+            self.push_pending_release(PendingReleasedFrame { frame, identity });
+            released = released.saturating_add(1);
+        }
+        Some(released)
     }
 
     /// Publish at most one frame already released from sequence ownership.

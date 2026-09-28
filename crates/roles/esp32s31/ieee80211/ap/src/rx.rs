@@ -14,7 +14,9 @@ use oer_esp32s31_ieee80211::protected_data_rx::{
 
 use oer_esp32s31_ieee80211_mac::rx::{
     PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, RxSegment,
-    ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
+    ampdu::{
+        RxBlockAckMpduKey, RxBlockAckRequestKey, rx_block_ack_mpdu_key, rx_block_ack_request_key,
+    },
     view_normalized_rx_frame,
 };
 
@@ -457,6 +459,20 @@ impl ApRxDispatcher {
             return None;
         }
         rx_block_ack_mpdu_key(segment.buffer, self.config.access_point, None)
+    }
+
+    /// Classify a BlockAckReq a client addressed to this AP.
+    ///
+    /// Agreement state still decides whether the named peer and TID have a
+    /// reorder window to move.
+    ///
+    /// SOURCE: `libnet80211.a::hostap_recv_ctl` dispatches control subtype 8
+    /// to `ieee80211_recv_bar`, as `sta_recv_ctl` does for the station.
+    pub fn block_ack_request_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckRequestKey> {
+        if self.config.security == LinkProtection::Open {
+            return None;
+        }
+        rx_block_ack_request_key(segment.buffer, self.config.access_point, None)
     }
 
     #[inline(never)]

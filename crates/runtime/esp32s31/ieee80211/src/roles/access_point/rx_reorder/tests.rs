@@ -541,3 +541,51 @@ fn full_shared_backing_drops_one_frame_without_advancing_sequence_state() {
     assert_eq!(reorder.discard_all(), RX_REORDER_BACKING_SLOT_COUNT as u8);
     assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
 }
+
+#[test]
+fn block_ack_request_releases_retained_frames_through_the_ordered_queue() {
+    let storage = RxReorderFrameStorage::<32>::new();
+    let mut reorder = AccessPointRxReorder::<32>::new();
+    reorder.start(agreement(0, PEER_A, 10), |_| {}).unwrap();
+    let bytes_11 = [11];
+    let bytes_12 = [12];
+    for (sequence, bytes) in [(11_u16, &bytes_11), (12, &bytes_12)] {
+        let progress = reorder
+            .ingest(
+                &storage,
+                segment(u32::from(sequence), bytes),
+                RxBlockAckMpduKey {
+                    peer: PEER_A,
+                    tid: 6,
+                    sequence: SequenceNumber::new(sequence).unwrap(),
+                    retry: false,
+                },
+                None,
+                1_000,
+                |_| panic!("a gap before 10 retains every later frame"),
+            )
+            .unwrap();
+        assert!(progress.buffered);
+    }
+    let request = |peer, tid, starting_sequence| RxBlockAckRequestKey {
+        peer,
+        tid,
+        starting_sequence: SequenceNumber::new(starting_sequence).unwrap(),
+    };
+
+    // No agreement for this peer, and a start at the window start: ignored.
+    assert_eq!(reorder.move_window(request(PEER_B, 6, 11), 1_001), None);
+    assert_eq!(reorder.move_window(request(PEER_A, 6, 10), 1_001), None);
+    assert!(!reorder.has_pending_release());
+
+    // The client gave up on sequence 10: 11 and 12 follow in order.
+    assert_eq!(reorder.move_window(request(PEER_A, 6, 11), 1_002), Some(2));
+    assert_eq!(reorder.next_deadline(), None, "no gap is left to age");
+    let mut released = std::vec::Vec::new();
+    while reorder.dispatch_pending(|segment| released.push(segment.descriptor_address)) {}
+    assert_eq!(released, [11, 12]);
+    assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
+
+    // A request behind the moved start changes nothing.
+    assert_eq!(reorder.move_window(request(PEER_A, 6, 5), 1_003), None);
+}

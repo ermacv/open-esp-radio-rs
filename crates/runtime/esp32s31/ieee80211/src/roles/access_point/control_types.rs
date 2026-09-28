@@ -69,6 +69,10 @@ pub struct AccessPointControlObservation {
     pub rx_reorder_dispatched_mpdus: u32,
     pub rx_reorder_hardware_window_resets: u32,
     pub rx_reorder_gap_timeouts: u32,
+    /// Client BlockAckReq frames addressed to this AP.
+    pub rx_block_ack_requests: u32,
+    /// Retained MPDUs released by client BlockAckReq window moves.
+    pub rx_reorder_bar_released_mpdus: u32,
     pub protected_data_radio_rejected: u32,
     pub protected_data_protocol_rejected: u32,
     pub first_rx_protocol_rejection: Option<AccessPointRxRejection>,

@@ -1246,6 +1246,18 @@ where
                 });
                 AccessPointRxProtocolClass::Rejected
             }
+        } else if let Some(request) = self.state.data_rx.block_ack_request_key(segment) {
+            // A client BlockAckReq moves its receive window; the frames it
+            // releases leave through the ordered pending-release queue.
+            let _released = self.state.rx_reorder.move_window(request, now_micros);
+            observe_access_point!(self, observation, {
+                observation.rx_block_ack_requests =
+                    observation.rx_block_ack_requests.saturating_add(1);
+                observation.rx_reorder_bar_released_mpdus = observation
+                    .rx_reorder_bar_released_mpdus
+                    .saturating_add(u32::from(_released.unwrap_or(0)));
+            });
+            AccessPointRxProtocolClass::Other
         } else {
             observe_access_point!(self, observation, {
                 observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);

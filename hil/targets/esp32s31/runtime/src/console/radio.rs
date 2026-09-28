@@ -53,7 +53,14 @@ pub fn runtime_log(args: Arguments<'_>) {
 /// USB progress part of their runtime contract.
 pub async fn runtime_log_reliably(args: Arguments<'_>) {
     if RUNTIME_ACTIVE.load(Ordering::Acquire) {
-        RECORDS.send(format_record(args)).await;
+        // Wait for a free slot before formatting, so the caller's future
+        // never holds a whole record across the await.
+        loop {
+            core::future::poll_fn(|cx| RECORDS.poll_ready_to_send(cx)).await;
+            if RECORDS.try_send(format_record(args)).is_ok() {
+                break;
+            }
+        }
     } else {
         write_record_immediate(&format_record(args));
     }

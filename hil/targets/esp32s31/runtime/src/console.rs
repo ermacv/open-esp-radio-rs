@@ -53,6 +53,12 @@ mod radio;
 pub(crate) use radio::*;
 
 pub(crate) const STARTUP_ARTIFACT_CAPACITY: usize = 512;
+// Images with the Wi-Fi system's diagnostics (every driver-observation image
+// and the station-exit diagnostic) log whole Debug records of driver state,
+// up to about 900 bytes; production-like images keep the smaller footprint.
+#[cfg(feature = "station-exit-evidence")]
+const MESSAGE_CAPACITY: usize = 1024;
+#[cfg(not(feature = "station-exit-evidence"))]
 const MESSAGE_CAPACITY: usize = 384;
 // Diagnostic role transitions emit synchronous register/status bursts before
 // the logger can run. Reserve bounded burst storage only in observer images;

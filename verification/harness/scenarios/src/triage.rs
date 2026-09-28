@@ -359,19 +359,22 @@ impl Code {
         }
     }
 
-    /// Whether the straight-line code from `index` to the next branch or
-    /// return only calls reviewed diagnostic functions and stores nothing
-    /// outside the stack.
-    fn diagnostic_only(&self, lines: &[Line], index: usize) -> bool {
+    /// How the straight-line code from `index` ends, when it only calls
+    /// reviewed diagnostic functions, stores nothing outside the stack, and
+    /// reads nothing outside the stack after its last call: work after the
+    /// output is behavior, not diagnostics.
+    fn diagnostic_only(&self, lines: &[Line], index: usize) -> Option<Ending> {
         let mut calls = 0;
         for line in &lines[index..] {
             if let SemanticOp::Memory {
                 kind, base, dest, ..
             } = line.op
-                && kind != MemoryKind::Load
-                && !(base == STACK && dest.is_none() && kind == MemoryKind::Store)
             {
-                return false;
+                let stack_store = base == STACK && dest.is_none() && kind == MemoryKind::Store;
+                let late_read = kind == MemoryKind::Load && base != STACK && calls > 0;
+                if (kind != MemoryKind::Load && !stack_store) || late_read {
+                    return None;
+                }
             }
             match line.flow {
                 InstructionFlow::Jump { link: true, .. }
@@ -382,17 +385,46 @@ impl Code {
                         .as_ref()
                         .is_some_and(|name| self.diagnostic.contains(name))
                     {
-                        return false;
+                        return None;
                     }
                 }
                 InstructionFlow::Next => {}
-                InstructionFlow::Branch { .. }
-                | InstructionFlow::Jump { .. }
-                | InstructionFlow::Indirect { .. }
-                | InstructionFlow::Stop => break,
+                InstructionFlow::Jump {
+                    displacement: 0,
+                    link: false,
+                } => return (calls > 0).then_some(Ending::Spins),
+                InstructionFlow::Indirect { link: false, .. } | InstructionFlow::Stop => {
+                    return (calls > 0).then_some(Ending::Returns);
+                }
+                InstructionFlow::Branch { .. } | InstructionFlow::Jump { .. } => {
+                    return (calls > 0).then_some(Ending::Continues);
+                }
             }
         }
-        calls > 0
+        None
+    }
+}
+
+/// How a diagnostic-only block ends.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Ending {
+    /// Jumps to itself: an assertion that logs and stops the core.
+    Spins,
+    /// Returns from its function after the output.
+    Returns,
+    /// Continues on another path after the output.
+    Continues,
+}
+
+impl Ending {
+    fn label(self) -> &'static str {
+        match self {
+            Ending::Spins => "assertion: reviewed diagnostic output, then the core spins",
+            Ending::Returns => {
+                "reviewed diagnostic output, then a return: the early return is behavior"
+            }
+            Ending::Continues => "reviewed diagnostic output, then another path",
+        }
     }
 }
 
@@ -470,6 +502,22 @@ fn definitions(lines: &[Line], index: usize) -> Vec<String> {
     found
 }
 
+/// The index of the transfer that ends the block opened at `index`: a
+/// branch, jump, return or other stop; calls do not end it.
+fn block_end(lines: &[Line], index: usize) -> usize {
+    lines[index..]
+        .iter()
+        .position(|line| {
+            !matches!(
+                line.flow,
+                InstructionFlow::Next
+                    | InstructionFlow::Jump { link: true, .. }
+                    | InstructionFlow::Indirect { link: true, .. }
+            )
+        })
+        .map_or(lines.len().saturating_sub(1), |offset| index + offset)
+}
+
 /// The report of `untriaged` over `code`.
 pub fn report(code: &Code, untriaged: &BTreeSet<Location>) -> String {
     let mut text = String::new();
@@ -490,23 +538,29 @@ pub fn report(code: &Code, untriaged: &BTreeSet<Location>) -> String {
             let Some(index) = lines.iter().position(|l| l.offset >= location.offset) else {
                 continue;
             };
-            let candidate =
-                matches!(location.kind, LocationKind::Block) && code.diagnostic_only(&lines, index);
+            let ending = matches!(location.kind, LocationKind::Block)
+                .then(|| code.diagnostic_only(&lines, index))
+                .flatten();
+            let candidate = ending.is_some();
             text.push_str(&format!(
                 "\n  +{:#x} {:?}{}\n",
                 location.offset,
                 location.kind,
-                if candidate {
-                    "  [candidate: reviewed diagnostic calls only, no store outside the stack]"
-                } else {
-                    ""
-                }
+                ending.map_or_else(String::new, |e| format!("  [candidate: {}]", e.label()))
             ));
             let start = index.saturating_sub(BEFORE);
+            // A candidate shows its whole block through the transfer that
+            // ends it: whether it rejoins the other path or returns is the
+            // reviewer's question.
+            let end = if candidate {
+                block_end(&lines, index) + AFTER
+            } else {
+                index + AFTER
+            };
             for (i, line) in lines
                 .iter()
                 .enumerate()
-                .take((index + AFTER + 1).min(lines.len()))
+                .take((end + 1).min(lines.len()))
                 .skip(start)
             {
                 let mark = if i == index { ">" } else { " " };
@@ -599,16 +653,78 @@ mod tests {
     }
 
     #[test]
+    fn a_block_ends_at_its_first_transfer_other_than_a_call() {
+        let lines = code(&[]).lines("probe").unwrap();
+        // The call at +0x10 continues the block; the return at +0x18 ends it.
+        assert_eq!(block_end(&lines, 4), 6);
+        assert_eq!(block_end(&lines, 0), 3);
+    }
+
+    #[test]
     fn only_reviewed_diagnostic_calls_make_a_candidate() {
         let unreviewed = code(&[]);
         let lines = unreviewed.lines("probe").unwrap();
         assert_eq!(lines[4].callee.as_deref(), Some("wifi_log"));
         // A callee no decision names as diagnostic output is never one.
-        assert!(!unreviewed.diagnostic_only(&lines, 4));
+        assert_eq!(unreviewed.diagnostic_only(&lines, 4), None);
         let reviewed = code(&["wifi_log"]);
         let lines = reviewed.lines("probe").unwrap();
-        assert!(reviewed.diagnostic_only(&lines, 4));
+        assert_eq!(reviewed.diagnostic_only(&lines, 4), Some(Ending::Returns));
         // A store outside the stack is never diagnostic.
-        assert!(!reviewed.diagnostic_only(&lines, 8));
+        assert_eq!(reviewed.diagnostic_only(&lines, 8), None);
+        // An assertion logs, then jumps to itself.
+        let line = |op, flow, callee: Option<&str>| Line {
+            offset: 0,
+            text: String::new(),
+            op,
+            flow,
+            branch: vec![],
+            callee: callee.map(str::to_owned),
+        };
+        let call = || {
+            line(
+                SemanticOp::Link { dest: 1 },
+                InstructionFlow::Jump {
+                    displacement: 8,
+                    link: true,
+                },
+                Some("wifi_log"),
+            )
+        };
+        let spin = line(
+            SemanticOp::None,
+            InstructionFlow::Jump {
+                displacement: 0,
+                link: false,
+            },
+            None,
+        );
+        assert_eq!(
+            reviewed.diagnostic_only(&[call(), spin.clone()], 0),
+            Some(Ending::Spins)
+        );
+        // Reading device or object state after the output is behavior.
+        let read = line(
+            SemanticOp::Memory {
+                kind: MemoryKind::Load,
+                base: 10,
+                displacement: 4,
+                width: 4,
+                dest: Some(15),
+                source: None,
+                swap: false,
+                signed: false,
+            },
+            InstructionFlow::Next,
+            None,
+        );
+        assert_eq!(
+            reviewed.diagnostic_only(&[call(), read.clone(), spin.clone()], 0),
+            None
+        );
+        assert_eq!(
+            reviewed.diagnostic_only(&[read, call(), spin], 0),
+            Some(Ending::Spins)
+        );
     }
 }

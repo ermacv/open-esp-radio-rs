@@ -526,7 +526,10 @@ results: each location's instructions, decoded and lifted by Blobray's RISC-V
 decoder, with constants folded and addresses and bit masks named by the
 published register bindings, the definitions of the registers its instruction
 reads, and a candidate mark on a block that only calls `Place::Diagnostic`
-functions and stores nothing outside the stack. The report proposes; the
+functions, stores nothing outside the stack and reads nothing outside it
+after its last call. The mark names how the block ends: an assertion that
+spins after its output, an early return (behavior, not diagnostics), or
+another path; a candidate shows its whole block. The report proposes; the
 decision stays reviewed.
 
 ## Observation decisions

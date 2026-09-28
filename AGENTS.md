@@ -17,7 +17,11 @@ Stay available to the user and to other agents while work runs. Run every
 shell command with `run_in_background: true` and act on its completion
 notification; do not wait for a build, test, check or HIL run in the
 foreground, and do not poll it with foreground `sleep` loops. Keep answering
-messages while background work runs.
+messages while background work runs. Never wait for or signal processes by
+name (`pgrep -f`, `pkill -f` and the like): the pattern also matches the
+waiting shell's own command line. Order dependent steps in one sequential
+command or wait on a PID (`wait`, `tail --pid`); `cargo hil run` already
+queues behind other holders in the arbiter.
 
 ## Project Structure & Module Organization
 

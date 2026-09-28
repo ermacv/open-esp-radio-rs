@@ -625,41 +625,47 @@ pub const LEAVES: &[Leaf] = &[
     ),
     // The FreeRTOS critical section and the sleep power-domain bookkeeping
     // around the modem clock registers are answered without effect.
-    quiet(
-        released(
-            in_archive(
-                objects(
-                    leaf(
-                        "modem_clock_select_lp_clock_source",
-                        "open_bluetooth_trace_select_low_power_clock",
-                        &[],
-                        false,
+    ruled(
+        quiet(
+            released(
+                in_archive(
+                    objects(
+                        leaf(
+                            "modem_clock_select_lp_clock_source",
+                            "open_bluetooth_trace_select_low_power_clock",
+                            &[],
+                            false,
+                        ),
+                        low_power_clock_select_abi,
                     ),
-                    low_power_clock_select_abi,
+                    HW_SUPPORT_INPUT,
                 ),
-                HW_SUPPORT_INPUT,
+                1,
             ),
-            1,
+            MODEM_CLOCK_QUIET,
         ),
-        MODEM_CLOCK_QUIET,
+        low_power_timer_gate_rules,
     ),
-    quiet(
-        released(
-            in_archive(
-                objects(
-                    leaf(
-                        "modem_clock_deselect_lp_clock_source",
-                        "open_bluetooth_trace_deselect_low_power_clock",
-                        &[],
-                        false,
+    ruled(
+        quiet(
+            released(
+                in_archive(
+                    objects(
+                        leaf(
+                            "modem_clock_deselect_lp_clock_source",
+                            "open_bluetooth_trace_deselect_low_power_clock",
+                            &[],
+                            false,
+                        ),
+                        low_power_clock_deselect_abi,
                     ),
-                    low_power_clock_deselect_abi,
+                    HW_SUPPORT_INPUT,
                 ),
-                HW_SUPPORT_INPUT,
+                1,
             ),
-            1,
+            MODEM_CLOCK_QUIET,
         ),
-        MODEM_CLOCK_QUIET,
+        low_power_timer_gate_rules,
     ),
 ];
 
@@ -682,6 +688,42 @@ pub(crate) const MODEM_CLOCK_QUIET: &[&str] = &[
     "vPortExitCriticalMultiCore",
     "esp_sleep_pd_config",
 ];
+/// `MODEM_LPCON.CLK_CONF` at the firmware's `MODEM_LPCON` base. ESP-HAL owns
+/// its gates and read-modify-writes the word under the lock that also serves
+/// its regi2c accesses; the radio requests them from its platform clock
+/// provider, which the probes answer without register access.
+pub(crate) const MODEM_LPCON_CLK_CONF: u32 = 0x2010_f018;
+/// The one read-modify-write of `MODEM_LPCON.CLK_CONF` a low-power clock
+/// selection performs.
+const PLATFORM_GATE_ACCESSES: u32 = 1;
+
+/// The vendor's read-modify-write of a platform-owned `MODEM_LPCON.CLK_CONF`
+/// gate, which production leaves to the platform for `reason`.
+pub(crate) fn platform_gate_rules(reason: &str) -> Vec<blobray_domain::EffectRule> {
+    vec![
+        crate::contracts::omitted_read(
+            "platform-gate-read".into(),
+            MODEM_LPCON_CLK_CONF,
+            PLATFORM_GATE_ACCESSES,
+            reason,
+        ),
+        crate::contracts::omitted_write(
+            "platform-gate-write".into(),
+            MODEM_LPCON_CLK_CONF,
+            PLATFORM_GATE_ACCESSES,
+            reason,
+        ),
+    ]
+}
+
+/// The Bluetooth selection sets the low-power timer gate and the
+/// deselection clears it.
+fn low_power_timer_gate_rules() -> Vec<blobray_domain::EffectRule> {
+    platform_gate_rules(
+        "production acquires and releases the modem low-power timer gate through the \
+        platform clock provider; ESP-HAL writes MODEM_LPCON.CLK_CONF under its own lock",
+    )
+}
 /// ESP-IDF `PERIPH_BT_MODULE` of `soc/esp32s31/include/soc/periph_defs.h`.
 const PERIPH_BT_MODULE: u32 = 6;
 /// ESP-IDF `MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL` of `hal/modem_clock_types.h`.
@@ -770,3 +812,47 @@ pub const BLUETOOTH: Suite = Suite {
         "vPortExitCriticalMultiCore",
     ],
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blobray_domain::{EffectDisposition, ExecutionEvent};
+
+    /// The `MODEM_LPCON` word holding the Bluetooth low-power clock source and
+    /// divider, which the selection writes and production compares.
+    const BLUETOOTH_LOW_POWER_CLOCK_CONF: u32 = 0x2010_f004;
+
+    fn dispositions(event: &ExecutionEvent) -> Vec<EffectDisposition> {
+        low_power_timer_gate_rules()
+            .iter()
+            .filter(|rule| rule.vendor.unwrap().selects(event, None))
+            .map(|rule| rule.disposition)
+            .collect()
+    }
+
+    #[test]
+    fn only_the_platform_gate_word_may_be_omitted() {
+        for event in [
+            ExecutionEvent::Read {
+                address: MODEM_LPCON_CLK_CONF,
+                width: 4,
+                value: 0,
+            },
+            ExecutionEvent::Write {
+                address: MODEM_LPCON_CLK_CONF,
+                width: 4,
+                value: 8,
+            },
+        ] {
+            assert_eq!(dispositions(&event), [EffectDisposition::Omitted]);
+        }
+        assert!(
+            dispositions(&ExecutionEvent::Write {
+                address: BLUETOOTH_LOW_POWER_CLOCK_CONF,
+                width: 4,
+                value: 4,
+            })
+            .is_empty()
+        );
+    }
+}

@@ -65,6 +65,15 @@ pub fn omitted_read(name: String, address: u32, maximum: u32, reason: &str) -> E
     }
 }
 
+/// Vendor writes of `address` production may omit, at most `maximum` times
+/// per case. Retained production occurrences still compare exactly.
+pub fn omitted_write(name: String, address: u32, maximum: u32, reason: &str) -> EffectRule {
+    EffectRule {
+        disposition: EffectDisposition::Omitted,
+        ..ignored(name, word(write, address), maximum, reason)
+    }
+}
+
 /// A vendor read of `address` immediately followed by a read of `successor`
 /// that production may omit, at most `maximum` times per case. Retained
 /// production occurrences still compare exactly.

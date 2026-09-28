@@ -6,7 +6,7 @@
 //! start, with the 32 kHz crystal when the RTC slow clock runs from it and
 //! the RC slow oscillator otherwise.
 use crate::harness::Result;
-use crate::mac::{Domain, Leaf, Objects, Vendor, in_archive, leaf, objects, quiet};
+use crate::mac::{Domain, Leaf, Objects, Vendor, in_archive, leaf, objects, quiet, ruled};
 
 /// Session inputs of the third and fourth `wifi-mac` suite archives.
 pub const HW_SUPPORT_INPUT: u64 = 5;
@@ -32,18 +32,29 @@ fn select_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
 /// The selection of each source `esp_perip_clk_init` chooses. The FreeRTOS
 /// critical section and the sleep power-domain bookkeeping around the modem
 /// clock registers are answered without effect.
-pub const SELECT: Leaf = quiet(
-    in_archive(
-        objects(
-            leaf(
-                "modem_clock_select_lp_clock_source",
-                "open_modem_clock_trace_select_wifi_low_power_clock",
-                &[("source", Domain::Words(SOURCES))],
-                false,
+pub const SELECT: Leaf = ruled(
+    quiet(
+        in_archive(
+            objects(
+                leaf(
+                    "modem_clock_select_lp_clock_source",
+                    "open_modem_clock_trace_select_wifi_low_power_clock",
+                    &[("source", Domain::Words(SOURCES))],
+                    false,
+                ),
+                select_abi,
             ),
-            select_abi,
+            HW_SUPPORT_INPUT,
         ),
-        HW_SUPPORT_INPUT,
+        crate::ble::MODEM_CLOCK_QUIET,
     ),
-    crate::ble::MODEM_CLOCK_QUIET,
+    wifi_power_gate_rules,
 );
+
+/// The Wi-Fi selection sets the Wi-Fi power gate.
+fn wifi_power_gate_rules() -> Vec<blobray_domain::EffectRule> {
+    crate::ble::platform_gate_rules(
+        "esp_hal::init sets the Wi-Fi power gate once, as ESP-IDF's esp_perip_clk_init \
+        does, and nothing clears it, so production leaves MODEM_LPCON.CLK_CONF to the platform",
+    )
+}

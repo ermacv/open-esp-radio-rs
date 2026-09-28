@@ -4508,6 +4508,12 @@ code = "263ae9942a725ad2b9b8654d2019117c5ab97075f9a20a8b1c968abd849ef6ad"
 [[function]]
 artifact = "libpp"
 member = "trc.o"
+symbol = "rcGetSched"
+code = "b6a05dcff114d7780af16b9a609d9ccce05817b44fa93c49660b4158364a4347"
+
+[[function]]
+artifact = "libpp"
+member = "trc.o"
 symbol = "rcReachRetryLimit"
 code = "254743107a43aee1c82293cb8b66f2f3454c4dbacdb6da4ded1efe800b7d6642"
 decisions = ["coverage.toml"]
@@ -6431,6 +6437,12 @@ artifact = "rom"
 member = ""
 symbol = "rcGetSMPDURate"
 code = "f34dcca6af5538222563649a3dd0e96031d4145fc876fa550059d41457a09aa4"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "rcGetSched"
+code = "522f2bef227e3adf5160e33d78c149f2dba37cf8aa17f164aee34c5a9b65358f"
 
 [[function]]
 artifact = "rom"

@@ -112,6 +112,8 @@ pub struct Session {
     /// Effect contracts and projections the scenario's relations select,
     /// reviewed through git and identified by content.
     effects: Vec<EffectContract>,
+    /// The same contracts with their names and rule selections so far.
+    reviewed: Vec<crate::rule_use::Reviewed>,
     projections: Vec<LayoutProjection>,
     /// Guest instructions executed in process, and the time spent executing.
     pub executed: std::cell::Cell<(u64, f64)>,
@@ -270,6 +272,7 @@ impl Session {
             images: Default::default(),
             unprepared: Default::default(),
             effects: vec![],
+            reviewed: vec![],
             projections: vec![],
             executed: Default::default(),
             patches: patches.to_vec(),
@@ -329,6 +332,11 @@ impl Session {
         )?;
         let selection = blobray_application::in_process::effect_contract_ref(&contract)?;
         if !self.effects.contains(&contract) {
+            self.reviewed.push(crate::rule_use::Reviewed::new(
+                name,
+                selection.clone(),
+                contract.clone(),
+            ));
             self.effects.push(contract);
         }
         Ok(selection)
@@ -699,6 +707,7 @@ impl Session {
             .sum();
         let (total, time) = self.executed.get();
         self.executed.set((total + steps, time + seconds));
+        crate::rule_use::count(&mut self.reviewed, request, &result.records)?;
         if result.verdict != verdict {
             // Every departing case, both sides' events and their contract
             // classification, beside the run.
@@ -1145,6 +1154,8 @@ impl Session {
             let path = crate::triage::write(self.runner.run_directory(), suite, &code, &listed)?;
             println!("{suite} untriaged locations: {}", path.display());
         }
+        let rules = crate::rule_use::check(self.runner.run_directory(), suite, &self.reviewed)?;
+        println!("{suite} effect rule selections: {}", rules.display());
         Ok(Claims {
             entries,
             untriaged,

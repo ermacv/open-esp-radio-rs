@@ -329,6 +329,14 @@ expectations; Blobray mechanisms supply the rest:
   fence and delay effect compares exactly, in order and value. Because every
   read compares, both sides necessarily consume the same never-written
   registers. Each verdict carries the `reviewed-effect-refinement` claim.
+  The TX-DC root issues no analog I2C command and the RX-gain root's commands
+  never wait, so their contracts carry only the reviews their cases exercise.
+- Every scenario counts, through Blobray's own effect classification, the
+  effects each contract rule selects and writes the counts to
+  `rules-<scenario>.txt` beside its run. A review (one disposition and
+  reason, possibly instantiated per register and shared by several
+  contracts) that selects no effect anywhere in the scenario fails it: the
+  review is stale or no case exercises its path.
 - ROM storage addresses name their ROM symbols (`rom_phyFuns`,
   `phy_param_rom`, `g_phyFuns_instance`) and are checked against the captured
   ROM inventory at session start.

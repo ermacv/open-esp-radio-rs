@@ -17,6 +17,7 @@ pub mod leaf;
 pub mod observation;
 pub mod phy;
 pub mod registers;
+pub mod rule_use;
 pub mod session;
 pub mod setup_cache;
 pub mod shard;

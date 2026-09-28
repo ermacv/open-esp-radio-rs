@@ -232,7 +232,7 @@ pub fn write(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use blobray_domain::{
         ArtifactId, CallEndpoint, EffectClaimCeiling, EffectDisposition, EffectPattern, EffectRule,
@@ -248,7 +248,7 @@ mod tests {
         }
     }
 
-    fn contract() -> EffectContract {
+    pub(crate) fn contract() -> EffectContract {
         let pattern = EffectPattern {
             selector: EffectSelector::MmioRead {
                 address: 0x2010_4080,

@@ -100,13 +100,18 @@ fn owned_eapol(frame: &RsnTxFrame<512>) -> OwnedEapolFrame<512> {
 
 fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     let pmk = Pmk::from_bytes([0x22; 32]);
-    let peer_ptk = pmk.derive_ptk(oer_ieee80211_rsn::Akm::Psk, ptk_context());
+    let peer_ptk = pmk.derive_ptk(oer_ieee80211_mac::security::rsn::Akm::Psk, ptk_context());
     let mut supplicant =
         RsnStaSupplicant::try_new(STATION, BSSID, SNONCE, &RSN, &RSN, &[]).unwrap();
     let mut aes = RsnSoftwareAes::new();
 
-    let message1 =
-        RsnTxFrame::<512>::message1(oer_ieee80211_rsn::Akm::Psk, STATION, 1, ANONCE).unwrap();
+    let message1 = RsnTxFrame::<512>::message1(
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
+        STATION,
+        1,
+        ANONCE,
+    )
+    .unwrap();
     assert!(matches!(
         embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message1), &pmk, &mut aes,)),
         Ok(RsnStaSupplicantAction::Transmit(_))
@@ -117,7 +122,7 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let wrapped = software_aes128_key_wrap(peer_ptk.kek(), plain.as_bytes()).unwrap();
     let message3 = RsnTxFrame::<512>::message3(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         STATION,
         2,
         ANONCE,
@@ -151,7 +156,7 @@ fn group_message1(
     kde[8..].copy_from_slice(&key);
     let wrapped = software_aes128_key_wrap(ptk.kek(), &kde).unwrap();
     let frame = RsnTxFrame::<512>::group_message1(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         STATION,
         replay_counter,
         receive_sequence,
@@ -771,12 +776,17 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
         authenticator_nonce: WPA2_ANONCE,
         supplicant_nonce: WPA2_SNONCE,
     };
-    let ptk = pmk.derive_ptk(oer_ieee80211_rsn::Akm::Psk, ptk_context);
+    let ptk = pmk.derive_ptk(oer_ieee80211_mac::security::rsn::Akm::Psk, ptk_context);
     let mut supplicant =
         RsnStaSupplicant::try_new(STATION, BSSID, WPA2_SNONCE, &WPA2_RSN, &WPA2_RSN, &[]).unwrap();
     let mut aes = RsnSoftwareAes::new();
-    let message1 =
-        RsnTxFrame::<512>::message1(oer_ieee80211_rsn::Akm::Psk, STATION, 1, WPA2_ANONCE).unwrap();
+    let message1 = RsnTxFrame::<512>::message1(
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
+        STATION,
+        1,
+        WPA2_ANONCE,
+    )
+    .unwrap();
     let RsnStaSupplicantAction::Transmit(_) = embassy_futures::block_on(supplicant.on_frame(
         owned_station_eapol(&message1),
         &pmk,
@@ -790,7 +800,7 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     let plain = RsnPlainKeyData::<64>::build(rsn.as_bytes(), &gtk, None).unwrap();
     let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes()).unwrap();
     let message3 = RsnTxFrame::<512>::message3(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         STATION,
         2,
         WPA2_ANONCE,
@@ -813,7 +823,7 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     };
 
     let wrong_replay = RsnTxFrame::<512>::message3(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         STATION,
         3,
         WPA2_ANONCE,

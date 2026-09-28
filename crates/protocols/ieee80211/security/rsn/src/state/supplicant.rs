@@ -1,6 +1,7 @@
 //! Station four-way-handshake state and its complete event/action transitions.
 
 use super::*;
+use crate::AkmKeys;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnStaPhase {

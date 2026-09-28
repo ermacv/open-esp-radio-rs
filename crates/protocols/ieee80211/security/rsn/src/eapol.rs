@@ -1,5 +1,6 @@
 //! Validated borrowed and owned RSN EAPOL-Key packets and MIC verification.
 
+use crate::AkmKeys;
 use crate::{Akm, Ptk, RSN_KCK_LEN, RsnInterface, RsnKeyConfirmationKey};
 
 pub const EAPOL_HEADER_LEN: usize = 4;

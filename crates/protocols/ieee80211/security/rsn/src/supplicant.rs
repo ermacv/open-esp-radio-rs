@@ -6,6 +6,7 @@
 //! requests. A target executor therefore handles only complete EAPOL RX/TX
 //! frames and the platform-specific key-slot transaction.
 
+use crate::AkmKeys;
 use crate::{
     Akm, EapolKeyFrame, Pmk, Ptk, PtkContext, RsnInterface, RsnKeyConfirmationKey,
     RsnKeyEncryptionKey,

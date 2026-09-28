@@ -8,7 +8,7 @@
 use aes::Aes128;
 use cmac::Cmac;
 use hmac::{Hmac, Mac};
-use oer_ieee80211_mac::security::rsn::ieee_suite;
+use oer_ieee80211_mac::security::rsn::Akm;
 use sha1::Sha1;
 use zeroize::Zeroize;
 
@@ -19,44 +19,17 @@ const PTK_EXPANSION_LABEL: &[u8] = b"Pairwise key expansion";
 /// Length of every EAPOL-Key MIC produced by a supported suite.
 pub const RSN_MIC_LEN: usize = 16;
 
-/// Authentication and key management suite of one association.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Akm {
-    /// `00-0F-AC:2`, PSK with PRF-SHA1 key expansion and HMAC-SHA1-128 MIC
-    /// (key descriptor version 2).
-    Psk,
-    /// `00-0F-AC:6`, PSK with the SHA-256 key derivation function and
-    /// AES-128-CMAC MIC (key descriptor version 3), as protected management
-    /// frames select.
-    PskSha256,
-    /// `00-0F-AC:8`, SAE: the PMK comes from the SAE exchange; the SHA-256
-    /// key derivation function and AES-128-CMAC MIC under the AKM-defined
-    /// key descriptor version 0.
-    Sae,
+/// The per-suite key hierarchy and EAPOL-Key integrity of an [`Akm`].
+pub(crate) trait AkmKeys {
+    /// Key Information descriptor version carried by every EAPOL-Key frame.
+    fn key_descriptor_version(self) -> u8;
+    /// Expand a PMK over the canonical address/nonce context into a PTK.
+    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN];
+    fn mic(self, kck: &[u8; RSN_KCK_LEN]) -> EapolMic;
 }
 
-impl Akm {
-    /// The suite named by an RSN element AKM selector, if supported.
-    pub const fn from_suite_selector(selector: [u8; 4]) -> Option<Self> {
-        match selector {
-            [0x00, 0x0f, 0xac, 2] => Some(Self::Psk),
-            [0x00, 0x0f, 0xac, 6] => Some(Self::PskSha256),
-            [0x00, 0x0f, 0xac, 8] => Some(Self::Sae),
-            _ => None,
-        }
-    }
-
-    pub const fn suite_selector(self) -> [u8; 4] {
-        let type_ = match self {
-            Self::Psk => 2,
-            Self::PskSha256 => 6,
-            Self::Sae => 8,
-        };
-        ieee_suite(type_)
-    }
-
-    /// Key Information descriptor version carried by every EAPOL-Key frame.
-    pub const fn key_descriptor_version(self) -> u8 {
+impl AkmKeys for Akm {
+    fn key_descriptor_version(self) -> u8 {
         match self {
             Self::Psk => 2,
             Self::PskSha256 => 3,
@@ -64,15 +37,14 @@ impl Akm {
         }
     }
 
-    /// Expand a PMK over the canonical address/nonce context into a PTK.
-    pub(crate) fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
+    fn expand_ptk(self, pmk: &[u8; 32], context: &[u8; 76]) -> [u8; RSN_PTK_LEN] {
         match self {
             Self::Psk => prf_sha1(pmk, context),
             Self::PskSha256 | Self::Sae => kdf_sha256(pmk, context),
         }
     }
 
-    pub(crate) fn mic(self, kck: &[u8; RSN_KCK_LEN]) -> EapolMic {
+    fn mic(self, kck: &[u8; RSN_KCK_LEN]) -> EapolMic {
         match self {
             Self::Psk => EapolMic::HmacSha1(
                 Hmac::<Sha1>::new_from_slice(kck).expect("KCK length is always accepted by HMAC"),

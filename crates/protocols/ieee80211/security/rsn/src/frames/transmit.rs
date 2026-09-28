@@ -1,6 +1,7 @@
 //! Bounded EAPOL/Ethernet transmission and typed handshake action encoding.
 
 use super::*;
+use crate::AkmKeys;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RsnTxFrame<const N: usize = RSN_TX_EAPOL_CAPACITY> {

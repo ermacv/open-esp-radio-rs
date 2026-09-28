@@ -26,9 +26,9 @@ use oer_ieee80211_mac::ht::HtPeerCapabilities;
 use oer_ieee80211_mac::protection::{
     ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode,
 };
-use oer_ieee80211_mac::security::{ApSecurityPolicy, LinkProtection};
+use oer_ieee80211_mac::security::{ApSecurityPolicy, LinkProtection, rsn::Akm};
 use oer_ieee80211_rsn::{
-    Akm, AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
+    AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
     element::{ValidatedRsnElement, validate_rsn_element},
     frames::{

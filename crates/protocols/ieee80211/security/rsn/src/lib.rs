@@ -34,7 +34,8 @@ pub mod supplicant;
 pub mod crypto;
 pub mod eapol;
 
-pub use akm::{Akm, RSN_MIC_LEN};
+pub(crate) use akm::AkmKeys;
+pub use akm::RSN_MIC_LEN;
 pub use crypto::{
     AssociationSecurityBinding, PSK_PASSPHRASE_MAX_LEN, PSK_PASSPHRASE_MIN_LEN,
     PSK_PBKDF2_ITERATIONS, PSK_SSID_MAX_LEN, Pmk, PskDerivationError, Ptk, PtkContext, RSN_KCK_LEN,
@@ -46,6 +47,7 @@ pub use eapol::{
     EAPOL_PACKET_TYPE_KEY, EapolCopyError, EapolKeyFrame, EapolKeyInfo, EapolKeyMessage,
     EapolParseError, OwnedEapolFrame, RSN_KEY_DESCRIPTOR_TYPE,
 };
+pub(crate) use oer_ieee80211_mac::security::rsn::Akm;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnInterface {

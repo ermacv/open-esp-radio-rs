@@ -1,6 +1,7 @@
 //! Authenticator four-way-handshake state and its bounded peer table.
 
 use super::*;
+use crate::AkmKeys;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnApPhase {

@@ -1480,7 +1480,7 @@ fn dispatches_protected_ethernet_and_owns_duplicate_history() {
 fn wpa2_admits_only_plaintext_eapol_from_the_exact_associated_link() {
     const HEADER: usize = 24;
     let message3 = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         STATION,
         2,
         [4; 32],

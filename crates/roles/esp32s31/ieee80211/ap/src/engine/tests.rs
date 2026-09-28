@@ -342,7 +342,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     engine.begin_wpa2::<512>(peer).unwrap();
 
     let ptk = Pmk::derive(b"password", b"ap").unwrap().derive_ptk(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         PtkContext {
             authenticator_address: ap,
             supplicant_address: peer,
@@ -351,9 +351,15 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         },
     );
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-    let message2 = RsnTxFrame::<512>::message2(oer_ieee80211_rsn::Akm::Psk, ap, 9, SNONCE, &rsn)
-        .unwrap()
-        .authenticate(&ptk);
+    let message2 = RsnTxFrame::<512>::message2(
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
+        ap,
+        9,
+        SNONCE,
+        &rsn,
+    )
+    .unwrap()
+    .authenticate(&ptk);
     let message2 =
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, peer, message2.as_bytes())
             .unwrap();
@@ -372,7 +378,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     assert_eq!(&message3_mpdu[10..16], &ap);
     assert_eq!(&message3_mpdu[22..24], &[0, 0]);
     assert_eq!(&message3_mpdu[30..32], &[0x88, 0x8e]);
-    let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_rsn::Akm::Psk, ap, 10)
+    let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Psk, ap, 10)
         .unwrap()
         .authenticate(&ptk);
     let message4 =
@@ -433,9 +439,10 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         "ordinary admission and coalesced activity share one peer binding"
     );
 
-    let repeated_message4 = RsnTxFrame::<512>::message4(oer_ieee80211_rsn::Akm::Psk, ap, 10)
-        .unwrap()
-        .authenticate(&ptk);
+    let repeated_message4 =
+        RsnTxFrame::<512>::message4(oer_ieee80211_mac::security::rsn::Akm::Psk, ap, 10)
+            .unwrap()
+            .authenticate(&ptk);
     let repeated_message4 = OwnedEapolFrame::<512>::try_copy(
         RsnInterface::AccessPoint,
         peer,

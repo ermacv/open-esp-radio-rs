@@ -138,7 +138,7 @@ fn connected_eapol_uses_the_security_lane_and_never_the_control_fifo() {
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
     let packet = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::group_message1(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [0; 8],
@@ -176,7 +176,7 @@ fn protected_eapol_overflow_remains_fail_closed() {
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
     let packet = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::group_message1(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [0; 8],
@@ -214,7 +214,7 @@ fn plaintext_eapol_full_and_copy_rejection_are_peer_local_drops() {
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
     let first = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [4; 32],
@@ -223,7 +223,7 @@ fn plaintext_eapol_full_and_copy_rejection_are_peer_local_drops() {
     )
     .unwrap();
     let second = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         4,
         [5; 32],
@@ -267,7 +267,7 @@ fn protected_security_precedes_an_earlier_plaintext_candidate() {
     let station = [2, 0, 0, 0, 0, 1];
     let ap = [2, 0, 0, 0, 0, 2];
     let message3 = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         station,
         3,
         [4; 32],
@@ -276,7 +276,7 @@ fn protected_security_precedes_an_earlier_plaintext_candidate() {
     )
     .unwrap();
     let group_message1 = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::group_message1(
-        oer_ieee80211_rsn::Akm::Psk,
+        oer_ieee80211_mac::security::rsn::Akm::Psk,
         station,
         4,
         [0; 8],

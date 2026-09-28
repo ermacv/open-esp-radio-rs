@@ -37,6 +37,42 @@ pub const fn ieee_suite(suite_type: u8) -> [u8; 4] {
     [RSN_OUI[0], RSN_OUI[1], RSN_OUI[2], suite_type]
 }
 
+/// Authentication and key management suite named by an RSN element.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Akm {
+    /// `00-0F-AC:2`, PSK with PRF-SHA1 key expansion and HMAC-SHA1-128 MIC
+    /// (key descriptor version 2).
+    Psk,
+    /// `00-0F-AC:6`, PSK with the SHA-256 key derivation function and
+    /// AES-128-CMAC MIC (key descriptor version 3), as protected management
+    /// frames select.
+    PskSha256,
+    /// `00-0F-AC:8`, SAE: the PMK comes from the SAE exchange; the SHA-256
+    /// key derivation function and AES-128-CMAC MIC under the AKM-defined
+    /// key descriptor version 0.
+    Sae,
+}
+
+impl Akm {
+    /// The suite named by an RSN element AKM selector, if supported.
+    pub const fn from_suite_selector(selector: [u8; 4]) -> Option<Self> {
+        match selector {
+            [0x00, 0x0f, 0xac, RSN_AKM_PSK] => Some(Self::Psk),
+            [0x00, 0x0f, 0xac, RSN_AKM_PSK_SHA256] => Some(Self::PskSha256),
+            [0x00, 0x0f, 0xac, RSN_AKM_SAE] => Some(Self::Sae),
+            _ => None,
+        }
+    }
+
+    pub const fn suite_selector(self) -> [u8; 4] {
+        ieee_suite(match self {
+            Self::Psk => RSN_AKM_PSK,
+            Self::PskSha256 => RSN_AKM_PSK_SHA256,
+            Self::Sae => RSN_AKM_SAE,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RsnSyntaxError {
     /// The header, a counted list or an optional field is incomplete, or

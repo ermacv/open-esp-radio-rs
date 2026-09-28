@@ -1,5 +1,6 @@
 //! Zeroizing RSN master/transient keys, PSK derivation and commitments.
 
+use crate::AkmKeys;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use zeroize::{Zeroize, ZeroizeOnDrop};

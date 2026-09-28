@@ -603,13 +603,13 @@ impl MacTxCompletionObservation {
         }
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-probes"))]
     pub const fn with_trigger_flow_model(mut self, trigger_flow: bool) -> Self {
         self.trigger_flow = trigger_flow;
         self
     }
 
-    #[cfg(not(target_pointer_width = "32"))]
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-probes"))]
     pub const fn with_trigger_packet_counts_model(
         mut self,
         primary: u8,

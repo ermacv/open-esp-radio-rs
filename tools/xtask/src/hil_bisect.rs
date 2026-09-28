@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Context, Result, hil_runs};
 
 /// The file declaring the HIL protocol version.
-const PROTOCOL_SOURCE: &str = "hil/protocol/src/message.rs";
+pub(crate) const PROTOCOL_SOURCE: &str = "hil/protocol/src/message.rs";
 const REPORT_SCHEMA: u16 = 1;
 
 #[derive(clap::Parser)]
@@ -174,7 +174,7 @@ pub fn search(len: usize, mut probe: impl FnMut(usize) -> Result<Probe>) -> Resu
 }
 
 /// `N` from the `PROTOCOL_VERSION: u16 = N;` declaration.
-fn protocol_version(source: &str) -> Option<u16> {
+pub(crate) fn protocol_version(source: &str) -> Option<u16> {
     source.lines().find_map(|line| {
         line.split_once("PROTOCOL_VERSION: u16 =")?
             .1

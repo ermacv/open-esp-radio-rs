@@ -18,6 +18,7 @@ pub mod firmware;
 pub mod firmware_catalog;
 pub mod graph;
 pub mod hil;
+pub mod hil_ab;
 pub mod hil_baseline;
 pub mod hil_bisect;
 pub mod hil_board;

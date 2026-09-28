@@ -92,6 +92,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             return wait_for_service(&args[2..]);
         }
         Some("wait") => return crate::hil_jobs::wait_command(&args[1..]),
+        Some("ab") => return crate::hil_ab::run(ctx, &options.owner(ctx)?, &args[1..]),
         Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
     }
@@ -116,7 +117,17 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let owner = options
         .owner(ctx)
         .unwrap_or_else(|_| String::from("unregistered"));
-    let mut job = crate::hil_jobs::Running::begin(ctx, &owner, &args, after.as_deref())?;
+    // Only a command that produces runs is a job; a read-only one is not.
+    let mut job = if produces_runs(&args) {
+        Some(crate::hil_jobs::Running::begin(
+            ctx,
+            &owner,
+            &args,
+            after.as_deref(),
+        )?)
+    } else {
+        None
+    };
     let (baseline, args) = crate::hil_baseline::take(args)?;
     let args = args.as_slice();
     let baseline = match baseline {
@@ -237,32 +248,38 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .collect::<Vec<_>>();
         forward_run_receipt(&run_ids)?;
         let store = crate::hil_store::shared_runs(HIL_TARGET)?;
-        job.finish(
-            &run_ids,
-            &run_ids
-                .iter()
-                .map(|id| crate::hil_runs::load(&store.join(id)).and_then(|run| run.outcome))
-                .collect::<Vec<_>>(),
-        )?;
+        if let Some(job) = job.as_mut() {
+            job.finish(
+                &run_ids,
+                &run_ids
+                    .iter()
+                    .map(|id| crate::hil_runs::load(&store.join(id)).and_then(|run| run.outcome))
+                    .collect::<Vec<_>>(),
+            )?;
+        }
         let created = runs_dirty(&run_ids)?;
-        match evidence_skip_reason(
-            record_forced,
-            args.iter().any(|arg| {
-                arg.to_str().is_some_and(|arg| {
-                    arg.starts_with("--source-include")
-                        || arg.starts_with("--source-snapshot")
-                        || arg == "--include-untracked"
-                })
-            }),
-            &created,
-        ) {
-            None if record_forced => record_evidence(ctx, &receipt_path, &run_ids)?,
-            None => remember_pending(ctx, options.owner(ctx).ok(), &run_ids)?,
-            // A runner that created no run has said why itself.
-            Some(_) if created.is_empty() => {}
-            Some(reason) => eprintln!(
-                "hil: HIL evidence not recorded: {reason}; pass {RECORD_EVIDENCE} to record it"
-            ),
+        if std::env::var_os(oer_hil_runner_core::experiment::EXPERIMENT_ENV).is_some() {
+            eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
+        } else {
+            match evidence_skip_reason(
+                record_forced,
+                args.iter().any(|arg| {
+                    arg.to_str().is_some_and(|arg| {
+                        arg.starts_with("--source-include")
+                            || arg.starts_with("--source-snapshot")
+                            || arg == "--include-untracked"
+                    })
+                }),
+                &created,
+            ) {
+                None if record_forced => record_evidence(ctx, &receipt_path, &run_ids)?,
+                None => remember_pending(ctx, options.owner(ctx).ok(), &run_ids)?,
+                // A runner that created no run has said why itself.
+                Some(_) if created.is_empty() => {}
+                Some(reason) => eprintln!(
+                    "hil: HIL evidence not recorded: {reason}; pass {RECORD_EVIDENCE} to record it"
+                ),
+            }
         }
         if let Err(error) = prune_automatically(ctx) {
             eprintln!("hil: automatic pruning of the run store failed: {error}");
@@ -277,6 +294,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
   cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
   cargo hil bisect --good A --bad B --scenario S [--layout-seed N]   first commit at which S stops passing
+  cargo hil ab --a VARIANT --b VARIANT --scenario S [--repetitions N] [--layout-seeds K]   A/B comparison with noise-aware verdicts
   cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
   cargo hil wait --service [BOARD...] block until the boards (all when none) and the stand are in service
   cargo hil wait JOB                  block until the job ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
@@ -529,6 +547,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         "preempt",
         "profile",
         "bisect",
+        "ab",
         "wait",
     ];
     let mut root = node(&["hil"], &stand, &["--owner"]);
@@ -559,6 +578,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         ("flash", crate::hil_flash::FlashCli::command()),
         ("profile", ProfileCli::command()),
         ("bisect", crate::hil_bisect::BisectCli::command()),
+        ("ab", crate::hil_ab::AbCli::command()),
     ] {
         nodes.extend(walk(&command, &path(&["hil", name])));
     }

@@ -13,6 +13,7 @@ pub mod device;
 pub mod durable;
 pub mod error;
 pub mod evidence;
+pub mod experiment;
 pub mod failure;
 pub mod fixture;
 pub mod image;

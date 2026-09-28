@@ -367,6 +367,9 @@ pub struct RunManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lab_provenance_path: Option<PathBuf>,
     pub firmware: Vec<FirmwareArtifact>,
+    /// The A/B experiment arm this run measured, when `cargo hil ab` ran it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experiment: Option<crate::experiment::Experiment>,
 }
 
 impl RunManifest {

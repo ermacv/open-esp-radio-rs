@@ -43,6 +43,7 @@ fn manifest() -> RunManifest {
         },
         lab_provenance_path: None,
         firmware: Vec::new(),
+        experiment: None,
     }
 }
 

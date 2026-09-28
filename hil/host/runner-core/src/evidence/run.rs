@@ -152,6 +152,7 @@ impl RunSession {
             },
             lab_provenance_path: None,
             firmware: Vec::new(),
+            experiment: crate::experiment::Experiment::from_environment()?,
         };
         atomic_json(&directory.join("manifest.json"), &manifest)?;
         record_created_run(&manifest.run_id)?;

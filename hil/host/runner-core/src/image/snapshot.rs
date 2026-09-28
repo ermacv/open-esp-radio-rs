@@ -357,20 +357,31 @@ struct Selection {
 /// and, when `include_untracked`, every untracked file inside an image
 /// package.
 pub fn capture(root: &Path, include: &[String], include_untracked: bool) -> Result<Snapshot> {
+    let overrides = crate::experiment::Dependency::ALL
+        .into_iter()
+        .filter_map(|dependency| {
+            std::env::var_os(dependency.root_env()).map(|path| (dependency, PathBuf::from(path)))
+        })
+        .collect::<Vec<_>>();
+    capture_with_overrides(root, include, include_untracked, &overrides)
+}
+
+/// [`capture`] with the local dependency checkouts named by `overrides`
+/// instead of the environment's.
+pub fn capture_with_overrides(
+    root: &Path,
+    include: &[String],
+    include_untracked: bool,
+    overrides: &[(crate::experiment::Dependency, PathBuf)],
+) -> Result<Snapshot> {
     let scopes = if include_untracked {
         untracked_scopes(image_packages(root)?)
     } else {
         Vec::new()
     };
     let mut roots = vec![("repository".to_owned(), root.canonicalize()?)];
-    for (name, variable) in [
-        ("esp-hal", "ESP_HAL_ROOT"),
-        ("embassy", "EMBASSY_ROOT"),
-        ("xarxa", "OPEN_RADIO_XARXA_ROOT"),
-    ] {
-        if let Some(path) = std::env::var_os(variable) {
-            roots.push((name.into(), PathBuf::from(path).canonicalize()?));
-        }
+    for (dependency, path) in overrides {
+        roots.push((dependency.id().into(), path.canonicalize()?));
     }
     capture_roots(
         &roots,

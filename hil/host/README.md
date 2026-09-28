@@ -621,6 +621,39 @@ records every step (commit, subject, runner, verdict and run) and the
 conclusion: the first bad commit (exit 0), the commits broken revisions leave
 ambiguous (exit 1), or why it stopped (exit 2). Its runs record no evidence.
 
+### A/B comparison
+
+```console
+cargo hil ab --a 'rev=main' --b 'rev=main;override:xarxa=/home/me/src/xarxa' \
+  --scenario udp-rx-ht40-task-residence-saturated --repetitions 3 --layout-seeds 2
+```
+
+`ab` compares two variants of the firmware on the same scenarios. A variant
+is a repository revision (`rev=`, HEAD when omitted) and, after `;`, local
+checkouts that replace pinned dependencies (`override:esp-hal=`,
+`override:embassy=`, `override:xarxa=`, the checkouts `ESP_HAL_ROOT`,
+`EMBASSY_ROOT` and `OPEN_RADIO_XARXA_ROOT` name). Each arm's revision is
+checked out in a worktree below `target/hil/ab/<id>/` and captured with its
+overrides into a source snapshot; this checkout's runner builds and runs
+both, so both revisions must have this checkout's `PROTOCOL_VERSION`. For
+every layout seed `1..=K` the first round runs A, then B, building their
+images; the remaining rounds replay those exact images, alternating A and B
+under one whole-stand lease, so drift of the air and the calibrations falls
+on both arms. Every run records `experiment` (its id, arm and variant: the
+commit and each override's path, commit and dirtiness) in its manifest and
+no evidence.
+
+The report takes one value per run and measurement (the mean over the run's
+repetitions) and compares the arms with `hil_perf::compare`: each arm's mean,
+deviation and count, the difference B − A with the half-width of its Welch
+95 % confidence interval, and a verdict: `significant` (the interval excludes
+zero and the difference is at least 2 % of A's mean) with the better arm,
+`within-noise`, or `insufficient-repetitions` (fewer than 3 runs on a side).
+A gated measurement's direction is its gate's; an ungated one is compared as
+if higher were better and says so. `ab-report.json` beside the worktrees
+holds the variants, every run and every comparison; the command prints a
+summary. Image features as a variant are not supported yet.
+
 ### Performance across commits
 
 A scenario's gated measurements, those with an `at-least` or `at-most`

@@ -34,7 +34,7 @@ pub enum Better {
 impl Better {
     /// The direction an `at-least` or `at-most` gate prefers; an `exactly`
     /// gate is a correctness check, not a performance figure.
-    fn from_threshold(threshold: &Threshold) -> Option<(Self, f64)> {
+    pub(crate) fn from_threshold(threshold: &Threshold) -> Option<(Self, f64)> {
         let value = threshold.value as f64;
         match threshold.comparison {
             Comparison::AtLeast => Some((Self::Higher, value)),

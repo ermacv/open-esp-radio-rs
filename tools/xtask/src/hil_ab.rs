@@ -199,7 +199,12 @@ pub fn compare(runs: &[(Arm, hil_runs::Run)]) -> Vec<MeasurementComparison> {
         .collect()
 }
 
-pub(crate) fn run(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
+/// Run the comparison; returns each created run with its outcome.
+pub(crate) fn run(
+    ctx: &Context,
+    owner: &str,
+    args: &[OsString],
+) -> Result<Vec<(String, Option<oer_hil_schema::run::Outcome>)>> {
     use clap::Parser as _;
     let cli = AbCli::try_parse_from(
         std::iter::once(OsString::from("cargo hil ab")).chain(args.iter().cloned()),
@@ -305,7 +310,10 @@ pub(crate) fn run(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::
     }
     print!("{}", summary(&report));
     println!("report: {}", path.display());
-    Ok(std::process::ExitCode::SUCCESS)
+    Ok(loaded
+        .iter()
+        .map(|(_, run)| (run.id.clone(), run.outcome))
+        .collect())
 }
 
 /// Add the run `id` of `arm` to the report and to the loaded runs.
@@ -487,6 +495,8 @@ impl PreparedArm {
                 serde_json::to_string(&experiment)?,
             )
             .env(RUN_RECEIPT_ENV, receipt)
+            // Each arm run is a job of its own, not the comparison's.
+            .env_remove(crate::hil_jobs::JOB_ENV)
             .stdout(log.try_clone()?)
             .stderr(log);
         Ok(command)

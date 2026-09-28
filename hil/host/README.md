@@ -630,7 +630,9 @@ images; the remaining rounds replay those exact images, alternating A and B
 under one whole-stand lease, so drift of the air and the calibrations falls
 on both arms. Every run records `experiment` (its id, arm and variant: the
 commit and each override's path, commit and dirtiness) in its manifest and
-no evidence.
+no evidence. A comparison takes hours, so like a run it is a job: `--enqueue`
+starts it detached and prints the job id for `cargo hil wait`, and `--after
+JOB` orders it after another job.
 
 The report takes one value per run and measurement (the mean over the run's
 repetitions) and compares the arms with `hil_perf::compare`: each arm's mean,

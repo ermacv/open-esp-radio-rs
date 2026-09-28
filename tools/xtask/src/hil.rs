@@ -86,7 +86,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             return wait_for_service(&args[2..]);
         }
         Some("wait") => return wait(&args[1..]),
-        Some("ab") => return crate::hil_ab::run(ctx, &options.owner(ctx)?, &args[1..]),
+        Some("ab") => return ab(ctx, &options.owner(ctx)?, args),
         Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
     }
@@ -218,7 +218,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
   cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
   cargo hil bisect --good A --bad B --scenario S [--layout-seed N]   first commit at which S stops passing
-  cargo hil ab --a VARIANT --b VARIANT --scenario S [--repetitions N] [--layout-seeds K]   A/B comparison with noise-aware verdicts
+  cargo hil ab --a VARIANT --b VARIANT --scenario S [--repetitions N] [--layout-seeds K] [--enqueue] [--after JOB]
+                                      A/B comparison with noise-aware verdicts; --enqueue makes it a job
   cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
   cargo hil wait --service [BOARD...] block until the boards (all when none) and the stand are in service
   cargo hil wait JOB|RUN              block until the job or run ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
@@ -485,6 +486,14 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
     ] {
         nodes.extend(walk(&command, &path(&["hil", name])));
     }
+    // The stand makes `ab` a job as it does a run.
+    if let Some(ab) = nodes
+        .iter_mut()
+        .find(|node| node.path == path(&["hil", "ab"]))
+    {
+        ab.flags
+            .extend(["--enqueue", "--after", "--after-any"].map(String::from));
+    }
     nodes.extend(runner_nodes.into_iter().skip(1));
     println!("{}", serde_json::to_string_pretty(&nodes)?);
     Ok(std::process::ExitCode::SUCCESS)
@@ -590,6 +599,23 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
         print!("{}", crate::hil_jobs::describe(&jobs, &status));
         print!("{}", crate::hil_jobs::describe_ended(&ended));
     }
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// `cargo hil ab ...`, a job like a run: `--enqueue` starts it detached and
+/// prints its id for `cargo hil wait`, and `--after JOB` orders it.
+fn ab(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::ExitCode> {
+    let (enqueue, after, args) = crate::hil_jobs::take(args.to_vec())?;
+    if enqueue {
+        let id = crate::hil_jobs::enqueue(ctx, owner, &args, after)?;
+        eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
+        println!("{id}");
+        return Ok(std::process::ExitCode::SUCCESS);
+    }
+    let mut job = crate::hil_jobs::Running::begin(ctx, owner, &args, after.as_ref())?;
+    let runs = crate::hil_ab::run(ctx, owner, &args[1..])?;
+    let (ids, outcomes): (Vec<_>, Vec<_>) = runs.into_iter().unzip();
+    job.finish(&ids, &outcomes)?;
     Ok(std::process::ExitCode::SUCCESS)
 }
 

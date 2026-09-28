@@ -16,17 +16,18 @@ use oer::wifi::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
 
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 
-use oer::systems::esp32s31::embassy::wifi::{
-    self as integration, ConcurrentPartitions, DeadlineBudget, DeadlineWatchdog, EspHalRadioClocks,
-    EspHalRadioPlatform, EspHalWifiPlatform, RadioConfig, RadioHardware, SharedRadio,
-    WatchdogConfig, WifiParts, WifiStarted,
+use oer::systems::esp32s31::embassy::{
+    radio::{self as shared_radio, ConcurrentPartitions, RadioStart},
+    wifi::{
+        self as integration, DeadlineBudget, DeadlineWatchdog, EspHalRadioPlatform,
+        EspHalWifiPlatform, RadioConfig, WatchdogConfig, WifiParts, WifiStarted,
+    },
 };
 
 use static_cell::StaticCell;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 // The shared radio outlives every client and its periodic PHY tracking task.
-static RADIO: StaticCell<SharedRadio> = StaticCell::new();
 // The entropy source owns RNG hardware for the entire process. It must not be
 // dropped while the radio keeps the nested `Trng` owner across await points.
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
@@ -56,12 +57,6 @@ extern "C" fn runtime_main() -> ! {
         peripherals.LP_TSENS,
         peripherals.I2C_ANA_MST,
     );
-    let identity = radio_platform.phy_calibration_identity();
-    let hardware =
-        RadioHardware::take().expect("ESP32-S31 radio hardware must have a unique owner");
-    let (radio, partitions) =
-        SharedRadio::new(hardware, radio_platform, EspHalRadioClocks::new(), identity);
-    let radio = RADIO.init(radio);
     let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
         peripherals.FROM_CPU_INTR0,
     )));
@@ -70,7 +65,7 @@ extern "C" fn runtime_main() -> ! {
     unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
     executor.run(|spawner| {
         spawner.spawn(
-            monitor_task(spawner, radio, partitions, wifi_platform, trng, watchdog)
+            monitor_task(spawner, radio_platform, wifi_platform, trng, watchdog)
                 .expect("monitor task storage must be available once"),
         );
     })
@@ -79,8 +74,7 @@ extern "C" fn runtime_main() -> ! {
 #[embassy_executor::task]
 async fn monitor_task(
     spawner: embassy_executor::Spawner,
-    radio: &'static SharedRadio,
-    partitions: ConcurrentPartitions,
+    radio_platform: EspHalRadioPlatform,
     wifi_platform: EspHalWifiPlatform,
     trng: Trng,
     watchdog: &'static DeadlineWatchdog,
@@ -104,10 +98,8 @@ async fn monitor_task(
         WifiMacAddress::new(access_point).expect("AP MAC must be unicast"),
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
-    spawner.spawn(tracking_task(radio).expect("PHY tracking task storage is available once"));
-    spawner.spawn(
-        coex_schedule_task(radio).expect("coexistence schedule task storage is available once"),
-    );
+    let (radio, partitions) = shared_radio::start(spawner, radio_platform, RadioStart::new())
+        .expect("the shared radio starts once");
     let ConcurrentPartitions {
         wifi: partition, ..
     } = partitions;
@@ -168,17 +160,4 @@ async fn monitor_task(
 )]
 async fn radio_task(spawner: embassy_executor::Spawner, runner: integration::SystemRunner) {
     runner.run(spawner).await;
-}
-
-/// ESP-IDF's periodic `phy_track_pll` timer for the shared radio.
-/// The coexistence schedule's phase timer for the shared radio.
-#[embassy_executor::task]
-async fn coex_schedule_task(radio: &'static SharedRadio) {
-    radio.run_coex_schedule().await
-}
-
-#[embassy_executor::task]
-async fn tracking_task(radio: &'static SharedRadio) {
-    let error = radio.run_tracking().await;
-    panic!("shared PHY tracking failed: {error:?}");
 }

@@ -22,14 +22,15 @@ use esp_hal::{
 };
 use log::{error, info};
 use oer::systems::esp32s31::embassy::ieee802154::{
-    EspHalRadioClocks, EspHalRadioPlatform, IEEE802154_EVENT_CAPACITY, Ieee802154MacOwners,
-    Ieee802154Parked, Ieee802154PibDefaults, Ieee802154System, RadioHardware, SharedRadio,
+    EspHalRadioPlatform, IEEE802154_EVENT_CAPACITY, Ieee802154MacOwners, Ieee802154Parked,
+    Ieee802154PibDefaults, Ieee802154System,
     openthread::{
         OPEN_THREAD_RADIO_CAPABILITIES, OpenThreadRadio, OpenThreadRadioDefaults,
         frames::role_coex_config,
     },
     start,
 };
+use oer::systems::esp32s31::embassy::radio::{self as shared_radio, RadioStart, SharedRadio};
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 use openthread::{OpenThread, OtResources, OtUdpResources, SimpleRamSettings, UdpSocket};
 use static_cell::{ConstStaticCell, StaticCell};
@@ -67,7 +68,6 @@ static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 // The entropy source must outlive every `Trng` OpenThread draws from.
 static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 static TRNG: StaticCell<Trng> = StaticCell::new();
-static RADIO: StaticCell<SharedRadio> = StaticCell::new();
 static SYSTEM: StaticCell<Ieee802154System> = StaticCell::new();
 static OT_RESOURCES: StaticCell<OtResources> = StaticCell::new();
 static OT_UDP: StaticCell<OtUdpResources<UDP_SOCKETS, UDP_BUFFER>> = StaticCell::new();
@@ -136,11 +136,8 @@ async fn thread_task(
     platform: EspHalRadioPlatform,
     trng: Trng,
 ) {
-    let hardware = RadioHardware::take().expect("the radio hardware is taken once");
-    let identity = platform.phy_calibration_identity();
-    let (radio, partitions) =
-        SharedRadio::new(hardware, platform, EspHalRadioClocks::new(), identity);
-    let radio: &'static SharedRadio = RADIO.init(radio);
+    let (radio, partitions) = shared_radio::start(spawner, platform, RadioStart::new())
+        .expect("the shared radio starts once");
     let defaults = Ieee802154PibDefaults::default();
     let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)
         .expect("the IEEE 802.15.4 engine frames are taken once");
@@ -154,7 +151,6 @@ async fn thread_task(
         return;
     };
     let system = SYSTEM.init(system);
-    spawner.spawn(tracking_task(radio).expect("tracking task storage must be available once"));
 
     let ot_settings = OT_SETTINGS.init(SimpleRamSettings::new(OT_SETTINGS_BUFFER.take()));
     // OpenThread's `SubMac` reads the radio capabilities when the instance
@@ -221,14 +217,6 @@ async fn thread_task(
             error!("the echo to {remote} failed");
         }
     }
-}
-
-/// The periodic PHY tracking of the shared radio, as ESP-IDF's
-/// `phy_track_pll` timer runs it.
-#[embassy_executor::task]
-async fn tracking_task(radio: &'static SharedRadio) {
-    let failure = radio.run_tracking().await;
-    error!("PHY tracking stopped: {failure:?}; the radio needs a reset");
 }
 
 #[embassy_executor::task]

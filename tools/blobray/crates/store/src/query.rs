@@ -162,7 +162,7 @@ impl Project {
             .container
             .ok_or_else(|| integrity("revision index lacks container framing"))?;
         sink.container(kind, members_complete, control)?;
-        let mut json = Json::new(&manifest);
+        let mut json = Json::new(&manifest, memory);
         let (start, end) = scope
             .diagnostics
             .ok_or_else(|| integrity("revision index lacks input diagnostics"))?;
@@ -329,7 +329,7 @@ pub(crate) fn walk_manifest(
     phase: RunPhase,
 ) -> Result<bool> {
     control.phase(phase)?;
-    let mut json = Json::new(manifest);
+    let mut json = Json::new(manifest, memory);
     let root = json.root(control)?;
     let [schema, project, parent, target, producer, inputs] = json.fields(
         root,

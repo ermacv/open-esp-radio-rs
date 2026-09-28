@@ -20,6 +20,13 @@ impl<T> Deref for Decoded<'_, T> {
         &self.value
     }
 }
+/// Values at least this long have their end recorded by the scan that finds
+/// it, so walking into nested values scans each large value once.
+const RECORDED_VALUE: u64 = WORK_BLOCK as u64;
+/// Admitted bytes per recorded value end, with the table's node overhead.
+const RECORDED_END_COST: u64 = 48;
+/// Recorded value ends admitted by the table's first growth.
+const RECORDED_ENDS_FIRST: usize = 64;
 pub(crate) struct Json<'a> {
     source: &'a dyn ByteSource,
     /// The source's length, fixed for its lifetime.
@@ -27,16 +34,47 @@ pub(crate) struct Json<'a> {
     cache: [u8; WORK_BLOCK],
     base: u64,
     count: usize,
+    /// End of every recorded large value by its start.
+    ends: std::collections::BTreeMap<u64, u64>,
+    memory: &'a WorkingMemory,
+    /// Recorded ends the reservation admits.
+    ends_admitted: usize,
+    _ends_reservation: Option<MemoryReservation<'a>>,
 }
 impl<'a> Json<'a> {
-    pub fn new(source: &'a dyn ByteSource) -> Self {
+    pub fn new(source: &'a dyn ByteSource, memory: &'a WorkingMemory) -> Self {
         Self {
             source,
             len: source.len(),
             cache: [0; WORK_BLOCK],
             base: 0,
             count: 0,
+            ends: std::collections::BTreeMap::new(),
+            memory,
+            ends_admitted: 0,
+            _ends_reservation: None,
         }
+    }
+    /// Record the end of the value at `start` when it is large.
+    #[inline]
+    fn record(&mut self, start: u64, end: u64, control: &mut dyn RunControl) -> Result<()> {
+        if end - start < RECORDED_VALUE {
+            return Ok(());
+        }
+        if self.ends.len() == self.ends_admitted {
+            let count = (self.ends_admitted * 2).max(RECORDED_ENDS_FIRST);
+            self._ends_reservation = Some(
+                self.memory
+                    .reserve(count as u64 * RECORDED_END_COST, control.position())?,
+            );
+            self.ends_admitted = count;
+        }
+        self.ends.insert(start, end);
+        Ok(())
+    }
+    /// The first recorded value that starts at or after `offset`.
+    fn recorded_from(&self, offset: u64) -> Option<(u64, u64)> {
+        self.ends.range(offset..).next().map(|(s, e)| (*s, *e))
     }
     /// Bring `offset` into the cached window; returns its index there.
     fn load(&mut self, offset: u64, control: &mut dyn RunControl) -> Result<usize> {
@@ -99,12 +137,24 @@ impl<'a> Json<'a> {
         control.checkpoint(1)?;
         let start = self.whitespace(start, control)?;
         let kind = self.byte(start, control)?;
+        if let Some(end) = self.ends.get(&start) {
+            return Ok(Node {
+                start,
+                end: *end,
+                kind,
+            });
+        }
         let mut end = start;
         if kind == b'"' {
             end = self.string_end(start, control)?;
+            self.record(start, end, control)?;
         } else if matches!(kind, b'[' | b'{') {
             let mut stack = [0u8; 128];
+            let mut starts = [0u64; 128];
             let mut depth = 0;
+            // Recorded values start where the scan lands on their first
+            // byte; values recorded during this scan lie behind it.
+            let mut recorded = self.recorded_from(start + 1);
             loop {
                 let (at, byte) = self.find(
                     end,
@@ -112,8 +162,19 @@ impl<'a> Json<'a> {
                     control,
                 )?;
                 end = at;
+                if let Some((next, next_end)) = recorded
+                    && next <= at
+                {
+                    recorded = self.recorded_from(at + 1);
+                    // A recorded nested value was scanned already.
+                    if next == at {
+                        end = next_end;
+                        continue;
+                    }
+                }
                 if byte == b'"' {
                     end = self.string_end(end, control)?;
+                    self.record(at, end, control)?;
                     continue;
                 }
                 match byte {
@@ -122,6 +183,7 @@ impl<'a> Json<'a> {
                             return Err(integrity("JSON nesting exceeds schema decoder limit"));
                         }
                         stack[depth] = if byte == b'[' { b']' } else { b'}' };
+                        starts[depth] = at;
                         depth += 1;
                     }
                     b']' | b'}' => {
@@ -129,6 +191,7 @@ impl<'a> Json<'a> {
                             return Err(integrity("mismatched JSON delimiter"));
                         }
                         depth -= 1;
+                        self.record(starts[depth], at + 1, control)?;
                         if depth == 0 {
                             end += 1;
                             break;
@@ -314,7 +377,8 @@ mod tests {
     fn window_scanning_finds_the_same_value_ends() {
         let bytes = straddling();
         let source: &[u8] = &bytes;
-        let mut json = Json::new(&source);
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let mut json = Json::new(&source, &memory);
         let root = json.root(&mut || Ok(())).unwrap();
         assert_eq!((root.start, root.end), (0, bytes.len() as u64));
         let [pad, list, n] = json
@@ -335,10 +399,77 @@ mod tests {
     fn unterminated_strings_and_control_characters_are_rejected() {
         for document in [&b"\"abc"[..], b"\"a\\", b"\"a\nb\""] {
             let source: &[u8] = document;
+            let memory = WorkingMemory::new(1 << 20).unwrap();
             assert_eq!(
-                Json::new(&source).root(&mut || Ok(())).err().unwrap().code,
+                Json::new(&source, &memory)
+                    .root(&mut || Ok(()))
+                    .err()
+                    .unwrap()
+                    .code,
                 ErrorCode::Integrity
             );
         }
+    }
+
+    /// A source that counts the bytes read from it.
+    struct Counted<'a> {
+        bytes: &'a [u8],
+        read: std::cell::Cell<u64>,
+    }
+    impl ByteSource for Counted<'_> {
+        fn len(&self) -> u64 {
+            self.bytes.len() as u64
+        }
+        fn read_at(
+            &self,
+            offset: u64,
+            bytes: &mut [u8],
+            control: &mut dyn RunControl,
+        ) -> Result<()> {
+            self.read.set(self.read.get() + bytes.len() as u64);
+            self.bytes.read_at(offset, bytes, control)
+        }
+    }
+
+    #[test]
+    fn walking_into_nested_values_scans_each_large_value_once() {
+        // Six levels of `{"v":[<level>, "<padding>"]}`: every level is larger
+        // than a recorded value, so without recorded ends each nested field
+        // would rescan everything below it.
+        const LEVELS: usize = 6;
+        const PADDING: usize = 16 * WORK_BLOCK;
+        let mut document = b"0".to_vec();
+        for _ in 0..LEVELS {
+            let mut level = b"{\"v\":[".to_vec();
+            level.extend_from_slice(&document);
+            level.extend_from_slice(b",\"");
+            level.resize(level.len() + PADDING, b'x');
+            level.extend_from_slice(b"\"]}");
+            document = level;
+        }
+        let source = Counted {
+            bytes: &document,
+            read: Default::default(),
+        };
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let mut json = Json::new(&source, &memory);
+        let mut node = json.root(&mut || Ok(())).unwrap();
+        for _ in 0..LEVELS {
+            let [values] = json.fields(node, ["v"], &mut || Ok(())).unwrap();
+            let mut values = json.array(values).unwrap();
+            node = json.next(&mut values, &mut || Ok(())).unwrap().unwrap();
+            let padding = json.next(&mut values, &mut || Ok(())).unwrap().unwrap();
+            assert_eq!(padding.end - padding.start, PADDING as u64 + 2);
+            assert!(json.next(&mut values, &mut || Ok(())).unwrap().is_none());
+        }
+        assert_eq!(&document[node.start as usize..node.end as usize], b"0");
+        // One scan, plus the windows the field and separator checks reload;
+        // rescanning each level would read the document about eight times.
+        assert!(
+            source.read.get() < 2 * document.len() as u64,
+            "{} bytes read for a {}-byte document",
+            source.read.get(),
+            document.len()
+        );
     }
 }

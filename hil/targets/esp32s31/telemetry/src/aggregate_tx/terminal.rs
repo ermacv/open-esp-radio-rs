@@ -1,7 +1,7 @@
 //! Terminal receipts only; no intermediate BA or live-tail inference.
 use core::sync::atomic::{AtomicU32, Ordering};
 use oer_hil_protocol::StationTxTerminalEvidence;
-use oer_ieee80211_softmac::{MacAmpduTxResult, MacAmpduTxStatus, MacTxResult};
+use oer_ieee80211_softmac::{MacAmpduTxResult, MacAmpduTxStatus};
 
 pub(super) struct Counters {
     exchanges: AtomicU32,
@@ -45,14 +45,11 @@ impl Counters {
             .fetch_add(u32::from(acknowledged), Ordering::Relaxed);
         self.unacknowledged
             .fetch_add(u32::from(unacknowledged), Ordering::Relaxed);
-        if let Some(ordinary) = status.ordinary_retry {
-            let counter = if matches!(ordinary.result, MacTxResult::Transmitted) {
-                &self.ordinary_recovered
-            } else {
-                &self.ordinary_failed
-            };
-            counter.fetch_add(1, Ordering::Relaxed);
-        }
+        let individual = status.individual_retries;
+        self.ordinary_recovered
+            .fetch_add(u32::from(individual.transmitted), Ordering::Relaxed);
+        self.ordinary_failed
+            .fetch_add(u32::from(individual.failed), Ordering::Relaxed);
     }
 
     pub(super) fn snapshot(&self) -> StationTxTerminalEvidence {

@@ -284,13 +284,13 @@ pub struct MacTxStatus<Rate> {
 
 /// Terminal result of one logical A-MPDU exchange.
 ///
-/// A successful aggregate may include several aggregate publications and one
-/// final ordinary retry for a detached MPDU.  `Delivered` therefore describes
+/// A successful aggregate may include several aggregate publications followed
+/// by individual retries of MPDUs taken out of it.  `Delivered` therefore describes
 /// the complete HMAC-visible exchange, not just receipt of one BlockAck.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacAmpduTxResult {
-    /// Every original MPDU was acknowledged, including an optional ordinary
-    /// retry of one detached MPDU.
+    /// Every original MPDU was acknowledged, by BlockAck or by an individual
+    /// retry.
     Delivered,
     /// The retry policy ended while at least one original MPDU was unacknowledged.
     Incomplete,
@@ -302,9 +302,9 @@ pub enum MacAmpduTxResult {
 
 /// Normalized terminal status for one logical A-MPDU exchange.
 ///
-/// The aggregate rate is kept separately from the optional ordinary retry's
-/// terminal rate.  Collapsing those into one `final_rate` would lose which
-/// part of the exchange used which PHY policy.
+/// The aggregate rate is kept separately from the individual retries' final
+/// rate.  Collapsing those into one `final_rate` would lose which part of the
+/// exchange used which PHY policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacAmpduTxStatus<Rate> {
     pub result: MacAmpduTxResult,
@@ -314,24 +314,52 @@ pub struct MacAmpduTxStatus<Rate> {
     pub aggregate_rate: Rate,
     /// Original MPDUs acknowledged by one or more BlockAck responses.
     pub block_acknowledged_subframes: u16,
-    /// Terminal status of a detached one-MPDU retry, when the backend used
-    /// that fallback after the last aggregate publication.
-    pub ordinary_retry: Option<MacTxStatus<Rate>>,
+    /// MPDUs taken out of the aggregate after its last publication and
+    /// sent as individual frames.
+    pub individual_retries: MacIndividualRetries<Rate>,
+}
+
+/// Individual transmissions of MPDUs that left an A-MPDU exchange: a single
+/// missing HT MPDU, or every live missing MPDU once the BlockAck agreement
+/// ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacIndividualRetries<Rate> {
+    /// MPDUs whose individual transmission was acknowledged.
+    pub transmitted: u16,
+    /// MPDUs whose individual transmission ended unacknowledged.
+    pub failed: u16,
+    /// Hardware publications across every individual transmission.
+    pub attempts: u16,
+    /// Rate of the last individual transmission, if any was made.
+    pub final_rate: Option<Rate>,
+}
+
+impl<Rate> MacIndividualRetries<Rate> {
+    pub const NONE: Self = Self {
+        transmitted: 0,
+        failed: 0,
+        attempts: 0,
+        final_rate: None,
+    };
+
+    /// Account one finished individual transmission.
+    pub fn record(&mut self, status: MacTxStatus<Rate>) {
+        if matches!(status.result, MacTxResult::Transmitted) {
+            self.transmitted = self.transmitted.saturating_add(1);
+        } else {
+            self.failed = self.failed.saturating_add(1);
+        }
+        self.attempts = self.attempts.saturating_add(u16::from(status.attempts));
+        self.final_rate = Some(status.final_rate);
+    }
 }
 
 impl<Rate: Copy> MacAmpduTxStatus<Rate> {
-    /// Original MPDUs proved delivered by BlockAck plus an optional successful
-    /// ordinary retry.
+    /// Original MPDUs proved delivered by BlockAck or by an acknowledged
+    /// individual retry.
     pub const fn delivered_subframes(&self) -> u16 {
-        let ordinary_delivered = match self.ordinary_retry {
-            Some(MacTxStatus {
-                result: MacTxResult::Transmitted,
-                ..
-            }) => 1,
-            _ => 0,
-        };
         self.block_acknowledged_subframes
-            .saturating_add(ordinary_delivered)
+            .saturating_add(self.individual_retries.transmitted)
     }
 
     pub const fn fully_delivered(&self) -> bool {
@@ -342,11 +370,7 @@ impl<Rate: Copy> MacAmpduTxStatus<Rate> {
     /// Aggregate and ordinary hardware publications made for the complete
     /// exchange.
     pub const fn total_publication_attempts(&self) -> u16 {
-        let ordinary_attempts = match self.ordinary_retry {
-            Some(status) => status.attempts as u16,
-            None => 0,
-        };
-        self.aggregate_attempts as u16 + ordinary_attempts
+        (self.aggregate_attempts as u16).saturating_add(self.individual_retries.attempts)
     }
 }
 

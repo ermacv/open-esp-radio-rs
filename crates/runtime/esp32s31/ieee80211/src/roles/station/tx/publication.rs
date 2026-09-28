@@ -89,7 +89,6 @@ where
         // rate and descriptor program until terminal completion.
         self.config.rate = self.rate_control.ampdu_tx_rate(self.aggregate_rate_policy);
         self.last_aggregate_status = None;
-        self.pending_ordinary_retry = None;
         let selected = self.ordinary.select_network_traffic(first.ethernet())?;
         let aggregate_rate = !matches!(self.config.rate, TxPhyRate::Legacy(_));
         let ht_requires_pair = matches!(self.config.rate, TxPhyRate::Ht(_));
@@ -468,6 +467,7 @@ where
         )?;
         self.active = ConnectedTxActive::Aggregate(AggregateActive {
             traffic: prepared.traffic,
+            block_ack_generation: prepared.block_ack_generation,
             config,
             retry: prepared.retry,
             original_subframes: prepared.original_subframes,
@@ -1085,7 +1085,6 @@ where
             return Err(error);
         }
         self.last_aggregate_status = None;
-        self.pending_ordinary_retry = None;
         self.active = ConnectedTxActive::Aggregate(active);
         self.network_power.started = true;
         Ok(WifiTxProgress::Pending)

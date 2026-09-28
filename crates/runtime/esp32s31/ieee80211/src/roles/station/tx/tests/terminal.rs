@@ -79,7 +79,7 @@ fn exhausted_aggregate_emits_one_terminal_receipt() {
             aggregate_attempts: 2,
             aggregate_rate: TxPhyRate::Ht(TEST_RATE),
             block_acknowledged_subframes: 1,
-            ordinary_retry: None,
+            individual_retries: MacIndividualRetries::NONE,
         })
     );
     send_frame(&mut device, 4);

@@ -1,5 +1,5 @@
 use super::*;
-use oer_ieee80211_softmac::MacTxStatus;
+use oer_ieee80211_softmac::{MacIndividualRetries, MacTxResult, MacTxStatus};
 
 fn status(result: MacAmpduTxResult, acknowledged: u16) -> MacAmpduTxStatus<()> {
     MacAmpduTxStatus {
@@ -8,7 +8,7 @@ fn status(result: MacAmpduTxResult, acknowledged: u16) -> MacAmpduTxStatus<()> {
         aggregate_attempts: 2,
         aggregate_rate: (),
         block_acknowledged_subframes: acknowledged,
-        ordinary_retry: None,
+        individual_retries: MacIndividualRetries::NONE,
     }
 }
 
@@ -27,7 +27,7 @@ fn terminal_accounting_separates_recovered_and_exhausted_mpdus() {
             },
             2,
         );
-        value.ordinary_retry = Some(MacTxStatus {
+        value.individual_retries.record(MacTxStatus {
             result: if recovered {
                 MacTxResult::Transmitted
             } else {

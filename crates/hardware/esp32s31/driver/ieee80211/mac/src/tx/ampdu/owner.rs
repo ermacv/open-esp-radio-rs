@@ -284,6 +284,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         cookie: TxCookie,
         retry: &mut crate::tx::runtime::AmpduRetryState<CAPACITY>,
         now_micros: u64,
+        block_ack_operational: bool,
     ) -> Result<Option<RetainedAmpduRetryCompletion>, RetainedAmpduRetryCompletionError> {
         let Some(completion) = self.acknowledge_completion(hardware)? else {
             return Ok(None);
@@ -291,7 +292,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         self.detach_completed(hardware, cookie)?;
         let subframes = self.frame_count();
         let first_sequence = retry.current_first_sequence();
-        let decision = retry.observe(completion, subframes, now_micros)?;
+        let decision = retry.observe(completion, subframes, now_micros, block_ack_operational)?;
         Ok(Some(RetainedAmpduRetryCompletion {
             completion,
             first_sequence,

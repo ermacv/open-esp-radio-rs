@@ -410,6 +410,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             cookie,
             &mut retry,
             ordinary.now_micros(),
+            // The AP does not yet end a client's aggregate when its
+            // agreement ends; it keeps retrying it as an aggregate.
+            true,
         )?
         else {
             self.state = ApAmpduState::Hardware {
@@ -444,6 +447,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
             }
             AmpduRetryDecision::Finish { .. } | AmpduRetryDecision::FinishTriggerFlow => None,
+            AmpduRetryDecision::Unaggregate { .. } => unreachable!(
+                "an operational agreement that retains single MPDUs never unaggregates"
+            ),
         };
         if let Some((retry_mask, republication)) = republication {
             let aggregate = self

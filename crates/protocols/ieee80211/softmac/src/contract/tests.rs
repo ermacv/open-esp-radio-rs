@@ -127,23 +127,34 @@ fn receive_metadata_keeps_absence_and_provenance_distinct() {
 }
 
 #[test]
-fn ampdu_status_joins_block_ack_and_one_ordinary_retry() {
+fn ampdu_status_joins_block_ack_and_individual_retries() {
     let status = MacAmpduTxStatus {
         result: MacAmpduTxResult::Delivered,
         original_subframes: 3,
         aggregate_attempts: 2,
         aggregate_rate: 7_u8,
         block_acknowledged_subframes: 2,
-        ordinary_retry: Some(MacTxStatus {
+        individual_retries: MacIndividualRetries::NONE,
+    };
+    assert_eq!(status.delivered_subframes(), 2);
+    assert!(!status.fully_delivered());
+
+    let mut delivered = MacAmpduTxStatus {
+        original_subframes: 4,
+        ..status
+    };
+    for attempts in [2, 1] {
+        delivered.individual_retries.record(MacTxStatus {
             result: MacTxResult::Transmitted,
-            attempts: 2,
+            attempts,
             final_rate: 5,
             acknowledged: Some(true),
             ack_snr_db: Some(12),
             airtime_micros: None,
-        }),
-    };
-    assert_eq!(status.delivered_subframes(), 3);
-    assert_eq!(status.total_publication_attempts(), 4);
-    assert!(status.fully_delivered());
+        });
+    }
+    assert_eq!(delivered.delivered_subframes(), 4);
+    assert_eq!(delivered.total_publication_attempts(), 5);
+    assert_eq!(delivered.individual_retries.final_rate, Some(5));
+    assert!(delivered.fully_delivered());
 }

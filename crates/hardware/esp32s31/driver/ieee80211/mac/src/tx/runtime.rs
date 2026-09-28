@@ -710,9 +710,18 @@ pub enum AmpduRetryDecision {
     /// retry count and contention window, skips the Retry-bit leaf and
     /// re-enters `lmacEndFrameExchangeSequence` with the unchanged frame.
     RepublishUnchanged { retry_mask: u32 },
-    /// End aggregate ownership. The selected MPDUs were not acknowledged;
-    /// a single one may still be retried individually while its lifetime
-    /// lasts, see [`AmpduRetryState::aged`].
+    /// End aggregate ownership and send the selected MPDUs individually,
+    /// in order, each already carrying its Retry bit.
+    ///
+    /// SOURCE: `libpp.a[pp.o]::ppResortTxAMPDU` moves the remaining MPDUs
+    /// to the head of the queue's ordinary list when
+    /// `trc_isTxAmpduOperational` or `trc_tid_isTxAmpduOperational` is
+    /// false after its resort, first converting a missing aggregate head
+    /// through `ppHEAMPDU2Normal` (blobray 943d350d7). A single missing HT
+    /// MPDU takes the same ordinary path.
+    Unaggregate { retry_mask: u32 },
+    /// End aggregate ownership. The selected MPDUs were not acknowledged
+    /// and are discarded.
     Finish { retry_mask: u32 },
     /// End ownership through the vendor Trigger-based completion path.
     ///
@@ -726,6 +735,7 @@ impl AmpduRetryDecision {
         match self {
             Self::RetainAggregate { retry_mask }
             | Self::RepublishUnchanged { retry_mask }
+            | Self::Unaggregate { retry_mask }
             | Self::Finish { retry_mask } => retry_mask,
             Self::FinishTriggerFlow => 0,
         }
@@ -820,12 +830,15 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// `rcGetRate` for the state written by
     /// `lmacProcessLongRetryFail`, so a retained aggregate keeps its PHY rate.
     /// A missing MPDU stays in the aggregate until it is aged at
-    /// `now_micros`; aged MPDUs end the aggregate and are discarded.
+    /// `now_micros`; aged MPDUs end the aggregate and are discarded. Once
+    /// the TID's BlockAck agreement is no longer `block_ack_operational`,
+    /// the live missing MPDUs leave the aggregate for individual retry.
     pub fn observe(
         &mut self,
         completion: HtAmpduTxCompletion,
         observed_subframes: u8,
         now_micros: u64,
+        block_ack_operational: bool,
     ) -> Result<AmpduRetryDecision, AmpduRetryError> {
         if observed_subframes != self.current_subframes {
             return Err(AmpduRetryError::FrameCountChanged {
@@ -887,14 +900,14 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             } else {
                 (1_u32 << observed_subframes) - 1
             };
-            let retain = (observed_subframes >= 2 || self.policy.retain_single_mpdu)
-                && self.ack_timeouts < VENDOR_SHORT_RETRY_LIMIT
-                && !self.aged(now_micros);
-            if !retain {
+            if self.ack_timeouts >= VENDOR_SHORT_RETRY_LIMIT || self.aged(now_micros) {
                 return Ok(AmpduRetryDecision::Finish { retry_mask });
             }
-            self.aggregate_attempts = self.aggregate_attempts.saturating_add(1);
-            return Ok(AmpduRetryDecision::RetainAggregate { retry_mask });
+            return Ok(self.retain_or_unaggregate(
+                retry_mask,
+                observed_subframes,
+                block_ack_operational,
+            ));
         }
 
         let mut retry_mask = 0_u32;
@@ -913,16 +926,30 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         }
         self.missing_original_indices = retry_original_indices;
         let missing = retry_mask.count_ones() as u8;
-        let retain = (missing >= 2 || (missing == 1 && self.policy.retain_single_mpdu))
-            && !self.aged(now_micros);
-        if !retain {
+        if missing == 0 || self.aged(now_micros) {
             return Ok(AmpduRetryDecision::Finish { retry_mask });
         }
+        let decision = self.retain_or_unaggregate(retry_mask, missing, block_ack_operational);
+        if matches!(decision, AmpduRetryDecision::RetainAggregate { .. }) {
+            self.pending_original_indices = retry_original_indices;
+            self.current_subframes = missing;
+        }
+        Ok(decision)
+    }
 
-        self.pending_original_indices = retry_original_indices;
-        self.current_subframes = missing;
+    /// Keep `missing` live MPDUs in the aggregate, or hand them to the
+    /// ordinary queue when the agreement ended or one HT MPDU remains.
+    fn retain_or_unaggregate(
+        &mut self,
+        retry_mask: u32,
+        missing: u8,
+        block_ack_operational: bool,
+    ) -> AmpduRetryDecision {
+        if !block_ack_operational || (missing == 1 && !self.policy.retain_single_mpdu) {
+            return AmpduRetryDecision::Unaggregate { retry_mask };
+        }
         self.aggregate_attempts = self.aggregate_attempts.saturating_add(1);
-        Ok(AmpduRetryDecision::RetainAggregate { retry_mask })
+        AmpduRetryDecision::RetainAggregate { retry_mask }
     }
 
     pub const fn current_subframes(&self) -> u8 {

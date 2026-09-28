@@ -444,7 +444,7 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         .submit(&mut hardware, cookie, LegacyTxQueue::BestEffort, config)
         .unwrap();
     let observed = owner
-        .observe_retry_completion(&mut hardware, cookie, &mut retry, 0)
+        .observe_retry_completion(&mut hardware, cookie, &mut retry, 0, true)
         .unwrap()
         .unwrap();
     assert_eq!(observed.first_sequence, SequenceNumber::new(0).unwrap());
@@ -473,7 +473,7 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         )
         .unwrap();
     let observed = owner
-        .observe_retry_completion(&mut hardware, cookie, &mut retry, 0)
+        .observe_retry_completion(&mut hardware, cookie, &mut retry, 0, true)
         .unwrap()
         .unwrap();
     assert_eq!(

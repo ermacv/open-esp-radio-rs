@@ -80,7 +80,6 @@ where
             he_trigger_based: None,
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
-            pending_ordinary_retry: None,
             network_ordinary: false,
             network_power: NetworkTxPowerReport::default(),
             #[cfg(any(feature = "diagnostics", test))]
@@ -370,9 +369,11 @@ where
         match &self.active {
             ConnectedTxActive::Idle => 1,
             ConnectedTxActive::Ordinary => 1,
-            ConnectedTxActive::Aggregate(active) | ConnectedTxActive::AbortSettling(active) => {
-                usize::from(active.original_subframes)
-            }
+            ConnectedTxActive::Aggregate(active)
+            | ConnectedTxActive::AbortSettling(active)
+            | ConnectedTxActive::Unaggregating(Unaggregating {
+                aggregate: active, ..
+            }) => usize::from(active.original_subframes),
         }
     }
 
@@ -505,7 +506,6 @@ where
         let aggregate_rate_policy = self.aggregate_rate_policy;
         let he_trigger_based = self.he_trigger_based;
         let last_aggregate_status = self.last_aggregate_status;
-        let pending_ordinary_retry = self.pending_ordinary_retry;
         let network_power = self.network_power;
         #[cfg(any(feature = "diagnostics", test))]
         let observer = self.observer;
@@ -528,7 +528,6 @@ where
                 aggregate_rate_policy,
                 he_trigger_based,
                 last_aggregate_status,
-                pending_ordinary_retry,
                 network_power,
                 #[cfg(any(feature = "diagnostics", test))]
                 observer,
@@ -557,7 +556,6 @@ where
             aggregate_rate_policy,
             he_trigger_based,
             last_aggregate_status,
-            pending_ordinary_retry,
             network_power,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
@@ -582,7 +580,6 @@ where
         owner.block_ack_generations = block_ack_generations;
         owner.block_ack_generation_exhausted = block_ack_generation_exhausted;
         owner.last_aggregate_status = last_aggregate_status;
-        owner.pending_ordinary_retry = pending_ordinary_retry;
         owner.network_power = network_power;
         owner.he_trigger_based = he_trigger_based;
         #[cfg(any(feature = "diagnostics", test))]
@@ -713,7 +710,9 @@ where
                 Some(active.deadline_micros)
             }
             ConnectedTxActive::AbortSettling(active) => Some(active.deadline_micros),
-            ConnectedTxActive::Ordinary => self.ordinary.next_deadline_micros(),
+            ConnectedTxActive::Ordinary | ConnectedTxActive::Unaggregating(_) => {
+                self.ordinary.next_deadline_micros()
+            }
             ConnectedTxActive::Idle => None,
         }
     }

@@ -41,9 +41,7 @@ where
                 if progress == WifiTxProgress::Pending {
                     self.active = ConnectedTxActive::Ordinary;
                 } else {
-                    if core::mem::take(&mut self.network_ordinary)
-                        && self.pending_ordinary_retry.is_none()
-                    {
+                    if core::mem::take(&mut self.network_ordinary) {
                         self.network_power.completed = Some(
                             self.ordinary
                                 .last_outcome()
@@ -59,27 +57,80 @@ where
                         });
                     }
                 }
-                if progress != WifiTxProgress::Pending
-                    && let Some(mut aggregate) = self.pending_ordinary_retry.take()
-                {
-                    let ordinary = self
-                        .ordinary
-                        .last_outcome()
-                        .ok_or(AggregateTxError::MissingOrdinaryRetryStatus)?;
-                    let ordinary = ordinary.report().status;
-                    aggregate.result = if matches!(ordinary.result, MacTxResult::Transmitted) {
-                        MacAmpduTxResult::Delivered
-                    } else {
-                        MacAmpduTxResult::Incomplete
-                    };
-                    aggregate.ordinary_retry = Some(ordinary);
-                    self.record_terminal_status(aggregate);
-                }
                 Ok(progress)
+            }
+            ConnectedTxActive::Unaggregating(unaggregating) => {
+                self.service_unaggregating(hardware, wake, unaggregating)
             }
             ConnectedTxActive::AbortSettling(active) => self.service_abort_settle(hardware, active),
             ConnectedTxActive::Aggregate(active) => self.service_aggregate(hardware, wake, active),
         }
+    }
+
+    /// Copy the next missing MPDU out of the retained aggregate and send it
+    /// as an ordinary frame; the copy of the last one releases the aggregate.
+    fn start_unaggregated_retry<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        mut unaggregating: Unaggregating<SLOTS>,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let index = unaggregating.remaining.trailing_zeros() as u8;
+        unaggregating.remaining &= unaggregating.remaining - 1;
+        let (frame_length, hardware_mic_length) = {
+            let (encoded, mic) = self.ampdu.active_mut().completed_frame(cookie, index)?;
+            (self.ordinary.copy_encoded_retry(encoded)?, usize::from(mic))
+        };
+        if unaggregating.remaining == 0 {
+            self.release_completed()?;
+        }
+        let aggregate = &unaggregating.aggregate;
+        let progress = self.ordinary.start_prepared_encoded_retry_for_category(
+            hardware,
+            frame_length,
+            hardware_mic_length,
+            aggregate.config.rate(),
+            aggregate.traffic.selected.access_category,
+        )?;
+        debug_assert_eq!(progress, WifiTxProgress::Pending);
+        self.active = ConnectedTxActive::Unaggregating(unaggregating);
+        Ok(progress)
+    }
+
+    fn service_unaggregating<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        wake: WifiTxWake,
+        mut unaggregating: Unaggregating<SLOTS>,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        let progress = self.ordinary.service(hardware, wake)?;
+        if progress == WifiTxProgress::Pending {
+            self.active = ConnectedTxActive::Unaggregating(unaggregating);
+            return Ok(progress);
+        }
+        self.observe_ordinary_rate_control();
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe_station_ordinary(self.ordinary.last_outcome());
+            observer.observe(AggregateTxObservation::OrdinaryWorkCompleted {
+                work: self.ordinary.work(),
+            });
+        }
+        let ordinary = self
+            .ordinary
+            .last_outcome()
+            .ok_or(AggregateTxError::MissingOrdinaryRetryStatus)?
+            .report()
+            .status;
+        if !matches!(ordinary.result, MacTxResult::Transmitted) {
+            unaggregating.status.result = MacAmpduTxResult::Incomplete;
+        }
+        unaggregating.status.individual_retries.record(ordinary);
+        if unaggregating.remaining != 0 {
+            return self.start_unaggregated_retry(hardware, unaggregating);
+        }
+        self.record_terminal_status(unaggregating.status);
+        Ok(progress)
     }
 
     fn record_terminal_status(&mut self, status: MacAmpduTxStatus<TxPhyRate>) {
@@ -117,7 +168,7 @@ where
             aggregate_attempts: active.retry.aggregate_attempts(),
             aggregate_rate: active.config.rate(),
             block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
-            ordinary_retry: None,
+            individual_retries: MacIndividualRetries::NONE,
         });
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {
@@ -159,11 +210,14 @@ where
         };
 
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let block_ack_operational =
+            self.block_ack_generation(active.traffic.tid()) == Some(active.block_ack_generation);
         if let Some(observed) = self.ampdu.active_mut().observe_retry_completion(
             hardware,
             cookie,
             &mut active.retry,
             self.ordinary.now_micros(),
+            block_ack_operational,
         )? {
             let completion = observed.completion;
             let current_subframes = observed.subframes;
@@ -205,7 +259,9 @@ where
                 AmpduRetryDecision::RepublishUnchanged { retry_mask } => {
                     Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
                 }
-                AmpduRetryDecision::Finish { .. } | AmpduRetryDecision::FinishTriggerFlow => None,
+                AmpduRetryDecision::Unaggregate { .. }
+                | AmpduRetryDecision::Finish { .. }
+                | AmpduRetryDecision::FinishTriggerFlow => None,
             };
             if let Some((retry_mask, republication)) = republication {
                 let queue = active.traffic.queue();
@@ -246,31 +302,7 @@ where
                 self.ordinary.reset_terminal_exchange(queue);
             }
 
-            let individual_retry = matches!(active.config, AmpduTxConfig::Ht(_))
-                && missing == 1
-                && !active.retry.aged(self.ordinary.now_micros());
-            if individual_retry {
-                let index = retry_mask.trailing_zeros() as u8;
-                let (frame_length, hardware_mic_length) = {
-                    let (encoded, mic) = self.ampdu.active_mut().completed_frame(cookie, index)?;
-                    (self.ordinary.copy_encoded_retry(encoded)?, usize::from(mic))
-                };
-                self.release_completed()?;
-                let progress = self.ordinary.start_prepared_encoded_retry_for_category(
-                    hardware,
-                    frame_length,
-                    hardware_mic_length,
-                    active.config.rate(),
-                    active.traffic.selected.access_category,
-                )?;
-                self.pending_ordinary_retry = Some(MacAmpduTxStatus {
-                    result: MacAmpduTxResult::Incomplete,
-                    original_subframes: u16::from(active.original_subframes),
-                    aggregate_attempts: active.retry.aggregate_attempts(),
-                    aggregate_rate: active.config.rate(),
-                    block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
-                    ordinary_retry: None,
-                });
+            if matches!(decision, AmpduRetryDecision::Unaggregate { .. }) {
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     observer.observe(AggregateTxObservation::Completed {
@@ -279,8 +311,23 @@ where
                     });
                     self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
                 }
-                self.active = ConnectedTxActive::Ordinary;
-                return Ok(progress);
+                let status = MacAmpduTxStatus {
+                    // Delivered only once every missing MPDU was transmitted.
+                    result: MacAmpduTxResult::Delivered,
+                    original_subframes: u16::from(active.original_subframes),
+                    aggregate_attempts: active.retry.aggregate_attempts(),
+                    aggregate_rate: active.config.rate(),
+                    block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
+                    individual_retries: MacIndividualRetries::NONE,
+                };
+                return self.start_unaggregated_retry(
+                    hardware,
+                    Unaggregating {
+                        aggregate: active,
+                        remaining: retry_mask,
+                        status,
+                    },
+                );
             }
 
             self.release_completed()?;
@@ -295,7 +342,7 @@ where
                 aggregate_attempts: active.retry.aggregate_attempts(),
                 aggregate_rate: active.config.rate(),
                 block_acknowledged_subframes: u16::from(acknowledged),
-                ordinary_retry: None,
+                individual_retries: MacIndividualRetries::NONE,
             });
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
@@ -362,7 +409,7 @@ where
                 aggregate_attempts: active.retry.aggregate_attempts(),
                 aggregate_rate: active.config.rate(),
                 block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
-                ordinary_retry: None,
+                individual_retries: MacIndividualRetries::NONE,
             });
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {

@@ -1551,7 +1551,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
             aggregate_attempts: 1,
             aggregate_rate: TxPhyRate::Ht(TEST_RATE),
             block_acknowledged_subframes: 2,
-            ordinary_retry: None,
+            individual_retries: MacIndividualRetries::NONE,
         })
     );
     send_frame(&mut device, 4);
@@ -1637,7 +1637,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
             aggregate_attempts: 2,
             aggregate_rate: TxPhyRate::Ht(TEST_RATE),
             block_acknowledged_subframes: 3,
-            ordinary_retry: None,
+            individual_retries: MacIndividualRetries::NONE,
         })
     );
     send_frame(&mut device, 4);
@@ -1750,17 +1750,98 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
     assert_eq!(aggregate.block_acknowledged_subframes, 1);
     assert_eq!(aggregate.delivered_subframes(), 2);
     assert_eq!(aggregate.total_publication_attempts(), 2);
-    assert!(matches!(
-        aggregate.ordinary_retry,
-        Some(status) if status.result == MacTxResult::Transmitted
-            && status.final_rate == TxPhyRate::Ht(TEST_RATE)
-            && status.acknowledged == Some(true)
-    ));
+    assert_eq!(
+        aggregate.individual_retries,
+        MacIndividualRetries {
+            transmitted: 1,
+            failed: 0,
+            attempts: 1,
+            final_rate: Some(TxPhyRate::Ht(TEST_RATE)),
+        }
+    );
     assert!(matches!(
         tx.take_last_ordinary_outcome(),
         Some(SingleMpduTxOutcome::Success(_))
     ));
     for _ in 0..TEST_QUEUE_DEPTH {
         drop(network.try_receive_tx_direct().unwrap());
+    }
+}
+
+#[test]
+fn an_agreement_ended_mid_exchange_sends_the_missing_mpdus_individually() {
+    let (mut device, network) = make_network();
+    send_frame(&mut device, 1);
+    send_frame(&mut device, 2);
+    send_frame(&mut device, 3);
+    let first = network.try_receive_tx_direct().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let observer = RecordingAggregateTxObserver::default();
+    let mut tx = ConnectedTx::new_for_test(
+        ordinary,
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap()
+    .with_observer(&observer);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 1);
+
+    // DELBA while the aggregate is in the air: the BlockAck still arrives,
+    // but the two missing MPDUs must not be aggregated again.
+    tx.set_block_ack_window(0, None);
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b010));
+    let interrupt = WifiTxWake::Interrupt {
+        events: EVENT_TX_COMPLETE,
+    };
+    assert_eq!(
+        tx.service(&mut hardware, interrupt),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 2);
+    assert_eq!(tx.take_last_aggregate_status(), None);
+
+    // The first individual retry is acknowledged; the second starts.
+    hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(0, 0));
+    assert_eq!(
+        tx.service(&mut hardware, interrupt),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 3);
+    assert_eq!(tx.take_last_aggregate_status(), None);
+
+    hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(0, 0));
+    assert_eq!(
+        tx.service(&mut hardware, interrupt),
+        Ok(WifiTxProgress::Complete)
+    );
+    let aggregate = tx
+        .take_last_aggregate_status()
+        .expect("the last individual retry completes the logical exchange");
+    assert_eq!(*observer.terminal.lock().unwrap(), [aggregate]);
+    assert_eq!(aggregate.result, MacAmpduTxResult::Delivered);
+    assert_eq!(aggregate.original_subframes, 3);
+    assert_eq!(aggregate.aggregate_attempts, 1);
+    assert_eq!(aggregate.block_acknowledged_subframes, 1);
+    assert_eq!(aggregate.individual_retries.transmitted, 2);
+    assert_eq!(aggregate.delivered_subframes(), 3);
+    assert!(!tx.active());
+    for _ in 0..3 {
+        drop(network.try_receive_tx_direct());
     }
 }

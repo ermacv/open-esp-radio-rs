@@ -74,7 +74,9 @@ use oer_ieee80211_mac::{
 
 use oer_ieee80211_datapath::PhysicalTxSource;
 
-use oer_ieee80211_softmac::{MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult};
+use oer_ieee80211_softmac::{
+    MacAmpduTxResult, MacAmpduTxStatus, MacIndividualRetries, MacTxQueueState, MacTxResult,
+};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::{
@@ -146,7 +148,6 @@ pub struct ConnectedTxParked<'observer, const SLOTS: usize> {
     aggregate_rate_policy: StaTxRatePolicy,
     he_trigger_based: Option<HeTriggerBasedTxConfig>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
-    pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
     network_power: NetworkTxPowerReport,
     #[cfg(any(feature = "diagnostics", test))]
     observer: Option<&'observer dyn crate::diagnostics::aggregate_tx::AggregateTxObserver>,
@@ -285,6 +286,9 @@ impl AggregateTraffic {
 
 struct AggregateActive<const SLOTS: usize> {
     traffic: AggregateTraffic,
+    /// Agreement the aggregate was built for; its retries stay aggregated
+    /// only while this exact agreement is operational.
+    block_ack_generation: u32,
     config: AmpduTxConfig,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
@@ -318,6 +322,20 @@ enum ConnectedTxActive<const SLOTS: usize> {
     Ordinary,
     Aggregate(AggregateActive<SLOTS>),
     AbortSettling(AggregateActive<SLOTS>),
+    /// The retained aggregate's missing MPDUs leave it one ordinary
+    /// transmission at a time.
+    Unaggregating(Unaggregating<SLOTS>),
+}
+
+/// Ordinary retries of MPDUs taken out of a completed aggregate. The
+/// aggregate storage stays retained until the last missing MPDU has been
+/// copied into the ordinary buffer.
+struct Unaggregating<const SLOTS: usize> {
+    aggregate: AggregateActive<SLOTS>,
+    /// Retained-aggregate subframe indices not yet copied out.
+    remaining: u32,
+    /// Terminal aggregate status, accumulating the individual retries.
+    status: MacAmpduTxStatus<TxPhyRate>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -410,7 +428,6 @@ pub struct ConnectedTx<
     he_trigger_based: Option<HeTriggerBasedTxConfig>,
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
-    pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
     /// The ordinary transaction in flight carries network data.
     network_ordinary: bool,
     /// Network data TX not yet read by power management.

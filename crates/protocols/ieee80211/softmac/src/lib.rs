@@ -65,9 +65,9 @@ pub use monitor::{
 };
 
 pub use contract::{
-    MacAmpduTxResult, MacAmpduTxStatus, MacInterfaceCapabilities, MacOperationOwner,
-    MacOperationOwnership, MacResourceLimits, MacRxCryptoStatus, MacRxEvidence, MacRxMetadata,
-    MacServiceCapabilities, MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus,
+    MacAmpduTxResult, MacAmpduTxStatus, MacIndividualRetries, MacInterfaceCapabilities,
+    MacOperationOwner, MacOperationOwnership, MacResourceLimits, MacRxCryptoStatus, MacRxEvidence,
+    MacRxMetadata, MacServiceCapabilities, MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus,
 };
 
 /// Transmission-time prediction independent of memory and chip topology.

@@ -49,6 +49,7 @@ const DECISION_RETAIN: u32 = 1;
 const DECISION_FINISH: u32 = 2;
 const DECISION_REPUBLISH: u32 = 3;
 const DECISION_TRIGGER: u32 = 4;
+const DECISION_UNAGGREGATE: u32 = 5;
 /// Failure codes: invalid inputs, then the production step that failed.
 const INVALID_INPUT: u32 = 1;
 const BEGIN_FAILED: u32 = 2;
@@ -289,7 +290,7 @@ oer_probe_macros::probe! {
             return INVALID_INPUT;
         };
         let now = COMMITTED_MICROS + u64::from(elapsed_micros);
-        let observed = match owner.observe_retry_completion(&mut hardware, cookie, &mut retry, now) {
+        let observed = match owner.observe_retry_completion(&mut hardware, cookie, &mut retry, now, true) {
             Ok(Some(observed)) => observed,
             Ok(None) => return NO_COMPLETION,
             Err(_) => return COMPLETION_FAILED,
@@ -299,6 +300,7 @@ oer_probe_macros::probe! {
             AmpduRetryDecision::Finish { .. } => DECISION_FINISH,
             AmpduRetryDecision::RepublishUnchanged { .. } => DECISION_REPUBLISH,
             AmpduRetryDecision::FinishTriggerFlow => DECISION_TRIGGER,
+            AmpduRetryDecision::Unaggregate { .. } => DECISION_UNAGGREGATE,
         };
         if decision == DECISION_RETAIN
             && owner
@@ -473,6 +475,7 @@ oer_probe_macros::probe! {
             sequence.cookie,
             &mut sequence.retry,
             COMMITTED_MICROS,
+            true,
         ) {
             Ok(Some(observed)) => observed,
             Ok(None) => return NO_COMPLETION,
@@ -496,6 +499,10 @@ oer_probe_macros::probe! {
                 return DECISION_FINISH;
             }
             AmpduRetryDecision::FinishTriggerFlow => return DECISION_TRIGGER,
+            AmpduRetryDecision::Unaggregate { .. } => {
+                core::mem::forget(slot.take());
+                return DECISION_UNAGGREGATE;
+            }
         };
         let Ok(retained) =
             sequence

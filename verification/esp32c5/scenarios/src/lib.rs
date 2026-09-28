@@ -6,6 +6,7 @@
 //! belong to this verification owner.
 pub mod decisions;
 pub mod phy_i2c;
+pub mod run;
 
 use oer_vendor_scenario_engine::{Chip, Isa, phy::PhyLayout};
 

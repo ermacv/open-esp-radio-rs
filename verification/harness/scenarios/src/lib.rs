@@ -12,8 +12,8 @@ pub mod dependencies;
 pub mod discovery;
 pub mod evidence;
 pub mod failure;
+pub mod findings;
 pub mod harness;
-pub mod inspect;
 pub mod leaf;
 pub mod mutant;
 pub mod observation;
@@ -24,6 +24,5 @@ pub mod session;
 pub mod setup_cache;
 pub mod shard;
 pub mod state;
-pub mod triage;
 
 pub use chip::{Chip, Isa, chip, install};

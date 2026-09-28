@@ -12,8 +12,6 @@
 //! The pass is intraprocedural and forgets what it knows where control can
 //! enter from elsewhere, so an access through a pointer computed in another
 //! function, or after a join, is not attributed.
-use crate::harness::{Result, invalid};
-use crate::registers::Registers;
 use crate::triage::{CALLEE_SAVED, PARCEL, REGISTERS, ZERO};
 use blobray_backend_riscv::RiscvDecoder;
 use blobray_domain::{
@@ -24,6 +22,8 @@ use object::{
     Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex,
     SymbolKind,
 };
+use oer_vendor_scenario_engine::harness::{Result, invalid};
+use oer_vendor_scenario_engine::registers::Registers;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -144,17 +144,17 @@ impl Corpus {
         let mut corpus = Self {
             functions: vec![],
             names: BTreeMap::new(),
-            registers: Registers::load(&root.join(crate::chip().registers))?,
+            registers: Registers::load(&root.join(oer_vendor_scenario_engine::chip().registers))?,
             missing: vec![],
         };
-        for artifact in &crate::artifacts::manifest().artifact {
+        for artifact in &oer_vendor_scenario_engine::artifacts::manifest().artifact {
             if !CODE_EXTENSIONS
                 .iter()
                 .any(|extension| artifact.path.ends_with(extension))
             {
                 continue;
             }
-            let path = crate::artifacts::path(root, &artifact.id);
+            let path = oer_vendor_scenario_engine::artifacts::path(root, &artifact.id);
             let Ok(bytes) = std::fs::read(&path) else {
                 corpus.missing.push(artifact.id.clone());
                 continue;
@@ -1145,7 +1145,7 @@ pub fn parse_address(text: &str) -> std::result::Result<u32, String> {
 /// The installed chip's corpus from this checkout. A pinned code artifact
 /// the checkout does not hold is reported and skipped.
 pub fn load() -> Result<Corpus> {
-    let corpus = Corpus::load(&crate::observation::root()?)?;
+    let corpus = Corpus::load(&oer_vendor_scenario_engine::observation::root()?)?;
     for id in &corpus.missing {
         eprintln!("{id}: not in this checkout, skipped");
     }
@@ -1359,6 +1359,57 @@ pub fn show(corpus: &Corpus, name: &str) -> Option<String> {
         }
     }
     (!text.is_empty()).then_some(text)
+}
+
+/// The reviewer commands a scenario binary offers beside its scenarios.
+#[derive(clap::Subcommand)]
+pub enum Command {
+    /// Every read and write of the pinned vendor code to the addresses from
+    /// `start` up to `end`, one word when `end` is omitted, with the bits each
+    /// store clears, sets or takes from a computed value.
+    Xref {
+        #[arg(value_parser = parse_address)]
+        start: u32,
+        #[arg(value_parser = parse_address)]
+        end: Option<u32>,
+    },
+    /// One pinned vendor function, annotated, from every artifact defining it.
+    Show { function: String },
+    /// Every read and write of the pinned vendor code to a structure field
+    /// reached through pointers whose last offsets are `offsets`, from any
+    /// argument or symbol: `0x34 0` is the word at offset 0 of the pointer
+    /// stored at offset 0x34.
+    Fields {
+        #[arg(required = true, allow_hyphen_values = true, value_parser = parse_offset)]
+        offsets: Vec<i32>,
+    },
+    /// Every print of the pinned vendor code that passes bits of the
+    /// addresses from `start` up to `end` (one word when omitted) to a
+    /// format conversion, with the format text up to that conversion.
+    Prints {
+        #[arg(value_parser = parse_address)]
+        start: u32,
+        #[arg(value_parser = parse_address)]
+        end: Option<u32>,
+    },
+}
+
+/// Print what `command` asks for about the installed chip's pinned code.
+pub fn run(command: Command) -> Result<()> {
+    let corpus = load()?;
+    let text = match command {
+        Command::Xref { start, end } => {
+            xref(&corpus, start, end.unwrap_or(start.saturating_add(WORD)))
+        }
+        Command::Prints { start, end } => {
+            prints(&corpus, start, end.unwrap_or(start.saturating_add(WORD)))
+        }
+        Command::Fields { offsets } => fields(&corpus, &offsets),
+        Command::Show { function } => show(&corpus, &function)
+            .ok_or_else(|| invalid(format!("no pinned artifact defines {function}")))?,
+    };
+    print!("{text}");
+    Ok(())
 }
 
 #[cfg(test)]

@@ -8,13 +8,13 @@
 //! pass over each function folds constants, so the report shows the
 //! addresses, register names and fields an instruction touches. These are
 //! proposals for a reviewer: exclusions stay reviewed decisions.
-use crate::registers::Registers;
-use crate::session::evidence_index::{Location, LocationKind};
 use blobray_backend_riscv::RiscvDecoder;
 use blobray_domain::{
     FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand, SemanticOp,
 };
 use object::{Object, ObjectSymbol, SymbolKind};
+use oer_vendor_scenario_engine::registers::Registers;
+use oer_vendor_scenario_engine::session::evidence_index::{Location, LocationKind};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 

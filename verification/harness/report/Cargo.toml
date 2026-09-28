@@ -1,24 +1,21 @@
 [package]
 workspace = "../../../tools/blobray"
-name = "oer-esp32c5-vendor-scenarios"
+name = "oer-vendor-scenario-report"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Typed ESP32-C5 vendor-comparison scenarios driven through the Blobray CLI"
-
-[[bin]]
-name = "esp32c5-vendor-scenarios"
-path = "src/main.rs"
+description = "Reviewer reports of the typed vendor-comparison scenarios: untriaged locations, closure gateways and standalone inspection of pinned vendor code"
 
 [dependencies]
-blobray-application = { path = "../../../tools/blobray/crates/application" }
+blobray-backend-riscv = { path = "../../../tools/blobray/crates/riscv" }
 blobray-domain = { path = "../../../tools/blobray/crates/domain" }
-oer-vendor-scenario-engine = { path = "../../harness/scenarios" }
-oer-vendor-scenario-report = { path = "../../harness/report" }
+oer-vendor-scenario-engine = { path = "../scenarios" }
 clap = { version = "=4.5.48", features = ["derive"] }
+object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
+sha2 = "=0.10.9"
 
 [lints]
 workspace = true

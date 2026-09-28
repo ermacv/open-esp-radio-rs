@@ -9,6 +9,7 @@ pub mod coexistence;
 pub mod decisions;
 pub mod engine;
 pub mod phy;
+pub mod run;
 pub mod wifi;
 
 // Domain modules keep their crate-root paths.

@@ -590,10 +590,11 @@ pointer stored at offset 0x34, printed as a path such as `a0->0x34->0x0`.
 argument register addresses a string with printf conversions is a print, and
 each following argument that carries bits of a word read from the range, as
 read or after shifts and masks, is listed with those bits, the shift and the
-format text up to its conversion. The pass is intraprocedural: it merges the states of the paths that join at a
-branch target and iterates loops to a fixed point, but a value returned by a
-call, or an address computed from an index, is not followed. The engine owns both in
-[`inspect.rs`](../harness/scenarios/src/inspect.rs).
+format text up to its conversion. The pass is intraprocedural: it merges the
+states of the paths that join at a branch target and iterates loops to a fixed
+point, but a value returned by a call, or an address computed from an index,
+is not followed. The report crate owns these commands in
+[`inspect.rs`](../harness/report/src/inspect.rs).
 
 ## Inputs and probes
 
@@ -634,7 +635,10 @@ The reviewed coverage decisions are data outside the crate, in
 record them as a scenario source.
 
 Domain modules keep their crate-root paths (`crate::gain`, `crate::ble`) as
-re-exports, and `main.rs` holds the command line.
+re-exports. The library's `run.rs` holds the scenario command line and the
+dispatch that decides verdicts and writes shards; `main.rs` only adds the
+reviewer commands of the [report crate](../harness/README.md) and passes its
+reviewer to `run`.
 
 ## Coverage decisions
 

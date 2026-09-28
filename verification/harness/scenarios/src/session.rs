@@ -1218,6 +1218,7 @@ impl Session {
         roots: &BTreeMap<String, u32>,
         list: &[(&str, &str, &str)],
         decisions: &[crate::coverage::Decision],
+        report: &dyn crate::findings::RunReport,
     ) -> Result<Claims> {
         let mut observed = crate::coverage::Observed::default();
         let executed: std::collections::BTreeSet<u32> = self
@@ -1325,62 +1326,41 @@ impl Session {
             .filter(|pair| !claimed.contains(&(pair.vendor, pair.production)))
             .map(|pair| (name(&names, pair.vendor), name(&probes, pair.production)))
             .collect();
-        for (vendor, production) in &unclaimed {
-            println!("{suite} compared pair {vendor} -> {production} has no claim");
-        }
         let (steps, seconds) = self.executed.get();
         println!(
             "{suite} interpreter {steps} guest instructions in {seconds:.2} s ({:.1} M/s)",
             steps as f64 / seconds.max(f64::EPSILON) / 1e6
         );
         let (_, untriaged) = crate::coverage::Observed::classify(decisions, &observed.uncovered);
-        if !untriaged.is_empty() {
-            // A reviewer's aid beside the run: each untriaged location's code.
-            let image = std::fs::read(self.run.join("image/image.elf")).unwrap_or_default();
-            let rom = self
-                .inputs
-                .get(crate::chip().rom_input as usize)
-                .map_or(&[][..], Vec::as_slice);
-            let registers = crate::registers::Registers::load(
-                &crate::observation::root()?.join(crate::chip().registers),
-            )?;
-            let code = crate::triage::Code::of(
-                &[&image, rom],
-                registers,
-                crate::coverage::diagnostic(decisions),
-            );
-            // The locations the evidence index lists: those no closure reached.
-            let listed =
-                crate::coverage::uncovered_everywhere(&observed.closures, untriaged.clone());
-            let path = crate::triage::write(self.runner.run_directory(), suite, &code, &listed)?;
-            println!("{suite} untriaged locations: {}", path.display());
-            let consequential: std::collections::BTreeSet<_> = observed
-                .closures
-                .iter()
-                .flat_map(|closure| closure.consequential.iter().cloned())
-                .collect();
-            let view = crate::triage::functions(
-                &code,
-                &listed,
-                &observed.uncovered,
-                &consequential,
-                |location| crate::coverage::reason(decisions, location),
-            );
-            let path = self
-                .runner
-                .run_directory()
-                .join(format!("functions-{suite}.txt"));
-            fs::write(&path, view)?;
-            println!("{suite} untriaged functions: {}", path.display());
-        }
-        if !observed.gateways.is_empty() {
-            let path = self
-                .runner
-                .run_directory()
-                .join(format!("gateways-{suite}.txt"));
-            fs::write(&path, observed.gateways.join("\n") + "\n")?;
-            println!("{suite} closure gateways: {}", path.display());
-        }
+        let image = std::fs::read(self.run.join("image/image.elf")).unwrap_or_default();
+        let rom = self
+            .inputs
+            .get(crate::chip().rom_input as usize)
+            .map_or(&[][..], Vec::as_slice);
+        let listed = crate::coverage::uncovered_everywhere(&observed.closures, untriaged.clone());
+        let consequential: std::collections::BTreeSet<_> = observed
+            .closures
+            .iter()
+            .flat_map(|closure| closure.consequential.iter().cloned())
+            .collect();
+        let untriaged_findings = if untriaged.is_empty() {
+            None
+        } else {
+            Some(crate::findings::Untriaged {
+                images: [&image, rom],
+                decisions,
+                listed: &listed,
+                uncovered: &observed.uncovered,
+                consequential: &consequential,
+            })
+        };
+        report.report(&crate::findings::Findings {
+            suite,
+            directory: self.runner.run_directory(),
+            unclaimed: &unclaimed,
+            gateways: &observed.gateways,
+            untriaged: untriaged_findings,
+        })?;
         let rules = crate::rule_use::check(self.runner.run_directory(), suite, &self.reviewed)?;
         println!("{suite} effect rule selections: {}", rules.display());
         Ok(Claims {

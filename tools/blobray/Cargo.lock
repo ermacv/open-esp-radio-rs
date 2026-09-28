@@ -491,6 +491,7 @@ dependencies = [
  "blobray-domain",
  "clap",
  "oer-vendor-scenario-engine",
+ "oer-vendor-scenario-report",
 ]
 
 [[package]]
@@ -507,6 +508,7 @@ dependencies = [
  "object",
  "oer-probe-codegen",
  "oer-vendor-scenario-engine",
+ "oer-vendor-scenario-report",
  "serde",
  "serde_json",
  "sha2",
@@ -546,6 +548,18 @@ dependencies = [
  "sha2",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "oer-vendor-scenario-report"
+version = "0.1.0"
+dependencies = [
+ "blobray-backend-riscv",
+ "blobray-domain",
+ "clap",
+ "object",
+ "oer-vendor-scenario-engine",
+ "sha2",
 ]
 
 [[package]]

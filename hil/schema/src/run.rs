@@ -41,6 +41,9 @@ pub enum Outcome {
     Skipped,
     Blocked,
     Interrupted,
+    /// The board stayed unreachable or needed hardware recovery too often,
+    /// and the stand quarantined it; not a verdict on the code under test.
+    BoardQuarantined,
 }
 
 impl Outcome {
@@ -53,6 +56,7 @@ impl Outcome {
             Self::Skipped => "skipped",
             Self::Blocked => "blocked",
             Self::Interrupted => "interrupted",
+            Self::BoardQuarantined => "board-quarantined",
         }
     }
 

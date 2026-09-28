@@ -846,6 +846,22 @@ fn run_scenario_repetition(
     let started_unix_millis = hil_core::durable::unix_millis()?;
     let started = std::time::Instant::now();
     let cleanup = hil_core::fixture::cleanup::Scope::new(output);
+    if hil_core::recovery::device_quarantined() {
+        return finalize_repetition(
+            repetition,
+            artifacts,
+            output,
+            started_unix_millis,
+            started,
+            cleanup,
+            Outcome::BoardQuarantined,
+            Some(Failure::new(
+                FailureKind::Infrastructure,
+                "the board was quarantined earlier in this run; the repetition did not touch it",
+            )),
+            Vec::new(),
+        );
+    }
     let (outcome, failure, measurements) = match fixture::preflight::check(lab, selected)
         .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, &plan, output))
         .and_then(|fixture| {

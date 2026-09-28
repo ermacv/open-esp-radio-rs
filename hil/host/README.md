@@ -376,6 +376,21 @@ reset the runner did not cause (neither USB Serial/JTAG nor JTAG) makes it
 checkpoints the ended boot passed. The exchange and the workload's own
 failure are kept in the repetition's `post-mortem/`.
 
+A target that does not answer within those 20 s climbs the recovery ladder:
+an EN pulse through the board's registered reset path, or an RTS pulse on its
+own USB Serial/JTAG port when it has none, then the same query again (a power
+cycle through a switchable hub port becomes the next step once boards have
+one). A step that brings it back is journaled as a recovery, `hardware` when
+the port had vanished or the ROM waited for a download. A board no step brings
+back, or with three hardware-level recoveries within an hour, is quarantined:
+the repetition and the run's remaining repetitions end `board-quarantined`,
+which is no verdict on the code under test, every request for the board is
+refused with the reason, and the user is notified. What the stand saw stays in
+the repetition's `post-mortem/`, which the quarantine names. After pressing
+the board's reset button or power-cycling it, `cargo hil devices release
+BOARD --confirm reset|power-cycle` returns it once an RTS reset shows it
+booting from flash; the release is journaled.
+
 ### Operational commands without a rebuild
 
 `cargo hil` builds this xtask from the caller's working tree before every

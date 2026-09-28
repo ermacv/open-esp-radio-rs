@@ -16,7 +16,10 @@ pub fn junit(suite: &SuiteResult, manifest: &RunManifest) -> String {
             tests += 1;
             match scenario.outcome {
                 Outcome::Failed => failures += 1,
-                Outcome::Broken | Outcome::Blocked | Outcome::Interrupted => errors += 1,
+                Outcome::Broken
+                | Outcome::Blocked
+                | Outcome::Interrupted
+                | Outcome::BoardQuarantined => errors += 1,
                 Outcome::Skipped => skipped += 1,
                 Outcome::Passed => {}
             }
@@ -26,7 +29,10 @@ pub fn junit(suite: &SuiteResult, manifest: &RunManifest) -> String {
             tests += 1;
             match repetition.outcome {
                 Outcome::Failed => failures += 1,
-                Outcome::Broken | Outcome::Blocked | Outcome::Interrupted => errors += 1,
+                Outcome::Broken
+                | Outcome::Blocked
+                | Outcome::Interrupted
+                | Outcome::BoardQuarantined => errors += 1,
                 Outcome::Skipped => skipped += 1,
                 Outcome::Passed => {}
             }
@@ -134,7 +140,7 @@ fn render_junit_case(
                 xml_escape(message)
             );
         }
-        Outcome::Broken | Outcome::Blocked | Outcome::Interrupted => {
+        Outcome::Broken | Outcome::Blocked | Outcome::Interrupted | Outcome::BoardQuarantined => {
             let kind = failure.map_or("infrastructure", |failure| failure.kind.id());
             let _ = writeln!(
                 xml,

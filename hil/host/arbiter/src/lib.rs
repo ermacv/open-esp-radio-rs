@@ -32,7 +32,7 @@ mod store;
 mod unknown;
 
 pub use balance::HARD_LIMIT;
-pub use board::{BoardEvent, BoardEventKind};
+pub use board::{BoardEvent, BoardEventKind, RecoveryStep};
 pub use control::{BootMode, Control, ResetControl};
 pub use devices::{
     AttachedPort, Device, attached_ports, board_mac, device_label, normalize_mac, port_mac,
@@ -40,7 +40,7 @@ pub use devices::{
 pub use estimate::{DEFAULT_ESTIMATE, EstimateSource, format_duration, parse_duration};
 pub use grant::{Grant, LEASE_ENV, NO_BUDGETS, OWNER_ENV, Request, default_owner};
 pub use history::{GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance};
-pub use maintenance::Maintenance;
+pub use maintenance::{Confirmation, Maintenance, QuarantineTrigger, ServiceKind};
 pub use process::process_started_unix_millis;
 pub use state::{AIR, Claim, Mode, STAND};
 pub use status::{HolderStatus, QueuedStatus, Status};

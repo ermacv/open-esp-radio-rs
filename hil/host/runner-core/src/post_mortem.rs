@@ -24,6 +24,7 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(20);
 const NAMED_CHECKPOINTS: usize = 6;
 
 /// What the target reported after a failed repetition.
+#[derive(Clone)]
 pub struct Finding {
     pub boot: BootEvidence,
     pub checkpoints: Vec<Checkpoint>,
@@ -31,11 +32,48 @@ pub struct Finding {
     pub failure: Option<Failure>,
 }
 
-/// Attach to the target at `port` without resetting it, record the exchange
-/// under `output/post-mortem`, and classify what it reports; `None` when it
-/// does not answer.
-pub fn inspect(port: &Path, output: &Path, elf: Option<&Path>) -> Option<Finding> {
-    let capture = SerialCapture::attach(port, &output.join("post-mortem")).ok()?;
+/// The MAC of the board attached at `port`, its USB serial number.
+pub fn board_mac(port: &Path) -> Option<String> {
+    oer_hil_arbiter::port_mac(port)
+}
+
+/// The target's current port: `port` while it exists, else the port of the
+/// board with `mac` once it is attached again, since a reset can make a USB
+/// Serial/JTAG port re-enumerate under another name. `None` after `within`.
+pub fn current_port(
+    port: &Path,
+    mac: Option<&str>,
+    within: Duration,
+) -> Option<std::path::PathBuf> {
+    let started = std::time::Instant::now();
+    loop {
+        if let Some(mac) = mac
+            && let Some(attached) = oer_hil_arbiter::attached_ports()
+                .into_iter()
+                .find(|attached| attached.mac.as_deref() == Some(mac))
+        {
+            return Some(attached.port.into());
+        }
+        if mac.is_none() && port.exists() {
+            return Some(port.to_owned());
+        }
+        if started.elapsed() >= within || oer_process::sleep(Duration::from_millis(250)).is_err() {
+            return None;
+        }
+    }
+}
+
+/// Attach to the target of board `mac` at `port` without resetting it,
+/// record the exchange under `output/post-mortem`, and classify what it
+/// reports; `None` when it does not answer.
+pub fn inspect(
+    port: &Path,
+    mac: Option<&str>,
+    output: &Path,
+    elf: Option<&Path>,
+) -> Option<Finding> {
+    let port = current_port(port, mac, ANSWER_WITHIN)?;
+    let capture = SerialCapture::attach(&port, &output.join("post-mortem")).ok()?;
     let started = std::time::Instant::now();
     let answer = loop {
         match capture.boot_status() {

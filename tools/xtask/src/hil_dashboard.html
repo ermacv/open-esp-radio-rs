@@ -112,7 +112,7 @@ function when(unix) {
 function tone(outcome) {
   switch (outcome) {
     case "passed": case "released": case "Released": return "ok";
-    case "failed": case "broken": case "budget-exceeded": case "hard-limit": case "abandoned": return "bad";
+    case "failed": case "broken": case "budget-exceeded": case "hard-limit": case "abandoned": case "board-quarantined": return "bad";
     case "blocked": case "interrupted": case "preempted": case "yielded": case "yielded-to-balance": case "running": return "warn";
     default: return "muted";
   }
@@ -159,7 +159,9 @@ function devices(list, maintenance) {
   const rows = list.map((d) => {
     const held = (maintenance || []).find((m) => m.mac === d.mac);
     const service = held
-      ? `<div class="bad">maintenance by ${esc(held.owner)}: ${esc(held.reason)}</div>`
+      ? (held.kind === "quarantine"
+        ? `<div class="bad">QUARANTINED (${esc(held.trigger)}): ${esc(held.reason)} — reset or power-cycle it, then <code>cargo hil devices release ${esc(d.label)} --confirm reset</code></div>`
+        : `<div class="bad">maintenance by ${esc(held.owner)}: ${esc(held.reason)}</div>`)
       : "";
     const f = d.firmware;
     const firmware = !f ? '<span class="muted">unknown</span>'

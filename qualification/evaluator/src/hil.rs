@@ -690,6 +690,8 @@ enum Outcome {
     Skipped,
     Blocked,
     Interrupted,
+    /// The stand quarantined the board: no verdict on the code under test.
+    BoardQuarantined,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
@@ -786,7 +788,7 @@ impl SuiteCounts {
                 Outcome::Failed => counts.failed += 1,
                 Outcome::Broken => counts.broken += 1,
                 Outcome::Skipped => counts.skipped += 1,
-                Outcome::Blocked => counts.blocked += 1,
+                Outcome::Blocked | Outcome::BoardQuarantined => counts.blocked += 1,
                 Outcome::Interrupted => counts.interrupted += 1,
             }
         }
@@ -903,7 +905,11 @@ fn validate_suite(suite: &SuiteResult, manifest: &RunManifest, directory: &Path)
                 || (repetition.outcome == Outcome::Passed && repetition.failure.is_some())
                 || (matches!(
                     repetition.outcome,
-                    Outcome::Failed | Outcome::Broken | Outcome::Blocked | Outcome::Interrupted
+                    Outcome::Failed
+                        | Outcome::Broken
+                        | Outcome::Blocked
+                        | Outcome::Interrupted
+                        | Outcome::BoardQuarantined
                 ) && repetition.failure.is_none())
             {
                 return Err(format!(
@@ -924,6 +930,8 @@ fn aggregate_outcome(outcomes: impl IntoIterator<Item = Outcome>) -> Outcome {
         Outcome::Passed
     } else if observed.contains(&Outcome::Interrupted) {
         Outcome::Interrupted
+    } else if observed.contains(&Outcome::BoardQuarantined) {
+        Outcome::BoardQuarantined
     } else if observed.contains(&Outcome::Broken) {
         Outcome::Broken
     } else if observed.contains(&Outcome::Failed) {

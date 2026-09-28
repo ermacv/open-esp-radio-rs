@@ -281,6 +281,19 @@ fn reset(target: &Target, via: Via, download: bool) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Whether `board` boots from flash after an RTS reset: its ROM reset line,
+/// or why not. A quarantined board is checked without a lease, which nobody
+/// else can hold.
+pub(crate) fn boots(board: &str) -> Result<String> {
+    let target = target(board)?;
+    let line = reset(&target, Via::Rts, false)?
+        .ok_or("no ROM reset line on its console after an RTS reset")?;
+    if line.contains("DOWNLOAD") {
+        return Err(format!("its ROM waits for a download: {line}").into());
+    }
+    Ok(line)
+}
+
 fn rom_line(lines: &mpsc::Receiver<Vec<u8>>, within: Duration) -> Option<String> {
     let deadline = Instant::now() + within;
     while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {

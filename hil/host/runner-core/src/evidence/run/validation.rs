@@ -147,7 +147,11 @@ pub fn validate_suite(suite: &SuiteResult, manifest: &RunManifest) -> Result<()>
             if (repetition.outcome == Outcome::Passed && repetition.failure.is_some())
                 || (matches!(
                     repetition.outcome,
-                    Outcome::Failed | Outcome::Broken | Outcome::Blocked | Outcome::Interrupted
+                    Outcome::Failed
+                        | Outcome::Broken
+                        | Outcome::Blocked
+                        | Outcome::Interrupted
+                        | Outcome::BoardQuarantined
                 ) && repetition.failure.is_none())
             {
                 return Err(format!(

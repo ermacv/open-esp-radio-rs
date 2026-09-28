@@ -2,7 +2,10 @@
 //!
 //! A board under maintenance serves only the owner who took it out: every
 //! other request that claims it, or the whole stand, is refused with the
-//! reason instead of queueing. Maintenance never stops a lease already held;
+//! reason instead of queueing. A quarantined board serves nobody: the runner
+//! quarantines a board that stays unreachable after automatic recovery, or
+//! that needed hardware-level recovery too often, and only a person who
+//! reset or power-cycled it returns it, after it answers again. Maintenance never stops a lease already held;
 //! it keeps later ones away. The state is `maintenance.json` beside the
 //! queue, so every checkout of the host user sees it.
 
@@ -14,6 +17,42 @@ use crate::{Arbiter, state::Claim};
 
 const SCHEMA: u32 = 1;
 
+/// The owner of every quarantine: no request is ever made by it.
+pub const QUARANTINE_OWNER: &str = "quarantine";
+/// Hardware-level recoveries within [`FLAKY_WINDOW`] that quarantine a board.
+pub const FLAKY_RECOVERIES: usize = 3;
+pub const FLAKY_WINDOW: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Why a board is out of service.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ServiceKind {
+    /// Taken out by an owner, who keeps using it.
+    #[default]
+    Maintenance,
+    /// Taken out by the stand until a person resets or power-cycles it.
+    Quarantine,
+}
+
+/// What made the stand quarantine a board.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuarantineTrigger {
+    /// It stayed unreachable after every automatic recovery step.
+    Unreachable,
+    /// It needed hardware-level recovery [`FLAKY_RECOVERIES`] times within
+    /// [`FLAKY_WINDOW`].
+    Flaky,
+}
+
+/// What a person did to a quarantined board before returning it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Confirmation {
+    Reset,
+    PowerCycle,
+}
+
 /// One board out of service.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Maintenance {
@@ -23,6 +62,13 @@ pub struct Maintenance {
     pub owner: String,
     pub reason: String,
     pub since_unix: u64,
+    #[serde(default)]
+    pub kind: ServiceKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<QuarantineTrigger>,
+    /// Where the stand kept what it saw before and during recovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub unknown: crate::Unknown,
@@ -59,6 +105,94 @@ impl Arbiter {
         })
     }
 
+    /// Quarantine the board with `mac`: no request is granted it until
+    /// [`Self::release_quarantine`]. The user is notified.
+    pub fn quarantine(
+        &self,
+        mac: &str,
+        trigger: QuarantineTrigger,
+        reason: String,
+        evidence: Option<String>,
+    ) -> crate::Result<()> {
+        crate::notify::send(
+            "HIL board quarantined",
+            &format!(
+                "{mac}: {reason}; press RST or power-cycle it, then `cargo hil devices release {mac} --confirm reset|power-cycle`"
+            ),
+        );
+        eprintln!(
+            "hil-arbiter: board {mac} quarantined ({trigger:?}): {reason}{}",
+            evidence
+                .as_deref()
+                .map(|path| format!("; evidence in {path}"))
+                .unwrap_or_default()
+        );
+        self.set_maintenance(Maintenance {
+            mac: mac.to_owned(),
+            owner: QUARANTINE_OWNER.to_owned(),
+            reason,
+            since_unix: crate::unix_now(),
+            kind: ServiceKind::Quarantine,
+            trigger: Some(trigger),
+            evidence,
+            unknown: crate::Unknown::default(),
+        })
+    }
+
+    /// Whether the board with `mac` is quarantined.
+    pub fn is_quarantined(&self, mac: &str) -> crate::Result<bool> {
+        Ok(self
+            .maintenance()?
+            .iter()
+            .any(|entry| entry.mac == mac && entry.kind == ServiceKind::Quarantine))
+    }
+
+    /// Return a quarantined board to service after a person's `confirmation`,
+    /// recorded in the board journal; `healthy` is the caller's check that
+    /// it answers again, and the board stays quarantined when it fails.
+    pub fn release_quarantine(
+        &self,
+        mac: &str,
+        owner: &str,
+        confirmation: Confirmation,
+        healthy: impl FnOnce() -> crate::Result<String>,
+    ) -> crate::Result<String> {
+        if !self.is_quarantined(mac)? {
+            return Err(format!("board {mac} is not quarantined").into());
+        }
+        let answer = healthy().map_err(|error| {
+            format!("board {mac} still does not answer; it stays quarantined: {error}")
+        })?;
+        self.record_board_by(
+            owner.to_owned(),
+            Some(mac.to_owned()),
+            crate::BoardEventKind::QuarantineReleased {
+                confirmation,
+                check: answer.clone(),
+            },
+        )?;
+        self.clear_maintenance(mac)?;
+        Ok(answer)
+    }
+
+    /// Hardware-level recoveries of the board with `mac` within
+    /// [`FLAKY_WINDOW`].
+    pub fn recent_hardware_recoveries(&self, mac: &str) -> crate::Result<usize> {
+        let since = crate::unix_now().saturating_sub(FLAKY_WINDOW.as_secs());
+        Ok(self
+            .board_events()?
+            .iter()
+            .filter(|event| {
+                event.device.as_deref() == Some(mac)
+                    && event.unix >= since
+                    && matches!(
+                        event.kind,
+                        crate::BoardEventKind::Recovered { hardware: true, .. }
+                    )
+            })
+            .count())
+    }
+
     /// Return the board with `mac` to service; whether it was out of service.
     pub fn clear_maintenance(&self, mac: &str) -> crate::Result<bool> {
         let path = self.maintenance_path();
@@ -79,18 +213,24 @@ pub(crate) fn refusal(boards: &[Maintenance], owner: &str, claims: &[Claim]) -> 
     let whole = claims.iter().any(|claim| claim.resource == crate::STAND);
     boards
         .iter()
-        .filter(|board| board.owner != owner)
+        .filter(|board| board.kind == ServiceKind::Quarantine || board.owner != owner)
         .find(|board| {
             whole
                 || claims
                     .iter()
                     .any(|claim| claim.resource == Claim::board(&board.mac).resource)
         })
-        .map(|board| {
-            format!(
-                "board {} is under maintenance by {}: {}; it serves only its maintainer until `cargo hil devices release`",
+        .map(|board| match board.kind {
+            ServiceKind::Quarantine => format!(
+                "board {} is quarantined: {}; a person must reset or power-cycle it and run \
+                 `cargo hil devices release {} --confirm reset|power-cycle`",
+                board.mac, board.reason, board.mac
+            ),
+            ServiceKind::Maintenance => format!(
+                "board {} is under maintenance by {}: {}; it serves only its maintainer until \
+                 `cargo hil devices release`",
                 board.mac, board.owner, board.reason
-            )
+            ),
         })
 }
 
@@ -134,8 +274,76 @@ mod tests {
             owner: owner.into(),
             reason: "USB hangs after a reset".into(),
             since_unix: 1,
+            kind: ServiceKind::Maintenance,
+            trigger: None,
+            evidence: None,
             unknown: Default::default(),
         }
+    }
+
+    #[test]
+    fn a_quarantined_board_serves_nobody_until_a_checked_release() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        arbiter
+            .quarantine(
+                "AA",
+                QuarantineTrigger::Unreachable,
+                "no answer after an EN reset".into(),
+                Some("/runs/x/post-mortem".into()),
+            )
+            .unwrap();
+        let boards = arbiter.maintenance().unwrap();
+        let claims = [Claim::board("AA")];
+        for owner in ["802154", QUARANTINE_OWNER, "stand"] {
+            assert!(
+                refusal(&boards, owner, &claims)
+                    .unwrap()
+                    .contains("quarantined"),
+                "{owner}"
+            );
+        }
+        let still = arbiter.release_quarantine("AA", "user", Confirmation::Reset, || {
+            Err("no ROM line".into())
+        });
+        assert!(still.is_err());
+        assert!(arbiter.is_quarantined("AA").unwrap());
+        let answer = arbiter
+            .release_quarantine("AA", "user", Confirmation::PowerCycle, || {
+                Ok(String::from("rst:0x1 (POWERON)"))
+            })
+            .unwrap();
+        assert_eq!(answer, "rst:0x1 (POWERON)");
+        assert!(!arbiter.is_quarantined("AA").unwrap());
+        assert!(arbiter.board_events().unwrap().iter().any(|event| matches!(
+            event.kind,
+            crate::BoardEventKind::QuarantineReleased {
+                confirmation: Confirmation::PowerCycle,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn only_hardware_recoveries_count_towards_flaky() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        for hardware in [true, false, true] {
+            arbiter
+                .record_board_by(
+                    String::from("runner"),
+                    Some(String::from("AA")),
+                    crate::BoardEventKind::Recovered {
+                        step: crate::RecoveryStep::EnReset,
+                        hardware,
+                        reset_line: None,
+                        origin: String::from("run"),
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(arbiter.recent_hardware_recoveries("AA").unwrap(), 2);
+        assert_eq!(arbiter.recent_hardware_recoveries("BB").unwrap(), 0);
     }
 
     #[test]

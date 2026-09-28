@@ -938,6 +938,12 @@ fn firmware(
     Ok(std::process::ExitCode::SUCCESS)
 }
 
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ConfirmArg {
+    Reset,
+    PowerCycle,
+}
+
 /// `cargo hil devices [--json]` and `cargo hil devices set MAC ...`.
 fn devices(
     ctx: &Context,
@@ -995,6 +1001,10 @@ fn devices(
         Release {
             #[arg(value_name = "NAME|MAC")]
             board: String,
+            /// What you did to a quarantined board: pressed its reset button
+            /// or power-cycled it. It returns only if it then boots.
+            #[arg(long, value_enum)]
+            confirm: Option<ConfirmArg>,
         },
     }
     let cli = DevicesCli::try_parse_from(args)?;
@@ -1077,6 +1087,9 @@ fn devices(
                 since_unix: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_secs(),
+                kind: oer_hil_arbiter::ServiceKind::Maintenance,
+                trigger: None,
+                evidence: None,
                 unknown: Default::default(),
             })?;
             println!("{board} ({mac}) is under maintenance by {owner}");
@@ -1088,8 +1101,23 @@ fn devices(
             }
             return Ok(std::process::ExitCode::SUCCESS);
         }
-        Some(DevicesCommand::Release { board }) => {
+        Some(DevicesCommand::Release { board, confirm }) => {
             let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
+            if arbiter.is_quarantined(&mac)? {
+                let confirmation = match confirm.ok_or(
+                    "the board is quarantined: reset or power-cycle it, then pass \
+                     --confirm reset|power-cycle",
+                )? {
+                    ConfirmArg::Reset => oer_hil_arbiter::Confirmation::Reset,
+                    ConfirmArg::PowerCycle => oer_hil_arbiter::Confirmation::PowerCycle,
+                };
+                let answer =
+                    arbiter.release_quarantine(&mac, &options.owner(ctx), confirmation, || {
+                        crate::hil_board::boots(&board)
+                    })?;
+                println!("{board} ({mac}) is back in service; it booted: {answer}");
+                return Ok(std::process::ExitCode::SUCCESS);
+            }
             if arbiter.clear_maintenance(&mac)? {
                 println!("{board} ({mac}) is back in service");
             } else {

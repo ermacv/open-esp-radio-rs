@@ -4,6 +4,7 @@ use super::*;
 fn io_failure_is_broken_but_a_scenario_assertion_is_failed() {
     let io = std::io::Error::from(std::io::ErrorKind::NotConnected);
     let evidence = ExecutionEvidence {
+        quarantined: false,
         measurements: Vec::new(),
         interrupted: false,
         failure: Some(classify(&io)),
@@ -13,6 +14,7 @@ fn io_failure_is_broken_but_a_scenario_assertion_is_failed() {
     let assertion: Box<dyn std::error::Error + Send + Sync> =
         "target failed the throughput criterion".into();
     let evidence = ExecutionEvidence {
+        quarantined: false,
         measurements: Vec::new(),
         interrupted: false,
         failure: Some(classify(&*assertion)),
@@ -39,9 +41,21 @@ fn fixture_setup_failure_is_broken_even_through_operation_context() {
             .into(),
     );
     let evidence = ExecutionEvidence {
+        quarantined: false,
         failure: Some(classify(&*error)),
         ..Default::default()
     };
     assert_eq!(evidence.outcome(), Outcome::Broken);
     assert_eq!(evidence.failure.unwrap().kind, FailureKind::Infrastructure);
+}
+
+#[test]
+fn a_quarantined_board_is_its_own_outcome() {
+    let evidence = ExecutionEvidence {
+        quarantined: true,
+        measurements: Vec::new(),
+        interrupted: false,
+        failure: Some(Failure::new(FailureKind::Infrastructure, "unreachable")),
+    };
+    assert_eq!(evidence.outcome(), Outcome::BoardQuarantined);
 }

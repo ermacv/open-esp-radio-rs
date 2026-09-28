@@ -162,6 +162,8 @@ pub(in crate::evidence) fn aggregate_outcome(
         Outcome::Passed
     } else if observed.contains(&Outcome::Interrupted) {
         Outcome::Interrupted
+    } else if observed.contains(&Outcome::BoardQuarantined) {
+        Outcome::BoardQuarantined
     } else if observed.contains(&Outcome::Broken) {
         Outcome::Broken
     } else if observed.contains(&Outcome::Failed) {
@@ -201,7 +203,8 @@ impl SuiteCounts {
                 Outcome::Failed => counts.failed += 1,
                 Outcome::Broken => counts.broken += 1,
                 Outcome::Skipped => counts.skipped += 1,
-                Outcome::Blocked => counts.blocked += 1,
+                // A quarantined board says nothing about the code under test.
+                Outcome::Blocked | Outcome::BoardQuarantined => counts.blocked += 1,
                 Outcome::Interrupted => counts.interrupted += 1,
             }
         }

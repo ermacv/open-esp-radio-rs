@@ -383,7 +383,7 @@ fn scenario_trends(observations: Vec<ScenarioObservation>) -> Vec<ScenarioTrend>
                 trend.skipped += 1;
                 trend.consecutive_non_passed += 1;
             }
-            Outcome::Blocked => {
+            Outcome::Blocked | Outcome::BoardQuarantined => {
                 trend.blocked += 1;
                 trend.consecutive_non_passed += 1;
             }

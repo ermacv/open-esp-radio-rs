@@ -38,6 +38,24 @@ pub enum BoardEventKind {
         sha256: String,
         disposition: String,
     },
+    /// The stand recovered an unreachable board automatically.
+    Recovered {
+        /// The recovery step that brought it back.
+        step: RecoveryStep,
+        /// Whether the failure was below the firmware: the port vanished, the
+        /// ROM waited for a download, or nothing answered at all.
+        hardware: bool,
+        /// The ROM's reset line after the step.
+        reset_line: Option<String>,
+        /// The run or command that recovered it.
+        origin: String,
+    },
+    /// A person returned a quarantined board after a reset or power cycle.
+    QuarantineReleased {
+        confirmation: crate::maintenance::Confirmation,
+        /// What the board answered to the release check.
+        check: String,
+    },
 }
 
 impl std::fmt::Display for BoardEvent {
@@ -79,8 +97,36 @@ impl std::fmt::Display for BoardEvent {
                 "{who} wrote startup artifact {} ({disposition}) to {path}",
                 short_hash(sha256)
             ),
+            BoardEventKind::Recovered {
+                step,
+                hardware,
+                reset_line,
+                origin,
+            } => write!(
+                f,
+                "{who} recovered it by {step:?} ({} failure) in {origin}: {}",
+                if *hardware { "hardware" } else { "firmware" },
+                reset_line.as_deref().unwrap_or("no reset line")
+            ),
+            BoardEventKind::QuarantineReleased {
+                confirmation,
+                check,
+            } => write!(f, "{who} returned it after a {confirmation:?}: {check}"),
         }
     }
+}
+
+/// An automatic recovery step of an unreachable board.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecoveryStep {
+    /// A pulse on RTS of the chip's own USB Serial/JTAG port, for a board
+    /// without an EN path.
+    RtsReset,
+    /// A pulse on EN through the board's registered reset path.
+    EnReset,
+    /// Its switchable hub port was powered off and on.
+    PowerCycle,
 }
 
 fn short_hash(hash: &str) -> &str {
@@ -121,7 +167,9 @@ impl BoardEvent {
         match &self.kind {
             BoardEventKind::StartupArtifactUploaded { path, .. }
             | BoardEventKind::StartupArtifactWritten { path, .. } => Some(path),
-            BoardEventKind::Flashed { .. } => None,
+            BoardEventKind::Flashed { .. }
+            | BoardEventKind::Recovered { .. }
+            | BoardEventKind::QuarantineReleased { .. } => None,
         }
     }
 }

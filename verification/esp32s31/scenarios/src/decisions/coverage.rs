@@ -1167,7 +1167,7 @@ pub const DECISIONS: &[Decision] = &[
         places: &[Place::Range {
             function: "rcReachRetryLimit",
             start: 0xa,
-            end: 0x46,
+            end: 0x8c,
         }],
     },
 ];

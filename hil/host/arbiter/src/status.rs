@@ -218,6 +218,18 @@ fn duration(seconds: u64) -> String {
     format_duration(Duration::from_secs(seconds))
 }
 
+/// A holder's estimate, and how far it has run past it.
+fn estimate(elapsed_secs: u64, estimate_secs: u64) -> String {
+    match elapsed_secs.checked_sub(estimate_secs) {
+        Some(overdue) if overdue > 0 => format!(
+            "estimated {}, overdue by {}",
+            duration(estimate_secs),
+            duration(overdue)
+        ),
+        _ => format!("estimated {}", duration(estimate_secs)),
+    }
+}
+
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut text = String::new();
@@ -227,14 +239,14 @@ impl std::fmt::Display for Status {
         for holder in &self.holders {
             writeln!(
                 text,
-                "held:    #{} {} `{}` on {} pid {}, {} (estimated {}), balance {}",
+                "held:    #{} {} `{}` on {} pid {}, {} ({}), balance {}",
                 holder.id,
                 holder.owner,
                 holder.work,
                 holder.claims,
                 holder.pid,
                 duration(holder.elapsed_secs),
-                duration(holder.estimate_secs),
+                estimate(holder.elapsed_secs, holder.estimate_secs),
                 signed_duration(holder.balance_ms)
             )?;
         }
@@ -336,5 +348,20 @@ impl std::fmt::Display for Status {
             )?;
         }
         f.write_str(text.trim_end())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_holder_past_its_estimate_is_shown_overdue() {
+        assert_eq!(estimate(60, 300), format!("estimated {}", duration(300)));
+        assert_eq!(estimate(300, 300), format!("estimated {}", duration(300)));
+        assert_eq!(
+            estimate(420, 300),
+            format!("estimated {}, overdue by {}", duration(300), duration(120))
+        );
     }
 }

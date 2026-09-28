@@ -224,37 +224,3 @@ fn build(
         c,
     )
 }
-
-/// Expand immutable original streams without acquiring source paths or running analysis.
-pub(crate) fn read(
-    project: &Project,
-    id: &ArtifactId,
-    memory: &WorkingMemory,
-    c: &mut dyn RunControl,
-    emit: &mut dyn FnMut(&SemanticIrRecord, &mut dyn RunControl) -> Result<()>,
-) -> Result<SemanticIrManifest> {
-    let _envelope = memory.reserve(2 * 1024 * 1024, c.position())?;
-    let ir = project.semantic_ir(id, memory, c)?;
-    let mut reader = project.analysis_reader(memory);
-    blobray_store::visit_jsonl(&ir.records, c, |record: SemanticIrRecord, c| {
-        emit(&record, c)?;
-        if let SemanticIrRecord::Function { function, .. } = &record {
-            let lease = reader.analysis(&function.analysis, c)?;
-            let mut ordinal = 0;
-            blobray_store::visit_jsonl(&lease.records, c, |fact: FunctionRecord, c| {
-                emit(
-                    &SemanticIrRecord::Fact {
-                        analysis: function.analysis.clone(),
-                        record: ordinal,
-                        fact: Box::new(fact),
-                    },
-                    c,
-                )?;
-                ordinal += 1;
-                Ok(())
-            })?;
-        }
-        Ok(())
-    })?;
-    Ok(ir.manifest)
-}

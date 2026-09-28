@@ -1,13 +1,11 @@
 //! Bounded local control-flow exploration. No filesystem, project or ISA implementation.
 use blobray_domain::*;
 pub mod closure;
-pub mod interfaces;
 pub mod navigation;
-pub mod paths;
+mod paths;
 pub mod pointers;
 mod references;
 pub mod registers;
-pub mod summaries;
 pub mod trace;
 mod value_sets;
 mod values;
@@ -503,6 +501,3 @@ fn emit(
 pub mod audit;
 
 pub mod flow;
-
-pub mod event_routes;
-pub mod memory_slice;

@@ -121,35 +121,12 @@ impl<'a, 'm> Facts<'a, 'm> {
             .ok()
             .map(|i| self.references[i]))
     }
+    #[cfg(test)]
     pub(crate) fn expression(&self, id: u32) -> Result<&Expression> {
         self.expressions
             .get(id as usize)
             .copied()
             .ok_or_else(|| integrity("expression ID is absent"))
-    }
-    pub fn call_inputs_record(&self, offset: u64, c: &mut dyn RunControl) -> Result<Option<u64>> {
-        c.checkpoint(self.inputs.len().max(1).ilog2() as u64 + 1)?;
-        Ok(self
-            .inputs
-            .binary_search_by_key(&offset, |r| r.0)
-            .ok()
-            .map(|i| self.inputs[i].2))
-    }
-    pub fn call_argument(
-        &self,
-        offset: u64,
-        word: u8,
-        c: &mut dyn RunControl,
-    ) -> Result<Option<&AbstractValue>> {
-        c.checkpoint(self.inputs.len().max(1).ilog2() as u64 + 1)?;
-        Ok((word < 8)
-            .then(|| {
-                self.inputs
-                    .binary_search_by_key(&offset, |r| r.0)
-                    .ok()
-                    .and_then(|i| self.inputs[i].1.get(usize::from(word) + 10))
-            })
-            .flatten())
     }
     pub fn paths(
         &self,

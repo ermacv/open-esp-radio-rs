@@ -437,15 +437,6 @@ pub struct SemanticSummary {
 pub enum CallAbi {
     RiscvInteger,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ResearchOptions {
-    #[serde(default)]
-    pub companions: Vec<PublicationId>,
-    pub publication: PublicationId,
-    pub abi: Option<CallAbi>,
-    pub knowledge: Option<KnowledgeRevisionId>,
-}
 /// Flat DAG. References must point to earlier records in the same function.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]

@@ -9,14 +9,13 @@ provider registry, or cross-revision correspondence or rebase. The
 | --- | --- |
 | Import → inventory → reopen without originals | Implemented, partial inventory remains explicit |
 | Automatic whole-library or saved-plan investigation | Implemented, one application run and atomic publication |
-| Link PHY entry with explicit ROM companions → research | Limited RV32 integer static profile, unsupported semantics remain gaps |
-| Propose register from analysis → explicit review → research with selected knowledge | Implemented; proposal, review and observation remain distinct |
+| Link PHY entry with explicit ROM companions → analysis | Limited RV32 integer static profile, unsupported semantics remain gaps |
 | Saved MMIO/mask discovery → physical catalogue → review → source-model publication | Implemented; Next evidence and source-owned hardware acceptance remain separate |
 | Execute / compare / replay captured implementations | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
 | Captured PHY I2C → compiled-production comparison → replay | [Native real scenario](../../../../verification/esp32s31/README.md#captured-i2c-command-memory-comparison); 45 command-memory writes, descriptor/no-op leaves and both-host byte/field/reset transport under explicit bounded peripheral responses; independent MATCH/DIFF/INCOMPLETE expectations, no physical timing or RF claim |
 | Current PHY calibration leaves → compiled-production comparison → replay | [Finite native matrix](../../../../verification/esp32s31/README.md#current-calibration-leaves); TX-gain restore, forced gain, temperature conversion and post-init AGC with explicit domains and independent writes/returns; enclosing calibration remains outside this profile |
 | Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
-| Exact data ranges → integer table/constant proposal → review → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
+| Exact data ranges → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
 
 Concrete scenario orchestration belongs to application. Selection/planning and
 execution share one original deadline and work/memory/disk budget. Failure before
@@ -26,15 +25,12 @@ publication leaves prior results and current selections intact.
 
 | Contract | Implementation | Regression coverage |
 | --- | --- | --- |
-| Image data symbols agree across generic proposal, review and export | [shared occurrence](../../crates/application/src/occurrence.rs) | `generic_image_table_review_and_export_validate_the_same_physical_symbol` in [linked tests](../../next/tests/linked/mod.rs) |
-| Shared child facts survive repeated consumers and release after the final edge | [research](../../crates/application/src/research.rs) | `shared_callee_facts_live_until_the_last_edge_then_release_capacity`; `diamond_research_keeps_shared_leaf_effects_for_both_parents_and_repeated_calls` in [linked tests](../../next/tests/linked/mod.rs) |
 | Failed record growth releases the incoming payload without losing old records | [record memory](../../crates/domain/src/record_memory.rs) | `failed_record_growth_rolls_back_payload_and_allows_reuse` in the same module |
-| Captured data, known constants and explicit review survive source removal | [data operations](../../crates/application/src/data.rs) | [data regression tests](../../next/tests/functions/data.rs) |
+| Captured data observations survive source removal | [data operations](../../crates/application/src/data.rs) | [data regression tests](../../next/tests/functions/data.rs) |
 | Partial inventory is partial in summary and handle | [query](../../crates/application/src/query.rs) | `partial_inventory_has_the_same_assessment_in_handle_and_output` in [memory tests](../../next/tests/memory.rs) |
 | One object preparation for multiple functions; linear archive indexing | [investigations](../../crates/application/src/investigations.rs) | `automatic_investigation_prepares_each_object_once_and_publishes_one_run`, `archive_lookup_work_grows_with_members_without_restarting_the_cursor` in [investigation tests](../../next/tests/functions/investigations.rs) |
 | Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [function tests](../../next/tests/functions.rs) |
 | Original budget and atomic publication span automatic planning | [scenarios](../../crates/application/src/scenarios.rs), [supervisor](../../crates/application/src/jobs.rs) | `automatic_planning_and_execution_share_exhaustion_and_publication_boundary` in [investigation tests](../../next/tests/functions/investigations.rs) |
-| One knowledge-history materialization per research | [research](../../crates/application/src/research.rs) | `image_mmio_knowledge_round_trip_has_native_commands_and_retained_evidence` in [linked tests](../../next/tests/linked/mod.rs) |
 | Unsupported journal and project formats remain untouched | [store](../../crates/store/src/jobs.rs) | `incompatible_journals_are_rejected_by_all_readers_without_mutation`, `older_project_formats_are_rejected_without_mutation` in [store tests](../../crates/store/src/tests.rs) |
 | Phase/counter accounting continues through retention | [resources](../../crates/application/src/resources.rs) | `fixed_measurements_and_phase_costs_survive_worker_handoff` in the same module |
 
@@ -159,17 +155,12 @@ object and streams captured bytes, relocations and supporting analysis records.
 The selected analyses retain their original scope and gaps. No hidden analysis
 or preferred resolution of duplicate names occurs.
 
-A table proposal supplies integer encoding, count, stride, purpose and applicability.
-A coefficient proposal instead names an exact known operand in a saved analysis.
-Knowledge validates the claim shape; application checks the physical evidence on
-proposal and review. Only explicit review produces an accepted interpretation.
-A table with relocations can have a reviewed layout while numeric values remain
-unresolved. Writable bytes describe initialization, not runtime state.
+A pointer-table request adds an explicit count and stride; relocations stay
+retained and are never applied. Writable bytes describe initialization, not
+runtime state. The observation is evidence, not an accepted interpretation.
 
-Success means an export at the selected knowledge revision preserves the exact
-object, data ranges or instruction evidence, layout/constant interpretation and
-provenance after source deletion, move and restore. The export never presents
-an instruction-derived coefficient as a contiguous table in the binary.
+Success means an export preserves the exact object, data ranges, supporting
+analysis records and provenance after source deletion, move and restore.
 
 ## Compare a Rust replacement
 
@@ -317,7 +308,7 @@ and executable intervals outside that selection are separate observations.
 `storage-usage` reports accumulated logical storage without changing the project.
 
 **Implemented within the current format:** backup/restore, project move, reopening
-without source files, and recreating accepted-data exports. Other database or
+without source files, and recreating data exports. Other database or
 journal versions are rejected unchanged. No old-reader packaging, upgrade or
 compatibility reader is provided. Exports retain bytes and provenance; they do not
 promise automatic import into another format.
@@ -356,26 +347,6 @@ validation alone establishes neither those runtime guarantees nor hardware
 qualification.
 
 
-## Captured interface observation and review (implemented profile)
-
-1. Select a retained analysis or exact captured pointer-table span. Run the shared
-   `interfaces` read query with explicit ABI where argument roots require it.
-2. Inspect physical root, dereference/index path, slot and evidence record. Missing
-   provenance or unsupported expressions remain issues; numeric targets do not
-   establish table ownership. Null/external/unresolved pointer values stay distinct.
-3. Propose a native interface contract with reviewed layout and preconditions.
-   Leave signature/semantic binding unknown when evidence only establishes a slot.
-   Validate and review through the ordinary knowledge lifecycle.
-4. Query with the exact accepted knowledge revision. Inspect candidate states,
-   ambiguity and unverified runtime conditions. Matching never executes a model.
-5. Export observations and preserve the project; source removal and backup/restore
-   retain identical query identities and content. The real PHY scenario checks a ROM
-   global-pointer/slot path with independently established instruction operands.
-
-This structural scenario does not claim callback execution or hardware behavior.
-Runtime interface placement and callback execution use the separate explicit
-scenarios below. Neither is a read query success condition.
-
 ## Reviewed runtime callback (implemented profile)
 
 Select an accepted interface assertion and its exact knowledge revision. Supply
@@ -396,74 +367,24 @@ defines exact ownership and the value-association claim.
 
 Select a captured function symbol or explicit executable range. Propose its native
 function contract with retained evidence, known or unknown signature, argument
-contexts, field roles and caller preconditions. Validate through the shared read
-query, then apply/review against an explicit knowledge base. Conflicting accepted
+contexts, field roles and caller preconditions through the knowledge API, then
+review it against an explicit knowledge base. Conflicting accepted
 interpretations require explicit supersession; invalid physical identities or
 contradictory layout/predicates publish no knowledge revision.
 
 Query/export the accepted revision after source removal. Review preserves the
 interpretation and never rewrites the saved function analysis or supplies observed
-runtime preconditions. Field navigation and route witnesses consume explicit
-reviewed declarations through their own query contracts; declaration alone does
-not assert a call path, executable route or behavioral equivalence.
+runtime preconditions. Declaration alone does not assert a call path, executable
+route or behavioral equivalence.
 
 
-### Selected research navigation
-
-Implemented: select a revision, saved publications/analyses and optional knowledge;
-list functions and declared contracts; inspect callers/callees or object readers/writers;
-select an accepted context declaration and inspect observed field accesses; export
-and reopen the same query after source removal. `navigate` shares the application
-read lifecycle and resource budget. Missing/partial facts and ambiguous addresses
-remain visible. No read performs hidden planning, linking or analysis, and no empty
-selection proves that the entire firmware lacks an effect. Structural flow/effect inventory and ordered path review use `flow` and the native
-path claim. `memory-slice` inspects local RAM definitions at publication.
-`event-route` validates reviewed conditional asynchronous routes against saved facts.
-
-
-### Saved structural path review
-
-Implemented: select a root and target analysis; inspect the returned structural
-predecessor hops and frontiers; propose an exact native path with root evidence;
-validate/review every selected physical call; export the accepted knowledge and
-flow query. Review rejects an ambiguous selected step instead of choosing an
-interpretation. The same source-free project can produce a reachable memory-effect
-inventory with original local/composed provenance and explicit unknown addresses.
-These results do not establish event delivery, feasible execution or comparison.
-
-
-### Saved RAM definitions
-
-Implemented: select one retained analysis and an exact local call/store/transfer
-anchor, then discover preceding writes or select a known address/access span.
-Inspect incoming state, last definitions, source facts, CFG witnesses and barriers;
-export the query and reopen it after removing source files or restoring a backup.
-Joining paths, loops, unknown aliases/calls and partial coverage remain explicit.
-The slice never launches analysis or turns composed may-effects into RAM state.
-
-
-### Conditional event-route review
-
-Implemented: choose exact dispatch, registration/delivery or domain/subscription
-calls and the saved field/selector/callback evidence. Inspect `event-route`
-checks, correct unresolved or mismatched bindings, then use ordinary knowledge
-proposal and acceptance. Query/export the same declaration after source removal;
-knowledge export preserves its participant identities. Selector delivery, static
-callbacks and broker subscriptions each have their own finite declaration.
-
-Acceptance authenticates the physical structure and the reviewed assignment of
-service roles. Mechanism semantics, object lifetime, delivery/context/guards and
-registration order remain explicit obligations for a runtime consumer. Static
-review alone cannot complete an asynchronous execution scenario.
 ## Register discovery and source publication
 
 Select saved analyses/publications and, optionally, a frozen knowledge revision.
-`registers` reports the selected coverage, unknown/alternative addresses, local and
-composed observations, expression masks and applicable declarations/conflicts. The
-same API exports its complete typed result without reacquiring original binaries.
-Use exact analysis records as proposal evidence and supply physical widths/fields
-explicitly. Acceptance preserves occurrence applicability; it does not turn an
-instruction access width into physical geometry or establish hardware behavior.
+`registers` reports the selected coverage, unknown/alternative addresses, local
+observations, expression masks and applicable declarations/conflicts. The same API
+exports its complete typed result without reacquiring original binaries. An
+instruction access width never becomes physical geometry or hardware behavior.
 
 To publish source, the independent register tool initializes explicit empty
 peripherals or imports retained CMSIS-SVD into an unreviewed native model. A source
@@ -474,8 +395,8 @@ automatic Next-to-hardware acceptance or binary-derived write-semantics fallback
 See the [source-authoring commands](../../../registers/README.md) and
 [saved register reference](../../next/reference/registers-data/README.md#saved-register-research).
 
-Regression owners are Next `functions/registers.rs` (review, conflicts, limits,
-source-free export and restore), analysis `registers` (mask bounds), application
+Regression owners are Next `functions/registers.rs` (address filters, partial scope
+and invalid requests), analysis `registers` (mask bounds), application
 `registers::index` (applicability and retired claims) and register tool `drafts`
 (initialization/import, explicit review and four-output publication).
 
@@ -483,8 +404,8 @@ source-free export and restore), analysis `registers` (mask bounds), application
 
 Select frozen publications/analyses and optional knowledge, then configure named
 all/prefix/exact-analysis roots and resolved call closure. One application build
-publishes an immutable IR identity. Show/export streams the original facts with
-profile membership, partial coverage, unresolved links and transitive provenance.
+publishes an immutable IR identity that retains the original facts with profile
+membership, partial coverage, unresolved links and transitive provenance.
 Deleting origins, moving the project and restoring a backup preserve that identity.
 A successful build means the configured bundle was retained; static-trace exactness
 and concrete execution are separate consumer claims. Details and commands:
@@ -498,8 +419,7 @@ Read the path blockers and exactness independently from operation completion. Co
 ordered MMIO/fence events only; return/RAM/call relations belong to other profiles.
 Export the result and retain its project backup to reproduce the same trace without
 source binaries. [Static trace scope and assumptions](../../next/reference/ir-traces/README.md#static-observable-traces)
-define MATCH/DIFF/INCOMPLETE and the distinction from composed research and concrete
-execution.
+define MATCH/DIFF/INCOMPLETE and the distinction from concrete execution.
 
 
 The implemented device workflow declares exact ports and applicability in the shared

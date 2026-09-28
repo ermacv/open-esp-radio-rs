@@ -140,7 +140,6 @@ fn fixture(bytes: Vec<u8>, thin: bool) -> Fixture {
         .clone();
     let revision = inventory.revision_id;
     let request = FunctionRequest {
-        research: None,
         revision: Some(revision.clone()),
         source: FunctionSource::Input { input: 0 },
         selector: (symbol).into(),
@@ -440,10 +439,13 @@ fn function_cancellation_timeout_and_disk_limit_never_publish() {
     assert_eq!(limited.temporary_storage_status().reserved_bytes, 0);
     assert!(matches!(
         f.app
-            .query(&f.project, app::ReadQuery::Analyses, budget())
+            .query(&f.project, app::ReadQuery::Doctor, budget())
             .unwrap()
             .summary(),
-        app::QuerySummary::Analyses { count: 0 }
+        app::QuerySummary::Doctor {
+            checked_analyses: 0,
+            ..
+        }
     ));
     assert_eq!(
         app::inventory(&f.project, None).unwrap().revision_id,
@@ -709,10 +711,13 @@ fn value_state_capacity_failure_has_its_own_phase_and_never_publishes() {
     assert!(run.analysis.is_none());
     assert!(matches!(
         f.app
-            .query(&f.project, app::ReadQuery::Analyses, budget())
+            .query(&f.project, app::ReadQuery::Doctor, budget())
             .unwrap()
             .summary(),
-        app::QuerySummary::Analyses { count: 0 }
+        app::QuerySummary::Doctor {
+            checked_analyses: 0,
+            ..
+        }
     ));
     assert_eq!(
         app::inventory(&f.project, None).unwrap().revision_id,
@@ -839,9 +844,6 @@ mod reports;
 
 #[path = "functions/ranges.rs"]
 mod ranges;
-
-#[path = "functions/memory_slice.rs"]
-mod memory_slice;
 
 #[path = "functions/registers.rs"]
 mod registers;

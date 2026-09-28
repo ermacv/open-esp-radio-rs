@@ -64,45 +64,8 @@ impl QueryOutput {
             {
                 None
             }
-            (
-                ReadQuery::SemanticIr { id },
-                QuerySummary::SemanticIr {
-                    id: actual,
-                    manifest,
-                },
-            ) if id == actual
-                && manifest.schema == SEMANTIC_IR_SCHEMA
-                && manifest.policy == SEMANTIC_IR_POLICY =>
-            {
-                None
-            }
             (ReadQuery::Registers { request }, QuerySummary::Registers { summary })
                 if summary.schema == 1 && summary.request == *request =>
-            {
-                None
-            }
-            (ReadQuery::EventRoute { request }, QuerySummary::EventRoute { summary })
-                if summary.schema == 1 && summary.request == *request =>
-            {
-                None
-            }
-            (ReadQuery::MemorySlice { request }, QuerySummary::MemorySlice { summary })
-                if summary.schema == 1 && summary.request == *request =>
-            {
-                None
-            }
-            (ReadQuery::Flow { request }, QuerySummary::Flow { summary })
-                if summary.schema == 1 && summary.request == *request =>
-            {
-                None
-            }
-            (ReadQuery::Navigate { request }, QuerySummary::Navigation { summary })
-                if request == &summary.request && summary.schema == 1 =>
-            {
-                None
-            }
-            (ReadQuery::Interfaces { request }, QuerySummary::Interfaces { summary })
-                if request == &summary.request && summary.schema == 1 =>
             {
                 None
             }
@@ -120,27 +83,9 @@ impl QueryOutput {
                 None
             }
             (
-                ReadQuery::ReviewedData {
-                    revision,
-                    assertion,
-                },
-                QuerySummary::Data { manifest },
-            ) if manifest.knowledge.as_ref() == Some(revision)
-                && manifest
-                    .accepted
-                    .as_ref()
-                    .is_some_and(|e| &e.id == assertion && e.state == AssertionState::Accepted) =>
-            {
-                None
-            }
-            (
                 ReadQuery::AuditTargets { ranges, .. },
                 QuerySummary::TargetAudit { ranges: actual, .. },
             ) if ranges == actual => None,
-            (
-                ReadQuery::ValidateKnowledge { change },
-                QuerySummary::KnowledgeValidation { expected_base },
-            ) if &change.expected_base == expected_base => None,
             (
                 ReadQuery::RetainedPayload { id },
                 QuerySummary::RetainedPayload { id: actual, .. },
@@ -173,7 +118,6 @@ impl QueryOutput {
                 None
             }
             (ReadQuery::InvestigationStatus, QuerySummary::InvestigationStatus { .. }) => None,
-            (ReadQuery::Analyses, QuerySummary::Analyses { .. }) => None,
             (
                 ReadQuery::Execution { id, .. } | ReadQuery::ExecutionSummary { id },
                 QuerySummary::Execution { id: actual, .. },
@@ -261,10 +205,7 @@ impl QueryOutput {
             }
         };
         let mut bundle = Vec::new();
-        if matches!(
-            &work.query,
-            ReadQuery::Data { .. } | ReadQuery::ReviewedData { .. }
-        ) {
+        if matches!(&work.query, ReadQuery::Data { .. }) {
             for name in ["data.bin", "object.elf", "records.jsonl", "manifest.json"] {
                 bundle.push((name, File::open(stage.join(name)).map_err(io)?));
             }

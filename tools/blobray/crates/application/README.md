@@ -147,8 +147,7 @@ explicit; the helper grants no publication or review authority.
 `start_knowledge` admits proposals and review changes through the durable job
 supervisor. The worker resolves exact retained occurrences, verifies evidence
 and uses `blobray-knowledge` for conflicts/transitions. Store atomically publishes
-the event and run outcome. `ReadQuery::Knowledge` freezes its head at admission;
-`ValidateKnowledge` checks a change without publication.
+the event and run outcome. `ReadQuery::Knowledge` freezes its head at admission.
 
 Backup and restore use the same supervised query lifecycle. Restore cannot
 mutate an existing destination; the caller publishes a verified new project with
@@ -159,16 +158,10 @@ define the formats, bounds, publication boundary and supported conversions.
 returns the ordinary exact link plan. Missing/ambiguous names return candidate
 records without selecting a definition. Prepared-image analysis freezes that
 image's original revision, retains its ELF lease, and uses the existing function
-engine. Queries expose saved functions, call targets, memory accesses and mapping
-precision. No query performs linking or analysis as a side effect.
+engine. Queries expose saved functions and mapping precision. No query performs
+linking or analysis as a side effect.
 
-## Research ownership
-
-`research` resolves a saved function through image-qualified publication entries,
-walks the reachable call closure iteratively, and supplies acyclic callee facts to
-analysis. Recursive components remain explicit gaps. It applies only the selected
-knowledge revision. The local ELF borrow ends before summary composition starts.
-No second worker, parser, scheduler or provider registry exists.
+## ROM companions
 
 `companions` validates exact retained ROM function and data definitions for the
 common link recipe; `linking::proposal` trial-links a request and proposes them
@@ -209,7 +202,7 @@ linker capabilities. The artifact owner validates executable sections; analysis
 owns target policy evaluation. Findings are streamed and no project is opened.
 
 Concrete compound operations (`start_analyze_project` with automatic/saved input,
-`start_research`, `start_propose_register`, `start_replay`) belong to application.
+`start_replay`) belong to application.
 They retain one supervisor, worker and original budget through resolution and
 publication. CLI does not carry budgets between separate operations.
 `QueryOutput::assessment` and `QuerySummary::assessment` use the same scoped
@@ -217,20 +210,15 @@ assessment as `RunRecord`; lifecycle, research coverage, policy and comparison
 are separate. See [contracts](../../docs/design/contracts.md#result-assessment).
 
 Whole-library execution shares a prepared object/section across its function
-views. Research uses admitted publication/MMIO indexes and one frozen knowledge
-snapshot. Fixed phase costs and work counters survive coordinator retention.
+views. Fixed phase costs and work counters survive coordinator retention.
 
-Data research resolves an exact occurrence once and borrows ranges from one prepared
-object. `ReadQuery::Data` and `ReviewedData` share the query/delivery budget;
-`start_propose_data` and `start_propose_constant` resolve exact evidence within one
-supervised scenario and publish through existing knowledge transactions.
+Data observation resolves an exact occurrence once and borrows ranges from one
+prepared object under the query/delivery budget of `ReadQuery::Data`.
 `QueryOutput::export_data` transfers captured object/bytes/records and provenance
-to a new directory. Review state and analysis coverage remain separate.
+to a new directory. Analysis coverage remains separate.
 
 `coverage` streams selected extent unions against captured inventory, while
 `storage-usage` observes persistent file sizes without a writer or recovery.
-Single-function enrichment starts after the prepared ELF and references end;
-research records retain capacity only until their last composition consumer.
 
 Function requests carry `FunctionSelector::Symbol` or an explicit
 `FunctionSelector::Range`; both use shared captured-occurrence acquisition.
@@ -238,53 +226,31 @@ Reviewed executable ranges and symbol-size overrides enter one investigation
 enumeration and one function engine. Coverage joins ranges directly to section
 metadata and symbols to their physical table records before counting the union.
 
-Data observation/review/export also owns pointer tables. Requests explicitly
+Data observation and export also own pointer tables. Requests explicitly
 select one captured range and a count/stride profile; the application injects
-backend relocation semantics into the streaming analysis port. Accepted exports
+backend relocation semantics into the streaming analysis port. Exports
 preserve the profile, raw bytes, physical relocation identities and classification
 counters without promoting external symbols or numeric addresses to callees.
 
 Interface proposals and reviews use the existing knowledge lifecycle and captured-occurrence helper. Exact symbol and function-range roots and captured-payload guards are checked against retained bytes. Runtime guards are conditional metadata and do not resolve callbacks or grant execution authority.
 
-The `interfaces` read scenario selects saved analysis facts or a captured pointer
-span plus an explicit knowledge revision. It owns one admitted record/object view
-and one sorted path/slot binding index. It exposes every matching review state and
-unverified runtime condition without hidden analysis, callee selection or model
-execution. CLI and API share this query; JSON export retains reference identities.
-
-`ReadQuery::Navigate` owns explicit publication/analysis/knowledge selection,
-operation-local physical indexes, context argument mapping and streamed evidence.
-It releases each function record owner before reading the next; shared dependency
-handles belong to one store reader. Navigation never starts analysis implicitly.
-
-`ReadQuery::Flow` reuses navigation selection and edge resolution, owns compact
-call graph metadata, and streams reached effects in a second linear pass. Native
-path proposal/review rechecks exact immutable hops through this shared resolver.
-No path query invokes analysis, and review is not executable reachability.
-
-`ReadQuery::MemorySlice` loads one authenticated saved record owner and streams
-bounded local definition queries under the same supervision/export lifecycle.
-Application owns acquisition and atomic delivery; analysis owns CFG/alias rules.
-
-`ReadQuery::EventRoute` and native route proposal/review share one evidence path.
-Navigation supplies exact selected callees and a synchronous borrowed-facts port;
-route orchestration retains only admitted values/metadata between participants.
-Physical structural checks are distinct from service semantics and temporal
-conditions. No route query launches hidden analysis or executable delivery.
+`navigation` resolves explicit publication/analysis/knowledge selection,
+operation-local physical indexes and call links for the register catalogue and
+semantic IR builds. It releases each function record owner before reading the
+next and never starts analysis implicitly.
 
 `start_build_ir` packages explicit saved scopes into immutable named semantic
 profiles. The common navigation resolver supplies physical links and publication
 names; finite profile propagation and a separate admitted provenance worklist
 preserve the distinction between selected callees and evidence-only dependencies.
-The build owns one supervised budget/publication. `ReadQuery::SemanticIr` expands
-original function facts through `QuerySink::semantic_ir`; no hidden analysis or
+The build owns one supervised budget/publication; no hidden analysis or
 live-origin access occurs. See [IR profiles](../../next/reference/ir-traces/README.md#saved-semantic-ir-profiles).
 
 `ReadQuery::Trace` selects original local members of retained IR profiles and exposes
 `QuerySink::trace` evidence and a scoped static comparison verdict. Each side's saved
 facts are loaded once and released before the next side. Only ordered observables
-and an admitted canonical expression index overlap. Unknowns and composition-only
-facts never trigger an implicit analysis or execution workflow.
+and an admitted canonical expression index overlap. Unknowns never trigger an
+implicit analysis or execution workflow.
 
 Concrete invocation setup owns the aligned stack argument area and its knownness.
 Explicit unknown words invalidate seeded bytes before execution. Domain validates

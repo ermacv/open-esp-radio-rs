@@ -55,13 +55,10 @@ snapshot. Durable operations never use this path to reopen missing source files.
 
 ## Concrete application scenarios
 
-`start_analyze_project(InvestigationInput)`, `start_research`,
-`start_propose_register` and `start_replay` each own one admission, run, writer,
-worker, deadline, work counter, working-capacity authority and disk budget.
-Automatic investigation freezes the source revision at admission and retains its
-plan. Research resolves an exact function from the selected immutable publication.
-Register proposal derives occurrence/evidence from the selected analysis. Replay
-requires the original executor/environment/verifier identities and exact request.
+`start_analyze_project(InvestigationInput)` and `start_replay` each own one
+admission, run, writer, worker, deadline, work counter, working-capacity authority
+and disk budget. Automatic investigation freezes the source revision at admission
+and retains its plan. Replay requires the original executor/environment/verifier identities and exact request.
 CLI parses parameters and renders outcomes; it performs none of these resolutions.
 
 A `Scenario` journal operation retains original intent. `resolved_operation`
@@ -75,25 +72,20 @@ entry stream directly into execution under the original budget.
 ## Research memory and read-only observations
 
 Single-function local analysis returns an owned staged manifest. Its prepared
-ELF, section views and reference indexes end before enrichment starts. Library
-analysis keeps one prepared object across its local functions; enrichment cannot
-run inside that owner. No global object cache exists.
+ELF, section views and reference indexes end with the analysis. Library analysis
+keeps one prepared object across its local functions. No global object cache
+exists.
 
-Research loading admits a bounded JSONL decoding workspace before deserialization,
+Record loading admits a bounded JSONL decoding workspace before deserialization,
 then transfers records into `RecordBuffer`: vector capacities, boxes, names,
 identities and nested value collections remain charged with their owners. Shared
-reference targets are conservatively charged per reference. Composition admits
-mapping/return workspaces from type sizes and maximum resident counts; output
-grows through admitted containers, charging old/new buffers simultaneously.
-Original records end after replacement; callee facts end after their last parent.
-Cyclic components keep explicit partial local facts. This is capacity admission,
-not a no-heap or whole-process RSS guarantee.
+reference targets are conservatively charged per reference. This is capacity
+admission, not a no-heap or whole-process RSS guarantee.
 
 Phase diagnostics contain `reserved_bytes` at the last admission/release
 observation and `peak_reserved_bytes` at such observations, alongside work/time.
 They include allocations carried into that phase; phase peaks must not be added.
-`load-research` and `compose-research` distinguish retained facts from ELF
-preparation. These measurements are diagnostic and do not enter result identity.
+`load-research` distinguishes retained facts from ELF preparation. These measurements are diagnostic and do not enter result identity.
 
 `storage-usage` is a supervised read query. It counts logical file sizes in CAS,
 metadata and staging, including unreachable CAS files. Metadata row counts share
@@ -654,28 +646,6 @@ Backup/restore preserve source, analysis, publication and knowledge identities.
 Existing target executable ABI/interface validators and register-publication policies remain outside
 this implemented review vocabulary. Reviewed MMIO region/register interpretation is implemented.
 
-### Implemented PHY/ROM research boundary
-
-The library research operation extends the
-same local engine with a bounded expression DAG and acyclic call composition.
-Application selects exact published callees; analysis receives borrowed facts and
-returns admitted owned output. Recursive components retain local facts and gaps.
-The explicit ABI assumption, source/companion publications and knowledge revision
-are recipe dependencies. Callee may-effects do not establish ordered execution.
-Expression provenance and source-qualified addresses survive composition.
-
-Knowledge occurrences identify input or prepared image, object and optional
-function symbol. Accepted MMIO descriptions label observations without providing
-load values or hardware qualification. Root/image applicability is validated on
-proposal and review; a mapping never silently transfers an assertion.
-
-Prepared-image policy 5 records exact captured ROM function definitions and places
-executable sections by ELF flags. No compatibility adapter, model stub or implicit
-companion lookup participates. The original ELF/code view ends before composition;
-working buffers and summary reservations end after their staged delivery. The
-same supervisor retains cancellation, capacity and atomic publication ownership.
-
-
 ### Implemented concrete execution boundary
 
 Domain owns `ExecutionRequest`, `ExecutionProducer`, observations and the injected
@@ -761,23 +731,12 @@ once, owns the query budget and streams observations. Store neither parses ELF
 nor interprets a table. Query delivery owns its private exported files until
 transfer or drop, and does not publish knowledge as a side effect.
 
-`KnowledgeClaim::IntegerTable` describes integer encoding/count/stride over exact
-captured bytes. Proposal and review require matching Source evidence for the
-whole selected file range. A `Constant` claim requires a known selected operand
-at an exact Analysis record ordinal. Both require purpose and applicability and
-use the existing expected-base/review/supersession transaction. Source revisions
-remain separate from knowledge revisions. A constant's value is an RV32 bit
-pattern, not a fabricated data payload.
-
-Data exports retain the captured object, selected bytes, analysis coverage and
-optional accepted assertion at a fixed knowledge revision. Original paths are
+Data exports retain the captured object, selected bytes and analysis coverage.
+Original paths are
 provenance only. Image VMAs are checked against file-backed load mappings;
 section-relative and file-relative offsets are separate fields. Mutable section
-bytes are initialization only. Relocations are retained, never implicitly applied;
-this integer profile withholds numeric decoding when a known relocation write
-intersects the selected range or any section relocation has unknown write extent.
-Proven disjoint fixed-width writes do not block unrelated integer data. The
-manifest retains total, overlapping and unknown-extent counts. Unknown transforms
+bytes are initialization only. Relocations are retained, never implicitly applied.
+The manifest retains total, overlapping and unknown-extent counts. Unknown transforms
 are never excluded merely by their offset, and invalid known extents are rejected. Successful export makes no general completeness or comparison claim.
 
 ### Physical symbol selection
@@ -796,7 +755,7 @@ including aliases, as separate physical requests and results. Coverage unions
 selected byte intervals without turning duplicate symbols into additional bytes.
 Function selection policy 8 and investigation policy 4 record this interpretation;
 reading does not convert older policies. Regression coverage lives in Next
-`functions` tests `dynamic_occurrences_keep_physical_indices_through_review_export_and_reopen`,
+`functions` tests `dynamic_occurrences_keep_physical_indices_through_analysis_and_reopen`,
 `dynamic_function_selection_keeps_static_relocation_target_identity` and
 `dynamic_and_static_function_aliases_remain_distinct_in_saved_publication`.
 
@@ -820,20 +779,16 @@ metadata and unions them with symbol extents, leaving other bytes unclassified.
 
 Function and investigation records carry these identities under the
 [current formats](../../next/reference/interfaces-formats/README.md#current-formats). Old formats are rejected without
-mutation or conversion. `functions::ranges` regressions cover table-free ordinary
-and thin archives, generic review, invalid ranges, source-free export and coverage;
+mutation or conversion. `functions::ranges` regressions cover invalid ranges and
+explicit range planning;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
 prepared-image review and virtual addresses.
 
 ### Captured pointer-table observations
 
-`DataLayout` distinguishes integer and pointer table proposals. `PointerTable`
-specifies count/stride for captured little-endian RV32 four-byte slots. Raw
-`DataRequest.pointer_table` is an explicit observation request over one range;
-accepted exports derive that request from `KnowledgeClaim::PointerTable`. Generic
-and specialized proposals, review and export share physical occurrence and exact
-byte-evidence validation. Conflicting overlapping integer/pointer interpretations
-cannot coexist as accepted assertions.
+`PointerTable` specifies count/stride for captured little-endian RV32 four-byte
+slots. `DataRequest.pointer_table` is an explicit observation request over one
+range; export shares physical occurrence and exact byte-evidence validation.
 
 Artifacts supplies borrowed bytes, sorted physical relocations and structural
 write bounds. `analysis::pointers` streams individual slots with work accounting;
@@ -846,16 +801,12 @@ retained.
 Pointer values distinguish null, numeric address, defined symbol plus addend,
 external symbol plus addend and a typed unresolved transformation. Linked words
 must agree with known R_RISCV_32 results; captured bytes are never patched. Address
-values establish neither executable mappings nor function/ABI boundaries. An
-accepted layout is not a claim that every target is executable or resolved.
+values establish neither executable mappings nor function/ABI boundaries.
 Data manifest schema 3 includes producer identity and classification counters;
-resource failure aborts the query/proposal, never truncates a successful table.
+resource failure aborts the query, never truncates a successful table.
 
-Next pointer regressions cover source-free ordinary/thin exports, overlapping and
-partial writes, unknown/wider relocations, raw addresses, generic review and shared
-budget exhaustion. The real PHY scenario checks all eleven physical relocation
-targets and an independently established digest for `phy_i2c.o` `.rodata`, then
-reviews, exports and reopens the table after project restore.
+Next pointer regressions cover null, address, defined and external slots,
+overlapping and partial writes and unknown/wider relocations.
 
 ## Finite value alternatives
 
@@ -875,17 +826,14 @@ includes set lookup/growth and each candidate evaluation. Cycles converge under
 the finite-height lattice; resource exhaustion creates no published partial result.
 
 Read queries match each possible address/symbol without changing or recomputing
-the saved facts. Call filters include ambiguous finite targets as unresolved.
-Research keeps their transfer records and does not compose an arbitrarily selected
-callee. Callee image alternatives become source/object-qualified addresses; callee
-stack alternatives cannot be treated as caller storage. CFG edges and original
+the saved facts. Call filters include ambiguous finite targets as unresolved and
+never select one of them. CFG edges and original
 instruction/relocation records remain provenance; sets do not encode path
 correlation, prove reachability or expand indirect control flow.
 
 Contract regressions: analysis `value_sets::tests` and
 `values::tests::joins_and_loops_converge_independently_of_visit_order`; Next
-`finite_pointer_loads_keep_both_callback_targets_in_queries_research_and_reopening`
-and `persisted_alternatives_are_flat_bounded_and_canonical`.
+`persisted_alternatives_are_flat_bounded_and_canonical`.
 
 ## Conditional interface declarations
 
@@ -919,46 +867,6 @@ Regressions: knowledge `interfaces::tests` checks guards/domains/ABI and physica
 static overlap; Next `native_interface_roots_validate_review_and_export_without_sources`
 checks generic admission, every root kind, symbol-less arguments, thin members,
 resource failure and source-free CLI review/export.
-
-
-### Interface observation lifetime and matching
-
-`ReadQuery::Interfaces` owns one explicit `InterfaceQuery`. Domain owns its request,
-observation and summary values. Analysis interprets the retained flat expression DAG
-iteratively and builds admitted instruction/call/expression indexes. Application
-loads one saved analysis into a `RecordBuffer`, or prepares one captured data object
-and borrows its span for streaming pointer interpretation. It loads only the requested
-knowledge revision (`None` is empty) and builds a sorted, admitted physical path/slot
-index. No per-call full knowledge scan, hidden analysis, extra resolver authority or
-persistent discovery cache exists. Output bindings and variable payloads are
-admitted until the synchronous sink returns; errors discard the supervised query's
-private staging without publishing a truncated result.
-
-An observation retains the input analysis record or pointer-slot ordinal, instruction
-or data offset, exact paths, saved target/pointer value, issues and every candidate
-binding's review state. Matching requires the same revision/source/object and physical
-root/path/slot. Static offsets are canonicalized; dereference/index boundaries remain
-part of identity. No address-to-symbol guessing or cross-occurrence alias inference is
-performed. Accepted candidates can remain ambiguous. Guards and index domains remain
-unverified runtime preconditions; signatures and semantic keys can remain unknown.
-The query has counts, not a general coverage or verification assessment.
-
-The current analysis profile recognizes saved indirect calls (also ET_REL), four-byte
-loads, constant offsets, incoming stack words and scaled a0..a7 words under an explicit
-integer ABI. Known numeric/finite targets without retained load provenance produce
-`NoPointerPath`; unsupported expressions and foreign occurrences remain explicit.
-It does not reverse-engineer an originating table from a destination address, expand
-callee control flow or claim executable reachability. Data queries preserve captured
-initialization and relocation uncertainty. Source-free query/export retains reference
-identities; a JSON observation export is not a transitive research backup.
-
-Regressions: analysis `interfaces::tests` covers exact argument/index paths, canonical
-keys, malformed DAGs and resource failure; Next
-`saved_callback_discovery_review_states_guards_and_export_share_one_query_contract`
-and `captured_symbol_less_pointer_slots_match_only_selected_structural_declarations`
-cover shared API/CLI, review states, conditional matches and source removal. The real
-ESP32-S31 `research` scenario checks the independently read ROM global/slot path, explicit unknown
-signature, acceptance and byte-identical query export after backup/restore.
 
 
 ### Function/context declaration boundary (implemented profile)
@@ -1021,231 +929,6 @@ source-free review/export. Signature validation also remains covered by the nati
 interface regressions through the shared `calls` validator.
 
 
-### Saved research navigation
-
-One application read query selects an explicit source revision, saved analyses and
-publications, and optional knowledge revision. It never chooses current heads or
-starts missing analysis. Function identities are source plus exact selector;
-results retain analysis IDs and record ordinals, including unresolved and ambiguous
-calls. Callers/callees describe retained structural may-edges, not execution traces.
-Multiple saved interpretations of one function are not silently collapsed.
-
-Application owns bounded operation indexes and reads each selected analysis's facts
-once. Decoding/workspace ends before the next function; retained call/selection
-metadata is admitted separately. Domain owns navigation values; analysis owns flat
-expression/access-path interpretation; artifacts validates selected object locations
-including NOBITS without inventing initialization bytes; store supplies retained
-readers only. Memory-object matching uses physical symbols/sections or explicitly
-qualified image addresses. Cross-object name matching cannot resolve an external
-symbol. Unresolved addresses cannot establish absence of access.
-
-Context-field queries require an explicitly selected accepted function contract.
-They match observed address expressions against its exact function ABI word and
-field extent. Read/write roles from review remain distinct from actual access kind;
-preconditions are still unverified. Partial overlaps, finite alternatives and
-unsupported paths stay visible with evidence. Read/export/reopen share this query
-and impose the same work, memory, deadline and delivery limits.
-
-
-`ReadQuery::Navigate` delivers `NavigationRecord` and `NavigationSummary` through
-shared query staging and optional atomic JSON export. An explicit accepted contract
-maps logical context arguments to physical incoming words; unknown signatures require
-caller-supplied mappings. A known signature rejects contradictory maps. `AccessRoot`
-and `AccessStep` are the shared physical vocabulary for interface and field paths;
-entry words and index domains use `word`, not logical `argument` ordinals.
-
-`store::AnalysisReader` owns at most 256 admitted, verified immediate dependency
-handles until the query ends. Shared revision/publication/member roots are hashed
-once; every function manifest and fact stream is still opened and verified. It is
-neither an incremental cache nor a transitive retention pin. Snapshot and one-record
-construction envelopes, sorted indexes, pending calls and emitted variable payloads
-have separate admission. Failed admission/cancellation discards private query output.
-
-Structural calls retain unknown/ambiguous targets and out-of-selection saved IDs.
-A callers focus does not label unresolved edges as confirmed callers. Object queries
-match exact physical ranges, including NOBITS; unknown and unqualified composed
-addresses cannot prove non-access or inherit the caller's object. Context reads use
-observed load/store/atomic kinds rather than declared roles. These queries neither
-traverse an unbounded call graph nor schedule missing interpretation.
-
-Regressions: Next `selected_navigation_keeps_call_evidence_deduplicates_scope_and_never_starts_analysis`,
-`context_navigation_uses_logical_signature_arguments_and_explicit_unknown_mappings`,
-`bss_reader_writer_navigation_uses_physical_ranges_without_fabricating_data_bytes`;
-application `navigation::tests`; domain scalar ABI placement and store function
-publication reader tests. The authenticated PHY scenario checks saved linked callees
-and byte-identical navigation export after source removal and backup/restore.
-
-
-### Structural flow and path review
-
-A flow request chooses an explicit navigation scope, one exact root analysis and a
-selected target analysis or effect profile. It never substitutes a different saved
-interpretation of an entry. Application builds a bounded operation-local graph from
-retained calls; analysis owns iterative reachability. Unknown/ambiguous transfers,
-missing selected targets, partial analyses and depth boundaries remain frontiers.
-The graph can return a representative structural path, never an executable witness
-or absence proof outside the selection. A callee requires an unambiguous selected
-physical edge; a reviewed interface label does not create one.
-
-Graph construction releases each function's decoded facts. Effect delivery may
-make a second linear pass over reached functions after graph construction; it does
-not load a function for each caller or retain all function record buffers. Each
-emitted effect refers to a source record and a predecessor path in the returned
-selected graph. Local facts and composed facts retain their distinct origin IDs.
-No source ELF preparation or new analysis occurs during flow reading.
-
-A native ordered path assertion stores exact caller-analysis/record/callee-analysis
-hops, purpose and applicability. Proposal and review recheck all participating
-analyses in the same revision, require contiguous unambiguous edges, retain their
-manifest/fact roots and reject missing/mismatched steps before publication. The
-assertion is conditional reviewed structural navigation; it supplies no runtime
-precondition satisfaction, event delivery or executable comparison claim.
-
-
-`ReadQuery::Flow` shares navigation's selection/edge resolver and observed-manifest
-callback; no second physical resolver or graph cache exists. Reachability accepts
-only uniquely resolved selected edges. Parent links identify one deterministic
-shortest call path; a depth bound reports a frontier for an unreached destination.
-Effects retain source analysis/record and original `MemoryAccess` or `CalleeEffect`
-values. They are evidence rows, not a deduplicated trace: a local callee effect and
-its composed caller instances remain distinct. Address filters match access spans;
-unknown or partly matching finite addresses remain visible with unknown match state.
-
-`FlowSummary.target_reached` refers only to the selected structural graph, and is
-null for an effect query. Frontiers/unavailable entries are separate counts; no
-summary has an overall complete/PASS/executable claim. `facts_passes` counts decoded
-function streams: one per selected analysis for the graph and, for memory effects,
-one additional pass per reached analysis. The original ELF is never prepared.
-Path assertions allow 1..64 contiguous acyclic hops and require exact root analysis
-evidence. Changed paths for the same subject conflict until explicitly superseded.
-
-Regressions: analysis `flow::tests` covers diamond/cycle/depth and failed admission;
-application `flow::tests` checks unknown/alternative address filtering; knowledge
-`paths::tests` checks finite declaration shape. Next
-`selected_flow_paths_review_exact_hops_and_reopen_without_sources` covers review,
-ambiguous physical interpretations, wrong records/occurrences, work failure and
-CLI/API export after source removal. The PHY workflow checks a linked target,
-44 composed fill records and the independently expected first encoded write, then
-reopens identical flow exports after project backup/restore.
-
-
-### Memory definitions at publication
-
-A read request selects one retained analysis, an exact local call/transfer/store
-record as the publication anchor, an optional explicit integer ABI, and locations.
-An empty location selection discovers known local write spans; explicit selections
-can name a local access record, literal span, entry-stack span or incoming ABI-word
-pointee. Thus a selected read with no prior write can report incoming state. No
-caller-invented symbol identity or hidden source reanalysis enters this query.
-
-Analysis builds bounded indexes over saved instructions, edges, expressions and
-local accesses. Per location, it walks CFG predecessors from immediately before
-the anchor, stops at definite covering writes and retains possible/conditional writes,
-incoming state, call clobbers and unknown/overlapping aliases. It reuses one admitted
-worklist/visited/predecessor set per location instead of materializing all location
-states at every CFG node. Loops use marked nodes and preserve the possibility of a
-prior iteration of the anchor. Work and memory exhaustion fail the query atomically.
-
-The returned local definition is `must`, `alternative` or `candidate` with an exact
-record and structural suffix witness. A must classification requires one definite
-last-write site, no incoming alternative or unresolved alias/clobber and closed
-structural coverage. Partial-width overlap remains explicit without invented byte
-composition. Different incoming pointers or dereferenced roots are not assumed
-disjoint; composed callee effects do not erase an unmodeled call's clobber. These
-are local write-definition relationships, not runtime memory contents, hardware
-state, path feasibility or interprocedural effect-completeness guarantees.
-
-`ReadQuery::MemorySlice` owns one authenticated retained fact stream. The pure
-analysis port borrows it for instruction/access indexes, SCC membership and one
-backward search per selected span. Explicit selections are bounded at 256; an
-empty selection discovers preceding write spans within the operation budget.
-Loading reports `LoadResearch`; local index/dataflow work reports `AnalyzeValues`.
-No prepared ELF or global cache overlaps these owners.
-
-`incoming` is `possible` when an unchanged entry value has a structural path,
-`overwritten` when every such path meets a covering write, and `unknown` when
-missing CFG or a surviving ambiguous path prevents that decision. A wide covering
-write can establish overwritten while its narrower value remains candidate:
-there is no byte-lane composition or projection. Definition facts retain original
-operands, including atomic operands, not manufactured final RAM values.
-
-Equal entry-register words, stack offsets and physical addresses share locations.
-Different pointer roots may alias. A scalar computed once outside every CFG cycle
-can identify one loaded pointer and its disjoint fields. Its expression ID belongs
-to this saved analysis, never to a host allocation. Iterative SCC detection keeps
-repeated loads dynamic; pure expressions of immutable inputs remain stable.
-Stack argument cells are mutable: selecting an initial ABI pointee does not assert
-that a later stack load still contains that pointer. Select its exact saved access
-record to follow a particular loaded value. ABI omission does not infer a mapping.
-
-Regressions: analysis `memory_slice` covers bounded predecessor search, SCCs,
-joins/loops/conditional writes and overlap; Next `functions::memory_slice` covers
-machine-code fixtures, API/CLI exports, unknown calls, killed clobbers, malformed
-requests, capacity/work failures and source-free reopening. The PHY scenario checks
-exact prologue stack writes/witnesses before and after an ordinary linked call;
-its unexpanded tail retains partial CFG status even for the early local witness.
-
-### Reviewed event routes
-
-Three finite native declarations own selector delivery, static callback
-registration/delivery and broker subscription. Participants are exact saved
-analysis/call/condition/load/store identities, with explicit physical RV32 ABI
-words and selector/object/queue/domain fields. Upstream and terminal paths retain
-ordered exact hops. No name lookup or implicit analysis participates.
-
-Application shares navigation's physical selection and target keys. A synchronous
-borrowed-facts consumer prepares only required observations while one saved record
-owner is live, then releases that owner; cross-participant checks retain admitted
-values and metadata. Analysis owns local pointer coordinates, branch predicates,
-CFG suffixes and callback-store reaching definitions. Knowledge owns finite shape,
-conflicts and review; proposal and acceptance authenticate the same physical facts.
-
-The read result separates established, unresolved and mismatched structural checks
-from runtime obligations: object lifetime, registration before dispatch, delivery
-order, execution context and guard satisfaction. Acceptance requires established
-structural bindings and never discharges these temporal obligations. Unknown stack
-arguments or dynamic pointers are explicit unresolved evidence, never substituted
-with a different ABI word or selected callback. No complete/PASS/execution claim
-is inferred from a structurally reviewed asynchronous route.
-
-
-Service roles (send, receive, registration, invoke, attach and subscribe) are
-reviewed interpretations of the explicitly selected callees. Structural argument
-checks do not derive those service semantics from their bodies. The result retains
-`mechanism-semantics` as an obligation, alongside lifetime/order/context/guard
-conditions; runtime consumers must supply the matching reviewed service model.
-Selector case checks show that the selected value is consistent with a chosen
-branch and a structural suffix to the handler, not that this is its exclusive or
-exhaustive runtime dispatch. A suffix cannot change the selected case by revisiting
-the same condition. Full-width RV32 masks preserve pointer coordinates; partial
-masks never silently become a resolved callback address.
-
-
-Declaration bounds are 1..16 static dispatch sites, at most 16 hops on each optional
-upstream/terminal path, physical ABI words below 64, and 4096 bytes per context or
-applicability text. Current saved-call arguments expose words 0..7; higher words
-remain unresolved. Selector widths are 1/2/4 bytes. A callback store is exactly four
-bytes and must be the unique reaching write before subscription. The broker domain
-selector is checked both at attach and subscribe; publish object and selector,
-subscriber field and callback entry, callback selector branch and selected handler
-remain separate checks. Payload words retain raw saved call inputs; no guessed
-payload expression is required.
-
-Preview queries return unresolved/mismatched checks without publication. Both
-generic proposal and acceptance reject those checks through the same application
-path. Accepted claims retain every participant manifest/fact root, require exact
-root analysis evidence and conflict with different routes for the same subject.
-`analyses_read` counts one decode per selected participant; a borrowed facts
-consumer releases each full stream before the next. Local checks report
-`AnalyzeValues`, acquisition reports `LoadResearch`. Work/capacity failure exposes
-no partial query or knowledge revision.
-
-Regressions: Next `functions::event_routes` exercises all three declarations,
-physical values and cases, callback overwrite/truncation, competing interpretations,
-wrong records/fields, cycle rejection, budgets, proposal/review and source-free
-exports. A selected case cannot reach its handler by revisiting the same predicate
-and taking a different edge on a later iteration. Runtime conditions remain in
-all successful query results.
 ## Register research and source publication
 
 Register discovery reads an explicit saved analysis/publication scope and an
@@ -1254,7 +937,6 @@ and expression masks are observations, not physical register/field declarations.
 Unknown addresses, alternatives, partial analyses and unavailable members remain
 visible. A catalogue matches declarations only in their exact source revision and
 object applicability; no hardware meaning is inferred from a coincident address.
-Proposals and acceptance use the existing knowledge evidence/conflict lifecycle.
 
 The independent register owner initializes editable source models from explicit
 peripheral geometry and imports CMSIS-SVD into the same native source format.
@@ -1283,9 +965,8 @@ transitive saved analysis provenance is retained separately from profile members
 An evidence-only dependency never silently becomes a selected callee. The normal
 supervisor validates/promotes the closure and publishes the result with the run;
 capacity, cancellation or validation failure cannot publish an incomplete bundle.
-Read/export expands original facts with exact analysis and record identities,
-preserving local effects, composed may-effects and their original coverage. Trace
-extraction is a separate consumer responsible for its explicit exactness claim.
+Trace extraction reads original facts with exact analysis and record identities
+and is responsible for its explicit exactness claim.
 
 ## Static trace relation
 
@@ -1306,8 +987,7 @@ conflicting boundaries, missing flow or unsupported semantics; those still block
 exactness. Original function coverage is not upgraded.
 
 A trace is conditional on explicit inputs, original immutable-image assumptions and
-ordinary integer ABI call/return behavior. Composed may-effects are never treated as
-an ordered execution. Unknowns are blockers, not zeroes; all incomplete paths prevent
+ordinary integer ABI call/return behavior. Unknowns are blockers, not zeroes; all incomplete paths prevent
 MATCH. Canonical symbolic equality can prove the selected relation, while undecidable
 symbolic inequality remains INCOMPLETE unless a later observed event proves a
 difference. A proven prefix mismatch yields DIFF even with incomplete paths,
@@ -1316,7 +996,7 @@ when the shorter side is exact. Return rows/call sites are provenance and are
 excluded from the physical MMIO/fence relation. A successful query denotes delivery,
 not exactness or termination proof. The same frozen IR and request reproduce the
 result after source-free backup/restore. Regression owners are Next
-`functions::trace`, linked call/tail tests and the authenticated PHY research scenario.
+`functions::trace` and the static trace execution tests.
 
 
 ### Implemented device ownership and completion

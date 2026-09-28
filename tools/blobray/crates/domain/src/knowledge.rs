@@ -50,12 +50,6 @@ pub enum KnowledgeClaim {
     CallPair {
         correspondence: Box<CallCorrespondence>,
     },
-    EventRoute {
-        route: Box<ReviewedEventRoute>,
-    },
-    Path {
-        path: Box<ReviewedPath>,
-    },
     Function {
         contract: Box<FunctionContract>,
     },
@@ -205,11 +199,4 @@ pub struct KnowledgeStatus {
 pub struct ReviewedExtent {
     pub revision: KnowledgeRevisionId,
     pub assertion: AssertionId,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct KnowledgeEvent {
-    pub revision: KnowledgeRevisionId,
-    pub manifest: KnowledgeManifest,
 }

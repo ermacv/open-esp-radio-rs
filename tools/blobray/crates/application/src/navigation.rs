@@ -32,15 +32,6 @@ struct Declaration<'a, 'm> {
 fn sort_charge(n: usize, c: &mut dyn RunControl) -> Result<()> {
     c.checkpoint(n as u64 * (n.max(1).ilog2() as u64 + 1))
 }
-pub(crate) fn query(
-    project: &Project,
-    request: &NavigationQuery,
-    memory: &WorkingMemory,
-    c: &mut dyn RunControl,
-    emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
-) -> Result<NavigationSummary> {
-    query_observed(project, request, memory, c, &mut |_, _, _, _| Ok(()), emit)
-}
 type DescriptorObserver<'a> = dyn FnMut(&NavigationFunction, &FunctionManifest, Option<&[u8]>, &mut dyn RunControl) -> Result<()>
     + 'a;
 /// Same selection and single fact pass, with borrowed names from selected publications.
@@ -297,7 +288,7 @@ fn query_inner(
             || target.as_ref().is_some_and(|t| t.relevant(recipe))
         {
             context_found = true;
-            let records = crate::research::load_records(&lease.records, memory, c)?;
+            let records = crate::records::load_records(&lease.records, memory, c)?;
             summary.analyses_read += 1;
             let facts = Facts::new(&records, memory, c)?;
             if let Some(inspect) = inspect.as_mut() {
@@ -374,14 +365,6 @@ fn count(record: &NavigationRecord, summary: &mut NavigationSummary) {
 
 #[cfg(test)]
 mod tests;
-
-pub(crate) fn target_matches(
-    caller: &FunctionRecipe,
-    target: &FunctionRecipe,
-    value: &AbstractValue,
-) -> bool {
-    calls::target_matches(caller, target, value)
-}
 
 /// Heap payload retained when storing a call row beyond its borrowed callback.
 pub(crate) fn call_bytes(record: &NavigationRecord) -> u64 {

@@ -812,15 +812,7 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 );
             }
             KnowledgeCommand::Show { revision } => {
-                return read_query(
-                    project,
-                    ReadQuery::Knowledge {
-                        revision,
-                        history: false,
-                    },
-                    limits,
-                    format,
-                );
+                return read_query(project, ReadQuery::Knowledge { revision }, limits, format);
             }
         },
         Command::AnalyzeProject {

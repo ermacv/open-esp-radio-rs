@@ -225,7 +225,6 @@ fn missing_unsupported_duplicate_and_contradictory_link_effects_fail_closed() {
     let manifest = FunctionManifest {
         schema: FUNCTION_SCHEMA,
         recipe: FunctionRecipe {
-            research: None,
             abi: RiscvAbi::Ilp32,
             schema: FUNCTION_SCHEMA,
             policy: FUNCTION_POLICY,

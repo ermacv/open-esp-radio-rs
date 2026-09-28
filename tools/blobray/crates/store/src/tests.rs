@@ -681,7 +681,6 @@ fn check_function_publication(decoding: bool) {
         index: 1,
     };
     let request = FunctionRequest {
-        research: None,
         revision: Some(snapshot.revision_id.clone()),
         source: FunctionSource::Input { input: 0 },
         selector: (symbol.clone()).into(),
@@ -721,7 +720,6 @@ fn check_function_publication(decoding: bool) {
             ..Default::default()
         }),
         recipe: FunctionRecipe {
-            research: None,
             abi: RiscvAbi::Ilp32,
             address_space: CodeAddressSpace::Section,
             schema: FUNCTION_SCHEMA,
@@ -865,7 +863,6 @@ fn staged_investigation(
         index: 1,
     };
     let request = FunctionRequest {
-        research: None,
         revision: Some(revision.clone()),
         source: FunctionSource::Input { input: 0 },
         selector: (symbol.clone()).into(),
@@ -927,7 +924,6 @@ fn staged_investigation(
             &FunctionManifest {
                 schema: FUNCTION_SCHEMA,
                 recipe: FunctionRecipe {
-                    research: None,
                     abi: RiscvAbi::Ilp32,
                     address_space: CodeAddressSpace::Section,
                     schema: FUNCTION_SCHEMA,

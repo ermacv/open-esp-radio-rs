@@ -73,5 +73,5 @@ phases! {
     publish: Publish, execute: Execute, compare: Compare, materialize: Materialize,
     link: Link, validate_image: ValidateImage, analyze_function: AnalyzeFunction,
     analyze_values: AnalyzeValues, prepare_object: PrepareObject, prepare_section: PrepareSection,
-    plan_investigation: PlanInvestigation, index_research: IndexResearch,
+    plan_investigation: PlanInvestigation,
 }

@@ -93,7 +93,7 @@ are injected ports; domain selects neither an ISA nor an environment. Request
 validation bounds control cardinalities. Host admission also bounds serialization
 before copying requests. See the [execution contract](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
-`ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines four concrete application actions. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
+`ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines five concrete application actions. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
 
 Data contracts identify exact captured ranges, integer table encodings and constants
 selected from retained analysis operands. Observations, review state and function
@@ -105,16 +105,6 @@ observations describe admission, not RSS. Extent and storage reports are typed
 observations without discovery, pruning or hardware claims.
 
 Native interface declarations retain exact symbol/function/address roots, explicit pointer paths, index preconditions, conditional guards and typed slot signatures. Their semantic keys are labels, not runtime models; function range roots need no fabricated symbol.
-
-
-`MemorySliceQuery` and its records distinguish exact anchor identity, local spans,
-incoming uncertainty, last-write classes and unresolved barriers. Saved expression
-IDs scope pointer identity to one analysis; witnesses are structural evidence.
-
-
-`ReviewedEventRoute` defines three finite conditional mechanisms; `EventRouteQuery`
-and its output separate exact saved evidence, structural check outcomes and runtime
-conditions. No schema field promotes static bindings to completed delivery.
 
 [Saved IR values](src/semantic_ir.rs) define configured profile selection and original
 fact/provenance membership. [Static traces](src/trace.rs) define explicit physical

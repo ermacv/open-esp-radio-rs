@@ -2,11 +2,8 @@
 //! streams accepted assertions; this crate cannot read, publish or run analysis.
 use blobray_domain::*;
 mod calls;
-mod event_routes;
 mod functions;
 mod interfaces;
-mod paths;
-pub use event_routes::validate as validate_event_route;
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)
 }
@@ -44,17 +41,6 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
             }
         }
 
-        KnowledgeClaim::EventRoute { route } => {
-            validate_event_route(route)?;
-            if !p
-                .evidence
-                .iter()
-                .any(|e| matches!(e,EvidenceRef::Analysis {analysis,..} if analysis==route.root()))
-            {
-                return Err(invalid("event route needs exact root analysis evidence"));
-            }
-        }
-        KnowledgeClaim::Path { path } => paths::validate(p, path)?,
         KnowledgeClaim::Function { contract } => functions::validate(p, contract)?,
         KnowledgeClaim::Interface { contract } => interfaces::validate(p, contract)?,
         KnowledgeClaim::IntegerTable {
@@ -248,12 +234,6 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
                     || x.replacement == y.replacement)
         }
 
-        (KnowledgeClaim::EventRoute { route: x }, KnowledgeClaim::EventRoute { route: y }) => {
-            a.subject == b.subject && x != y
-        }
-        (KnowledgeClaim::Path { path: x }, KnowledgeClaim::Path { path: y }) => {
-            a.subject == b.subject && x != y
-        }
         (KnowledgeClaim::Function { contract: x }, KnowledgeClaim::Function { contract: y }) => {
             a.occurrence.source == b.occurrence.source
                 && a.occurrence.object == b.occurrence.object

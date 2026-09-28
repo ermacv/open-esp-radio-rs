@@ -61,7 +61,6 @@ fn captured_range(thin: bool) -> (Fixture, u32, u64) {
             },
         },
         extent: None,
-        research: None,
     };
     (
         Fixture {

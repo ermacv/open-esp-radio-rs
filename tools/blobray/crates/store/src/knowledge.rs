@@ -440,12 +440,6 @@ fn proposal_heap_bytes(p: &KnowledgeProposal) -> u64 {
         KnowledgeClaim::CallPair { correspondence } => {
             std::mem::size_of::<CallCorrespondence>() + correspondence.allocated_bytes() as usize
         }
-        KnowledgeClaim::EventRoute { route } => {
-            std::mem::size_of::<ReviewedEventRoute>() + route.allocated_bytes() as usize
-        }
-        KnowledgeClaim::Path { path } => {
-            std::mem::size_of::<ReviewedPath>() + path.allocated_bytes() as usize
-        }
         KnowledgeClaim::Function { contract } => {
             std::mem::size_of::<FunctionContract>() + contract.allocated_bytes() as usize
         }

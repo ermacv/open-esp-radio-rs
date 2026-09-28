@@ -96,7 +96,7 @@ impl<'m> FunctionEngine<'m> {
         payload: &ArtifactId,
         control: &mut dyn RunControl,
     ) -> Result<PreparedFunctionReceipt> {
-        let mut manifest = {
+        let manifest = {
             let mut references = AdmittedVec::new(self.memory);
             blobray_artifacts::with_prepared_object(
                 source,
@@ -105,18 +105,9 @@ impl<'m> FunctionEngine<'m> {
                 control,
                 |object, c| self.analyze_local(object, &mut references, request, payload, c),
             )?
-        }; // Both the prepared ELF and its reference indexes end before enrichment.
-        let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
-        crate::research::enrich(
-            self.project,
-            &staging,
-            &mut manifest,
-            self.memory,
-            self.disk,
-            self.stage,
-            control,
-        )?;
-        staging.function_receipt(&manifest, control)
+        };
+        Staging::with_temporary_budget(self.stage, self.disk.clone())?
+            .function_receipt(&manifest, control)
     }
     pub fn analyze_prepared(
         &self,
@@ -126,12 +117,6 @@ impl<'m> FunctionEngine<'m> {
         payload: &ArtifactId,
         control: &mut dyn RunControl,
     ) -> Result<PreparedFunctionReceipt> {
-        if request.research.is_some() {
-            return Err(Error::new(
-                ErrorCode::InvalidRequest,
-                "enrichment requires ending the prepared-object scope",
-            ));
-        }
         let manifest = self.analyze_local(object, references, request, payload, control)?;
         Staging::with_temporary_budget(self.stage, self.disk.clone())?
             .function_receipt(&manifest, control)
@@ -158,7 +143,6 @@ impl<'m> FunctionEngine<'m> {
         control.checkpoint(0)?;
         object.with_function(request, control, |view, control| {
             let recipe = FunctionRecipe {
-                research: request.research.clone(),
                 abi: view.abi,
                 address_space: view.address_space,
                 schema: FUNCTION_SCHEMA,
@@ -208,7 +192,7 @@ impl<'m> FunctionEngine<'m> {
                 self.memory,
                 control,
                 &mut records,
-                request.research.as_ref().and_then(|r| r.abi),
+                None,
             )?;
             let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
             let records = staging.retain_temporary(records.file, control)?;

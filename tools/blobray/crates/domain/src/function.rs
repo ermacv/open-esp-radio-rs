@@ -79,8 +79,6 @@ impl From<SymbolId> for FunctionSelector {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FunctionRequest {
-    #[serde(default)]
-    pub research: Option<ResearchOptions>,
     pub revision: Option<RevisionId>,
     pub source: FunctionSource,
     pub selector: FunctionSelector,
@@ -99,7 +97,6 @@ impl FunctionRequest {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FunctionRecipe {
-    pub research: Option<ResearchOptions>,
     pub abi: RiscvAbi,
     pub schema: u32,
     pub policy: u32,

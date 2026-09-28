@@ -96,26 +96,8 @@ pub enum ReadQuery {
     Trace {
         request: TraceRequest,
     },
-    SemanticIr {
-        id: ArtifactId,
-    },
     Registers {
         request: RegisterQuery,
-    },
-    EventRoute {
-        request: EventRouteQuery,
-    },
-    MemorySlice {
-        request: MemorySliceQuery,
-    },
-    Flow {
-        request: FlowQuery,
-    },
-    Navigate {
-        request: NavigationQuery,
-    },
-    Interfaces {
-        request: InterfaceQuery,
     },
     Coverage {
         id: PublicationId,
@@ -123,10 +105,6 @@ pub enum ReadQuery {
     StorageUsage,
     Data {
         request: DataRequest,
-    },
-    ReviewedData {
-        revision: KnowledgeRevisionId,
-        assertion: AssertionId,
     },
     AuditTargets {
         artifact: OriginPath,
@@ -148,9 +126,6 @@ pub enum ReadQuery {
     CodeCoverage {
         executions: Vec<ArtifactId>,
     },
-    ValidateKnowledge {
-        change: KnowledgeChange,
-    },
     RetainedPayload {
         id: ArtifactId,
     },
@@ -160,7 +135,6 @@ pub enum ReadQuery {
     },
     Knowledge {
         revision: Option<KnowledgeRevisionId>,
-        history: bool,
     },
     PlanInvestigation {
         request: InvestigationRequest,
@@ -172,7 +146,6 @@ pub enum ReadQuery {
         filter: InvestigationFilter,
     },
     InvestigationStatus,
-    Analyses,
     Analysis {
         id: FunctionAnalysisId,
         export: bool,

@@ -12,27 +12,8 @@ pub enum QuerySummary {
     Trace {
         summary: Box<TraceSummary>,
     },
-    SemanticIr {
-        id: ArtifactId,
-        manifest: Box<SemanticIrManifest>,
-    },
     Registers {
         summary: Box<RegisterSummary>,
-    },
-    EventRoute {
-        summary: Box<EventRouteSummary>,
-    },
-    MemorySlice {
-        summary: Box<MemorySliceSummary>,
-    },
-    Flow {
-        summary: Box<FlowSummary>,
-    },
-    Navigation {
-        summary: Box<NavigationSummary>,
-    },
-    Interfaces {
-        summary: Box<InterfaceSummary>,
     },
     Coverage {
         id: PublicationId,
@@ -61,9 +42,6 @@ pub enum QuerySummary {
         semantics: String,
         report: Box<CodeCoverageReport>,
     },
-    KnowledgeValidation {
-        expected_base: Option<KnowledgeRevisionId>,
-    },
     RetainedPayload {
         id: ArtifactId,
         length: u64,
@@ -87,9 +65,6 @@ pub enum QuerySummary {
     },
     InvestigationStatus {
         status: InvestigationStatus,
-    },
-    Analyses {
-        count: u64,
     },
     Analysis {
         id: FunctionAnalysisId,
@@ -188,7 +163,6 @@ impl QuerySummary {
                 unfinished_runs,
                 ..
             } => ResultAssessment::checked(*errors == 0 && *unfinished_runs == 0),
-            Self::KnowledgeValidation { .. } => ResultAssessment::checked(true),
             Self::LinkPlan { description } => ResultAssessment::checked(description.ready()),
             Self::CompanionProposal { proposal } => {
                 ResultAssessment::checked(proposal.unresolved.is_empty())
@@ -205,22 +179,10 @@ pub trait QuerySink: InventorySink + DoctorSink {
             "consumer does not support static traces",
         ))
     }
-    fn semantic_ir(&mut self, _: &SemanticIrRecord, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support semantic IR",
-        ))
-    }
     fn register(&mut self, _: &RegisterRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
             "consumer does not support registers",
-        ))
-    }
-    fn event_route(&mut self, _: &EventRouteRecord, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support event routes",
         ))
     }
     fn coverage(&mut self, _: &ExtentCoverageRecord, _: &mut dyn RunControl) -> Result<()> {
@@ -245,12 +207,6 @@ pub trait QuerySink: InventorySink + DoctorSink {
         Err(Error::new(
             ErrorCode::InvalidRequest,
             "consumer does not support knowledge entries",
-        ))
-    }
-    fn knowledge_event(&mut self, _: &KnowledgeEvent, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support knowledge events",
         ))
     }
     fn investigation_entry(&mut self, _: &PlanEntry, _: &mut dyn RunControl) -> Result<()> {
@@ -279,12 +235,6 @@ pub trait QuerySink: InventorySink + DoctorSink {
         Err(Error::new(
             ErrorCode::InvalidRequest,
             "consumer does not support findings",
-        ))
-    }
-    fn analysis(&mut self, _: &FunctionAnalysisId, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support analyses",
         ))
     }
     fn execution_evidence(&mut self, _: &ExecutionEvidence, _: &mut dyn RunControl) -> Result<()> {
@@ -319,30 +269,6 @@ pub trait QuerySink: InventorySink + DoctorSink {
         ))
     }
 
-    fn memory_slice(&mut self, _: &MemorySliceRecord, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support memory slices",
-        ))
-    }
-    fn flow(&mut self, _: &FlowRecord, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support flow records",
-        ))
-    }
-    fn navigation(&mut self, _: &NavigationRecord, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support navigation records",
-        ))
-    }
-    fn interface(&mut self, _: &InterfaceObservation, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support interfaces",
-        ))
-    }
     fn candidate(
         &mut self,
         _candidate: &SelectionCandidate,
@@ -358,19 +284,12 @@ pub trait QuerySink: InventorySink + DoctorSink {
 #[derive(Serialize)]
 enum RecordRef<'a> {
     Trace(&'a TraceRecord),
-    SemanticIr(&'a SemanticIrRecord),
     Register(&'a RegisterRecord),
-    EventRoute(&'a EventRouteRecord),
-    MemorySlice(&'a MemorySliceRecord),
-    Flow(&'a FlowRecord),
-    Navigation(&'a NavigationRecord),
-    Interface(&'a InterfaceObservation),
     Coverage(&'a ExtentCoverageRecord),
     Data(&'a DataRecord),
     TargetAudit(&'a TargetAuditRecord),
     Execution(&'a ExecutionEvidence),
     KnowledgeEntry(&'a KnowledgeEntry),
-    KnowledgeEvent(&'a KnowledgeEvent),
     InvestigationEntry(&'a PlanEntry),
     InvestigationMember(&'a InvestigationMember),
     Publication(&'a PublicationId),
@@ -378,7 +297,6 @@ enum RecordRef<'a> {
     Image(&'a PreparedImageId),
     ImageMapping(&'a ImageMapping),
     LinkObservation(&'a LinkObservationRecord),
-    Analysis(&'a FunctionAnalysisId),
     Function(&'a FunctionRecord),
     Revision(&'a RevisionHeader),
     Candidate(&'a SelectionCandidate),
@@ -395,19 +313,12 @@ enum RecordRef<'a> {
 #[derive(Deserialize)]
 enum Record {
     Trace(TraceRecord),
-    SemanticIr(SemanticIrRecord),
     Register(RegisterRecord),
-    EventRoute(EventRouteRecord),
-    MemorySlice(MemorySliceRecord),
-    Flow(FlowRecord),
-    Navigation(NavigationRecord),
-    Interface(InterfaceObservation),
     Coverage(ExtentCoverageRecord),
     Data(DataRecord),
     TargetAudit(TargetAuditRecord),
     Execution(ExecutionEvidence),
     KnowledgeEntry(KnowledgeEntry),
-    KnowledgeEvent(KnowledgeEvent),
     InvestigationEntry(PlanEntry),
     InvestigationMember(InvestigationMember),
     Publication(PublicationId),
@@ -415,7 +326,6 @@ enum Record {
     Image(PreparedImageId),
     ImageMapping(ImageMapping),
     LinkObservation(LinkObservationRecord),
-    Analysis(FunctionAnalysisId),
     Function(FunctionRecord),
     Revision(RevisionHeader),
     Candidate(SelectionCandidate),
@@ -599,19 +509,6 @@ pub fn prepare_query_with_tools(
                     )?),
                 }
             }
-            ReadQuery::SemanticIr { id } => {
-                let project = Project::open(&work.project.to_path()?)?;
-                QuerySummary::SemanticIr {
-                    id: id.clone(),
-                    manifest: Box::new(crate::semantic_ir::read(
-                        &project,
-                        id,
-                        &memory,
-                        control,
-                        &mut |r, c| spool.push(RecordRef::SemanticIr(r), c),
-                    )?),
-                }
-            }
             ReadQuery::Registers { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 QuerySummary::Registers {
@@ -622,69 +519,6 @@ pub fn prepare_query_with_tools(
                         control,
                         &mut |r, c| spool.push(RecordRef::Register(r), c),
                     )?),
-                }
-            }
-            ReadQuery::EventRoute { request } => {
-                let project = Project::open(&work.project.to_path()?)?;
-                QuerySummary::EventRoute {
-                    summary: Box::new(crate::event_routes::query(
-                        &project,
-                        request,
-                        &memory,
-                        control,
-                        &mut |r, c| spool.push(RecordRef::EventRoute(r), c),
-                    )?),
-                }
-            }
-            ReadQuery::MemorySlice { request } => {
-                let project = Project::open(&work.project.to_path()?)?;
-                let lease = project.analysis(&request.analysis, control)?;
-                let records = crate::research::load_records(&lease.records, &memory, control)?;
-                let summary = blobray_analysis::memory_slice::inspect(
-                    &lease.manifest.recipe,
-                    lease.manifest.coverage,
-                    &records,
-                    request,
-                    &memory,
-                    control,
-                    &mut |r, c| spool.push(RecordRef::MemorySlice(r), c),
-                )?;
-                QuerySummary::MemorySlice {
-                    summary: Box::new(summary),
-                }
-            }
-            ReadQuery::Flow { request } => {
-                let project = Project::open(&work.project.to_path()?)?;
-                let summary =
-                    crate::flow::query(&project, request, &memory, control, &mut |r, c| {
-                        spool.push(RecordRef::Flow(r), c)
-                    })?;
-                QuerySummary::Flow {
-                    summary: Box::new(summary),
-                }
-            }
-            ReadQuery::Navigate { request } => {
-                let project = Project::open(&work.project.to_path()?)?;
-                let summary =
-                    crate::navigation::query(&project, request, &memory, control, &mut |r, c| {
-                        spool.push(RecordRef::Navigation(r), c)
-                    })?;
-                QuerySummary::Navigation {
-                    summary: Box::new(summary),
-                }
-            }
-            ReadQuery::Interfaces { request } => {
-                let project = Project::open(&work.project.to_path()?)?;
-                let summary = crate::interfaces::discover(
-                    &project,
-                    request,
-                    decoder,
-                    &memory,
-                    control,
-                    &mut |r, c| spool.push(RecordRef::Interface(r), c),
-                )?;
-                QuerySummary::Interfaces {
-                    summary: Box::new(summary),
                 }
             }
             ReadQuery::Coverage { id } => {
@@ -709,29 +543,6 @@ pub fn prepare_query_with_tools(
                     &project,
                     request,
                     None,
-                    decoder,
-                    &memory,
-                    &disk,
-                    control,
-                    &mut |r, c| spool.push(RecordRef::Data(r), c),
-                )?;
-                QuerySummary::Data {
-                    manifest: Box::new(manifest),
-                }
-            }
-            ReadQuery::ReviewedData {
-                revision,
-                assertion,
-            } => {
-                let project = Project::open(&work.project.to_path()?)?;
-                let _envelope = memory.reserve(2 * 1024 * 1024, control.position())?;
-                let (request, entry) =
-                    crate::data::accepted_request(&project, revision, assertion, &memory, control)?;
-                let manifest = crate::data::prepare(
-                    stage,
-                    &project,
-                    &request,
-                    Some((revision.clone(), entry)),
                     decoder,
                     &memory,
                     &disk,
@@ -780,31 +591,6 @@ pub fn prepare_query_with_tools(
                     report: Box::new(report),
                 }
             }
-            ReadQuery::ValidateKnowledge { change } => {
-                std::fs::create_dir(stage.join("objects")).map_err(storage_io)?;
-                std::fs::create_dir(stage.join("staging")).map_err(storage_io)?;
-                crate::knowledge::prepare_with(
-                    stage,
-                    &KnowledgeWork {
-                        schema: 1,
-                        run: work.run.clone(),
-                        project: work.project.clone(),
-                        change: change.clone(),
-                        budget: work.budget.clone(),
-                        started_ms: work.started_ms,
-                        deadline_ms: work.deadline_ms,
-                    },
-                    decoder.ok_or_else(|| {
-                        Error::new(ErrorCode::Incompatible, "knowledge decoder unavailable")
-                    })?,
-                    &memory,
-                    &disk,
-                    control,
-                )?;
-                QuerySummary::KnowledgeValidation {
-                    expected_base: change.expected_base.clone(),
-                }
-            }
             ReadQuery::RetainedPayload { id } => {
                 let source = Project::open(&work.project.to_path()?)?.open_payload(id, control)?;
                 let mut output = disk.create(&stage.join("payload.bin"))?;
@@ -844,31 +630,13 @@ pub fn prepare_query_with_tools(
                     )?,
                 }
             }
-            ReadQuery::Knowledge { revision, history } => {
+            ReadQuery::Knowledge { revision } => {
                 let _envelope = memory.reserve(2 * 1024 * 1024, control.position())?;
                 let project = Project::open(&work.project.to_path()?)?;
                 let status =
                     project.knowledge_entries(revision.as_ref(), control, &mut |entry, c| {
-                        if !history {
-                            spool.push(RecordRef::KnowledgeEntry(entry), c)?;
-                        }
-                        Ok(())
+                        spool.push(RecordRef::KnowledgeEntry(entry), c)
                     })?;
-                if *history {
-                    project.knowledge_history(
-                        revision.as_ref(),
-                        control,
-                        &mut |id, manifest, c| {
-                            spool.push(
-                                RecordRef::KnowledgeEvent(&KnowledgeEvent {
-                                    revision: id.clone(),
-                                    manifest: manifest.clone(),
-                                }),
-                                c,
-                            )
-                        },
-                    )?;
-                }
                 QuerySummary::Knowledge { status }
             }
             ReadQuery::PlanInvestigation { request, producer } => {
@@ -985,16 +753,6 @@ pub fn prepare_query_with_tools(
                     id: id.clone(),
                     manifest: Box::new(publication.manifest),
                 }
-            }
-            ReadQuery::Analyses => {
-                let project = Project::open(&work.project.to_path()?)?;
-                let mut count = 0;
-                project.analyses(control, &mut |id, control| {
-                    spool.push(RecordRef::Analysis(id), control)?;
-                    count += 1;
-                    Ok(())
-                })?;
-                QuerySummary::Analyses { count }
             }
             ReadQuery::ExecutionSummary { id } => {
                 let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
@@ -1357,16 +1115,9 @@ pub(crate) fn visit(
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
             Record::Trace(r) => sink.trace(&r, control)?,
-            Record::SemanticIr(r) => sink.semantic_ir(&r, control)?,
             Record::Register(r) => sink.register(&r, control)?,
-            Record::EventRoute(r) => sink.event_route(&r, control)?,
-            Record::MemorySlice(r) => sink.memory_slice(&r, control)?,
-            Record::Flow(r) => sink.flow(&r, control)?,
-            Record::Navigation(r) => sink.navigation(&r, control)?,
-            Record::Interface(r) => sink.interface(&r, control)?,
             Record::TargetAudit(r) => sink.target_audit(&r, control)?,
             Record::KnowledgeEntry(r) => sink.knowledge_entry(&r, control)?,
-            Record::KnowledgeEvent(r) => sink.knowledge_event(&r, control)?,
             Record::InvestigationEntry(r) => sink.investigation_entry(&r, control)?,
             Record::InvestigationMember(r) => sink.investigation_member(&r, control)?,
             Record::Publication(r) => sink.publication(&r, control)?,
@@ -1374,7 +1125,6 @@ pub(crate) fn visit(
             Record::Image(id) => sink.image(&id, control)?,
             Record::LinkObservation(r) => sink.link_observation(&r, control)?,
             Record::ImageMapping(mapping) => sink.image_mapping(&mapping, control)?,
-            Record::Analysis(id) => sink.analysis(&id, control)?,
             Record::Execution(record) => sink.execution_evidence(&record, control)?,
             Record::Data(record) => sink.data(&record, control)?,
             Record::Coverage(record) => sink.coverage(&record, control)?,
@@ -1452,7 +1202,7 @@ mod assessment_tests {
             assert_eq!(assessment.comparison, Some(verdict));
         }
         assert_eq!(
-            QuerySummary::Analyses { count: 1 }.assessment(),
+            QuerySummary::Publications { count: 1 }.assessment(),
             ResultAssessment::default()
         );
     }

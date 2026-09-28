@@ -2,7 +2,6 @@ use super::*;
 #[derive(Default)]
 struct KnowledgeRecords {
     entries: Vec<KnowledgeEntry>,
-    events: Vec<KnowledgeEvent>,
 }
 impl ElfSink for KnowledgeRecords {
     fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {
@@ -32,28 +31,16 @@ impl app::QuerySink for KnowledgeRecords {
         self.entries.push(e.clone());
         Ok(())
     }
-    fn knowledge_event(&mut self, e: &KnowledgeEvent, _: &mut dyn RunControl) -> Result<()> {
-        self.events.push(e.clone());
-        Ok(())
-    }
     fn summary(&mut self, _: &app::QuerySummary, _: &mut dyn RunControl) -> Result<()> {
         Ok(())
     }
 }
-fn records(
-    f: &Fixture,
-    project: &Path,
-    at: Option<KnowledgeRevisionId>,
-    history: bool,
-) -> KnowledgeRecords {
+fn records(f: &Fixture, project: &Path, at: Option<KnowledgeRevisionId>) -> KnowledgeRecords {
     let handle = f
         .app
         .start_query(
             project,
-            app::ReadQuery::Knowledge {
-                revision: at,
-                history,
-            },
+            app::ReadQuery::Knowledge { revision: at },
             budget(),
         )
         .unwrap();
@@ -106,135 +93,6 @@ fn apply(f: &Fixture, change: &KnowledgeChange) -> app::RunRecord {
         .wait()
 }
 #[test]
-fn review_history_conflicts_supersession_and_backup_survive_source_removal() {
-    let f = fixture(object(BRANCH, BRANCH.len() as u64, false), false);
-    let first = change(&f, None, "old");
-    let validated = f
-        .app
-        .start_query(
-            &f.project,
-            app::ReadQuery::ValidateKnowledge {
-                change: first.clone(),
-            },
-            budget(),
-        )
-        .unwrap();
-    let result = validated.wait();
-    assert_eq!(result.state, RunState::Completed, "{result:?}");
-    assert!(matches!(
-        validated.take_output().unwrap().summary(),
-        app::QuerySummary::KnowledgeValidation {
-            expected_base: None
-        }
-    ));
-    assert!(records(&f, &f.project, None, false).entries.is_empty());
-    let proposed = apply(&f, &first);
-    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
-    let base = proposed.knowledge.unwrap();
-    let entries = records(&f, &f.project, None, false).entries;
-    let assertion = entries[0].id.clone();
-    let accept = KnowledgeChange {
-        expected_base: Some(base.clone()),
-        actor: "reviewer".into(),
-        reason: "checked byte evidence".into(),
-        action: KnowledgeAction::Review {
-            assertion: assertion.clone(),
-            decision: ReviewDecision::Accept,
-            supersedes: None,
-        },
-    };
-    let accepted = apply(&f, &accept);
-    assert_eq!(accepted.state, RunState::Completed, "{accepted:?}");
-    assert_eq!(
-        records(&f, &f.project, Some(base), false).entries[0].state,
-        AssertionState::Proposed
-    );
-    assert_eq!(
-        records(&f, &f.project, None, false).entries[0].state,
-        AssertionState::Accepted
-    );
-    assert_eq!(
-        f.app
-            .start_knowledge(&f.project, &accept, budget())
-            .err()
-            .unwrap()
-            .code,
-        ErrorCode::Conflict
-    );
-    let next = apply(&f, &change(&f, accepted.knowledge, "new"));
-    let pending = records(&f, &f.project, None, false).entries[1].id.clone();
-    let mut review = KnowledgeChange {
-        expected_base: next.knowledge,
-        actor: "reviewer".into(),
-        reason: "corrected name".into(),
-        action: KnowledgeAction::Review {
-            assertion: pending.clone(),
-            decision: ReviewDecision::Accept,
-            supersedes: None,
-        },
-    };
-    assert_eq!(apply(&f, &review).error.unwrap().code, ErrorCode::Conflict);
-    review.action = KnowledgeAction::Review {
-        assertion: pending,
-        decision: ReviewDecision::Accept,
-        supersedes: Some(assertion),
-    };
-    let final_run = apply(&f, &review);
-    assert_eq!(final_run.state, RunState::Completed, "{final_run:?}");
-    fs::remove_file(f.dir.path().join("entry.a")).unwrap();
-    fs::remove_file(f.dir.path().join("entry.o")).unwrap();
-    let backup = f
-        .app
-        .start_query(&f.project, app::ReadQuery::Backup, budget())
-        .unwrap();
-    assert_eq!(backup.wait().state, RunState::Completed);
-    let path = f.dir.path().join("backup.blobray");
-    backup
-        .take_output()
-        .unwrap()
-        .export_backup(&path, &|| false)
-        .unwrap();
-    let restored = f.dir.path().join("restored");
-    let restore = f
-        .app
-        .start_query(
-            &restored,
-            app::ReadQuery::Restore {
-                bundle: OriginPath::from_path(&path),
-            },
-            budget(),
-        )
-        .unwrap();
-    let run = restore.wait();
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    restore
-        .take_output()
-        .unwrap()
-        .publish_restore(&restored, &|| false)
-        .unwrap();
-    assert_eq!(
-        records(&f, &f.project, None, false).entries,
-        records(&f, &restored, None, false).entries
-    );
-    assert_eq!(records(&f, &restored, None, true).events.len(), 4);
-    let mut damaged = fs::read(&path).unwrap();
-    let n = damaged.len() / 2;
-    damaged[n] ^= 1;
-    fs::write(&path, damaged).unwrap();
-    let failed = f
-        .app
-        .start_query(
-            &f.dir.path().join("corrupt"),
-            app::ReadQuery::Restore {
-                bundle: OriginPath::from_path(&path),
-            },
-            budget(),
-        )
-        .unwrap();
-    assert_ne!(failed.wait().state, RunState::Completed);
-    assert!(!f.dir.path().join("corrupt").exists());
-}
-#[test]
 fn missing_evidence_wrong_occurrence_and_exhausted_budget_cannot_publish() {
     let f = fixture(object(BRANCH, BRANCH.len() as u64, false), false);
     let mut request = change(&f, None, "name");
@@ -242,7 +100,7 @@ fn missing_evidence_wrong_occurrence_and_exhausted_budget_cannot_publish() {
         proposal.occurrence.source = FunctionSource::Input { input: 99 };
     }
     assert_eq!(apply(&f, &request).error.unwrap().code, ErrorCode::NotFound);
-    assert!(records(&f, &f.project, None, false).entries.is_empty());
+    assert!(records(&f, &f.project, None).entries.is_empty());
     if let KnowledgeAction::Propose { proposal } = &mut request.action {
         proposal.occurrence.source = f.request.source.clone();
         proposal.evidence = vec![EvidenceRef::Analysis {
@@ -260,7 +118,7 @@ fn missing_evidence_wrong_occurrence_and_exhausted_budget_cannot_publish() {
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::ResourceLimited);
-    assert!(records(&f, &f.project, None, false).entries.is_empty());
+    assert!(records(&f, &f.project, None).entries.is_empty());
 }
 #[test]
 fn reviewed_extent_is_selected_explicitly_and_names_do_not_change_function_computation() {
@@ -277,7 +135,7 @@ fn reviewed_extent_is_selected_explicitly_and_names_do_not_change_function_compu
     }
     let proposed = apply(&f, &proposal);
     assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
-    let id = records(&f, &f.project, None, false).entries[0].id.clone();
+    let id = records(&f, &f.project, None).entries[0].id.clone();
     let query = |revision: KnowledgeRevisionId| {
         f.app
             .start_query(

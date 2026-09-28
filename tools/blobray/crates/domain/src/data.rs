@@ -239,34 +239,6 @@ pub enum DataRecord {
         signed: Option<i64>,
     },
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DataProposalRequest {
-    pub analyses: Vec<FunctionAnalysisId>,
-    pub occurrence: KnowledgeOccurrence,
-    pub subject: SubjectId,
-    pub selector: DataSelector,
-    pub layout: DataLayout,
-    pub purpose: String,
-    pub applicability: String,
-    pub expected_base: Option<KnowledgeRevisionId>,
-    pub actor: String,
-    pub reason: String,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ConstantProposalRequest {
-    pub analysis: FunctionAnalysisId,
-    pub record: u64,
-    pub operand: ConstantOperand,
-    pub value: u32,
-    pub subject: SubjectId,
-    pub purpose: String,
-    pub applicability: String,
-    pub expected_base: Option<KnowledgeRevisionId>,
-    pub actor: String,
-    pub reason: String,
-}
 
 impl KnowledgeClaim {
     pub fn table_layout(&self) -> Option<DataLayout> {

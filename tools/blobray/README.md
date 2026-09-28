@@ -109,11 +109,10 @@ selects sampled process-tree RSS enforcement when that is the desired policy;
 there is no automatic fallback. See the [operator reference](next/README.md) for
 linking, research, knowledge review, execution/comparison, replay and preservation.
 Explicit executable ranges and physical static/dynamic symbols support retained
-code research without inferred boundaries. Exact data ranges, integer-table review and instruction-derived constants can be
-exported with captured bytes and provenance; see the operator reference.
+code research without inferred boundaries. Exact data ranges can be exported
+with captured bytes and provenance; see the operator reference.
 CLI/JSON share the [application](crates/application/README.md) operations.
-Saved interface discovery, function/context review, structural paths, memory slices
-and conditional event routes retain their evidence. The register catalogue reports
+The register catalogue reports
 MMIO candidates and masks separately from reviewed physical declarations.
 Configured semantic IR profiles retain original facts and provenance. Static trace
 queries compare explicitly selected physical MMIO/fence observations with visible

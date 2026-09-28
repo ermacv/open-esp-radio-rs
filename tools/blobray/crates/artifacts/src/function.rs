@@ -278,7 +278,6 @@ impl<'data> PreparedObject<'data, '_> {
                     }
                     FunctionSelector::Range { .. } => self.with_function(
                         &FunctionRequest {
-                            research: None,
                             revision: Some(occurrence.revision.clone()),
                             source: occurrence.source.clone(),
                             selector: function.clone(),

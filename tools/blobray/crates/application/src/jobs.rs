@@ -658,14 +658,6 @@ impl Application {
             ),
         }
     }
-    pub fn start_research(
-        &self,
-        project: &Path,
-        request: ResearchRequest,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(project, ScenarioRequest::Research { request }, budget)
-    }
     pub fn start_propose_effect_contract(
         &self,
         project: &Path,
@@ -699,38 +691,6 @@ impl Application {
         self.start_scenario(
             project,
             ScenarioRequest::ProposeCallPair { request },
-            budget,
-        )
-    }
-    pub fn start_propose_data(
-        &self,
-        project: &Path,
-        request: DataProposalRequest,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(project, ScenarioRequest::ProposeData { request }, budget)
-    }
-    pub fn start_propose_constant(
-        &self,
-        project: &Path,
-        request: ConstantProposalRequest,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(
-            project,
-            ScenarioRequest::ProposeConstant { request },
-            budget,
-        )
-    }
-    pub fn start_propose_register(
-        &self,
-        project: &Path,
-        request: RegisterProposalRequest,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(
-            project,
-            ScenarioRequest::ProposeRegister { request },
             budget,
         )
     }
@@ -809,21 +769,6 @@ impl Application {
         }
         if let ScenarioRequest::ProposeCallPair { request } = &request {
             request.correspondence.validate()?;
-            writer
-                .project()
-                .check_knowledge_base(&request.expected_base)?;
-        }
-        if let ScenarioRequest::ProposeData { request } = &request {
-            writer
-                .project()
-                .check_knowledge_base(&request.expected_base)?;
-        }
-        if let ScenarioRequest::ProposeConstant { request } = &request {
-            writer
-                .project()
-                .check_knowledge_base(&request.expected_base)?;
-        }
-        if let ScenarioRequest::ProposeRegister { request } = &request {
             writer
                 .project()
                 .check_knowledge_base(&request.expected_base)?;

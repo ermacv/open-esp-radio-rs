@@ -167,7 +167,6 @@ fn composed_unqualified_addresses_never_inherit_the_callers_object() {
         section: 1,
         extent: node.extent,
         user_extent: true,
-        research: None,
         abi: RiscvAbi::Ilp32,
         address_space: CodeAddressSpace::Image,
         decoder: "test".into(),

@@ -287,9 +287,6 @@ pub fn extract<'m>(
                 break;
             }};
         }
-        if index.function.manifest.recipe.research.is_some() {
-            blocked!(TraceBlocker::ComposedInterpretation);
-        }
         if !complete[frame.function] || index.function.manifest.semantics.is_none() {
             blocked!(TraceBlocker::PartialFunction);
         }

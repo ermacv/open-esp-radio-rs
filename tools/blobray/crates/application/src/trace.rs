@@ -54,7 +54,7 @@ fn side<'m>(
                 c.position(),
             )?;
             let lease = reader.analysis(&function.analysis, c)?;
-            let records = crate::research::load_records(&lease.records, memory, c)?;
+            let records = crate::records::load_records(&lease.records, memory, c)?;
             functions.push(
                 Function {
                     id: function.analysis,

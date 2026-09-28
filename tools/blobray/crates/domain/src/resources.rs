@@ -19,7 +19,6 @@ pub enum RunPhase {
     PrepareObject,
     PrepareSection,
     PlanInvestigation,
-    IndexResearch,
     LoadResearch,
     ComposeResearch,
     Execute,

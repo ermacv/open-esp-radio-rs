@@ -86,7 +86,6 @@ impl Enumeration<'_> {
                                 extent: range.extent,
                             },
                             extent: None,
-                            research: None,
                         },
                         name: None,
                         payload,
@@ -262,7 +261,6 @@ impl ElfSink for Enumeration<'_> {
                     length: r.size,
                 }),
                 request: FunctionRequest {
-                    research: None,
                     revision: self.request.revision.clone(),
                     source,
                     selector: (r.id.clone()).into(),

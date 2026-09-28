@@ -86,29 +86,20 @@ fn render_unbuffered(
     if matches!(
         result.summary(),
         app::QuerySummary::Trace { .. }
-            | app::QuerySummary::SemanticIr { .. }
             | app::QuerySummary::Registers { .. }
-            | app::QuerySummary::EventRoute { .. }
-            | app::QuerySummary::MemorySlice { .. }
-            | app::QuerySummary::Flow { .. }
-            | app::QuerySummary::Navigation { .. }
-            | app::QuerySummary::Interfaces { .. }
             | app::QuerySummary::Coverage { .. }
             | app::QuerySummary::StorageUsage { .. }
             | app::QuerySummary::Data { .. }
             | app::QuerySummary::TargetAudit { .. }
             | app::QuerySummary::CodeCoverage { .. }
-            | app::QuerySummary::KnowledgeValidation { .. }
             | app::QuerySummary::RetainedPayload { .. }
             | app::QuerySummary::Preservation { .. }
             | app::QuerySummary::Knowledge { .. }
-            | app::QuerySummary::InvestigationPlan { .. }
             | app::QuerySummary::Publications { .. }
             | app::QuerySummary::Publication { .. }
             | app::QuerySummary::InvestigationStatus { .. }
             | app::QuerySummary::Selection { .. }
             | app::QuerySummary::Inspection { .. }
-            | app::QuerySummary::Analyses { .. }
             | app::QuerySummary::Analysis { .. }
             | app::QuerySummary::Execution { .. }
             | app::QuerySummary::Images { .. }
@@ -527,26 +518,8 @@ impl app::QuerySink for Records<'_> {
     fn trace(&mut self, r: &TraceRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("trace", r, c)
     }
-    fn semantic_ir(&mut self, r: &SemanticIrRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.record("semantic-ir", r, c)
-    }
     fn register(&mut self, r: &RegisterRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("register", r, c)
-    }
-    fn event_route(&mut self, r: &EventRouteRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.record("event-route", r, c)
-    }
-    fn memory_slice(&mut self, r: &MemorySliceRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.record("memory-slice", r, c)
-    }
-    fn flow(&mut self, r: &FlowRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.record("flow", r, c)
-    }
-    fn navigation(&mut self, r: &NavigationRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.record("navigation", r, c)
-    }
-    fn interface(&mut self, r: &InterfaceObservation, c: &mut dyn RunControl) -> Result<()> {
-        self.record("interface", r, c)
     }
     fn coverage(&mut self, r: &ExtentCoverageRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("coverage", r, c)
@@ -572,12 +545,6 @@ impl app::QuerySink for Records<'_> {
     }
     fn knowledge_entry(&mut self, r: &KnowledgeEntry, c: &mut dyn RunControl) -> Result<()> {
         self.record("assertion", r, c)
-    }
-    fn knowledge_event(&mut self, r: &KnowledgeEvent, c: &mut dyn RunControl) -> Result<()> {
-        self.record("review-event", r, c)
-    }
-    fn investigation_entry(&mut self, r: &PlanEntry, c: &mut dyn RunControl) -> Result<()> {
-        self.record("plan-entry", r, c)
     }
     fn investigation_member(
         &mut self,
@@ -628,9 +595,6 @@ impl app::QuerySink for Records<'_> {
             });
         }
         self.record("finding", r, c)
-    }
-    fn analysis(&mut self, id: &FunctionAnalysisId, c: &mut dyn RunControl) -> Result<()> {
-        self.record("analysis", id, c)
     }
     fn execution_evidence(
         &mut self,
@@ -708,15 +672,6 @@ impl app::QuerySink for Records<'_> {
                     return output(self.file, c, |w| {
                         writeln!(w, "Publication: {id}")?;
                         write_coverage(w, manifest.coverage)
-                    });
-                }
-                app::QuerySummary::InvestigationPlan { plan } => {
-                    return output(self.file, c, |w| {
-                        writeln!(
-                            w,
-                            "Plan {}: {} functions, {} entries",
-                            plan.id, plan.recipe.functions, plan.recipe.entry_count
-                        )
                     });
                 }
                 app::QuerySummary::Publications { count } => {

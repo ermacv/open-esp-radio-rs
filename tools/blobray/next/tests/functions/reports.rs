@@ -89,42 +89,6 @@ fn coverage_counts_alias_union_and_unselected_executable_sections_without_changi
     assert_eq!(usage, cli(&f, &["storage-usage"]));
 }
 #[test]
-fn single_function_releases_large_elf_before_research_loading() {
-    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
-    let text = obj.add_section(vec![], b".text".to_vec(), SectionKind::Text);
-    obj.append_section_data(text, &[0x67, 0x80, 0, 0], 4);
-    obj.add_symbol(symbol(
-        b"entry",
-        SymbolSection::Section(text),
-        4,
-        SymbolKind::Text,
-    ));
-    let data = obj.add_section(vec![], b".rodata".to_vec(), SectionKind::ReadOnlyData);
-    obj.append_section_data(data, &vec![0; 8 * 1024 * 1024], 4);
-    let f = fixture(obj.write().unwrap(), false);
-    let id = publication(&f);
-    let mut request = f.request.clone();
-    request.research = Some(ResearchOptions {
-        publication: id,
-        companions: vec![],
-        abi: Some(CallAbi::RiscvInteger),
-        knowledge: None,
-    });
-    let mut limits = budget();
-    limits.working_memory_bytes = Some(12 * 1024 * 1024);
-    let run = f
-        .app
-        .start_analyze_function(&f.project, request, limits)
-        .unwrap()
-        .wait();
-    assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
-    let phases = run.diagnostics.unwrap().progress.unwrap().phases;
-    assert!(phases.prepare_object.peak_reserved_bytes >= 8 * 1024 * 1024);
-    assert!(phases.load_research.peak_reserved_bytes < 8 * 1024 * 1024);
-    assert!(phases.compose_research.peak_reserved_bytes < 8 * 1024 * 1024);
-}
-
-#[test]
 fn unknown_extents_and_malformed_members_remain_visible_and_queries_do_not_publish() {
     let bytes = object(&[0x67, 0x80, 0, 0], 0, false);
     let f = fixture(bytes.clone(), false);

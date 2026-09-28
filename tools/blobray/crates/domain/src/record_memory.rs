@@ -41,17 +41,6 @@ impl FunctionRecipe {
             + self.source.allocated_bytes()
             + self.selector.object().artifact.allocated_bytes()
             + self.payload.allocated_bytes()
-            + self.research.as_ref().map_or(0, |r| {
-                r.publication.allocated_bytes()
-                    + r.knowledge
-                        .as_ref()
-                        .map_or(0, KnowledgeRevisionId::allocated_bytes)
-                    + (r.companions.capacity() * size_of::<PublicationId>()) as u64
-                    + r.companions
-                        .iter()
-                        .map(PublicationId::allocated_bytes)
-                        .sum::<u64>()
-            })
     }
 }
 impl ReferenceTarget {

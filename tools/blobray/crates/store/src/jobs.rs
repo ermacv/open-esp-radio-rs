@@ -875,35 +875,10 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                         && matches!(&proposal.claim, KnowledgeClaim::CallPair { correspondence } if **correspondence == request.correspondence))
             }
 
-            (ScenarioRequest::ProposeData { request }, RunOperation::Knowledge { change }) => {
-                change.expected_base == request.expected_base
-                    && change.actor == request.actor
-                    && change.reason == request.reason
-                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.occurrence == request.occurrence && proposal.subject == request.subject && matches!(&proposal.claim, KnowledgeClaim::IntegerTable { selector: DataSelector::Section { .. }, purpose, applicability, .. } | KnowledgeClaim::PointerTable { selector: DataSelector::Section { .. }, purpose, applicability, .. } if proposal.claim.table_layout().as_ref() == Some(&request.layout) && purpose == &request.purpose && applicability == &request.applicability))
-            }
-            (ScenarioRequest::ProposeConstant { request }, RunOperation::Knowledge { change }) => {
-                change.expected_base == request.expected_base
-                    && change.actor == request.actor
-                    && change.reason == request.reason
-                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.subject == request.subject && proposal.claim == (KnowledgeClaim::Constant { analysis: request.analysis.clone(), record: request.record, operand: request.operand.clone(), value: request.value, purpose: request.purpose.clone(), applicability: request.applicability.clone() }) && proposal.evidence == vec![EvidenceRef::Analysis { analysis: request.analysis.clone(), record: Some(request.record) }])
-            }
             (
                 ScenarioRequest::Investigate { request, .. },
                 RunOperation::Investigate { revision, .. },
             ) => request.revision.as_ref() == Some(revision),
-            (
-                ScenarioRequest::Research { request },
-                RunOperation::AnalyzeFunction { request: function },
-            ) => {
-                function.research.as_ref() == Some(&request.options)
-                    && request.publication == request.options.publication
-            }
-            (ScenarioRequest::ProposeRegister { request }, RunOperation::Knowledge { change }) => {
-                change.expected_base == request.expected_base
-                    && change.actor == request.actor
-                    && change.reason == request.reason
-                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.subject == request.subject && proposal.claim == (KnowledgeClaim::MmioRegister { register: request.register.clone() }) && proposal.evidence == vec![EvidenceRef::Analysis { analysis: request.analysis.clone(), record: None }])
-            }
             (
                 ScenarioRequest::Replay { producer, .. },
                 RunOperation::Execute {

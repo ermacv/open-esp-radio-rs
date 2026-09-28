@@ -149,26 +149,6 @@ impl Project {
             return Err(integrity("analysis row and manifest disagree"));
         }
         root(&revision.parse()?, control)?;
-        if let Some(research) = &manifest.recipe.research {
-            if research.companions.len() > 64 {
-                return Err(integrity("too many research companions"));
-            }
-            for id in std::iter::once(&research.publication).chain(&research.companions) {
-                // Check immediate retained roots without recursive traversal through
-                // publications -> analyses -> publications. Doctor checks each row.
-                let source = root(&id.as_str().parse()?, control)?;
-                let publication = investigations::decode(source.as_ref(), control)?;
-                if publication.plan.recipe.request.revision.as_ref()
-                    != Some(&manifest.recipe.revision)
-                {
-                    return Err(integrity("research dependency revision differs"));
-                }
-                root(&publication.members, control)?;
-            }
-            if let Some(id) = &research.knowledge {
-                root(&id.as_str().parse()?, control)?;
-            }
-        }
         // Ordinary member payload is inside the retained archive; the source revision
         // reader/doctor verifies its closure. The payload digest qualifies that range.
         Ok(FunctionLease {
@@ -222,7 +202,6 @@ impl Writer {
         if recipe.project != receipt.project
             || recipe.revision != receipt.revision
             || recipe.selector != request.selector
-            || recipe.research != request.research
             || recipe.source != request.source
             || recipe.user_extent != request.explicit_extent().is_some()
             || request

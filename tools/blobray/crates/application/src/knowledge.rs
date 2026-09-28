@@ -59,7 +59,6 @@ fn validate_evidence(
                 crate::call_pairs::endpoint(&capture, &correspondence.vendor, memory, c)?;
             } else if let KnowledgeClaim::Function { contract } = &proposal.claim {
                 let request = FunctionRequest {
-                    research: None,
                     revision: Some(occurrence.revision.clone()),
                     source: occurrence.source.clone(),
                     selector: contract.selector.clone(),
@@ -86,7 +85,6 @@ fn validate_evidence(
                         }
                         AccessRoot::EntryWord { function, .. } => {
                             let request = FunctionRequest {
-                                research: None,
                                 revision: Some(occurrence.revision.clone()),
                                 source: occurrence.source.clone(),
                                 selector: function.clone(),
@@ -111,7 +109,6 @@ fn validate_evidence(
                 })?;
             } else if let KnowledgeClaim::ExecutableRange { section, extent } = proposal.claim {
                 let request = FunctionRequest {
-                    research: None,
                     revision: Some(occurrence.revision.clone()),
                     source: occurrence.source.clone(),
                     extent: None,
@@ -129,7 +126,6 @@ fn validate_evidence(
                     && occurrence.symbol.is_some()
             {
                 let request = FunctionRequest {
-                    research: None,
                     revision: Some(occurrence.revision.clone()),
                     source: occurrence.source.clone(),
                     selector: (occurrence
@@ -167,16 +163,6 @@ fn validate_evidence(
             &correspondence.replacement,
             memory,
             control,
-        )?);
-    }
-    if let KnowledgeClaim::Path { path } = &proposal.claim {
-        roots.extend(crate::flow::validate_path(
-            project, proposal, path, memory, control,
-        )?);
-    }
-    if let KnowledgeClaim::EventRoute { route } = &proposal.claim {
-        roots.extend(crate::event_routes::validate(
-            project, proposal, route, memory, control,
         )?);
     }
     for evidence in &proposal.evidence {

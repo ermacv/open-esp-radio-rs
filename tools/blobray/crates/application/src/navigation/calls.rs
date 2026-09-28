@@ -234,38 +234,3 @@ pub(super) fn emit(
     }
     Ok(())
 }
-
-/// Same physical keys used by selected call resolution; no name fallback.
-pub(super) fn target_matches(
-    caller: &FunctionRecipe,
-    target: &FunctionRecipe,
-    value: &AbstractValue,
-) -> bool {
-    let Some(observed) = key(
-        &caller.source,
-        caller.selector.object(),
-        caller.address_space,
-        value,
-    ) else {
-        return false;
-    };
-    let physical = Key {
-        source: &target.source,
-        object: target.selector.object(),
-        coordinate: if target.address_space == CodeAddressSpace::Image {
-            Coordinate::Image(target.extent.start)
-        } else {
-            Coordinate::Section(target.section, target.extent.start)
-        },
-    };
-    observed == physical
-        || !target.user_extent
-            && target.selector.symbol().is_some_and(|symbol| {
-                observed
-                    == Key {
-                        source: &target.source,
-                        object: target.selector.object(),
-                        coordinate: Coordinate::Symbol(symbol),
-                    }
-            })
-}

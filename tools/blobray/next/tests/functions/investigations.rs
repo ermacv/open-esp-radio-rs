@@ -320,10 +320,13 @@ fn exhaustion_cancel_and_changed_plan_never_publish_children() {
     ));
     assert!(matches!(
         f.app
-            .query(&f.project, app::ReadQuery::Analyses, budget())
+            .query(&f.project, app::ReadQuery::Doctor, budget())
             .unwrap()
             .summary(),
-        app::QuerySummary::Analyses { count: 0 }
+        app::QuerySummary::Doctor {
+            checked_analyses: 0,
+            ..
+        }
     ));
     assert_eq!(publish(&f, &p).state, RunState::Completed);
 }
@@ -517,10 +520,13 @@ fn killed_library_coordinator_leaves_no_publication_and_recovery_never_promotes_
     ));
     assert!(matches!(
         f.app
-            .query(&f.project, app::ReadQuery::Analyses, budget())
+            .query(&f.project, app::ReadQuery::Doctor, budget())
             .unwrap()
             .summary(),
-        app::QuerySummary::Analyses { count: 0 }
+        app::QuerySummary::Doctor {
+            checked_analyses: 0,
+            ..
+        }
     ));
     assert!(f.app.recover(&f.project).unwrap().is_empty());
     assert_eq!(
@@ -613,10 +619,13 @@ fn library_staging_quota_and_deadline_fail_without_visible_children() {
     assert_eq!(run.state, RunState::TimedOut, "{:?}", run.error);
     assert!(matches!(
         f.app
-            .query(&f.project, app::ReadQuery::Analyses, budget())
+            .query(&f.project, app::ReadQuery::Doctor, budget())
             .unwrap()
             .summary(),
-        app::QuerySummary::Analyses { count: 0 }
+        app::QuerySummary::Doctor {
+            checked_analyses: 0,
+            ..
+        }
     ));
     assert!(matches!(
         f.app

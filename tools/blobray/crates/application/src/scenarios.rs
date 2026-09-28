@@ -39,12 +39,6 @@ fn resolve(
         ScenarioRequest::ProposeCallPair { request } => RunOperation::Knowledge {
             change: crate::call_pairs::propose(project, request, memory, c)?,
         },
-        ScenarioRequest::ProposeData { request } => RunOperation::Knowledge {
-            change: crate::data::propose_data(project, request, memory, c)?,
-        },
-        ScenarioRequest::ProposeConstant { request } => RunOperation::Knowledge {
-            change: crate::data::propose_constant(project, request, c)?,
-        },
         ScenarioRequest::Investigate { request, producer } => {
             c.phase(RunPhase::PlanInvestigation)?;
             let plan = crate::investigations::enumerate(
@@ -72,80 +66,6 @@ fn resolve(
                 },
                 plan: Some(plan),
             });
-        }
-        ScenarioRequest::Research { request } => {
-            if request.options.publication != request.publication {
-                return Err(invalid("research selection and options differ"));
-            }
-            let publication = project.publication(&request.publication, c)?;
-            let mut selected = None;
-            let mut count = 0;
-            c.measure(WorkMetric::PublicationPasses, 1);
-            blobray_store::visit_jsonl(
-                &publication.members,
-                c,
-                |member: InvestigationMember, c| {
-                    c.checkpoint(1)?;
-                    if let PlanEntry::Function {
-                        request: function,
-                        name,
-                        address_space,
-                        declared_extent,
-                        ..
-                    } = member.entry
-                        && request
-                            .name
-                            .as_ref()
-                            .is_none_or(|n| name.as_ref().is_some_and(|a| a == n.as_bytes()))
-                        && request.address.is_none_or(|a| {
-                            address_space == CodeAddressSpace::Image
-                                && declared_extent.start == u64::from(a)
-                        })
-                    {
-                        count += 1;
-                        if count == 1 {
-                            selected = Some(function);
-                        } else {
-                            selected = None;
-                        }
-                    }
-                    Ok(())
-                },
-            )?;
-            let mut function =
-                selected.ok_or_else(|| invalid("research requires one exact function"))?;
-            function.research = Some(request.options.clone());
-            RunOperation::AnalyzeFunction { request: function }
-        }
-        ScenarioRequest::ProposeRegister { request } => {
-            let analysis = project.analysis(&request.analysis, c)?;
-            let recipe = analysis.manifest.recipe;
-            let change = KnowledgeChange {
-                expected_base: request.expected_base.clone(),
-                actor: request.actor.clone(),
-                reason: request.reason.clone(),
-                action: KnowledgeAction::Propose {
-                    proposal: KnowledgeProposal {
-                        subject: request.subject.clone(),
-                        occurrence: KnowledgeOccurrence {
-                            revision: recipe.revision,
-                            source: recipe.source,
-                            object: recipe.selector.object().clone(),
-                            symbol: recipe.selector.symbol().cloned(),
-                        },
-                        claim: KnowledgeClaim::MmioRegister {
-                            register: request.register.clone(),
-                        },
-                        evidence: vec![EvidenceRef::Analysis {
-                            analysis: request.analysis.clone(),
-                            record: None,
-                        }],
-                        note: None,
-                    },
-                },
-            };
-            blobray_knowledge::validate_change(&change)?;
-            RunOperation::Knowledge { change }
         }
         ScenarioRequest::Replay {
             execution,

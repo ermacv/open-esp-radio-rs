@@ -139,7 +139,6 @@ pub enum TraceEvent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TraceBlocker {
-    ComposedInterpretation,
     PartialFunction,
     MissingInstruction,
     UnknownCondition,

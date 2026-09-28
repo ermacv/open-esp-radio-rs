@@ -32,11 +32,6 @@ keys with stable record IDs and provenance. Hash collisions use full equality;
 lookup, replacement-index construction and payload ownership share the analysis
 budget. Failed admission or cancellation leaves retained IDs usable.
 
-The `summaries` module composes supplied acyclic callees and substitutes arguments
-without acquiring source-selection authority. Its owned output uses a capacity-admitted `RecordBuffer`; mapping/return
-workspaces end when composition returns. Imported expressions retain analysis provenance; transitive memory
-records are may-effects, not unconditional traces. Unknown callees retain gaps.
-
 The `audit` module scans all supplied executable ranges linearly for direct and
 locally resolved transfers. It shares the ISA port and integer folding with value
 analysis; it does not obtain filesystem access or claim dynamic-target completeness.
@@ -64,13 +59,6 @@ operation-local vectors and a bounded-load lookup index. It does not enlarge eac
 register state with an inline array. Joins and Cartesian arithmetic widen explicitly
 on a ninth result; stored `alternative-limit` gaps distinguish this loss from a
 resolved singleton. Public alternatives are nonrecursive and validated on decode.
-Callee composition qualifies every retained image-address alternative; it never
-silently removes an unknown callee stack possibility or chooses one callback.
-
-`interfaces` follows saved indirect-call expressions iteratively and canonicalizes
-physical root/path/slot keys. It retains bounded alternative paths and explicit
-unsupported/missing-provenance issues, with admitted per-query indexes. It neither
-loads knowledge nor chooses an accepted binding; application owns those decisions.
 
 Saved navigation indexes one flat function record stream and interprets calls and
 physical access paths without storage, linking or binding authority. Cycles are
@@ -79,16 +67,6 @@ reported as structural edges; unknown addresses remain explicit.
 The flow module computes bounded iterative reachability over caller-selected
 unambiguous arcs. It returns predecessor indexes and depths; storage and reviewed
 path authority stay with application/knowledge.
-
-`memory_slice` borrows saved facts, constructs admitted instruction/access indexes
-and iteratively finds last local writes before an exact anchor. SCC membership
-bounds scalar identity; per-location backward searches release their scratch
-before the next location. It performs no I/O, execution or callee expansion.
-
-`event_routes::Prepared` borrows one authenticated function stream and its existing
-navigation index. It interprets required ABI values, local field coordinates and
-selector predicates, and shares the memory-slice owner for callback-store checks.
-Only owned admitted observations survive that borrowed preparation.
 
 `trace` consumes supplied original local IR and physical call links. Borrowed
 per-function indexes are reused across invocations; admitted expression memoization,

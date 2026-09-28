@@ -693,9 +693,7 @@ fn build_resolved(
         bootstrap.arg("--locked");
     }
     bootstrap_lock.configure(&mut bootstrap);
-    add_local_esp_hal_patches(&mut bootstrap, local_esp_hal);
-    add_local_embassy_patches(&mut bootstrap, local_embassy);
-    add_local_xarxa_patches(&mut bootstrap, local_xarxa);
+    add_bootstrap_patches(&mut bootstrap, local_esp_hal);
     enable_experimental_path_trimming(&mut bootstrap, trim_paths);
     crate::image::stack::configure_image_compiler(&mut bootstrap, &stack_budget);
     log.run(&mut bootstrap, "build Flash/SRAM bootstrap")?;
@@ -872,6 +870,13 @@ fn add_local_esp_hal_patches(command: &mut Command, local: Option<&Path>) {
             local.join(path).display()
         ));
     }
+}
+
+/// The local overrides the bootstrap build takes: esp-hal's, the only one
+/// it depends on. A patch it does not use would be recorded in its lock
+/// file, which `--locked` refuses.
+fn add_bootstrap_patches(command: &mut Command, local_esp_hal: Option<&Path>) {
+    add_local_esp_hal_patches(command, local_esp_hal);
 }
 
 fn add_local_embassy_patches(command: &mut Command, local: Option<&Path>) {

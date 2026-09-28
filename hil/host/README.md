@@ -198,9 +198,8 @@ arguments before `--`, and refuses two different owners:
 | --- | --- |
 | `--owner NAME` | Who holds the lease; defaults to an enclosing lease's owner, then the checkout directory name |
 
-The environment variable `OER_HIL_OWNER` carries the same choice. There is no
-budget to request; `--budget`, `--short`, `OER_HIL_BUDGET` and `OER_HIL_SHORT`
-are refused.
+The environment variable `OER_HIL_OWNER` carries the same choice. A request
+names no duration: the stand charges the time a lease holds, as follows.
 
 Every lease charges its owner's balance the time it holds, and an owner whose
 request waits behind a conflicting lease is credited the time it waits, once
@@ -421,9 +420,9 @@ failure are kept in the repetition's `post-mortem/`.
 
 A target that does not answer within those 20 s climbs the recovery ladder:
 an EN pulse through the board's registered reset path, or an RTS pulse on its
-own USB Serial/JTAG port when it has none, then the same query again (a power
-cycle through a switchable hub port becomes the next step once boards have
-one). The failure then names where core 0 was when the reset hit, from the
+own USB Serial/JTAG port when it has none, then the same query again. No
+board is on a switchable hub port, so the stand cannot power-cycle one; a
+board neither reset brings back needs a person. The failure then names where core 0 was when the reset hit, from the
 ROM banner's saved program counter symbolized like a hang: stuck in code, or
 idle in its executor. A step that brings it back is journaled as a recovery, `hardware` when
 the port had vanished or the ROM waited for a download. A board no step brings

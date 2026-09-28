@@ -388,3 +388,38 @@ responds. See [scenario semantics](../../scenarios/README.md#ap-availability)
 and the [focused capability program](../../../qualification/targets/esp32s31/wifi-ap-availability.toml).
 Fresh runs capture build sources; explicitly include reviewed untracked inputs
 with `--source-include` as described in the [host guide](../../host/README.md).
+
+## Local dependency overrides
+
+Three git-pinned dependencies of the firmware can be replaced by a local
+checkout for one build or run. The variable names the checkout's root:
+
+| Variable | Checkout | Packages patched |
+| --- | --- | --- |
+| `ESP_HAL_ROOT` | esp-hal | `esp-hal`, `esp-sync`, `esp-bootloader-esp-idf` |
+| `EMBASSY_ROOT` | embassy | `embassy-net`, `embassy-net-driver` |
+| `OPEN_RADIO_XARXA_ROOT` | xarxa | `xarxa`, `xarxa-driver` |
+
+The runtime build patches them in and resolves a private copy of its lock
+file; the bootstrap takes only the esp-hal override, the one dependency it has.
+A run's source snapshot archives each override checkout as its own source
+role, so an untracked file there is named as `--source-include xarxa:<path>`.
+An override build binds evidence only when the checkout's commit is the pinned
+revision in `hil/targets/esp32s31/Cargo.toml`; otherwise it is an experiment.
+
+To find the dependency commit that changed a scenario's outcome, bisect in the
+dependency's clone and build this checkout against each step. A build failure
+skips the step (exit 125) instead of marking it bad:
+
+```console
+git clone https://github.com/ermacv/xarxa.git ~/dev/xarxa
+cd ~/dev/xarxa
+git bisect start <bad-rev> <good-rev>
+git bisect run sh -c 'cd ~/dev/<checkout> &&
+  OPEN_RADIO_XARXA_ROOT=~/dev/xarxa cargo hil image build performance || exit 125;
+  OPEN_RADIO_XARXA_ROOT=~/dev/xarxa cargo hil run <scenario>'
+git bisect reset
+```
+
+Each step takes its own lease. The same recipe bisects esp-hal or embassy with
+their variable.

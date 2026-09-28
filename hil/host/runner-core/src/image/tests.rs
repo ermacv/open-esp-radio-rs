@@ -642,3 +642,25 @@ fn a_console_image_classifies_as_the_class_that_declares_it() {
     assert!(dtm.bluetooth_dtm && !dtm.bluetooth_peripheral);
     assert_eq!(ImageClass::Correctness.console_capabilities(), None);
 }
+
+#[test]
+fn the_bootstrap_takes_only_the_esp_hal_override() {
+    // A patch the bootstrap does not use would change its lock file, which
+    // its --locked build refuses; a local Xarxa or Embassy must not reach it.
+    let mut command = Command::new("cargo");
+    add_bootstrap_patches(&mut command, Some(Path::new("/esp-hal")));
+    let arguments = command
+        .get_args()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        arguments
+            .iter()
+            .any(|argument| argument.contains("esp-hal"))
+    );
+    assert!(
+        !arguments
+            .iter()
+            .any(|argument| argument.contains("xarxa") || argument.contains("embassy"))
+    );
+}

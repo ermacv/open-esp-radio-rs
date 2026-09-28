@@ -13,7 +13,7 @@ The peer is a [firmware catalog](../../host/README.md#share-the-stand) entry
 installed below `target/` apart from any user installation:
 
 ```console
-cargo hil --budget 5m firmware flash ieee802154-peer --board esp32c5
+cargo hil firmware flash ieee802154-peer --board esp32c5
 ```
 
 This builds the image, flashes it under a lease of that board only and records

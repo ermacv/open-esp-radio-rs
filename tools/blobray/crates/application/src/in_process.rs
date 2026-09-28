@@ -82,6 +82,10 @@ pub struct InProcessComparison<'a> {
     pub vendor: &'a [&'a [u8]],
     /// ELF bytes of the replacement target's sources, when it has one.
     pub replacement: Option<&'a [&'a [u8]]>,
+    /// Content identities of `vendor` and `replacement`, one per executable,
+    /// when the caller already authenticated them; computed otherwise.
+    pub vendor_identities: Option<&'a [ArtifactId]>,
+    pub replacement_identities: Option<&'a [ArtifactId]>,
     pub effects: &'a [EffectContract],
     pub projections: &'a [LayoutProjection],
     /// Vendor results of this request's vendor side, from `vendor`.
@@ -119,11 +123,58 @@ fn unsupported(what: &str) -> Error {
     )
 }
 
+/// The executables of one side with their content identities, each
+/// computed at most once: a goal's symbol names its executable by content,
+/// and hashing every executable for every case dominated large requests.
+pub(crate) struct Executables<'a> {
+    bytes: &'a [&'a [u8]],
+    ids: Vec<Option<ArtifactId>>,
+}
+
+impl<'a> Executables<'a> {
+    /// `bytes` with the identities the caller already authenticated, when
+    /// it gives one per executable.
+    pub(crate) fn new(bytes: &'a [&'a [u8]], known: Option<&[ArtifactId]>) -> Result<Self> {
+        let ids = match known {
+            None => vec![None; bytes.len()],
+            Some(ids) if ids.len() == bytes.len() => ids.iter().cloned().map(Some).collect(),
+            Some(_) => {
+                return Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    "executable identities must name every executable",
+                ));
+            }
+        };
+        Ok(Self { bytes, ids })
+    }
+
+    /// The executable whose content is `artifact`.
+    fn find(
+        &mut self,
+        artifact: &ArtifactId,
+        control: &mut dyn RunControl,
+    ) -> Result<Option<&'a [u8]>> {
+        for (bytes, id) in self.bytes.iter().zip(&mut self.ids) {
+            let id = match id {
+                Some(id) => id,
+                None => {
+                    control.checkpoint(bytes.len() / 4096 + 1)?;
+                    id.insert(ArtifactId::of_bytes(bytes))
+                }
+            };
+            if id == artifact {
+                return Ok(Some(bytes));
+            }
+        }
+        Ok(None)
+    }
+}
+
 /// The physical boundary of `goal`: a symbol goal names a code symbol of the
 /// standalone executable among `executables` whose content is its object.
 pub(crate) fn resolve_goal(
     goal: &ExecutionGoal,
-    executables: &[&[u8]],
+    executables: &mut Executables<'_>,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<ResolvedExecutionGoal> {
@@ -142,16 +193,9 @@ pub(crate) fn resolve_goal(
     {
         return Err(unsupported("symbol goals outside a standalone executable"));
     }
-    let mut found = None;
-    for executable in executables {
-        control.checkpoint(executable.len() / 4096 + 1)?;
-        if ArtifactId::of_bytes(executable) == symbol.object.artifact {
-            found = Some(*executable);
-            break;
-        }
-    }
-    let executable =
-        found.ok_or_else(|| unsupported("symbol goals outside the side's executables"))?;
+    let executable = executables
+        .find(&symbol.object.artifact, control)?
+        .ok_or_else(|| unsupported("symbol goals outside the side's executables"))?;
     let address = blobray_artifacts::code_symbol_at(
         &executable,
         symbol.table_section,
@@ -222,7 +266,13 @@ fn run(
         })
         .collect::<Result<Vec<_>>>()?;
     let mut goals = Vec::with_capacity(request.cases.len());
-    let sides = [Some(input.vendor), input.replacement];
+    let mut sides = [
+        Some(Executables::new(input.vendor, input.vendor_identities)?),
+        input
+            .replacement
+            .map(|r| Executables::new(r, input.replacement_identities))
+            .transpose()?,
+    ];
     for (phase, case) in request.cases.iter().enumerate() {
         control.checkpoint(1)?;
         let mut resolved = [None; 2];
@@ -230,7 +280,9 @@ fn run(
             .chain(case.replacement.as_ref())
             .enumerate()
         {
-            let executables = sides[side].unwrap_or_default();
+            let executables = sides[side]
+                .as_mut()
+                .ok_or_else(|| unsupported("a replacement case without replacement executables"))?;
             resolved[side] = Some(resolve_goal(
                 &invocation.goal,
                 executables,
@@ -334,6 +386,8 @@ pub fn vendor(
         &InProcessComparison {
             request: &request,
             replacement: None,
+            vendor_identities: None,
+            replacement_identities: None,
             vendor_results: None,
             dependence: None,
             ..*input

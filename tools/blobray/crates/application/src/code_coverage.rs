@@ -260,6 +260,7 @@ pub fn report_in_process(
     let mut target = None;
     let mut reached = Reached::default();
     let mut ids = Vec::new();
+    let mut executables = crate::in_process::Executables::new(vendor, None)?;
     for (identity, request, records) in executions {
         same_target(&mut target, request)?;
         let goals: Vec<[Option<ResolvedExecutionGoal>; 2]> = request
@@ -269,7 +270,7 @@ pub fn report_in_process(
                 Ok([
                     Some(crate::in_process::resolve_goal(
                         &case.vendor.goal,
-                        vendor,
+                        &mut executables,
                         memory,
                         c,
                     )?),

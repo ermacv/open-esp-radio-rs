@@ -119,6 +119,9 @@ pub struct Session {
     pub executed: std::cell::Cell<(u64, f64)>,
     /// Point mutants of the loaded production image.
     patches: Vec<blobray_application::in_process::ImagePatch>,
+    /// Content identity of each executable source, by input index or
+    /// prepared image, computed once.
+    identities: std::cell::RefCell<BTreeMap<String, ArtifactId>>,
 }
 
 /// A prepared image and its resolved roots, including the entry.
@@ -276,6 +279,7 @@ impl Session {
             projections: vec![],
             executed: Default::default(),
             patches: patches.to_vec(),
+            identities: Default::default(),
         })
     }
 
@@ -416,6 +420,32 @@ impl Session {
         Ok(selection)
     }
 
+    /// ELF bytes of every source of `target`, in source order, borrowed from
+    /// the captured inputs and the exported `images`.
+    fn sources<'s>(
+        &'s self,
+        images: &'s BTreeMap<PreparedImageId, Vec<u8>>,
+        target: &ExecutionTarget,
+    ) -> Result<Vec<&'s [u8]>> {
+        let input = |index: u64| {
+            self.inputs
+                .get(index as usize)
+                .map(Vec::as_slice)
+                .ok_or_else(|| invalid(format!("input {index} is not captured")))
+        };
+        let mut sources = vec![match &target.source {
+            FunctionSource::Input { input: index } => input(*index)?,
+            FunctionSource::Image { image } => images
+                .get(image)
+                .map(Vec::as_slice)
+                .ok_or_else(|| invalid("image is not exported"))?,
+        }];
+        for companion in &target.companions {
+            sources.push(input(*companion)?);
+        }
+        Ok(sources)
+    }
+
     /// ELF bytes of every source of `target`, in source order.
     fn executables(&self, target: &ExecutionTarget) -> Result<Vec<Vec<u8>>> {
         let input = |index: u64| {
@@ -439,6 +469,32 @@ impl Session {
         Ok(executables)
     }
 
+    /// The content identity of every source of `target`, in source order,
+    /// each hashed once per session.
+    fn identities(&self, target: &ExecutionTarget) -> Result<Vec<ArtifactId>> {
+        let keys = std::iter::once(match &target.source {
+            FunctionSource::Input { input } => format!("input-{input}"),
+            FunctionSource::Image { image } => format!("image-{}", image.as_str()),
+        })
+        .chain(target.companions.iter().map(|c| format!("input-{c}")));
+        let mut known = self.identities.borrow_mut();
+        let mut sources = None;
+        keys.enumerate()
+            .map(|(index, key)| {
+                if let Some(id) = known.get(&key) {
+                    return Ok(id.clone());
+                }
+                let executables = match &mut sources {
+                    Some(executables) => executables,
+                    None => sources.insert(self.executables(target)?),
+                };
+                let id = ArtifactId::of_bytes(&executables[index]);
+                known.insert(key, id.clone());
+                Ok(id)
+            })
+            .collect()
+    }
+
     /// Execute and compare `request` in this process.
     fn verify(
         &self,
@@ -447,17 +503,21 @@ impl Session {
         let failed = |e: crate::harness::Error| {
             blobray_domain::Error::new(ErrorCode::InvalidRequest, e.to_string())
         };
-        let vendor = self.executables(&request.vendor).map_err(failed)?;
+        let images = self.images.borrow();
+        let vendor = self.sources(&images, &request.vendor).map_err(failed)?;
         let replacement = request
             .replacement
             .as_ref()
-            .map(|t| self.executables(t))
+            .map(|t| self.sources(&images, t))
             .transpose()
             .map_err(failed)?;
-        let vendor: Vec<&[u8]> = vendor.iter().map(Vec::as_slice).collect();
-        let replacement: Option<Vec<&[u8]>> = replacement
+        let vendor_identities = self.identities(&request.vendor).map_err(failed)?;
+        let replacement_identities = request
+            .replacement
             .as_ref()
-            .map(|r| r.iter().map(Vec::as_slice).collect());
+            .map(|t| self.identities(t))
+            .transpose()
+            .map_err(failed)?;
         let budget = self.runner.budget;
         let memory = blobray_domain::WorkingMemory::new(budget.working_memory_mib << 20)?;
         blobray_application::in_process::verify(
@@ -465,6 +525,8 @@ impl Session {
                 request,
                 vendor: &vendor,
                 replacement: replacement.as_deref(),
+                vendor_identities: Some(&vendor_identities),
+                replacement_identities: replacement_identities.as_deref(),
                 effects: &self.effects,
                 projections: &self.projections,
                 vendor_results: None,
@@ -1146,7 +1208,17 @@ impl Session {
                 .inputs
                 .iter()
                 .enumerate()
-                .map(|(index, bytes)| (format!("input-{index}"), crate::harness::sha256(bytes)))
+                .map(|(index, bytes)| {
+                    let key = format!("input-{index}");
+                    let id = self
+                        .identities
+                        .borrow_mut()
+                        .entry(key.clone())
+                        .or_insert_with(|| ArtifactId::of_bytes(bytes))
+                        .as_str()
+                        .to_owned();
+                    (key, id)
+                })
                 .collect(),
             dependencies,
         })

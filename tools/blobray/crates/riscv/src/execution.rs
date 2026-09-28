@@ -45,13 +45,22 @@ fn floating_point(bytes: &[u8]) -> bool {
     }
 }
 
-/// Slots of one execution's direct-mapped decode cache. Decoding depends only
-/// on the instruction bytes, so a slot is valid for any address and for code
-/// that later changes: changed bytes are another key.
+/// Slots of the direct-mapped decode cache. Decoding depends only on the
+/// instruction bytes and the profile, so a slot is valid for any address, for
+/// code that later changes (changed bytes are another key) and for any later
+/// execution under the same profile.
 const DECODE_CACHE_BITS: u32 = 14;
 /// Instructions charged to the run control, and recorded as its position, at
 /// once. Work beyond the last full interval of one execution is not charged.
 const ACCOUNTING_INTERVAL: u64 = 256;
+
+thread_local! {
+    /// The decode cache of this thread's executions. It is several hundred
+    /// kilobytes, so allocating and clearing one per execution dominated
+    /// requests of many short cases.
+    static DECODE_CACHE: std::cell::RefCell<Option<DecodeCache>> =
+        const { std::cell::RefCell::new(None) };
+}
 
 /// Direct-mapped cache of decoded instruction words.
 struct DecodeCache {
@@ -131,6 +140,22 @@ fn execute(
     memory: &mut dyn ExecutionMemory,
     control: &mut dyn RunControl,
 ) -> Result<(ExecutionStop, u64)> {
+    // A cache of another profile holds words that profile admits; start over.
+    let mut cache = DECODE_CACHE
+        .with_borrow_mut(Option::take)
+        .filter(|cache| cache.profile == profile)
+        .unwrap_or_else(|| DecodeCache::new(profile));
+    let result = run(start, memory, control, &mut cache);
+    DECODE_CACHE.with_borrow_mut(|slot| *slot = Some(cache));
+    result
+}
+
+fn run(
+    start: &ExecutionStart,
+    memory: &mut dyn ExecutionMemory,
+    control: &mut dyn RunControl,
+    cache: &mut DecodeCache,
+) -> Result<(ExecutionStop, u64)> {
     let ExecutionStart {
         entry,
         stack,
@@ -150,7 +175,6 @@ fn execute(
     }
     let mut pc = entry;
     let mut steps = 0;
-    let mut cache = DecodeCache::new(profile);
     let mut pending = 0u64;
     macro_rules! stop {
         ($reason:expr) => {

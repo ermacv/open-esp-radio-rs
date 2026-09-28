@@ -438,6 +438,8 @@ fn in_process_symbol_goals_resolve_in_the_executables_and_compare_vendor_prefixe
                 request,
                 vendor: sources,
                 replacement: Some(sources),
+                vendor_identities: None,
+                replacement_identities: None,
                 effects: &[],
                 projections: &[],
                 vendor_results: None,

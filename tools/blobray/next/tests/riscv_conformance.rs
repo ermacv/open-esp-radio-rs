@@ -144,6 +144,8 @@ fn run(elf: &[u8]) -> std::result::Result<Vec<u32>, String> {
             request: &request,
             vendor: &[elf],
             replacement: None,
+            vendor_identities: None,
+            replacement_identities: None,
             effects: &[],
             projections: &[],
             vendor_results: None,

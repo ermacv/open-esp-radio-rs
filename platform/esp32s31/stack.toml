@@ -130,6 +130,12 @@ max_bytes = 35584
 reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck including the immediate in-order dispatch branch, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
 
 [[reviewed_frames]]
+function_contains = "::supervisor::outside_poll_frame::<"
+source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/mod.rs"]
+max_bytes = 13824
+reason = "a connected epoch's synchronous teardown moves the quiesced services, parked RX, TX resources, network and security material by value into the returned station owner or its fault; it runs outside the connected epoch's poll frame and exists only while it runs (measured 13248 bytes in the station example)"
+
+[[reviewed_frames]]
 function_contains = "::advance_station_to_paired_frontier::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/concurrent.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/concurrent.rs"]
 max_bytes = 17408

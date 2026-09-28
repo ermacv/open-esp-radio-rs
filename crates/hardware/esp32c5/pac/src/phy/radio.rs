@@ -190,7 +190,7 @@ impl PhyRadioRegisters {
     pub fn open_rf_initialization_clocks(&mut self) {
         generated::power_5g_clock_generator(self.pmu());
         generated::enable_saradc_register_clock(&self.peripherals.pcr_radio);
-        generated::set_pcr_undocumented_014c_low_byte(&self.peripherals.pcr_radio);
+        generated::set_pcr_register_014c_low_byte(&self.peripherals.pcr_radio);
     }
 
     /// `phy_set_tsens_power(on)`.

@@ -17,25 +17,25 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ADC_RATE_LOW_UNKNOWN"
+name = "ADC_RATE_LOW_OPAQUE"
 description = "Bit 0, set to the ADC rate bit by phy_adc_rate_set."
 bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "ADC_RATE_HIGH_UNKNOWN"
+name = "ADC_RATE_HIGH_OPAQUE"
 description = "Bit 1, set to the ADC rate bit by phy_adc_rate_set."
 bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "DAC_RATE_LOW_UNKNOWN"
+name = "DAC_RATE_LOW_OPAQUE"
 description = "Bit 2, cleared by phy_dac_rate_set."
 bitOffset = 2
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "DAC_RATE_HIGH_UNKNOWN"
+name = "DAC_RATE_HIGH_OPAQUE"
 description = "Bit 3, cleared by phy_dac_rate_set."
 bitOffset = 3
 bitWidth = 1
@@ -77,7 +77,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FRONT_END_INIT_ENABLE_UNKNOWN"
+name = "FRONT_END_INIT_ENABLE_OPAQUE"
 description = "Front-end initialization enable; meaning unknown."
 bitOffset = 2
 bitWidth = 1
@@ -91,7 +91,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CALIBRATION_CONTROL_UNKNOWN"
+name = "CALIBRATION_CONTROL_OPAQUE"
 description = "Two-bit calibration control; meaning unknown."
 bitOffset = 22
 bitWidth = 2
@@ -117,7 +117,7 @@ bitOffset = 30
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "FRONT_END_INIT_HIGH_UNKNOWN"
+name = "FRONT_END_INIT_HIGH_OPAQUE"
 description = "Front-end initialization bit; meaning unknown."
 bitOffset = 31
 bitWidth = 1
@@ -131,13 +131,13 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "SCALE_LOW_UNKNOWN"
+name = "SCALE_LOW_OPAQUE"
 description = "Low RX IQ scale byte."
 bitOffset = 0
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "SCALE_HIGH_UNKNOWN"
+name = "SCALE_HIGH_OPAQUE"
 description = "High RX IQ scale byte."
 bitOffset = 8
 bitWidth = 8
@@ -151,7 +151,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_CLEAR_FIRST_UNKNOWN"
+name = "INIT_CLEAR_FIRST_OPAQUE"
 description = "Front-end initialization clear bit; meaning unknown."
 bitOffset = 8
 bitWidth = 1
@@ -165,7 +165,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FE_BB_ENABLE_UNKNOWN"
+name = "FE_BB_ENABLE_OPAQUE"
 description = "Two-bit front-end and baseband clock enable; individual meanings unknown."
 bitOffset = 0
 bitWidth = 2
@@ -179,13 +179,13 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CALIBRATION_FIELD_UNKNOWN"
+name = "CALIBRATION_FIELD_OPAQUE"
 description = "Byte phy_pwdet_reg_init replaces with 0x50."
 bitOffset = 4
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "INITIALIZATION_MODE_UNKNOWN"
+name = "INITIALIZATION_MODE_OPAQUE"
 description = "Three-bit mode phy_pwdet_reg_init sets to 2 and phy_pwdet_sar2_init to 6."
 bitOffset = 20
 bitWidth = 3
@@ -199,13 +199,13 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "SAR_CONFIG_CLEAR_UNKNOWN"
+name = "SAR_CONFIG_CLEAR_OPAQUE"
 description = "Bit phy_pwdet_sar2_init clears."
 bitOffset = 9
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "SAR_MODE_UNKNOWN"
+name = "SAR_MODE_OPAQUE"
 description = "Two bits phy_pwdet_sar2_init sets."
 bitOffset = 12
 bitWidth = 2
@@ -275,7 +275,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "IQ_SWAP_UNKNOWN"
+name = "IQ_SWAP_OPAQUE"
 description = "Band-dependent bit that phy_fe_reg_init sets in the 5 GHz band; meaning unknown."
 bitOffset = 29
 bitWidth = 1
@@ -289,7 +289,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FE_INIT_ENABLE_UNKNOWN"
+name = "FE_INIT_ENABLE_OPAQUE"
 description = "Front-end initialization enable; meaning unknown."
 bitOffset = 22
 bitWidth = 1
@@ -303,13 +303,13 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "SCALE_LOW_UNKNOWN"
+name = "SCALE_LOW_OPAQUE"
 description = "Second DAC scale byte."
 bitOffset = 8
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "SCALE_HIGH_UNKNOWN"
+name = "SCALE_HIGH_OPAQUE"
 description = "First DAC scale byte."
 bitOffset = 16
 bitWidth = 8
@@ -323,13 +323,13 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_FIRST_UNKNOWN"
+name = "INIT_FIRST_OPAQUE"
 description = "First bit; meaning unknown."
 bitOffset = 25
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "INIT_SECOND_UNKNOWN"
+name = "INIT_SECOND_OPAQUE"
 description = "Second bit; meaning unknown."
 bitOffset = 26
 bitWidth = 1
@@ -363,7 +363,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_LOW_UNKNOWN"
+name = "INIT_LOW_OPAQUE"
 description = "Low byte; meaning unknown."
 bitOffset = 0
 bitWidth = 8
@@ -391,7 +391,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CLEAR_UNKNOWN"
+name = "CLEAR_OPAQUE"
 description = "Four bits phy_rxevm_init_cfg clears; meaning unknown."
 bitOffset = 12
 bitWidth = 4
@@ -405,19 +405,19 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE_LOW_UNKNOWN"
+name = "ENABLE_LOW_OPAQUE"
 description = "Set with bit 2 when phy_rxevm_init_cfg enables the measurement."
 bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "MEMORY_RESET_UNKNOWN"
+name = "MEMORY_RESET_OPAQUE"
 description = "Pulsed by phy_rxevm_reset_mem."
 bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE_HIGH_UNKNOWN"
+name = "ENABLE_HIGH_OPAQUE"
 description = "Set with bit 0 when phy_rxevm_init_cfg enables the measurement."
 bitOffset = 2
 bitWidth = 1
@@ -431,7 +431,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "MODE_UNKNOWN"
+name = "MODE_OPAQUE"
 description = "Five bits phy_rxevm_init_cfg sets to 0x18."
 bitOffset = 2
 bitWidth = 5
@@ -457,7 +457,275 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RESET_UNKNOWN"
+name = "RESET_OPAQUE"
 description = "Pulsed by phy_rxevm_reset_mem."
 bitOffset = 8
 bitWidth = 1
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL.ADC_RATE_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL.ADC_RATE_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL.DAC_RATE_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.ADC_RATE_AND_FRONT_END_CONTROL.DAC_RATE_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FE_CLOCK_GATE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FE_CLOCK_GATE.STATE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.TABLE_MEMORY_INDEX_SOURCE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.TABLE_MEMORY_INDEX_SOURCE.BASE_INDEX"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_AND_TONE_STOP_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_AND_TONE_STOP_CONTROL.FRONT_END_INIT_ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_DCO_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_DCO_CONTROL.CALIBRATION_CONTROL_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL.RX_IQ_CORRECTION_MODE_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL.RX_IQ_CORRECTION_MODE_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_CONTROL.FRONT_END_INIT_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_IQ_SCALE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_IQ_SCALE.SCALE_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_IQ_SCALE.SCALE_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_CLEAR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_CLEAR_CONTROL.INIT_CLEAR_FIRST_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FE_BB_CLOCK_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FE_BB_CLOCK_CONTROL.FE_BB_ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL.CALIBRATION_FIELD_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_CONTROL.INITIALIZATION_MODE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS.SAR_CONFIG_CLEAR_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_SAR_CONTROL_STATUS.SAR_MODE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_810"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_810.STATE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_814"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_WORD_814.STATE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_REFERENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.POWER_DETECTOR_REFERENCE.STATE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.TX_PA_CONTROL_1"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.TX_PA_CONTROL_1.PA_ON_BT_DELAY"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0888.IQ_SWAP_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0894"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0894.FE_INIT_ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.DAC_SCALE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.DAC_SCALE.SCALE_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.DAC_SCALE.SCALE_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08.INIT_FIRST_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C08.INIT_SECOND_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_AUX"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_AUX.TX_IQ_CORRECTION_MODE_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.IQ_CORRECTION_AUX.TX_IQ_CORRECTION_MODE_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C20"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.FRONT_END_INIT_0C20.INIT_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.BB_CLOCK_GATE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.BB_CLOCK_GATE.STATE"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_WORD_7920"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_WORD_7920.CLEAR_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONTROL.ENABLE_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONTROL.MEMORY_RESET_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONTROL.ENABLE_HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONFIG"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONFIG.MODE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONFIG.SECOND_PARAMETER"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_CONFIG.THIRD_PARAMETER"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET"
+naming = "descriptive"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG.RX_EVM_MEMORY_RESET.RESET_OPAQUE"
+naming = "opaque"

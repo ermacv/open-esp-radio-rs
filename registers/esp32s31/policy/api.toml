@@ -4629,7 +4629,7 @@ sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 name = "initialize_shared_receive_image_0_high"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_0"
-fields = [{ field = "POSITIONAL_IMAGE_21_31", source-bit-offset = 0 }]
+fields = [{ field = "INIT_21_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x792
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4638,7 +4638,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_control_image"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "RX_SETUP_CONTROL"
-fields = [{ field = "SHARED_INIT_IMAGE_10_20", source-bit-offset = 0 }]
+fields = [{ field = "INIT_10_20_OPAQUE", source-bit-offset = 0 }]
 value = 0x79c
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4647,7 +4647,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_1_low"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_1"
-fields = [{ field = "POSITIONAL_IMAGE_0_10", source-bit-offset = 0 }]
+fields = [{ field = "INIT_0_10_OPAQUE", source-bit-offset = 0 }]
 value = 0x7a6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4656,7 +4656,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_0_middle"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_0"
-fields = [{ field = "POSITIONAL_IMAGE_13_20", source-bit-offset = 0 }]
+fields = [{ field = "INIT_13_20_OPAQUE", source-bit-offset = 0 }]
 value = 0xa6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4665,7 +4665,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_4_high"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_4"
-fields = [{ field = "POSITIONAL_IMAGE_20_30", source-bit-offset = 0 }]
+fields = [{ field = "INIT_20_30_OPAQUE", source-bit-offset = 0 }]
 value = 0x7e1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4674,7 +4674,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_4_middle"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_4"
-fields = [{ field = "POSITIONAL_IMAGE_9_19", source-bit-offset = 0 }]
+fields = [{ field = "INIT_9_19_OPAQUE", source-bit-offset = 0 }]
 value = 0x7ed
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4683,7 +4683,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_2_high"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_2"
-fields = [{ field = "POSITIONAL_IMAGE_8_31", source-bit-offset = 0 }]
+fields = [{ field = "INIT_8_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x07a120
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4692,7 +4692,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_3_high"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_3"
-fields = [{ field = "POSITIONAL_IMAGE_8_31", source-bit-offset = 0 }]
+fields = [{ field = "INIT_8_31_OPAQUE", source-bit-offset = 0 }]
 value = 0xf85edf
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4701,7 +4701,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_control_0"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_CONTROL_0"
-fields = [{ field = "POSITIONAL_FORCE_ZERO_1", source-bit-offset = 0 }]
+fields = [{ field = "INIT_1_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4710,7 +4710,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_control_1"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_CONTROL_1"
-fields = [{ field = "POSITIONAL_FORCE_ONE_30", source-bit-offset = 0 }]
+fields = [{ field = "INIT_30_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4719,7 +4719,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_2_low"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_2"
-fields = [{ field = "POSITIONAL_IMAGE_0_7", source-bit-offset = 0 }]
+fields = [{ field = "INIT_0_7_OPAQUE", source-bit-offset = 0 }]
 value = 0xf1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -4728,7 +4728,7 @@ sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 name = "initialize_shared_receive_image_4_low"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "SHARED_RX_INIT_IMAGE_4"
-fields = [{ field = "POSITIONAL_FORCE_ONE_0", source-bit-offset = 0 }]
+fields = [{ field = "INIT_0_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
@@ -6075,7 +6075,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 name = "initialize_bluetooth_receive_setup_zbbb_bit_8"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "RX_SETUP_CONTROL"
-fields = [{ field = "CONFIG_FORCE_ZERO_8", source-bit-offset = 0 }]
+fields = [{ field = "SETUP_8_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -6084,7 +6084,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 name = "initialize_bluetooth_receive_setup_zbbb_image"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "RX_SETUP_IMAGE"
-fields = [{ field = "CONFIG_IMAGE", source-bit-offset = 0 }]
+fields = [{ field = "SETUP_12_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x001cb
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -6093,7 +6093,7 @@ sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 name = "initialize_bluetooth_receive_setup_zbbb_low"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "RX_SETUP_CONTROL"
-fields = [{ field = "CONFIG_FORCE_ZERO_LOW", source-bit-offset = 0 }]
+fields = [{ field = "SETUP_0_1_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
@@ -6153,7 +6153,7 @@ sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT"]
 name = "initialize_bluetooth_shared_receive_final_image"
 peripheral = "ZBBB_RADIO_CONTROL"
 register = "RX_SETUP_IMAGE"
-fields = [{ field = "CONFIG_IMAGE", source-bit-offset = 0 }]
+fields = [{ field = "SETUP_12_31_OPAQUE", source-bit-offset = 0 }]
 value = 0x0019f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
@@ -6178,14 +6178,14 @@ sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
 name = "observe_ieee802154_core0_route"
 peripheral = "IEEE802154_INTERRUPT_ROUTE"
 register = "CORE0_ROUTE"
-fields = ["MAP", "UNCLASSIFIED_6_7", "PASS_LEVEL", "UNCLASSIFIED_10_31"]
+fields = ["MAP", "BITS_6_7_OPAQUE", "PASS_LEVEL", "BITS_10_31_OPAQUE"]
 sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 
 [[field-snapshot-reads]]
 name = "observe_ieee802154_core1_route"
 peripheral = "IEEE802154_INTERRUPT_ROUTE"
 register = "CORE1_ROUTE"
-fields = ["MAP", "UNCLASSIFIED_6_7", "PASS_LEVEL", "UNCLASSIFIED_10_31"]
+fields = ["MAP", "BITS_6_7_OPAQUE", "PASS_LEVEL", "BITS_10_31_OPAQUE"]
 sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 
 [[field-replace-modifies]]

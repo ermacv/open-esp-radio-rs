@@ -22424,13 +22424,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
       <registers>
         <register>
           <name>RX_SETUP_IMAGE</name>
-          <description>bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F.</description>
+          <description>Project-assigned name. bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_IMAGE</name>
+              <name>SETUP_12_31_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>20</bitWidth>
               <writeConstraint>
@@ -22444,13 +22445,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_SETUP_CONTROL</name>
-          <description>bt_bb_rx_set clears bit 8 and the low two-bit field through separate fresh-read RMW operations; the complete shared receive initializer independently replaces bits 10:20.</description>
+          <description>Project-assigned name. bt_bb_rx_set clears bit 8 and the low two-bit field through separate fresh-read RMW operations; the complete shared receive initializer independently replaces bits 10:20.</description>
           <addressOffset>0xC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONFIG_FORCE_ZERO_LOW</name>
+              <name>SETUP_0_1_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>2</bitWidth>
               <writeConstraint>
@@ -22461,13 +22463,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               </writeConstraint>
             </field>
             <field>
-              <name>CONFIG_FORCE_ZERO_8</name>
+              <name>SETUP_8_OPAQUE</name>
+              <description>Opaque: meaning not established.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>SHARED_INIT_IMAGE_10_20</name>
-              <description>The complete shared receive initializer replaces bits 10:20 with the finite image 0x79C.</description>
+              <name>INIT_10_20_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete shared receive initializer replaces bits 10:20 with the finite image 0x79C.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22481,14 +22484,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SHARED_RX_INIT_IMAGE_0</name>
-          <description>The complete shared receive initializer replaces two disjoint positional fields with finite images while preserving every other bit.</description>
+          <description>Project-assigned name. The complete shared receive initializer replaces two disjoint positional fields with finite images while preserving every other bit.</description>
           <addressOffset>0x10</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>POSITIONAL_IMAGE_13_20</name>
-              <description>The complete initializer replaces bits 13:20 with the finite image 0xA6.</description>
+              <name>INIT_13_20_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 13:20 with the finite image 0xA6.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -22499,8 +22502,8 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               </writeConstraint>
             </field>
             <field>
-              <name>POSITIONAL_IMAGE_21_31</name>
-              <description>The complete initializer replaces bits 21:31 with the finite image 0x792.</description>
+              <name>INIT_21_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 21:31 with the finite image 0x792.</description>
               <bitOffset>21</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22514,14 +22517,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SHARED_RX_INIT_CONTROL_0</name>
-          <description>The complete shared receive initializer clears one positional control bit and preserves the remainder of the word.</description>
+          <description>Project-assigned name. The complete shared receive initializer clears one positional control bit and preserves the remainder of the word.</description>
           <addressOffset>0x14</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>POSITIONAL_FORCE_ZERO_1</name>
-              <description>The complete initializer clears bit 1.</description>
+              <name>INIT_1_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer clears bit 1.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -22529,14 +22532,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SHARED_RX_INIT_IMAGE_1</name>
-          <description>The complete shared receive initializer replaces the low eleven bits with one finite image.</description>
+          <description>Project-assigned name. The complete shared receive initializer replaces the low eleven bits with one finite image.</description>
           <addressOffset>0x18</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>POSITIONAL_IMAGE_0_10</name>
-              <description>The complete initializer replaces bits 0:10 with the finite image 0x7A6.</description>
+              <name>INIT_0_10_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 0:10 with the finite image 0x7A6.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22550,14 +22553,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SHARED_RX_INIT_CONTROL_1</name>
-          <description>The complete shared receive initializer sets one positional control bit and preserves the remainder of the word.</description>
+          <description>Project-assigned name. The complete shared receive initializer sets one positional control bit and preserves the remainder of the word.</description>
           <addressOffset>0x28</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>POSITIONAL_FORCE_ONE_30</name>
-              <description>The complete initializer sets bit 30.</description>
+              <name>INIT_30_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer sets bit 30.</description>
               <bitOffset>30</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -22565,14 +22568,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SHARED_RX_INIT_IMAGE_2</name>
-          <description>The complete shared receive initializer replaces the high twenty-four bits and low byte through two disjoint fresh-read updates.</description>
+          <description>Project-assigned name. The complete shared receive initializer replaces the high twenty-four bits and low byte through two disjoint fresh-read updates.</description>
           <addressOffset>0x2C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>POSITIONAL_IMAGE_0_7</name>
-              <description>The complete initializer replaces bits 0:7 with the finite image 0xF1.</description>
+              <name>INIT_0_7_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 0:7 with the finite image 0xF1.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -22583,8 +22586,8 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               </writeConstraint>
             </field>
             <field>
-              <name>POSITIONAL_IMAGE_8_31</name>
-              <description>The complete initializer replaces bits 8:31 with the finite image 0x07A120.</description>
+              <name>INIT_8_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 8:31 with the finite image 0x07A120.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>24</bitWidth>
               <writeConstraint>
@@ -22598,14 +22601,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SHARED_RX_INIT_IMAGE_3</name>
-          <description>The complete shared receive initializer replaces the high twenty-four bits with one finite image.</description>
+          <description>Project-assigned name. The complete shared receive initializer replaces the high twenty-four bits with one finite image.</description>
           <addressOffset>0x30</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>POSITIONAL_IMAGE_8_31</name>
-              <description>The complete initializer replaces bits 8:31 with the finite image 0xF85EDF.</description>
+              <name>INIT_8_31_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 8:31 with the finite image 0xF85EDF.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>24</bitWidth>
               <writeConstraint>
@@ -22619,20 +22622,20 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SHARED_RX_INIT_IMAGE_4</name>
-          <description>The complete shared receive initializer replaces three disjoint positional fields with finite images.</description>
+          <description>Project-assigned name. The complete shared receive initializer replaces three disjoint positional fields with finite images.</description>
           <addressOffset>0x34</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>POSITIONAL_FORCE_ONE_0</name>
-              <description>The complete initializer sets bit 0.</description>
+              <name>INIT_0_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer sets bit 0.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>POSITIONAL_IMAGE_9_19</name>
-              <description>The complete initializer replaces bits 9:19 with the finite image 0x7ED.</description>
+              <name>INIT_9_19_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 9:19 with the finite image 0x7ED.</description>
               <bitOffset>9</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22643,8 +22646,8 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               </writeConstraint>
             </field>
             <field>
-              <name>POSITIONAL_IMAGE_20_30</name>
-              <description>The complete initializer replaces bits 20:30 with the finite image 0x7E1.</description>
+              <name>INIT_20_30_OPAQUE</name>
+              <description>Opaque: meaning not established. The complete initializer replaces bits 20:30 with the finite image 0x7E1.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>11</bitWidth>
               <writeConstraint>
@@ -22658,14 +22661,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SOFTWARE_RESET_IDLE_STATUS</name>
-          <description>bbmac_idle_for_swrst reports idle only when the observed low three-bit image equals one.</description>
+          <description>Project-assigned name. bbmac_idle_for_swrst reports idle only when the observed low three-bit image equals one.</description>
           <addressOffset>0x38</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>LOW_3_REQUIRED_IMAGE</name>
-              <description>The reset-idle predicate compares this exact field with the finite image 1.</description>
+              <description>Project-assigned name. The reset-idle predicate compares this exact field with the finite image 1.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
             </field>
@@ -22980,63 +22983,68 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>CONTROL</name>
-          <description>Selected MAC policy bits mutated by public common LL accessors. Unused control bits remain absent.</description>
+          <description>Project-assigned name. Selected MAC policy bits mutated by public common LL accessors. Unused control bits remain absent.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>AUTO_ACK_TX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ENHANCED_ACK_TX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>AUTO_ACK_RX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>3</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>COORDINATOR</name>
+              <description>Project-assigned name.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>PROMISCUOUS</name>
+              <description>Project-assigned name.</description>
               <bitOffset>7</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>PENDING_ENHANCED</name>
-              <description>Boolean pending-mode selector used by the current public LL. The wider public pending-mode enum is not encoded in this one-bit field.</description>
+              <description>Project-assigned name. Boolean pending-mode selector used by the current public LL. The wider public pending-mode enum is not encoded in this one-bit field.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>MULTIPAN0_ENABLED</name>
-              <description>Enable public multipan context zero.</description>
+              <description>Project-assigned name. Enable public multipan context zero.</description>
               <bitOffset>28</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>MULTIPAN1_ENABLED</name>
-              <description>Enable public multipan context one.</description>
+              <description>Project-assigned name. Enable public multipan context one.</description>
               <bitOffset>29</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>MULTIPAN2_ENABLED</name>
-              <description>Enable public multipan context two.</description>
+              <description>Project-assigned name. Enable public multipan context two.</description>
               <bitOffset>30</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>MULTIPAN3_ENABLED</name>
-              <description>Enable public multipan context three.</description>
+              <description>Project-assigned name. Enable public multipan context three.</description>
               <bitOffset>31</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -23047,13 +23055,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <dimIncrement>0x10</dimIncrement>
           <dimIndex>0-3</dimIndex>
           <name>MULTIPAN%s_SHORT_ADDRESS</name>
-          <description>Sixteen-bit short address for one public multipan context.</description>
+          <description>Project-assigned name. Sixteen-bit short address for one public multipan context.</description>
           <addressOffset>0x8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>ADDRESS</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
               <writeConstraint>
@@ -23070,13 +23079,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <dimIncrement>0x10</dimIncrement>
           <dimIndex>0-3</dimIndex>
           <name>MULTIPAN%s_PAN_ID</name>
-          <description>Sixteen-bit PAN identifier for one public multipan context.</description>
+          <description>Project-assigned name. Sixteen-bit PAN identifier for one public multipan context.</description>
           <addressOffset>0xC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>PAN_ID</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
               <writeConstraint>
@@ -23093,13 +23103,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <dimIncrement>0x10</dimIncrement>
           <dimIndex>0-3</dimIndex>
           <name>MULTIPAN%s_EXTENDED_ADDRESS_LOW</name>
-          <description>Extended-address bytes zero through three packed little-endian by the public common LL.</description>
+          <description>Project-assigned name. Extended-address bytes zero through three packed little-endian by the public common LL.</description>
           <addressOffset>0x10</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>ADDRESS_WORD</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -23116,13 +23127,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <dimIncrement>0x10</dimIncrement>
           <dimIndex>0-3</dimIndex>
           <name>MULTIPAN%s_EXTENDED_ADDRESS_HIGH</name>
-          <description>Extended-address bytes four through seven packed little-endian by the public common LL.</description>
+          <description>Project-assigned name. Extended-address bytes four through seven packed little-endian by the public common LL.</description>
           <addressOffset>0x14</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>ADDRESS_WORD</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -23143,7 +23155,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <fields>
             <field>
               <name>FREQUENCY_CODE</name>
-              <description>Eight-bit code read and written by ieee802154_ll_get_freq/set_freq; this register model does not equate it to an IEEE channel number.</description>
+              <description>Project-assigned name. Eight-bit code read and written by ieee802154_ll_get_freq/set_freq; this register model does not equate it to an IEEE channel number.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -23164,7 +23176,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <fields>
             <field>
               <name>POWER_CODE</name>
-              <description>Raw eight-bit hardware code; no dBm conversion is claimed at the register boundary.</description>
+              <description>Project-assigned name. Raw eight-bit hardware code; no dBm conversion is claimed at the register boundary.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
             </field>
@@ -23172,14 +23184,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>ED_DURATION</name>
-          <description>Energy-detection duration field written by the public common LL. The adjacent delay field is not used there and remains absent.</description>
+          <description>Project-assigned name. Energy-detection duration field written by the public common LL. The adjacent delay field is not used there and remains absent.</description>
           <addressOffset>0x50</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>DURATION</name>
-              <description>Twenty-four-bit physical field. The current public setter accepts only a uint16_t and therefore exercises a strict subset of its declared range.</description>
+              <description>Project-assigned name. Twenty-four-bit physical field. The current public setter accepts only a uint16_t and therefore exercises a strict subset of its declared range.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>24</bitWidth>
             </field>
@@ -23187,14 +23199,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>ED_CONFIG</name>
-          <description>Energy-detection and clear-channel-assessment configuration plus read-only result fields used by the public common LL. The pinned reg macros call bits 12:11 ED_SAMPLE_MODE and bit 13 DIS_ED_POWER_SEL, while the pinned struct/common LL operate them as ED_SAMPLE_RATE and ED_SAMPLE_MODE respectively; this model follows the operational struct/common-LL pair and leaves the naming conflict explicit.</description>
+          <description>Project-assigned name. Energy-detection and clear-channel-assessment configuration plus read-only result fields used by the public common LL. The pinned reg macros call bits 12:11 ED_SAMPLE_MODE and bit 13 DIS_ED_POWER_SEL, while the pinned struct/common LL operate them as ED_SAMPLE_RATE and ED_SAMPLE_MODE respectively; this model follows the operational struct/common-LL pair and leaves the naming conflict explicit.</description>
           <addressOffset>0x54</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>CCA_THRESHOLD_CODE</name>
-              <description>Eight-bit code written from an int8_t; signed physical units are intentionally left to the HAL.</description>
+              <description>Project-assigned name. Eight-bit code written from an int8_t; signed physical units are intentionally left to the HAL.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
               <writeConstraint>
@@ -23206,6 +23218,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
             </field>
             <field>
               <name>ED_SAMPLE_RATE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>2</bitWidth>
               <writeConstraint>
@@ -23279,7 +23292,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
             </field>
             <field>
               <name>ED_RSS_CODE</name>
-              <description>Eight-bit result returned as int8_t by the public common LL.</description>
+              <description>Project-assigned name. Eight-bit result returned as int8_t by the public common LL.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>8</bitWidth>
               <access>read-only</access>
@@ -23301,6 +23314,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <fields>
             <field>
               <name>TIMEOUT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
               <writeConstraint>
@@ -23314,80 +23328,92 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>EVENT_ENABLE</name>
-          <description>Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics.</description>
+          <description>Project-assigned name. Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics.</description>
           <addressOffset>0x60</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>TX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ACK_TX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ACK_RX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>3</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_ABORT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TX_ABORT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ED_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_7</name>
-              <description>Physically present event-enable bit without an assigned public vendor event.</description>
+              <name>BIT_7_OPAQUE</name>
+              <description>Opaque: meaning not established. Physically present event-enable bit without an assigned public vendor event.</description>
               <bitOffset>7</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TIMER0_OVERFLOW</name>
+              <description>Project-assigned name.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TIMER1_OVERFLOW</name>
+              <description>Project-assigned name.</description>
               <bitOffset>9</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CLOCK_COUNT_MATCH</name>
+              <description>Project-assigned name.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TX_SFD_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_SFD_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_13</name>
-              <description>Physically present event-enable bit without an assigned public vendor event.</description>
+              <name>BIT_13_OPAQUE</name>
+              <description>Opaque: meaning not established. Physically present event-enable bit without an assigned public vendor event.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -23395,7 +23421,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>EVENT_STATUS</name>
-          <description>Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics.</description>
+          <description>Project-assigned name. Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics.</description>
           <addressOffset>0x64</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -23403,73 +23429,85 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <fields>
             <field>
               <name>TX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ACK_TX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ACK_RX_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>3</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_ABORT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TX_ABORT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ED_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_7</name>
-              <description>Physically present event-status bit without an assigned public vendor event.</description>
+              <name>BIT_7_OPAQUE</name>
+              <description>Opaque: meaning not established. Physically present event-status bit without an assigned public vendor event.</description>
               <bitOffset>7</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TIMER0_OVERFLOW</name>
+              <description>Project-assigned name.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TIMER1_OVERFLOW</name>
+              <description>Project-assigned name.</description>
               <bitOffset>9</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CLOCK_COUNT_MATCH</name>
+              <description>Project-assigned name.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TX_SFD_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_SFD_DONE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_13</name>
-              <description>Physically present event-status bit without an assigned public vendor event.</description>
+              <name>BIT_13_OPAQUE</name>
+              <description>Opaque: meaning not established. Physically present event-status bit without an assigned public vendor event.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -23477,13 +23515,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_ABORT_ENABLE</name>
-          <description>Low thirty-one receive-abort enable bits mutated by public LL accessors. Only the finite abort-reason values named by the LL are semantically classified.</description>
+          <description>Project-assigned name. Low thirty-one receive-abort enable bits mutated by public LL accessors. Only the finite abort-reason values named by the LL are semantically classified.</description>
           <addressOffset>0x68</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>EVENTS</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>31</bitWidth>
               <writeConstraint>
@@ -23515,13 +23554,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>PENDING_CONFIG</name>
-          <description>Selected outgoing acknowledgment frame-pending bit. The untouched timeout field remains absent.</description>
+          <description>Project-assigned name. Selected outgoing acknowledgment frame-pending bit. The untouched timeout field remains absent.</description>
           <addressOffset>0x6C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>FRAME_PENDING</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -23536,6 +23576,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <fields>
             <field>
               <name>TXRX_PTI</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -23547,6 +23588,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
             </field>
             <field>
               <name>ACK_PTI</name>
+              <description>Project-assigned name.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>5</bitWidth>
               <writeConstraint>
@@ -23560,13 +23602,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TX_ABORT_ENABLE</name>
-          <description>Low thirty-one transmit-abort enable bits mutated by public LL accessors. Only the finite abort-reason values named by the LL are semantically classified.</description>
+          <description>Project-assigned name. Low thirty-one transmit-abort enable bits mutated by public LL accessors. Only the finite abort-reason values named by the LL are semantically classified.</description>
           <addressOffset>0x78</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>EVENTS</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>31</bitWidth>
               <writeConstraint>
@@ -23593,13 +23636,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>ENHANCED_ACK_NOTIFY</name>
-          <description>Write-only enhanced-ack generation-done notification word. The public common LL writes the complete value one; trigger/clear behavior is not inferred.</description>
+          <description>Project-assigned name. Write-only enhanced-ack generation-done notification word. The public common LL writes the complete value one; trigger/clear behavior is not inferred.</description>
           <addressOffset>0x7C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>NOTIFY_IMAGE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -23614,11 +23658,13 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <fields>
             <field>
               <name>FILTER_FAIL_REASON</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>4</bitWidth>
             </field>
             <field>
               <name>ABORT_REASON</name>
+              <description>Project-assigned name.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>5</bitWidth>
               <enumeratedValues>
@@ -23691,12 +23737,13 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
             </field>
             <field>
               <name>STATE</name>
-              <description>Three-bit receive state. The public LL only establishes that value one is RECEIVE_SFD and tests for later states with a greater-than comparison.</description>
+              <description>Project-assigned name. Three-bit receive state. The public LL only establishes that value one is RECEIVE_SFD and tests for later states with a greater-than comparison.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>3</bitWidth>
             </field>
             <field>
               <name>CURRENT_CHANNEL_INDEX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>19</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -23721,11 +23768,13 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <fields>
             <field>
               <name>STATE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>4</bitWidth>
             </field>
             <field>
               <name>ABORT_REASON</name>
+              <description>Project-assigned name.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>5</bitWidth>
               <enumeratedValues>
@@ -23794,6 +23843,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
             </field>
             <field>
               <name>SECURITY_ERROR</name>
+              <description>Project-assigned name.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>4</bitWidth>
               <enumeratedValues>
@@ -23824,13 +23874,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TIMER0_THRESHOLD</name>
-          <description>Complete timer-zero threshold word written by the public common LL.</description>
+          <description>Project-assigned name. Complete timer-zero threshold word written by the public common LL.</description>
           <addressOffset>0xA8</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>THRESHOLD</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -23844,13 +23895,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TIMER0_VALUE</name>
-          <description>Complete timer-zero value word read by the public common LL.</description>
+          <description>Project-assigned name. Complete timer-zero value word read by the public common LL.</description>
           <addressOffset>0xAC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>VALUE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -23858,13 +23910,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TIMER1_THRESHOLD</name>
-          <description>Complete timer-one threshold word written by the public common LL.</description>
+          <description>Project-assigned name. Complete timer-one threshold word written by the public common LL.</description>
           <addressOffset>0xB0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>THRESHOLD</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -23878,13 +23931,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TIMER1_VALUE</name>
-          <description>Complete timer-one value word read by the public common LL.</description>
+          <description>Project-assigned name. Complete timer-one value word read by the public common LL.</description>
           <addressOffset>0xB4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>VALUE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
             </field>
@@ -23892,13 +23946,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TX_DMA_ADDRESS</name>
-          <description>Complete transmit frame-buffer address written by the public common LL. Address validity and buffer lifetime remain HAL responsibilities.</description>
+          <description>Project-assigned name. Complete transmit frame-buffer address written by the public common LL. Address validity and buffer lifetime remain HAL responsibilities.</description>
           <addressOffset>0xD0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>ADDRESS</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -23912,13 +23967,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_DMA_ADDRESS</name>
-          <description>Complete receive frame-buffer address written by the public common LL. Address validity and buffer lifetime remain HAL responsibilities.</description>
+          <description>Project-assigned name. Complete receive frame-buffer address written by the public common LL. Address validity and buffer lifetime remain HAL responsibilities.</description>
           <addressOffset>0xE0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>ADDRESS</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -24016,18 +24072,20 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SECURITY_CONTROL</name>
-          <description>Transmit-security enable and payload-offset fields used by the public common LL.</description>
+          <description>Project-assigned name. Transmit-security enable and payload-offset fields used by the public common LL.</description>
           <addressOffset>0x128</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>TX_ENABLE</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>PAYLOAD_OFFSET</name>
+              <description>Project-assigned name.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>7</bitWidth>
             </field>
@@ -24035,13 +24093,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SECURITY_ADDRESS_LOW</name>
-          <description>Security extended-address bytes zero through three packed little-endian by the public common LL.</description>
+          <description>Project-assigned name. Security extended-address bytes zero through three packed little-endian by the public common LL.</description>
           <addressOffset>0x12C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>ADDRESS_WORD</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -24055,13 +24114,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SECURITY_ADDRESS_HIGH</name>
-          <description>Security extended-address bytes four through seven packed little-endian by the public common LL.</description>
+          <description>Project-assigned name. Security extended-address bytes four through seven packed little-endian by the public common LL.</description>
           <addressOffset>0x130</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>ADDRESS_WORD</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -24078,13 +24138,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
           <dimIncrement>0x4</dimIncrement>
           <dimIndex>0-3</dimIndex>
           <name>SECURITY_KEY%s</name>
-          <description>One little-endian four-byte word of the sixteen-byte transmit-security key written by the public common LL. Key lifecycle and zeroization remain HAL obligations.</description>
+          <description>Project-assigned name. One little-endian four-byte word of the sixteen-byte transmit-security key written by the public common LL. Key lifecycle and zeroization remain HAL obligations.</description>
           <addressOffset>0x134</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>KEY_WORD</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>
@@ -24098,18 +24159,20 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>SFD_TIMEOUT_COUNTER</name>
-          <description>Two read-only diagnostic counters independently read by the common and ESP32-S31 LL headers.</description>
+          <description>Project-assigned name. Two read-only diagnostic counters independently read by the common and ESP32-S31 LL headers.</description>
           <addressOffset>0x144</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>SFD_TIMEOUT_COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
             <field>
               <name>RX_FILTER_NOT_WORK_COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24117,18 +24180,20 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>CRC_ERROR_COUNTER</name>
-          <description>Two read-only diagnostic counters independently read by the common and ESP32-S31 LL headers.</description>
+          <description>Project-assigned name. Two read-only diagnostic counters independently read by the common and ESP32-S31 LL headers.</description>
           <addressOffset>0x148</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>CRC_ERROR_COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
             <field>
               <name>RX_PREAMBLE_DETECT_ERROR_COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24136,12 +24201,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>ED_ABORT_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x14C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24149,12 +24216,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>CCA_FAIL_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x150</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24162,12 +24231,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_FILTER_FAIL_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x154</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24175,12 +24246,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>NO_RSS_DETECT_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x158</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24188,12 +24261,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_ABORT_COEX_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x15C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24201,12 +24276,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_RESTART_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x160</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24214,12 +24291,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TX_ACK_ABORT_COEX_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x164</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24227,12 +24306,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>ED_SCAN_BREAK_COEX_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x168</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24240,12 +24321,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_ACK_ABORT_COEX_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x16C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24253,12 +24336,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>RX_ACK_TIMEOUT_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x170</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24266,12 +24351,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TX_BREAK_COEX_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x174</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24279,12 +24366,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>TX_SECURITY_ERROR_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x178</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24292,12 +24381,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>CCA_BUSY_COUNTER</name>
+          <description>Project-assigned name.</description>
           <addressOffset>0x17C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
               <name>COUNT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
             </field>
@@ -24305,93 +24396,110 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>DIAGNOSTIC_COUNTER_CLEAR</name>
-          <description>Write-only clear bitmap for the seventeen named diagnostic counters. The public common LL writes a complete caller-supplied image; no self-clearing timing is inferred.</description>
+          <description>Project-assigned name. Write-only clear bitmap for the seventeen named diagnostic counters. The public common LL writes a complete caller-supplied image; no self-clearing timing is inferred.</description>
           <addressOffset>0x180</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>ED_SCAN_BREAK_COEX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CCA_BUSY</name>
+              <description>Project-assigned name.</description>
               <bitOffset>1</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CCA_FAIL</name>
+              <description>Project-assigned name.</description>
               <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>ED_ABORT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>3</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TX_SECURITY_ERROR</name>
+              <description>Project-assigned name.</description>
               <bitOffset>4</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TX_BREAK_COEX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TX_ACK_ABORT_COEX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_ACK_TIMEOUT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>7</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_RESTART</name>
+              <description>Project-assigned name.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_ACK_ABORT_COEX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>9</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_ABORT_COEX</name>
+              <description>Project-assigned name.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>NO_RSS_DETECT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_FILTER_FAIL</name>
+              <description>Project-assigned name.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CRC_ERROR</name>
+              <description>Project-assigned name.</description>
               <bitOffset>13</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>SFD_TIMEOUT</name>
+              <description>Project-assigned name.</description>
               <bitOffset>14</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_FILTER_NOT_WORK</name>
+              <description>Project-assigned name.</description>
               <bitOffset>15</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>RX_PREAMBLE_DETECT_ERROR</name>
+              <description>Project-assigned name.</description>
               <bitOffset>16</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
@@ -24409,7 +24517,7 @@ polled or validation transaction starts with both CPU routes detached.</descript
       <registers>
         <register>
           <name>CORE0_ROUTE</name>
-          <description>Core-zero destination and privilege routing for MODEM_ZB_MAC.</description>
+          <description>Project-assigned name. Core-zero destination and privilege routing for MODEM_ZB_MAC.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -24417,25 +24525,25 @@ polled or validation transaction starts with both CPU routes detached.</descript
           <fields>
             <field>
               <name>MAP</name>
-              <description>CPU-interrupt destination selected for the peripheral source.</description>
+              <description>Project-assigned name. CPU-interrupt destination selected for the peripheral source.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>6</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_6_7</name>
-              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <name>BITS_6_7_OPAQUE</name>
+              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
             <field>
               <name>PASS_LEVEL</name>
-              <description>Privilege pass/remap level selected for the peripheral source.</description>
+              <description>Project-assigned name. Privilege pass/remap level selected for the peripheral source.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_10_31</name>
-              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <name>BITS_10_31_OPAQUE</name>
+              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>22</bitWidth>
             </field>
@@ -24443,7 +24551,7 @@ polled or validation transaction starts with both CPU routes detached.</descript
         </register>
         <register>
           <name>CORE1_ROUTE</name>
-          <description>Core-one destination and privilege routing for MODEM_ZB_MAC.</description>
+          <description>Project-assigned name. Core-one destination and privilege routing for MODEM_ZB_MAC.</description>
           <addressOffset>0x800</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -24451,25 +24559,25 @@ polled or validation transaction starts with both CPU routes detached.</descript
           <fields>
             <field>
               <name>MAP</name>
-              <description>CPU-interrupt destination selected for the peripheral source.</description>
+              <description>Project-assigned name. CPU-interrupt destination selected for the peripheral source.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>6</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_6_7</name>
-              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <name>BITS_6_7_OPAQUE</name>
+              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>6</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
             <field>
               <name>PASS_LEVEL</name>
-              <description>Privilege pass/remap level selected for the peripheral source.</description>
+              <description>Project-assigned name. Privilege pass/remap level selected for the peripheral source.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>2</bitWidth>
             </field>
             <field>
-              <name>UNCLASSIFIED_10_31</name>
-              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <name>BITS_10_31_OPAQUE</name>
+              <description>Opaque: meaning not established. Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>22</bitWidth>
             </field>

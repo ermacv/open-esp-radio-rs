@@ -942,10 +942,10 @@ pub(crate) fn clear_phy_power_detector_sar_config(registers: &crate::svd::PhyBas
     crate::svd::field_replace_modify::clear_phy_power_detector_sar_config(registers);
 }
 
-/// Typed bridge for the reviewed `set_pcr_undocumented_014c_low_byte` fixed field-replacement transaction.
+/// Typed bridge for the reviewed `set_pcr_register_014c_low_byte` fixed field-replacement transaction.
 #[inline]
-pub(crate) fn set_pcr_undocumented_014c_low_byte(registers: &crate::svd::PcrRadio) {
-    crate::svd::field_replace_modify::set_pcr_undocumented_014c_low_byte(registers);
+pub(crate) fn set_pcr_register_014c_low_byte(registers: &crate::svd::PcrRadio) {
+    crate::svd::field_replace_modify::set_pcr_register_014c_low_byte(registers);
 }
 
 /// Typed bridge for the reviewed `release_tsens_reset` fixed field-replacement transaction.

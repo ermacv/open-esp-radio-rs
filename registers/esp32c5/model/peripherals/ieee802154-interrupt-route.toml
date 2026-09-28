@@ -26,7 +26,7 @@ bitOffset = 0
 bitWidth = 6
 
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_6_7"
+name = "BITS_6_7_OPAQUE"
 description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 6
 bitWidth = 2
@@ -38,7 +38,7 @@ bitOffset = 8
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_9_31"
+name = "BITS_9_31_OPAQUE"
 description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 9
 bitWidth = 23
@@ -56,6 +56,7 @@ sources = ["ESP_PACS_5CD68D2_C5_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "partial"
+naming = "descriptive"
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.MAP"
@@ -63,6 +64,7 @@ sources = ["ESP_PACS_5CD68D2_C5_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
+naming = "descriptive"
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.PASS_IN_SEC"
@@ -70,3 +72,12 @@ sources = ["ESP_PACS_5CD68D2_C5_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
+naming = "descriptive"
+
+[[review]]
+entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_6_7_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_9_31_OPAQUE"
+naming = "opaque"

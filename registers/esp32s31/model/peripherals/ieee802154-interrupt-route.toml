@@ -26,7 +26,7 @@ bitOffset = 0
 bitWidth = 6
 
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_6_7"
+name = "BITS_6_7_OPAQUE"
 description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 6
 bitWidth = 2
@@ -38,7 +38,7 @@ bitOffset = 8
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_10_31"
+name = "BITS_10_31_OPAQUE"
 description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 10
 bitWidth = 22
@@ -60,7 +60,7 @@ bitOffset = 0
 bitWidth = 6
 
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_6_7"
+name = "BITS_6_7_OPAQUE"
 description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 6
 bitWidth = 2
@@ -72,7 +72,7 @@ bitOffset = 8
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "UNCLASSIFIED_10_31"
+name = "BITS_10_31_OPAQUE"
 description = "Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."
 bitOffset = 10
 bitWidth = 22
@@ -93,6 +93,7 @@ sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "partial"
+naming = "descriptive"
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.MAP"
@@ -100,6 +101,7 @@ sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
+naming = "descriptive"
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.PASS_LEVEL"
@@ -107,6 +109,7 @@ sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
+naming = "descriptive"
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE1_ROUTE"
@@ -114,6 +117,7 @@ sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "partial"
+naming = "descriptive"
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE1_ROUTE.MAP"
@@ -121,6 +125,7 @@ sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
+naming = "descriptive"
 
 [[review]]
 entity = "IEEE802154_INTERRUPT_ROUTE.CORE1_ROUTE.PASS_LEVEL"
@@ -128,3 +133,20 @@ sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 provenance = "imported"
 accuracy = "exact"
 completeness = "complete"
+naming = "descriptive"
+
+[[review]]
+entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_6_7_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_INTERRUPT_ROUTE.CORE0_ROUTE.BITS_10_31_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_INTERRUPT_ROUTE.CORE1_ROUTE.BITS_6_7_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "IEEE802154_INTERRUPT_ROUTE.CORE1_ROUTE.BITS_10_31_OPAQUE"
+naming = "opaque"

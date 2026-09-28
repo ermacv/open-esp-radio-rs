@@ -74,8 +74,8 @@ bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_6_7"
-method = "unclassified_6_7"
+svd-name = "BITS_6_7_OPAQUE"
+method = "bits_6_7_opaque"
 bit-offset = 6
 bit-width = 2
 access = "read-write"
@@ -88,8 +88,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_9_31"
-method = "unclassified_9_31"
+svd-name = "BITS_9_31_OPAQUE"
+method = "bits_9_31_opaque"
 bit-offset = 9
 bit-width = 23
 access = "read-write"
@@ -155,16 +155,16 @@ access = "read-write"
 address = 1611227468
 width = 32
 access = "read-write"
-identity = "PCR_RADIO.UNDOCUMENTED_014C"
+identity = "PCR_RADIO.REGISTER_014C_OPAQUE"
 peripheral = "PCR_RADIO"
 peripheral-type = "PcrRadio"
 peripheral-module = "pcr_radio"
 scope = []
-register-method = "undocumented_014c"
+register-method = "register_014c_opaque"
 
 [[registers.fields]]
-svd-name = "LOW_BYTE_UNKNOWN"
-method = "low_byte_unknown"
+svd-name = "LOW_BYTE_OPAQUE"
+method = "low_byte_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
@@ -217,8 +217,8 @@ scope = []
 register-method = "front_end_and_tone_stop_control"
 
 [[registers.fields]]
-svd-name = "FRONT_END_INIT_ENABLE_UNKNOWN"
-method = "front_end_init_enable_unknown"
+svd-name = "FRONT_END_INIT_ENABLE_OPAQUE"
+method = "front_end_init_enable_opaque"
 bit-offset = 2
 bit-width = 1
 access = "read-write"
@@ -235,8 +235,8 @@ scope = []
 register-method = "rx_dco_control"
 
 [[registers.fields]]
-svd-name = "CALIBRATION_CONTROL_UNKNOWN"
-method = "calibration_control_unknown"
+svd-name = "CALIBRATION_CONTROL_OPAQUE"
+method = "calibration_control_opaque"
 bit-offset = 22
 bit-width = 2
 access = "read-write"
@@ -267,8 +267,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "FRONT_END_INIT_HIGH_UNKNOWN"
-method = "front_end_init_high_unknown"
+svd-name = "FRONT_END_INIT_HIGH_OPAQUE"
+method = "front_end_init_high_opaque"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -285,15 +285,15 @@ scope = []
 register-method = "rx_iq_scale"
 
 [[registers.fields]]
-svd-name = "SCALE_LOW_UNKNOWN"
-method = "scale_low_unknown"
+svd-name = "SCALE_LOW_OPAQUE"
+method = "scale_low_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SCALE_HIGH_UNKNOWN"
-method = "scale_high_unknown"
+svd-name = "SCALE_HIGH_OPAQUE"
+method = "scale_high_opaque"
 bit-offset = 8
 bit-width = 8
 access = "read-write"
@@ -310,8 +310,8 @@ scope = []
 register-method = "front_end_clear_control"
 
 [[registers.fields]]
-svd-name = "INIT_CLEAR_FIRST_UNKNOWN"
-method = "init_clear_first_unknown"
+svd-name = "INIT_CLEAR_FIRST_OPAQUE"
+method = "init_clear_first_opaque"
 bit-offset = 8
 bit-width = 1
 access = "read-write"
@@ -328,29 +328,29 @@ scope = []
 register-method = "adc_rate_and_front_end_control"
 
 [[registers.fields]]
-svd-name = "ADC_RATE_LOW_UNKNOWN"
-method = "adc_rate_low_unknown"
+svd-name = "ADC_RATE_LOW_OPAQUE"
+method = "adc_rate_low_opaque"
 bit-offset = 0
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ADC_RATE_HIGH_UNKNOWN"
-method = "adc_rate_high_unknown"
+svd-name = "ADC_RATE_HIGH_OPAQUE"
+method = "adc_rate_high_opaque"
 bit-offset = 1
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "DAC_RATE_LOW_UNKNOWN"
-method = "dac_rate_low_unknown"
+svd-name = "DAC_RATE_LOW_OPAQUE"
+method = "dac_rate_low_opaque"
 bit-offset = 2
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "DAC_RATE_HIGH_UNKNOWN"
-method = "dac_rate_high_unknown"
+svd-name = "DAC_RATE_HIGH_OPAQUE"
+method = "dac_rate_high_opaque"
 bit-offset = 3
 bit-width = 1
 access = "read-write"
@@ -367,8 +367,8 @@ scope = []
 register-method = "fe_bb_clock_control"
 
 [[registers.fields]]
-svd-name = "FE_BB_ENABLE_UNKNOWN"
-method = "fe_bb_enable_unknown"
+svd-name = "FE_BB_ENABLE_OPAQUE"
+method = "fe_bb_enable_opaque"
 bit-offset = 0
 bit-width = 2
 access = "read-write"
@@ -385,15 +385,15 @@ scope = []
 register-method = "power_detector_control"
 
 [[registers.fields]]
-svd-name = "CALIBRATION_FIELD_UNKNOWN"
-method = "calibration_field_unknown"
+svd-name = "CALIBRATION_FIELD_OPAQUE"
+method = "calibration_field_opaque"
 bit-offset = 4
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INITIALIZATION_MODE_UNKNOWN"
-method = "initialization_mode_unknown"
+svd-name = "INITIALIZATION_MODE_OPAQUE"
+method = "initialization_mode_opaque"
 bit-offset = 20
 bit-width = 3
 access = "read-write"
@@ -410,15 +410,15 @@ scope = []
 register-method = "power_detector_sar_control_status"
 
 [[registers.fields]]
-svd-name = "SAR_CONFIG_CLEAR_UNKNOWN"
-method = "sar_config_clear_unknown"
+svd-name = "SAR_CONFIG_CLEAR_OPAQUE"
+method = "sar_config_clear_opaque"
 bit-offset = 9
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SAR_MODE_UNKNOWN"
-method = "sar_mode_unknown"
+svd-name = "SAR_MODE_OPAQUE"
+method = "sar_mode_opaque"
 bit-offset = 12
 bit-width = 2
 access = "read-write"
@@ -507,8 +507,8 @@ scope = []
 register-method = "front_end_init_0888"
 
 [[registers.fields]]
-svd-name = "IQ_SWAP_UNKNOWN"
-method = "iq_swap_unknown"
+svd-name = "IQ_SWAP_OPAQUE"
+method = "iq_swap_opaque"
 bit-offset = 29
 bit-width = 1
 access = "read-write"
@@ -525,8 +525,8 @@ scope = []
 register-method = "front_end_init_0894"
 
 [[registers.fields]]
-svd-name = "FE_INIT_ENABLE_UNKNOWN"
-method = "fe_init_enable_unknown"
+svd-name = "FE_INIT_ENABLE_OPAQUE"
+method = "fe_init_enable_opaque"
 bit-offset = 22
 bit-width = 1
 access = "read-write"
@@ -543,15 +543,15 @@ scope = []
 register-method = "dac_scale"
 
 [[registers.fields]]
-svd-name = "SCALE_LOW_UNKNOWN"
-method = "scale_low_unknown"
+svd-name = "SCALE_LOW_OPAQUE"
+method = "scale_low_opaque"
 bit-offset = 8
 bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "SCALE_HIGH_UNKNOWN"
-method = "scale_high_unknown"
+svd-name = "SCALE_HIGH_OPAQUE"
+method = "scale_high_opaque"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
@@ -568,15 +568,15 @@ scope = []
 register-method = "front_end_init_0c08"
 
 [[registers.fields]]
-svd-name = "INIT_FIRST_UNKNOWN"
-method = "init_first_unknown"
+svd-name = "INIT_FIRST_OPAQUE"
+method = "init_first_opaque"
 bit-offset = 25
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_SECOND_UNKNOWN"
-method = "init_second_unknown"
+svd-name = "INIT_SECOND_OPAQUE"
+method = "init_second_opaque"
 bit-offset = 26
 bit-width = 1
 access = "read-write"
@@ -618,8 +618,8 @@ scope = []
 register-method = "front_end_init_0c20"
 
 [[registers.fields]]
-svd-name = "INIT_LOW_UNKNOWN"
-method = "init_low_unknown"
+svd-name = "INIT_LOW_OPAQUE"
+method = "init_low_opaque"
 bit-offset = 0
 bit-width = 8
 access = "read-write"
@@ -1046,8 +1046,8 @@ bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_7"
-method = "unclassified_7"
+svd-name = "BIT_7_OPAQUE"
+method = "bit_7_opaque"
 bit-offset = 7
 bit-width = 1
 access = "read-write"
@@ -1220,8 +1220,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_7"
-method = "unclassified_7"
+svd-name = "BIT_7_OPAQUE"
+method = "bit_7_opaque"
 bit-offset = 7
 bit-width = 1
 access = "read-write"
@@ -1322,8 +1322,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNCLASSIFIED_7"
-method = "unclassified_7"
+svd-name = "BIT_7_OPAQUE"
+method = "bit_7_opaque"
 bit-offset = 7
 bit-width = 1
 access = "read-write"
@@ -3423,8 +3423,8 @@ scope = []
 register-method = "rx_evm_word_7920"
 
 [[registers.fields]]
-svd-name = "CLEAR_UNKNOWN"
-method = "clear_unknown"
+svd-name = "CLEAR_OPAQUE"
+method = "clear_opaque"
 bit-offset = 12
 bit-width = 4
 access = "read-write"
@@ -3441,22 +3441,22 @@ scope = []
 register-method = "rx_evm_control"
 
 [[registers.fields]]
-svd-name = "ENABLE_LOW_UNKNOWN"
-method = "enable_low_unknown"
+svd-name = "ENABLE_LOW_OPAQUE"
+method = "enable_low_opaque"
 bit-offset = 0
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "MEMORY_RESET_UNKNOWN"
-method = "memory_reset_unknown"
+svd-name = "MEMORY_RESET_OPAQUE"
+method = "memory_reset_opaque"
 bit-offset = 1
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ENABLE_HIGH_UNKNOWN"
-method = "enable_high_unknown"
+svd-name = "ENABLE_HIGH_OPAQUE"
+method = "enable_high_opaque"
 bit-offset = 2
 bit-width = 1
 access = "read-write"
@@ -3473,8 +3473,8 @@ scope = []
 register-method = "rx_evm_config"
 
 [[registers.fields]]
-svd-name = "MODE_UNKNOWN"
-method = "mode_unknown"
+svd-name = "MODE_OPAQUE"
+method = "mode_opaque"
 bit-offset = 2
 bit-width = 5
 access = "read-write"
@@ -3505,8 +3505,8 @@ scope = []
 register-method = "rx_evm_memory_reset"
 
 [[registers.fields]]
-svd-name = "RESET_UNKNOWN"
-method = "reset_unknown"
+svd-name = "RESET_OPAQUE"
+method = "reset_opaque"
 bit-offset = 8
 bit-width = 1
 access = "read-write"

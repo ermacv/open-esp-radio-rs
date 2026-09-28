@@ -55,14 +55,57 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "UNDOCUMENTED_014C"
+name = "REGISTER_014C_OPAQUE"
 description = "Word between PCR_SAR_CLK_DIV and PCR_BS_CONF that the public header does not describe; phy_rf_init replaces its low byte with 0x0A."
 addressOffset = 0x14c
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_BYTE_UNKNOWN"
+name = "LOW_BYTE_OPAQUE"
 description = "Low byte; meaning unknown."
 bitOffset = 0
 bitWidth = 8
+
+[[review]]
+entity = "PCR_RADIO.SARADC_CONF"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[review]]
+entity = "PCR_RADIO.SARADC_CONF.SARADC_CLK_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[review]]
+entity = "PCR_RADIO.SARADC_CONF.SARADC_REG_CLK_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[review]]
+entity = "PCR_RADIO.TSENS_CLK_CONF"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[review]]
+entity = "PCR_RADIO.TSENS_CLK_CONF.TSENS_CLK_SEL"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[review]]
+entity = "PCR_RADIO.TSENS_CLK_CONF.TSENS_CLK_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[review]]
+entity = "PCR_RADIO.TSENS_CLK_CONF.TSENS_RST_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_PCR_TSENS"]
+
+[[review]]
+entity = "PCR_RADIO.REGISTER_014C_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "PCR_RADIO.REGISTER_014C_OPAQUE.LOW_BYTE_OPAQUE"
+naming = "opaque"

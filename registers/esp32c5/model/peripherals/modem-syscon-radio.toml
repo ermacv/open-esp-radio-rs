@@ -83,3 +83,58 @@ name = "CLK_BTBB_EN"
 description = "Enable the baseband clock shared by Bluetooth LE and IEEE 802.15.4."
 bitOffset = 17
 bitWidth = 1
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF.CLK_ETM_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF.CLK_ZB_APB_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF.CLK_ZBMAC_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF.CLK_MODEM_SEC_APB_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.MODEM_RST_CONF"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.MODEM_RST_CONF.RST_ZBMAC_APB"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.MODEM_RST_CONF.RST_ZBMAC"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF1"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF1.CLK_BT_APB_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]
+
+[[review]]
+entity = "MODEM_SYSCON_RADIO.CLK_CONF1.CLK_BTBB_EN"
+naming = "vendor"
+sources = ["ESP_IDF_4D59230D_C5_MODEM_SYSCON_STRUCT"]

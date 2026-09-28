@@ -468,7 +468,7 @@ value = 66
 name = "observe_ieee802154_core0_route"
 peripheral = "IEEE802154_INTERRUPT_ROUTE"
 register = "CORE0_ROUTE"
-fields = ["MAP", "UNCLASSIFIED_6_7", "PASS_IN_SEC", "UNCLASSIFIED_9_31"]
+fields = ["MAP", "BITS_6_7_OPAQUE", "PASS_IN_SEC", "BITS_9_31_OPAQUE"]
 sources = ["ESP_PACS_5CD68D2_C5_INTERRUPT_MATRIX"]
 
 [[enum-domains]]
@@ -861,7 +861,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
 name = "set_phy_adc_rate_high"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "ADC_RATE_AND_FRONT_END_CONTROL"
-fields = [{ field = "ADC_RATE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "ADC_RATE_HIGH_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyRateBit"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
@@ -870,7 +870,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
 name = "set_phy_adc_rate_low"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "ADC_RATE_AND_FRONT_END_CONTROL"
-fields = [{ field = "ADC_RATE_LOW_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "ADC_RATE_LOW_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyRateBit"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
@@ -879,7 +879,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
 name = "clear_phy_dac_rate_high"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "ADC_RATE_AND_FRONT_END_CONTROL"
-fields = [{ field = "DAC_RATE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "DAC_RATE_HIGH_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
@@ -888,7 +888,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
 name = "clear_phy_dac_rate_low"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "ADC_RATE_AND_FRONT_END_CONTROL"
-fields = [{ field = "DAC_RATE_LOW_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "DAC_RATE_LOW_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES"]
@@ -925,7 +925,7 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
 [[field-or-modifies.fields]]
-field = "FE_BB_ENABLE_UNKNOWN"
+field = "FE_BB_ENABLE_OPAQUE"
 source-bit-offset = 0
 
 [[fixed-register-images]]
@@ -960,7 +960,7 @@ source-bit-offset = 0
 name = "clear_phy_front_end_init_0c08_first"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "FRONT_END_INIT_0C08"
-fields = [{ field = "INIT_FIRST_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "INIT_FIRST_OPAQUE", source-bit-offset = 0 }]
 value = 0x0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -974,18 +974,18 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
 [[field-or-modifies.fields]]
-field = "INIT_FIRST_UNKNOWN"
+field = "INIT_FIRST_OPAQUE"
 source-bit-offset = 25
 
 [[field-or-modifies.fields]]
-field = "INIT_SECOND_UNKNOWN"
+field = "INIT_SECOND_OPAQUE"
 source-bit-offset = 26
 
 [[field-replace-modifies]]
 name = "clear_phy_rx_dco_calibration_control"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_DCO_CONTROL"
-fields = [{ field = "CALIBRATION_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "CALIBRATION_CONTROL_OPAQUE", source-bit-offset = 0 }]
 value = 0x0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -999,14 +999,14 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
 [[field-or-modifies.fields]]
-field = "FE_INIT_ENABLE_UNKNOWN"
+field = "FE_INIT_ENABLE_OPAQUE"
 source-bit-offset = 0
 
 [[field-replace-modifies]]
 name = "clear_phy_front_end_clear_first"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "FRONT_END_CLEAR_CONTROL"
-fields = [{ field = "INIT_CLEAR_FIRST_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "INIT_CLEAR_FIRST_OPAQUE", source-bit-offset = 0 }]
 value = 0x0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1029,7 +1029,7 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
 [[field-or-modifies.fields]]
-field = "FRONT_END_INIT_ENABLE_UNKNOWN"
+field = "FRONT_END_INIT_ENABLE_OPAQUE"
 source-bit-offset = 0
 
 [[field-or-modifies]]
@@ -1049,7 +1049,7 @@ field = "RX_IQ_CORRECTION_MODE_HIGH"
 source-bit-offset = 30
 
 [[field-or-modifies.fields]]
-field = "FRONT_END_INIT_HIGH_UNKNOWN"
+field = "FRONT_END_INIT_HIGH_OPAQUE"
 source-bit-offset = 31
 
 [[field-or-modifies]]
@@ -1072,7 +1072,7 @@ source-bit-offset = 14
 name = "set_phy_rx_iq_scale_high"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_IQ_SCALE"
-fields = [{ field = "SCALE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "SCALE_HIGH_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyRxIqScale"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1081,7 +1081,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 name = "set_phy_rx_iq_scale_low"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_IQ_SCALE"
-fields = [{ field = "SCALE_LOW_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "SCALE_LOW_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyRxIqScale"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1095,14 +1095,14 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
 [[field-or-modifies.fields]]
-field = "IQ_SWAP_UNKNOWN"
+field = "IQ_SWAP_OPAQUE"
 source-bit-offset = 0
 
 [[field-replace-modifies]]
 name = "clear_phy_front_end_iq_swap"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "FRONT_END_INIT_0888"
-fields = [{ field = "IQ_SWAP_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "IQ_SWAP_OPAQUE", source-bit-offset = 0 }]
 value = 0x0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1111,7 +1111,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 name = "set_phy_front_end_init_0c20"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "FRONT_END_INIT_0C20"
-fields = [{ field = "INIT_LOW_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "INIT_LOW_OPAQUE", source-bit-offset = 0 }]
 value = 0x57
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1143,7 +1143,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 name = "set_phy_power_detector_calibration_field"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "POWER_DETECTOR_CONTROL"
-fields = [{ field = "CALIBRATION_FIELD_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "CALIBRATION_FIELD_OPAQUE", source-bit-offset = 0 }]
 value = 0x50
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1159,7 +1159,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 name = "set_phy_power_detector_mode"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "POWER_DETECTOR_CONTROL"
-fields = [{ field = "INITIALIZATION_MODE_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "INITIALIZATION_MODE_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyPowerDetectorMode"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1189,7 +1189,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 name = "set_phy_dac_scale_high"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "DAC_SCALE"
-fields = [{ field = "SCALE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "SCALE_HIGH_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyDacScale"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1198,7 +1198,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 name = "set_phy_dac_scale_low"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "DAC_SCALE"
-fields = [{ field = "SCALE_LOW_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "SCALE_LOW_OPAQUE", source-bit-offset = 0 }]
 domain = "PhyDacScale"
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1212,14 +1212,14 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
 
 [[field-or-modifies.fields]]
-field = "SAR_MODE_UNKNOWN"
+field = "SAR_MODE_OPAQUE"
 source-bit-offset = 12
 
 [[field-replace-modifies]]
 name = "clear_phy_power_detector_sar_config"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "POWER_DETECTOR_SAR_CONTROL_STATUS"
-fields = [{ field = "SAR_CONFIG_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "SAR_CONFIG_CLEAR_OPAQUE", source-bit-offset = 0 }]
 value = 0x0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_2"]
@@ -1317,10 +1317,10 @@ field = "SARADC_REG_CLK_EN"
 source-bit-offset = 2
 
 [[field-replace-modifies]]
-name = "set_pcr_undocumented_014c_low_byte"
+name = "set_pcr_register_014c_low_byte"
 peripheral = "PCR_RADIO"
-register = "UNDOCUMENTED_014C"
-fields = [{ field = "LOW_BYTE_UNKNOWN", source-bit-offset = 0 }]
+register = "REGISTER_014C_OPAQUE"
+fields = [{ field = "LOW_BYTE_OPAQUE", source-bit-offset = 0 }]
 value = 0xa
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_4", "ESP_IDF_4D59230D_C5_PCR_TSENS"]
@@ -1407,7 +1407,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
 name = "set_phy_rx_evm_mode"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_EVM_CONFIG"
-fields = [{ field = "MODE_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "MODE_OPAQUE", source-bit-offset = 0 }]
 value = 0x18
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
@@ -1442,9 +1442,9 @@ name = "set_phy_rx_evm_enable"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_EVM_CONTROL"
 fields = [
-    { field = "ENABLE_LOW_UNKNOWN", source-bit-offset = 0 },
-    { field = "MEMORY_RESET_UNKNOWN", source-bit-offset = 1 },
-    { field = "ENABLE_HIGH_UNKNOWN", source-bit-offset = 2 },
+    { field = "ENABLE_LOW_OPAQUE", source-bit-offset = 0 },
+    { field = "MEMORY_RESET_OPAQUE", source-bit-offset = 1 },
+    { field = "ENABLE_HIGH_OPAQUE", source-bit-offset = 2 },
 ]
 domain = "PhyRxEvmEnable"
 exposure = "facade"
@@ -1470,7 +1470,7 @@ sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
 name = "clear_phy_rx_evm_word_7920"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_EVM_WORD_7920"
-fields = [{ field = "CLEAR_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "CLEAR_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
@@ -1484,14 +1484,14 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
 
 [[field-or-modifies.fields]]
-field = "MEMORY_RESET_UNKNOWN"
+field = "MEMORY_RESET_OPAQUE"
 source-bit-offset = 1
 
 [[field-replace-modifies]]
 name = "release_phy_rx_evm_memory_reset"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_EVM_CONTROL"
-fields = [{ field = "MEMORY_RESET_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "MEMORY_RESET_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
@@ -1505,14 +1505,14 @@ exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]
 
 [[field-or-modifies.fields]]
-field = "RESET_UNKNOWN"
+field = "RESET_OPAQUE"
 source-bit-offset = 0
 
 [[field-replace-modifies]]
 name = "release_phy_rx_evm_memory_reset_2"
 peripheral = "PHY_BASEBAND_CONFIG"
 register = "RX_EVM_MEMORY_RESET"
-fields = [{ field = "RESET_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESET_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["C5_BLOB_LIBPHY_RF_INIT_LEAVES_5"]

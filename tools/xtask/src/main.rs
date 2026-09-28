@@ -128,6 +128,12 @@ enum Task {
     /// Update every workspace's Cargo.lock to its manifests after a
     /// dependency or pin change.
     Lock,
+    /// Add or remove a Git worktree whose target/ starts as a copy-on-write
+    /// clone of this checkout's build outputs.
+    Worktree {
+        #[command(subcommand)]
+        worktree: Worktree,
+    },
     /// Build the xtask of origin/main once and install `oer-stand`, which
     /// runs the operational HIL stand commands without building this tree.
     StandInstall,
@@ -180,6 +186,23 @@ enum Compare {
         #[arg(long)]
         show: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum Worktree {
+    /// Create PATH on a new BRANCH from FROM and seed its target/.
+    Add {
+        path: std::path::PathBuf,
+        #[arg(long)]
+        branch: String,
+        #[arg(long, default_value = "origin/main")]
+        from: String,
+    },
+    /// Remove a worktree and its private target/.
+    Remove { path: std::path::PathBuf },
+    /// Turn this checkout's target/ into a btrfs subvolume once, so `add`
+    /// snapshots it instantly; run it while no build uses target/.
+    Prepare,
 }
 
 #[derive(Subcommand)]
@@ -376,6 +399,13 @@ fn run() -> Result<std::process::ExitCode> {
         }
         Task::Push => oer_xtask::push::run(&ctx),
         Task::Lock => checks::metadata::update_locks(&ctx),
+        Task::Worktree { worktree } => match worktree {
+            Worktree::Add { path, branch, from } => {
+                oer_xtask::worktree::add(&ctx, &path, &branch, &from)
+            }
+            Worktree::Remove { path } => oer_xtask::worktree::remove(&ctx, &path),
+            Worktree::Prepare => oer_xtask::worktree::prepare(&ctx),
+        },
         Task::StandInstall => oer_xtask::stand_install::run(&ctx),
         Task::Sweep {
             all_checkouts,

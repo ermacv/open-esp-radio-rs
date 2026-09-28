@@ -75,10 +75,14 @@ pub(super) enum Binding {
     Unavailable,
     Commit,
     Snapshot,
+    /// Everything binds the sources except that the run's snapshot is no
+    /// longer the checkout's tree: files changed since the run.
+    StaleSnapshot,
 }
 
 pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -> Result<Binding> {
     let mut binding = Binding::Snapshot;
+    let mut stale = false;
     if manifest.firmware.is_empty() {
         return Ok(Binding::Unavailable);
     }
@@ -133,14 +137,18 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
             .sources
             .iter()
             .any(|s| s.rebuild_status == "source-snapshot")
-            && (!provenance
+        {
+            if !provenance
                 .sources
                 .iter()
                 .all(|s| s.rebuild_status == "source-snapshot")
                 || !application_bound(&provenance, artifact)
-                || !snapshot::current(root, run, &provenance.sources)?)
-        {
-            return Ok(Binding::Unavailable);
+            {
+                return Ok(Binding::Unavailable);
+            }
+            if !snapshot::current(root, run, &provenance.sources)? {
+                stale = true;
+            }
         }
         if primary.rebuild_status != "source-snapshot" {
             binding = Binding::Commit;
@@ -168,7 +176,11 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
             }
         }
     }
-    Ok(binding)
+    Ok(if stale {
+        Binding::StaleSnapshot
+    } else {
+        binding
+    })
 }
 
 fn matches_pin(source: &SourceMaterial, lock: &CargoLock) -> bool {

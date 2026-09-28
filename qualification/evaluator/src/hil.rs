@@ -263,6 +263,9 @@ struct ScenarioEvidence {
     /// An observation from a tracked shard whose recorded sources, including
     /// the observer's, match the checkout.
     source_bound: bool,
+    /// Its build binds its sources in every respect but one: the checkout's
+    /// tree changed since its snapshot.
+    stale_snapshot: bool,
 }
 
 impl ScenarioEvidence {
@@ -352,6 +355,7 @@ impl HilEvidenceIndex {
                             measurements: vec![Vec::new(); *repetitions],
                             procedure_document: None,
                             source_bound: false,
+                            stale_snapshot: false,
                         }],
                     )
                 })
@@ -566,6 +570,10 @@ impl HilEvidenceIndex {
                 if exclusions.is_empty() && binding == provenance::Binding::Unavailable {
                     exclusions.push(decision::Exclusion::SourceBindingNotEstablished);
                 }
+                if exclusions.is_empty() && binding == provenance::Binding::StaleSnapshot {
+                    exclusions.push(decision::Exclusion::SnapshotDiffersFromCheckout);
+                }
+                let stale_snapshot = binding == provenance::Binding::StaleSnapshot;
                 if exclusions.is_empty() {
                     current_producer = true;
                 }
@@ -628,6 +636,7 @@ impl HilEvidenceIndex {
                                 .collect(),
                             procedure_document: None,
                             source_bound: false,
+                            stale_snapshot,
                         });
                     let observation = scenarios.get_mut(&scenario_id).unwrap().last_mut().unwrap();
                     if !current_observer.available() {

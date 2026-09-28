@@ -22,9 +22,24 @@ pub(crate) enum Exclusion {
     /// project onto today's observer inputs.
     ObserverGraphNotProjectable,
     CurrentObserverConfigurationUnavailable,
+    /// The run's source snapshot is no longer the checkout's tree.
+    SnapshotDiffersFromCheckout,
 }
 
 impl Exclusion {
+    /// Whether the exclusion comes only from comparing the whole tree: the
+    /// run's commit or its snapshot differ from the checkout. An observation
+    /// whose build binds its sources otherwise ([`ScenarioEvidence`]'s
+    /// `stale_snapshot`) is still recordable when every source its shard
+    /// binds matches its snapshot. A dirty producer, a replay, an unbound
+    /// build, a procedure or an observer mismatch never is.
+    pub(crate) fn is_tree_binding(&self) -> bool {
+        matches!(
+            self,
+            Self::DifferentCommit | Self::SnapshotDiffersFromCheckout | Self::EvaluatorDirty
+        )
+    }
+
     /// The exclusion's kebab-case identifier.
     pub(crate) fn id(&self) -> &'static str {
         match self {
@@ -39,6 +54,7 @@ impl Exclusion {
             Self::CurrentObserverConfigurationUnavailable => {
                 "current-observer-configuration-unavailable"
             }
+            Self::SnapshotDiffersFromCheckout => "snapshot-differs-from-checkout",
         }
     }
 }

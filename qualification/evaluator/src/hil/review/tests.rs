@@ -497,6 +497,109 @@ fn identical_snapshot_is_direct_evidence_regardless_of_commit_or_dirty_state() {
 }
 
 #[test]
+fn a_run_stays_recordable_after_a_change_outside_the_sources_it_binds() {
+    for (change, recordable) in [("outside", true), ("inside", false)] {
+        let fixture = Fixture::new();
+        fs::write(fixture.0.join("driver.rs"), "fn permission() {}\n").unwrap();
+        let run = run(&fixture, "fresh", "passed", 100, b"fresh firmware");
+        // A clean run of the current commit, as its snapshot and provenance say.
+        let directory = run.join("source/snapshot");
+        let mut captured: CapturedManifest =
+            serde_json::from_slice(&fs::read(directory.join("manifest.json")).unwrap()).unwrap();
+        captured.sources[0].dirty = false;
+        captured.sources[0].commit = "current".into();
+        let workspace = digest(&serde_json::to_vec(&captured.sources[0]).unwrap());
+        fs::write(
+            directory.join("manifest.json"),
+            serde_json::to_vec(&captured).unwrap(),
+        )
+        .unwrap();
+        let mut snapshot: Value = read_json(&directory.join("snapshot.json")).unwrap();
+        snapshot["snapshot_id"] = json!(digest(&serde_json::to_vec(&captured).unwrap()));
+        write(&directory.join("snapshot.json"), &snapshot);
+        let mut manifest: Value = read_json(&run.join("manifest.json")).unwrap();
+        manifest["repository"] =
+            json!({"commit": "current", "dirty": false, "workspace_sha256": workspace});
+        write(&run.join("manifest.json"), &manifest);
+        let mut build: Value = read_json(&run.join("build-provenance.json")).unwrap();
+        build["sources"][0]["commit"] = json!("current");
+        build["sources"][0]["dirty"] = json!(false);
+        build["sources"][0]["workspace_sha256"] = json!(workspace);
+        write(&run.join("build-provenance.json"), &build);
+        let git = |args: &[&str]| {
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&fixture.0)
+                    .args(args)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["add", "driver.rs", "Cargo.lock"]);
+        fs::write(
+            fixture.0.join(".git/info/exclude"),
+            "runs/\ntarget/\nevidence/\n",
+        )
+        .unwrap();
+        match change {
+            // A later commit that only touches documentation.
+            "outside" => {
+                fs::write(fixture.0.join("notes.md"), "a later note\n").unwrap();
+                git(&["add", "notes.md"]);
+            }
+            _ => fs::write(fixture.0.join("driver.rs"), "fn changed() {}\n").unwrap(),
+        }
+        crate::hil::tests::seal(&run);
+        let only = BTreeSet::from([String::from("fresh")]);
+        let (runs, evidence) = (Path::new("runs"), Path::new("evidence"));
+        let index = HilEvidenceIndex::load_selected(
+            &fixture.0,
+            runs,
+            evidence,
+            "esp32s31",
+            &crate::hil::RepositoryState {
+                commit: "current".into(),
+                dirty: false,
+            },
+            Some(&only),
+        )
+        .unwrap();
+        let sources = [PathBuf::from("driver.rs")];
+        let recorded = crate::hil::shard::distill(
+            &fixture.0,
+            &index,
+            evidence,
+            "esp32s31",
+            &sources,
+            Some(&only),
+        )
+        .unwrap();
+        assert_eq!(recorded == ["exchange"], recordable, "{change}");
+        let verdicts =
+            crate::hil::shard::explain(&fixture.0, &index, &only, &recorded, evidence, &sources)
+                .unwrap();
+        let verdict = &verdicts[0].2;
+        if recordable {
+            assert_eq!(
+                verdict,
+                &crate::hil::shard::RunVerdict::Recorded,
+                "{change}"
+            );
+        } else {
+            assert_eq!(verdict.id(), "snapshot-differs-from-checkout", "{change}");
+            assert!(
+                verdict.detail().contains("driver.rs"),
+                "{}",
+                verdict.detail()
+            );
+        }
+    }
+}
+
+#[test]
 fn observation_of_an_unclassified_workload_is_excluded_not_fatal() {
     let fixture = setup();
     let old = fixture.0.join("runs/old");

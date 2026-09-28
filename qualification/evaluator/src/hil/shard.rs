@@ -183,6 +183,7 @@ impl Shard {
             resolution: None,
             procedure_document: self.procedure.clone(),
             source_bound: true,
+            stale_snapshot: false,
         }
     }
 
@@ -521,16 +522,29 @@ pub(crate) fn distill(
     fs::create_dir_all(root.join(directory))?;
     let mut recorded = vec![];
     for (scenario, observations) in &index.scenarios {
-        let mut qualifying = observations
-            .iter()
-            .filter(|o| {
-                !o.source_bound
-                    && o.exclusions.is_empty()
-                    && o.outcome == Outcome::Passed
-                    && o.run_directory.is_some()
-                    && runs.is_none_or(|runs| runs.contains(&o.run_id))
-            })
-            .collect::<Vec<_>>();
+        let mut qualifying = Vec::new();
+        for o in observations {
+            if o.source_bound
+                || o.outcome != Outcome::Passed
+                || o.run_directory.is_none()
+                || !runs.is_none_or(|runs| runs.contains(&o.run_id))
+            {
+                continue;
+            }
+            // A requested run is recorded by the rule that later judges its
+            // shard current: every source the shard binds matches the run's
+            // snapshot, whatever else the tree changed since.
+            let recordable = o.exclusions.is_empty()
+                || (runs.is_some()
+                    && o.stale_snapshot
+                    && o.exclusions
+                        .iter()
+                        .all(decision::Exclusion::is_tree_binding)
+                    && differing_sources(root, o, sources)?.is_some_and(|d| d.is_empty()));
+            if recordable {
+                qualifying.push(o);
+            }
+        }
         qualifying.sort_by_key(|o| std::cmp::Reverse(o.started_unix_millis));
         let mut chosen = None;
         for observation in qualifying {
@@ -696,10 +710,21 @@ pub(crate) fn explain(
         for (scenario, observations) in &index.scenarios {
             for observation in observations.iter().filter(|o| &o.run_id == run) {
                 observed = true;
+                let shard_run = recorded
+                    .contains(scenario)
+                    .then(|| {
+                        read_json::<Value>(
+                            &root.join(directory).join(format!("{scenario}.{EXTENSION}")),
+                        )
+                    })
+                    .transpose()?
+                    .and_then(|shard| shard["run-id"].as_str().map(str::to_owned));
                 let verdict = if observation.outcome != Outcome::Passed {
                     RunVerdict::NotPassed {
                         outcome: observation.outcome,
                     }
+                } else if shard_run.as_deref() == Some(run.as_str()) {
+                    RunVerdict::Recorded
                 } else if let Some(exclusion) = observation.exclusions.first() {
                     RunVerdict::Excluded {
                         exclusion: exclusion.clone(),
@@ -707,14 +732,8 @@ pub(crate) fn explain(
                     }
                 } else if let Some(flags) = inherited_flags(observation)? {
                     RunVerdict::InheritedFlags { flags }
-                } else if recorded.contains(scenario) {
-                    let shard: Value =
-                        read_json(&root.join(directory).join(format!("{scenario}.{EXTENSION}")))?;
-                    match shard["run_id"].as_str() {
-                        Some(id) if id == run => RunVerdict::Recorded,
-                        Some(id) => RunVerdict::NewerRunRecorded { run: id.to_owned() },
-                        None => RunVerdict::Recorded,
-                    }
+                } else if let Some(id) = shard_run {
+                    RunVerdict::NewerRunRecorded { run: id }
                 } else {
                     RunVerdict::NotFound
                 };

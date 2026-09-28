@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "9d341a90eabed0a38a9044d960dd5b05ba834cbdbca87af2c7f8d7c4195c2237",
+    "input-2": "910670aebd0a0bf741470a6ca19bfa6c9b5ba8c4b8913560a59eedb85d61a95d",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "input-5": "e643ad6aef2d840fa605255dc3c773f328cd103ecbc93ef0047ebc9deea7dadc",
@@ -211,7 +211,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/interrupt/primary.rs",
-      "sha256": "8b859d270ea17844ea1ce7f67820bd1a1e3d52a7bfc5ff72ba4fe268d31be2f5"
+      "sha256": "81a917a93eeb8b7c17a79471f7739fd3efeb68affae4e590e368eea89d7e5732"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/interrupt/route.rs",
@@ -251,11 +251,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/resources.rs",
-      "sha256": "46896987bfc581a863ffd9fc881f9dfba02d84f6f5a393601fd9f7ed2fe54327"
+      "sha256": "d8bdc7c8116a3dac6bdc3f83b01ada647d6a53be1d8f64f2d6f3fb2a9c566d9b"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/runtime_resources/scheduler.rs",
-      "sha256": "334f797456d9875d68046a58ee65c687365468785d000cb71c1b4ffabcedb21b"
+      "sha256": "2c2a2c8a4ec0b2ecc3aaaa0ba04533c8bf5e0542cb84d5ccf70e7cd0537aad97"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/runtime_resources.rs",
@@ -291,11 +291,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware/live.rs",
-      "sha256": "3539fce62dbcbea2843df4fdcb8a27530ec2bb637720d84856e5675a738fe30b"
+      "sha256": "06c5115491785f9a3afa804cfee3728ce1bb685b0d22ccbe6facd1273d11cfd8"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/hardware.rs",
-      "sha256": "9c8cb948353bda1b8cb85d083424c3254e008620d3d5da347a274656e941632f"
+      "sha256": "a4805967cf4d7a5538818f6391c6be22a7aafd40d744e21dfd8e81b4d4ab2e51"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/list.rs",
@@ -303,7 +303,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/mod.rs",
-      "sha256": "4f7f03b14b8981d4614f35036cd306f6e399a17c512182ecff49a6eb33e383f8"
+      "sha256": "1d1201db1524a9a7890c118cd663bb3fd472189c42ab3f33c9c220dbf0321b7e"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/src/scheduler/time.rs",
@@ -754,16 +754,20 @@
       "sha256": "288e3d85cb8749d708b0053343e826f9ee6fa229cbd7c85b122408191619e3db"
     },
     {
+      "path": "crates/hardware/esp32s31/hal/src/bluetooth/diagnostic.rs",
+      "sha256": "f44c378382eac09ac0c722b987d633d37ebe2b73227f23bbe818cecada0e1043"
+    },
+    {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_lock.rs",
-      "sha256": "4cf2c531ae3c125258d8550aa742d0e19d49e4f6bb42ac72abf220ea9cba8dbe"
+      "sha256": "2f0dc7e30278ba508304d1f5aa114134b7079c9a921ff63fc0fca46f5cee83b0"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_execution_modify.rs",
-      "sha256": "8d36fbd10ede84e34abc4ec04e695a13f5e18b2323c0db48b0ef9cc7073e6101"
+      "sha256": "18128d1bd3879333bc5c0e5d90ebf14006579cccde868d0454648f854d568851"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/scheduler_stop.rs",
-      "sha256": "5e91c08cece33cf5e27a03c1b63420ab83c0de95db0a47dd1d41aabff4ef2a5f"
+      "sha256": "fa6ca6eb0a225c0057b822826a6186d1f0aa676e97cd874392fc993d95d5962a"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/shutdown.rs",
@@ -771,11 +775,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth/validation.rs",
-      "sha256": "909d798127096e82e92063bb86fe36ccb9df2e7a22b1f792091090f58573f19e"
+      "sha256": "5b4839e817d2687f2450f1af52f0a2bc5d7bd07fd5d25d0bd46832b8c8eb6abb"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth.rs",
-      "sha256": "be4507d4628a4d0ce79b43ddb1311ee5980dc5dae61934b889e6696b93a9cec5"
+      "sha256": "2d789f8df0524cf623ece2cbe9fdae855a3d720907fd9b6d552d4434430f5dc1"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/clock.rs",
@@ -1031,7 +1035,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/interrupt/retirement.rs",
-      "sha256": "7e6ee5a1944884397738e8009bc59b275d0ce73be1b8e5ca972faf28348b2b64"
+      "sha256": "71373058139af912713ef65a2df815f378d1db4afe2a5a4b4e5c385fe1ef2b00"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/interrupt.rs",
@@ -1059,19 +1063,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/insertion.rs",
-      "sha256": "f1673388433fe54fb7c7535f3cd32f22ffef986036f67e840cfceae1c2fe1647"
+      "sha256": "b6b765550146204f1cd9434bf902e22cae05609b59ea87d0419e9b3731020e8e"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/lock_modify.rs",
-      "sha256": "fae9a3286c2b8dacdecbe496034b25f9cdbb30529b7fd93c3abf4279767be83f"
+      "sha256": "2fa2d462c4cd1c43b119e87696622ae773c8637ebb66e9bd630e746f8fd90430"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/runtime.rs",
-      "sha256": "8403fd647c29b6d0c35cf8b4440434a58431005d5b6d31cc008c76a437750df9"
+      "sha256": "d1164491cc791b947a61060697388a338e6074f924f75cb614fb0171c9636e0a"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/stop.rs",
-      "sha256": "1fa4a5a2a94ddc937dccedebb46c1640b68f2918c13577826d29af73cd108e6c"
+      "sha256": "0928074d839c60c77cfbe6251f95e1f925eb02170d1f9bad9ea00360d0015ce2"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler.rs",
@@ -1127,7 +1131,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/lib.rs",
-      "sha256": "586fecbb1e541a07f3c2741d0cfcf7597a65e70414be85973354a2eb73d18b58"
+      "sha256": "05a6d84ac3a68fbdbf206a9f420622ae8c6b4ae50cac9455f7de625d77f7dfa1"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/clock_device.rs",
@@ -1223,7 +1227,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/validation.rs",
-      "sha256": "8ab44ad252a3a366c76f3bc8641d047ab4eb8b4c452d4c6cef3c888fceed3c19"
+      "sha256": "d853c6db3a1454333c50438fd3062aed8f0266ab29d467ef31e354cacdac4cfe"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/wifi/mac/antenna_init.rs",
@@ -3991,7 +3995,7 @@
     },
     {
       "path": "tools/blobray/crates/store/src/json_ranges.rs",
-      "sha256": "2fcb22aa713e05220b8603094f2c1301a72f497db66ba6b1a82a759a9aa38f54"
+      "sha256": "d6b48a766f8fdffeda87d9170174518a3ba8da636b13a1140babd60f92cf481d"
     },
     {
       "path": "tools/blobray/crates/store/src/knowledge.rs",
@@ -4023,7 +4027,7 @@
     },
     {
       "path": "tools/blobray/crates/store/src/source.rs",
-      "sha256": "4bdac0eb14488c940ee2ca293e6a398f6f5d8b6e50d7a921af352335ee02de54"
+      "sha256": "2db2d54d43038b227b2966d277cc9d084296630293028c594680fa9cf7152fa3"
     },
     {
       "path": "tools/blobray/crates/store/src/stream.rs",
@@ -4167,7 +4171,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/bluetooth/ble.rs",
-      "sha256": "aba3e13586100caaeaabfdbbad0da86d67f77ed4afdfef2cc911365c8f768803"
+      "sha256": "c67c667299d16288d385ba72474e4c5be379e50e632f246efa4d21fb7df44c35"
     },
     {
       "path": "verification/esp32s31/scenarios/src/bluetooth/mod.rs",

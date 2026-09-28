@@ -259,3 +259,77 @@ fn a_configuration_rejects_a_value_wider_than_its_field_before_the_bus() {
     );
     assert!(model.operations.is_empty());
 }
+
+#[test]
+fn a_field_write_transition_asks_for_one_read_and_one_write() {
+    let field = AnalogField::new(2_u8, 5, 3).unwrap();
+    let mut write = FieldWriteTransition::new(field, 0b101).unwrap();
+    assert_eq!(write.action(), Action::Read { address: 2 });
+    assert_eq!(
+        write.advance(Completion::Written { address: 2 }),
+        Err(TransitionError::WrongCompletion)
+    );
+    write
+        .advance(Completion::Read {
+            address: 2,
+            value: 0xff,
+        })
+        .unwrap();
+    assert_eq!(
+        write.action(),
+        Action::Write {
+            address: 2,
+            value: 0b1110_1111
+        }
+    );
+    write.advance(Completion::Written { address: 2 }).unwrap();
+    assert_eq!(write.action(), Action::Complete(()));
+    assert_eq!(
+        write.advance(Completion::Written { address: 2 }),
+        Err(TransitionError::AlreadyComplete)
+    );
+}
+
+#[test]
+fn a_field_read_transition_rejects_another_address() {
+    let mut read = FieldReadTransition::new(AnalogField::new(1_u8, 3, 0).unwrap());
+    assert_eq!(
+        read.advance(Completion::Read {
+            address: 2,
+            value: 9
+        }),
+        Err(TransitionError::WrongCompletion)
+    );
+    read.advance(Completion::Read {
+        address: 1,
+        value: 0x9c,
+    })
+    .unwrap();
+    assert_eq!(read.action(), Action::Complete(0xc));
+}
+
+#[test]
+fn an_invalid_configuration_command_completes_without_a_bus_action() {
+    let field = AnalogField::new(0_u8, 1, 0).unwrap();
+    let commands = |index| match index {
+        0 => Some(ConfigurationCommand::Write(1, 7)),
+        1 => Some(ConfigurationCommand::Modify(field, 4)),
+        _ => None,
+    };
+    let mut configuration = ConfigurationTransition::new(commands);
+    assert_eq!(
+        configuration.action(),
+        Action::Write {
+            address: 1,
+            value: 7
+        }
+    );
+    configuration
+        .advance(Completion::Written { address: 1 })
+        .unwrap();
+    assert_eq!(configuration.invalid(), Some(InvalidCommand { index: 1 }));
+    assert_eq!(
+        configuration.action(),
+        Action::Complete(Err(InvalidCommand { index: 1 }))
+    );
+}

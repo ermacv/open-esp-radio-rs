@@ -141,17 +141,14 @@ fn rfpll_completion(
 }
 
 fn loopback_completion(action: PhyTxIqLoopbackAction) -> PhyTxIqLoopbackCompletion {
-    use crate::analog::i2c::{MaskedI2cWriteAction, MaskedI2cWriteCompletion};
+    use crate::analog::i2c;
 
     match action {
-        PhyTxIqLoopbackAction::I2c(MaskedI2cWriteAction::ReadByte { address }) => {
-            PhyTxIqLoopbackCompletion::I2c(MaskedI2cWriteCompletion::I2cReadCompleted {
-                address,
-                value: 0,
-            })
+        PhyTxIqLoopbackAction::I2c(oer_radio_analog::Action::Read { address }) => {
+            PhyTxIqLoopbackCompletion::I2c(oer_radio_analog::Completion::Read { address, value: 0 })
         }
-        PhyTxIqLoopbackAction::I2c(MaskedI2cWriteAction::WriteByte { address, .. }) => {
-            PhyTxIqLoopbackCompletion::I2c(MaskedI2cWriteCompletion::I2cWriteCompleted { address })
+        PhyTxIqLoopbackAction::I2c(oer_radio_analog::Action::Write { address, .. }) => {
+            PhyTxIqLoopbackCompletion::I2c(oer_radio_analog::Completion::Written { address })
         }
         PhyTxIqLoopbackAction::ConfigureTxClock { enabled } => {
             PhyTxIqLoopbackCompletion::TxClockConfigured { enabled }

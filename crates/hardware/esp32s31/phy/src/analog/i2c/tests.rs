@@ -1,14 +1,13 @@
 use super::{
     AdcRateAction, AdcRateCompletion, FilterDcapAction, FilterDcapCompletion, FilterDcapParameters,
     FilterDcapTransition, FilterDcapTransitionError, I2cInit1Action, I2cInit1Completion,
-    I2cInit1Transition, I2cInit1TransitionError, MaskedI2cWriteAction, MaskedI2cWriteCompletion,
-    MaskedI2cWriteTransition, MaskedI2cWriteTransitionError, OpenI2cXpdAction,
-    OpenI2cXpdCompletion, OpenI2cXpdOutcome, OpenI2cXpdTransition, OpenI2cXpdTransitionError,
-    PhyRfInitParameterSnapshot, PhyRfInitPrefixAction, PhyRfInitPrefixCompletion,
-    PhyRfInitPrefixOutcome, PhyRfInitPrefixStep, PhyRfInitPrefixTransition,
-    PhyRfInitPrefixTransitionError, RcCalibrationAction, RcCalibrationCompletion,
-    RcCalibrationTransition, RcCalibrationTransitionError, RfpllChargePumpAction,
-    RfpllChargePumpCompletion, RfpllChargePumpOutcome, RfpllChargePumpTransition, analog_registers,
+    I2cInit1Transition, I2cInit1TransitionError, OpenI2cXpdAction, OpenI2cXpdCompletion,
+    OpenI2cXpdOutcome, OpenI2cXpdTransition, OpenI2cXpdTransitionError, PhyRfInitParameterSnapshot,
+    PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome, PhyRfInitPrefixStep,
+    PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError, RcCalibrationAction,
+    RcCalibrationCompletion, RcCalibrationTransition, RcCalibrationTransitionError,
+    RfpllChargePumpAction, RfpllChargePumpCompletion, RfpllChargePumpOutcome,
+    RfpllChargePumpTransition, analog_registers,
 };
 use crate::analog::frequency::{
     PhyChannelFrequencyInitAction, PhyChannelFrequencyInitCompletion,
@@ -636,32 +635,32 @@ fn rc_calibration_plan_has_only_explicit_async_edges() {
 fn masked_i2c_write_owns_read_transform_and_write_edges() {
     let field = analog_registers::WIFI_TX_TEMPERATURE_TRACKING_0;
     let address = field.address();
-    let mut transition = MaskedI2cWriteTransition::new(field, 3);
+    let mut transition = crate::analog::i2c::field_write(field, 3);
     assert_eq!(
         transition.action(),
-        MaskedI2cWriteAction::ReadByte { address }
+        oer_radio_analog::Action::Read { address }
     );
     assert_eq!(
-        transition.advance(MaskedI2cWriteCompletion::I2cWriteCompleted { address }),
-        Err(MaskedI2cWriteTransitionError::WrongCompletion)
+        transition.advance(oer_radio_analog::Completion::Written { address }),
+        Err(oer_radio_analog::TransitionError::WrongCompletion)
     );
     transition
-        .advance(MaskedI2cWriteCompletion::I2cReadCompleted {
+        .advance(oer_radio_analog::Completion::Read {
             address,
             value: 0x0f,
         })
         .unwrap();
     assert_eq!(
         transition.action(),
-        MaskedI2cWriteAction::WriteByte {
+        oer_radio_analog::Action::Write {
             address,
             value: 0x03,
         }
     );
     transition
-        .advance(MaskedI2cWriteCompletion::I2cWriteCompleted { address })
+        .advance(oer_radio_analog::Completion::Written { address })
         .unwrap();
-    assert_eq!(transition.action(), MaskedI2cWriteAction::Complete);
+    assert_eq!(transition.action(), oer_radio_analog::Action::Complete(()));
 }
 
 #[test]

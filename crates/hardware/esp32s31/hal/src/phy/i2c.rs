@@ -43,35 +43,49 @@ fn configure_initialization_stage_two_with(
     inputs: PhyI2cCommandMemoryInputs,
     maximum_observations: u32,
 ) -> Result<(), PhyI2cInitializationStageTwoError> {
-    access.select_parallel_host_map();
-
-    let result = (|| {
-        for host in [PhyI2cHost::Host0, PhyI2cHost::Host1] {
-            if access.is_busy(host) {
-                return Err(PhyI2cInitializationStageTwoError::BusyAtStart { host });
+    use oer_radio_analog::{ParallelAction, ParallelHost, ParallelTransition};
+    let host = |host| match host {
+        ParallelHost::First => PhyI2cHost::Host0,
+        ParallelHost::Second => PhyI2cHost::Host1,
+    };
+    let mut transition =
+        ParallelTransition::new(|index| inputs.initialization_stage_two_pair(index));
+    let mut result = Ok(());
+    loop {
+        match transition.action() {
+            ParallelAction::SelectParallelMap => {
+                access.select_parallel_host_map();
+                // Both hosts must be idle before the first pair starts.
+                if let Some(busy) = [PhyI2cHost::Host0, PhyI2cHost::Host1]
+                    .into_iter()
+                    .find(|host| access.is_busy(*host))
+                {
+                    result = Err(PhyI2cInitializationStageTwoError::BusyAtStart { host: busy });
+                    break;
+                }
             }
-        }
-
-        let mut pair_index = 0;
-        while let Some(pair) = inputs.initialization_stage_two_pair(pair_index) {
-            access.start_pair(pair);
-
-            for host in [PhyI2cHost::Host0, PhyI2cHost::Host1] {
+            ParallelAction::StartPair(pair) => access.start_pair(pair),
+            ParallelAction::AwaitIdle(parallel_host) => {
+                let awaited = host(parallel_host);
                 let mut observations = 0;
-                while access.is_busy(host) {
+                while access.is_busy(awaited) {
                     if observations == maximum_observations {
-                        return Err(PhyI2cInitializationStageTwoError::CompletionTimeout {
-                            host,
-                            pair: pair_index as u8,
+                        result = Err(PhyI2cInitializationStageTwoError::CompletionTimeout {
+                            host: awaited,
+                            pair: transition.pair_index().unwrap_or(0) as u8,
                         });
+                        break;
                     }
                     observations += 1;
                 }
+                if result.is_err() {
+                    break;
+                }
             }
-            pair_index += 1;
+            ParallelAction::RestoreMap | ParallelAction::Complete => break,
         }
-        Ok(())
-    })();
+        transition.advance();
+    }
 
     // The vendor leaf restores the normal 0x3fa0 host field after the
     // parallel sequence. OER also restores it on finite failure so diagnostic
@@ -99,154 +113,162 @@ pub enum PhyI2cConfigurationObservation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cConfigurationError {
     BusyAtStart,
+    /// A command's value does not fit its field; nothing was started.
+    InvalidCommand,
     WrongAction,
     AlreadyComplete,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PhyI2cConfigurationPhase {
-    Start,
-    AwaitRead,
-    AwaitWrite,
-    Complete,
+/// A PHY-I²C bus over the PAC: each command addresses its block's own host
+/// with its read mask.
+struct PacAnalogBus<'a>(&'a mut RadioPhyRegisters);
+
+impl oer_radio_analog::AnalogRegisterBus for PacAnalogBus<'_> {
+    type Address = PhyI2cAddress;
+
+    fn try_start_read(&mut self, address: PhyI2cAddress) -> Result<(), oer_radio_analog::Busy> {
+        self.0
+            .try_start_phy_i2c_read(address)
+            .map_err(|PhyI2cAccessError::Busy| oer_radio_analog::Busy)
+    }
+
+    fn try_finish_read(&self, address: PhyI2cAddress) -> Result<u8, oer_radio_analog::Busy> {
+        self.0
+            .try_finish_phy_i2c_read(address)
+            .map_err(|PhyI2cAccessError::Busy| oer_radio_analog::Busy)
+    }
+
+    fn try_start_write(
+        &mut self,
+        address: PhyI2cAddress,
+        value: u8,
+    ) -> Result<(), oer_radio_analog::Busy> {
+        self.0
+            .try_start_phy_i2c_write(address, value)
+            .map_err(|PhyI2cAccessError::Busy| oer_radio_analog::Busy)
+    }
+
+    fn try_finish_write(&self, address: PhyI2cAddress) -> Result<(), oer_radio_analog::Busy> {
+        self.0
+            .try_finish_phy_i2c_write(address)
+            .map_err(|PhyI2cAccessError::Busy| oer_radio_analog::Busy)
+    }
 }
 
-trait PhyI2cConfigurationAccess {
-    fn start_read(&mut self, address: PhyI2cAddress) -> Result<(), ()>;
-    fn start_write(&mut self, address: PhyI2cAddress, value: u8) -> Result<(), ()>;
-    fn observe_read(&self, address: PhyI2cAddress) -> Result<u8, ()>;
-    fn observe_write(&self, address: PhyI2cAddress) -> Result<(), ()>;
+/// The analog field of a reviewed PAC field.
+pub const fn analog_field(field: PhyI2cField) -> oer_radio_analog::AnalogField<PhyI2cAddress> {
+    let (msb, lsb) = field.bit_range();
+    match oer_radio_analog::AnalogField::new(field.address(), msb, lsb) {
+        Some(field) => field,
+        None => panic!("a reviewed analog field lies within its byte"),
+    }
+}
+
+/// The commands of one PAC configuration operation as portable commands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct OperationCommands(PhyI2cConfigurationOperation);
+
+impl oer_radio_analog::ConfigurationCommands for OperationCommands {
+    type Address = PhyI2cAddress;
+
+    fn command(
+        &self,
+        index: usize,
+    ) -> Option<oer_radio_analog::ConfigurationCommand<PhyI2cAddress>> {
+        use oer_radio_analog::ConfigurationCommand;
+        let index = u8::try_from(index).ok()?;
+        Some(match self.0.command(index)? {
+            PhyI2cConfigurationCommand::Read(address) => ConfigurationCommand::Read(address),
+            PhyI2cConfigurationCommand::Write(address, value) => {
+                ConfigurationCommand::Write(address, value)
+            }
+            PhyI2cConfigurationCommand::Modify(field, value) => {
+                ConfigurationCommand::Modify(analog_field(field), value)
+            }
+        })
+    }
 }
 
 /// Non-cloneable owner of one complete recovered PHY-I²C write plan.
 ///
 /// The PAC supplies the operation's commands with opaque analog identities;
-/// this transaction owns the phase, read-modify-write value and completion
-/// edges. Callers can only select and drive a finite semantic operation.
+/// the portable [`oer_radio_analog::ConfigurationTransition`] owns the
+/// command order and read-modify-write value, and this transaction owns the
+/// start and completion edges of each byte command.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyI2cConfigurationTransaction {
-    operation: PhyI2cConfigurationOperation,
-    phase: PhyI2cConfigurationPhase,
-    command_index: u8,
-    pending_write: Option<u8>,
+    transition: oer_radio_analog::ConfigurationTransition<OperationCommands, PhyI2cAddress>,
+    started: bool,
 }
 
 impl PhyI2cConfigurationTransaction {
-    pub const fn new(operation: PhyI2cConfigurationOperation) -> Self {
+    pub fn new(operation: PhyI2cConfigurationOperation) -> Self {
         Self {
-            operation,
-            phase: PhyI2cConfigurationPhase::Start,
-            command_index: 0,
-            pending_write: None,
+            transition: oer_radio_analog::ConfigurationTransition::new(OperationCommands(
+                operation,
+            )),
+            started: false,
         }
     }
 
-    pub const fn action(&self) -> PhyI2cConfigurationAction {
-        match self.phase {
-            PhyI2cConfigurationPhase::Start => PhyI2cConfigurationAction::StartCommand,
-            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {
-                PhyI2cConfigurationAction::AwaitCompletionEdge
-            }
-            PhyI2cConfigurationPhase::Complete => PhyI2cConfigurationAction::Complete,
+    pub fn action(&self) -> PhyI2cConfigurationAction {
+        use oer_radio_analog::ByteTransition;
+        match self.transition.action() {
+            oer_radio_analog::Action::Complete(_) => PhyI2cConfigurationAction::Complete,
+            _ if self.started => PhyI2cConfigurationAction::AwaitCompletionEdge,
+            _ => PhyI2cConfigurationAction::StartCommand,
         }
     }
 
     fn start_with(
         &mut self,
-        access: &mut impl PhyI2cConfigurationAccess,
+        bus: &mut impl oer_radio_analog::AnalogRegisterBus<Address = PhyI2cAddress>,
     ) -> Result<(), PhyI2cConfigurationError> {
-        match self.phase {
-            PhyI2cConfigurationPhase::Complete => {
-                return Err(PhyI2cConfigurationError::AlreadyComplete);
-            }
-            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-            PhyI2cConfigurationPhase::Start => {}
+        use oer_radio_analog::{Action, ByteTransition};
+        if self.started {
+            return Err(PhyI2cConfigurationError::WrongAction);
         }
-        let command = self
-            .operation
-            .command(self.command_index)
-            .ok_or(PhyI2cConfigurationError::WrongAction)?;
-        let address = command.address();
-        match (command, self.pending_write) {
-            (
-                PhyI2cConfigurationCommand::Read(_) | PhyI2cConfigurationCommand::Modify(..),
-                None,
-            ) => {
-                access
-                    .start_read(address)
-                    .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
-                self.phase = PhyI2cConfigurationPhase::AwaitRead;
-            }
-            (PhyI2cConfigurationCommand::Write(_, value), None)
-            | (PhyI2cConfigurationCommand::Modify(..), Some(value)) => {
-                access
-                    .start_write(address, value)
-                    .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
-                self.phase = PhyI2cConfigurationPhase::AwaitWrite;
-            }
-            (PhyI2cConfigurationCommand::Write(..), Some(_)) => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-            (PhyI2cConfigurationCommand::Read(_), Some(_)) => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-        }
+        let started = match self.transition.action() {
+            Action::Read { address } => bus.try_start_read(address),
+            Action::Write { address, value } => bus.try_start_write(address, value),
+            Action::Complete(Ok(())) => return Err(PhyI2cConfigurationError::AlreadyComplete),
+            Action::Complete(Err(_)) => return Err(PhyI2cConfigurationError::InvalidCommand),
+        };
+        started.map_err(|oer_radio_analog::Busy| PhyI2cConfigurationError::BusyAtStart)?;
+        self.started = true;
         Ok(())
     }
 
     fn observe_with(
         &mut self,
-        access: &impl PhyI2cConfigurationAccess,
+        bus: &impl oer_radio_analog::AnalogRegisterBus<Address = PhyI2cAddress>,
     ) -> Result<PhyI2cConfigurationObservation, PhyI2cConfigurationError> {
-        match self.phase {
-            PhyI2cConfigurationPhase::Complete => {
-                return Err(PhyI2cConfigurationError::AlreadyComplete);
-            }
-            PhyI2cConfigurationPhase::Start => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {}
+        use oer_radio_analog::{Action, ByteTransition, Completion};
+        if !self.started {
+            return Err(match self.transition.action() {
+                Action::Complete(_) => PhyI2cConfigurationError::AlreadyComplete,
+                _ => PhyI2cConfigurationError::WrongAction,
+            });
         }
-        let command = self
-            .operation
-            .command(self.command_index)
-            .ok_or(PhyI2cConfigurationError::WrongAction)?;
-        if self.phase == PhyI2cConfigurationPhase::AwaitRead {
-            let current = match access.observe_read(command.address()) {
-                Ok(value) => value,
-                Err(()) => return Ok(PhyI2cConfigurationObservation::StillPending),
-            };
-            match command {
-                PhyI2cConfigurationCommand::Modify(field, value) => {
-                    self.pending_write = Some(field.replace(current, value));
-                    self.phase = PhyI2cConfigurationPhase::Start;
+        let completion = match self.transition.action() {
+            Action::Read { address } => match bus.try_finish_read(address) {
+                Ok(value) => Completion::Read { address, value },
+                Err(oer_radio_analog::Busy) => {
+                    return Ok(PhyI2cConfigurationObservation::StillPending);
                 }
-                PhyI2cConfigurationCommand::Read(_) => {
-                    self.command_index += 1;
-                    self.phase = if self.command_index == self.operation.command_count() {
-                        PhyI2cConfigurationPhase::Complete
-                    } else {
-                        PhyI2cConfigurationPhase::Start
-                    };
+            },
+            Action::Write { address, .. } => match bus.try_finish_write(address) {
+                Ok(()) => Completion::Written { address },
+                Err(oer_radio_analog::Busy) => {
+                    return Ok(PhyI2cConfigurationObservation::StillPending);
                 }
-                PhyI2cConfigurationCommand::Write(..) => {
-                    return Err(PhyI2cConfigurationError::WrongAction);
-                }
-            }
-            return Ok(PhyI2cConfigurationObservation::EdgeConsumed);
-        }
-        if access.observe_write(command.address()).is_err() {
-            return Ok(PhyI2cConfigurationObservation::StillPending);
-        }
-        self.pending_write = None;
-        self.command_index += 1;
-        self.phase = if self.command_index == self.operation.command_count() {
-            PhyI2cConfigurationPhase::Complete
-        } else {
-            PhyI2cConfigurationPhase::Start
+            },
+            Action::Complete(_) => return Err(PhyI2cConfigurationError::AlreadyComplete),
         };
+        self.transition
+            .advance(completion)
+            .map_err(|_| PhyI2cConfigurationError::WrongAction)?;
+        self.started = false;
         Ok(PhyI2cConfigurationObservation::EdgeConsumed)
     }
 }
@@ -577,7 +599,7 @@ pub fn start_configuration(
     transaction: &mut PhyI2cConfigurationTransaction,
     registers: &mut impl SharedPhyAccess,
 ) -> Result<(), PhyI2cConfigurationError> {
-    transaction.start_with(phy_pac_mut(registers))
+    transaction.start_with(&mut PacAnalogBus(phy_pac_mut(registers)))
 }
 
 /// Consume one configuration-completion edge.
@@ -585,7 +607,7 @@ pub fn observe_configuration(
     transaction: &mut PhyI2cConfigurationTransaction,
     registers: &mut impl SharedPhyAccess,
 ) -> Result<PhyI2cConfigurationObservation, PhyI2cConfigurationError> {
-    transaction.observe_with(phy_pac(registers))
+    transaction.observe_with(&PacAnalogBus(phy_pac_mut(registers)))
 }
 
 /// Start the current command of one Bluetooth TX-power transaction.
@@ -633,31 +655,6 @@ impl PhyI2cParallelAccess for RadioPhyRegisters {
 
     fn start_pair(&mut self, pair: PhyI2cParallelWrite) {
         self.start_phy_i2c_parallel_pair(pair);
-    }
-}
-
-/// Configuration commands address their block's own host with its read
-/// mask, as the ROM `phy_i2c_writeReg`, `phy_i2c_readReg` and their masked
-/// forms do through `phy_chip_i2c_readReg_org`.
-impl PhyI2cConfigurationAccess for RadioPhyRegisters {
-    fn start_read(&mut self, address: PhyI2cAddress) -> Result<(), ()> {
-        self.try_start_phy_i2c_read(address)
-            .map_err(|PhyI2cAccessError::Busy| ())
-    }
-
-    fn start_write(&mut self, address: PhyI2cAddress, value: u8) -> Result<(), ()> {
-        self.try_start_phy_i2c_write(address, value)
-            .map_err(|PhyI2cAccessError::Busy| ())
-    }
-
-    fn observe_read(&self, address: PhyI2cAddress) -> Result<u8, ()> {
-        self.try_finish_phy_i2c_read(address)
-            .map_err(|PhyI2cAccessError::Busy| ())
-    }
-
-    fn observe_write(&self, address: PhyI2cAddress) -> Result<(), ()> {
-        self.try_finish_phy_i2c_write(address)
-            .map_err(|PhyI2cAccessError::Busy| ())
     }
 }
 

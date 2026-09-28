@@ -347,7 +347,7 @@ fn tx_cap_lowering_covers_every_nested_operation_class() {
         ))
     ));
     assert!(matches!(
-        PhyTxCapExternalBinding::lower(PhyTxCapAction::I2c(MaskedI2cWriteAction::ReadByte {
+        PhyTxCapExternalBinding::lower(PhyTxCapAction::I2c(oer_radio_analog::Action::Read {
             address: i2c
         })),
         Ok(PhyTxCapExternalBinding::I2c(_))
@@ -366,7 +366,7 @@ fn tx_cap_lowering_covers_every_nested_operation_class() {
     ));
     assert!(matches!(
         PhyTxCapExternalBinding::lower(PhyTxCapAction::Search(PhyTxCapSearchAction::I2c(
-            MaskedI2cWriteAction::WriteByte {
+            oer_radio_analog::Action::Write {
                 address: i2c,
                 value: 3,
             }

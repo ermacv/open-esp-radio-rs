@@ -78,6 +78,14 @@ impl PhyI2cField {
     pub const fn address(self) -> PhyI2cAddress {
         PhyI2cAddress::recovered(self.bank(), self.register())
     }
+
+    /// The field's most and least significant bit in its byte register.
+    #[inline]
+    pub const fn bit_range(self) -> (u8, u8) {
+        // Every reviewed field is one contiguous run of bits.
+        let mask = self.replace(0, 0xff);
+        (7 - mask.leading_zeros() as u8, mask.trailing_zeros() as u8)
+    }
 }
 
 /// One finite analog-register command is still owned by its hardware host.

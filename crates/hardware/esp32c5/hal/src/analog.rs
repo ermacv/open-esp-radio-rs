@@ -158,7 +158,7 @@ mod tests {
                     Some(ConfigurationCommand::Modify(field, value)) => {
                         assert!(field.insert(0, value).is_some(), "{leaf:?} {index}");
                     }
-                    Some(ConfigurationCommand::Write(..)) => {}
+                    Some(ConfigurationCommand::Write(..) | ConfigurationCommand::Read(_)) => {}
                     None => panic!("{leaf:?} {index} has no valid field"),
                 }
                 index += 1;

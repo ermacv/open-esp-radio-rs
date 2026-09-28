@@ -113,7 +113,10 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
     }
-    let mut job = crate::hil_jobs::Running::begin(after.as_deref())?;
+    let owner = options
+        .owner(ctx)
+        .unwrap_or_else(|_| String::from("unregistered"));
+    let mut job = crate::hil_jobs::Running::begin(ctx, &owner, &args, after.as_deref())?;
     let (baseline, args) = crate::hil_baseline::take(args)?;
     let args = args.as_slice();
     let baseline = match baseline {
@@ -654,11 +657,11 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
     let jobs = crate::hil_jobs::Jobs::open()?.unfinished();
     if json {
         let mut value = serde_json::to_value(&status)?;
-        value["jobs"] = serde_json::to_value(&jobs)?;
+        value["jobs"] = serde_json::to_value(crate::hil_jobs::views(&jobs, &status))?;
         println!("{}", serde_json::to_string_pretty(&value)?);
     } else {
         println!("{status}");
-        print!("{}", crate::hil_jobs::describe(&jobs));
+        print!("{}", crate::hil_jobs::describe(&jobs, &status));
     }
     Ok(std::process::ExitCode::SUCCESS)
 }

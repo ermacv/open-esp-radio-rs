@@ -36,9 +36,87 @@ pub struct Job {
     /// The detached process and its start time, which survive PID reuse.
     pub pid: Option<u32>,
     pub pid_started_unix_millis: Option<u64>,
-    pub log: PathBuf,
+    /// Where a detached job's output goes; a run in the foreground has none.
+    pub log: Option<PathBuf>,
     #[serde(flatten)]
     pub state: JobState,
+}
+
+/// Where an unfinished job is, from the arbiter's view of its process.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Phase {
+    /// Waiting for the job it runs after.
+    WaitingForJob,
+    /// Building its images; it has not asked for the stand yet.
+    Building,
+    /// Queued in the arbiter.
+    WaitingForStand,
+    /// Holding its lease.
+    Holding,
+    Finished,
+}
+
+impl Phase {
+    pub const fn describe(self) -> &'static str {
+        match self {
+            Self::WaitingForJob => "waits for its job",
+            Self::Building => "building images",
+            Self::WaitingForStand => "waiting for the stand",
+            Self::Holding => "holding the stand",
+            Self::Finished => "finished",
+        }
+    }
+}
+
+/// The phase of `job` given the arbiter's holders and queue: a holder or a
+/// queued request made by the job's process, or by a child of it (the
+/// runner), is that job's.
+pub fn phase(job: &Job, status: &oer_hil_arbiter::Status) -> Phase {
+    phase_of(
+        job,
+        &status
+            .holders
+            .iter()
+            .map(|holder| holder.pid)
+            .collect::<Vec<_>>(),
+        &status
+            .queue
+            .iter()
+            .map(|queued| queued.pid)
+            .collect::<Vec<_>>(),
+        parent_pid,
+    )
+}
+
+/// [`phase`] from the PIDs of the holders and of the queued requests, with
+/// `parent` naming a process's parent.
+fn phase_of(
+    job: &Job,
+    holders: &[u32],
+    queued: &[u32],
+    parent: impl Fn(u32) -> Option<u32>,
+) -> Phase {
+    let ours = |pid: u32| job.pid.is_some() && (Some(pid) == job.pid || parent(pid) == job.pid);
+    match job.state {
+        JobState::Finished { .. } => Phase::Finished,
+        JobState::Pending if job.after.is_some() => Phase::WaitingForJob,
+        _ if holders.iter().any(|pid| ours(*pid)) => Phase::Holding,
+        _ if queued.iter().any(|pid| ours(*pid)) => Phase::WaitingForStand,
+        _ => Phase::Building,
+    }
+}
+
+/// The parent of the live process `pid`: field 4 of `/proc/<pid>/stat`,
+/// after the parenthesised command name.
+fn parent_pid(pid: u32) -> Option<u32> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -166,7 +244,8 @@ impl Jobs {
         Ok(())
     }
 
-    /// Every job that has not finished, oldest first.
+    /// Every job that has not finished, oldest first. A job whose process is
+    /// gone is recorded as abandoned and left out.
     pub fn unfinished(&self) -> Vec<Job> {
         let mut jobs = fs::read_dir(&self.directory)
             .into_iter()
@@ -177,6 +256,18 @@ impl Jobs {
                 self.read(name.strip_suffix(".json")?).ok()
             })
             .filter(|job| !matches!(job.state, JobState::Finished { .. }))
+            .filter(|job| {
+                if alive(job) {
+                    return true;
+                }
+                let mut abandoned = job.clone();
+                abandoned.state = JobState::Finished {
+                    outcome: JobOutcome::Abandoned,
+                    runs: Vec::new(),
+                };
+                let _ = self.write(&abandoned);
+                false
+            })
             .collect::<Vec<_>>();
         jobs.sort_by(|a, b| (a.enqueued_unix_millis, &a.id).cmp(&(b.enqueued_unix_millis, &b.id)));
         jobs
@@ -214,6 +305,11 @@ fn alive(job: &Job) -> bool {
         }
         _ => unix_millis().saturating_sub(job.enqueued_unix_millis) < 60_000,
     }
+}
+
+/// A job id unique on this host: its enqueue time and the process making it.
+fn new_id(enqueued_unix_millis: u64) -> String {
+    format!("{enqueued_unix_millis}-{:x}", std::process::id())
 }
 
 fn unix_millis() -> u64 {
@@ -267,7 +363,7 @@ pub fn enqueue(
         jobs.read(after)?;
     }
     let enqueued = unix_millis();
-    let id = format!("{enqueued}-{:x}", std::process::id());
+    let id = new_id(enqueued);
     let log_directory = ctx.root.join("target/hil/jobs");
     fs::create_dir_all(&log_directory)?;
     let log = log_directory.join(format!("{id}.log"));
@@ -283,7 +379,7 @@ pub fn enqueue(
         enqueued_unix_millis: enqueued,
         pid: None,
         pid_started_unix_millis: None,
-        log: log.clone(),
+        log: Some(log.clone()),
         state: JobState::Pending,
     };
     jobs.write(&job)?;
@@ -322,26 +418,54 @@ pub struct Running {
 }
 
 impl Running {
-    /// Wait for `after` (a job id from `--after`) and, when this process
-    /// runs as a job, mark the job started.
-    pub fn begin(after: Option<&str>) -> Result<Self> {
+    /// Record this run as a job (a detached one already has its record),
+    /// wait for `after` (a job id from `--after`) and mark the job started.
+    /// Every run is a job, so `queue` shows it while it builds.
+    pub fn begin(
+        ctx: &Context,
+        owner: &str,
+        args: &[OsString],
+        after: Option<&str>,
+    ) -> Result<Self> {
         let jobs = Jobs::open()?;
+        let id = match std::env::var(JOB_ENV) {
+            Ok(id) => id,
+            Err(_) => {
+                let enqueued = unix_millis();
+                let pid = std::process::id();
+                let job = Job {
+                    id: new_id(enqueued),
+                    owner: owner.to_owned(),
+                    command: args
+                        .iter()
+                        .map(|argument| argument.to_string_lossy().into_owned())
+                        .collect(),
+                    checkout: ctx.root.clone(),
+                    after: after.map(str::to_owned),
+                    enqueued_unix_millis: enqueued,
+                    pid: Some(pid),
+                    pid_started_unix_millis: oer_hil_arbiter::process_started_unix_millis(pid),
+                    log: None,
+                    state: JobState::Pending,
+                };
+                jobs.write(&job)?;
+                job.id
+            }
+        };
+        let running = Self {
+            jobs,
+            id: Some(id.clone()),
+            finished: false,
+        };
         if let Some(after) = after {
             eprintln!("hil: waiting for job {after}");
-            let outcome = jobs.wait(after)?;
+            let outcome = running.jobs.wait(after)?;
             eprintln!("hil: job {after} ended {outcome}; starting");
         }
-        let id = std::env::var(JOB_ENV).ok();
-        if let Some(id) = &id {
-            let mut job = jobs.read(id)?;
-            job.state = JobState::Started;
-            jobs.write(&job)?;
-        }
-        Ok(Self {
-            jobs,
-            id,
-            finished: false,
-        })
+        let mut job = running.jobs.read(&id)?;
+        job.state = JobState::Started;
+        running.jobs.write(&job)?;
+        Ok(running)
     }
 
     /// Finish the job with its runs' outcomes.
@@ -384,25 +508,47 @@ pub fn wait_command(args: &[OsString]) -> Result<std::process::ExitCode> {
         _ => String::new(),
     };
     println!(
-        "job {id}: {outcome}; runs: {runs}; log: {}",
-        job.log.display()
+        "job {id}: {outcome}; runs: {runs}{}",
+        job.log
+            .as_deref()
+            .map(|log| format!("; log: {}", log.display()))
+            .unwrap_or_default()
     );
     Ok(std::process::ExitCode::from(outcome.exit_code()))
 }
 
-/// The unfinished jobs, for `cargo hil queue`: who waits for whom.
-pub fn describe(jobs: &[Job]) -> String {
+/// A job with its phase, as `queue --json` and the dashboard show it.
+#[derive(Serialize)]
+pub struct JobView<'a> {
+    #[serde(flatten)]
+    pub job: &'a Job,
+    pub phase: Phase,
+}
+
+pub fn views<'a>(jobs: &'a [Job], status: &oer_hil_arbiter::Status) -> Vec<JobView<'a>> {
+    jobs.iter()
+        .map(|job| JobView {
+            job,
+            phase: phase(job, status),
+        })
+        .collect()
+}
+
+/// The unfinished jobs, for `cargo hil queue`: runs still building, and
+/// who waits for whom.
+pub fn describe(jobs: &[Job], status: &oer_hil_arbiter::Status) -> String {
+    describe_views(&views(jobs, status))
+}
+
+fn describe_views(views: &[JobView<'_>]) -> String {
     let mut text = String::new();
-    for job in jobs {
-        let state = match (&job.state, &job.after) {
-            (JobState::Pending, Some(after)) => format!("waits for job {after}"),
-            (JobState::Pending, None) => String::from("pending"),
-            (JobState::Started, _) => String::from("started"),
-            (JobState::Finished { outcome, .. }, _) => format!("finished {outcome}"),
+    for JobView { job, phase } in views {
+        let state = match (phase, &job.after) {
+            (Phase::WaitingForJob, Some(after)) => format!("waits for job {after}"),
+            (phase, _) => String::from(phase.describe()),
         };
-        let abandoned = if alive(job) { "" } else { " (abandoned)" };
         text.push_str(&format!(
-            "job:     {} {} `cargo hil {}` {state}{abandoned}\n",
+            "job:     {} {} `cargo hil {}` {state}\n",
             job.id,
             job.owner,
             job.command.join(" ")

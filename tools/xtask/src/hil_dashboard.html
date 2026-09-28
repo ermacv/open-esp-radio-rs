@@ -82,7 +82,9 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   <span id="updated">loading…</span>
 </header>
 <main>
+  <section class="wide" id="stand-service"></section>
   <section><h2>Holding now</h2><div id="holders"></div></section>
+  <section><h2>Preparing</h2><div id="jobs"></div></section>
   <section><h2>Queue</h2><div id="queue"></div></section>
   <section><h2>Balances</h2><div id="balances"></div></section>
   <section class="wide"><h2>Boards</h2><div id="devices"></div></section>
@@ -143,6 +145,22 @@ function queue(list) {
       <div class="work">${esc(q.work)}</div>
       <div class="claims">${esc(q.claims)}${q.ahead ? ` · ${q.ahead} conflicting ahead` : ""}</div>
     </div>`).join("");
+}
+
+function jobs(list) {
+  const preparing = (list || []).filter((j) => j.phase !== "holding" && j.phase !== "finished");
+  if (!preparing.length) return '<p class="empty">No run is building or waiting.</p>';
+  const text = { "waiting-for-job": "waits for a job", "building": "building images", "waiting-for-stand": "waiting for the stand" };
+  return preparing.map((j) => `<div class="item">
+      <div class="row"><span class="owner">${esc(j.owner)}</span><span class="id">${esc(j.id)}</span>
+        <span class="meta">${esc(text[j.phase] ?? j.phase)}${j.after ? ` after ${esc(j.after)}` : ""} · ${duration(Date.now() / 1000 - j.enqueued_unix_millis / 1000)}</span></div>
+      <div class="work">cargo hil ${esc(j.command.join(" "))}</div>
+    </div>`).join("");
+}
+
+function standService(maintenance) {
+  const stand = (maintenance || []).find((m) => m.mac === "stand");
+  return stand ? `<div class="bad"><b>The stand is out of service</b>: maintenance by ${esc(stand.owner)}: ${esc(stand.reason)}. Runs wait; <code>cargo hil wait --service</code> returns when it is back.</div>` : "";
 }
 
 function balances(list) {
@@ -220,6 +238,8 @@ async function refresh() {
     if (data.error) throw new Error(data.error);
     $("holders").innerHTML = holders(data.holders);
     $("queue").innerHTML = queue(data.queue);
+    $("jobs").innerHTML = jobs(data.jobs);
+    $("stand-service").innerHTML = standService(data.maintenance);
     $("balances").innerHTML = balances(data.balances);
     $("devices").innerHTML = devices(data.devices, data.maintenance);
     $("runs").innerHTML = runs(data.runs);

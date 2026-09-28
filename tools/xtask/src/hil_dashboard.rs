@@ -206,6 +206,7 @@ fn respond(path: &str, runs: &Path) -> (&'static str, &'static str, String) {
 fn snapshot(runs: &Path) -> Result<Value> {
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     let status = arbiter.status()?;
+    let jobs = crate::hil_jobs::Jobs::open()?.unfinished();
     let mut history = arbiter.history()?;
     history.reverse();
     history.truncate(RECENT_LEASES);
@@ -218,6 +219,7 @@ fn snapshot(runs: &Path) -> Result<Value> {
         "balances": status.balances,
         "devices": status.devices,
         "maintenance": status.maintenance,
+        "jobs": crate::hil_jobs::views(&jobs, &status),
         "leases": history,
         "runs": newest_runs(runs, RECENT_RUNS),
     }))

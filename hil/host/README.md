@@ -583,8 +583,15 @@ enqueued or in the foreground, start only once that job has ended, whatever
 its outcome. `wait JOB` blocks until the job ends and exits with its outcome:
 0 passed, 1 failed, 2 interrupted (or on a quarantined board), 3 blocked or
 skipped, 4 broken, 5 no run created, 6 abandoned (its process is gone without
-finishing, told by its PID and start time). `queue` lists unfinished jobs and
-which job each waits for; `queue --json` has them under `jobs`. An agent waits
+finishing, told by its PID and start time). Every `run`, `run-all` and
+`run-plan`, enqueued or in the foreground, is such a job from its start, so
+`queue` and the dashboard's Preparing section show runs before they ask for
+the stand: each with its phase, from the arbiter's holders and queue matched
+by the job's process or its runner child (waits for a job, building images,
+waiting for the stand, holding the stand). Building costs no balance and
+takes no place in the queue. A job whose process is gone is recorded as
+abandoned when the list is read. `queue --json` has the jobs, with `phase`,
+under `jobs`; the dashboard also shows a whole-stand maintenance. An agent waits
 with `wait`, never by looking for process names.
 
 ### Bisecting a scenario

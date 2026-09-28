@@ -14,7 +14,7 @@ fn job(id: &str, state: JobState) -> Job {
         enqueued_unix_millis: unix_millis(),
         pid: Some(std::process::id()),
         pid_started_unix_millis: oer_hil_arbiter::process_started_unix_millis(std::process::id()),
-        log: PathBuf::from("/checkout/target/hil/jobs/x.log"),
+        log: Some(PathBuf::from("/checkout/target/hil/jobs/x.log")),
         state,
     }
 }
@@ -113,21 +113,66 @@ fn a_job_settles_when_it_finishes_or_its_process_is_gone() {
             .iter()
             .map(|job| job.id.as_str())
             .collect::<Vec<_>>(),
-        ["1-a", "3-a"]
+        ["1-a"]
     );
 }
 
 #[test]
-fn the_queue_names_who_waits_for_whom() {
+fn the_queue_names_each_job_s_phase_and_who_waits_for_whom() {
     let mut waiting = job("5-b", JobState::Pending);
     waiting.after = Some(String::from("4-a"));
-    let text = describe(&[job("4-a", JobState::Started), waiting]);
+    let started = job("4-a", JobState::Started);
+    let text = describe_views(&[
+        JobView {
+            job: &started,
+            phase: Phase::Building,
+        },
+        JobView {
+            job: &waiting,
+            phase: Phase::WaitingForJob,
+        },
+    ]);
     assert!(
-        text.contains("job:     4-a stand `cargo hil run icmp-latency` started\n"),
+        text.contains("job:     4-a stand `cargo hil run icmp-latency` building images\n"),
         "{text}"
     );
     assert!(
         text.contains("5-b stand `cargo hil run icmp-latency` waits for job 4-a\n"),
         "{text}"
     );
+}
+
+#[test]
+fn a_job_s_phase_follows_its_process_and_its_runner_in_the_arbiter() {
+    let started = job("1-a", JobState::Started);
+    let me = started.pid.unwrap();
+    let runner = me + 1;
+    let parent = |pid: u32| (pid == runner).then_some(me);
+    assert_eq!(phase_of(&started, &[], &[], parent), Phase::Building);
+    assert_eq!(
+        phase_of(&started, &[], &[runner], parent),
+        Phase::WaitingForStand
+    );
+    assert_eq!(phase_of(&started, &[runner], &[], parent), Phase::Holding);
+    assert_eq!(phase_of(&started, &[me], &[], parent), Phase::Holding);
+    // Another owner's lease is not this job's.
+    assert_eq!(phase_of(&started, &[me + 7], &[], parent), Phase::Building);
+    let mut after = job("2-a", JobState::Pending);
+    after.after = Some(String::from("1-a"));
+    assert_eq!(phase_of(&after, &[], &[], parent), Phase::WaitingForJob);
+    assert_eq!(
+        parent_pid(std::process::id()),
+        Some(std::os::unix::process::parent_id())
+    );
+}
+
+#[test]
+fn a_job_whose_process_is_gone_is_recorded_abandoned_and_left_out() {
+    let directory = tempfile::tempdir().unwrap();
+    let jobs = Jobs::at(directory.path().to_owned());
+    let mut gone = job("9-a", JobState::Started);
+    gone.pid_started_unix_millis = gone.pid_started_unix_millis.map(|started| started + 5_000);
+    jobs.write(&gone).unwrap();
+    assert!(jobs.unfinished().is_empty());
+    assert_eq!(jobs.settled("9-a").unwrap(), Some(JobOutcome::Abandoned));
 }

@@ -16,8 +16,8 @@ cargo qualification catalog render \
   --out target/qualification/catalog/bluetooth-static
 ```
 
-The generated `domain-inventory.md`, `capability-catalog.md` and
-`migration-map.md` are ignored views. The
+The generated `domain-inventory.md` and `capability-catalog.md` are ignored
+views. The
 [Bluetooth LE qualification program](../../../../../qualification/targets/esp32s31/bluetooth-le.toml)
 selects the same declarations through the sole qualification evaluator. Classic
 BR/EDR remains source inventory outside that LE gate.

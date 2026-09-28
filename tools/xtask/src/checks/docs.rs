@@ -262,7 +262,6 @@ fn run_catalogs(ctx: &Context, output: &Path, groups: &[CatalogGroup]) -> Result
             "project-status.md",
             "domain-inventory.md",
             "capability-catalog.md",
-            "migration-map.md",
         ] {
             let left = forward.join(name);
             let right = reverse.join(name);

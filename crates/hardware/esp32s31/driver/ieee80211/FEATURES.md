@@ -18,8 +18,8 @@ evaluator and its configured evidence inputs:
 cargo qualification catalog render --manifest qualification/targets/esp32s31/wifi-sta.toml --out target/qualification/catalog/wifi-sta
 ```
 
-The static render writes `domain-inventory.md`, `capability-catalog.md`,
-`project-status.md` and `migration-map.md` into the ignored output directory.
+The static render writes `domain-inventory.md`, `capability-catalog.md` and
+`project-status.md` into the ignored output directory.
 The catalog is the tracked source; generated Markdown is never a readiness
 authority.
 

@@ -237,8 +237,9 @@ cargo qualification catalog render \
   --out target/qualification/catalog/esp32s31-radio-static
 ```
 
-Static render writes `project-status.md`, `domain-inventory.md`,
-`capability-catalog.md`, and `migration-map.md`. Manifest render additionally
+Static render writes `project-status.md`, `domain-inventory.md` and
+`capability-catalog.md`; each entry names the code that owns it (its
+`// CAPABILITY:` anchors). Manifest render additionally
 writes `program-status.md` and `program-inventory.md` after evaluation. The program view records repository
 commit/dirty state and configured evidence provenance; a catalog or manifest
 hash is source identity, never firmware identity. All outputs are ignored

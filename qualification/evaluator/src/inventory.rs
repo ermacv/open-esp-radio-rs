@@ -71,11 +71,6 @@ pub(crate) fn write_static(
     )?;
     write_file(
         output_directory,
-        "migration-map.md",
-        &render_mapping(catalog, output_directory, root)?,
-    )?;
-    write_file(
-        output_directory,
         "project-status.md",
         &crate::engineering::ProjectMap::from_catalog(catalog, None)?
             .markdown(output_directory, root)?,
@@ -219,7 +214,7 @@ fn render_domain(
                 text.push_str(&format!("#### {}\n\n", escape_heading(&item.id)));
                 text.push_str(&format!("**{}**\n\n", escape_text(&item.title)));
                 text.push_str(&format!(
-                    "- Source status: `{}`\n- Level: `{}`\n- Legacy owner: `{}`\n\n",
+                    "- Source status: `{}`\n- Level: `{}`\n- Entry page: `{}`\n\n",
                     item.status.label(),
                     item.level.label(),
                     section.source_document.display()
@@ -447,55 +442,6 @@ fn render_program(qualification: &Qualification, output: &Path, root: &Path) -> 
         for id in unselected {
             text.push_str(&format!("- `{id}`\n"));
         }
-    }
-    Ok(text)
-}
-
-fn render_mapping(catalog: &CatalogView, output: &Path, root: &Path) -> Result<String> {
-    let mut text = String::from(
-        "# Source inventory migration map\n\nThis ignored generated map demonstrates that each legacy row, mapping, or protocol matrix cell has one canonical catalog item/reference or an explicit projection of a shared source fact.\n\n| Legacy document | Legacy section | Legacy entry | Canonical ID | Fact/reference |\n| --- | --- | --- | --- | --- |\n",
-    );
-    for item in &catalog.items {
-        let section = catalog
-            .sections
-            .iter()
-            .find(|section| section.id == item.section)
-            .expect("validated inventory section");
-        text.push_str(&format!(
-            "| `{}` | {} | {} | [`{}`](domain-inventory.md#{}) | `{}` |\n",
-            section.source_document.display(),
-            escape_table(&section.title),
-            escape_table(&rewrite_links(
-                &item.title,
-                &section.source_document,
-                output,
-                root,
-            )?),
-            item.id,
-            item.id,
-            item.source_fact.as_deref().unwrap_or(&item.id)
-        ));
-    }
-    for reference in &catalog.references {
-        let section = catalog
-            .sections
-            .iter()
-            .find(|section| section.id == reference.section)
-            .expect("validated inventory section");
-        text.push_str(&format!(
-            "| `{}` | {} | {} | [`{}`](domain-inventory.md#{}) | `{}` |\n",
-            section.source_document.display(),
-            escape_table(&section.title),
-            escape_table(&rewrite_links(
-                &reference.title,
-                &section.source_document,
-                output,
-                root,
-            )?),
-            reference.id,
-            reference.id,
-            reference.kind.label()
-        ));
     }
     Ok(text)
 }

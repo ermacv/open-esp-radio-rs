@@ -80,6 +80,12 @@ owners instead of copying their rows. Distinguish a pure model, an executable ha
 composed application path and independently qualified readiness. A recovered
 register meaning or matching semantic leaf is not complete protocol support.
 
+A catalog entry that claims support names its owning code with a
+[code anchor](../qualification/README.md#code-anchors), a
+`// CAPABILITY: <id>` comment above the owning item; `cargo xtask check
+capabilities` keeps the two consistent, so a feature view cannot outlive the
+code it describes.
+
 Describe an unsupported feature as a current limitation. Do not turn that row
 into a task list, promised delivery order or speculative API. Throughput and
 hardware readiness are derived from qualifying evidence, not remembered
@@ -101,8 +107,11 @@ depend on documentation paths. Update those consumers without changing the
 meaning of evidence or inventing a replacement proof.
 
 Use the repository's pinned toolchain for examples and API documentation.
-`cargo xtask check docs` checks owned local Markdown links and checks/renders
-static qualification catalogs and programs. It does not build API documentation.
+`cargo xtask check docs` checks owned local Markdown links, checks that every
+repository path named in inline code (such as `crates/memory/`) still exists,
+and checks/renders static qualification catalogs and programs. It does not
+build API documentation. Name a moved or removed path correctly in the same
+change; a path with a placeholder (`verification/<chip>/`) is not checked.
 API documentation follows docs.rs conventions: each package is documented once,
 for the target and features in its `[package.metadata.docs.rs]` table. Portable
 and host packages use the host; chip packages set

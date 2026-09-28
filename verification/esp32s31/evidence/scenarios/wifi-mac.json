@@ -345,7 +345,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/lib.rs",
-      "sha256": "e27684e15f6961f320528604bcd20686d1124c1e34496cb9f19ae56cd6f1ddb9"
+      "sha256": "fc0b9128c05b226b186dafb44ef871f78a17585ea6869327f9e91be9a73351ca"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex/src/model.rs",
@@ -4233,7 +4233,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "6af0936b48358e0fca560491264319a089f6ada0222c5660b912608b48a809b9"
+      "sha256": "e34bfec29db6792e01cfdf185977cd01ac97f2429ffdf60d5352de795eb8f40f"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",

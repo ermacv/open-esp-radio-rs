@@ -1148,7 +1148,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "6af0936b48358e0fca560491264319a089f6ada0222c5660b912608b48a809b9"
+      "sha256": "e34bfec29db6792e01cfdf185977cd01ac97f2429ffdf60d5352de795eb8f40f"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",

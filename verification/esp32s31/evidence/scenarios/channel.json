@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "b7f9d7e9636a102c7c5d4760af2006710da27199531ee70d2ef09420047b15d4"
+    "input-2": "59140a0c85c9fa710db587dc4a4e6e2d458ed4c58be019eb72b5e024f74abdf3"
   },
   "sources": [
     {
@@ -1155,7 +1155,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "6e7bad546086ed8dbaca46690258406d9f2f64c6c957f97bfb0de556c76a7071"
+      "sha256": "e8ab7503b8e9968fc0b7fc19afc2768741da850dfef23f0646a93dc03baaae6c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",

@@ -39,6 +39,8 @@ semantics or hardware behavior; application validates physical bytes/evidence.
 
 The private `interfaces` validator admits bounded RV32 interface declarations and rejects malformed/contradictory guards, unsupported slot signatures and conflicting static layouts. Runtime conditions remain declared preconditions after review; this crate cannot assert their satisfaction.
 
+`paths` validates the finite shape of reviewed access paths (one to 64 hops,
+purpose and applicability); application authenticates the saved hops.
 
 `functions` validates physical-selector function contracts, argument contexts and
 preconditions. `calls` owns one shared integer/pointer signature profile for direct
@@ -46,7 +48,6 @@ functions and interface slots. Context layouts, overlapping byte predicates and
 argument range/mask intersections are bounded and checked before acceptance.
 Unknown signatures/types remain unknown; declared predicates are never observed
 runtime facts. Application supplies the captured function and evidence validation.
-
 
 Native event-route declarations validate finite participants, ABI roles, selector
 fields and acyclic upstream/terminal paths. They require root analysis evidence and

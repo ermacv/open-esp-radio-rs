@@ -61,4 +61,6 @@ independent exercise/value/count obligations. Unknown classification stops align
 without manufacturing a shifted mismatch. Raw evidence remains with the caller.
 The result exposes the review's claim ceiling and first policy gap; a refined MATCH
 never asserts physical equality. Shared bounded domain counters permit store to
-validate retained accounting independently. See [effect contracts](../../docs/design/contracts.md#reviewed-effect-contracts).
+validate retained accounting independently. `classify_effects` returns the
+selection a contract gives each effect of one side, so a caller can count the
+effects each rule selects. See [effect contracts](../../docs/design/contracts.md#reviewed-effect-contracts).

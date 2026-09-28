@@ -590,7 +590,9 @@ opaque dependency containment retain the existing host guarantees.
 
 `blobray_application::in_process::verify` executes and compares one request
 inside the calling process. The caller supplies the ELF bytes of every target
-source in source order (the source, then its companions) and the effect
+source in source order (the source, then its companions), optionally with
+their content identities when it already authenticated those bytes (otherwise
+each is hashed once per call), and the effect
 contracts and layout projections its relations select. Those are reviewed
 outside Blobray: `effect_contract_ref` and `projection_ref` select them by the
 SHA-256 of their canonical JSON encoding, and `verify` rejects a selection whose

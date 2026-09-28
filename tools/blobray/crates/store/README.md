@@ -180,7 +180,8 @@ an admitted journal cell and verify the admitted request, original function stre
 profile counts, frozen knowledge and transitive analysis dependencies. The index
 contains no copied function facts; query/export expands original CAS streams.
 Doctor checks indexes and completed-run references, and backup/restore retains
-both. Retention roots for any future GC must include these transitive dependencies.
+both. Blobray does not collect garbage; any retention root must include these
+transitive dependencies.
 
 
 Execution validation checks model definition identity, cumulative participation, transcript totals and phase/session closure. Missing or inconsistent observations and MATCH with unmet obligations are rejected. This structural validation never supplies device execution semantics.

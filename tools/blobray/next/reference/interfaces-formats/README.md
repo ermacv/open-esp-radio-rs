@@ -69,8 +69,8 @@ This result protocol is internal to the matching application/host build. It does
 not add another archive parser or retained research format. The frontend consumes
 borrowed records or the captured manifest without loading the complete result.
 
-`InventoryView` is not a transitive retention pin for future pruning/compaction,
-which Next does not implement. Inspection `Plan`, synthetic `LinkPlan` and retained
+`InventoryView` is not a transitive retention pin; Next does not prune or
+compact. Inspection `Plan`, synthetic `LinkPlan` and retained
 prepared images, bounded review and concrete comparison are implemented. General
 pass planning and extended model/review policies remain outside this profile. Metadata listing,
 initialization and recovery do not use the supervised worker path.

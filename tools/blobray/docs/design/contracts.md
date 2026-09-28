@@ -77,7 +77,7 @@ entry stream directly into execution under the original budget.
 Single-function local analysis returns an owned staged manifest. Its prepared
 ELF, section views and reference indexes end before enrichment starts. Library
 analysis keeps one prepared object across its local functions; enrichment cannot
-run inside that owner. No global object cache is introduced.
+run inside that owner. No global object cache exists.
 
 Research loading admits a bounded JSONL decoding workspace before deserialization,
 then transfers records into `RecordBuffer`: vector capacities, boxes, names,
@@ -118,7 +118,7 @@ it does not reserve a fixed large allowance for each relocation.
 changing existing contents and releases its reservation on drop. Research indexes
 are local to one run. Store's `knowledge_snapshot` verifies every selected event
 and evidence root once, then folds review/supersession into admitted owned entries.
-No global cache, scheduler or allocator is introduced. `WorkingMemory` remains
+No global cache, scheduler or allocator exists. `WorkingMemory` remains
 capacity admission, not an RSS meter or a claim of zero system allocations.
 Fixed phase/counter diagnostics continue across worker/coordinator handoff.
 
@@ -767,7 +767,7 @@ the original address and width; domain/store validation permits these ordinary
 transactions while continuing to require aligned atomics. Misaligned MMIO never
 consumes a response or splits into smaller operations. Instruction fetch alignment
 is unchanged. This policy is part of `ExecutionProducer.environment`, so replay
-cannot silently use the former aligned-only environment. It makes no hardware,
+cannot silently use an aligned-only environment. It makes no hardware,
 timing or concurrent-atomicity assertion. Regression ownership is
 `execution/unaligned.rs` and `store::execution_timeline`.
 
@@ -929,7 +929,7 @@ canonical exact alternatives at a register join. Domain owns nonrecursive leaves
 and validates 2..=8 sorted distinct entries when decoding saved values. Analysis
 owns the finite lattice and admitted, operation-local set/index storage. Values
 and expression outputs borrow no set owner after analysis. No global cache or
-additional allocator authority is introduced.
+additional allocator authority exists.
 
 Joins retain a may-set; arithmetic applies to each bounded operand pair and
 immutable image loads require all candidate reads to be modeled. Unknown inputs
@@ -977,7 +977,7 @@ The existing knowledge lifecycle supplies expected-base admission, review states
 immutable revisions, query/export and atomic publication. Store accounts the
 boxed contract and variable capacities when retaining knowledge snapshots. The
 same 64 KiB event bound applies; no new catalog, compatibility format or execution
-workflow is introduced. Source-free reopening retains exact interface/evidence
+workflow exists. Source-free reopening retains exact interface/evidence
 identities; knowledge JSON export remains a reference export, not a binary backup.
 
 Regressions: knowledge `interfaces::tests` checks guards/domains/ABI and physical
@@ -995,7 +995,7 @@ loads one saved analysis into a `RecordBuffer`, or prepares one captured data ob
 and borrows its span for streaming pointer interpretation. It loads only the requested
 knowledge revision (`None` is empty) and builds a sorted, admitted physical path/slot
 index. No per-call full knowledge scan, hidden analysis, extra resolver authority or
-persistent discovery cache is introduced. Output bindings and variable payloads are
+persistent discovery cache exists. Output bindings and variable payloads are
 admitted until the synchronous sink returns; errors discard the supervised query's
 private staging without publishing a truncated result.
 
@@ -1644,8 +1644,7 @@ through evidence serialization and comparison. Recycling drops the snapshot befo
 releasing capacity; a following phase cannot accumulate previous snapshots. These
 records are separate from guest events and do not consume `max_events`; their
 independent byte bound and shared memory/work/disk budgets still apply. Capture
-failure cancels the whole publication. No extra memory cache or lifecycle owner is
-introduced.
+failure cancels the whole publication. No extra memory cache or lifecycle owner exists.
 
 Store checks chunk order, exact range coverage, canonical masks/bytes, phase/side
 ordering, blocked absence and selected-knownness before accepting a comparison

@@ -292,7 +292,7 @@ Clones share that ownership and admission slot. `start_run(&Plan)` acquires its
 own ownership until worker teardown and uses the captured manifest, even after
 the original project path disappears. It does not reparse binary inputs or
 inspect current. Last release removes the private manifest. This metadata lease
-is not a transitive payload pin for future garbage collection.
+is not a transitive payload pin.
 
 `PlanDescription` contains an ID and recipe: schema/operation/result versions,
 project and revision, exact scope, target, inventory producer, selected capture

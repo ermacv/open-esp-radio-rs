@@ -414,8 +414,7 @@ One supervised worker analyzes functions sequentially through the same function
 operation, sharing working capacity, work, deadline and disk budgets. Per-function
 state is released before the next function. Semantic blockers can produce a
 partial investigation; resource, cancellation, integrity and I/O failures abort
-publication. No subprocess-per-function coordinator or interprocedural engine is
-introduced. Names of external references never establish linker selection.
+publication. No subprocess-per-function coordinator or interprocedural engine exists. Names of external references never establish linker selection.
 
 Store owns an immutable publication manifest and streamed membership, retains the
 function closures, and commits their visibility and the completed run together.

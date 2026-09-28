@@ -2,7 +2,7 @@
 
 Blobray investigates captured RV32 ELF/archive inputs and retains analysis,
 reviewed knowledge and concrete comparison evidence. `cargo blobray` runs the
-new application directly; its Linux supervisor owns memory/time limits and child
+application directly; its Linux supervisor owns memory/time limits and child
 process cleanup. No external limiter is required.
 
 Use Blobray when the missing information is in a captured binary: where a
@@ -140,9 +140,11 @@ Unknown selected values and unmet goals/model obligations cannot MATCH. Results
 remain conditional on the selected cases and explicit modeling assumptions.
 
 [Reviewed effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) are
-implemented and retain their conditional claim ceiling. Cross-revision
-correspondence/rebase, retention GC, reference-code generation and TUI remain
-pending. Unsupported execution remains `INCOMPLETE`.
+implemented and retain their conditional claim ceiling. Unsupported execution
+remains `INCOMPLETE`. The typed vendor scenarios run the same execution and
+comparison inside their own process through
+[in-process verification](next/reference/execution/README.md#in-process-verification),
+without a project.
 
 The [architecture](docs/design/architecture.md), [contracts](docs/design/contracts.md)
 and [workflows](docs/design/workflows.md) distinguish implemented scope from target

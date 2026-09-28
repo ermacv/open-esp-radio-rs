@@ -18,7 +18,6 @@ workspace. `inspect_payload` also supports caller-owned bytes. Both require
 explicit `WorkingMemory` and `RunControl` ports. They emit sections, symbols,
 relocations and diagnostics synchronously through `ElfSink`, returning only ELF
 header metadata. There is no container-wide inventory or symbol-set accumulator.
-The former materializing `Container` interface is replaced by these ports.
 
 A `ReadRef` adapter bounds ELF delimiter scans; table visits, name copies and
 range reads participate in cooperative work accounting. Sink failures preserve

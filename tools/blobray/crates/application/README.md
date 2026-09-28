@@ -79,7 +79,7 @@ store project, writer or recovery capability. `planning` owns creation, bounded
 serialization, reopening and execution admission. `selection` filters the common
 store stream and retains only bounded recipe metadata or one selected code occurrence's
 section index. Domain supplies revision-local selectors; names only enumerate
-candidates. No scheduling graph or analysis engine is introduced for inspection.
+candidates. No scheduling graph or analysis engine exists for inspection.
 
 Each execution retains the plan independently of client handles, validates its
 manifest/recipe and streams the selected records under the saved execution
@@ -169,7 +169,7 @@ precision. No query performs linking or analysis as a side effect.
 walks the reachable call closure iteratively, and supplies acyclic callee facts to
 analysis. Recursive components remain explicit gaps. It applies only the selected
 knowledge revision. The local ELF borrow ends before summary composition starts.
-No second worker, parser, scheduler or provider registry is introduced.
+No second worker, parser, scheduler or provider registry exists.
 
 `companions` validates exact retained ROM function and data definitions for the
 common link recipe; `linking::proposal` trial-links a request and proposes them

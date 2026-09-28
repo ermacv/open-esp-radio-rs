@@ -41,6 +41,16 @@ The `audit` module scans all supplied executable ranges linearly for direct and
 locally resolved transfers. It shares the ISA port and integer folding with value
 analysis; it does not obtain filesystem access or claim dynamic-target completeness.
 
+`closure::code_closure` walks the code statically reachable from root entries
+by recursive descent: direct branches, jumps and calls, `auipc`/`lui` plus
+`jalr` pairs with a known target, and the caller-supplied observed targets of
+executed indirect transfers. A jump to another function's start is a tail
+transfer; declared boundaries stop the walk. Each function reports its blocks,
+branch directions, callees, modeled boundaries and unresolved or
+observation-followed transfers, which application's code coverage compares
+with executed instructions. Decoding shares the working capacity and run
+control; the function count is bounded.
+
 `PreparedReferences` retains one normalized reference table per prepared section. Sorted offset, symbol and physical-pair indexes replace repeated whole-table scans while preserving nonadjacent HI/LO ambiguity and exact physical identities.
 
 `pointers` streams explicitly selected captured pointer slots using structural
@@ -70,12 +80,10 @@ The flow module computes bounded iterative reachability over caller-selected
 unambiguous arcs. It returns predecessor indexes and depths; storage and reviewed
 path authority stay with application/knowledge.
 
-
 `memory_slice` borrows saved facts, constructs admitted instruction/access indexes
 and iteratively finds last local writes before an exact anchor. SCC membership
 bounds scalar identity; per-location backward searches release their scratch
 before the next location. It performs no I/O, execution or callee expansion.
-
 
 `event_routes::Prepared` borrows one authenticated function stream and its existing
 navigation index. It interprets required ABI values, local field coordinates and

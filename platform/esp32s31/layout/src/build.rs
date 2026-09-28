@@ -6,10 +6,7 @@
 
 extern crate std;
 
-use crate::{
-    memory::{self, CodePlacement, DataPlacement, RuntimeProfile},
-    stage_two,
-};
+use crate::{memory, stage_two};
 use std::{path::Path, println};
 
 fn defsym(bin: &str, name: &str, value: u32) {
@@ -36,15 +33,11 @@ fn link(bin: &str, linker_dir: &Path, scripts: &[&str], entry: &str) {
     }
     defsym(bin, "RUNTIME_PSRAM_ORIGIN", memory::RUNTIME_PSRAM.origin);
     defsym(bin, "RUNTIME_PSRAM_LENGTH", memory::RUNTIME_PSRAM.length);
-    defsym(
-        bin,
-        "RUNTIME_FLASH_CODE_ORIGIN",
-        memory::RUNTIME_FLASH_CODE.origin,
-    );
 }
 
-/// Links binary `bin` as a stage-two runtime placed by `profile`.
-pub fn configure_runtime(bin: &str, linker_dir: &Path, profile: RuntimeProfile) {
+/// Links binary `bin` as a stage-two runtime: code, data and task stacks in
+/// PSRAM, interrupt entries, stacks and DMA state in internal SRAM.
+pub fn configure_runtime(bin: &str, linker_dir: &Path) {
     link(
         bin,
         linker_dir,
@@ -56,22 +49,7 @@ pub fn configure_runtime(bin: &str, linker_dir: &Path, profile: RuntimeProfile) 
         ],
         "-Truntime/link.x",
     );
-    let code = profile.code_region();
-    let data = profile.data_region();
     for (name, value) in [
-        (
-            "RUNTIME_CODE_IN_PSRAM",
-            u32::from(profile.code() == CodePlacement::Psram),
-        ),
-        ("RUNTIME_CODE_ORIGIN", code.origin),
-        ("RUNTIME_CODE_LENGTH", code.length),
-        (
-            "RUNTIME_DATA_IN_PSRAM",
-            u32::from(profile.data() == DataPlacement::Psram),
-        ),
-        ("RUNTIME_DATA_ORIGIN", data.origin),
-        ("RUNTIME_DATA_LENGTH", data.length),
-        ("PSRAM_TASK_STACKS", u32::from(profile.psram_task_stack())),
         ("STAGE_TWO_MAGIC", stage_two::MAGIC),
         ("STAGE_TWO_ABI_VERSION", stage_two::ABI_VERSION),
         ("STAGE_TWO_HEADER_BYTES", stage_two::HEADER_BYTES as u32),
@@ -80,10 +58,6 @@ pub fn configure_runtime(bin: &str, linker_dir: &Path, profile: RuntimeProfile) 
             memory::CPU0_PSRAM_TASK_STACK_BYTES,
         ),
         ("IRQ_STACK_BYTES", memory::IRQ_STACK_BYTES),
-        (
-            "MIN_SRAM_THREAD_STACK_BYTES",
-            memory::MIN_SRAM_THREAD_STACK_BYTES,
-        ),
     ] {
         defsym(bin, name, value);
     }

@@ -3,7 +3,6 @@
 use oer_hil_protocol::StackWatermark;
 
 pub(crate) fn current_irq_snapshot() -> Option<StackWatermark> {
-    #[cfg(feature = "psram-task-stack")]
     {
         let capacity = crate::psram_task_stack::IRQ_STACK_BYTES as u32;
         let free = crate::psram_task_stack::current_hart_interrupt_stack_free_bytes() as u32;
@@ -24,8 +23,6 @@ pub(crate) fn current_irq_snapshot() -> Option<StackWatermark> {
             minimum_free_bytes: minimum,
         })
     }
-    #[cfg(not(feature = "psram-task-stack"))]
-    None
 }
 
 #[cfg(feature = "open-radio-hil")]

@@ -86,7 +86,7 @@ pub fn build(
     oer_esp32s31_firmware::pack_runtime(&packed)?;
     fs::write(
         output.join("placement.txt"),
-        oer_esp32s31_firmware::audit_runtime(&runtime, &packed, true)?,
+        oer_esp32s31_firmware::audit_runtime(&runtime, &packed)?,
     )?;
     let bootstrap_target = workspace.cache().join("bootstrap");
     let mut command = ctx.cargo();

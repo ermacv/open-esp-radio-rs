@@ -8,15 +8,15 @@ the host packer and image auditor in [`oer-esp32s31-firmware`](../../../tools/fi
 
 | Module | Owns |
 | --- | --- |
-| `memory` | SRAM, Flash XIP and PSRAM regions, the bootstrap PSRAM prefix, stage-two code/data windows, stack sizes and the validated `RuntimeProfile` |
+| `memory` | SRAM, Flash XIP and PSRAM regions, the second-stage loader bound, the bootstrap PSRAM probe page, the stage-two PSRAM window and stack sizes |
 | `stage_two` | The little-endian image `Header`, its magic, ABI version and size, and the payload CRC-32 with the checksum field read as zero |
 | `build` (feature `build`) | `configure_runtime` and `configure_bootstrap`, which link a binary with the scripts under [`linker`](../linker) and define every layout value as a `--defsym` symbol |
 
 The linker scripts contain no addresses or header constants of their own; they
 read `SRAM_ORIGIN`, `RUNTIME_PSRAM_ORIGIN`, `STAGE_TWO_MAGIC` and the other
-symbols emitted by `build`. A profile is either PSRAM code with PSRAM or SRAM
-data, or Flash code with PSRAM data; PSRAM task stacks require PSRAM code and
-data. `RuntimeProfile::STANDALONE` is the standalone example profile.
+symbols emitted by `build`. Stage two has one placement: code, data and task
+stacks in PSRAM; interrupt entries, per-hart interrupt stacks, hot code,
+critical state and DMA state in internal SRAM.
 
 Region sizes describe this board's fitted memories and boot contract, not
 universal chip capabilities. Changing a value changes the linked images and the

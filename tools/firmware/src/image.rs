@@ -7,7 +7,7 @@ pub const BOOTSTRAP_BIN: &str = "oer-esp32s31-platform-bootstrap";
 fn program_from_env(variable: &str, fallback: &str) -> OsString {
     env::var_os(variable).unwrap_or_else(|| fallback.into())
 }
-pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Result<String> {
+pub fn audit_runtime(elf: &Path, binary: &Path) -> Result<String> {
     let output = Command::new(program_from_env("LLVM_NM", "llvm-nm"))
         .args(["--defined-only", "--numeric-sort"])
         .arg(elf)
@@ -55,7 +55,7 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
     let psram_start = u64::from(layout::PSRAM.origin);
     let psram_end = u64::from(layout::PSRAM.end());
     let irq_stack_bytes = u64::from(layout::IRQ_STACK_BYTES);
-    let stack_placement_valid = if psram_task_stack {
+    let stack_placement_valid = {
         let cpu0_irq_bottom = symbol("__runtime_cpu0_irq_stack_bottom")?;
         let cpu0_irq_top = symbol("__runtime_cpu0_irq_stack_top")?;
         let cpu1_irq_bottom = symbol("__runtime_cpu1_irq_stack_bottom")?;
@@ -86,10 +86,6 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
             && in_sram(cpu0_mtvt, cpu0_mtvt + 48 * 4)
             && in_sram(cpu1_mtvt, cpu1_mtvt + 48 * 4)
             && all_irq_entries_in_sram
-    } else {
-        stack_top == u64::from(layout::SRAM.end())
-            && stack_top.saturating_sub(stack_bottom)
-                >= u64::from(layout::MIN_SRAM_THREAD_STACK_BYTES)
     };
     if image_start != u64::from(layout::RUNTIME_PSRAM.origin)
         || payload_end <= image_start
@@ -105,9 +101,7 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
     {
         return Err("runtime ELF violates the PSRAM/PSRAM placement contract".into());
     }
-    if psram_task_stack {
-        audit_psram_stack_entry_instructions(elf)?;
-    }
+    audit_psram_stack_entry_instructions(elf)?;
 
     Ok(format!(
         "profile={}\n\
@@ -120,11 +114,7 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
          dma={dma_start:#010x}..{dma_end:#010x}\n\
          stack={stack_bottom:#010x}..{stack_top:#010x}\n\
          result=PASS\n",
-        if psram_task_stack {
-            "psram-code-psram-data-psram-stack"
-        } else {
-            "psram-code-psram-data"
-        }
+        "psram-code-psram-data-psram-stack"
     ))
 }
 

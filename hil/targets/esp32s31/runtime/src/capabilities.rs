@@ -66,7 +66,7 @@ pub const fn hil_capabilities() -> Capabilities {
                 feature = "core0-rx-coarse-telemetry"
             )),
             mac_irq_evidence: OPEN_RADIO_MAC_IRQ_TELEMETRY,
-            psram_task_stack: cfg!(feature = "psram-task-stack"),
+            psram_task_stack: true,
             network_scheduler_evidence: false,
             data_plane_placement: !cfg!(feature = "memory-benchmark"),
             timebase_probe: true,

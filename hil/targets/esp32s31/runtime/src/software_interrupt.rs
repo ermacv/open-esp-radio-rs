@@ -45,7 +45,7 @@ pub(crate) fn executor1(
 
 /// Core 1's executor wake again after the stack switch, which consumed and
 /// forgot the peripheral before entering the new stack.
-#[cfg(all(feature = "open-radio-hil", feature = "psram-task-stack"))]
+#[cfg(feature = "open-radio-hil")]
 pub(crate) fn executor1_after_stack_switch() -> SoftwareInterrupt<'static, { Line::Executor1 as u8 }>
 {
     // SAFETY: the line's one owner, core 1's executor, takes it back here

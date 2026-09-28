@@ -160,7 +160,7 @@ jobs:
       - name: HIL runtime
         run: |
           cargo check --locked --manifest-path hil/targets/esp32s31/runtime/Cargo.toml --target "$TARGET" \
-            --no-default-features --features "open-radio-hil,owned-network,code-psram,profile-psram-data,psram-task-stack"
+            --no-default-features --features "open-radio-hil,owned-network"
       - name: Wi-Fi composition
         run: |
           cargo check --locked -p oer-esp32s31-ieee80211-system --target "$TARGET"

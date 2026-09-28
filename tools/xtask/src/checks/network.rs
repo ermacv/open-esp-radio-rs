@@ -232,7 +232,7 @@ pub fn profiles() -> [Profile; 10] {
             features: &[
                 "--no-default-features",
                 "--features",
-                "open-radio-hil,owned-network,code-psram,profile-psram-data,psram-task-stack",
+                "open-radio-hil,owned-network",
             ],
         },
         Profile {

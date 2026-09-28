@@ -93,7 +93,7 @@ fn trouble_gatt_has_one_host_and_rejects_diagnostic_capabilities() {
     assert!(!ImageClass::BluetoothGatt.requires_driver_observation());
     assert_eq!(
         ImageClass::BluetoothGatt.runtime_features(),
-        "bluetooth-gatt,psram-task-stack,code-psram,profile-psram-data"
+        "bluetooth-gatt"
     );
 }
 
@@ -212,71 +212,66 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
     }
     assert_eq!(
         ImageClass::SystemWatchdog.runtime_features(),
-        "system-watchdog,psram-task-stack,code-psram,profile-psram-data"
+        "system-watchdog"
     );
 }
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
     assert_eq!(crate::image::ImageClass::ALL.len(), 24);
-    assert!(
-        crate::image::ImageClass::ALL
-            .into_iter()
-            .all(crate::image::ImageClass::uses_psram_task_stack)
-    );
     assert_eq!(crate::image::ImageClass::Performance.id(), "performance");
     assert_eq!(crate::image::ImageClass::Correctness.id(), "correctness");
     assert_eq!(
         crate::image::ImageClass::WifiBleCoex.runtime_features(),
-        "wifi-ble-coex,psram-task-stack,code-psram,profile-psram-data"
+        "wifi-ble-coex"
     );
     assert_eq!(
         crate::image::ImageClass::Correctness.runtime_features(),
-        "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
+        "open-radio-hil,driver-observation"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticMacIrq.runtime_features(),
-        "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
+        "open-radio-hil,mac-irq-telemetry"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticTaskResidence.runtime_features(),
-        "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
+        "open-radio-hil,task-residence-telemetry"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticTxArchitecture.runtime_features(),
-        "open-radio-hil,psram-task-stack,tx-architecture-probes,code-psram,profile-psram-data"
+        "open-radio-hil,tx-architecture-probes"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticTaskPoll.runtime_features(),
-        "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
+        "open-radio-hil,task-poll-telemetry"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticCore0RxCoarse.runtime_features(),
-        "open-radio-hil,psram-task-stack,core0-rx-coarse-telemetry,code-psram,profile-psram-data"
+        "open-radio-hil,core0-rx-coarse-telemetry"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
-        "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
+        "open-radio-hil,core0-rx-cycle-telemetry"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticRxDelivery.runtime_features(),
-        "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
+        "open-radio-hil,rx-delivery-telemetry"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
-        "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
+        "open-radio-hil,ieee802154-event-status-probe"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
-        "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
+        "open-radio-hil,ieee802154-ed-event-probe"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticIeee802154Radio.runtime_features(),
-        "open-radio-hil,ieee802154-radio,psram-task-stack,code-psram,profile-psram-data"
+        "open-radio-hil,ieee802154-radio"
     );
     assert_eq!(
         crate::image::ImageClass::DiagnosticIeee802154Thread.runtime_features(),
-        "open-radio-hil,ieee802154-thread,psram-task-stack,code-psram,profile-psram-data"
+        "open-radio-hil,ieee802154-thread"
     );
 }
 
@@ -420,7 +415,7 @@ fn memory_benchmark_image_is_exclusive_and_has_a_reproducible_recipe() {
     assert_eq!(classify_image_signature(signature), None);
     assert_eq!(
         ImageClass::DiagnosticMemoryBenchmark.runtime_features(),
-        "open-radio-hil,memory-benchmark,psram-task-stack,code-psram,profile-psram-data"
+        "open-radio-hil,memory-benchmark"
     );
     assert!(!ImageClass::DiagnosticMemoryBenchmark.requires_driver_observation());
 }

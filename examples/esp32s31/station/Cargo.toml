@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-oer-esp32s31-platform-runtime = { path = "../../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
+oer-esp32s31-platform-runtime = { path = "../../../platform/esp32s31/runtime" }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "9c390fa27e636824b935d245810f03856bf5d459", features = ["dhcpv4", "medium-ethernet", "udp"], optional = true }

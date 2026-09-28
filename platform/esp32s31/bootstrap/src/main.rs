@@ -24,7 +24,6 @@ use oer_esp32s31_soc_esp_hal::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
 use static_cell::ConstStaticCell;
 
 const RUNTIME_PSRAM_ADDRESS: usize = layout::memory::RUNTIME_PSRAM.origin as usize;
-const RUNTIME_FLASH_ADDRESS: usize = layout::memory::RUNTIME_FLASH_CODE.origin as usize;
 const FLASH_TUNING_REFERENCE_WORDS: usize = 64 * 1024 / size_of::<u32>();
 
 // This is the load image, not its runtime placement. The bootstrap copies and
@@ -96,12 +95,7 @@ fn main() -> ! {
         fail(c"OER_BOOT bootstrap=FAIL reason=source-not-xip\r\n");
     }
 
-    let layout = validate_header(
-        read_header(source),
-        source_address,
-        psram_base as usize,
-        psram_size,
-    );
+    let layout = validate_header(read_header(source), psram_base as usize, psram_size);
     if layout.payload_len != RUNTIME_PAYLOAD.len() {
         fail(c"OER_BOOT bootstrap=FAIL reason=payload-length\r\n");
     }
@@ -111,11 +105,7 @@ fn main() -> ! {
     }
     print(c"OER_BOOT bootstrap=SOURCE_CRC\r\n");
 
-    if layout.code_in_psram {
-        unsafe {
-            ptr::copy_nonoverlapping(source, layout.load_address as *mut u8, layout.payload_len)
-        };
-    }
+    unsafe { ptr::copy_nonoverlapping(source, layout.load_address as *mut u8, layout.payload_len) };
     unsafe {
         ptr::write_bytes(
             layout.bss_start as *mut u8,
@@ -152,20 +142,7 @@ fn main() -> ! {
     // a distinct page, and rejected timings can leave corrupted cache lines
     // behind until a future S31 cache-invalidate primitive is available. The
     // region is disposable; stage two was copied from a disjoint range first.
-    if !layout.code_in_psram {
-        let flash_runtime_crc = payload_crc32(source, layout.payload_len);
-        if flash_runtime_crc != layout.expected_crc32 {
-            print_crc_failure(
-                c"flash-runtime-crc-120mhz",
-                layout.expected_crc32,
-                flash_runtime_crc,
-            );
-        }
-    }
-    if layout.code_in_psram
-        && unsafe {
-            esp_hal::psram::prepare_code(layout.load_address as *const u8, layout.payload_len)
-        }
+    if unsafe { esp_hal::psram::prepare_code(layout.load_address as *const u8, layout.payload_len) }
         .is_err()
     {
         fail(c"OER_BOOT bootstrap=FAIL reason=psram-code\r\n");
@@ -184,7 +161,6 @@ struct ValidatedLayout {
     bss_start: usize,
     bss_end: usize,
     expected_crc32: u32,
-    code_in_psram: bool,
 }
 
 fn read_header(source: *const u8) -> RuntimeHeader {
@@ -194,12 +170,7 @@ fn read_header(source: *const u8) -> RuntimeHeader {
     unsafe { source.cast::<RuntimeHeader>().read_unaligned() }
 }
 
-fn validate_header(
-    header: RuntimeHeader,
-    source_address: usize,
-    psram_base: usize,
-    psram_size: usize,
-) -> ValidatedLayout {
+fn validate_header(header: RuntimeHeader, psram_base: usize, psram_size: usize) -> ValidatedLayout {
     let load_address = header.load_address as usize;
     let entry = header.entry as usize;
     let payload_end = header.payload_end as usize;
@@ -210,16 +181,8 @@ fn validate_header(
     let psram_end = psram_base
         .checked_add(psram_size)
         .unwrap_or_else(|| fail(c"OER_BOOT bootstrap=FAIL reason=psram-range\r\n"));
-    let code_in_psram = load_address == RUNTIME_PSRAM_ADDRESS;
-    let code_in_flash = load_address == RUNTIME_FLASH_ADDRESS && load_address == source_address;
-    let code_end_valid = if code_in_psram {
-        payload_end <= psram_end
-    } else {
-        code_in_flash && payload_end <= FLASH_XIP_END
-    };
-
     if !header.is_compatible()
-        || (!code_in_psram && !code_in_flash)
+        || load_address != RUNTIME_PSRAM_ADDRESS
         || payload_end <= load_address
         || text_start < load_address + size_of::<RuntimeHeader>()
         || text_end <= text_start
@@ -229,7 +192,7 @@ fn validate_header(
         || !entry.is_multiple_of(2)
         || bss_start < payload_end
         || bss_end < bss_start
-        || !code_end_valid
+        || payload_end > psram_end
         || bss_end > psram_end
     {
         fail(c"OER_BOOT bootstrap=FAIL reason=header\r\n");
@@ -242,7 +205,6 @@ fn validate_header(
         bss_start,
         bss_end,
         expected_crc32: header.payload_crc32,
-        code_in_psram,
     }
 }
 

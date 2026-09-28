@@ -9,7 +9,7 @@ fn cancellation_harness() {
     let _signals = oer_process::install_signal_handlers().unwrap();
     let unused = Path::new("unused-fixture-path");
     let error = if stage == "nm" {
-        audit_runtime(unused, unused, false).unwrap_err()
+        audit_runtime(unused, unused).unwrap_err()
     } else {
         audit_psram_stack_entry_instructions(unused).unwrap_err()
     };

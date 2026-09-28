@@ -281,9 +281,9 @@ mod tests {
     #[test]
     fn wifi_overlays_select_the_explicit_profile_independently_of_order() {
         let profiles = vec![
-            "bluetooth-secure-gatt,code-psram".into(),
-            "open-radio-hil,owned-network,code-psram".into(),
-            "bluetooth-gatt,code-psram".into(),
+            "bluetooth-secure-gatt".into(),
+            "open-radio-hil,owned-network".into(),
+            "bluetooth-gatt".into(),
         ];
         assert_eq!(hil_wifi_profile(&profiles).unwrap(), profiles[1]);
         assert!(hil_wifi_profile(&profiles[..1]).is_err());

@@ -157,104 +157,37 @@ impl ImageClass {
 
     pub const fn runtime_features(self) -> &'static str {
         match self {
-            Self::BluetoothGatt => "bluetooth-gatt,psram-task-stack,code-psram,profile-psram-data",
-            Self::BluetoothSecureGatt => {
-                "bluetooth-secure-gatt,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::SystemWatchdog => {
-                "system-watchdog,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::BluetoothDtm => {
-                "bluetooth-hil,phy-rx-hot-sram,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
-            Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
-            Self::WifiBleCoex => "wifi-ble-coex,psram-task-stack,code-psram,profile-psram-data",
-            Self::DiagnosticRxOwnership => {
-                "open-radio-hil,rx-ownership-telemetry,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticStationExit => {
-                "open-radio-hil,station-exit-evidence,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::Correctness => {
-                "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticMacIrq => {
-                "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticTxWait => {
-                "open-radio-hil,psram-task-stack,tx-wait-probe,task-poll-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticTaskResidence => {
-                "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticTxArchitecture => {
-                "open-radio-hil,psram-task-stack,tx-architecture-probes,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticTaskPoll => {
-                "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticCore0RxCoarse => {
-                "open-radio-hil,psram-task-stack,core0-rx-coarse-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticCore0RxCycles => {
-                "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticRxDelivery => {
-                "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticIeee802154EventStatus => {
-                "open-radio-hil,ieee802154-event-status-probe,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticMemoryBenchmark => {
-                "open-radio-hil,memory-benchmark,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticIeee802154EdEvent => {
-                "open-radio-hil,ieee802154-ed-event-probe,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticIeee802154Radio => {
-                "open-radio-hil,ieee802154-radio,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticIeee802154Thread => {
-                "open-radio-hil,ieee802154-thread,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticIeee802154Route => {
-                "open-radio-hil,ieee802154-route-probe,psram-task-stack,code-psram,profile-psram-data"
-            }
+            Self::BluetoothGatt => "bluetooth-gatt",
+            Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
+            Self::SystemWatchdog => "system-watchdog",
+            Self::BluetoothDtm => "bluetooth-hil,phy-rx-hot-sram",
+            Self::BootSmoke => "boot-smoke",
+            Self::Performance => "open-radio-hil",
+            Self::WifiBleCoex => "wifi-ble-coex",
+            Self::DiagnosticRxOwnership => "open-radio-hil,rx-ownership-telemetry",
+            Self::DiagnosticStationExit => "open-radio-hil,station-exit-evidence",
+            Self::Correctness => "open-radio-hil,driver-observation",
+            Self::DiagnosticMacIrq => "open-radio-hil,mac-irq-telemetry",
+            Self::DiagnosticTxWait => "open-radio-hil,tx-wait-probe,task-poll-telemetry",
+            Self::DiagnosticTaskResidence => "open-radio-hil,task-residence-telemetry",
+            Self::DiagnosticTxArchitecture => "open-radio-hil,tx-architecture-probes",
+            Self::DiagnosticTaskPoll => "open-radio-hil,task-poll-telemetry",
+            Self::DiagnosticCore0RxCoarse => "open-radio-hil,core0-rx-coarse-telemetry",
+            Self::DiagnosticCore0RxCycles => "open-radio-hil,core0-rx-cycle-telemetry",
+            Self::DiagnosticRxDelivery => "open-radio-hil,rx-delivery-telemetry",
+            Self::DiagnosticIeee802154EventStatus => "open-radio-hil,ieee802154-event-status-probe",
+            Self::DiagnosticMemoryBenchmark => "open-radio-hil,memory-benchmark",
+            Self::DiagnosticIeee802154EdEvent => "open-radio-hil,ieee802154-ed-event-probe",
+            Self::DiagnosticIeee802154Radio => "open-radio-hil,ieee802154-radio",
+            Self::DiagnosticIeee802154Thread => "open-radio-hil,ieee802154-thread",
+            Self::DiagnosticIeee802154Route => "open-radio-hil,ieee802154-route-probe",
         }
     }
 
+    /// The one stage-two placement every image uses: code, data and task
+    /// stacks in PSRAM, interrupt stacks in SRAM.
     pub const fn runtime_profile(self) -> &'static str {
-        match self {
-            Self::SystemWatchdog
-            | Self::BluetoothGatt
-            | Self::BluetoothSecureGatt
-            | Self::BluetoothDtm
-            | Self::BootSmoke
-            | Self::Performance
-            | Self::Correctness
-            | Self::WifiBleCoex
-            | Self::DiagnosticMacIrq
-            | Self::DiagnosticTxWait
-            | Self::DiagnosticTaskResidence
-            | Self::DiagnosticTxArchitecture
-            | Self::DiagnosticTaskPoll
-            | Self::DiagnosticCore0RxCoarse
-            | Self::DiagnosticCore0RxCycles
-            | Self::DiagnosticRxDelivery
-            | Self::DiagnosticRxOwnership
-            | Self::DiagnosticStationExit
-            | Self::DiagnosticIeee802154EventStatus
-            | Self::DiagnosticMemoryBenchmark
-            | Self::DiagnosticIeee802154EdEvent
-            | Self::DiagnosticIeee802154Radio
-            | Self::DiagnosticIeee802154Thread
-            | Self::DiagnosticIeee802154Route => "psram-code-psram-data-psram-stack",
-        }
-    }
-
-    pub const fn uses_psram_task_stack(self) -> bool {
-        true
+        "psram-code-psram-data-psram-stack"
     }
 
     /// Whether the image promises typed driver-internal evidence.

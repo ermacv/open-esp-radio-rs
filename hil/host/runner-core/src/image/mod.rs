@@ -1174,7 +1174,7 @@ pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
 }
 
 fn audit_runtime(elf: &Path, binary: &Path, class: crate::image::ImageClass) -> Result<String> {
-    let report = oer_esp32s31_firmware::audit_runtime(elf, binary, class.uses_psram_task_stack())
+    let report = oer_esp32s31_firmware::audit_runtime(elf, binary)
         .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
     use object::{Object, ObjectSection, ObjectSymbol};
     let bytes = fs::read(elf)?;

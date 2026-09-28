@@ -16,12 +16,6 @@ phy-trace = ["oer-esp32s31-phy?/trace", "trace-snapshots"]
 # Experimental direct RX-gain transaction SRAM placement for an otherwise
 # identical diagnostic image.
 phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-ieee80211-system?/phy-rx-hot-sram"]
-default = ["code-psram", "profile-psram-data"]
-code-flash = []
-code-psram = []
-profile-psram-data = []
-profile-sram-data = []
-psram-task-stack = ["oer-esp32s31-platform-runtime/psram-task-stack"]
 boot-smoke = []
 system-watchdog = [
     "dep:oer-hil-protocol",
@@ -307,5 +301,5 @@ platform = "chip"
 chip = "esp32s31"
 default-configuration = false
 supported-feature-profiles = [
-    "open-radio-hil,owned-network,psram-task-stack,code-psram,profile-psram-data",
+    "open-radio-hil,owned-network",
 ]

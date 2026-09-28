@@ -107,24 +107,5 @@ _runtime_start:
     tail runtime_main
     .size _runtime_start, . - _runtime_start
 
-    # Control profile: paint the inherited SRAM stack. The PSRAM stack module
-    # supplies a strong `_runtime_stack_bootstrap` implementation.
-    .balign 4
-    .global _runtime_default_stack_bootstrap
-    .type _runtime_default_stack_bootstrap, @function
-_runtime_default_stack_bootstrap:
-    la t0, _stack_end
-    addi t0, t0, 256
-    mv t1, sp
-    addi t1, t1, -256
-    li t2, 0xa55aa55a
-17:
-    bgeu t0, t1, 18f
-    sw t2, 0(t0)
-    addi t0, t0, 4
-    j 17b
-18:
-    ret
-    .size _runtime_default_stack_bootstrap, . - _runtime_default_stack_bootstrap
 "#
 );

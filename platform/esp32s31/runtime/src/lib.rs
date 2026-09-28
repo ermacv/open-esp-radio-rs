@@ -1,10 +1,14 @@
 #![no_std]
 //! Stage-two entry, relocation and interrupt-stack ownership for ESP32-S31.
 mod entry;
-#[cfg(feature = "psram-task-stack")]
 pub mod stacks;
 
 /// Adopt the board mapping and install the stage-two interrupt context.
+///
+/// Code, data and task stacks run from PSRAM from here on, so the adopted
+/// mapping keeps the PSRAM function clock (and through it MPLL) referenced in
+/// esp-hal's clock tree for the lifetime of the image: a driver that requests
+/// and releases MPLL must never power it down under PSRAM.
 ///
 /// # Safety
 /// Call once on CPU0 after `_runtime_start`, with interrupts disabled and the
@@ -16,7 +20,6 @@ pub unsafe fn adopt_psram(
     unsafe {
         let psram = oer_esp32s31_platform_board::adopt_initialized_psram(peripheral);
         esp_hal::interrupt::reinitialize_vectoring_after_handoff();
-        #[cfg(feature = "psram-task-stack")]
         stacks::install_current_hart_interrupt_stack();
         unsafe extern "C" {
             static _stack_end: u8;

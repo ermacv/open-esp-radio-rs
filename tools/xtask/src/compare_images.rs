@@ -53,6 +53,17 @@ impl Sections {
     }
 }
 
+/// What a reviewer supplies to a comparison.
+#[derive(Clone, Debug, Default)]
+pub struct Review {
+    pub aliases: Aliases,
+    /// Functions whose code may differ (reviewed scheduling ties).
+    pub allowed: BTreeSet<String>,
+    /// Print the instruction diff of every differing or one-sided function
+    /// whose name contains one of these.
+    pub show: Vec<String>,
+}
+
 /// Reviewed renames applied to every symbol name before comparison.
 #[derive(Clone, Debug, Default)]
 pub struct Aliases(pub Vec<(String, String)>);
@@ -64,6 +75,15 @@ fn clean(name: &str, aliases: &Aliases) -> String {
         && name[index + 3..].bytes().all(|b| b.is_ascii_hexdigit())
     {
         name.truncate(index);
+    }
+    // LLVM numbers local clones (`.123`, `.llvm.456`) per build; the
+    // numbering is not part of the code, so clones share a name and are
+    // compared as a sorted set of bodies.
+    while let Some((stem, number)) = name.rsplit_once('.')
+        && !number.is_empty()
+        && number.bytes().all(|b| b.is_ascii_digit())
+    {
+        name.truncate(stem.strip_suffix(".llvm").unwrap_or(stem).len());
     }
     for (from, to) in &aliases.0 {
         name = name.replace(from.as_str(), to);
@@ -388,17 +408,11 @@ fn compare_functions(
 }
 
 /// Compare two ELF images and print the result; fails unless every function
-/// is equivalent or listed in `allowed`.
-pub fn compare_elf(
-    ctx: &Context,
-    old: &Path,
-    new: &Path,
-    aliases: &Aliases,
-    allowed: &BTreeSet<String>,
-) -> Result<Comparison> {
+/// is equivalent or listed in `review.allowed`.
+pub fn compare_elf(ctx: &Context, old: &Path, new: &Path, review: &Review) -> Result<Comparison> {
     let tools = Tools::find(ctx)?;
-    let image_old = Image::load(&tools, old, aliases)?;
-    let image_new = Image::load(&tools, new, aliases)?;
+    let image_old = Image::load(&tools, old, &review.aliases)?;
+    let image_new = Image::load(&tools, new, &review.aliases)?;
     let old_functions = functions(&tools, old, &image_old)?;
     let new_functions = functions(&tools, new, &image_new)?;
     let comparison = compare_functions(&old_functions, &new_functions);
@@ -412,7 +426,7 @@ pub fn compare_elf(
         comparison.paired_by_body
     );
     for name in comparison.differing.iter().take(40) {
-        let reviewed = if allowed.contains(name) {
+        let reviewed = if review.allowed.contains(name) {
             " (reviewed tie)"
         } else {
             ""
@@ -425,7 +439,65 @@ pub fn compare_elf(
     for name in comparison.only_new.iter().take(10) {
         println!("  only new: {name}");
     }
+    let shown = comparison
+        .differing
+        .iter()
+        .chain(&comparison.only_old)
+        .chain(&comparison.only_new)
+        .filter(|name| review.show.iter().any(|pattern| name.contains(pattern)))
+        .collect::<BTreeSet<_>>();
+    let none = Vec::new();
+    for name in shown {
+        println!("--- {name}");
+        let old = old_functions.get(name).unwrap_or(&none);
+        let new = new_functions.get(name).unwrap_or(&none);
+        for index in 0..old.len().max(new.len()) {
+            let empty = Vec::new();
+            let (old, new) = (
+                old.get(index).unwrap_or(&empty),
+                new.get(index).unwrap_or(&empty),
+            );
+            if old == new {
+                continue;
+            }
+            if old.len().max(new.len()) > 1 {
+                println!("  body {index}:");
+            }
+            for (mark, line) in diff(old, new) {
+                println!("  {mark} {line}");
+            }
+        }
+    }
     Ok(comparison)
+}
+
+/// A line diff by longest common subsequence: ' ' kept, '-' old, '+' new.
+fn diff<'a>(old: &'a [String], new: &'a [String]) -> Vec<(char, &'a str)> {
+    let mut common = vec![vec![0u32; new.len() + 1]; old.len() + 1];
+    for i in (0..old.len()).rev() {
+        for j in (0..new.len()).rev() {
+            common[i][j] = if old[i] == new[j] {
+                common[i + 1][j + 1] + 1
+            } else {
+                common[i + 1][j].max(common[i][j + 1])
+            };
+        }
+    }
+    let (mut i, mut j, mut lines) = (0, 0, Vec::new());
+    while i < old.len() || j < new.len() {
+        if i < old.len() && j < new.len() && old[i] == new[j] {
+            lines.push((' ', old[i].as_str()));
+            i += 1;
+            j += 1;
+        } else if j < new.len() && (i == old.len() || common[i][j + 1] >= common[i + 1][j]) {
+            lines.push(('+', new[j].as_str()));
+            j += 1;
+        } else {
+            lines.push(('-', old[i].as_str()));
+            i += 1;
+        }
+    }
+    lines
 }
 
 /// The runtime ELF of the newest build of `class` in the checkout at `root`.
@@ -446,8 +518,7 @@ pub fn compare_images(
     ctx: &Context,
     base: &str,
     classes: &[String],
-    aliases: &Aliases,
-    allowed: &BTreeSet<String>,
+    review: &Review,
 ) -> Result<()> {
     let worktree = ctx.root.join("target/compare/base");
     if worktree.exists() {
@@ -476,10 +547,9 @@ pub fn compare_images(
             ctx,
             &image_elf(&worktree, class)?,
             &image_elf(&ctx.root, class)?,
-            aliases,
-            allowed,
+            review,
         )?;
-        equivalent &= comparison.equivalent(allowed);
+        equivalent &= comparison.equivalent(&review.allowed);
     }
     if equivalent {
         println!("images equivalent modulo placement against {base}");
@@ -505,6 +575,27 @@ mod tests {
             "Mac::set"
         );
         assert_eq!(clean("plain::h0123", &aliases), "plain::h0123");
+    }
+
+    #[test]
+    fn llvm_clone_numbers_are_dropped() {
+        let none = Aliases::default();
+        assert_eq!(
+            clean("<u8 as Debug>::fmt.1234", &none),
+            "<u8 as Debug>::fmt"
+        );
+        assert_eq!(clean("inner.llvm.98765.12", &none), "inner");
+        assert_eq!(clean("v1.2::name", &none), "v1.2::name");
+    }
+
+    #[test]
+    fn a_diff_keeps_common_lines_and_marks_the_rest() {
+        let lines = |text: &[&str]| text.iter().map(|l| (*l).to_owned()).collect::<Vec<_>>();
+        let (old, new) = (lines(&["a", "b", "c"]), lines(&["a", "x", "c"]));
+        assert_eq!(
+            diff(&old, &new),
+            [(' ', "a"), ('+', "x"), ('-', "b"), (' ', "c")]
+        );
     }
 
     #[test]

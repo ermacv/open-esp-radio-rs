@@ -140,6 +140,10 @@ enum Compare {
         /// Reviewed function whose code may differ (a scheduling tie).
         #[arg(long = "allow")]
         allowed: Vec<String>,
+        /// Print the instruction diff of differing functions whose name
+        /// contains this.
+        #[arg(long)]
+        show: Vec<String>,
     },
     /// HIL image classes built at BASE and in this checkout.
     Images {
@@ -151,6 +155,8 @@ enum Compare {
         aliases: Vec<String>,
         #[arg(long = "allow")]
         allowed: Vec<String>,
+        #[arg(long)]
+        show: Vec<String>,
     },
 }
 
@@ -264,35 +270,37 @@ fn run() -> Result<std::process::ExitCode> {
         } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline),
         Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Compare { compare } => {
-            let parse =
-                |aliases: Vec<String>| -> oer_xtask::Result<oer_xtask::compare_images::Aliases> {
-                    aliases
-                        .into_iter()
-                        .map(|alias| {
-                            alias
-                                .split_once('=')
-                                .map(|(a, b)| (a.to_owned(), b.to_owned()))
-                                .ok_or_else(|| format!("alias `{alias}` is not FROM=TO").into())
-                        })
-                        .collect::<oer_xtask::Result<Vec<_>>>()
-                        .map(oer_xtask::compare_images::Aliases)
-                };
+            let review = |aliases: Vec<String>,
+                          allowed: Vec<String>,
+                          show: Vec<String>|
+             -> oer_xtask::Result<oer_xtask::compare_images::Review> {
+                let aliases = aliases
+                    .into_iter()
+                    .map(|alias| {
+                        alias
+                            .split_once('=')
+                            .map(|(a, b)| (a.to_owned(), b.to_owned()))
+                            .ok_or_else(|| format!("alias `{alias}` is not FROM=TO").into())
+                    })
+                    .collect::<oer_xtask::Result<Vec<_>>>()?;
+                Ok(oer_xtask::compare_images::Review {
+                    aliases: oer_xtask::compare_images::Aliases(aliases),
+                    allowed: allowed.into_iter().collect(),
+                    show,
+                })
+            };
             match compare {
                 Compare::Elf {
                     old,
                     new,
                     aliases,
                     allowed,
+                    show,
                 } => {
-                    let allowed = allowed.into_iter().collect();
-                    let comparison = oer_xtask::compare_images::compare_elf(
-                        &ctx,
-                        &old,
-                        &new,
-                        &parse(aliases)?,
-                        &allowed,
-                    )?;
-                    if comparison.equivalent(&allowed) {
+                    let review = review(aliases, allowed, show)?;
+                    let comparison =
+                        oer_xtask::compare_images::compare_elf(&ctx, &old, &new, &review)?;
+                    if comparison.equivalent(&review.allowed) {
                         Ok(())
                     } else {
                         Err("images differ beyond placement".into())
@@ -303,12 +311,12 @@ fn run() -> Result<std::process::ExitCode> {
                     classes,
                     aliases,
                     allowed,
+                    show,
                 } => oer_xtask::compare_images::compare_images(
                     &ctx,
                     &base,
                     &classes,
-                    &parse(aliases)?,
-                    &allowed.into_iter().collect(),
+                    &review(aliases, allowed, show)?,
                 ),
             }
         }

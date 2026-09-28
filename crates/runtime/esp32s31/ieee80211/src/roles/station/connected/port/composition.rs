@@ -246,11 +246,11 @@ impl ConnectedStaPort {
                 "a connected epoch requires returned idle standby aggregate storage"
             );
         }
-        let security_mode = resources.security.mode();
+        let link_protection = resources.security.mode();
         let handoff = ConnectedTxHandoff {
             security: resources.security,
             sequences: resources.sequences,
-            config: plan.single_mpdu_tx_config().for_security(security_mode),
+            config: plan.single_mpdu_tx_config().for_security(link_protection),
         };
         let ordinary = match resources.control.try_into_connected(handoff) {
             Ok(ordinary) => ordinary,
@@ -337,7 +337,7 @@ impl ConnectedStaPort {
                 binding,
             );
         }
-        if plan.security_mode() == oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal
+        if plan.link_protection() == oer_ieee80211_mac::security::LinkProtection::Ccmp
             && plan.config.block_ack.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
         {

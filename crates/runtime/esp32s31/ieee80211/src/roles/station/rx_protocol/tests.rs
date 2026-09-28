@@ -4,7 +4,7 @@ use oer_esp32s31_ieee80211_mac::rx::RxIngressConfig;
 
 use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxConfig;
 
-use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_mac::security::LinkProtection;
 
 use std::boxed::Box;
 
@@ -32,7 +32,7 @@ fn open_config() -> ConnectedRxConfig {
             csi_config: 0,
             flags: 0,
         },
-        security: WifiSecurityMode::Open,
+        security: LinkProtection::Open,
         peer_qos: false,
         management_protection: false,
     }

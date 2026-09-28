@@ -11,7 +11,7 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         now_micros: u64,
     ) -> Result<Option<AddbaRequest>, ApServiceError> {
-        if self.security_mode() == WifiSecurityMode::Open {
+        if self.link_protection() == LinkProtection::Open {
             return Ok(None);
         }
         let starting_sequence = self
@@ -34,7 +34,7 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         action: BlockAckAction,
     ) -> Result<Option<TxBlockAckResponse>, ApServiceError> {
-        if self.security_mode() == WifiSecurityMode::Open {
+        if self.link_protection() == LinkProtection::Open {
             return Ok(None);
         }
         let peer = self.checked_peer_mut(peer)?;
@@ -67,7 +67,7 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         alarm: TxBlockAckAlarm,
     ) -> Result<bool, ApServiceError> {
-        if self.security_mode() == WifiSecurityMode::Open {
+        if self.link_protection() == LinkProtection::Open {
             return Ok(false);
         }
         let peer = self.checked_peer_mut(peer)?;

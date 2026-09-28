@@ -209,7 +209,7 @@ impl<'storage> ApEngine<'storage> {
                 };
                 if self.service.matches_association_security(security)
                     && (peer_status.phase == ApPeerPhase::Securing
-                        || (self.service.security_mode() == WifiSecurityMode::Open
+                        || (self.service.link_protection() == LinkProtection::Open
                             && peer_status.phase == ApPeerPhase::Authorized))
                 {
                     // A station can repeat Association Request when the first
@@ -248,12 +248,12 @@ impl<'storage> ApEngine<'storage> {
                     ht: ht_capabilities,
                     qos_supported,
                 };
-                let action = match self.service.security_mode() {
-                    WifiSecurityMode::Open => {
+                let action = match self.service.link_protection() {
+                    LinkProtection::Open => {
                         self.service
                             .associate_open(peer, security, capabilities, now_micros)?
                     }
-                    WifiSecurityMode::Wpa2Personal => self.service.associate_rsn(
+                    LinkProtection::Ccmp => self.service.associate_rsn(
                         peer,
                         security,
                         capabilities,
@@ -299,7 +299,7 @@ impl<'storage> ApEngine<'storage> {
                 });
                 #[cfg(any(feature = "diagnostics", test))]
                 if association_id.is_some()
-                    && self.service.security_mode() == WifiSecurityMode::Open
+                    && self.service.link_protection() == LinkProtection::Open
                 {
                     self.observe(ApEngineObservationEvent::PeerAuthorized {
                         authorized_peers: self.service.authorized_count(),
@@ -308,7 +308,7 @@ impl<'storage> ApEngine<'storage> {
                 Ok(ApManagementOutcome::Response {
                     len,
                     begin_wpa2: association_id.is_some()
-                        && self.service.security_mode() == WifiSecurityMode::Wpa2Personal,
+                        && self.service.link_protection() == LinkProtection::Ccmp,
                 })
             }
             ApManagementRequest::Disassociation { peer, .. }

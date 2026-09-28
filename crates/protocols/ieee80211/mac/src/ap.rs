@@ -14,7 +14,7 @@ use crate::{
         ht_operation_ie, ht_peer_capabilities,
     },
     protection::ApBssProtection,
-    security::{ApSecurityPolicy, WifiSecurityMode},
+    security::{ApSecurityPolicy, LinkProtection},
     sequence::SequenceNumber,
     station::SAE_AUTHENTICATION_ALGORITHM,
     station_power_save::STA_NULL_DATA_FRAME_LEN,
@@ -859,7 +859,11 @@ pub fn write_ht_association_response_frame_for_security(
         protection,
     )?;
     if security == ApSecurityPolicy::Open {
-        body[..2].copy_from_slice(&profile.capabilities(security.link_mode()).to_le_bytes());
+        body[..2].copy_from_slice(
+            &profile
+                .capabilities(security.link_protection())
+                .to_le_bytes(),
+        );
     }
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
@@ -923,11 +927,7 @@ pub fn write_ht_association_response(
         return Err(ApAssociationResponseError::MissingAssociationId);
     }
     body[..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN].fill(0);
-    body[..2].copy_from_slice(
-        &profile
-            .capabilities(WifiSecurityMode::Wpa2Personal)
-            .to_le_bytes(),
-    );
+    body[..2].copy_from_slice(&profile.capabilities(LinkProtection::Ccmp).to_le_bytes());
     body[6..8].copy_from_slice(&[1, 8]);
     body[8..16].copy_from_slice(profile.legacy_rates.supported());
     body[16..18].copy_from_slice(&[50, 4]);

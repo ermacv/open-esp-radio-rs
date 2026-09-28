@@ -26,7 +26,7 @@ use {
     oer_ieee80211_mac::channel::WifiChannelError,
     oer_ieee80211_mac::channel::WifiChannelWidth,
     oer_ieee80211_mac::scan::ScanRecord,
-    oer_ieee80211_mac::security::{StaSecurityPolicy, WifiSecurityMode},
+    oer_ieee80211_mac::security::{LinkProtection, StaSecurityPolicy},
     oer_ieee80211_mac::station::StaTxSequenceCounters,
     oer_ieee80211_mac::station::association::Preference,
 };
@@ -400,10 +400,10 @@ pub enum StaInstalledSecurity {
 }
 
 impl StaInstalledSecurity {
-    pub const fn mode(&self) -> WifiSecurityMode {
+    pub const fn mode(&self) -> LinkProtection {
         match self {
-            Self::Open => WifiSecurityMode::Open,
-            Self::Wpa2Personal { .. } => WifiSecurityMode::Wpa2Personal,
+            Self::Open => LinkProtection::Open,
+            Self::Wpa2Personal { .. } => LinkProtection::Ccmp,
         }
     }
 }

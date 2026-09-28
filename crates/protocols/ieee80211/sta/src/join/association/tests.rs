@@ -20,7 +20,7 @@ fn association_retry_schedule_is_finite_inside_vendor_deadline() {
 
 #[test]
 fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
-    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x0ffc).unwrap());
     let mut attempts = [StaAssociationAttempt {
         ordinal: 0,
@@ -70,7 +70,7 @@ fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
 
 #[test]
 fn association_runtime_accepts_only_selected_peer_response() {
-    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     assert_eq!(
         runtime.begin_tick(&mut sequence).unwrap().unwrap().ordinal,
@@ -116,7 +116,7 @@ fn association_runtime_accepts_only_selected_peer_response() {
 #[test]
 fn association_runtime_reports_peer_disconnect_and_rejection() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
-    let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     disconnected.begin_tick(&mut sequence).unwrap();
     disconnected.observe_received_frame().unwrap();
     assert_eq!(
@@ -130,7 +130,7 @@ fn association_runtime_reports_peer_disconnect_and_rejection() {
         })
     );
 
-    let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let mut rejected = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     rejected.begin_tick(&mut sequence).unwrap();
     assert_eq!(
         rejected.observe_management_frame(&association_response(17)),
@@ -166,7 +166,7 @@ fn ticks_until_attempt(
 #[test]
 fn a_temporary_refusal_comes_back_once_after_its_comeback_time() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
-    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     let (_, first) = ticks_until_attempt(&mut runtime, &mut sequence);
     assert_eq!(first.ordinal, 1);
     // 1000 TUs, as hostapd names while it confirms the old association.
@@ -194,7 +194,7 @@ fn a_temporary_refusal_comes_back_once_after_its_comeback_time() {
 #[test]
 fn a_long_or_unnamed_temporary_refusal_ends_the_association() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
-    let mut long = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let mut long = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     long.begin_tick(&mut sequence).unwrap();
     assert_eq!(
         long.observe_management_frame(&refused_temporarily(5_001)),
@@ -203,7 +203,7 @@ fn a_long_or_unnamed_temporary_refusal_ends_the_association() {
             total_received_frames: 0,
         })
     );
-    let mut unnamed = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
+    let mut unnamed = StaAssociationRuntime::new(LOCAL, BSSID, LinkProtection::Ccmp);
     unnamed.begin_tick(&mut sequence).unwrap();
     assert_eq!(
         unnamed.observe_management_frame(&association_response(30)),

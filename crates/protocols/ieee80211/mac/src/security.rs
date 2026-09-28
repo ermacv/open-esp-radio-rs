@@ -1,18 +1,19 @@
 //! Link-security selection shared by station and access-point protocol code.
 
-/// Exact security contract for one infrastructure BSS.
+/// Data protection of one infrastructure link: what the data path, the
+/// hardware key slots and replay admission follow.
 ///
 /// This is deliberately not an ordered strength or preference. A caller
 /// selects one variant and candidate/association/data paths must match it
-/// exactly; there is no downgrade or mixed WPA/Open fallback.
+/// exactly; there is no downgrade or mixed WPA/Open fallback. How the keys
+/// were established (PSK or SAE) is not part of the link protection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 // CAPABILITY: wifi-security-open-bss
-pub enum WifiSecurityMode {
+pub enum LinkProtection {
     /// IEEE 802.11 Open System with plaintext data and no RSN element.
     Open,
-    /// RSN with CCMP data protection under a personal key: WPA2-Personal
-    /// (PSK) or, for a station, WPA3-Personal (SAE).
-    Wpa2Personal,
+    /// RSN with CCMP data protection.
+    Ccmp,
 }
 
 /// What one station request admits.
@@ -29,10 +30,10 @@ pub enum StaSecurityPolicy {
 
 impl StaSecurityPolicy {
     /// The data protection of the link.
-    pub const fn link_mode(self) -> WifiSecurityMode {
+    pub const fn link_protection(self) -> LinkProtection {
         match self {
-            Self::Open => WifiSecurityMode::Open,
-            Self::Wpa2Personal | Self::Wpa3Personal => WifiSecurityMode::Wpa2Personal,
+            Self::Open => LinkProtection::Open,
+            Self::Wpa2Personal | Self::Wpa3Personal => LinkProtection::Ccmp,
         }
     }
 }
@@ -80,10 +81,10 @@ pub const AP_SAE_H2E_RSNX_ELEMENT: [u8; 3] = [244, 1, 1 << 5];
 
 impl ApSecurityPolicy {
     /// The data protection of the BSS.
-    pub const fn link_mode(self) -> WifiSecurityMode {
+    pub const fn link_protection(self) -> LinkProtection {
         match self {
-            Self::Open => WifiSecurityMode::Open,
-            Self::Wpa2Personal | Self::Wpa3Personal => WifiSecurityMode::Wpa2Personal,
+            Self::Open => LinkProtection::Open,
+            Self::Wpa2Personal | Self::Wpa3Personal => LinkProtection::Ccmp,
         }
     }
 

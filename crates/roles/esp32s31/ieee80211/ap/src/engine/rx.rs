@@ -25,9 +25,9 @@ impl<'storage> ApEngine<'storage> {
         let duplicate_owner = rx_peer.duplicate_owner;
         match request.operation() {
             ApRxAdmissionOperation::Ordinary => {
-                match (self.service.security_mode(), request.ccmp_header()) {
-                    (WifiSecurityMode::Open, None) => ApRxAdmission::authorized(duplicate_owner),
-                    (WifiSecurityMode::Wpa2Personal, Some(header)) => {
+                match (self.service.link_protection(), request.ccmp_header()) {
+                    (LinkProtection::Open, None) => ApRxAdmission::authorized(duplicate_owner),
+                    (LinkProtection::Ccmp, Some(header)) => {
                         if header.key_id() != CcmpKeyId::PAIRWISE {
                             return ApRxAdmission::rejected(ApRxError::PairwiseKeyId(
                                 header.key_id().value(),
@@ -52,7 +52,7 @@ impl<'storage> ApEngine<'storage> {
                 let Some(header) = request.ccmp_header() else {
                     return ApRxAdmission::rejected(ApRxError::SecurityModeMismatch);
                 };
-                if self.service.security_mode() != WifiSecurityMode::Wpa2Personal {
+                if self.service.link_protection() != LinkProtection::Ccmp {
                     return ApRxAdmission::rejected(ApRxError::SecurityModeMismatch);
                 }
                 if header.key_id() != CcmpKeyId::PAIRWISE {
@@ -86,7 +86,7 @@ impl<'storage> ApEngine<'storage> {
                 })
             }
             ApRxAdmissionOperation::CommitFragment(prepared) => {
-                if self.service.security_mode() != WifiSecurityMode::Wpa2Personal
+                if self.service.link_protection() != LinkProtection::Ccmp
                     || prepared.peer != peer
                     || prepared.lane != request.lane()
                     || Some(prepared.ccmp_header) != request.ccmp_header()
@@ -197,9 +197,9 @@ impl<'storage> ApEngine<'storage> {
             self.rx_peer = None;
             return Err(ApRxAdmission::unauthorized());
         };
-        let pairwise = match self.service.security_mode() {
-            WifiSecurityMode::Open => None,
-            WifiSecurityMode::Wpa2Personal => Some(
+        let pairwise = match self.service.link_protection() {
+            LinkProtection::Open => None,
+            LinkProtection::Ccmp => Some(
                 self.security
                     .bind_pairwise(peer, status.association_id)
                     .map_err(rejected_rx_security)?,

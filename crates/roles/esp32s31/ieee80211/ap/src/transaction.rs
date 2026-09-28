@@ -27,7 +27,7 @@ use oer_esp32s31_ieee80211_mac::tx::{
 };
 
 use oer_ieee80211_mac::{
-    ap::ApPeerDisconnectKind, block_ack::TxBlockAckAlarm, security::WifiSecurityMode,
+    ap::ApPeerDisconnectKind, block_ack::TxBlockAckAlarm, security::LinkProtection,
 };
 
 use oer_ieee80211_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
@@ -657,7 +657,7 @@ where
         self.require_idle()?;
         self.transmit
             .install_bss_protection(self.engine.bss_protection());
-        let hardware_mic_length = if self.engine.security_mode() == WifiSecurityMode::Open {
+        let hardware_mic_length = if self.engine.link_protection() == LinkProtection::Open {
             0
         } else {
             TX_CCMP_MIC_SIZE
@@ -737,7 +737,7 @@ where
         self.require_idle()?;
         self.transmit
             .install_bss_protection(self.engine.bss_protection());
-        let hardware_mic_length = if self.engine.security_mode() == WifiSecurityMode::Open {
+        let hardware_mic_length = if self.engine.link_protection() == LinkProtection::Open {
             0
         } else {
             TX_CCMP_MIC_SIZE

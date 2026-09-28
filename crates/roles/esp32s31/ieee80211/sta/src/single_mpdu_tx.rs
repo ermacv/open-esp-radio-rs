@@ -32,7 +32,7 @@ use oer_ieee80211_mac::{
     extensions::espressif::esp_now::EspNowRandomValue,
     management::ProbeRequest,
     management_protection::is_robust_action_category,
-    security::WifiSecurityMode,
+    security::LinkProtection,
     station::{
         StaDataFrame, StaManagementFrame, StaManagementSubtype, StaProtectedDataFrame,
         StaProtectedEthernetFrame, StaProtectedManagementFrame, StaTxSequenceCounters,
@@ -72,8 +72,8 @@ impl SingleMpduTxConfig {
     /// The current Open encoder is intentionally non-QoS; keeping a peer's
     /// WMM bit here would consume the wrong sequence space and imply an
     /// unsupported plaintext A-MPDU path.
-    pub const fn for_security(mut self, security: WifiSecurityMode) -> Self {
-        if matches!(security, WifiSecurityMode::Open) {
+    pub const fn for_security(mut self, security: LinkProtection) -> Self {
+        if matches!(security, LinkProtection::Open) {
             self.peer_qos = false;
         }
         self
@@ -98,10 +98,10 @@ pub enum ConnectedTxSecurity {
 }
 
 impl ConnectedTxSecurity {
-    pub const fn mode(&self) -> WifiSecurityMode {
+    pub const fn mode(&self) -> LinkProtection {
         match self {
-            Self::Open => WifiSecurityMode::Open,
-            Self::Wpa2Personal(_) => WifiSecurityMode::Wpa2Personal,
+            Self::Open => LinkProtection::Open,
+            Self::Wpa2Personal(_) => LinkProtection::Ccmp,
         }
     }
 
@@ -491,7 +491,7 @@ where
         self.security.hardware_key_selector()
     }
 
-    pub const fn security_mode(&self) -> WifiSecurityMode {
+    pub const fn link_protection(&self) -> LinkProtection {
         self.security.mode()
     }
 
@@ -503,7 +503,7 @@ where
     /// Sequence Control and CCMP PN are already present and must not be
     /// allocated again; only the IEEE Retry bit is added.
     pub fn copy_encoded_retry(&mut self, encoded: &[u8]) -> Result<usize, SingleMpduTxError> {
-        if self.security_mode() == WifiSecurityMode::Open {
+        if self.link_protection() == LinkProtection::Open {
             return Err(SingleMpduTxError::SecurityModeMismatch);
         }
         if self.ordinary.active() {
@@ -549,7 +549,7 @@ where
         rate: TxPhyRate,
         access_category: oer_ieee80211_mac::qos::WmmAccessCategory,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
-        if self.security_mode() == WifiSecurityMode::Open || hardware_mic_length == 0 {
+        if self.link_protection() == LinkProtection::Open || hardware_mic_length == 0 {
             return Err(SingleMpduTxError::SecurityModeMismatch);
         }
         let queue = LegacyTxQueue::from_access_category(access_category);

@@ -87,11 +87,9 @@ where
         owner.pending_keys = None;
         owner.installed_security = None;
         owner.report = StaAttemptReport::default();
-        owner.report.security = Some(match owner.security.policy().link_mode() {
-            WifiSecurityMode::Open => {
-                StaAttemptSecurityExecution::OpenHandshakeAndKeyInstallSkipped
-            }
-            WifiSecurityMode::Wpa2Personal => StaAttemptSecurityExecution::Wpa2Personal,
+        owner.report.security = Some(match owner.security.policy().link_protection() {
+            LinkProtection::Open => StaAttemptSecurityExecution::OpenHandshakeAndKeyInstallSkipped,
+            LinkProtection::Ccmp => StaAttemptSecurityExecution::Wpa2Personal,
         });
         owner.prepared_peer = Some(
             StaPeerPort::prepare(owner.transmit, &owner.station.access_point).map_err(|error| {
@@ -289,7 +287,7 @@ where
             .associate(
                 owner.station.station_address,
                 owner.station.access_point.bssid,
-                owner.station.security.link_mode(),
+                owner.station.security.link_protection(),
                 owner.security.sequences.non_qos_mut(),
             )
             .await;
@@ -355,7 +353,7 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
-        if owner.security.policy().link_mode() == WifiSecurityMode::Open {
+        if owner.security.policy().link_protection() == LinkProtection::Open {
             owner.installed_security = Some(StaInstalledSecurity::Open);
             return Ok(());
         }
@@ -439,7 +437,7 @@ where
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> Result<(), StaAttemptStepError<Self::Error>> {
-        if owner.security.policy().link_mode() == WifiSecurityMode::Open {
+        if owner.security.policy().link_protection() == LinkProtection::Open {
             return Ok(());
         }
         let pending = owner.pending_keys.take().ok_or_else(|| {
@@ -528,7 +526,7 @@ where
                 Some(StaAttemptStateError::MissingConnectedPeer)
             } else if owner.installed_security.is_none() {
                 Some(StaAttemptStateError::MissingKeys)
-            } else if owner.security.policy().link_mode() == WifiSecurityMode::Wpa2Personal
+            } else if owner.security.policy().link_protection() == LinkProtection::Ccmp
                 && !owner.security.has_connected_wpa2()
             {
                 Some(StaAttemptStateError::MissingConnectedSecurity)

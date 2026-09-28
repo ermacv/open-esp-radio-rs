@@ -23,7 +23,7 @@ fn active_tx_admits_data_and_observation_only_control_frames() {
             buffer: &protected,
             next_descriptor_address: 0,
         },
-        WifiSecurityMode::Wpa2Personal,
+        LinkProtection::Ccmp,
     ));
 
     let mut control = protected;
@@ -35,7 +35,7 @@ fn active_tx_admits_data_and_observation_only_control_frames() {
             buffer: &control,
             next_descriptor_address: 0,
         },
-        WifiSecurityMode::Wpa2Personal,
+        LinkProtection::Ccmp,
     ));
 
     let mut management = protected;
@@ -47,6 +47,6 @@ fn active_tx_admits_data_and_observation_only_control_frames() {
             buffer: &management,
             next_descriptor_address: 0,
         },
-        WifiSecurityMode::Wpa2Personal,
+        LinkProtection::Ccmp,
     ));
 }

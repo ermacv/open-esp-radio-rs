@@ -63,8 +63,8 @@ pub struct ConnectedStaRxPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedStaConfigError {
     SecurityModeMismatch {
-        installed: oer_ieee80211_mac::security::WifiSecurityMode,
-        material: oer_ieee80211_mac::security::WifiSecurityMode,
+        installed: oer_ieee80211_mac::security::LinkProtection,
+        material: oer_ieee80211_mac::security::LinkProtection,
     },
     MissingStationInterface,
     InterfaceRole(VifRole),
@@ -114,7 +114,7 @@ pub struct ConnectedStaPlan {
     pub(super) beacon_loss: StaBeaconLossConfig,
     pub(super) esp_now_rx: Option<EspNowRxEpoch>,
     pub(super) ccmp_rx_replay: Option<StaCcmpRxReplayRxEndpoint>,
-    pub(super) security: oer_ieee80211_mac::security::WifiSecurityMode,
+    pub(super) security: oer_ieee80211_mac::security::LinkProtection,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,7 +146,7 @@ pub enum ConnectedStaEspNowRxError {
 }
 
 impl ConnectedStaPlan {
-    pub const fn security_mode(&self) -> oer_ieee80211_mac::security::WifiSecurityMode {
+    pub const fn link_protection(&self) -> oer_ieee80211_mac::security::LinkProtection {
         self.security
     }
 
@@ -211,7 +211,7 @@ impl ConnectedStaPlan {
         &mut self,
         replay: StaCcmpRxReplayRxEndpoint,
     ) -> Result<(), ConnectedStaCcmpReplayFailure> {
-        if self.security != oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal {
+        if self.security != oer_ieee80211_mac::security::LinkProtection::Ccmp {
             return Err(ConnectedStaCcmpReplayFailure {
                 error: ConnectedStaCcmpReplayError::RequiresWpa2,
                 replay,
@@ -357,7 +357,7 @@ impl ConnectedStaPort {
         peer: ConnectedStaPeer,
         config: ConnectedStaConfig,
         interface: BoundVirtualInterface,
-        security: oer_ieee80211_mac::security::WifiSecurityMode,
+        security: oer_ieee80211_mac::security::LinkProtection,
     ) -> Result<ConnectedStaPlan, ConnectedStaPrepareFailure> {
         Self::prepare_for_interface_with_storage_security_and_ht_duplicate_certification::<
             AGGREGATE_SLOTS,
@@ -383,7 +383,7 @@ impl ConnectedStaPort {
             peer,
             config,
             interface,
-            oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal,
+            oer_ieee80211_mac::security::LinkProtection::Ccmp,
             request,
         )
     }
@@ -396,13 +396,13 @@ impl ConnectedStaPort {
         peer: ConnectedStaPeer,
         mut config: ConnectedStaConfig,
         interface: BoundVirtualInterface,
-        security: oer_ieee80211_mac::security::WifiSecurityMode,
+        security: oer_ieee80211_mac::security::LinkProtection,
         request: Option<HtDuplicateCertificationRequest>,
     ) -> Result<ConnectedStaPlan, ConnectedStaPrepareFailure> {
         // Trigger-based publication assumes the QoS/BA-connected contract.
         // Open owns neither, so erase even a syntactically valid opt-in before
         // it can reach control or TX runtime state.
-        if security == oer_ieee80211_mac::security::WifiSecurityMode::Open {
+        if security == oer_ieee80211_mac::security::LinkProtection::Open {
             config.tx.he_trigger_based = None;
         }
         if interface.interface.role != VifRole::Station {
@@ -463,9 +463,7 @@ impl ConnectedStaPort {
                 peer,
             });
         }
-        if security == oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal
-            && !peer.link.peer_qos
-        {
+        if security == oer_ieee80211_mac::security::LinkProtection::Ccmp && !peer.link.peer_qos {
             return Err(ConnectedStaPrepareFailure {
                 error: ConnectedStaConfigError::PeerDoesNotSupportQos,
                 peer,

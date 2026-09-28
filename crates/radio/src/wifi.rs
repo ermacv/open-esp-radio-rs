@@ -39,7 +39,7 @@ pub use supervisor::{
 };
 pub use {
     oer_ieee80211_mac::channel::WifiChannel, oer_ieee80211_mac::channel::WifiChannelError,
-    oer_ieee80211_mac::channel::WifiChannelWidth, oer_ieee80211_mac::security::WifiSecurityMode,
+    oer_ieee80211_mac::channel::WifiChannelWidth, oer_ieee80211_mac::security::LinkProtection,
     oer_ieee80211_mac::ssid::WifiSsid, oer_ieee80211_mac::ssid::WifiSsidError,
     oer_ieee80211_mac::station::association::Preference,
 };

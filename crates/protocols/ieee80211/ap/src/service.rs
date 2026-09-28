@@ -26,7 +26,7 @@ use oer_ieee80211_mac::ht::HtPeerCapabilities;
 use oer_ieee80211_mac::protection::{
     ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode,
 };
-use oer_ieee80211_mac::security::{ApSecurityPolicy, WifiSecurityMode};
+use oer_ieee80211_mac::security::{ApSecurityPolicy, LinkProtection};
 use oer_ieee80211_rsn::{
     Akm, AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
@@ -605,7 +605,7 @@ impl ApPeerStatus {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccessPointServiceStatus {
-    pub security: WifiSecurityMode,
+    pub security: LinkProtection,
     pub client_limit: AccessPointClientLimit,
     pub associated: u8,
     pub authorized: u8,
@@ -738,8 +738,8 @@ impl<'peers> AccessPointService<'peers> {
         }
     }
 
-    pub const fn security_mode(&self) -> WifiSecurityMode {
-        self.security_policy().link_mode()
+    pub const fn link_protection(&self) -> LinkProtection {
+        self.security_policy().link_protection()
     }
 
     pub const fn address(&self) -> [u8; 6] {
@@ -869,7 +869,7 @@ impl<'peers> AccessPointService<'peers> {
             *destination = source.as_ref().map(ApPeer::status);
         }
         AccessPointServiceStatus {
-            security: self.security_mode(),
+            security: self.link_protection(),
             client_limit: self.client_limit,
             associated: self.associated_count,
             authorized: self.authorized_count,

@@ -46,7 +46,7 @@ use oer_esp32s31_ieee80211_sta::connected_rx::{
 };
 
 use oer_ieee80211_mac::{
-    data::EthernetFrameParts, security::WifiSecurityMode, vif::StaApRxAddresses,
+    data::EthernetFrameParts, security::LinkProtection, vif::StaApRxAddresses,
 };
 
 use oer_network_interface::RxEnqueueError;
@@ -831,7 +831,7 @@ fn dispatcher_config() -> ConnectedRxConfig {
             csi_config: 0,
             flags: 0,
         },
-        security: WifiSecurityMode::Wpa2Personal,
+        security: LinkProtection::Ccmp,
         peer_qos: true,
         management_protection: false,
     }

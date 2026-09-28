@@ -26,7 +26,7 @@ use oer_ieee80211_mac::{
         OpenDataDefragmenter, OpenDataFragmentError, OpenDataFragmentPreflight,
         OpenDataUnfragmentedAdmission, parse_ccmp_data_identity, parse_open_data_identity,
     },
-    security::WifiSecurityMode,
+    security::LinkProtection,
 };
 
 use oer_ieee80211_ap::AP_MAX_CLIENTS;
@@ -39,7 +39,7 @@ const OPEN_FRAGMENT_CONTEXTS: usize = 2;
 pub struct ApRxConfig {
     pub access_point: [u8; 6],
     pub ingress: RxIngressConfig,
-    pub security: WifiSecurityMode,
+    pub security: LinkProtection,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -424,8 +424,7 @@ impl ApRxDispatcher {
     /// Any fragment epoch, A-MSDU or non-QoS subtype stays on the complete AP
     /// role graph.
     pub fn may_dispatch_ordinary_pairwise(&self, segment: RxSegment<'_>) -> bool {
-        if self.config.security != WifiSecurityMode::Wpa2Personal || self.fragment_admission_active
-        {
+        if self.config.security != LinkProtection::Ccmp || self.fragment_admission_active {
             return false;
         }
         let Some(mpdu) = segment.buffer.get(PUBLIC_HEADER_SIZE..) else {
@@ -454,7 +453,7 @@ impl ApRxDispatcher {
     /// owner because multiple stations can use the same TID concurrently.
     #[inline(always)]
     pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckMpduKey> {
-        if self.config.security == WifiSecurityMode::Open {
+        if self.config.security == LinkProtection::Open {
             return None;
         }
         rx_block_ack_mpdu_key(segment.buffer, self.config.access_point, None)
@@ -505,8 +504,7 @@ impl ApRxDispatcher {
         S: ApRxSink,
         A: FnMut(ApOrdinaryPairwiseRxRequest) -> ApRxAdmission,
     {
-        if self.config.security != WifiSecurityMode::Wpa2Personal || self.fragment_admission_active
-        {
+        if self.config.security != LinkProtection::Ccmp || self.fragment_admission_active {
             return None;
         }
         let data = match view_protected_data(segment, self.config.ingress) {
@@ -626,25 +624,25 @@ impl ApRxDispatcher {
         };
         let protected = frame_control & 0x4000 != 0;
         let fragmented = fragmented_mpdu(normalized.mpdu);
-        if protected != (self.config.security == WifiSecurityMode::Wpa2Personal) {
+        if protected != (self.config.security == LinkProtection::Ccmp) {
             return ApRxDispatch::Rejected(ApRxError::SecurityModeMismatch);
         }
         if fragmented {
             self.fragment_admission_active = true;
             return match self.config.security {
-                WifiSecurityMode::Open => {
+                LinkProtection::Open => {
                     self.dispatch_open_fragment(segment, now_micros, &mut admit, sink)
                 }
-                WifiSecurityMode::Wpa2Personal => {
+                LinkProtection::Ccmp => {
                     self.dispatch_protected_fragment(segment, now_micros, &mut admit, sink)
                 }
             };
         }
         let data = match self.config.security {
-            WifiSecurityMode::Open => {
+            LinkProtection::Open => {
                 view_unprotected_data(segment, self.config.ingress).map(ApDataRxView::Open)
             }
-            WifiSecurityMode::Wpa2Personal => {
+            LinkProtection::Ccmp => {
                 view_protected_data(segment, self.config.ingress).map(ApDataRxView::Wpa2Personal)
             }
         };

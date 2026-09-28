@@ -3,9 +3,7 @@
 //! Fixed record capacities preserve the implemented beacon/association format.
 //! The chip profile chooses values; these types validate and encode them.
 
-use crate::{
-    extensions::wmm::WmmAcParameters, ht::HtLocalCapabilities, security::WifiSecurityMode,
-};
+use crate::{extensions::wmm::WmmAcParameters, ht::HtLocalCapabilities, security::LinkProtection};
 
 /// The Supported Rates and Extended Supported Rates records of this AP.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -125,11 +123,11 @@ impl Advertisement {
         }
     }
 
-    pub const fn capabilities(&self, security: WifiSecurityMode) -> u16 {
+    pub const fn capabilities(&self, security: LinkProtection) -> u16 {
         self.capability_information
             | match security {
-                WifiSecurityMode::Open => 0,
-                WifiSecurityMode::Wpa2Personal => 0x0010,
+                LinkProtection::Open => 0,
+                LinkProtection::Ccmp => 0x0010,
             }
     }
 }

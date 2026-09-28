@@ -2,7 +2,7 @@
 
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::{
-    security::WifiSecurityMode,
+    security::LinkProtection,
     station::{
         AssociationResponse, StaDisconnect, StaSequenceCounter, parse_association_response,
         parse_sta_disconnect,
@@ -99,7 +99,7 @@ pub enum StaAssociationRuntimeError {
 pub struct StaAssociationRuntime {
     local: [u8; 6],
     bssid: [u8; 6],
-    security: WifiSecurityMode,
+    security: LinkProtection,
     elapsed_ms: u32,
     tick_active: bool,
     terminal: bool,
@@ -124,7 +124,7 @@ const COMEBACK_MARGIN_TU: u32 = 100;
 const MICROS_PER_TU: u32 = 1_024;
 
 impl StaAssociationRuntime {
-    pub const fn new(local: [u8; 6], bssid: [u8; 6], security: WifiSecurityMode) -> Self {
+    pub const fn new(local: [u8; 6], bssid: [u8; 6], security: LinkProtection) -> Self {
         Self {
             local,
             bssid,

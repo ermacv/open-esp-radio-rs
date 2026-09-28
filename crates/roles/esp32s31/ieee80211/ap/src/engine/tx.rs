@@ -113,7 +113,7 @@ impl<'storage> ApEngine<'storage> {
         output: &mut [u8],
         more_data: bool,
     ) -> Result<ApPreparedDataFrame, ApEngineError> {
-        if self.service.security_mode() == WifiSecurityMode::Open {
+        if self.service.link_protection() == LinkProtection::Open {
             let group = destination[0] & 1 != 0;
             if group {
                 if self.service.authorized_count() == 0 {
@@ -269,7 +269,7 @@ impl<'storage> ApEngine<'storage> {
         if status.phase != ApPeerPhase::Authorized || !status.qos_supported || status.ht.is_none() {
             return Ok(None);
         }
-        let protected = self.service.security_mode() != WifiSecurityMode::Open;
+        let protected = self.service.link_protection() != LinkProtection::Open;
         if protected
             && !status.tx_block_ack.is_some_and(|agreement| {
                 agreement.tid == oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID && agreement.amsdu

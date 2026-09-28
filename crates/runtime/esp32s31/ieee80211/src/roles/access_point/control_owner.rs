@@ -316,7 +316,7 @@ where
 
             let staged_frame = if tx_pending {
                 self.protocol_rx
-                    .try_receive_during_tx(self.mac.engine().security_mode())
+                    .try_receive_during_tx(self.mac.engine().link_protection())
             } else {
                 self.protocol_rx.try_receive()
             };

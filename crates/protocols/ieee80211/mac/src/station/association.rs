@@ -388,11 +388,11 @@ pub struct AssociationResponse {
 impl AssociationResponse {
     /// Match the AP's successful response to the exact security mode selected
     /// from scan admission. There is no fallback between Open and WPA2.
-    pub const fn matches_security(self, security: WifiSecurityMode) -> bool {
+    pub const fn matches_security(self, security: LinkProtection) -> bool {
         let privacy = self.capability_info & 0x0010 != 0;
         match security {
-            WifiSecurityMode::Open => !privacy,
-            WifiSecurityMode::Wpa2Personal => privacy,
+            LinkProtection::Open => !privacy,
+            LinkProtection::Ccmp => privacy,
         }
     }
 }

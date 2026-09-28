@@ -82,7 +82,7 @@ fn ap_entropy_is_consumed_only_for_a_fresh_wpa2_association() {
 
     assert_eq!(
         ap_security_material_for_management(
-            WifiSecurityMode::Wpa2Personal,
+            LinkProtection::Ccmp,
             Some(association),
             Some(ApPeerPhase::Authenticated),
             &mut source,
@@ -93,17 +93,17 @@ fn ap_entropy_is_consumed_only_for_a_fresh_wpa2_association() {
 
     for (mode, request, phase) in [
         (
-            WifiSecurityMode::Wpa2Personal,
+            LinkProtection::Ccmp,
             Some(association),
             Some(ApPeerPhase::Securing),
         ),
         (
-            WifiSecurityMode::Wpa2Personal,
+            LinkProtection::Ccmp,
             None,
             Some(ApPeerPhase::Authenticated),
         ),
         (
-            WifiSecurityMode::Open,
+            LinkProtection::Open,
             Some(association),
             Some(ApPeerPhase::Authenticated),
         ),

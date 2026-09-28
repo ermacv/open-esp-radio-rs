@@ -12,7 +12,7 @@ use oer_esp32s31_ieee80211_mac::rx::{
     pool::{RxStagePool, RxStageTransactionError},
 };
 
-use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_mac::security::LinkProtection;
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::rx_pipeline::RxPipelineObserver;
@@ -51,7 +51,7 @@ pub trait AccessPointRxProtocolConsumer {
     /// the radio owner has an active transaction. Management and WPA2
     /// unprotected-data/EAPOL frames remain the exact ordered head; control,
     /// extension and ordinary protected data may be processed immediately.
-    fn try_receive_during_tx(&mut self, security: WifiSecurityMode) -> Option<Self::Frame>;
+    fn try_receive_during_tx(&mut self, security: LinkProtection) -> Option<Self::Frame>;
     type Frame: AccessPointStagedRxFrame;
     fn queued_frames(&self) -> usize;
     fn discard_queued(&mut self) -> usize;
@@ -132,7 +132,7 @@ pub struct AccessPointRxConsumer<
 
 pub(super) fn can_process_ap_frame_during_tx(
     segment: RxSegment<'_>,
-    security: WifiSecurityMode,
+    security: LinkProtection,
 ) -> bool {
     let Some(frame_control) = segment
         .buffer
@@ -148,7 +148,7 @@ pub(super) fn can_process_ap_frame_during_tx(
         // Protected data is ordinary authorized ingress. Open-network data is
         // also ordinary ingress; WPA2 unprotected data may be EAPOL and keeps
         // the hardware/TX capability until the idle boundary.
-        0x0008 => security == WifiSecurityMode::Open || frame_control & 0x4000 != 0,
+        0x0008 => security == LinkProtection::Open || frame_control & 0x4000 != 0,
         // Control and extension frames are observation/ignore-only in the AP
         // protocol owner and cannot manufacture a TX transaction.
         _ => true,
@@ -513,7 +513,7 @@ impl<
     }
 
     #[inline(always)]
-    fn try_receive_during_tx(&mut self, security: WifiSecurityMode) -> Option<Self::Frame> {
+    fn try_receive_during_tx(&mut self, security: LinkProtection) -> Option<Self::Frame> {
         if self.deferred.is_some() {
             return None;
         }

@@ -216,8 +216,8 @@ where
     }
 
     pub fn set_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {
-        let agreement = if self.ordinary.security_mode()
-            == oer_ieee80211_mac::security::WifiSecurityMode::Open
+        let agreement = if self.ordinary.link_protection()
+            == oer_ieee80211_mac::security::LinkProtection::Open
         {
             None
         } else {
@@ -296,7 +296,7 @@ where
     }
 
     pub(super) fn aggregate_frame_limit(&self, tid: u8) -> usize {
-        if self.ordinary.security_mode() == oer_ieee80211_mac::security::WifiSecurityMode::Open {
+        if self.ordinary.link_protection() == oer_ieee80211_mac::security::LinkProtection::Open {
             return 0;
         }
         if matches!(self.config.rate, TxPhyRate::Ht(_)) {
@@ -315,7 +315,7 @@ where
         &self,
         tid: u8,
     ) -> Result<Option<HtAmpduTxRolePolicy>, AggregateTxError> {
-        if self.ordinary.security_mode() == oer_ieee80211_mac::security::WifiSecurityMode::Open {
+        if self.ordinary.link_protection() == oer_ieee80211_mac::security::LinkProtection::Open {
             return Ok(None);
         }
         let TxPhyRate::Ht(rate) = self.config.rate else {

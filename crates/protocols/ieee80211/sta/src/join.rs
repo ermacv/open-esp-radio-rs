@@ -10,7 +10,7 @@
 
 use core::future::Future;
 
-use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_mac::security::LinkProtection;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::{AssociationResponse, StaSequenceCounter};
 
@@ -409,7 +409,7 @@ where
         &mut self,
         local: [u8; 6],
         bssid: [u8; 6],
-        security: WifiSecurityMode,
+        security: LinkProtection,
         sequence: &mut StaSequenceCounter,
     ) -> Result<StaAssociationSuccess, StaJoinError<B::Error>> {
         let mut runtime = StaAssociationRuntime::new(local, bssid, security);

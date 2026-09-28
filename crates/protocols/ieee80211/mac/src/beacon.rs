@@ -206,7 +206,7 @@ pub fn write_ht_beacon(
     frame[16..22].copy_from_slice(&access_point);
     frame[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
     frame[32..34].copy_from_slice(&beacon_interval_tu.to_le_bytes());
-    let capabilities = profile.capabilities(security.link_mode());
+    let capabilities = profile.capabilities(security.link_protection());
     frame[34..36].copy_from_slice(&capabilities.to_le_bytes());
 
     let mut offset = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;

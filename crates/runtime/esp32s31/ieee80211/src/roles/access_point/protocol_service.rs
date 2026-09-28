@@ -33,7 +33,7 @@ fn observe_ht_rx_data_frame(
 }
 
 fn ap_security_material_for_management<S>(
-    security_mode: WifiSecurityMode,
+    link_protection: LinkProtection,
     request: Option<ApManagementRequest<'_>>,
     peer_phase: Option<ApPeerPhase>,
     source: &mut S,
@@ -41,7 +41,7 @@ fn ap_security_material_for_management<S>(
 where
     S: FnMut() -> ([u8; 32], u64),
 {
-    if security_mode == WifiSecurityMode::Wpa2Personal
+    if link_protection == LinkProtection::Ccmp
         && matches!(request, Some(ApManagementRequest::Association { .. }))
         && peer_phase == Some(ApPeerPhase::Authenticated)
     {
@@ -377,7 +377,7 @@ where
     let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
     let data_frame = frame_control & 0x000c == 0x0008;
     let protected = frame_control & 0x4000 != 0;
-    if !data_frame || (engine.security_mode() != WifiSecurityMode::Open && !protected) {
+    if !data_frame || (engine.link_protection() != LinkProtection::Open && !protected) {
         return Ok(None);
     }
 
@@ -746,7 +746,7 @@ where
         observation_storage: &'static mut AccessPointObservationStorage,
     ) -> Self {
         let access_point = mac.engine().service_address();
-        let security = mac.engine().security_mode();
+        let security = mac.engine().link_protection();
         data_rx.reset(ApRxConfig {
             access_point,
             ingress: RxIngressConfig {
@@ -869,7 +869,7 @@ where
         if tx_pending
             && !rx_pipeline::can_process_ap_frame_during_tx(
                 frame.segment(),
-                self.mac.engine().security_mode(),
+                self.mac.engine().link_protection(),
             )
         {
             return Ok(crate::roles::concurrent::RoutedRxDisposition::Deferred(frame));
@@ -981,7 +981,7 @@ where
         if self.rx_batch_pending()
             || !rx_pipeline::can_process_ap_frame_during_tx(
                 frame.segment(),
-                self.mac.engine().security_mode(),
+                self.mac.engine().link_protection(),
             )
         {
             return Ok(crate::roles::concurrent::RoutedRxDisposition::Deferred(frame));
@@ -1349,7 +1349,7 @@ where
                     starting_sequence,
                     ..
                 } if self.mac.engine().is_authorized_peer(peer) => {
-                    if self.mac.engine().security_mode() == WifiSecurityMode::Open {
+                    if self.mac.engine().link_protection() == LinkProtection::Open {
                         self.publish_declined_rx_addba(hardware, peer, dialog_token, tid, window)?;
                         return Ok(true);
                     }
@@ -1423,7 +1423,7 @@ where
             _ => None,
         };
         let (authenticator_nonce, initial_replay_counter) = ap_security_material_for_management(
-            self.mac.engine().security_mode(),
+            self.mac.engine().link_protection(),
             request,
             peer_phase,
             security_material,

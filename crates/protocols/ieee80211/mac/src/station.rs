@@ -15,7 +15,7 @@ use crate::{
     he::{parse_he20_capabilities, parse_he20_operation},
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
-    security::{StaSecurityPolicy, WifiSecurityMode},
+    security::{LinkProtection, StaSecurityPolicy},
     sequence::SequenceNumber,
 };
 

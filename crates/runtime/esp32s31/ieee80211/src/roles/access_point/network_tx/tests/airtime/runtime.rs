@@ -179,7 +179,7 @@ fn run(case: Case) {
                 csi_config: 0,
                 flags: 0,
             },
-            security: WifiSecurityMode::Open,
+            security: LinkProtection::Open,
         });
         let ba = StaApRxBlockAck::new();
         let reorder_storage = RxReorderFrameStorage::<512>::new();

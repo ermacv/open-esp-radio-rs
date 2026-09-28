@@ -7,7 +7,7 @@
 //! extraction.
 
 use crate::ht::{HtPeerCapabilities, ht_peer_capabilities};
-use crate::security::WifiSecurityMode;
+use crate::security::LinkProtection;
 
 pub const SCAN_RECORD_CAPACITY: usize = 32;
 pub const RSN_IE_CAPACITY: usize = 64;
@@ -154,9 +154,9 @@ impl ScanRecord {
     /// that the Privacy capability is clear and neither RSN nor legacy WPA
     /// was observed; WPA2 means a Privacy-marked, RSN-only BSS. Full WPA2
     /// suite validation remains at association encoding.
-    pub const fn matches_security(&self, mode: WifiSecurityMode) -> bool {
+    pub const fn matches_security(&self, mode: LinkProtection) -> bool {
         match mode {
-            WifiSecurityMode::Open => {
+            LinkProtection::Open => {
                 !self.information_elements_truncated
                     && !self.privacy
                     && !self.rsn
@@ -164,7 +164,7 @@ impl ScanRecord {
                     && !self.legacy_wpa
                     && self.rsn_ie_len == 0
             }
-            WifiSecurityMode::Wpa2Personal => {
+            LinkProtection::Ccmp => {
                 !self.information_elements_truncated
                     && self.privacy
                     && self.rsn

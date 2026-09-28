@@ -231,7 +231,7 @@ fn successful_join_uses_typed_sequences_and_leaves_association_rx_live() {
         })
     );
     assert_eq!(
-        block_on(runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,)),
+        block_on(runner.associate(LOCAL, BSSID, LinkProtection::Ccmp, &mut sequence,)),
         Ok(StaAssociationSuccess {
             response: AssociationResponse {
                 capability_info: 0x0431,
@@ -292,7 +292,7 @@ fn association_timeout_sends_seven_requests_and_stops_rx_at_1000_ms() {
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
 
     assert_eq!(
-        block_on(runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,)),
+        block_on(runner.associate(LOCAL, BSSID, LinkProtection::Ccmp, &mut sequence,)),
         Err(StaJoinError::AssociationFailed {
             failure: StaAssociationFailure::Timeout,
             total_received_frames: 0,
@@ -319,10 +319,7 @@ fn association_response_on_exact_deadline_wins_before_timeout() {
     let mut runner = StaJoinRunner::new(backend, TestTimer::default());
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
 
-    assert!(
-        block_on(runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,))
-            .is_ok()
-    );
+    assert!(block_on(runner.associate(LOCAL, BSSID, LinkProtection::Ccmp, &mut sequence,)).is_ok());
     assert_eq!(runner.timer.now_micros, 1_000_000);
     assert!(runner.backend().receive_live);
     assert_eq!(runner.backend().stops, 0);

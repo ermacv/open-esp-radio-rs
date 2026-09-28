@@ -119,7 +119,7 @@ fn select_personal_rsn(
     access_point: &ScanRecord,
     policy: StaSecurityPolicy,
 ) -> Result<SelectedRsn, StaSecurityError> {
-    if !access_point.matches_security(WifiSecurityMode::Wpa2Personal) {
+    if !access_point.matches_security(LinkProtection::Ccmp) {
         return Err(StaSecurityError::SecurityModeMismatch);
     }
     let rsn = access_point.rsn_ie_bytes();
@@ -240,7 +240,7 @@ pub fn select_association_rsn(
     policy: StaSecurityPolicy,
 ) -> Result<SelectedRsn, StaSecurityError> {
     match policy {
-        StaSecurityPolicy::Open if access_point.matches_security(WifiSecurityMode::Open) => {
+        StaSecurityPolicy::Open if access_point.matches_security(LinkProtection::Open) => {
             Ok(SelectedRsn::OPEN)
         }
         StaSecurityPolicy::Open => Err(StaSecurityError::SecurityModeMismatch),

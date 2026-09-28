@@ -211,7 +211,7 @@ fn ccmp_replay_plan_rejections_return_the_exact_rx_endpoint() {
             open_peer,
             config(),
             open_interface,
-            oer_ieee80211_mac::security::WifiSecurityMode::Open,
+            oer_ieee80211_mac::security::LinkProtection::Open,
         )
         .unwrap();
     let open_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));

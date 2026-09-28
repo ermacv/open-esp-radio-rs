@@ -1039,7 +1039,7 @@ pub async fn new(
                             flags: 0,
                         },
                         security:
-                            oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal,
+                            oer_ieee80211_mac::security::LinkProtection::Ccmp,
                     },
                 )
             }),

@@ -128,7 +128,7 @@ impl<'peers> AccessPointService<'peers> {
         initial_replay_counter: u64,
         now_micros: u64,
     ) -> Result<ApMlmeAction, ApServiceError> {
-        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+        if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch);
         }
         let policy = self.security_policy();
@@ -260,7 +260,7 @@ impl<'peers> AccessPointService<'peers> {
         capabilities: ApAssociationCapabilities,
         now_micros: u64,
     ) -> Result<ApMlmeAction, ApServiceError> {
-        if self.security_mode() != WifiSecurityMode::Open {
+        if self.link_protection() != LinkProtection::Open {
             return Err(ApServiceError::SecurityModeMismatch);
         }
         let security_matches = self.matches_association_security(security);

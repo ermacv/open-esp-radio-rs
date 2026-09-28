@@ -40,7 +40,7 @@ use oer_ieee80211_mac::{
     ccmp::{CcmpKeyId, CcmpReplayLane},
     channel::WifiChannel,
     data::{IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN},
-    security::{ApSecurityPolicy, WifiSecurityMode},
+    security::{ApSecurityPolicy, LinkProtection},
     ssid::WifiSsid,
 };
 
@@ -435,7 +435,7 @@ impl<'storage> ApEngine<'storage> {
         beacon_interval_tu: u16,
         dtim_period: u8,
     ) -> Result<Self, ApEngineStartFailure<'storage>> {
-        let security_mode = service.security_mode();
+        let link_protection = service.link_protection();
         let advertised_protection = service.bss_protection(is_forty_mhz(channel));
         let beacon_len = match write_ht_beacon(
             &crate::profile::ADVERTISEMENT,
@@ -461,9 +461,9 @@ impl<'storage> ApEngine<'storage> {
         };
         let beacon = ApBeacon::from_initialized(beacon_storage, beacon_len, beacon_interval_tu);
         configure_ap_receive_policy(hardware, service.address());
-        let security = match security_mode {
-            WifiSecurityMode::Open => ApSecurity::open(pairwise_storage),
-            WifiSecurityMode::Wpa2Personal => ApSecurity::install_group(
+        let security = match link_protection {
+            LinkProtection::Open => ApSecurity::open(pairwise_storage),
+            LinkProtection::Ccmp => ApSecurity::install_group(
                 hardware,
                 service
                     .gtk()
@@ -504,8 +504,8 @@ impl<'storage> ApEngine<'storage> {
         self.channel
     }
 
-    pub const fn security_mode(&self) -> WifiSecurityMode {
-        self.service.security_mode()
+    pub const fn link_protection(&self) -> LinkProtection {
+        self.service.link_protection()
     }
 
     #[cfg(any(feature = "diagnostics", test))]
@@ -679,7 +679,7 @@ impl<'storage> ApEngine<'storage> {
                 advertisement.legacy_rates.supported(),
                 advertisement.legacy_rates.extended(),
             ),
-            short_preamble: advertisement.capabilities(WifiSecurityMode::Open) & (1 << 5) != 0,
+            short_preamble: advertisement.capabilities(LinkProtection::Open) & (1 << 5) != 0,
         }
     }
 

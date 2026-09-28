@@ -80,7 +80,7 @@ use oer_ieee80211_mac::{
         DataInterfaceRole, EthernetFrameParts, IEEE80211_LEGACY_DATA_HEADER_LEN,
         IEEE80211_QOS_DATA_HEADER_LEN, plan_data_decapsulation,
     },
-    security::WifiSecurityMode,
+    security::LinkProtection,
 };
 
 use oer_ieee80211_runtime::await_stack_boundary;

@@ -16,7 +16,7 @@ pub use oer_ieee80211_ap::{
 };
 use oer_ieee80211_mac::{
     channel::WifiChannel,
-    security::{StaSecurityPolicy, WifiSecurityMode},
+    security::{LinkProtection, StaSecurityPolicy},
     ssid::WifiSsid,
 };
 use oer_ieee80211_rsn::{Pmk, PskDerivationError, sae::SaePassword};
@@ -231,10 +231,10 @@ impl AccessPointSecurity {
         Self::Wpa2Personal(pmk)
     }
 
-    pub const fn mode(&self) -> WifiSecurityMode {
+    pub const fn mode(&self) -> LinkProtection {
         match self {
-            Self::Open => WifiSecurityMode::Open,
-            Self::Wpa2Personal(_) => WifiSecurityMode::Wpa2Personal,
+            Self::Open => LinkProtection::Open,
+            Self::Wpa2Personal(_) => LinkProtection::Ccmp,
         }
     }
 

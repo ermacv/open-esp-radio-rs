@@ -31,7 +31,7 @@ use oer_ieee80211_mac::{
     },
     management_protection::{SaQuery, is_robust_action_category},
     ndpa::{HeNdpa, HeNdpaError},
-    security::WifiSecurityMode,
+    security::LinkProtection,
     station::{StaDisconnect, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
@@ -114,7 +114,7 @@ pub struct ConnectedRxConfig {
     pub bssid: [u8; 6],
     pub association_id: u16,
     pub ingress: RxIngressConfig,
-    pub security: WifiSecurityMode,
+    pub security: LinkProtection,
     /// Peer-negotiated receive geometry. Open TX may deliberately remain
     /// non-QoS while an HT/WMM AP legitimately sends plaintext QoS Data.
     pub peer_qos: bool,
@@ -1404,7 +1404,7 @@ impl ConnectedRxDispatcher {
                 csi_config: 0,
                 flags: 0,
             },
-            security: WifiSecurityMode::Wpa2Personal,
+            security: LinkProtection::Ccmp,
             peer_qos: true,
             management_protection: false,
         })
@@ -1448,7 +1448,7 @@ impl ConnectedRxDispatcher {
     pub fn install_ccmp_rx_replay(&mut self, replay: StaCcmpRxReplayEpoch) {
         assert_eq!(
             self.config.security,
-            WifiSecurityMode::Wpa2Personal,
+            LinkProtection::Ccmp,
             "CCMP replay state requires a WPA2 connected epoch"
         );
         self.shared_ccmp_replay = StaCcmpRxReplayRxEndpoint::vacant();
@@ -1460,7 +1460,7 @@ impl ConnectedRxDispatcher {
     pub fn install_shared_ccmp_rx_replay(&mut self, replay: StaCcmpRxReplayRxEndpoint) {
         assert_eq!(
             self.config.security,
-            WifiSecurityMode::Wpa2Personal,
+            LinkProtection::Ccmp,
             "CCMP replay state requires a WPA2 connected epoch"
         );
         self.owned_ccmp_replay = None;
@@ -1553,8 +1553,8 @@ impl ConnectedRxDispatcher {
     pub fn may_publish_ethernet(&self, segment: RxSegment<'_>) -> bool {
         public_frame_control(segment.buffer).is_some_and(|frame_control| {
             let expected = match self.config.security {
-                WifiSecurityMode::Open => DATA_TYPE,
-                WifiSecurityMode::Wpa2Personal => DATA_TYPE | PROTECTED,
+                LinkProtection::Open => DATA_TYPE,
+                LinkProtection::Ccmp => DATA_TYPE | PROTECTED,
             };
             frame_control & (DATA_TYPE_MASK | PROTECTED) == expected
                 && (self.config.peer_qos || frame_control & QOS_SUBTYPE == 0)
@@ -1573,8 +1573,8 @@ impl ConnectedRxDispatcher {
             return false;
         };
         let expected = match self.config.security {
-            WifiSecurityMode::Open => DATA_TYPE,
-            WifiSecurityMode::Wpa2Personal => DATA_TYPE | PROTECTED,
+            LinkProtection::Open => DATA_TYPE,
+            LinkProtection::Ccmp => DATA_TYPE | PROTECTED,
         };
         if frame_control & (DATA_TYPE_MASK | PROTECTED) != expected
             || (frame_control & QOS_SUBTYPE != 0 && !self.config.peer_qos)
@@ -1590,7 +1590,7 @@ impl ConnectedRxDispatcher {
 
     /// Compatibility hint retained for Open-only adapters.
     pub fn may_complete_open_fragment(&self, segment: RxSegment<'_>) -> bool {
-        self.config.security == WifiSecurityMode::Open && self.may_complete_fragment(segment)
+        self.config.security == LinkProtection::Open && self.may_complete_fragment(segment)
     }
 
     /// Return whether a protected QoS data unit advertises A-MSDU payload.
@@ -1608,8 +1608,8 @@ impl ConnectedRxDispatcher {
             return false;
         };
         let expected = match self.config.security {
-            WifiSecurityMode::Open => DATA_TYPE | QOS_SUBTYPE,
-            WifiSecurityMode::Wpa2Personal => DATA_TYPE | PROTECTED | QOS_SUBTYPE,
+            LinkProtection::Open => DATA_TYPE | QOS_SUBTYPE,
+            LinkProtection::Ccmp => DATA_TYPE | PROTECTED | QOS_SUBTYPE,
         };
         if frame_control & (DATA_TYPE_MASK | PROTECTED | QOS_SUBTYPE) != expected {
             return false;
@@ -1628,7 +1628,7 @@ impl ConnectedRxDispatcher {
     /// dispatch path; agreement state still decides whether the returned TID
     /// is currently reordered.
     pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckMpduKey> {
-        if self.config.security == WifiSecurityMode::Open {
+        if self.config.security == LinkProtection::Open {
             return None;
         }
         rx_block_ack_mpdu_key(
@@ -1840,7 +1840,7 @@ impl ConnectedRxDispatcher {
                     && mpdu[10..16] == self.config.bssid
                     && mpdu[16..22] == self.config.bssid;
                 if is_associated_peer_action && let Some(action) = parse_block_ack_action(body) {
-                    if self.config.security == WifiSecurityMode::Open {
+                    if self.config.security == LinkProtection::Open {
                         return ConnectedRxDispatch::Ignored;
                     }
                     sink.publish(ConnectedRxEvent::BlockAck { action, body });
@@ -2069,7 +2069,7 @@ impl ConnectedRxDispatcher {
             return ConnectedRxDispatch::Ignored;
         }
         let observed_protected = public_frame_control & PROTECTED != 0;
-        let expected_protected = self.config.security == WifiSecurityMode::Wpa2Personal;
+        let expected_protected = self.config.security == LinkProtection::Ccmp;
         let fragmented = public_fragmented(segment.buffer, public_frame_control).unwrap_or(false);
         if expected_protected && !observed_protected {
             return self.dispatch_unprotected_eapol(segment, protection, sink);
@@ -2090,13 +2090,13 @@ impl ConnectedRxDispatcher {
         }
         if fragmented {
             return match self.config.security {
-                WifiSecurityMode::Open => self.dispatch_open_fragment(
+                LinkProtection::Open => self.dispatch_open_fragment(
                     segment,
                     protection,
                     runtime_received_at_micros,
                     sink,
                 ),
-                WifiSecurityMode::Wpa2Personal => self.dispatch_protected_fragment(
+                LinkProtection::Ccmp => self.dispatch_protected_fragment(
                     segment,
                     protection,
                     runtime_received_at_micros,
@@ -2105,7 +2105,7 @@ impl ConnectedRxDispatcher {
             };
         }
         let (mpdu, retry, sequence_control, tid, ccmp_header, data) = match self.config.security {
-            WifiSecurityMode::Open => {
+            LinkProtection::Open => {
                 let view = match view_unprotected_data(segment, self.config.ingress) {
                     Ok(view) => view,
                     Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
@@ -2144,7 +2144,7 @@ impl ConnectedRxDispatcher {
                 };
                 (identity.0, identity.1, identity.2, identity.3, None, data)
             }
-            WifiSecurityMode::Wpa2Personal => {
+            LinkProtection::Ccmp => {
                 let view = match view_protected_data(segment, self.config.ingress) {
                     Ok(view) => view,
                     Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),

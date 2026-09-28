@@ -8,7 +8,7 @@ use embassy_sync::{
 };
 
 use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
-use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_mac::security::LinkProtection;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationLinkState {
@@ -29,11 +29,11 @@ pub enum StationLinkSecurity {
 }
 
 impl StationLinkSecurity {
-    pub const fn new(mode: WifiSecurityMode, management_protection: bool, sae: bool) -> Self {
+    pub const fn new(mode: LinkProtection, management_protection: bool, sae: bool) -> Self {
         match mode {
-            WifiSecurityMode::Open => Self::Open,
-            WifiSecurityMode::Wpa2Personal if sae => Self::Wpa3Personal,
-            WifiSecurityMode::Wpa2Personal => Self::Wpa2Personal {
+            LinkProtection::Open => Self::Open,
+            LinkProtection::Ccmp if sae => Self::Wpa3Personal,
+            LinkProtection::Ccmp => Self::Wpa2Personal {
                 management_protection,
             },
         }

@@ -13,15 +13,15 @@ impl<'peers> AccessPointService<'peers> {
         if security.malformed_elements || security.legacy_wpa_present {
             return false;
         }
-        match self.security_mode() {
-            WifiSecurityMode::Open => {
+        match self.link_protection() {
+            LinkProtection::Open => {
                 !security.privacy
                     && security.rsn_ie_count == 0
                     && security.rsn_ie.is_none()
                     && security.rsnxe_count == 0
                     && security.rsnxe.is_none()
             }
-            WifiSecurityMode::Wpa2Personal => {
+            LinkProtection::Ccmp => {
                 Self::validated_association_security(self.security_policy(), security).is_some()
             }
         }
@@ -63,7 +63,7 @@ impl<'peers> AccessPointService<'peers> {
 
     /// Signal that the successful Association Response reached TX complete.
     pub fn begin_wpa2(&self, peer: [u8; 6]) -> Result<ApMlmeAction, ApServiceError> {
-        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+        if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch);
         }
         let existing = self.checked_peer(peer)?;
@@ -74,7 +74,7 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn wpa2_mut(&mut self, peer: [u8; 6]) -> Result<&mut RsnApState, ApServiceError> {
-        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+        if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch);
         }
         let existing = self.checked_peer_mut(peer)?;
@@ -103,7 +103,7 @@ impl<'peers> AccessPointService<'peers> {
         &self,
         peer: [u8; 6],
     ) -> Result<RsnTxFrame<N>, ApWpa2Error> {
-        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+        if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch.into());
         }
         let existing = self.checked_peer(peer)?;
@@ -243,7 +243,7 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         frame: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
-        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+        if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch.into());
         }
         let action = match self
@@ -458,7 +458,7 @@ impl<'peers> AccessPointService<'peers> {
     }
 
     pub fn authorize(&mut self, peer: [u8; 6], now_micros: u64) -> Result<(), ApServiceError> {
-        if self.security_mode() != WifiSecurityMode::Wpa2Personal {
+        if self.link_protection() != LinkProtection::Ccmp {
             return Err(ApServiceError::SecurityModeMismatch);
         }
         let inactive_timeout_micros = self.inactive_timeout.micros();

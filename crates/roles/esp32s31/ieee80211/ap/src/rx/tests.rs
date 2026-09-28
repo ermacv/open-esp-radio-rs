@@ -34,13 +34,13 @@ fn config() -> ApRxConfig {
             csi_config: 0,
             flags: 0,
         },
-        security: WifiSecurityMode::Wpa2Personal,
+        security: LinkProtection::Ccmp,
     }
 }
 
 fn open_config() -> ApRxConfig {
     ApRxConfig {
-        security: WifiSecurityMode::Open,
+        security: LinkProtection::Open,
         ..config()
     }
 }

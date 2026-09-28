@@ -534,7 +534,7 @@ fn config() -> ConnectedRxConfig {
             csi_config: 0,
             flags: 0,
         },
-        security: WifiSecurityMode::Wpa2Personal,
+        security: LinkProtection::Ccmp,
         peer_qos: true,
         management_protection: false,
     }
@@ -674,7 +674,7 @@ fn open_station_reassembles_only_the_exact_fragment_identity() {
         &final_payload,
     );
     let mut open = config();
-    open.security = WifiSecurityMode::Open;
+    open.security = LinkProtection::Open;
     open.peer_qos = false;
     let mut dispatcher = ConnectedRxDispatcher::new(open);
     let mut sink = RecordingSink::default();
@@ -1159,7 +1159,7 @@ fn open_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
     let ordinary_signal =
         open_fragment(&mut ordinary_storage, 7, 0, false, false, SOURCE, &payload);
     let mut open = config();
-    open.security = WifiSecurityMode::Open;
+    open.security = LinkProtection::Open;
     open.peer_qos = false;
     let mut dispatcher = ConnectedRxDispatcher::new(open);
     let mut sink = RecordingSink::default();
@@ -1276,7 +1276,7 @@ fn reconfigure_revokes_duplicate_and_fragment_history() {
     let mut fragment = [0_u8; 192];
     let fragment_signal = open_fragment(&mut fragment, 8, 0, true, false, SOURCE, &payload);
     let mut open = config();
-    open.security = WifiSecurityMode::Open;
+    open.security = LinkProtection::Open;
     open.peer_qos = false;
     let mut dispatcher = ConnectedRxDispatcher::new(open);
     let mut sink = RecordingSink::default();
@@ -1556,7 +1556,7 @@ fn wpa2_admits_only_plaintext_eapol_from_the_exact_associated_link() {
     storage[FRAME_OFFSET + HEADER + 6..FRAME_OFFSET + HEADER + 8]
         .copy_from_slice(&0x888e_u16.to_be_bytes());
     let mut open = config();
-    open.security = WifiSecurityMode::Open;
+    open.security = LinkProtection::Open;
     open.peer_qos = false;
     let mut open_dispatcher = ConnectedRxDispatcher::new(open);
     let mut open_sink = RecordingSink::default();

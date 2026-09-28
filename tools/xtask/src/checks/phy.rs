@@ -17,6 +17,10 @@ const PHY_PACKAGES: &[&str] = &[
     "oer-esp32s31-pac",
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-phy",
+    // Shared register layouts and reviewed transactions of the Wi-Fi MAC that
+    // the chip PAC places; closed register PACs, no vendor code.
+    "oer-ieee80211-pac",
+    "oer-ieee80211-pac-raw",
     // Portable IEEE 802.15.4 frame values the MAC engine is typed over.
     "oer-ieee802154",
     // The chip-neutral IEEE 802.15.4 MAC engine the HAL's radio owners drive.

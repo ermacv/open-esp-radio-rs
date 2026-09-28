@@ -44,6 +44,7 @@ pub(in crate::product_hil) async fn run_air_check(
 ) -> Ieee802154AirCheckEvidence {
     let mut evidence = Ieee802154AirCheckEvidence::default();
     trace(0xa000);
+    debug_vendor_brownout();
     let Ok(channel) = Channel::new(request.channel) else {
         return evidence;
     };
@@ -296,4 +297,27 @@ fn trace(value: u32) {
     let index = OER_TRACE_RING[64].load(SeqCst) % 64;
     OER_TRACE_RING[index as usize].store(value, SeqCst);
     OER_TRACE_RING[64].store(index + 1, SeqCst);
+}
+
+/// Debug: configure the brownout detector as ESP-IDF's application does.
+#[allow(unsafe_code, reason = "debug brownout configuration")]
+fn debug_vendor_brownout() {
+    let mode0 = 0x2070_2000 as *mut u32;
+    let mode1 = 0x2070_2004 as *mut u32;
+    let fib = 0x2070_201c as *mut u32;
+    unsafe {
+        trace(mode0.read_volatile());
+        trace(mode1.read_volatile());
+        trace(fib.read_volatile());
+        fib.write_volatile(fib.read_volatile() & !(1 << 1));
+        mode1.write_volatile(mode1.read_volatile() & !(1 << 31));
+        let mut value = mode0.read_volatile();
+        value &= !((0x3ff << 8) | (0x3ff << 18));
+        value |= (1 << 6) | (1 << 7) | (2 << 8) | (0x3ff << 18) | (1 << 30) | (1 << 31);
+        mode0.write_volatile(value | (1 << 28));
+        mode0.write_volatile(value);
+        mode0.write_volatile(value | (1 << 29));
+        trace(mode0.read_volatile());
+        trace(mode1.read_volatile());
+    }
 }

@@ -43,6 +43,9 @@ const ALL: u32 = u32::MAX;
 const ARGUMENTS: std::ops::Range<u8> = 10..18;
 /// Most loads a followed pointer may take from its root.
 const DEPTH: usize = 4;
+/// Flags, width, precision and length characters between `%` and a
+/// printf conversion.
+const CONVERSION_MODIFIERS: &str = "-+ #0123456789.*lhzjtqL";
 /// Most passes the dataflow takes to reach its fixed point.
 const PASSES: usize = 16;
 
@@ -108,6 +111,7 @@ impl Reference {
         Value::Address {
             base: Place::Symbol(self.target.clone()),
             offset: self.addend as i32,
+            literal: self.literal.clone(),
         }
     }
 
@@ -391,6 +395,7 @@ impl Corpus {
                     text: ".half".into(),
                     notes: vec![],
                     access: None,
+                    print: None,
                 },
             );
         };
@@ -429,6 +434,7 @@ impl Corpus {
             &mut notes,
             &self.registers,
         );
+        let print = if call { state.print() } else { None };
         if call {
             state.call();
         }
@@ -439,6 +445,7 @@ impl Corpus {
                 text: op.text.clone(),
                 notes,
                 access,
+                print,
             },
         )
     }
@@ -468,6 +475,22 @@ struct Step {
     text: String,
     notes: Vec<String>,
     access: Option<Access>,
+    print: Option<Print>,
+}
+
+/// A call whose argument addresses a format string: the format and, for
+/// each conversion, the location bits the following argument carries.
+struct Print {
+    format: String,
+    arguments: Vec<Option<Extracted>>,
+}
+
+/// `(word & bits) >> shift` of the word at `location`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Extracted {
+    pub location: Location,
+    pub bits: u32,
+    pub shift: u32,
 }
 
 /// A pointer the pass follows symbolically: an argument register's value at
@@ -575,10 +598,18 @@ pub enum Effect {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Value {
     Constant(u32),
-    /// The pointer `base` plus `offset` bytes.
+    /// The pointer `base` plus `offset` bytes, and the string it addresses
+    /// when a relocation names one.
     Address {
         base: Place,
         offset: i32,
+        literal: Option<String>,
+    },
+    /// `(word & bits) >> shift` of the word read from `location`.
+    Extract {
+        location: Location,
+        bits: u32,
+        shift: u32,
     },
     /// The `width`-byte value read from `location` with only its `keep`
     /// bits, `set` bits forced to one and `value` bits from a value the pass
@@ -602,7 +633,7 @@ impl Value {
     /// The value as a pointer, when it is one the pass can follow.
     fn pointer(&self) -> Option<(Place, i32)> {
         match self {
-            Value::Address { base, offset } => Some((base.clone(), *offset)),
+            Value::Address { base, offset, .. } => Some((base.clone(), *offset)),
             Value::Word {
                 location,
                 width: WORD_BYTES,
@@ -610,6 +641,34 @@ impl Value {
                 set: 0,
                 value: 0,
             } if location.depth() < DEPTH => Some((Place::Loaded(Box::new(location.clone())), 0)),
+            _ => None,
+        }
+    }
+
+    /// The bits of a location the value carries, when it is a word read
+    /// from one, a field of it, or a masked word.
+    fn extracted(&self) -> Option<Extracted> {
+        match self {
+            Value::Word {
+                location,
+                keep,
+                set: 0,
+                value: 0,
+                ..
+            } => Some(Extracted {
+                location: location.clone(),
+                bits: *keep,
+                shift: 0,
+            }),
+            Value::Extract {
+                location,
+                bits,
+                shift,
+            } => Some(Extracted {
+                location: location.clone(),
+                bits: *bits,
+                shift: *shift,
+            }),
             _ => None,
         }
     }
@@ -646,6 +705,7 @@ impl State {
             state.0[usize::from(register)] = Value::Address {
                 base: Place::Argument(index as u8),
                 offset: 0,
+                literal: None,
             };
         }
         state
@@ -678,6 +738,28 @@ impl State {
         if register != ZERO {
             self.0[usize::from(register)] = value;
         }
+    }
+
+    /// The print a call makes: the first argument register addressing a
+    /// string with conversions, and the arguments after it.
+    fn print(&self) -> Option<Print> {
+        let registers: Vec<u8> = ARGUMENTS.collect();
+        let (index, format) =
+            registers.iter().enumerate().find_map(|(index, register)| {
+                match self.get(*register) {
+                    Value::Address {
+                        literal: Some(text),
+                        ..
+                    } if !conversions(&text).is_empty() => Some((index, text)),
+                    _ => None,
+                }
+            })?;
+        let arguments = registers[index + 1..]
+            .iter()
+            .take(conversions(&format).len())
+            .map(|register| self.get(*register).extracted())
+            .collect();
+        Some(Print { format, arguments })
     }
 
     /// A call leaves only the callee-saved registers known.
@@ -851,7 +933,7 @@ fn width_mask(width: u8) -> u32 {
 /// `op` over two values, keeping what the pass can say about the result.
 fn combine(op: IntegerOp, left: Value, right: Value) -> Value {
     use IntegerOp::*;
-    use Value::{Address, Constant, Unknown, Word};
+    use Value::{Address, Constant, Extract, Unknown, Word};
     let word = |value: &Value| matches!(value, Word { .. });
     match (op, &left, &right) {
         (_, Constant(a), Constant(b)) => return Constant(op.evaluate(*a, *b)),
@@ -866,19 +948,86 @@ fn combine(op: IntegerOp, left: Value, right: Value) -> Value {
             return Address {
                 base,
                 offset: offset.wrapping_add(*more as i32),
+                literal: None,
             };
         }
         (Sub, Some((base, offset)), _, _, Constant(less)) => {
             return Address {
                 base,
                 offset: offset.wrapping_sub(*less as i32),
+                literal: None,
             };
         }
         _ => {}
     }
-    // Any other arithmetic on a pointer is on a value the pass does not know.
+    // A shift or mask of a word read from a location extracts a field.
+    match (op, &left, &right) {
+        (
+            Shr | Sar,
+            Word {
+                location,
+                keep,
+                set: 0,
+                value: 0,
+                ..
+            },
+            Constant(shift),
+        ) if *shift < u32::BITS => {
+            return Extract {
+                location: location.clone(),
+                bits: keep & (ALL << shift),
+                shift: *shift,
+            };
+        }
+        (
+            Shr | Sar,
+            Extract {
+                location,
+                bits,
+                shift,
+            },
+            Constant(more),
+        ) if shift + more < u32::BITS => {
+            let shift = shift + more;
+            return Extract {
+                location: location.clone(),
+                bits: bits & (ALL << shift),
+                shift,
+            };
+        }
+        (
+            And,
+            Extract {
+                location,
+                bits,
+                shift,
+            },
+            Constant(mask),
+        )
+        | (
+            And,
+            Constant(mask),
+            Extract {
+                location,
+                bits,
+                shift,
+            },
+        ) => {
+            return Extract {
+                location: location.clone(),
+                bits: bits & mask.checked_shl(*shift).unwrap_or(0),
+                shift: *shift,
+            };
+        }
+        _ => {}
+    }
+    // Any other arithmetic on a pointer or a field is on a value the pass
+    // does not know beyond the field's width.
     let unknown = |value: Value| match value {
         Address { .. } => UNKNOWN,
+        Extract { bits, shift, .. } => Unknown {
+            bits: bits >> shift,
+        },
         other => other,
     };
     let (left, right) = (unknown(left), unknown(right));
@@ -1086,6 +1235,86 @@ fn report(corpus: &Corpus, wanted: impl Fn(&Location) -> bool) -> String {
         let _ = writeln!(text, "{}", line.trim_end());
     }
     text
+}
+
+/// Every print of the corpus that passes bits of a location in
+/// `start..end` to a conversion: the register bits, the shift, the format
+/// text up to that conversion and the call site.
+pub fn prints(corpus: &Corpus, start: u32, end: u32) -> String {
+    let mut lines = BTreeSet::new();
+    for function in &corpus.functions {
+        for step in corpus.walk(function) {
+            let Some(print) = step.print else {
+                continue;
+            };
+            let conversions = conversions(&print.format);
+            for (argument, conversion) in print.arguments.iter().zip(&conversions) {
+                let Some(Extracted {
+                    location: Location::Absolute(address),
+                    bits,
+                    shift,
+                }) = argument
+                else {
+                    continue;
+                };
+                if !(start..end).contains(address) {
+                    continue;
+                }
+                let word = address & !(u32::from(WORD_BYTES) - 1);
+                lines.insert((
+                    *address,
+                    function.origin.clone(),
+                    function.name.clone(),
+                    step.offset,
+                    format!(
+                        "{} {} >> {shift} -> {conversion:?} {}::{}+{:#x}",
+                        corpus.registers.name(*address),
+                        corpus.registers.bits(word, *bits),
+                        function.origin,
+                        function.name,
+                        step.offset
+                    ),
+                ));
+            }
+        }
+    }
+    let mut text = String::new();
+    for (.., line) in lines {
+        let _ = writeln!(text, "{line}");
+    }
+    text
+}
+
+/// The conversions of a printf format, each with the text since the
+/// previous one: `"a=%d b=%x"` is `["a=%d", " b=%x"]`.
+fn conversions(format: &str) -> Vec<String> {
+    let mut conversions = vec![];
+    let mut current = String::new();
+    let mut chars = format.chars().peekable();
+    while let Some(c) = chars.next() {
+        current.push(c);
+        if c != '%' {
+            continue;
+        }
+        if chars.peek() == Some(&'%') {
+            current.extend(chars.next());
+            continue;
+        }
+        while let Some(&c) = chars.peek() {
+            if !CONVERSION_MODIFIERS.contains(c) {
+                break;
+            }
+            current.push(c);
+            chars.next();
+        }
+        if let Some(c) = chars.next() {
+            current.push(c);
+            if c.is_ascii_alphabetic() {
+                conversions.push(std::mem::take(&mut current));
+            }
+        }
+    }
+    conversions
 }
 
 /// The set bits of `mask` by number.

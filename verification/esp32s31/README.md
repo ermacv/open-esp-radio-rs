@@ -572,6 +572,7 @@ authenticated against its pinned SHA-256) without running a scenario:
 cargo xtask vendor-scenario --chip esp32s31 xref 0x2010d830 [END]
 cargo xtask vendor-scenario --chip esp32s31 show pm_on_isr_twt_wake
 cargo xtask vendor-scenario --chip esp32s31 fields 0x34 0
+cargo xtask vendor-scenario --chip esp32s31 prints 0x20101000 0x20101500
 ```
 
 `xref` lists every load and store whose address a forward pass over the
@@ -585,7 +586,11 @@ string literals they address. `fields OFFSET...` lists the accesses to a
 structure field reached through pointers whose last offsets are the given
 ones, from any argument or symbol: `0x34 0` is the word at offset 0 of the
 pointer stored at offset 0x34, printed as a path such as `a0->0x34->0x0`.
-The pass is intraprocedural: it merges the states of the paths that join at a
+`prints START [END]` ties register bits to debug output: a call whose
+argument register addresses a string with printf conversions is a print, and
+each following argument that carries bits of a word read from the range, as
+read or after shifts and masks, is listed with those bits, the shift and the
+format text up to its conversion. The pass is intraprocedural: it merges the states of the paths that join at a
 branch target and iterates loops to a fixed point, but a value returned by a
 call, or an address computed from an index, is not followed. The engine owns both in
 [`inspect.rs`](../harness/scenarios/src/inspect.rs).

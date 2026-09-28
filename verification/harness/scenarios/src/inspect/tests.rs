@@ -175,3 +175,50 @@ fn a_relocated_low_part_names_the_symbol_once() {
     assert!(text.contains("&g->0xc R test::load+0x4"));
     assert!(fields(&corpus, &[0x18]).is_empty());
 }
+
+#[test]
+fn a_printed_register_field_is_tied_to_its_conversion() {
+    // lui/addi 0x2010d830; lw a1, 0(a5); srli a1, a1, 4; andi a1, a1, 0xf;
+    // lui/addi a0, "gain=%d\n"; call printf; ret: bits 7:4 of the register
+    // are the first conversion.
+    let mut corpus = corpus(
+        "gauge",
+        code(&[
+            "2010e7b7", "83078793", "0007a583", "0045d593", "00f5f593", "00000537", "00050513",
+            "00000097", "000080e7", "8082",
+        ]),
+    );
+    let format = |kind| Reference {
+        kind,
+        target: ".rodata".into(),
+        addend: 0,
+        literal: Some("gain=%d\n".into()),
+    };
+    corpus.functions[0].references = BTreeMap::from([
+        (0x14, format(object::elf::R_RISCV_HI20)),
+        (0x18, format(object::elf::R_RISCV_LO12_I)),
+        (
+            0x1c,
+            Reference {
+                kind: object::elf::R_RISCV_CALL_PLT,
+                target: "printf".into(),
+                addend: 0,
+                literal: None,
+            },
+        ),
+    ]);
+    let text = prints(&corpus, 0x2010_d830, 0x2010_d834);
+    assert!(
+        text.contains("bits 4,5,6,7 >> 4 -> \"gain=%d\" test::gauge+0x20"),
+        "{text}"
+    );
+    assert!(prints(&corpus, 0x2010_d834, 0x2010_d838).is_empty());
+}
+
+#[test]
+fn conversions_carry_the_text_since_the_previous_one() {
+    assert_eq!(
+        conversions("a=%d 100%% b=%08lx\n"),
+        ["a=%d", " 100%% b=%08lx"]
+    );
+}

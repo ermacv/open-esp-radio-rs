@@ -37,6 +37,15 @@ enum Scenario {
     },
     /// One pinned vendor function, annotated, from every artifact defining it.
     Show { function: String },
+    /// Every print of the pinned vendor code that passes bits of the
+    /// addresses from `start` up to `end` (one word when omitted) to a
+    /// format conversion, with the format text up to that conversion.
+    Prints {
+        #[arg(value_parser = oer_vendor_scenario_engine::inspect::parse_address)]
+        start: u32,
+        #[arg(value_parser = oer_vendor_scenario_engine::inspect::parse_address)]
+        end: Option<u32>,
+    },
     /// Every read and write of the pinned vendor code to a structure field
     /// reached through pointers whose last offsets are `offsets`, from any
     /// argument or symbol: `0x34 0` is the word at offset 0 of the pointer
@@ -1057,7 +1066,8 @@ impl Scenario {
             Scenario::Research { .. }
             | Scenario::Xref { .. }
             | Scenario::Show { .. }
-            | Scenario::Fields { .. } => Ok(()),
+            | Scenario::Fields { .. }
+            | Scenario::Prints { .. } => Ok(()),
         }
     }
 }
@@ -1142,6 +1152,11 @@ fn main() -> ExitCode {
         Scenario::Xref { start, end } => inspect::load().map(|corpus| {
             let end = end.unwrap_or(start.saturating_add(inspect::WORD));
             print!("{}", inspect::xref(&corpus, start, end));
+            ExitCode::SUCCESS
+        }),
+        Scenario::Prints { start, end } => inspect::load().map(|corpus| {
+            let end = end.unwrap_or(start.saturating_add(inspect::WORD));
+            print!("{}", inspect::prints(&corpus, start, end));
             ExitCode::SUCCESS
         }),
         Scenario::Fields { offsets } => inspect::load().map(|corpus| {

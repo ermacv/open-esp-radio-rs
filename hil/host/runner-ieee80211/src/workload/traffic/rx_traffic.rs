@@ -332,9 +332,10 @@ pub fn run(
         } else {
             None
         };
-        let transport_failure = if !structured.finished.summary.passed {
-            Some(String::from(
-                "target did not complete the typed RX session normally",
+        let transport_failure = if !structured.finished.summary.verdict.passed() {
+            Some(format!(
+                "target did not complete the typed RX session normally: {}",
+                structured.finished.summary.verdict,
             ))
         } else if structured.transport.tx_bytes != 0 || structured.transport.tx_units != 0 {
             Some(String::from(
@@ -472,9 +473,10 @@ pub fn run(
             .transport
             .rx_units
             .saturating_mul(options.payload as u64);
-        if !evidence.finished.summary.passed {
-            Some(String::from(
-                "target did not complete the typed RX session normally",
+        if !evidence.finished.summary.verdict.passed() {
+            Some(format!(
+                "target did not complete the typed RX session normally: {}",
+                evidence.finished.summary.verdict,
             ))
         } else if evidence.transport.tx_bytes != 0 || evidence.transport.tx_units != 0 {
             Some(String::from(

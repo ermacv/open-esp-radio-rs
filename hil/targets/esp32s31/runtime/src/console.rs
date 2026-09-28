@@ -34,10 +34,11 @@ use oer_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, FailureCode, Finished,
     FlowTransportEvidence, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials,
     NetworkIpv4Configuration, RejectReason, ResultSummary, RxDeliveryEvidence,
-    SESSION_FLOW_CAPACITY, SessionConfig, SessionState, StartupArtifactChunk, StateChange,
-    TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
-    WifiAccessPointRequest, WifiMonitorCaptureRequest, WifiMonitorRequest, WifiRole,
-    WifiScanRequest, WifiStationAccessPointRequest, evidence_crc32c, startup_artifact_crc32c,
+    SESSION_FLOW_CAPACITY, SessionConfig, SessionFailure, SessionState, SessionVerdict,
+    StartupArtifactChunk, StateChange, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
+    TransportEvidence, WifiAccessPointRequest, WifiMonitorCaptureRequest, WifiMonitorRequest,
+    WifiRole, WifiScanRequest, WifiStationAccessPointRequest, evidence_crc32c,
+    startup_artifact_crc32c,
 };
 #[cfg(feature = "ieee802154-radio")]
 use oer_hil_protocol::{
@@ -2760,18 +2761,35 @@ async fn publish_result(retained: RetainedSessionResult, request_id: u32) {
         request_id,
         Event::Finished(Finished {
             summary: ResultSummary {
-                passed: result.passed
-                    && link.rx_cobs_errors == 0
-                    && link.rx_checksum_errors == 0
-                    && link.rx_decode_errors == 0
-                    && link.rx_overflows == 0
-                    && link.tx_dropped == 0,
+                verdict: session_verdict(result.passed, &link),
                 evidence_records,
             },
             evidence_crc32c: checksum,
         }),
     )
     .await;
+}
+
+/// The session's verdict: the workload's own, then the control link's.
+fn session_verdict(workload_passed: bool, link: &LinkHealth) -> SessionVerdict {
+    if !workload_passed {
+        return SessionVerdict::Failed(SessionFailure::Unreported);
+    }
+    if link.rx_cobs_errors != 0
+        || link.rx_checksum_errors != 0
+        || link.rx_decode_errors != 0
+        || link.rx_overflows != 0
+        || link.tx_dropped != 0
+    {
+        return SessionVerdict::Failed(SessionFailure::ControlLink {
+            cobs_errors: link.rx_cobs_errors,
+            checksum_errors: link.rx_checksum_errors,
+            decode_errors: link.rx_decode_errors,
+            overflows: link.rx_overflows,
+            tx_dropped: link.tx_dropped,
+        });
+    }
+    SessionVerdict::Passed
 }
 
 fn link_health_snapshot() -> LinkHealth {

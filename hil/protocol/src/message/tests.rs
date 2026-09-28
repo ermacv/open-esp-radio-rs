@@ -237,3 +237,30 @@ fn stack_headroom_accepts_the_boundary_and_rejects_exhaustion_or_invalid_evidenc
         .has_required_headroom()
     );
 }
+
+#[test]
+fn a_failed_session_carries_its_first_failed_check_over_the_wire() {
+    extern crate std;
+    use std::string::ToString as _;
+    let finished = Finished {
+        summary: ResultSummary {
+            verdict: SessionVerdict::Failed(SessionFailure::NoTerminal {
+                received: 41_000,
+                highest_sequence: 41_950,
+            }),
+            evidence_records: 7,
+        },
+        evidence_crc32c: 0x1234_5678,
+    };
+    let mut buffer = [0; 64];
+    let encoded = postcard::to_slice(&finished, &mut buffer).unwrap();
+    let decoded: Finished = postcard::from_bytes(encoded).unwrap();
+    assert_eq!(decoded, finished);
+    assert!(!decoded.summary.verdict.passed());
+    assert_eq!(
+        decoded.summary.verdict.to_string(),
+        "failed: no terminal marker (received 41000, highest sequence 41950)"
+    );
+    assert!(SessionVerdict::Passed.passed());
+    assert_eq!(SessionVerdict::Passed.failure(), None);
+}

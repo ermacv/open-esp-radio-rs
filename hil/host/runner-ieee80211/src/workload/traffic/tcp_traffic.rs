@@ -184,10 +184,10 @@ fn validate(
     host_rx: Option<HostReception>,
     structured: SessionEvidence,
 ) -> Result<()> {
-    if !structured.finished.summary.passed || structured.transport.transport_errors != 0 {
+    if !structured.finished.summary.verdict.passed() || structured.transport.transport_errors != 0 {
         return Err(format!(
-            "target TCP session failed: passed={} transport_errors={}",
-            structured.finished.summary.passed, structured.transport.transport_errors,
+            "target TCP session failed: verdict={} transport_errors={}",
+            structured.finished.summary.verdict, structured.transport.transport_errors,
         )
         .into());
     }

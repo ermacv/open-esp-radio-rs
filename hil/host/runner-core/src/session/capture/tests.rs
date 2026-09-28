@@ -1117,7 +1117,7 @@ fn result_events(rx_frames: u32) -> Vec<Event> {
     ];
     let finished = Finished {
         summary: ResultSummary {
-            passed: true,
+            verdict: oer_hil_protocol::SessionVerdict::Passed,
             evidence_records: 4,
         },
         evidence_crc32c: evidence_crc32c(&records).unwrap(),

@@ -87,7 +87,7 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         },
         finished: Finished {
             summary: ResultSummary {
-                passed: true,
+                verdict: oer_hil_protocol::SessionVerdict::Passed,
                 evidence_records: 4,
             },
             evidence_crc32c: 0,

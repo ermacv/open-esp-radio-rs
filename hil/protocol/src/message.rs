@@ -5,7 +5,7 @@ use crate::absent::stand_ins::*;
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 195;
+pub const PROTOCOL_VERSION: u16 = 196;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.

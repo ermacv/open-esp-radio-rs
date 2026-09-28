@@ -103,7 +103,7 @@ fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> Sessi
         },
         finished: Finished {
             summary: ResultSummary {
-                passed: true,
+                verdict: oer_hil_protocol::SessionVerdict::Passed,
                 evidence_records: 0,
             },
             evidence_crc32c: 0,

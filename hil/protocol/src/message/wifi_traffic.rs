@@ -640,8 +640,128 @@ pub struct NetworkSchedulerEvidence {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ResultSummary {
-    pub passed: bool,
+    pub verdict: SessionVerdict,
     pub evidence_records: u16,
+}
+
+/// A traffic session's own verdict.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SessionVerdict {
+    Passed,
+    /// The first check that failed, in the order the verdict evaluates them,
+    /// with its counts at the end of the session.
+    Failed(SessionFailure),
+}
+
+impl SessionVerdict {
+    pub const fn passed(self) -> bool {
+        matches!(self, Self::Passed)
+    }
+
+    pub const fn failure(self) -> Option<SessionFailure> {
+        match self {
+            Self::Passed => None,
+            Self::Failed(failure) => Some(failure),
+        }
+    }
+}
+
+impl core::fmt::Display for SessionVerdict {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Passed => f.write_str("passed"),
+            Self::Failed(failure) => write!(f, "failed: {failure}"),
+        }
+    }
+}
+
+/// Why a traffic session failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SessionFailure {
+    /// No datagram of the session arrived.
+    NoDatagrams,
+    /// The terminal marker never arrived.
+    NoTerminal {
+        received: u32,
+        highest_sequence: u32,
+    },
+    ReceiveErrors(u32),
+    SocketErrors(u32),
+    TransmitErrors(u32),
+    /// TCP connect or accept did not complete.
+    NotConnected,
+    /// TCP transfer units that did not finish.
+    Incomplete {
+        rx_units: u32,
+        tx_units: u32,
+    },
+    /// Received TCP bytes did not match the stream pattern.
+    PatternMismatch,
+    /// Receive DMA or queue loss counted as a failure.
+    Health {
+        buffer_full: u32,
+        fifo_overflow: u32,
+        queue_dropped: u32,
+    },
+    /// The ownership epoch audit failed.
+    OwnershipInvalid,
+    /// The workload passed, but the control link lost or corrupted frames.
+    ControlLink {
+        cobs_errors: u32,
+        checksum_errors: u32,
+        decode_errors: u32,
+        overflows: u32,
+        tx_dropped: u32,
+    },
+    /// The workload failed without naming its check; to be replaced by the
+    /// workloads' own reasons.
+    Unreported,
+}
+
+impl core::fmt::Display for SessionFailure {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match *self {
+            Self::NoDatagrams => f.write_str("no datagram arrived"),
+            Self::NoTerminal {
+                received,
+                highest_sequence,
+            } => write!(
+                f,
+                "no terminal marker (received {received}, highest sequence {highest_sequence})"
+            ),
+            Self::ReceiveErrors(count) => write!(f, "{count} receive errors"),
+            Self::SocketErrors(count) => write!(f, "{count} socket errors"),
+            Self::TransmitErrors(count) => write!(f, "{count} transmit errors"),
+            Self::NotConnected => f.write_str("TCP connection did not complete"),
+            Self::Incomplete { rx_units, tx_units } => write!(
+                f,
+                "transfer incomplete (rx units {rx_units}, tx units {tx_units})"
+            ),
+            Self::PatternMismatch => f.write_str("received bytes did not match the pattern"),
+            Self::Health {
+                buffer_full,
+                fifo_overflow,
+                queue_dropped,
+            } => write!(
+                f,
+                "receive loss (buffer full {buffer_full}, FIFO overflow {fifo_overflow}, \
+                 queue dropped {queue_dropped})"
+            ),
+            Self::OwnershipInvalid => f.write_str("ownership epoch audit failed"),
+            Self::ControlLink {
+                cobs_errors,
+                checksum_errors,
+                decode_errors,
+                overflows,
+                tx_dropped,
+            } => write!(
+                f,
+                "control link errors (COBS {cobs_errors}, checksum {checksum_errors}, decode \
+                 {decode_errors}, overflows {overflows}, dropped {tx_dropped})"
+            ),
+            Self::Unreported => f.write_str("the workload did not report which check failed"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

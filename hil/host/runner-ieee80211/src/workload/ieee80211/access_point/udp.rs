@@ -210,10 +210,10 @@ pub(super) fn validate_udp(
     evidence: SessionEvidence,
     policy: UdpEvidencePolicy,
 ) -> Result<Option<Burst>> {
-    if !evidence.finished.summary.passed || evidence.transport.transport_errors != 0 {
+    if !evidence.finished.summary.verdict.passed() || evidence.transport.transport_errors != 0 {
         return Err(format!(
-            "AP UDP target failed: passed={} errors={}",
-            evidence.finished.summary.passed, evidence.transport.transport_errors,
+            "AP UDP target failed: verdict={} errors={}",
+            evidence.finished.summary.verdict, evidence.transport.transport_errors,
         )
         .into());
     }

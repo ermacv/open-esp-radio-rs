@@ -413,8 +413,12 @@ pub fn run(
         {
             return Err("performance image published driver-internal evidence".into());
         }
-        if !structured.finished.summary.passed {
-            return Err("target did not complete the typed TX session normally".into());
+        if !structured.finished.summary.verdict.passed() {
+            return Err(format!(
+                "target did not complete the typed TX session normally: {}",
+                structured.finished.summary.verdict
+            )
+            .into());
         }
         if structured.transport.rx_bytes != 0 || structured.transport.rx_units != 0 {
             return Err("TX-only session reported unexpected received traffic".into());
@@ -551,8 +555,12 @@ pub fn run(
         let evidence = structured;
         let received_bytes = qualified.iter().map(|burst| burst.bytes).sum::<u64>();
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
-        if !evidence.finished.summary.passed {
-            return Err("target did not complete the typed TX session normally".into());
+        if !evidence.finished.summary.verdict.passed() {
+            return Err(format!(
+                "target did not complete the typed TX session normally: {}",
+                evidence.finished.summary.verdict
+            )
+            .into());
         }
         if evidence.transport.rx_bytes != 0 || evidence.transport.rx_units != 0 {
             return Err("TX-only session reported unexpected received traffic".into());

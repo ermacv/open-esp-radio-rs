@@ -65,7 +65,13 @@ fn target_evidence(rx_units: u64, tx_units: u64, passed: bool) -> SessionEvidenc
         },
         finished: Finished {
             summary: ResultSummary {
-                passed,
+                verdict: if passed {
+                    oer_hil_protocol::SessionVerdict::Passed
+                } else {
+                    oer_hil_protocol::SessionVerdict::Failed(
+                        oer_hil_protocol::SessionFailure::NoDatagrams,
+                    )
+                },
                 evidence_records: 4,
             },
             evidence_crc32c: 0,

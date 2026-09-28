@@ -401,14 +401,14 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
             .transport
             .tx_units
             .saturating_mul(options.tx_payload as u64);
-        if !structured.finished.summary.passed
+        if !structured.finished.summary.verdict.passed()
             || structured.transport.transport_errors != 0
             || structured.transport.rx_bytes != expected_rx_bytes
             || structured.transport.tx_bytes != expected_tx_bytes
         {
             return Err(format!(
-                "target did not complete bidirectional performance session cleanly: passed={} errors={} rx={}/{} tx={}/{}",
-                structured.finished.summary.passed,
+                "target did not complete bidirectional performance session cleanly: verdict={} errors={} rx={}/{} tx={}/{}",
+                structured.finished.summary.verdict,
                 structured.transport.transport_errors,
                 structured.transport.rx_bytes,
                 expected_rx_bytes,
@@ -581,11 +581,11 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
             .transport
             .rx_units
             .saturating_mul(options.payload as u64);
-        if !evidence.finished.summary.passed || evidence.transport.transport_errors != 0 {
+        if !evidence.finished.summary.verdict.passed() || evidence.transport.transport_errors != 0 {
             qualification_failure.get_or_insert_with(|| {
                 format!(
-                    "target did not complete bidirectional session cleanly: passed={} errors={}",
-                    evidence.finished.summary.passed, evidence.transport.transport_errors
+                    "target did not complete bidirectional session cleanly: verdict={} errors={}",
+                    evidence.finished.summary.verdict, evidence.transport.transport_errors
                 )
             });
         }

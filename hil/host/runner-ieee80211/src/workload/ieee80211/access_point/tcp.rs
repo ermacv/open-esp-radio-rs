@@ -108,10 +108,10 @@ pub(super) fn validate_tcp(
     host_rx: Option<TcpReception>,
     evidence: SessionEvidence,
 ) -> Result<()> {
-    if !evidence.finished.summary.passed || evidence.transport.transport_errors != 0 {
+    if !evidence.finished.summary.verdict.passed() || evidence.transport.transport_errors != 0 {
         return Err(format!(
-            "AP TCP target failed: passed={} errors={}",
-            evidence.finished.summary.passed, evidence.transport.transport_errors,
+            "AP TCP target failed: verdict={} errors={}",
+            evidence.finished.summary.verdict, evidence.transport.transport_errors,
         )
         .into());
     }

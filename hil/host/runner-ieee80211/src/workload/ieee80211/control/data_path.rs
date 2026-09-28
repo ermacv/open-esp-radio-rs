@@ -210,7 +210,7 @@ fn require_recovery_exchange(
     target: SessionEvidence,
 ) -> Result<()> {
     let transport = target.transport;
-    if !target.finished.summary.passed
+    if !target.finished.summary.verdict.passed()
         || transport.transport_errors != 0
         || offer.datagrams != RX_DATAGRAMS
         || offer.bytes != RX_DATAGRAMS * PAYLOAD_BYTES as u64
@@ -221,8 +221,8 @@ fn require_recovery_exchange(
         || receipt.datagrams == 0
     {
         return Err(format!(
-            "station recovery RX+TX session did not reconcile: offered={offer:?} received={receipt:?} target={transport:?} passed={}",
-            target.finished.summary.passed,
+            "station recovery RX+TX session did not reconcile: offered={offer:?} received={receipt:?} target={transport:?} verdict={}",
+            target.finished.summary.verdict,
         ).into());
     }
     Ok(())

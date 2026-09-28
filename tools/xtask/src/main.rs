@@ -100,6 +100,11 @@ enum Task {
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
+    /// Compare linked images function by function, modulo placement.
+    Compare {
+        #[command(subcommand)]
+        compare: Compare,
+    },
     /// Build the xtask of origin/main once and install `oer-stand`, which
     /// runs the operational HIL stand commands without building this tree.
     StandInstall,
@@ -119,6 +124,32 @@ enum Task {
     Build {
         #[command(subcommand)]
         build: Build,
+    },
+}
+
+#[derive(Subcommand)]
+enum Compare {
+    /// Two ELF files.
+    Elf {
+        old: PathBuf,
+        new: PathBuf,
+        /// Reviewed rename applied to both images, FROM=TO (e.g. a moved path).
+        #[arg(long = "alias")]
+        aliases: Vec<String>,
+        /// Reviewed function whose code may differ (a scheduling tie).
+        #[arg(long = "allow")]
+        allowed: Vec<String>,
+    },
+    /// HIL image classes built at BASE and in this checkout.
+    Images {
+        #[arg(long)]
+        base: String,
+        #[arg(long = "class", default_values_t = [String::from("performance"), String::from("correctness")])]
+        classes: Vec<String>,
+        #[arg(long = "alias")]
+        aliases: Vec<String>,
+        #[arg(long = "allow")]
+        allowed: Vec<String>,
     },
 }
 
@@ -231,6 +262,55 @@ fn run() -> Result<std::process::ExitCode> {
             baseline,
         } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline),
         Task::Doc => oer_xtask::doc::run(&ctx),
+        Task::Compare { compare } => {
+            let parse =
+                |aliases: Vec<String>| -> oer_xtask::Result<oer_xtask::compare_images::Aliases> {
+                    aliases
+                        .into_iter()
+                        .map(|alias| {
+                            alias
+                                .split_once('=')
+                                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+                                .ok_or_else(|| format!("alias `{alias}` is not FROM=TO").into())
+                        })
+                        .collect::<oer_xtask::Result<Vec<_>>>()
+                        .map(oer_xtask::compare_images::Aliases)
+                };
+            match compare {
+                Compare::Elf {
+                    old,
+                    new,
+                    aliases,
+                    allowed,
+                } => {
+                    let allowed = allowed.into_iter().collect();
+                    let comparison = oer_xtask::compare_images::compare_elf(
+                        &ctx,
+                        &old,
+                        &new,
+                        &parse(aliases)?,
+                        &allowed,
+                    )?;
+                    if comparison.equivalent(&allowed) {
+                        Ok(())
+                    } else {
+                        Err("images differ beyond placement".into())
+                    }
+                }
+                Compare::Images {
+                    base,
+                    classes,
+                    aliases,
+                    allowed,
+                } => oer_xtask::compare_images::compare_images(
+                    &ctx,
+                    &base,
+                    &classes,
+                    &parse(aliases)?,
+                    &allowed.into_iter().collect(),
+                ),
+            }
+        }
         Task::StandInstall => oer_xtask::stand_install::run(&ctx),
         Task::Sweep {
             all_checkouts,

@@ -7,6 +7,7 @@ use oer_hil_esp32s31_telemetry::udp_rx_window::RxWindow;
 use oer_hil_protocol::{
     Completion, FlowTransportEvidence, SESSION_FLOW_CAPACITY, UdpSessionPayloadIdentity,
 };
+use oer_hil_target_core::traffic::payload::PayloadFillCheck;
 
 use crate::{
     console::{ActiveSession, runtime_log_reliably},
@@ -73,6 +74,8 @@ pub(super) async fn run(
             },
         })
     });
+    let payload_fill =
+        PayloadFillCheck::for_flows(flows.iter().flatten().map(|flow| flow.payload_identity));
     let mut window = RxWindow::new(
         Instant::now().as_micros(),
         elapsed_us,
@@ -108,7 +111,7 @@ pub(super) async fn run(
                     iperf2_udp_sequence(packet),
                     metadata.endpoint,
                     UdpSessionPayloadIdentity::from_payload(packet),
-                    UdpSessionPayloadIdentity::fill_matches(packet),
+                    payload_fill.fill_matches(packet),
                 )
             }),
         )

@@ -289,13 +289,7 @@ impl Coex {
         ]
         .into_iter()
         .map(|name| Ok((name, symbol(name)?)))
-        .collect::<Result<BTreeMap<_, _>>>()?;
-        // The claims name the static entries the cases enter too, at their
-        // linked addresses.
-        let mut roots = linked.roots;
-        for (name, address) in &entries {
-            roots.entry((*name).to_owned()).or_insert(*address);
-        }
+        .collect::<Result<_>>()?;
         Ok(Self {
             entries,
             env: symbol("coex_schm_env")?,
@@ -303,7 +297,7 @@ impl Coex {
             schemes,
             phases,
             run: session.run.clone(),
-            roots,
+            roots: linked.roots,
             vendor,
             production,
             session,

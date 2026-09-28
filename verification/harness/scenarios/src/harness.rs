@@ -738,6 +738,13 @@ impl ProbeCatalog {
         })
     }
 
+    /// Every declared entry with its address.
+    pub fn entries(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.entries
+            .iter()
+            .map(|(name, (_, address))| (name.as_str(), *address))
+    }
+
     pub fn entry(&self, name: &str) -> Result<u32> {
         self.entries
             .get(name)

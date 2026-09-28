@@ -893,6 +893,9 @@ impl Session {
         } = claimed;
         let mut cases = 0;
         let mut executions = vec![];
+        // Executions whose request differs where the scenario expected it
+        // to: they cover the vendor code they ran, but carry no verdict.
+        let mut differing = vec![];
         let mut reviews = std::collections::BTreeSet::new();
         for artifact in &self.artifacts {
             let selected: Vec<_> = artifact
@@ -900,11 +903,27 @@ impl Session {
                 .iter()
                 .filter(|c| c.vendor == vendor && c.production == production)
                 .collect();
-            if selected.is_empty()
-                || selected
-                    .iter()
-                    .any(|c| c.verdict != Some(blobray_domain::ComparisonVerdict::Match))
+            if selected.is_empty() {
+                continue;
+            }
+            if selected
+                .iter()
+                .any(|c| c.verdict != Some(blobray_domain::ComparisonVerdict::Match))
             {
+                // `submit` rejects a verdict other than the expected one.
+                if artifact.verdict == Some(blobray_domain::ComparisonVerdict::Diff)
+                    && selected.iter().all(|c| {
+                        matches!(
+                            c.verdict,
+                            Some(
+                                blobray_domain::ComparisonVerdict::Match
+                                    | blobray_domain::ComparisonVerdict::Diff
+                            )
+                        )
+                    })
+                {
+                    differing.push(artifact.identity.as_str().to_owned());
+                }
                 continue;
             }
             cases += selected.len() as u64;
@@ -937,8 +956,15 @@ impl Session {
             .iter()
             .filter(|a| executions.contains(&a.identity.as_str().to_owned()))
             .collect();
-        let pairs: Vec<(ArtifactId, &ExecutionRequest, &[ExecutionEvidence])> = selected
+        let pairs: Vec<(ArtifactId, &ExecutionRequest, &[ExecutionEvidence])> = self
+            .artifacts
             .iter()
+            .filter(|a| {
+                let identity = a.identity.as_str().to_owned();
+                executions.contains(&identity)
+                    || (differing.contains(&identity)
+                        && a.request.vendor == selected[0].request.vendor)
+            })
             .map(|a| (a.identity.clone(), &a.request, a.records.as_slice()))
             .collect();
         let executables = self.executables(&selected[0].request.vendor)?;
@@ -1152,6 +1178,26 @@ impl Session {
     /// Coverage of every claimed root closure is classified under
     /// `decisions`; the complete run checks that each still excludes
     /// something in some scenario.
+    /// Addresses of each defined function symbol of the linked image, by
+    /// name: several for a name that static functions share.
+    fn image_functions(&self) -> Result<BTreeMap<String, Vec<u32>>> {
+        let elf = fs::read(self.run.join("image/image.elf"))?;
+        let file = object::File::parse(&*elf)?;
+        let mut functions = BTreeMap::<String, Vec<u32>>::new();
+        for symbol in file.symbols() {
+            if symbol.kind() == object::SymbolKind::Text
+                && symbol.size() > 0
+                && let Ok(name) = symbol.name()
+            {
+                functions
+                    .entry(name.to_owned())
+                    .or_default()
+                    .push(u32::try_from(symbol.address())?);
+            }
+        }
+        Ok(functions)
+    }
+
     pub fn claims(
         &self,
         suite: &str,
@@ -1183,13 +1229,24 @@ impl Session {
             lines: Default::default(),
             unprojected: Default::default(),
         };
+        let functions = self.image_functions()?;
         let entries = list
             .iter()
             .map(|(source, symbol, production)| {
                 let vendor = match *source {
-                    "archive" => *roots
-                        .get(*symbol)
-                        .ok_or_else(|| invalid(format!("{symbol} is not a linked root")))?,
+                    // A static function the cases enter at its linked address
+                    // is claimed there too.
+                    "archive" => match roots.get(*symbol) {
+                        Some(address) => *address,
+                        None => match functions.get(*symbol).map(Vec::as_slice) {
+                            Some([address]) => *address,
+                            _ => {
+                                return Err(invalid(format!(
+                                    "{symbol} is neither a linked root nor one function of the image"
+                                )));
+                            }
+                        },
+                    },
                     "rom" => u32::try_from(
                         crate::harness::symbol(
                             &self.inventory,
@@ -1216,6 +1273,46 @@ impl Session {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+        // Every pair a case compares is a claim; a pair no claim names has
+        // its coverage and verdicts dropped from the evidence.
+        let claimed: std::collections::BTreeSet<(&str, &str)> = entries
+            .iter()
+            .map(|entry| (entry.symbol.as_str(), entry.production.as_str()))
+            .collect();
+        let names: BTreeMap<u32, &str> = functions
+            .iter()
+            .flat_map(|(name, addresses)| addresses.iter().map(|a| (*a, name.as_str())))
+            .chain(
+                roots
+                    .iter()
+                    .map(|(name, address)| (*address, name.as_str())),
+            )
+            .collect();
+        let probes: BTreeMap<u32, &str> = self
+            .probes
+            .entries()
+            .map(|(name, address)| (address, name))
+            .collect();
+        let name = |names: &BTreeMap<u32, &str>, address: u32| {
+            names
+                .get(&address)
+                .map_or_else(|| format!("{address:#x}"), |n| (*n).to_owned())
+        };
+        let unclaimed: std::collections::BTreeSet<(String, String)> = self
+            .artifacts
+            .iter()
+            .flat_map(|artifact| artifact.compared.iter())
+            // Comparisons whose production side is no probe entry prepare
+            // state, such as ROM copies on both sides.
+            .filter(|pair| probes.contains_key(&pair.production))
+            .map(|pair| (name(&names, pair.vendor), name(&probes, pair.production)))
+            .filter(|(vendor, production)| {
+                !claimed.contains(&(vendor.as_str(), production.as_str()))
+            })
+            .collect();
+        for (vendor, production) in &unclaimed {
+            println!("{suite} compared pair {vendor} -> {production} has no claim");
+        }
         let (steps, seconds) = self.executed.get();
         println!(
             "{suite} interpreter {steps} guest instructions in {seconds:.2} s ({:.1} M/s)",

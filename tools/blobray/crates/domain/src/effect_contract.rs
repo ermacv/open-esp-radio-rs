@@ -287,17 +287,26 @@ impl EffectPattern {
         next: Option<&ExecutionEvent>,
         history: &[ExecutionEvent],
     ) -> bool {
+        let earlier = history.iter().filter(|e| self.selector.matches(e)).count();
+        self.selects_following(event, next, history.last(), earlier as u64)
+    }
+    /// The pattern selects `event`, which directly follows `previous` after
+    /// `earlier` effects its selector matches, and precedes `next`.
+    pub fn selects_following(
+        self,
+        event: &ExecutionEvent,
+        next: Option<&ExecutionEvent>,
+        previous: Option<&ExecutionEvent>,
+        earlier: u64,
+    ) -> bool {
         self.selector.matches(event)
             && self
                 .followed_by
                 .is_none_or(|f| next.is_some_and(|n| f.matches(n)))
             && self
                 .preceded_by
-                .is_none_or(|p| history.last().is_some_and(|previous| p.matches(previous)))
-            && self.occurrence.is_none_or(|n| {
-                1 + history.iter().filter(|e| self.selector.matches(e)).count() as u64
-                    == u64::from(n)
-            })
+                .is_none_or(|p| previous.is_some_and(|previous| p.matches(previous)))
+            && self.occurrence.is_none_or(|n| 1 + earlier == u64::from(n))
     }
     /// Two patterns can select the same effect.
     pub fn overlaps(self, other: Self) -> bool {
@@ -470,9 +479,11 @@ pub struct EffectTracker<'a> {
     counts: [u32; MAX_EFFECT_RULES],
     first_unclassified: Option<EffectGap>,
     first_violation: Option<EffectViolation>,
-    /// The side's concrete effects observed so far, for predecessor and
+    /// The side's last concrete effect, for predecessor patterns.
+    previous: Option<ExecutionEvent>,
+    /// Earlier effects of the side each rule's selector matches, for
     /// occurrence patterns.
-    history: Vec<ExecutionEvent>,
+    earlier: [u64; MAX_EFFECT_RULES],
 }
 impl<'a> EffectTracker<'a> {
     pub fn new(
@@ -488,7 +499,8 @@ impl<'a> EffectTracker<'a> {
             counts: [0; MAX_EFFECT_RULES],
             first_unclassified: None,
             first_violation: None,
-            history: Vec::new(),
+            previous: None,
+            earlier: [0; MAX_EFFECT_RULES],
         })
     }
     /// Classify `event`; `next` is the same side's next concrete effect, if any.
@@ -528,14 +540,24 @@ impl<'a> EffectTracker<'a> {
                 "invalid concrete effect observation",
             ));
         }
-        let history = std::mem::take(&mut self.history);
+        let (previous, earlier) = (self.previous.as_ref(), &self.earlier);
         let selected = self.contract.rules.iter().enumerate().find_map(|(i, r)| {
             r.pattern(self.replacement)
-                .filter(|p| p.selects_after(event, next, &history))
+                .filter(|p| {
+                    let earlier = earlier.get(i).copied().unwrap_or_default();
+                    p.selects_following(event, next, previous, earlier)
+                })
                 .map(|p| (i, r, p))
         });
-        self.history = history;
-        self.history.push(event.clone());
+        for (i, rule) in self.contract.rules.iter().enumerate() {
+            if let (Some(count), Some(pattern)) =
+                (self.earlier.get_mut(i), rule.pattern(self.replacement))
+                && pattern.selector.matches(event)
+            {
+                *count += 1;
+            }
+        }
+        self.previous = Some(event.clone());
         let Some((i, r, p)) = selected else {
             if self.contract.unclassified == UnclassifiedEffects::Required {
                 return Ok(EffectSelection::Unlisted);

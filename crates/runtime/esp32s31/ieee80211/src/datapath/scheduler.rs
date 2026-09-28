@@ -57,7 +57,7 @@ where
             self.irq.is_rx_moderation_active(),
             self.recycled_rx_probe_deadline()
                 .map(|deadline| deadline.as_micros()),
-            self.rx_frame_deficit,
+            self.fairness.deficit(),
             self.services.has_rx_work(),
             self.network_tx_queue_len(),
             self.services.has_prepared_tx(),

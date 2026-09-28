@@ -46,8 +46,6 @@ pub use tx_performance::{
     TX_PERFORMANCE, TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot,
 };
 
-const RX_TX_FAIRNESS_QUANTUM_FRAMES: u32 = 8;
-
 /// Aggregation demand of the next network batch of one logical interface.
 ///
 /// `target` is the number of MPDUs one batch can carry for the destination it
@@ -166,16 +164,6 @@ const fn tx_lookahead_allowed(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DatapathRxServiceContext {
     pub maximum_protocol_frames: Option<usize>,
-}
-
-fn rx_protocol_frame_budget(rx_frame_deficit: i64, network_tx_pending: bool) -> Option<usize> {
-    if !network_tx_pending {
-        return None;
-    }
-    let remaining = i64::from(RX_TX_FAIRNESS_QUANTUM_FRAMES)
-        .saturating_sub(rx_frame_deficit)
-        .max(1);
-    Some(usize::try_from(remaining).unwrap_or(usize::MAX))
 }
 
 /// Terminal, non-error outcome of one role-neutral radio event loop.
@@ -534,10 +522,8 @@ pub struct DatapathRunner<'irq, M: RawMutex, N, B, R> {
     rx_progress: DatapathRxProgress,
     recycled_rx_probe_deadline: Option<Instant>,
     recycled_rx_probe_coalescing_level: u8,
-    /// Signed RX-minus-TX frame balance. A negative value is retained across
-    /// transactions so a large aggregate cannot erase the RX credit it
-    /// consumed merely because the old unsigned counter saturated at zero.
-    rx_frame_deficit: i64,
+    /// Deficit round robin between the RX frontier and network TX.
+    fairness: fairness::RxTxFairness,
     /// Relative network frames admitted for each VIF while both members of a
     /// pair are backlogged. Selection follows the smaller total, so unequal
     /// aggregate sizes do not turn transaction round-robin into airtime-sized
@@ -546,6 +532,7 @@ pub struct DatapathRunner<'irq, M: RawMutex, N, B, R> {
 }
 
 pub mod execution;
+mod fairness;
 mod owner;
 pub mod paired;
 mod scheduler;

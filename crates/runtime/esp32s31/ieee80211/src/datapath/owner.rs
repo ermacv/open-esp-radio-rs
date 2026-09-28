@@ -24,7 +24,7 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             rx_progress,
             recycled_rx_probe_deadline,
             recycled_rx_probe_coalescing_level,
-            rx_frame_deficit,
+            fairness,
             pair_tx_served_frames,
         } = self;
         match map(services) {
@@ -42,7 +42,7 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
                 rx_progress,
                 recycled_rx_probe_deadline,
                 recycled_rx_probe_coalescing_level,
-                rx_frame_deficit,
+                fairness,
                 pair_tx_served_frames,
             }),
             Err(services) => Err(DatapathRunner {
@@ -59,7 +59,7 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
                 rx_progress,
                 recycled_rx_probe_deadline,
                 recycled_rx_probe_coalescing_level,
-                rx_frame_deficit,
+                fairness,
                 pair_tx_served_frames,
             }),
         }
@@ -95,7 +95,7 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             rx_progress: self.rx_progress,
             recycled_rx_probe_deadline: self.recycled_rx_probe_deadline,
             recycled_rx_probe_coalescing_level: self.recycled_rx_probe_coalescing_level,
-            rx_frame_deficit: self.rx_frame_deficit,
+            fairness: self.fairness,
             pair_tx_served_frames: self.pair_tx_served_frames,
         }
     }
@@ -164,7 +164,7 @@ where
             rx_progress: DatapathRxProgress::Drained,
             recycled_rx_probe_deadline: None,
             recycled_rx_probe_coalescing_level: 0,
-            rx_frame_deficit: 0,
+            fairness: super::fairness::RxTxFairness::new(),
             pair_tx_served_frames: [0; 2],
         }
     }

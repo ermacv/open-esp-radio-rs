@@ -14,11 +14,9 @@ where
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
         let mut core0_cycles = RxRunnerProfile::begin();
+        let network_tx_pending = self.network_tx_pending();
         let context = DatapathRxServiceContext {
-            maximum_protocol_frames: rx_protocol_frame_budget(
-                self.rx_frame_deficit,
-                self.services.has_prepared_tx() || self.network_tx_queue_len() != 0,
-            ),
+            maximum_protocol_frames: self.fairness.rx_protocol_frame_budget(network_tx_pending),
         };
         let serviced_before = self.services.serviced_rx_frames();
         let work_before = self.services.rx_work_counters();
@@ -33,9 +31,7 @@ where
             .serviced_rx_frames()
             .saturating_sub(serviced_before);
         let work = self.services.rx_work_counters().saturating_sub(work_before);
-        self.rx_frame_deficit = self
-            .rx_frame_deficit
-            .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
+        self.fairness.charge_rx(serviced, network_tx_pending);
         self.complete_rx_service(progress, work, core0_cycles).await;
         // Control work has its own O(1) readiness predicate and wake future.
         // An ordinary data-only DMA pass must not force the complete control
@@ -55,6 +51,7 @@ where
 
     async fn service_rx_during_tx(&mut self) -> Result<(), B::Error> {
         let mut core0_cycles = RxRunnerProfile::begin();
+        let network_tx_pending = self.network_tx_pending();
         let serviced_before = self.services.serviced_rx_frames();
         let work_before = self.services.rx_work_counters();
         core0_cycles.begin_driver();
@@ -68,9 +65,7 @@ where
             .serviced_rx_frames()
             .saturating_sub(serviced_before);
         let work = self.services.rx_work_counters().saturating_sub(work_before);
-        self.rx_frame_deficit = self
-            .rx_frame_deficit
-            .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
+        self.fairness.charge_rx(serviced, network_tx_pending);
         self.complete_rx_service(progress, work, core0_cycles).await;
         Ok(())
     }
@@ -206,13 +201,18 @@ where
     }
 
     pub(super) const fn network_turn_owed(&self) -> bool {
-        self.rx_frame_deficit >= RX_TX_FAIRNESS_QUANTUM_FRAMES as i64
+        self.fairness.network_turn_owed()
+    }
+
+    /// Whether network TX waits for the radio: a prepared batch or queued
+    /// owners.
+    fn network_tx_pending(&self) -> bool {
+        self.services.has_prepared_tx() || self.network_tx_queue_len() != 0
     }
 
     pub(super) fn account_tx_frames(&mut self, frames: usize) {
-        self.rx_frame_deficit = self
-            .rx_frame_deficit
-            .saturating_sub(i64::try_from(frames.max(1)).unwrap_or(i64::MAX));
+        let rx_pending = self.services.has_rx_work() || self.irq.rx_signaled();
+        self.fairness.charge_tx(frames, rx_pending);
     }
 
     /// Publish one complete software-owned standby transaction.

@@ -14,6 +14,7 @@ blobray-application = { path = "../../../tools/blobray/crates/application" }
 blobray-backend-riscv = { path = "../../../tools/blobray/crates/riscv" }
 blobray-domain = { path = "../../../tools/blobray/crates/domain" }
 blobray-next = { path = "../../../tools/blobray/next" }
+blobray-verification = { path = "../../../tools/blobray/crates/verification" }
 oer-probe-codegen = { path = "../codegen" }
 rv-asm = "=0.2.1"
 clap = { version = "=4.5.48", features = ["derive"] }

@@ -535,6 +535,7 @@ dependencies = [
  "blobray-backend-riscv",
  "blobray-domain",
  "blobray-next",
+ "blobray-verification",
  "clap",
  "gimli",
  "object",

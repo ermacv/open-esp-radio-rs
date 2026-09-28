@@ -8,10 +8,11 @@
 //! every undeclared access the request reaches.
 use crate::harness::Result;
 use blobray_domain::{
-    ComparisonVerdict, EffectContract, EffectSelection, EffectTracker, ExecutionEvent,
-    ExecutionEvidence, ExecutionRequest, Result as DomainResult, RunControl,
+    ComparisonVerdict, EffectContract, EffectSelection, ExecutionEvent, ExecutionEvidence,
+    ExecutionRequest, Result as DomainResult, RunControl, is_contract_effect,
 };
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Directory below the run directory that holds the reports.
@@ -55,58 +56,36 @@ impl RunControl for Unmetered {
     }
 }
 
-fn concrete(event: &ExecutionEvent) -> bool {
-    matches!(
-        event,
-        ExecutionEvent::Read { .. }
-            | ExecutionEvent::Write { .. }
-            | ExecutionEvent::Fence { .. }
-            | ExecutionEvent::DelayMicros { .. }
-    )
-}
-
-/// The events of one side, each concrete effect classified by `contract`.
+/// The events of one side, each concrete effect classified by `contract`
+/// through the comparison's own classification.
 pub fn classify(
     events: &[ExecutionEvent],
     contract: Option<&EffectContract>,
     replacement: bool,
 ) -> Result<Vec<Event>> {
-    let mut tracker = contract
-        .map(|contract| EffectTracker::new(contract, replacement, &mut Unmetered))
-        .transpose()?;
-    let concrete_indices: Vec<usize> = (0..events.len())
-        .filter(|index| concrete(&events[*index]))
-        .collect();
-    let mut rows = vec![];
-    for (index, event) in events.iter().enumerate() {
-        let class = match (&mut tracker, concrete(event)) {
-            (_, false) => None,
-            (None, true) => Some("unlisted".into()),
-            (Some(tracker), true) => {
-                let position = concrete_indices
-                    .iter()
-                    .position(|i| *i == index)
-                    .expect("a concrete event has a position");
-                let next = concrete_indices
-                    .get(position + 1)
-                    .map(|next| &events[*next]);
-                let selection = tracker.observe(event, next, position as u32, &mut Unmetered)?;
-                Some(selection_name(
-                    selection,
-                    contract.expect("a tracker has a contract"),
-                ))
-            }
-        };
-        rows.push(Event {
+    let selections: BTreeMap<usize, String> = match contract {
+        Some(contract) => {
+            blobray_verification::classify_effects(contract, events, replacement, &mut Unmetered)?
+                .into_iter()
+                .map(|(index, selection)| (index, selection_name(selection, contract)))
+                .collect()
+        }
+        None => BTreeMap::new(),
+    };
+    Ok(events
+        .iter()
+        .enumerate()
+        .map(|(index, event)| Event {
             index,
             event: format!("{event:x?}"),
-            class,
-        });
-    }
-    Ok(rows)
+            class: selections.get(&index).cloned().or_else(|| {
+                (contract.is_none() && is_contract_effect(event)).then(|| "unlisted".into())
+            }),
+        })
+        .collect())
 }
 
-fn selection_name(selection: EffectSelection, contract: &EffectContract) -> String {
+pub fn selection_name(selection: EffectSelection, contract: &EffectContract) -> String {
     let rule = |index: u16| {
         contract
             .rules

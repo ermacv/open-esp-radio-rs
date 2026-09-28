@@ -60,7 +60,6 @@ enum Task {
         #[arg(long)]
         all: bool,
     },
-    /// Record reviewed code fingerprints of cited vendor functions.
     /// Rewrite the vendor evidence shards whose recorded sources changed, or
     /// the named scenarios' shards. Resolves conflicting shards after a merge.
     Evidence {
@@ -90,6 +89,7 @@ enum Task {
         /// or with `--check` every shard, when empty.
         scenarios: Vec<String>,
     },
+    /// Record reviewed code fingerprints of cited vendor functions.
     VendorProvenance {
         #[arg(long)]
         chip: String,

@@ -18,8 +18,8 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 
 | Command | Contract |
 | --- | --- |
-| `cargo xtask check changed [--base REV]` | Before a push: `cargo fmt --check` for every workspace a file changed against the merge base with `REV` (default `origin/main`, including uncommitted and untracked files) belongs to; root-workspace Clippy with `-D warnings`; tests and docs.rs-style API documentation of the changed root packages; `check docs` for Markdown/qualification changes, `check metadata` for manifest changes, `check phy` for production crate manifest changes and `check provenance` for every chip whose vendor artifacts are fetched when code, register models, vendor docs or provenance facts changed. Other workspaces are formatted only; it is not full coverage |
-| `cargo xtask compare elf OLD NEW` / `compare images --base REV [--class C]...` | Compare linked RISC-V images function by function modulo placement: formed addresses (branches, `auipc`/`lui` pairs, `.word`, data pointers) become symbol+offset, legacy mangling hashes are dropped, identical-code-folded names pair by body; `--alias FROM=TO` applies a reviewed rename and `--allow NAME` a reviewed scheduling tie. `images` builds each class at REV in a detached worktree and in this checkout. Fails unless every function is equivalent: the gate for pure code moves between crates |
+| `cargo xtask check changed [--base REV]` | Before a push: `cargo fmt --check` for every workspace a file changed against the merge base with `REV` (default `origin/main`, including uncommitted and untracked files) belongs to; root-workspace Clippy with `-D warnings`; tests and docs.rs-style API documentation of the changed root packages; `check docs` for Markdown/qualification changes, `check metadata` for manifest changes, `check phy` for production crate manifest changes, `check provenance` for every chip whose vendor artifacts are fetched when code, register models, vendor docs or provenance facts changed, and a `cargo check` of the HIL firmware feature sets a HIL source change can break. Other workspaces are formatted only; it is not full coverage |
+| `cargo xtask compare elf OLD NEW` / `compare images --base REV [--class C]...` | Compare linked RISC-V images function by function modulo placement: formed addresses (branches, `auipc`/`lui` pairs, `.word`, data pointers) become symbol+offset, legacy mangling hashes and LLVM clone numbers are dropped, identical-code-folded names pair by body; `--alias FROM=TO` applies a reviewed rename, `--allow NAME` a reviewed scheduling tie and `--show NAME` prints the instruction diff of matching functions. `images` builds each class at REV in a detached worktree and in this checkout. Fails unless every function is equivalent: the gate for pure code moves between crates |
 | `cargo xtask stand-install` | Build the xtask of `origin/main` in its own clone under `~/.local/share/open-esp-radio/stand-tool` and install `~/.local/bin/oer-stand`, which runs operational `cargo hil` commands against the caller's checkout without building its tree |
 | `cargo xtask sweep [--all-checkouts] [--apply]` | List, or remove, rebuildable build caches: `incremental` crate data unused for 3 days and HIL image caches unused for 7 days or built for a removed network implementation. Directories whose Cargo build lock is held are skipped; run bundles, evidence and archives are never touched. `check changed` sweeps every sibling checkout at most once a day for the whole host |
 | `cargo xtask check metadata` | Locked metadata for every actual Cargo workspace island, including unstaged source moves; every island applies the root `[patch]` replacements and resolves each Git package to one commit; every island repeats the root `[workspace.lints]` and every package inherits it, except the standalone Blobray workspace and the generated raw PAC |
@@ -32,9 +32,12 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check images` | Build both final performance/correctness HIL application images and run their target audits |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment, then build and test every Blobray crate |
 | `cargo xtask check provenance --chip CHIP` | Fail when a vendor function a production `SOURCE:` block, register-model evidence source or register or field description cites changed in, or vanished from, the pinned artifacts since its reviewed fingerprint in `verification/<chip>/facts/provenance.toml`, or is not registered; requires `cargo xtask vendor-fetch` |
+| `cargo xtask vendor-fetch CHIP` | Download the chip's pinned vendor artifacts into `target/vendor` and verify each against `verification/<chip>/artifacts.toml` |
+| `cargo xtask vendor-scenario SCENARIO ...` | Build Blobray and the typed vendor scenarios, then run one scenario with the forwarded arguments |
+| `cargo xtask hil-observer` | Prepare the current HIL observer configuration without running HIL |
 | `cargo xtask vendor-firmware --chip CHIP [PROJECT]` | Build the tracked vendor firmware of `verification/<chip>/hil-vendor` against the ESP-IDF revision pinned in `artifacts.toml`, checked out once per host in `~/.cache/open-esp-radio/esp-idf/<revision>-<pins>` (`OER_IDF_CACHE` overrides the directory; every checkout shares it) with every IDF submodule whose repository is a pinned source at its pinned revision and verified artifacts; fails when the image links an archive named like a pinned artifact that differs from it. Installs the IDF tools once into the cache's `idf-tools`; preparation holds the cache lock exclusively and builds hold it shared. A checkout's former `target/vendor-firmware/esp-idf` and `idf-tools` are removed on its first build; writes `build.json` next to each image |
 | `cargo xtask vendor-diff --chip CHIP --old A --new B` | Classify every function of two archive revisions by relocation-normalized code: unchanged, references renamed, renamed, changed (with similarity), removed (with the closest candidate) or added; `--baseline DIR` compares every pinned artifact with its namesake in `DIR` |
-| `cargo xtask evidence --chip CHIP [SCENARIO...]` | Rewrite the vendor evidence shards whose recorded sources changed, or the named scenarios' shards; builds the probes and runs the scenarios with the pinned artifacts, then prints each shard's changed claims (verdicts, cases, coverage, untriaged locations) apart from its changed source digests and lines. Use it after a merge that conflicted in `verification/<chip>/evidence/scenarios` |
+| `cargo xtask evidence --chip CHIP [SCENARIO...]` | Rewrite the vendor evidence shards whose recorded sources changed, or the named scenarios' shards; builds the probes and runs the scenarios with the pinned artifacts, then prints each shard's changed claims (verdicts, cases, coverage, untriaged locations) apart from its changed source digests and lines. The verification owner runs it, including after a merge that conflicted in `verification/<chip>/evidence/scenarios` |
 | `cargo xtask evidence --chip CHIP --check [--changed-since REV] [SCENARIO...]` | Rerun the named scenarios, or every one, and fail unless each committed shard equals its rerun, printing the changed claims of each that differs. `--changed-since` reruns only shards that record a file changed since `REV`, in the worktree or untracked, and names each skipped one; a shard that does not parse is always rerun |
 | `cargo xtask vendor-provenance --chip CHIP --accept NAME[,NAME]` | Record the pinned fingerprint of cited functions after reviewing their facts; `--rebuild --baseline DIR` recomputes the registry from the current citations with fingerprints of the revision in `DIR` |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it under a HIL stand lease and `--monitor` opens the console. Without `--port` it flashes the only attached board registered as `esp32s31` |
@@ -79,21 +82,16 @@ build cannot be replaced by a previous application image or a successful
 performance build. This gate does not run on hardware or measure runtime stack
 high-water.
 
-Network dependency checks distinguish released Embassy, original upstream,
-maintained owned and research contracts. Released Embassy products
-use the official crates.io Embassy network APIs and exclude the owned adapter
-and Xarxa. Owned products use fully revision-pinned network forks, with the
-Embassy stack and driver resolving to the same source. These source rules do
-not prohibit shared platform forks such as ESP-HAL. Research excludes Embassy
-and Xarxa from normal and build dependencies, including optional declarations;
-its default and complete feature selections are resolved independently.
-Original upstream checks require the reviewed full revisions from
-`embassy-rs/embassy` and `embassy-rs/xarxa` and reject fork, registry-network or
-local-source substitutions. Product and example checks reject mixed network
-features. Development-only dependencies do not define a production ownership boundary.
-All three station and AP feature profiles are checked in their own locked workspace;
-library profiles use isolated consumers so unrelated workspace features cannot
-hide a dependency leak.
+Network dependency checks resolve each network consumer in isolation and
+audit its boundary: neutral interface crates depend on no network stack, owned
+products and adapters use the revision-pinned owned Xarxa/Embassy forks with
+the stack and driver resolving to the same source, the datapath and radio core
+stay free of network stacks, and research excludes Embassy and Xarxa from
+normal and build dependencies, including optional declarations. These source
+rules do not prohibit shared platform forks such as ESP-HAL. Development-only
+dependencies do not define a production ownership boundary. Library profiles
+use isolated consumers so unrelated workspace features cannot hide a
+dependency leak.
 
 Run the orchestration regressions with:
 
@@ -116,7 +114,7 @@ default and only value); see the
 
 Firmware builds never modify a committed `Cargo.lock`. Each build copies the
 workspace catalog into its own cache and resolves through Cargo's
-`resolver.lockfile-path` (Cargo 1.97+), so a patched network or local override
+`resolver.lockfile-path` (Cargo 1.97+), so a `[patch]` or local override
 writes only that copy, which is archived as the build's effective lockfile.
 Metadata checks read committed catalogs without waiting, and builds of
 different examples, networks or image classes run concurrently. An overlapping

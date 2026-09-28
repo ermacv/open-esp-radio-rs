@@ -124,4 +124,28 @@ mod tests {
             Some("#![forbid(unsafe_code)]")
         );
     }
+
+    #[test]
+    fn the_unsafe_policy_document_lists_exactly_the_audited_packages() {
+        let document = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/UNSAFE.md"),
+        )
+        .unwrap();
+        let table = document
+            .split("| Package suffix | Source path |")
+            .nth(1)
+            .expect("the audited package table");
+        let documented = table
+            .lines()
+            .skip(2)
+            .take_while(|line| line.starts_with('|'))
+            .filter_map(|line| line.split('`').nth(1))
+            .map(|suffix| format!("oer-{suffix}"))
+            .collect::<std::collections::BTreeSet<_>>();
+        let audited = AUDITED_UNSAFE
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(documented, audited);
+    }
 }

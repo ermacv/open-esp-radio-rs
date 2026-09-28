@@ -179,8 +179,9 @@ joins that lease when the lease already holds what it needs, so no other owner
 can flash between the runs of a series. `--board NAME|MAC` (repeatable) and
 `--air shared|exclusive` name what the command uses. A lease naming neither is
 refused: a whole-stand lease blocks every other owner, so it must be asked for
-with `--stand`. The lease options precede the HIL command, or follow
-`lease`:
+with `--stand`. The lease options precede the HIL command or follow
+`lease`; a runner command (`run`, `run-all`, ...) also takes them among its
+arguments before `--`, and refuses two different owners:
 
 | Option | Meaning |
 | --- | --- |

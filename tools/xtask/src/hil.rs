@@ -85,6 +85,10 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("perf") => return perf(ctx, &options, &args[1..]),
         _ => {}
     }
+    // The runner has no lease options: take them from after the command
+    // too, before the runner is built.
+    let (options, args) = options.with_late(args)?;
+    let args = args.as_slice();
     let (runner, receipt_path) = prepare(ctx)?;
     if hands_off_terminal(args) {
         // Fixture installation ends in a foreground sudo handoff. A supervised
@@ -181,7 +185,7 @@ Stand commands (shared by every checkout of this user):
                                       flash an ELF for the board's chip under a lease of that board,
                                       journal it, capture the console for a bounded time
 
-Lease options, before any HIL command or after `lease`:
+Lease options, before any HIL command, after `lease`, or among a runner command's arguments:
   --owner NAME     default: enclosing lease owner, else the checkout directory name
 
 Leases on different boards run in parallel. There is no budget to request:
@@ -210,8 +214,9 @@ every 2h and stay within 1h either way. A run of several scenarios that has
 held 10m yields after its current scenario to a waiter with a higher balance.
 Every lease ends at 1h. There is no budget to request.";
 
-/// Stand lease options accepted before the HIL command, or after `lease`.
-#[derive(Debug, Default, PartialEq)]
+/// Stand lease options accepted before the HIL command, or after `lease`,
+/// and after a runner command.
+#[derive(Clone, Debug, Default, PartialEq)]
 struct LeaseOptions {
     owner: Option<String>,
 }
@@ -249,6 +254,48 @@ impl LeaseOptions {
                     break;
                 }
             }
+        }
+        Ok((options, remaining))
+    }
+
+    /// Take lease options that follow a runner command, up to a `--`, and
+    /// merge them with those before it; different owners are refused.
+    fn with_late(self, args: &[OsString]) -> Result<(Self, Vec<OsString>)> {
+        let mut options = self;
+        let mut remaining = Vec::new();
+        let mut rest = args.iter();
+        while let Some(argument) = rest.next() {
+            let text = argument.to_str().unwrap_or_default();
+            if text == "--" {
+                remaining.push(argument.clone());
+                remaining.extend(rest.by_ref().cloned());
+                break;
+            }
+            let (name, inline) = match text.split_once('=') {
+                Some((name, value)) => (name, Some(value)),
+                None => (text, None),
+            };
+            let owner = match name {
+                "--owner" => match inline {
+                    Some(value) => value.to_owned(),
+                    None => rest
+                        .next()
+                        .and_then(|value| value.to_str())
+                        .ok_or("--owner requires a value")?
+                        .to_owned(),
+                },
+                "--budget" | "--short" => {
+                    return Err(format!("{name}: {}", oer_hil_arbiter::NO_BUDGETS).into());
+                }
+                _ => {
+                    remaining.push(argument.clone());
+                    continue;
+                }
+            };
+            if let Some(earlier) = options.owner.as_ref().filter(|earlier| **earlier != owner) {
+                return Err(format!("--owner is given twice, as {earlier} and {owner}").into());
+            }
+            options.owner = Some(owner);
         }
         Ok((options, remaining))
     }
@@ -1449,6 +1496,30 @@ mod tests {
             }
         );
         assert_eq!(rest, args(&["run", "x", "--owner", "kept"]));
+        // The runner takes no lease options: they may follow its command.
+        let (options, rest) = LeaseOptions::default()
+            .with_late(&args(&["run", "x", "--owner", "phy", "y", "--", "--owner"]))
+            .unwrap();
+        assert_eq!(options.owner.as_deref(), Some("phy"));
+        assert_eq!(rest, args(&["run", "x", "y", "--", "--owner"]));
+        let (options, _) = options.with_late(&args(&["run", "--owner=phy"])).unwrap();
+        assert_eq!(options.owner.as_deref(), Some("phy"));
+        assert!(
+            options
+                .clone()
+                .with_late(&args(&["run", "--owner", "bt"]))
+                .is_err()
+        );
+        assert!(
+            LeaseOptions::default()
+                .with_late(&args(&["run", "--budget", "5m"]))
+                .is_err()
+        );
+        assert!(
+            LeaseOptions::default()
+                .with_late(&args(&["run", "--owner"]))
+                .is_err()
+        );
         // Budgets are retired: the stand charges held time.
         assert!(LeaseOptions::split(&args(&["--budget", "15m"])).is_err());
         assert!(LeaseOptions::split(&args(&["--short", "run"])).is_err());

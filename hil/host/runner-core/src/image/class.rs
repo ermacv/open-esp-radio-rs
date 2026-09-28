@@ -143,9 +143,11 @@ impl ImageClass {
                 bluetooth_secure_gatt: true,
                 ..console
             },
-            // The radio-contract image serves Direct Test Mode only.
+            // The radio-contract image serves Direct Test Mode and raw HCI
+            // exchanges.
             Self::BluetoothDtm => FeatureCapabilities {
                 phy_rx_hot_sram: true,
+                bluetooth_hci: true,
                 ..dtm
             },
             Self::BluetoothPhyMaintenance => FeatureCapabilities {

@@ -480,6 +480,47 @@ pub enum BluetoothDtmResult {
     LeaseExpired,
 }
 
+/// Longest HCI command parameter block a request carries. It covers every
+/// legacy command and LE Extended Create Connection for all three PHYs;
+/// longer advertising data travels in the fragments HCI defines for it, and
+/// the bound keeps a decoded command within the embedded queue budget.
+pub const BLUETOOTH_HCI_PARAMETER_BYTES: usize = 64;
+/// Longest HCI event packet: event code, length and parameters.
+pub const BLUETOOTH_HCI_EVENT_BYTES: usize = 2 + 255;
+
+/// One raw HCI exchange with the image's Controller.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BluetoothHciRequest {
+    /// Send one command and wait for its Command Complete or Command Status;
+    /// other events that arrive meanwhile stay queued for
+    /// [`Self::NextEvent`].
+    Command {
+        opcode: u16,
+        parameters: heapless::Vec<u8, BLUETOOTH_HCI_PARAMETER_BYTES>,
+    },
+    /// Return the oldest queued Controller event, waiting up to `wait_ms`.
+    NextEvent { wait_ms: u16 },
+}
+
+/// The image's answer to one [`BluetoothHciRequest`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BluetoothHciResponse {
+    /// The command's Command Complete or Command Status event.
+    Completed(heapless::Vec<u8, BLUETOOTH_HCI_EVENT_BYTES>),
+    /// One Controller event.
+    Event {
+        packet: heapless::Vec<u8, BLUETOOTH_HCI_EVENT_BYTES>,
+        /// Events dropped because the queue was full, since the last report.
+        dropped: u16,
+    },
+    /// No event arrived in time.
+    NoEvent,
+    /// The command did not complete in time.
+    Timeout,
+    /// The Host transport failed.
+    TransportFailed,
+}
+
 use crate::ResetReason;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -3006,6 +3006,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "futures-lite",
+ "heapless 0.9.3",
  "oer-hil-fixture",
  "oer-hil-protocol",
  "oer-hil-runner-core",

@@ -2,6 +2,7 @@
 
 pub mod att;
 pub mod att_parameters;
+pub mod discovery;
 pub use oer_hil_fixture::bluetooth::model;
 pub mod secure_gatt;
 

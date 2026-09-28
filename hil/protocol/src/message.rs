@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 191;
+pub const PROTOCOL_VERSION: u16 = 192;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -116,6 +116,9 @@ pub struct FeatureCapabilities {
     #[serde(default)]
     pub phy_register_image: bool,
     pub bluetooth_dtm: bool,
+    /// Raw HCI exchanges with the image's Controller.
+    #[serde(default)]
+    pub bluetooth_hci: bool,
     pub udp: bool,
     pub tcp: bool,
     pub rx: bool,
@@ -530,6 +533,8 @@ pub enum Command {
     PhyTracking(crate::PhyTrackingCommand),
     BluetoothPeripheral(crate::BluetoothPeripheralOperation),
     BluetoothDtm(crate::BluetoothDtmOperation),
+    /// Raw HCI exchange with the Controller of a `bluetooth_hci` image.
+    BluetoothHci(crate::BluetoothHciRequest),
     GetCapabilities,
     /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
     /// query is valid only outside an active traffic session.
@@ -1133,6 +1138,7 @@ pub enum Event {
     PhyTracking(crate::PhyTrackingEvidence),
     BluetoothPeripheral(crate::BluetoothPeripheralEvidence),
     BluetoothDtm(crate::BluetoothDtmEvidence),
+    BluetoothHci(crate::BluetoothHciResponse),
     /// AP-epoch modelled service accounting, emitted before the correlated stop.
     WifiAirtimePeer(crate::WifiAirtimePeerEvidence),
     /// Completeness of the preceding bounded peer records for this AP epoch.

@@ -1,13 +1,24 @@
-//! Direct Test Mode through the HCI Controller.
+//! Direct Test Mode and raw HCI exchanges through the HCI Controller.
 //!
 //! One task owns the Host end of the transport. It resets the Controller at
-//! boot, then turns every HIL DTM operation into the standard HCI command and
-//! waits for its Command Complete: LE Transmitter Test v1 on channel 0 with
-//! 37-byte PRBS9 payloads, LE Receiver Test v1 on channel 0, LE Test End and
-//! HCI Reset. The Controller core runs the test over the radio runtime.
+//! boot, then serves the console: every HIL DTM operation becomes the standard
+//! HCI command and waits for its Command Complete (LE Transmitter Test v1 on
+//! channel 0 with 37-byte PRBS9 payloads, LE Receiver Test v1 on channel 0,
+//! LE Test End and HCI Reset), and every raw HCI request either sends one
+//! command and returns its Command Complete or Command Status, or returns the
+//! oldest queued Controller event. Events that arrive while a command waits
+//! for its completion join that bounded queue; when it is full the oldest one
+//! is dropped and counted. The Controller core runs every role over the radio
+//! runtime.
 
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use core::cell::RefCell;
+
+use embassy_sync::{
+    blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
+    channel::Channel,
+};
 use embassy_time::{Duration, with_timeout};
+use heapless::{Deque, Vec};
 use oer_bluetooth_hci::bt_hci::{
     ControllerToHostPacket, PacketKind,
     cmd::{Opcode, OpcodeGroup},
@@ -15,8 +26,9 @@ use oer_bluetooth_hci::bt_hci::{
 };
 use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
 use oer_hil_protocol::{
-    BluetoothDtmEvidence, BluetoothDtmOperation as Operation, BluetoothDtmResult,
-    BluetoothDtmRxDiagnostics, Command, Event, FeatureCapabilities, RejectReason,
+    BLUETOOTH_HCI_EVENT_BYTES, BluetoothDtmEvidence, BluetoothDtmOperation as Operation,
+    BluetoothDtmResult, BluetoothDtmRxDiagnostics, BluetoothHciRequest, BluetoothHciResponse,
+    Command, Event, FeatureCapabilities, RejectReason,
 };
 
 use super::console;
@@ -29,11 +41,41 @@ const TEST_END: Opcode = Opcode::new(OpcodeGroup::LE, 0x001f);
 const CHANNEL: u8 = 0;
 const PAYLOAD_BYTES: u8 = 37;
 const PRBS9: u8 = 0x00;
-/// Bound on one DTM operation, including draining the event in progress.
+/// Bound on one DTM operation or raw command, including draining the event in
+/// progress.
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(2);
+/// Controller events kept for [`BluetoothHciRequest::NextEvent`].
+const EVENT_QUEUE: usize = 16;
+const COMMAND_COMPLETE: u8 = 0x0e;
+const COMMAND_STATUS: u8 = 0x0f;
 
-static OPERATIONS: Channel<CriticalSectionRawMutex, Operation, 1> = Channel::new();
-static RESULTS: Channel<CriticalSectionRawMutex, (BluetoothDtmResult, u16), 1> = Channel::new();
+enum Request {
+    Dtm(Operation),
+    Hci(BluetoothHciRequest),
+}
+
+enum Reply {
+    Dtm(BluetoothDtmResult, u16),
+    Hci(BluetoothHciResponse),
+}
+
+static REQUESTS: Channel<CriticalSectionRawMutex, Request, 1> = Channel::new();
+static REPLIES: Channel<CriticalSectionRawMutex, Reply, 1> = Channel::new();
+
+type Packet = Vec<u8, BLUETOOTH_HCI_EVENT_BYTES>;
+
+/// Controller events no request has returned yet, with the count of those
+/// dropped since the last returned one. Static, so that the task future
+/// stays small.
+struct Queue {
+    events: Deque<Packet, EVENT_QUEUE>,
+    dropped: u16,
+}
+
+static QUEUE: Mutex<CriticalSectionRawMutex, RefCell<Queue>> = Mutex::new(RefCell::new(Queue {
+    events: Deque::new(),
+    dropped: 0,
+}));
 
 pub(super) async fn run(
     spawner: embassy_executor::Spawner,
@@ -41,7 +83,7 @@ pub(super) async fn run(
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot: u64,
 ) -> ! {
-    spawner.spawn(tester(host).expect("Bluetooth DTM task"));
+    spawner.spawn(tester(host).expect("Bluetooth HCI task"));
     console::run(usb, boot, &Profile).await
 }
 
@@ -51,6 +93,7 @@ impl console::Profile for Profile {
     fn features(&self) -> FeatureCapabilities {
         FeatureCapabilities {
             bluetooth_dtm: true,
+            bluetooth_hci: true,
             phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
             ..FeatureCapabilities::default()
         }
@@ -61,81 +104,172 @@ impl console::Profile for Profile {
     }
 
     async fn command(&self, command: Command) -> Event {
-        let Command::BluetoothDtm(operation) = command else {
-            return Event::Rejected(RejectReason::InvalidState);
+        let request = match command {
+            Command::BluetoothDtm(operation) => Request::Dtm(operation),
+            Command::BluetoothHci(request) => Request::Hci(request),
+            _ => return Event::Rejected(RejectReason::InvalidState),
         };
-        OPERATIONS.send(operation).await;
-        let (result, received) = RESULTS.receive().await;
-        Event::BluetoothDtm(BluetoothDtmEvidence {
-            reset_reason: crate::system::boot_evidence().reset_reason,
-            operation,
-            result,
-            rx_diagnostics: BluetoothDtmRxDiagnostics {
-                counted_packets: u32::from(received),
-                ..BluetoothDtmRxDiagnostics::default()
+        let operation = match &request {
+            Request::Dtm(operation) => Some(*operation),
+            Request::Hci(_) => None,
+        };
+        REQUESTS.send(request).await;
+        match (REPLIES.receive().await, operation) {
+            (Reply::Dtm(result, received), Some(operation)) => {
+                Event::BluetoothDtm(BluetoothDtmEvidence {
+                    reset_reason: crate::system::boot_evidence().reset_reason,
+                    operation,
+                    result,
+                    rx_diagnostics: BluetoothDtmRxDiagnostics {
+                        counted_packets: u32::from(received),
+                        ..BluetoothDtmRxDiagnostics::default()
+                    },
+                })
+            }
+            (Reply::Hci(response), None) => Event::BluetoothHci(response),
+            _ => Event::Rejected(RejectReason::InvalidState),
+        }
+    }
+}
+
+/// The Host end of the transport.
+struct Host {
+    transport: BluetoothHostTransport,
+}
+
+impl Host {
+    /// Read the next Controller event; ACL data is discarded.
+    async fn read_event(&self) -> Option<Packet> {
+        let mut buffer = [0; oer_esp32s31_bluetooth_system::PACKET];
+        loop {
+            let ControllerToHostPacket::Event(event) =
+                self.transport.read(&mut buffer).await.ok()?
+            else {
+                continue;
+            };
+            let mut packet = Packet::new();
+            packet.push(event.kind.0).ok()?;
+            packet.push(event.data.len() as u8).ok()?;
+            packet.extend_from_slice(event.data).ok()?;
+            return Some(packet);
+        }
+    }
+
+    fn queue(&self, packet: Packet) {
+        QUEUE.lock(|queue| {
+            let mut queue = queue.borrow_mut();
+            if queue.events.is_full() {
+                queue.events.pop_front();
+                queue.dropped = queue.dropped.saturating_add(1);
+            }
+            let _ = queue.events.push_back(packet);
+        });
+    }
+
+    /// Send one command and wait for its Command Complete or Command Status,
+    /// queueing every other event. `None` when the transport failed.
+    async fn command(&self, opcode: Opcode, parameters: &[u8]) -> Option<Packet> {
+        self.transport
+            .write(&RawCommand { opcode, parameters })
+            .await
+            .ok()?;
+        loop {
+            let packet = self.read_event().await?;
+            let completes = match packet[0] {
+                COMMAND_COMPLETE => {
+                    packet.len() >= 5 && packet[3..5] == opcode.to_raw().to_le_bytes()
+                }
+                COMMAND_STATUS => {
+                    packet.len() >= 6 && packet[4..6] == opcode.to_raw().to_le_bytes()
+                }
+                _ => false,
+            };
+            if completes {
+                return Some(packet);
+            }
+            self.queue(packet);
+        }
+    }
+
+    async fn next_event(&self, wait: Duration) -> BluetoothHciResponse {
+        let queued = QUEUE.lock(|queue| queue.borrow_mut().events.pop_front());
+        let packet = match queued {
+            Some(packet) => packet,
+            None => match with_timeout(wait, self.read_event()).await {
+                Ok(Some(packet)) => packet,
+                Ok(None) => return BluetoothHciResponse::TransportFailed,
+                Err(_) => return BluetoothHciResponse::NoEvent,
             },
-        })
+        };
+        let dropped = QUEUE.lock(|queue| core::mem::take(&mut queue.borrow_mut().dropped));
+        BluetoothHciResponse::Event { packet, dropped }
     }
 }
 
 #[embassy_executor::task]
-async fn tester(host: BluetoothHostTransport) {
-    if command(&host, RESET, &[]).await != Some((0, None)) {
+async fn tester(transport: BluetoothHostTransport) {
+    let host = Host { transport };
+    if host
+        .command(RESET, &[])
+        .await
+        .and_then(|packet| packet.get(5).copied())
+        != Some(0)
+    {
         crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-hci-reset\r\n");
     }
     let mut received = 0;
     loop {
-        let operation = OPERATIONS.receive().await;
-        let result = with_timeout(OPERATION_TIMEOUT, execute(&host, operation))
-            .await
-            .unwrap_or(BluetoothDtmResult::Timeout);
-        if let BluetoothDtmResult::Complete {
-            received_packets: Some(count),
-        } = result
-        {
-            received = count;
-        }
-        RESULTS.send((result, received)).await;
+        let reply = match REQUESTS.receive().await {
+            Request::Dtm(operation) => {
+                let result = with_timeout(OPERATION_TIMEOUT, execute(&host, operation))
+                    .await
+                    .unwrap_or(BluetoothDtmResult::Timeout);
+                if let BluetoothDtmResult::Complete {
+                    received_packets: Some(count),
+                } = result
+                {
+                    received = count;
+                }
+                Reply::Dtm(result, received)
+            }
+            Request::Hci(BluetoothHciRequest::Command { opcode, parameters }) => {
+                let opcode = Opcode::new(OpcodeGroup::new((opcode >> 10) as u8), opcode & 0x03ff);
+                Reply::Hci(
+                    match with_timeout(OPERATION_TIMEOUT, host.command(opcode, &parameters)).await {
+                        Ok(Some(packet)) => BluetoothHciResponse::Completed(packet),
+                        Ok(None) => BluetoothHciResponse::TransportFailed,
+                        Err(_) => BluetoothHciResponse::Timeout,
+                    },
+                )
+            }
+            Request::Hci(BluetoothHciRequest::NextEvent { wait_ms }) => Reply::Hci(
+                host.next_event(Duration::from_millis(u64::from(wait_ms)))
+                    .await,
+            ),
+        };
+        REPLIES.send(reply).await;
     }
 }
 
-async fn execute(host: &BluetoothHostTransport, operation: Operation) -> BluetoothDtmResult {
+async fn execute(host: &Host, operation: Operation) -> BluetoothDtmResult {
     let (opcode, parameters): (Opcode, &[u8]) = match operation {
         Operation::Transmit => (TRANSMITTER_TEST, &[CHANNEL, PAYLOAD_BYTES, PRBS9]),
         Operation::Receive => (RECEIVER_TEST, &[CHANNEL]),
         Operation::End => (TEST_END, &[]),
         Operation::Reset => (RESET, &[]),
     };
-    match command(host, opcode, parameters).await {
-        Some((0, count)) => BluetoothDtmResult::Complete {
-            received_packets: (operation == Operation::End).then(|| count.unwrap_or(0)),
-        },
-        _ => BluetoothDtmResult::HciRejected,
-    }
-}
-
-/// Send one command and wait for its Command Complete: the status and, for
-/// LE Test End, the packet count. `None` when the transport failed.
-async fn command(
-    host: &BluetoothHostTransport,
-    opcode: Opcode,
-    parameters: &[u8],
-) -> Option<(u8, Option<u16>)> {
-    host.write(&RawCommand { opcode, parameters }).await.ok()?;
-    let mut buffer = [0; oer_esp32s31_bluetooth_system::PACKET];
-    loop {
-        let ControllerToHostPacket::Event(event) = host.read(&mut buffer).await.ok()? else {
-            continue;
-        };
-        // Command Complete: packets, opcode, status, return parameters.
-        let data = event.data;
-        if event.kind.0 == 0x0e
-            && data.len() >= 4
-            && u16::from_le_bytes([data[1], data[2]]) == opcode.to_raw()
-        {
-            let count = (data.len() >= 6).then(|| u16::from_le_bytes([data[4], data[5]]));
-            return Some((data[3], count));
+    // Command Complete: code, length, packets, opcode, status, count.
+    match host.command(opcode, parameters).await {
+        Some(packet) if packet[0] == COMMAND_COMPLETE && packet.get(5) == Some(&0) => {
+            BluetoothDtmResult::Complete {
+                received_packets: (operation == Operation::End).then(|| {
+                    packet
+                        .get(6..8)
+                        .map_or(0, |count| u16::from_le_bytes([count[0], count[1]]))
+                }),
+            }
         }
+        _ => BluetoothDtmResult::HciRejected,
     }
 }
 

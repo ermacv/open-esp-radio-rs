@@ -20,6 +20,7 @@ pub const fn hil_capabilities() -> Capabilities {
             bluetooth_gatt: cfg!(feature = "wifi-ble-coex"),
             bluetooth_secure_gatt: false,
             bluetooth_dtm: false,
+            bluetooth_hci: false,
             bluetooth_peripheral: false,
             bluetooth_phy_maintenance: false,
             bluetooth_watchdog_reset: false,

@@ -38,16 +38,18 @@ mod framing;
 #[cfg(feature = "async-io")]
 mod io;
 pub use bluetooth::{
+    BLUETOOTH_HCI_EVENT_BYTES, BLUETOOTH_HCI_PARAMETER_BYTES,
     BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES,
     BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS, BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK,
     BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV, BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
     BluetoothAclBackpressureEvidence, BluetoothCalibrationTrafficEvidence, BluetoothDtmEvidence,
     BluetoothDtmOperation, BluetoothDtmResult, BluetoothDtmRxDiagnostics,
-    BluetoothEncryptionEvidence, BluetoothPeripheralEvidence, BluetoothPeripheralOperation,
-    BluetoothPeripheralResult, BluetoothPeripheralTermination, BluetoothPhyMaintenanceEvidence,
-    BluetoothPhyOperation, BluetoothSecurityFailure, PhyRxGainQualityEvidence,
-    bluetooth_backpressure_packet, bluetooth_calibration_notification,
-    bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
+    BluetoothEncryptionEvidence, BluetoothHciRequest, BluetoothHciResponse,
+    BluetoothPeripheralEvidence, BluetoothPeripheralOperation, BluetoothPeripheralResult,
+    BluetoothPeripheralTermination, BluetoothPhyMaintenanceEvidence, BluetoothPhyOperation,
+    BluetoothSecurityFailure, PhyRxGainQualityEvidence, bluetooth_backpressure_packet,
+    bluetooth_calibration_notification, bluetooth_peripheral_acl_payload,
+    bluetooth_peripheral_acl_payload_for_sequence,
 };
 #[cfg(feature = "async-io")]
 pub use io::write_frame;

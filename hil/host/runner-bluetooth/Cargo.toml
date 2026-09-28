@@ -15,6 +15,7 @@ oer-process = { path = "../../../tools/process" }
 oer-hil-fixture = { path = "../fixture" }
 tempfile = "3"
 oer-hil-protocol = { path = "../../protocol" }
+heapless = "0.9.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 zbus = "=5.19.0"

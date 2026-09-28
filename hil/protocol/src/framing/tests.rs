@@ -1932,3 +1932,41 @@ fn full_trace_pages_fit_a_frame_and_round_trip() {
         assert_eq!(observed, Some(expected));
     }
 }
+
+#[test]
+fn the_largest_hci_exchange_fits_one_frame_each_way() {
+    let mut encoder = FrameEncoder::new();
+    let command = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Command::BluetoothHci(crate::BluetoothHciRequest::Command {
+            opcode: u16::MAX,
+            parameters: heapless::Vec::from_slice(&[0xa5; crate::BLUETOOTH_HCI_PARAMETER_BYTES])
+                .unwrap(),
+        }),
+    );
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(encoder.encode(&command).unwrap(), |result| {
+        observed = Some(result.unwrap())
+    });
+    assert_eq!(observed, Some(command));
+    let event = Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        Event::BluetoothHci(crate::BluetoothHciResponse::Event {
+            packet: heapless::Vec::from_slice(&[0x5a; crate::BLUETOOTH_HCI_EVENT_BYTES]).unwrap(),
+            dropped: u16::MAX,
+        }),
+    );
+    let frame = encoder.encode(&event).unwrap();
+    assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    assert_eq!(observed, Some(event));
+}

@@ -166,6 +166,10 @@ impl Owner {
         self.restored = true;
         Ok(())
     }
+    /// The adapter's public address.
+    pub fn address(&self) -> PeerAddress {
+        self.address
+    }
     pub fn connect(&self, peer: PeerAddress) -> Result<Att> {
         Att::connect(self.address, peer)
     }

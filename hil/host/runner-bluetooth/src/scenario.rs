@@ -30,6 +30,12 @@ use crate::{
 pub enum BluetoothScenario {
     /// Three plaintext ATT connection cycles on one Trouble/Controller epoch.
     Gatt {},
+    /// Scannable non-connectable advertising found by an active scanner
+    /// through its scan response.
+    ScannableAdvertising {},
+    /// High duty cycle directed advertising times out; low duty cycle
+    /// directed advertising connects its target.
+    DirectedAdvertising {},
     /// Automated Numeric Comparison, bonded reconnect and an explicit
     /// terminal fault.
     SecureGatt {
@@ -203,6 +209,8 @@ impl BluetoothScenario {
             | Self::EncryptedAcl { .. }
             | Self::SecurityFailure { .. }
             | Self::Dtm { .. }
+            | Self::ScannableAdvertising {}
+            | Self::DirectedAdvertising {}
             | Self::Peripheral { .. } => ImageClass::BluetoothDtm,
         }
     }
@@ -223,6 +231,7 @@ impl BluetoothScenario {
     pub fn served_by(&self, features: &FeatureCapabilities) -> bool {
         match self {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
+            Self::ScannableAdvertising {} | Self::DirectedAdvertising {} => features.bluetooth_hci,
             Self::Dtm { .. } | Self::WatchdogReset {} | Self::MaintenanceDeadline {} => {
                 features.bluetooth_dtm
             }
@@ -238,9 +247,11 @@ impl BluetoothScenario {
     /// The Linux adapter capabilities this workload needs.
     pub fn adapter_preflight(&self) -> fn(Adapter) -> Result<()> {
         match self {
-            Self::Gatt {} | Self::SecureGatt { .. } | Self::AclBackpressure { .. } => {
-                fixture::att::preflight
-            }
+            Self::Gatt {}
+            | Self::SecureGatt { .. }
+            | Self::AclBackpressure { .. }
+            | Self::ScannableAdvertising {}
+            | Self::DirectedAdvertising {} => fixture::att::preflight,
             Self::AclCalibration { .. } => fixture::att_parameters::preflight,
             Self::Dtm { .. } | Self::WatchdogReset {} | Self::MaintenanceDeadline {} => {
                 fixture::preflight
@@ -255,6 +266,8 @@ impl BluetoothScenario {
     pub fn run(&self, output: &Path, context: &Context<'_>) -> Result<()> {
         match self {
             Self::Gatt {} => workload::gatt::run(output, context),
+            Self::ScannableAdvertising {} => workload::scannable::run(output, context),
+            Self::DirectedAdvertising {} => workload::directed::run(output, context),
             Self::SecureGatt {
                 shutdown,
                 irq_sampling,

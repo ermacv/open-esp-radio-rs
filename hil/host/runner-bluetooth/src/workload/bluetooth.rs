@@ -4,9 +4,12 @@ pub mod backpressure;
 pub mod calibration;
 pub mod coexistence;
 pub mod deadline;
+pub mod directed;
 mod encrypted_maintenance;
 pub mod gatt;
+mod hci;
 pub mod phy_watchdog;
+pub mod scannable;
 pub mod secure_gatt;
 pub mod security_failure;
 

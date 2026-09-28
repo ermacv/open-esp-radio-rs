@@ -1183,6 +1183,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         .await;
                     }
                     Command::BluetoothDtm(_)
+                    | Command::BluetoothHci(_)
                     | Command::QueryBluetoothSecureGatt
                     | Command::ConfirmBluetoothGatt(_)
                     | Command::RestartBluetoothGatt { .. }

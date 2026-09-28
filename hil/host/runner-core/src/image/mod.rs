@@ -91,12 +91,21 @@ pub fn classify_flashed_capabilities(
         if features.bluetooth_phy_maintenance && features.bluetooth_watchdog_reset {
             return None;
         }
+        // Only the radio-contract image serves raw HCI exchanges.
+        if features.bluetooth_hci
+            && (features.bluetooth_peripheral
+                || features.bluetooth_phy_maintenance
+                || features.bluetooth_watchdog_reset)
+        {
+            return None;
+        }
         let expected = FeatureCapabilities {
             bluetooth_dtm: true,
             // The radio-contract image serves DTM without a peripheral role.
             bluetooth_peripheral: features.bluetooth_peripheral,
             bluetooth_phy_maintenance: features.bluetooth_phy_maintenance,
             bluetooth_watchdog_reset: features.bluetooth_watchdog_reset,
+            bluetooth_hci: features.bluetooth_hci,
             phy_fault_injection: features.phy_fault_injection,
             // Sealed older Bluetooth images retain their original placement.
             phy_rx_hot_sram: features.phy_rx_hot_sram,

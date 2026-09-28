@@ -879,6 +879,30 @@ impl SerialCapture {
         }
     }
 
+    /// One raw HCI exchange with the Controller of a `bluetooth_hci` image.
+    pub fn bluetooth_hci(
+        &self,
+        request: oer_hil_protocol::BluetoothHciRequest,
+    ) -> Result<oer_hil_protocol::BluetoothHciResponse> {
+        let wait = match &request {
+            oer_hil_protocol::BluetoothHciRequest::NextEvent { wait_ms } => {
+                Duration::from_millis(u64::from(*wait_ms))
+            }
+            oer_hil_protocol::BluetoothHciRequest::Command { .. } => Duration::ZERO,
+        };
+        match self
+            .send_command(
+                0,
+                Command::BluetoothHci(request),
+                Duration::from_secs(5) + wait,
+            )?
+            .body
+        {
+            Event::BluetoothHci(response) => Ok(response),
+            response => Err(format!("Bluetooth HCI exchange rejected: {response:?}").into()),
+        }
+    }
+
     /// The standalone GATT image's observation, accepted only with its
     /// single-core Bluetooth IRQ stack evidence.
     pub fn bluetooth_gatt(&self) -> Result<oer_hil_protocol::BluetoothGattEvidence> {

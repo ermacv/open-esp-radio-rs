@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "910670aebd0a0bf741470a6ca19bfa6c9b5ba8c4b8913560a59eedb85d61a95d",
+    "input-2": "7caf03308528693aca7f17dd3238830bad05c31d2f4d78e6a4b338fea6514a5a",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "input-5": "e643ad6aef2d840fa605255dc3c773f328cd103ecbc93ef0047ebc9deea7dadc",
@@ -391,7 +391,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/lib.rs",
-      "sha256": "f27cc6bb7215c611356b0cc09b2defa57bfed0084613b9ebf9b42bf5d2f7583c"
+      "sha256": "afae42993ac19ad3c3e1bc9ffcf9962fdd81788a5d29734ae4fbb2d35760672f"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_dma.rs",
@@ -399,11 +399,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "sha256": "c2f2750ac94bbf13ae54da803fb86526488a400953e664407348e84eb77a1d43"
+      "sha256": "3fbfceee3fdcf00eb2b3c38aaf5c2637aef9c32252fde24b5c10a8aedd2c2e07"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "sha256": "11471dcda6dc4ebc67d1fd9fcfd01c93f8705dc28944c129f3d7787ce55788be"
+      "sha256": "d2af1a38de0b4d0e91d715859317d8dd81541dfd78f6150328fbde80d9e5248c"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_ampdu_storage.rs",
@@ -547,7 +547,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx/pool.rs",
-      "sha256": "0ccaa5b1c375dea851465d7e6c401a8f005819f07326ca6dd3ced31d00041b6d"
+      "sha256": "97b8e846b9e3aedddeba0176f43681a120964b4d69383249de7484efab3e6f30"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/rx.rs",
@@ -2571,7 +2571,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_control.rs",
-      "sha256": "26230e79018c1ac417e39b8a943d75f787599b4599a3087a310bb885b4b3ad2d"
+      "sha256": "1189c00d1476a5bbde08a7b2cde185d873b293526ec7d9e8c8d91d717c0f8771"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/src/connected_rx.rs",
@@ -3139,7 +3139,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/control.rs",
-      "sha256": "ce3dbaf7ca13249df5bd03e32026314fb05f5ec549d5b9a4e3fd2d70dbcfa6e8"
+      "sha256": "aefae6e7da2ac522cf2a7961ba97aa6403db4314a8dc5f9cba041e04ce327325"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/control_mailbox.rs",
@@ -3211,7 +3211,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/rx_protocol/dispatch.rs",
-      "sha256": "ace223706c79451f88f6ce93398683f2ab7d5f709e1f5d9bcb5658a9246fe9d5"
+      "sha256": "5db4a4f793cdabc0f437d7bb962679db97729aad303f936900e457a480e57e97"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/rx_protocol/owner.rs",
@@ -4431,7 +4431,7 @@
     }
   ],
   "dependence": {
-    "read-data": "30680cff7b48854197094f10f89523794199e3e4a667da03be4c732b34bacfc5",
+    "read-data": "8d858dc72c32dbca62303bf4fa66ea71dce34668cc1b75384b52dd3a8e9b0a83",
     "fallback": "read data object _RNvNtCsbxRtKtcQ7s2_24oer_esp32s31_probe_radio12ampdu_resort8METADATA has no declaration file",
     "coverage-decisions": {
       "path": "verification/esp32s31/decisions/coverage.toml",
@@ -5867,8 +5867,8 @@
         "untriaged": 0
       },
       "observation": {
-        "executed": 313,
-        "observed": 289,
+        "executed": 315,
+        "observed": 291,
         "reviewed": 0,
         "untriaged": 24
       },
@@ -7361,11 +7361,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 948
+      "line": 947
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 958
+      "line": 957
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 1873
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7373,11 +7377,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1877
+      "line": 1876
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1878
+      "line": 1906
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7389,27 +7393,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1912
+      "line": 1914
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1916
+      "line": 2157
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2160
+      "line": 2158
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2161
+      "line": 2283
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2287
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2288
+      "line": 2284
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_ampdu_storage.rs",
@@ -7650,10 +7650,6 @@
       "line": 164
     },
     {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/lib.rs",
-      "line": 38
-    },
-    {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_dma.rs",
       "line": 123
     },
@@ -7807,6 +7803,14 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 297
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 298
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
       "line": 299
     },
     {
@@ -7815,31 +7819,35 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 301
+      "line": 302
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 306
+      "line": 305
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 695
+      "line": 694
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 720
+      "line": 719
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 722
+      "line": 721
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 724
+      "line": 723
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 730
+      "line": 729
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 788
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7847,51 +7855,51 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 790
+      "line": 807
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 808
+      "line": 817
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 818
+      "line": 833
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 834
+      "line": 836
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 837
+      "line": 868
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 869
+      "line": 891
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 892
+      "line": 1334
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1336
+      "line": 1339
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1341
+      "line": 1340
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1342
+      "line": 1343
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1345
+      "line": 1344
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1346
+      "line": 1347
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7907,15 +7915,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1355
+      "line": 1369
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1371
+      "line": 1370
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1372
+      "line": 1375
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 1376
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7923,31 +7935,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1378
+      "line": 1380
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1379
+      "line": 1387
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1382
+      "line": 1388
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1389
+      "line": 1393
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1390
+      "line": 1399
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1395
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1401
+      "line": 1409
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7955,7 +7963,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1413
+      "line": 1485
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 1486
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7979,19 +7991,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1492
+      "line": 1495
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1493
+      "line": 1496
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1497
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1498
+      "line": 1499
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -7999,15 +8007,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1503
+      "line": 1671
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1673
+      "line": 1764
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1766
+      "line": 1767
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8019,7 +8027,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1773
+      "line": 1776
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 1777
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8027,23 +8039,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1779
+      "line": 1789
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1780
+      "line": 1792
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1791
+      "line": 1801
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1794
+      "line": 1805
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1803
+      "line": 1806
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8051,23 +8063,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1808
+      "line": 1816
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1809
+      "line": 1829
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1818
+      "line": 1833
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1831
+      "line": 1837
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1835
+      "line": 1838
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8075,11 +8087,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1840
+      "line": 1849
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1841
+      "line": 1850
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8087,15 +8099,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1852
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
       "line": 1853
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1855
+      "line": 1857
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 1858
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8103,11 +8115,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1860
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1861
+      "line": 1872
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8115,19 +8123,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1876
+      "line": 1877
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1879
+      "line": 1884
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1886
+      "line": 1901
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1903
+      "line": 1905
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8135,7 +8143,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1909
+      "line": 1911
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8143,35 +8151,39 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1915
+      "line": 1928
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 1930
+      "line": 2005
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2007
+      "line": 2030
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2032
+      "line": 2048
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2050
+      "line": 2049
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2051
+      "line": 2107
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2110
+      "line": 2112
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2115
+      "line": 2118
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 2120
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8179,7 +8191,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2123
+      "line": 2122
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8191,15 +8203,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2127
+      "line": 2131
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2128
+      "line": 2132
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2134
+      "line": 2133
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8207,11 +8219,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2136
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2138
+      "line": 2156
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8219,7 +8227,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2162
+      "line": 2219
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8227,15 +8235,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2225
+      "line": 2223
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2226
+      "line": 2224
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2227
+      "line": 2228
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8243,47 +8251,55 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2235
+      "line": 2236
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2240
+      "line": 2243
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2247
+      "line": 2245
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2249
+      "line": 2257
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2261
+      "line": 2258
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2262
+      "line": 2259
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2263
+      "line": 2274
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2278
+      "line": 2281
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2285
+      "line": 2286
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2314
+      "line": 2310
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2316
+      "line": 2312
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 2334
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 2335
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8291,27 +8307,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2339
+      "line": 2377
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2342
+      "line": 2383
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2381
+      "line": 2384
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2387
+      "line": 2385
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2388
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2389
+      "line": 2386
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8323,31 +8335,35 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2398
+      "line": 2395
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2399
+      "line": 2396
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2400
+      "line": 2397
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2401
+      "line": 2405
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2409
+      "line": 2407
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2411
+      "line": 2414
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2418
+      "line": 2417
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
+      "line": 2420
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8355,15 +8371,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2424
+      "line": 2430
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2425
+      "line": 2431
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2434
+      "line": 2432
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8371,71 +8387,71 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2436
+      "line": 2443
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2439
+      "line": 2444
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2447
+      "line": 2451
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2448
+      "line": 2469
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2455
+      "line": 2476
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2473
+      "line": 2477
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2480
+      "line": 2478
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2481
+      "line": 2479
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2482
+      "line": 2484
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2483
+      "line": 2485
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2488
+      "line": 2486
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2489
+      "line": 2512
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2490
+      "line": 2513
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2516
+      "line": 2534
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2517
+      "line": 2535
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2538
+      "line": 2557
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2539
+      "line": 2560
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
@@ -8443,19 +8459,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2564
+      "line": 2571
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2565
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2575
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_ring.rs",
-      "line": 2578
+      "line": 2574
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
@@ -8575,35 +8583,35 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1208
+      "line": 1204
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1209
+      "line": 1205
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1210
+      "line": 1206
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1211
+      "line": 1207
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1261
+      "line": 1257
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1304
+      "line": 1300
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1306
+      "line": 1302
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
-      "line": 1307
+      "line": 1303
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_ampdu_storage.rs",

@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "c896760bc2bcbf0fd1c9ced6fa6e8f7ffbfa0b5a2a463c0cb1c4511f02f4527f",
+    "input-2": "4b7720b22e47a1d30d797e00bde98456470c3c11209f008a1d67d8b378536850",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -52,7 +52,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
-      "sha256": "0de71e1e8a0ff81f60bb357e5ad13c4d655aeb8026cbc2f9bd596da366d7d07b"
+      "sha256": "2467b026164873f8ac6678a4c5863a366ef45b70154eee1e4e12d1a0247b3128"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
@@ -272,7 +272,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/code_coverage.rs",
-      "sha256": "7eccefe7c44b563124b8e065634558c7e3f58318da2bb39cf2a191e8c432cc1a"
+      "sha256": "efb87571cc8e3e8dd2a8e517921856b282ac2b11200f506d1041c87c450281b6"
     },
     {
       "path": "tools/blobray/crates/application/src/command_bank.rs",
@@ -376,7 +376,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/in_process.rs",
-      "sha256": "7e993cbb2f27f9a8fee00c292b79a4e4544ba2f9454e5294f954f8c49daab2eb"
+      "sha256": "7865350f98c943f7d1f0fd6e751b497f96f1af983e7a9e5706d9b4e3070ac8e1"
     },
     {
       "path": "tools/blobray/crates/application/src/interfaces.rs",
@@ -768,7 +768,7 @@
     },
     {
       "path": "tools/blobray/crates/riscv/src/execution.rs",
-      "sha256": "28aeac30d6859e2fdca154c8be41defa4ae3ffc76ce4b7905637d4427cb14bb9"
+      "sha256": "d6e544d69518ede044e91a7421937879f043f7d73d9e7f81e52f041860f188c5"
     },
     {
       "path": "tools/blobray/crates/riscv/src/extensions.rs",
@@ -1068,7 +1068,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "139d64d0a2f30e336b2c5cbcb25acbd7cee72bb705dc6a2e42f4b242a888cc33"
+      "sha256": "de726bef813b71755e56db75f1048e7363bffcff683ff079fec97ade95a9bec8"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1112,7 +1112,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rfpll.rs",
-      "sha256": "b7ca511b889757862b1a187fabe926422edd6d7f92a02b0ddbadf807d1592871"
+      "sha256": "7960beba335ccca3164bc629506c76fc528a4fa84f850c0565cddcc517ed84e4"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rx_gain.rs",
@@ -1192,7 +1192,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/discovery.rs",
-      "sha256": "8590dbe293cfb5a51d837e3edc82759497b5ce3141813135f372adc304e2fccc"
+      "sha256": "17716e3f4663f2b227f384a474c20d845e2cfea2a344ae7159cae950d9564822"
     },
     {
       "path": "verification/harness/scenarios/src/evidence.rs",
@@ -1200,7 +1200,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/failure.rs",
-      "sha256": "f0b2989a1c0cfc7060baf31eb986a7ee653f94770a31b477bbfeb2992d4aac88"
+      "sha256": "36eca0ee9c813e427a0ffb0ce82c40dd92eca25a3aeb48b8cdbc03696a8d4799"
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
@@ -1208,11 +1208,15 @@
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",
-      "sha256": "e93a9aa5f419696caa2b977e6346397c111280fd41b75313eb5f1cebc7ea3c5b"
+      "sha256": "528fd7882988e80a33c6f10df99ac94539f94cfc400afb0d188d098a5435237e"
     },
     {
       "path": "verification/harness/scenarios/src/lib.rs",
-      "sha256": "cb4779a8bf581003c52a1085b6b68ea22fc5e45a7ca596e7208cb4979892a027"
+      "sha256": "293254b76f3cc0a01a5ca355029f898f1ca4d1242417cc521ee1b980a0fef39e"
+    },
+    {
+      "path": "verification/harness/scenarios/src/mutant.rs",
+      "sha256": "3e6bc44ec8ba3759125fb24f1b6f9ac2e34c950bda010e50d41679587c1fe8c1"
     },
     {
       "path": "verification/harness/scenarios/src/observation.rs",
@@ -1240,11 +1244,11 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "487a555ec618370294abb7976299927b69d001d4477c2831ada6a55217be2bb1"
+      "sha256": "d3135f0a0ada1f5ee73eaa32c5ce585768dd7f536ad5189e04fd14064f991803"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
-      "sha256": "da73587ecc76e9266fe323aaf690e614ad7959d87940cc040bb7b64ca0e59ff0"
+      "sha256": "12d231736aba47c0e6e456fa3024da9a5c67ac4cde2b315d7c1bec9bb718d63e"
     },
     {
       "path": "verification/harness/scenarios/src/shard.rs",
@@ -3298,7 +3302,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
-      "line": 68
+      "line": 69
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",

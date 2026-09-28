@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "af035ce9bd32482b089410bfc2cd082a5a345bebeebc7ecf03604948bdbd332c"
+    "input-2": "b7f9d7e9636a102c7c5d4760af2006710da27199531ee70d2ef09420047b15d4"
   },
   "sources": [
     {
@@ -59,11 +59,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/owner.rs",
-      "sha256": "7152a28e7fa78892e0519d3e2793bb81478b7e068c00af1561b0ef552b9642d7"
+      "sha256": "fb682000d83708e5c3471e272d938f651b99126c4a7c7ec5f2c4e92609fc0931"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/phy/agc.rs",
-      "sha256": "a36584dc86db2b8224981ef46858273da979ca84f8ade676b65b7871e7dd88e6"
+      "sha256": "daca997466e6175b61502618e16602a5ca2fd836e8205dfaf3e04471edd16a23"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/phy/frequency.rs",
@@ -87,7 +87,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
-      "sha256": "0de71e1e8a0ff81f60bb357e5ad13c4d655aeb8026cbc2f9bd596da366d7d07b"
+      "sha256": "2467b026164873f8ac6678a4c5863a366ef45b70154eee1e4e12d1a0247b3128"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
@@ -163,7 +163,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "sha256": "d47caed4b7d13737fdd5b7c5e4fa27ff76c2606ced366d4d50d7e1078072e2da"
+      "sha256": "41fac66b0025af9b41c218150a3ab29fe5692263d3c240a2695d6f565baedd45"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/hardware.rs",
@@ -395,7 +395,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/code_coverage.rs",
-      "sha256": "7eccefe7c44b563124b8e065634558c7e3f58318da2bb39cf2a191e8c432cc1a"
+      "sha256": "efb87571cc8e3e8dd2a8e517921856b282ac2b11200f506d1041c87c450281b6"
     },
     {
       "path": "tools/blobray/crates/application/src/command_bank.rs",
@@ -499,7 +499,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/in_process.rs",
-      "sha256": "7e993cbb2f27f9a8fee00c292b79a4e4544ba2f9454e5294f954f8c49daab2eb"
+      "sha256": "7865350f98c943f7d1f0fd6e751b497f96f1af983e7a9e5706d9b4e3070ac8e1"
     },
     {
       "path": "tools/blobray/crates/application/src/interfaces.rs",
@@ -891,7 +891,7 @@
     },
     {
       "path": "tools/blobray/crates/riscv/src/execution.rs",
-      "sha256": "28aeac30d6859e2fdca154c8be41defa4ae3ffc76ce4b7905637d4427cb14bb9"
+      "sha256": "d6e544d69518ede044e91a7421937879f043f7d73d9e7f81e52f041860f188c5"
     },
     {
       "path": "tools/blobray/crates/riscv/src/extensions.rs",
@@ -1191,7 +1191,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "139d64d0a2f30e336b2c5cbcb25acbd7cee72bb705dc6a2e42f4b242a888cc33"
+      "sha256": "de726bef813b71755e56db75f1048e7363bffcff683ff079fec97ade95a9bec8"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1235,7 +1235,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rfpll.rs",
-      "sha256": "b7ca511b889757862b1a187fabe926422edd6d7f92a02b0ddbadf807d1592871"
+      "sha256": "7960beba335ccca3164bc629506c76fc528a4fa84f850c0565cddcc517ed84e4"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rx_gain.rs",
@@ -1315,7 +1315,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/discovery.rs",
-      "sha256": "8590dbe293cfb5a51d837e3edc82759497b5ce3141813135f372adc304e2fccc"
+      "sha256": "17716e3f4663f2b227f384a474c20d845e2cfea2a344ae7159cae950d9564822"
     },
     {
       "path": "verification/harness/scenarios/src/evidence.rs",
@@ -1323,7 +1323,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/failure.rs",
-      "sha256": "f0b2989a1c0cfc7060baf31eb986a7ee653f94770a31b477bbfeb2992d4aac88"
+      "sha256": "36eca0ee9c813e427a0ffb0ce82c40dd92eca25a3aeb48b8cdbc03696a8d4799"
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
@@ -1331,11 +1331,15 @@
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",
-      "sha256": "e93a9aa5f419696caa2b977e6346397c111280fd41b75313eb5f1cebc7ea3c5b"
+      "sha256": "528fd7882988e80a33c6f10df99ac94539f94cfc400afb0d188d098a5435237e"
     },
     {
       "path": "verification/harness/scenarios/src/lib.rs",
-      "sha256": "cb4779a8bf581003c52a1085b6b68ea22fc5e45a7ca596e7208cb4979892a027"
+      "sha256": "293254b76f3cc0a01a5ca355029f898f1ca4d1242417cc521ee1b980a0fef39e"
+    },
+    {
+      "path": "verification/harness/scenarios/src/mutant.rs",
+      "sha256": "3e6bc44ec8ba3759125fb24f1b6f9ac2e34c950bda010e50d41679587c1fe8c1"
     },
     {
       "path": "verification/harness/scenarios/src/observation.rs",
@@ -1363,11 +1367,11 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "487a555ec618370294abb7976299927b69d001d4477c2831ada6a55217be2bb1"
+      "sha256": "d3135f0a0ada1f5ee73eaa32c5ce585768dd7f536ad5189e04fd14064f991803"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
-      "sha256": "da73587ecc76e9266fe323aaf690e614ad7959d87940cc040bb7b64ca0e59ff0"
+      "sha256": "12d231736aba47c0e6e456fa3024da9a5c67ac4cde2b315d7c1bec9bb718d63e"
     },
     {
       "path": "verification/harness/scenarios/src/shard.rs",
@@ -2078,11 +2082,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
-      "line": 68
+      "line": 69
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
-      "line": 198
+      "line": 199
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
@@ -3370,23 +3374,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 407
+      "line": 408
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 409
+      "line": 410
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 412
+      "line": 413
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 418
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 420
+      "line": 419
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3394,7 +3394,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 428
+      "line": 422
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3402,27 +3402,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 436
+      "line": 430
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 443
+      "line": 437
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 464
+      "line": 444
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 466
+      "line": 465
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 472
+      "line": 467
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 489
+      "line": 473
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3430,31 +3430,31 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 508
+      "line": 491
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 519
+      "line": 509
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 522
+      "line": 520
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 525
+      "line": 523
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 527
+      "line": 526
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 548
+      "line": 528
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 555
+      "line": 549
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3466,27 +3466,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 561
+      "line": 558
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 572
+      "line": 562
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 576
+      "line": 573
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 579
+      "line": 577
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 597
+      "line": 580
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 602
+      "line": 598
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3506,7 +3506,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 608
+      "line": 607
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3522,11 +3522,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 619
+      "line": 612
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 623
+      "line": 620
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3534,7 +3534,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 626
+      "line": 625
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3542,11 +3542,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 634
+      "line": 628
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 636
+      "line": 635
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3554,15 +3554,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 640
+      "line": 638
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 643
+      "line": 641
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 645
+      "line": 644
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3574,7 +3574,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 651
+      "line": 648
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3582,7 +3582,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 654
+      "line": 653
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3590,11 +3590,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 658
+      "line": 656
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 660
+      "line": 659
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3602,23 +3602,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 664
+      "line": 662
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 666
+      "line": 665
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 670
+      "line": 667
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 672
+      "line": 671
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 677
+      "line": 673
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3626,7 +3626,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 684
+      "line": 679
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3634,7 +3634,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 691
+      "line": 686
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3642,7 +3642,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 703
+      "line": 693
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3650,7 +3650,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 707
+      "line": 705
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3662,15 +3662,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 711
+      "line": 710
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 720
+      "line": 712
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 734
+      "line": 721
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3678,31 +3678,31 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 758
+      "line": 736
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 760
+      "line": 759
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 777
+      "line": 761
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 779
+      "line": 778
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 794
+      "line": 780
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 821
+      "line": 795
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 824
+      "line": 822
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3722,35 +3722,35 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 831
+      "line": 829
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 837
+      "line": 832
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 847
+      "line": 838
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 849
+      "line": 848
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 876
+      "line": 850
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 883
+      "line": 877
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 887
+      "line": 884
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 894
+      "line": 888
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3762,15 +3762,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 906
+      "line": 897
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 922
+      "line": 907
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 950
+      "line": 923
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3778,7 +3778,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 954
+      "line": 952
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3786,7 +3786,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 957
+      "line": 956
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3798,27 +3798,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 961
+      "line": 960
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 964
+      "line": 962
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 966
+      "line": 965
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 971
+      "line": 967
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 973
+      "line": 972
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 977
+      "line": 974
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3830,7 +3830,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 982
+      "line": 980
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3838,19 +3838,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 986
+      "line": 984
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 988
+      "line": 987
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 990
+      "line": 989
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 993
+      "line": 991
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3858,79 +3858,79 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 996
+      "line": 995
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 998
+      "line": 997
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1000
+      "line": 999
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1002
+      "line": 1001
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1006
+      "line": 1003
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1096
+      "line": 1007
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1106
+      "line": 1097
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1108
+      "line": 1107
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1129
+      "line": 1109
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1155
+      "line": 1130
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1158
+      "line": 1156
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1163
+      "line": 1159
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1165
+      "line": 1164
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1170
+      "line": 1166
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1210
+      "line": 1171
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1221
+      "line": 1211
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1228
+      "line": 1222
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1232
+      "line": 1229
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1283
+      "line": 1233
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3942,7 +3942,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1288
+      "line": 1286
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
@@ -3950,27 +3950,31 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1291
+      "line": 1290
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1294
+      "line": 1292
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1297
+      "line": 1295
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1299
+      "line": 1298
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1301
+      "line": 1300
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/channel.rs",
-      "line": 1307
+      "line": 1302
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/channel.rs",
+      "line": 1308
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/hardware.rs",

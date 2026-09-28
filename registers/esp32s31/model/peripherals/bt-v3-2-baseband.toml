@@ -106,7 +106,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_5_UNKNOWN"
+name = "HIGH_5_OPAQUE"
 description = "Exact value produced by shifting the complete register image right by 27."
 bitOffset = 27
 bitWidth = 5
@@ -209,13 +209,13 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "IDLE_BITS_15_16_UNKNOWN"
+name = "IDLE_BITS_15_16_OPAQUE"
 description = "The reset-idle predicate fails when this exact two-bit field is nonzero."
 bitOffset = 15
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "IDLE_BITS_20_23_UNKNOWN"
+name = "IDLE_BITS_20_23_OPAQUE"
 description = "The reset-idle predicate fails when this exact four-bit field is nonzero."
 bitOffset = 20
 bitWidth = 4
@@ -757,42 +757,42 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_6_UNKNOWN"
+name = "RESTART_BIT_6_OPAQUE"
 bitOffset = 6
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_7_UNKNOWN"
+name = "RESTART_BIT_7_OPAQUE"
 bitOffset = 7
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_8_UNKNOWN"
+name = "RESTART_BIT_8_OPAQUE"
 bitOffset = 8
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_9_UNKNOWN"
+name = "RESTART_BIT_9_OPAQUE"
 bitOffset = 9
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_10_UNKNOWN"
+name = "RESTART_BIT_10_OPAQUE"
 bitOffset = 10
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_19_UNKNOWN"
+name = "RESTART_BIT_19_OPAQUE"
 bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_20_UNKNOWN"
+name = "RESTART_BIT_20_OPAQUE"
 bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RESTART_BIT_21_UNKNOWN"
+name = "RESTART_BIT_21_OPAQUE"
 bitOffset = 21
 bitWidth = 1
 
@@ -949,6 +949,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -956,6 +957,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY.FORCE_ZERO_BITS_16_18"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -963,6 +965,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_TX_ON_DELAY.ENCODED_VALUE_MINUS_10"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -970,6 +973,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -977,6 +981,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_0.AA_LC_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -984,6 +989,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_0.ARGUMENT_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -991,6 +997,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -998,6 +1005,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_1.ARGUMENT_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1005,6 +1013,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_1.ARGUMENT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1012,6 +1021,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1019,6 +1029,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL.CONFIG_VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1026,6 +1037,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.CURRENT_RX_INFO"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS", "ESP_IDF_7B9CC1AC_IEEE802154_RECENT_RSSI"]
 provenance = "observed"
 accuracy = "exact"
@@ -1033,6 +1045,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.CURRENT_RX_INFO.RSSI"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS", "ESP_IDF_7B9CC1AC_IEEE802154_RECENT_RSSI"]
 provenance = "observed"
 accuracy = "exact"
@@ -1040,6 +1053,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1047,6 +1061,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1054,6 +1069,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1061,6 +1077,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_STATUS"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1068,6 +1085,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_DATA"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1075,6 +1093,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_DATA.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1082,6 +1101,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.WATCHDOG_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1089,6 +1109,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1099,6 +1120,7 @@ completeness = "partial"
 # change the accepted geometry.
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.APPLY"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1106,6 +1128,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.SET_ARGUMENT_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1113,6 +1136,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.PERIOD_ARGUMENT_0_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1120,6 +1144,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.PERIOD_FORCE_ZERO_20_22"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1127,6 +1152,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1134,6 +1160,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_0.SET_ARGUMENT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1141,6 +1168,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_1.SET_ARGUMENT_4"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1148,6 +1176,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_1.SET_ARGUMENT_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1155,6 +1184,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_1.SET_ARGUMENT_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1162,6 +1192,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_1.DEFAULT_CONFIG_VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1169,6 +1200,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2.SET_ARGUMENT_9"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1176,6 +1208,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2.SET_ARGUMENT_8"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1183,6 +1216,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2.SET_ARGUMENT_7"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1190,6 +1224,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2.SET_ARGUMENT_6"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1197,6 +1232,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2.SET_ARGUMENT_5"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1204,6 +1240,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_STATUS.RESET"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1211,6 +1248,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_STATUS.COUNT"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1218,6 +1256,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_STATUS.EMPTY"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1225,6 +1264,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_FIFO_STATUS.FULL"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1232,6 +1272,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.WATCHDOG_CONTROL.INIT_ARGUMENT_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1239,6 +1280,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.WATCHDOG_CONTROL.INIT_ARGUMENT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1246,6 +1288,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.WATCHDOG_CONTROL.INIT_FORCE_ONE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1253,6 +1296,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_2.ARGUMENT_1_COPY_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1260,6 +1304,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_2.ARGUMENT_1_COPY_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1267,6 +1312,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1274,6 +1320,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.BLE_DIAGNOSTIC"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1281,6 +1328,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.COEX_CONFIG"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1288,6 +1336,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_DPO_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1295,6 +1344,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT.SELECT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1302,6 +1352,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT.SELECT_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1309,6 +1360,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT.SELECT_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1316,6 +1368,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT.SELECT_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1323,6 +1376,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT.SELECT_4"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1330,6 +1384,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_FILTER_SELECT.SELECT_5"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1337,6 +1392,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.BLE_DIAGNOSTIC.ARGUMENT_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1344,6 +1400,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.BLE_DIAGNOSTIC.ARGUMENT_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1351,6 +1408,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.BLE_DIAGNOSTIC.ARGUMENT_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1358,6 +1416,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.COEX_CONFIG.CONFIG_FORCE_ONE_18"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1365,6 +1424,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.COEX_CONFIG.CONFIG_FORCE_ONE_20"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1372,6 +1432,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_DPO_CONTROL.CONFIG_FORCE_ZERO_19"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1379,6 +1440,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_DPO_CONTROL.CONFIG_VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1386,6 +1448,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1393,6 +1456,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_0.SET_BY_RX_SETUP_BIT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1400,6 +1464,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1407,6 +1472,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0.CONFIG_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1414,6 +1480,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1421,6 +1488,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_CONTROL_1.SET_BY_RX_SETUP_BIT_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1428,6 +1496,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1435,6 +1504,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT.ARGUMENT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1442,6 +1512,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_1.RX_SETUP_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1449,6 +1520,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2.RX_SETUP_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1456,6 +1528,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CCA_CONTROL_2.RX_SETUP_DISABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 provenance = "observed"
 accuracy = "exact"
@@ -1463,6 +1536,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.CHANNEL_POWER_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_CHANNEL_POWER_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -1470,6 +1544,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.CHANNEL_POWER_CONTROL.CHANNEL_POWER_BITS_8_9"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_CHANNEL_POWER_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -1477,13 +1552,15 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.TX_CONFIG_CHECK_VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.TX_CONFIG_CHECK_VALUE.HIGH_5_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.TX_CONFIG_CHECK_VALUE.HIGH_5_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"]
 provenance = "observed"
 accuracy = "exact"
@@ -1491,20 +1568,23 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.IDLE_BITS_15_16_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.IDLE_BITS_15_16_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.IDLE_BITS_20_23_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.SOFTWARE_RESET_IDLE_STATUS.IDLE_BITS_20_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST"]
 provenance = "observed"
 accuracy = "exact"
@@ -1512,6 +1592,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1519,6 +1600,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_2_9"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1526,6 +1608,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_10_16"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1533,6 +1616,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_17_22"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1540,6 +1624,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_23_27"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1547,6 +1632,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0.BITS_28_31"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1554,6 +1640,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1561,6 +1648,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_2_12"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1568,6 +1656,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_13_22"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1575,6 +1664,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1.BITS_23_31"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1582,6 +1672,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1589,6 +1680,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2.BITS_10_20"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1596,6 +1688,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2.BITS_21_31"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1603,6 +1696,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1610,6 +1704,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3.BITS_10_20"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1617,6 +1712,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3.BITS_21_31"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1624,6 +1720,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS", "BLOB_LIBBTBB_BT_TX_SET"]
 provenance = "observed"
 accuracy = "exact"
@@ -1631,6 +1728,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG.TX_SET_LOW_BYTE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_TX_SET"]
 provenance = "observed"
 accuracy = "exact"
@@ -1638,6 +1736,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG.GAUSSIAN_BITS_8_16"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1645,6 +1744,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG.GAUSSIAN_BITS_17_24"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1652,6 +1752,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG.GAUSSIAN_BITS_25_31"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1659,6 +1760,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1666,6 +1768,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_0_10"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1673,6 +1776,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_11_21"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1680,6 +1784,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1.BITS_22_31"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 provenance = "observed"
 accuracy = "exact"
@@ -1687,62 +1792,71 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_6_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_6_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_7_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_7_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_8_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_8_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_9_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_9_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_10_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_10_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_19_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_19_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_20_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_20_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_21_UNKNOWN"
+entity = "BT_V3_2_BASEBAND.AGC_RESTART_CONTROL.RESTART_BIT_21_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 provenance = "observed"
 accuracy = "exact"
@@ -1750,6 +1864,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL.RX_SETUP_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -1757,6 +1872,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL.FINAL_FORCE_ZERO_13"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 provenance = "observed"
 accuracy = "exact"
@@ -1764,6 +1880,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0.TX_SETUP_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_TX_SET"]
 provenance = "observed"
 accuracy = "exact"
@@ -1771,6 +1888,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT.TX_ARGUMENT_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTBB_BT_TX_SET"]
 provenance = "observed"
 accuracy = "exact"

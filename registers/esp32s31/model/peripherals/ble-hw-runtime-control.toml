@@ -132,6 +132,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -139,6 +140,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION.VALUE_LOW_8"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -146,6 +148,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION.CONFIG_8"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -153,6 +156,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_FOLLOWUP"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -160,6 +164,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.PHY_INIT_CONFIGURATION_FOLLOWUP.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -167,12 +172,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.STATUS%s"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_STATUS_CLEAR"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.STATUS%s.PENDING_BITS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_STATUS_CLEAR"]
 provenance = "observed"
 accuracy = "exact"
@@ -180,12 +187,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CLEAR%s"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_STATUS_CLEAR"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CLEAR%s.PENDING_BITS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_STATUS_CLEAR"]
 provenance = "observed"
 accuracy = "exact"
@@ -193,12 +202,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0088"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0088.VALUE_LOW_5"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
@@ -206,30 +217,35 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.VALUE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.CONFIG_5"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.VALUE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0090.CONFIG_13"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
@@ -237,12 +253,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0094"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_RUNTIME_CONTROL.CONFIG_0094.VALUE_LOW_8"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RUNTIME_CONFIG"]
 provenance = "observed"
 accuracy = "exact"

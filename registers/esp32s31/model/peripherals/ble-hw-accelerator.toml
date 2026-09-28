@@ -281,12 +281,14 @@ completeness = "partial"
 # Every register and field below is reviewed from complete ESP32-S31 bodies.
 [[review]]
 entity = "BLE_HW_ACCELERATOR.INIT_CONFIG"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.INIT_CONFIG.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -294,12 +296,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_START"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_START.COMMAND"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -307,12 +311,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_CONFIG"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_CONFIG.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -320,12 +326,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_BLOCK_LENGTH"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_BLOCK_LENGTH.BYTES"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -333,12 +341,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_0.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -346,12 +356,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_1.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -359,12 +371,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_2.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -372,12 +386,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_KEY_WORD_3.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -385,12 +401,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_INPUT_BUFFER_ADDRESS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_INPUT_BUFFER_ADDRESS.ADDRESS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -398,12 +416,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_OUTPUT_BUFFER_ADDRESS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_OUTPUT_BUFFER_ADDRESS.ADDRESS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -411,12 +431,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_SEARCH_START"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_SEARCH_START.COMMAND"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -424,12 +446,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_LIST_ARGUMENT"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_LIST_ARGUMENT.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -437,18 +461,21 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_SEARCH_ARGUMENT"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_SEARCH_ARGUMENT.ARGUMENT_LOW_28"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_SEARCH_ARGUMENT.MODE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -456,12 +483,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_METADATA"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_METADATA.RESULT_BYTE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -469,12 +498,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_POINTER_OFFSET"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_POINTER_OFFSET.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -482,12 +513,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_PRESENT"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_RESULT_PRESENT.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -495,18 +528,21 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENGINE_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK", "BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENGINE_CONTROL.ENCRYPT_CONFIG_BITS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENGINE_CONTROL.RESOLV_CONFIG_BIT"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -514,12 +550,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_STATUS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.RESOLV_STATUS.COMPLETE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SEARCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -527,12 +565,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_COMPLETION_STATUS"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.ENCRYPT_COMPLETION_STATUS.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_ENCRYPT_BLOCK"]
 provenance = "observed"
 accuracy = "exact"
@@ -540,12 +580,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_0.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -553,12 +595,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_HW_ACCELERATOR.INIT_SRAM_REGION_1.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"

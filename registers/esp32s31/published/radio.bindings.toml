@@ -2895,8 +2895,8 @@ scope = []
 register-method = "scheduler_sram_pointer_prefix"
 
 [[registers.fields]]
-svd-name = "ZERO_LOW_22_UNKNOWN"
-method = "zero_low_22_unknown"
+svd-name = "ZERO_LOW_22_OPAQUE"
+method = "zero_low_22_opaque"
 bit-offset = 0
 bit-width = 22
 access = "read-write"
@@ -3073,8 +3073,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_CLEAR_25_UNKNOWN"
-method = "init_clear_25_unknown"
+svd-name = "INIT_CLEAR_25_OPAQUE"
+method = "init_clear_25_opaque"
 bit-offset = 25
 bit-width = 1
 access = "read-write"
@@ -3087,8 +3087,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_CLEAR_27_30_UNKNOWN"
-method = "init_clear_27_30_unknown"
+svd-name = "INIT_CLEAR_27_30_OPAQUE"
+method = "init_clear_27_30_opaque"
 bit-offset = 27
 bit-width = 4
 access = "read-write"
@@ -3448,8 +3448,8 @@ scope = []
 register-method = "hal_init_latch"
 
 [[registers.fields]]
-svd-name = "ZERO_LOW_6_UNKNOWN"
-method = "zero_low_6_unknown"
+svd-name = "ZERO_LOW_6_OPAQUE"
+method = "zero_low_6_opaque"
 bit-offset = 0
 bit-width = 6
 access = "read-write"
@@ -3462,8 +3462,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ZERO_MIDDLE_24_UNKNOWN"
-method = "zero_middle_24_unknown"
+svd-name = "ZERO_MIDDLE_24_OPAQUE"
+method = "zero_middle_24_opaque"
 bit-offset = 7
 bit-width = 24
 access = "read-write"
@@ -3494,8 +3494,8 @@ bit-width = 20
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "ZERO_HIGH_12_UNKNOWN"
-method = "zero_high_12_unknown"
+svd-name = "ZERO_HIGH_12_OPAQUE"
+method = "zero_high_12_opaque"
 bit-offset = 20
 bit-width = 12
 access = "write-only"
@@ -4360,8 +4360,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_0_CLEAR_HIGH_UNKNOWN"
-method = "lane_0_clear_high_unknown"
+svd-name = "LANE_0_CLEAR_HIGH_OPAQUE"
+method = "lane_0_clear_high_opaque"
 bit-offset = 3
 bit-width = 1
 access = "read-write"
@@ -4388,8 +4388,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_1_CLEAR_HIGH_UNKNOWN"
-method = "lane_1_clear_high_unknown"
+svd-name = "LANE_1_CLEAR_HIGH_OPAQUE"
+method = "lane_1_clear_high_opaque"
 bit-offset = 7
 bit-width = 1
 access = "read-write"
@@ -4416,8 +4416,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_2_CLEAR_HIGH_UNKNOWN"
-method = "lane_2_clear_high_unknown"
+svd-name = "LANE_2_CLEAR_HIGH_OPAQUE"
+method = "lane_2_clear_high_opaque"
 bit-offset = 11
 bit-width = 1
 access = "read-write"
@@ -4444,8 +4444,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_3_CLEAR_HIGH_UNKNOWN"
-method = "lane_3_clear_high_unknown"
+svd-name = "LANE_3_CLEAR_HIGH_OPAQUE"
+method = "lane_3_clear_high_opaque"
 bit-offset = 15
 bit-width = 1
 access = "read-write"
@@ -4472,8 +4472,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_4_CLEAR_HIGH_UNKNOWN"
-method = "lane_4_clear_high_unknown"
+svd-name = "LANE_4_CLEAR_HIGH_OPAQUE"
+method = "lane_4_clear_high_opaque"
 bit-offset = 19
 bit-width = 1
 access = "read-write"
@@ -4500,8 +4500,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_5_CLEAR_HIGH_UNKNOWN"
-method = "lane_5_clear_high_unknown"
+svd-name = "LANE_5_CLEAR_HIGH_OPAQUE"
+method = "lane_5_clear_high_opaque"
 bit-offset = 23
 bit-width = 1
 access = "read-write"
@@ -4528,8 +4528,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_6_CLEAR_HIGH_UNKNOWN"
-method = "lane_6_clear_high_unknown"
+svd-name = "LANE_6_CLEAR_HIGH_OPAQUE"
+method = "lane_6_clear_high_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-write"
@@ -4556,8 +4556,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_7_CLEAR_HIGH_UNKNOWN"
-method = "lane_7_clear_high_unknown"
+svd-name = "LANE_7_CLEAR_HIGH_OPAQUE"
+method = "lane_7_clear_high_opaque"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -4596,8 +4596,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_0_CLEAR_HIGH_UNKNOWN"
-method = "lane_0_clear_high_unknown"
+svd-name = "LANE_0_CLEAR_HIGH_OPAQUE"
+method = "lane_0_clear_high_opaque"
 bit-offset = 3
 bit-width = 1
 access = "read-write"
@@ -4624,8 +4624,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_1_CLEAR_HIGH_UNKNOWN"
-method = "lane_1_clear_high_unknown"
+svd-name = "LANE_1_CLEAR_HIGH_OPAQUE"
+method = "lane_1_clear_high_opaque"
 bit-offset = 7
 bit-width = 1
 access = "read-write"
@@ -4652,8 +4652,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_2_CLEAR_HIGH_UNKNOWN"
-method = "lane_2_clear_high_unknown"
+svd-name = "LANE_2_CLEAR_HIGH_OPAQUE"
+method = "lane_2_clear_high_opaque"
 bit-offset = 11
 bit-width = 1
 access = "read-write"
@@ -4680,8 +4680,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_3_CLEAR_HIGH_UNKNOWN"
-method = "lane_3_clear_high_unknown"
+svd-name = "LANE_3_CLEAR_HIGH_OPAQUE"
+method = "lane_3_clear_high_opaque"
 bit-offset = 15
 bit-width = 1
 access = "read-write"
@@ -4708,8 +4708,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_4_CLEAR_HIGH_UNKNOWN"
-method = "lane_4_clear_high_unknown"
+svd-name = "LANE_4_CLEAR_HIGH_OPAQUE"
+method = "lane_4_clear_high_opaque"
 bit-offset = 19
 bit-width = 1
 access = "read-write"
@@ -4736,8 +4736,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_5_CLEAR_HIGH_UNKNOWN"
-method = "lane_5_clear_high_unknown"
+svd-name = "LANE_5_CLEAR_HIGH_OPAQUE"
+method = "lane_5_clear_high_opaque"
 bit-offset = 23
 bit-width = 1
 access = "read-write"
@@ -4764,8 +4764,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_6_CLEAR_HIGH_UNKNOWN"
-method = "lane_6_clear_high_unknown"
+svd-name = "LANE_6_CLEAR_HIGH_OPAQUE"
+method = "lane_6_clear_high_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-write"
@@ -4792,8 +4792,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_7_CLEAR_HIGH_UNKNOWN"
-method = "lane_7_clear_high_unknown"
+svd-name = "LANE_7_CLEAR_HIGH_OPAQUE"
+method = "lane_7_clear_high_opaque"
 bit-offset = 31
 bit-width = 1
 access = "read-write"
@@ -4932,8 +4932,8 @@ scope = []
 register-method = "status"
 
 [[registers.fields]]
-svd-name = "LOW_4_UNKNOWN"
-method = "low_4_unknown"
+svd-name = "LOW_4_OPAQUE"
+method = "low_4_opaque"
 bit-offset = 0
 bit-width = 4
 access = "read-only"
@@ -5207,8 +5207,8 @@ scope = []
 register-method = "value"
 
 [[registers.fields]]
-svd-name = "DYNAMIC_LOW_20_IMAGE"
-method = "dynamic_low_20_image"
+svd-name = "DYNAMIC_LOW_20_OPAQUE"
+method = "dynamic_low_20_opaque"
 bit-offset = 0
 bit-width = 20
 access = "write-only"
@@ -6314,8 +6314,8 @@ scope = []
 register-method = "value"
 
 [[registers.fields]]
-svd-name = "POSITIONAL_IMAGE"
-method = "positional_image"
+svd-name = "IMAGE_OPAQUE"
+method = "image_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"
@@ -6436,8 +6436,8 @@ scope = []
 register-method = "tx_config_check_value"
 
 [[registers.fields]]
-svd-name = "HIGH_5_UNKNOWN"
-method = "high_5_unknown"
+svd-name = "HIGH_5_OPAQUE"
+method = "high_5_opaque"
 bit-offset = 27
 bit-width = 5
 access = "read-only"
@@ -6554,15 +6554,15 @@ scope = []
 register-method = "software_reset_idle_status"
 
 [[registers.fields]]
-svd-name = "IDLE_BITS_15_16_UNKNOWN"
-method = "idle_bits_15_16_unknown"
+svd-name = "IDLE_BITS_15_16_OPAQUE"
+method = "idle_bits_15_16_opaque"
 bit-offset = 15
 bit-width = 2
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "IDLE_BITS_20_23_UNKNOWN"
-method = "idle_bits_20_23_unknown"
+svd-name = "IDLE_BITS_20_23_OPAQUE"
+method = "idle_bits_20_23_opaque"
 bit-offset = 20
 bit-width = 4
 access = "read-only"
@@ -7140,57 +7140,57 @@ scope = []
 register-method = "agc_restart_control"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_6_UNKNOWN"
-method = "restart_bit_6_unknown"
+svd-name = "RESTART_BIT_6_OPAQUE"
+method = "restart_bit_6_opaque"
 bit-offset = 6
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_7_UNKNOWN"
-method = "restart_bit_7_unknown"
+svd-name = "RESTART_BIT_7_OPAQUE"
+method = "restart_bit_7_opaque"
 bit-offset = 7
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_8_UNKNOWN"
-method = "restart_bit_8_unknown"
+svd-name = "RESTART_BIT_8_OPAQUE"
+method = "restart_bit_8_opaque"
 bit-offset = 8
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_9_UNKNOWN"
-method = "restart_bit_9_unknown"
+svd-name = "RESTART_BIT_9_OPAQUE"
+method = "restart_bit_9_opaque"
 bit-offset = 9
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_10_UNKNOWN"
-method = "restart_bit_10_unknown"
+svd-name = "RESTART_BIT_10_OPAQUE"
+method = "restart_bit_10_opaque"
 bit-offset = 10
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_19_UNKNOWN"
-method = "restart_bit_19_unknown"
+svd-name = "RESTART_BIT_19_OPAQUE"
+method = "restart_bit_19_opaque"
 bit-offset = 19
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_20_UNKNOWN"
-method = "restart_bit_20_unknown"
+svd-name = "RESTART_BIT_20_OPAQUE"
+method = "restart_bit_20_opaque"
 bit-offset = 20
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RESTART_BIT_21_UNKNOWN"
-method = "restart_bit_21_unknown"
+svd-name = "RESTART_BIT_21_OPAQUE"
+method = "restart_bit_21_opaque"
 bit-offset = 21
 bit-width = 1
 access = "read-write"
@@ -39556,8 +39556,8 @@ scope = []
 register-method = "value"
 
 [[registers.fields]]
-svd-name = "POSITIONAL_IMAGE"
-method = "positional_image"
+svd-name = "IMAGE_OPAQUE"
+method = "image_opaque"
 bit-offset = 0
 bit-width = 32
 access = "write-only"

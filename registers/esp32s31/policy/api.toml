@@ -4354,7 +4354,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_0_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_0_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_0_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -4366,7 +4366,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_1_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_1_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_1_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -4378,7 +4378,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_2_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_2_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_2_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -4390,7 +4390,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_3_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_3_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_3_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -4402,7 +4402,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_4_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_4_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_4_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -4414,7 +4414,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_5_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_5_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_5_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -4426,7 +4426,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_6_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_6_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_6_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -4438,7 +4438,7 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_SLOT_MAP%s"
 fields = [
     { field = "LANE_7_INDEX_HIGH", source-bit-offset = 0 },
-    { field = "LANE_7_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+    { field = "LANE_7_CLEAR_HIGH_OPAQUE", source-bit-offset = 0 },
 ]
 value = 0
 exposure = "facade"
@@ -5204,7 +5204,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_21"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_21_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_21_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5213,7 +5213,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_20"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_20_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_20_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5222,7 +5222,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_19"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_19_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_19_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5231,7 +5231,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_10"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_10_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_10_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5240,7 +5240,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_9"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_9_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_9_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5249,7 +5249,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_8"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_8_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_8_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5258,7 +5258,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_7"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_7_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_7_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
@@ -5267,7 +5267,7 @@ sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 name = "initialize_bluetooth_receive_restart_baseband_6"
 peripheral = "BT_V3_2_BASEBAND"
 register = "AGC_RESTART_CONTROL"
-fields = [{ field = "RESTART_BIT_6_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "RESTART_BIT_6_OPAQUE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]

@@ -33,6 +33,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_ISO_SCHEDULER_NOTIFY.COMMAND"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_ISO_SCHEDULER_NOTIFY"]
 provenance = "observed"
 accuracy = "exact"
@@ -40,6 +41,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_ISO_SCHEDULER_NOTIFY.COMMAND.TRIGGER"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_ISO_SCHEDULER_NOTIFY"]
 provenance = "observed"
 accuracy = "exact"

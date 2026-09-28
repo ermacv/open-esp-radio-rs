@@ -74,6 +74,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL.RING_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -81,6 +82,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL.RING_CONTROL.MAX_BUFFER_NUMBER"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -88,6 +90,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL.RING_CONTROL.RING_BUFFER_INDEX_CLEAR"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -95,6 +98,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER%s"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -102,6 +106,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_POINTER%s.COMPRESSED_DESCRIPTOR_POINTER"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -109,6 +114,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE%s"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -116,6 +122,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_CTE_RING_CONTROL.BUFFER_STATE%s.SOFTWARE_OWNED"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_CTE_RING_CONTROL"]
 provenance = "observed"
 accuracy = "exact"

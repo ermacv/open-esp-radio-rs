@@ -35,6 +35,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_RESOLVING_LIST.BASE_POINTER"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SET"]
 provenance = "observed"
 accuracy = "exact"
@@ -42,6 +43,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_HW_RESOLVING_LIST.BASE_POINTER.COMPRESSED_SRAM_POINTER"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_HW_RESOLV_LIST_SET"]
 provenance = "observed"
 accuracy = "exact"

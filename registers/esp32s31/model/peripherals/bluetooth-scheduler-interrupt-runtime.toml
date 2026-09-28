@@ -136,6 +136,7 @@ bitWidth = 8
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_REFERENCE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -143,6 +144,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_REFERENCE.VALUE_LOW_20"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -150,6 +152,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_REFERENCE.OPAQUE_HIGH_12"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -157,6 +160,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -164,6 +168,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.VALUE_LOW_20"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -171,6 +176,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.CURRENT_LINK_INDEX"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 provenance = "observed"
 accuracy = "exact"
@@ -178,6 +184,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.OPAQUE_STATE_24_28"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -185,6 +192,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.STATE_29"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -192,6 +200,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.OPAQUE_STATE_30"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -199,6 +208,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.SCHEDULER_STATE.BUSY"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -206,6 +216,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_SELECT"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP", "BLOB_LIBBTDM_SCHEDULER_EXECUTION_MODIFY"]
 provenance = "observed"
 accuracy = "exact"
@@ -213,6 +224,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_SELECT.SELECTION"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP", "BLOB_LIBBTDM_SCHEDULER_EXECUTION_MODIFY"]
 provenance = "observed"
 accuracy = "exact"
@@ -220,6 +232,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
 provenance = "observed"
 accuracy = "exact"
@@ -227,6 +240,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_VALUE.VALUE_0_LOW_7"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
 provenance = "observed"
 accuracy = "exact"
@@ -234,6 +248,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_VALUE.VALUE_0_BIT_7"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
 provenance = "observed"
 accuracy = "exact"
@@ -241,6 +256,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_VALUE.VALUE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
 provenance = "observed"
 accuracy = "exact"
@@ -248,6 +264,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_VALUE.VALUE_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
 provenance = "observed"
 accuracy = "exact"
@@ -255,6 +272,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.DIAGNOSTIC_VALUE.VALUE_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_STATUS_DIAGNOSTIC", "BLOB_LIBBLE_DIAGNOSTIC_STATUS_DUMP"]
 provenance = "observed"
 accuracy = "exact"

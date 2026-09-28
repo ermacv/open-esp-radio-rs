@@ -294,6 +294,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.RUNTIME_TIMER_START_COMMAND"
+naming = "descriptive"
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
     "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
@@ -303,6 +304,7 @@ accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.RUNTIME_TIMER_START_COMMAND.COMMAND"
+naming = "descriptive"
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
     "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
@@ -313,12 +315,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0004"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0004.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -326,12 +330,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0008"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0008.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -339,12 +345,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0010"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0010.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -352,12 +360,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0014"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0014.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -365,12 +375,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_0020"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_0020.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -378,18 +390,21 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_0024"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_0024.LOW_BYTE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_0024.UNCLASSIFIED_31_8"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -397,18 +412,21 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_002C"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_002C.LOW_BYTE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_002C.UNCLASSIFIED_31_8"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -416,12 +434,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0034"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0034.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -429,12 +449,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATUS_0038"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATUS_0038.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -442,12 +464,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0040"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0040.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -455,12 +479,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0044"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_0044.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -468,12 +494,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATUS_0048"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATUS_0048.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -481,12 +509,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_004C"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.COMMAND_004C.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -494,6 +524,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058"
+naming = "descriptive"
 sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
     "BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ",
@@ -503,24 +534,28 @@ accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.CONTROL_0058.CONTROL_4"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -528,12 +563,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.VALUE_0068"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.VALUE_0068.VALUE_LOW_24"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -541,12 +578,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.VALUE_006C"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.VALUE_006C.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -554,12 +593,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.CONTROL_0078"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.CONTROL_0078.CONTROL_25"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -567,12 +608,14 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_001C"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.STATE_001C.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -580,6 +623,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTDM_RUNTIME_CONTROL.VALUE_0064"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_RUNTIME_OPERATIONAL_GAPS"]
 provenance = "observed"
 accuracy = "exact"

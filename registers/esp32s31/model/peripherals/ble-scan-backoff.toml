@@ -56,12 +56,14 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_SCAN_BACKOFF.UPPER_LIMIT_MAX"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SCAN_BACKOFF"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_SCAN_BACKOFF.UPPER_LIMIT_MAX.VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SCAN_BACKOFF"]
 provenance = "observed"
 accuracy = "exact"
@@ -69,12 +71,14 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_SCAN_BACKOFF.BACKOFF_STATE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SCAN_BACKOFF", "BLOB_LIBBLE_SCAN_BACKOFF_READBACK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_SCAN_BACKOFF.BACKOFF_STATE_0.VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SCAN_BACKOFF", "BLOB_LIBBLE_SCAN_BACKOFF_READBACK"]
 provenance = "observed"
 accuracy = "exact"
@@ -82,12 +86,14 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_SCAN_BACKOFF.BACKOFF_STATE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SCAN_BACKOFF", "BLOB_LIBBLE_SCAN_BACKOFF_READBACK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 [[review]]
 entity = "BLE_SCAN_BACKOFF.BACKOFF_STATE_1.VALUE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SCAN_BACKOFF", "BLOB_LIBBLE_SCAN_BACKOFF_READBACK"]
 provenance = "observed"
 accuracy = "exact"

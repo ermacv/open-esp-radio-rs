@@ -44,6 +44,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_SYNC_PUBLICATION.VALUE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SYNC_PUBLICATION"]
 provenance = "observed"
 accuracy = "exact"
@@ -51,6 +52,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_SYNC_PUBLICATION.VALUE_0.IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SYNC_PUBLICATION"]
 provenance = "observed"
 accuracy = "exact"
@@ -58,6 +60,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BLE_SYNC_PUBLICATION.VALUE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SYNC_PUBLICATION"]
 provenance = "observed"
 accuracy = "exact"
@@ -65,6 +68,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BLE_SYNC_PUBLICATION.VALUE_1.IMAGE_LOW_24"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_SYNC_PUBLICATION"]
 provenance = "observed"
 accuracy = "exact"

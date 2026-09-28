@@ -428,6 +428,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -435,6 +436,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470.SET_BY_PHY_INIT_BRANCH_BIT_18"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -442,6 +444,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -449,6 +452,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_ZERO_0074.INIT_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -456,6 +460,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS", "BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 provenance = "observed"
 accuracy = "exact"
@@ -463,6 +468,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SCHEDULER_RUN"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 provenance = "observed"
 accuracy = "exact"
@@ -470,6 +476,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SOURCE_17"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -477,6 +484,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_CLEAR"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS", "BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 provenance = "observed"
 accuracy = "exact"
@@ -484,6 +492,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_CLEAR.SCHEDULER_RUN"
+naming = "descriptive"
 sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 provenance = "observed"
 accuracy = "exact"
@@ -491,6 +500,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -498,6 +508,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0138.INIT_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -505,6 +516,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -512,6 +524,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG.LC_TX_ON_DELAY"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -519,6 +532,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG.INIT_DUPLICATE_BYTE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -526,6 +540,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -533,6 +548,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -540,6 +556,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -547,6 +564,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2_LOW_7"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -554,6 +572,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2_HIGH"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -561,6 +580,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -568,6 +588,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400.INIT_ENABLE_22"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -575,6 +596,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400.INIT_ENABLE_31"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -582,6 +604,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -589,6 +612,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458.INIT_HIGH_HALF"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -596,6 +620,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -603,6 +628,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_045C.INIT_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -610,6 +636,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -617,6 +644,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_DYNAMIC_IMAGE_04A0.INIT_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -624,6 +652,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -631,6 +660,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -638,6 +668,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -645,6 +676,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -652,6 +684,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A4.INIT_BYTE_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -659,6 +692,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -666,6 +700,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -673,6 +708,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -680,6 +716,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -687,6 +724,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_04A8.INIT_BYTE_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -694,6 +732,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBBLE_PHY_INIT_REGISTERS",
     "BLOB_LIBBLE_CONNECTION_ABORT_CONTROL",
@@ -704,6 +743,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL.CUSTOM_OPCODE_ENABLED"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -711,6 +751,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.CONNECTION_ABORT_CONTROL.LINK_STATE_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_CONNECTION_ABORT_CONTROL", "HIL_S31_SOFTWARE_CCM_OPCODE_ABORT"]
 provenance = "observed"
 accuracy = "exact"
@@ -718,6 +759,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -725,6 +767,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_VALUE_0540.INIT_IMAGE"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -732,6 +775,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -739,6 +783,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C.INIT_LOW_5"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -746,6 +791,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -753,6 +799,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -760,6 +807,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -767,6 +815,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0550.INIT_BYTE_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -774,6 +823,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -781,6 +831,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -788,6 +839,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -795,6 +847,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -802,6 +855,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0554.INIT_BYTE_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -809,6 +863,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -816,6 +871,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -823,6 +879,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -830,6 +887,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -837,6 +895,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0558.INIT_BYTE_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -844,6 +903,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -851,6 +911,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_0"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -858,6 +919,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_1"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -865,6 +927,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_2"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
@@ -872,6 +935,7 @@ completeness = "complete"
 
 [[review]]
 entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_055C.INIT_BYTE_3"
+naming = "descriptive"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"

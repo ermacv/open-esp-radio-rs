@@ -45,6 +45,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTDM_SCHEDULER_TABLE.ENTRY%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBBTDM_SCHEDULER_LIFECYCLE",
     "BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION",
@@ -56,6 +57,7 @@ completeness = "partial"
 
 [[review]]
 entity = "BTDM_SCHEDULER_TABLE.ENTRY%s.HEAD_POINTER"
+naming = "descriptive"
 sources = [
     "BLOB_LIBBTDM_SCHEDULER_LIFECYCLE",
     "BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION",

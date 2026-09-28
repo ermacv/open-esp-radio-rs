@@ -28,9 +28,8 @@
 //! a scan window starts after busy reservations and ends before the next
 //! advertising or connection event, and an advertising event that cannot
 //! start within the advertising delay range is skipped. The connection uses
-//! no peripheral latency, the Data Length Extension or a PHY other than LE 1M,
-//! and connectable advertising needs the random source that encryption draws
-//! from.
+//! no peripheral latency and no PHY other than LE 1M, and connectable
+//! advertising needs the random source that encryption draws from.
 //!
 //! Commands complete in order. Reset, advertising and scanning enable
 //! changes, advertising-data updates while advertising and Test End complete

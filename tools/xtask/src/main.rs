@@ -117,6 +117,10 @@ enum Task {
         #[command(subcommand)]
         compare: Compare,
     },
+    /// Rebase onto origin/main, run `check changed` there, and push to main
+    /// only a revision that passed; reinstall `oer-stand` when its tooling
+    /// changed.
+    Push,
     /// Build the xtask of origin/main once and install `oer-stand`, which
     /// runs the operational HIL stand commands without building this tree.
     StandInstall,
@@ -350,6 +354,7 @@ fn run() -> Result<std::process::ExitCode> {
                 ),
             }
         }
+        Task::Push => oer_xtask::push::run(&ctx),
         Task::StandInstall => oer_xtask::stand_install::run(&ctx),
         Task::Sweep {
             all_checkouts,

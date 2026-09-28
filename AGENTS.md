@@ -72,7 +72,10 @@ cargo clippy --workspace --all-targets
 cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
 ```
 
-Before every push to `main`, run `cargo xtask check changed`: it formats every
+Push to `main` with `cargo xtask push`: it rebases onto `origin/main`, runs
+`cargo xtask check changed` there, checks again if `main` moved meanwhile, and
+pushes only a revision that passed. Do not chain `check changed | tail && git
+push`: a pipeline's status is its last command's. `check changed` formats every
 workspace a changed file belongs to, runs workspace Clippy, and tests and
 documents the changed root packages, plus the docs and metadata checks when
 prose or manifests changed, and the capability anchors when Rust sources or

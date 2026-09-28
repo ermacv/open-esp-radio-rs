@@ -1050,7 +1050,12 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
         let bar = called(request_bar)
             .then(|| call_words(&records, compared, fill_bar))
             .flatten()
-            .map(|words| (words[usize::from(FILL_BAR_TID)], words[usize::from(FILL_BAR_SEQUENCE)]));
+            .map(|words| {
+                (
+                    words[usize::from(FILL_BAR_TID)],
+                    words[usize::from(FILL_BAR_SEQUENCE)],
+                )
+            });
         let expected_bar = completion
             .bar
             .map(|sequence| (Some(u32::from(TID)), Some(u32::from(sequence))));

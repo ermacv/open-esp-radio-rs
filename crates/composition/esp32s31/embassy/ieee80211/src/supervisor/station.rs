@@ -1274,6 +1274,14 @@ pub(super) const fn connected_config(power: StationPowerMode) -> ConnectedStaCon
                 flags: 0,
             },
             beacon_miss_limit: 10,
+            // SOURCE: the ESP-IDF `esp_wifi_set_inactive_time` contract: a
+            // station without a beacon from its access point for the
+            // inactive time, 6 s by default, leaves it. Complete pinned
+            // `libnet80211.a[wl_cnx.o]::sta_reset_beacon_timeout` rearms that
+            // timeout in seconds from each beacon, and its expiry in
+            // `cnx_beacon_timeout_process` probes the access point before
+            // disconnecting.
+            beacon_timeout_micros: 6_000_000,
         },
     }
 }

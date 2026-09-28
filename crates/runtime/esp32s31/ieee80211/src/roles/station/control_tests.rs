@@ -615,7 +615,7 @@ fn individual_twt_parameters(implicit: bool) -> IndividualTwtParameterSet {
 fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (_publisher, receiver) = resources.split();
-    let policy = StaBeaconLossConfig::new(100, 10).unwrap();
+    let policy = StaBeaconLossConfig::new(100, 10, 1_024_000).unwrap();
     let mut control = ConnectedControl::new(
         receiver,
         BSSID,
@@ -1242,7 +1242,7 @@ fn beacon_loss_disconnects_only_after_bounded_active_probes() {
         true,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3).unwrap());
+    control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3, 307_200).unwrap());
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1290,7 +1290,7 @@ fn associated_probe_response_cancels_beacon_loss_recovery() {
         false,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3).unwrap());
+    control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3, 307_200).unwrap());
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -1556,7 +1556,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
         false,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3).unwrap());
+    control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3, 307_200).unwrap());
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,

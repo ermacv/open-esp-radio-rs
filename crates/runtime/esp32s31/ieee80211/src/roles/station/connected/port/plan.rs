@@ -51,7 +51,12 @@ pub struct ConnectedStaBlockAckPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedStaRxPolicy {
     pub ingress: RxIngressConfig,
+    /// Consecutive misses the hardware beacon monitor counts while the
+    /// modem sleeps.
     pub beacon_miss_limit: u8,
+    /// How long the link may go without a beacon before the station probes
+    /// the access point.
+    pub beacon_timeout_micros: u64,
 }
 
 /// Configuration failure detected before any connected owner moves.
@@ -493,6 +498,7 @@ impl ConnectedStaPort {
         let beacon_loss = match StaBeaconLossConfig::new(
             peer.link.beacon_interval_tu,
             config.receive.beacon_miss_limit,
+            config.receive.beacon_timeout_micros,
         ) {
             Ok(beacon_loss) => beacon_loss,
             Err(error) => {

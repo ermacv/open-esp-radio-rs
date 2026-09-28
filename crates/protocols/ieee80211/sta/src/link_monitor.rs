@@ -7,16 +7,21 @@
 
 use oer_ieee80211_mac::station_beacon::{StaBeaconObservation, StaTimObservation};
 
-const TU_MICROS: u64 = 1_024;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaBeaconLossConfigError {
     ZeroInterval,
     ZeroMissLimit,
+    ZeroTimeout,
     DeadlineOverflow,
 }
 
-/// Association-derived limit for consecutive missing infrastructure beacons.
+/// Association-derived beacon-loss policy.
+///
+/// The connected station declares the link unreachable, and starts probing
+/// the access point, when no beacon has arrived for `timeout_micros`, as the
+/// vendor's station beacon timeout does. `miss_limit` is the separate
+/// consecutive-miss count the MAC's hardware beacon monitor uses while the
+/// modem sleeps.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaBeaconLossConfig {
     interval_tu: u16,
@@ -25,19 +30,24 @@ pub struct StaBeaconLossConfig {
 }
 
 impl StaBeaconLossConfig {
-    pub const fn new(interval_tu: u16, miss_limit: u8) -> Result<Self, StaBeaconLossConfigError> {
+    pub const fn new(
+        interval_tu: u16,
+        miss_limit: u8,
+        timeout_micros: u64,
+    ) -> Result<Self, StaBeaconLossConfigError> {
         if interval_tu == 0 {
             return Err(StaBeaconLossConfigError::ZeroInterval);
         }
         if miss_limit == 0 {
             return Err(StaBeaconLossConfigError::ZeroMissLimit);
         }
-        // u16 * u8 * 1024 is bounded far below u64::MAX.
-        let window_micros = interval_tu as u64 * miss_limit as u64 * TU_MICROS;
+        if timeout_micros == 0 {
+            return Err(StaBeaconLossConfigError::ZeroTimeout);
+        }
         Ok(Self {
             interval_tu,
             miss_limit,
-            window_micros,
+            window_micros: timeout_micros,
         })
     }
 
@@ -49,6 +59,7 @@ impl StaBeaconLossConfig {
         self.miss_limit
     }
 
+    /// How long the link may go without a beacon before it is probed.
     pub const fn window_micros(self) -> u64 {
         self.window_micros
     }

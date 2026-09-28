@@ -2407,6 +2407,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-command-tree"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
@@ -2983,6 +2992,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "libc",
+ "oer-command-tree",
  "oer-hil-fixture-install",
  "oer-hil-protocol",
  "oer-hil-runner-bluetooth",
@@ -3243,6 +3253,7 @@ dependencies = [
  "addr2line",
  "clap",
  "object 0.39.1",
+ "oer-command-tree",
  "rustc-demangle",
  "serde",
  "serde_json",
@@ -3300,6 +3311,7 @@ dependencies = [
 name = "oer-qualification"
 version = "0.1.0"
 dependencies = [
+ "oer-command-tree",
  "oer-hil-schema",
  "serde",
  "serde_json",
@@ -3381,6 +3393,7 @@ version = "0.1.0"
 dependencies = [
  "cargo_metadata",
  "clap",
+ "oer-command-tree",
  "oer-process",
  "oer-register-contracts",
  "oer-register-model",
@@ -3422,6 +3435,7 @@ dependencies = [
  "libc",
  "object 0.39.1",
  "oer-chip-profile",
+ "oer-command-tree",
  "oer-esp32s31-firmware",
  "oer-hil-arbiter",
  "oer-hil-runner-core",

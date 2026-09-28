@@ -48,7 +48,6 @@ From the repository root, these commands do not open a serial device, change a
 fixture, flash a DUT, or transmit RF:
 
 ```console
-cargo xtask check docs --list
 cargo hil scenario list
 cargo hil scenario validate
 cargo hil fixture probe-plan

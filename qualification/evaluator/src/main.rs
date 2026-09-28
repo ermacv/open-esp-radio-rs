@@ -30,18 +30,124 @@ enum Command {
 }
 
 impl Command {
-    fn parse(value: &str) -> Result<Self> {
-        match value {
-            "status" => Ok(Self::Status),
-            "next" => Ok(Self::Next),
-            "plan" => Ok(Self::Plan),
-            "validate" => Ok(Self::Validate),
-            "evaluate" => Ok(Self::Evaluate),
-            "gate" => Ok(Self::Gate),
-            "hil-evidence" => Ok(Self::HilEvidence),
-            _ => Err(format!("unknown qualification command {value:?}").into()),
+    const ALL: [Self; 10] = [
+        Self::Status,
+        Self::Next,
+        Self::Plan,
+        Self::Validate,
+        Self::Evaluate,
+        Self::Gate,
+        Self::HilEvidence,
+        Self::CatalogCheck,
+        Self::CatalogRender,
+        Self::CatalogAnchors,
+    ];
+
+    /// The words that name the command after `cargo qualification`.
+    fn words(self) -> &'static [&'static str] {
+        match self {
+            Self::Status => &["status"],
+            Self::Next => &["next"],
+            Self::Plan => &["plan"],
+            Self::Validate => &["validate"],
+            Self::Evaluate => &["evaluate"],
+            Self::Gate => &["gate"],
+            Self::HilEvidence => &["hil-evidence"],
+            Self::CatalogCheck => &["catalog", "check"],
+            Self::CatalogRender => &["catalog", "render"],
+            Self::CatalogAnchors => &["catalog", "anchors"],
         }
     }
+
+    /// Every option the command accepts: the parser rejects the others, and
+    /// `__command-tree` prints these for the documentation check.
+    fn options(self) -> &'static [&'static str] {
+        const REPORTS: &[&str] = &["--manifest", "--root", "--json-report"];
+        match self {
+            Self::Status => &[
+                "--manifest",
+                "--catalog",
+                "--capability",
+                "--details",
+                "--root",
+                "--json-report",
+            ],
+            Self::Next => &[
+                "--manifest",
+                "--catalog",
+                "--capability",
+                "--root",
+                "--json-report",
+            ],
+            Self::Plan => &["--manifest", "--capability", "--root", "--json-report"],
+            Self::Validate | Self::Evaluate | Self::Gate => REPORTS,
+            Self::HilEvidence => &["--manifest", "--hil-target", "--run", "--root"],
+            Self::CatalogCheck => &["--manifest", "--catalog", "--root"],
+            Self::CatalogRender => &["--manifest", "--catalog", "--out", "--root"],
+            Self::CatalogAnchors => &["--catalog", "--changed", "--root"],
+        }
+    }
+
+    fn find(arguments: &[String]) -> Result<Self> {
+        let first = arguments.first().ok_or("missing qualification command")?;
+        if let Some(command) = Self::ALL.into_iter().find(|command| {
+            let words = command.words();
+            arguments.len() >= words.len() && words.iter().zip(arguments).all(|(w, a)| w == a)
+        }) {
+            return Ok(command);
+        }
+        if first != "catalog" {
+            return Err(format!("unknown qualification command {first:?}").into());
+        }
+        match arguments.get(1) {
+            None => Err("missing catalog operation".into()),
+            Some(operation) => Err(format!("unknown catalog operation {operation:?}").into()),
+        }
+    }
+}
+
+/// The command tree of `cargo qualification`: each command path with its
+/// subcommands and the long options it accepts.
+fn command_tree() -> Vec<oer_command_tree::CommandNode> {
+    let words = |words: &[&str]| {
+        words
+            .iter()
+            .map(|word| word.to_string())
+            .collect::<Vec<_>>()
+    };
+    let mut nodes = vec![oer_command_tree::CommandNode {
+        path: words(&["qualification"]),
+        subcommands: Vec::new(),
+        flags: Vec::new(),
+        forwards: false,
+    }];
+    for command in Command::ALL {
+        let mut path = words(&["qualification"]);
+        for word in command.words() {
+            let parent = nodes
+                .iter_mut()
+                .find(|node| node.path == path)
+                .expect("every parent is listed before its children");
+            if !parent.subcommands.iter().any(|known| known == word) {
+                parent.subcommands.push(word.to_string());
+            }
+            path.push(word.to_string());
+            if !nodes.iter().any(|node| node.path == path) {
+                nodes.push(oer_command_tree::CommandNode {
+                    path: path.clone(),
+                    subcommands: Vec::new(),
+                    flags: Vec::new(),
+                    forwards: false,
+                });
+            }
+        }
+        let leaf = nodes
+            .iter_mut()
+            .find(|node| node.path == path)
+            .expect("the command was just listed");
+        leaf.flags = words(command.options());
+    }
+    nodes
 }
 
 #[derive(Debug)]
@@ -73,19 +179,8 @@ fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<P
 
 fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     let arguments = arguments.into_iter().collect::<Vec<_>>();
-    let command_name = arguments.first().ok_or("missing qualification command")?;
-    let (command, mut index) = if command_name == "catalog" {
-        let operation = arguments.get(1).ok_or("missing catalog operation")?;
-        let command = match operation.as_str() {
-            "check" => Command::CatalogCheck,
-            "render" => Command::CatalogRender,
-            "anchors" => Command::CatalogAnchors,
-            _ => return Err(format!("unknown catalog operation {operation:?}").into()),
-        };
-        (command, 2)
-    } else {
-        (Command::parse(command_name)?, 1)
-    };
+    let command = Command::find(&arguments)?;
+    let mut index = command.words().len();
     let mut manifest = None;
     let mut catalogs = Vec::new();
     let mut root = None;
@@ -97,7 +192,19 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut runs = Vec::new();
     let mut changed = Vec::new();
     while index < arguments.len() {
-        match arguments[index].as_str() {
+        let option = arguments[index].as_str();
+        if !command.options().contains(&option) {
+            return Err(if Command::ALL
+                .iter()
+                .any(|command| command.options().contains(&option))
+            {
+                format!("{option} is not accepted by {}", command.words().join(" "))
+            } else {
+                format!("unknown option {option:?}")
+            }
+            .into());
+        }
+        match option {
             "--details" => {
                 if details {
                     return Err("duplicate --details".into());
@@ -121,9 +228,6 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     .ok_or("--run requires a run ID")?
                     .clone();
                 index += 2;
-                if command != Command::HilEvidence {
-                    return Err("--run is accepted by hil-evidence".into());
-                }
                 runs.push(value);
             }
             "--hil-target" => {
@@ -132,15 +236,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     .ok_or("--hil-target requires a value")?
                     .clone();
                 index += 2;
-                if command != Command::HilEvidence || hil_target.replace(value).is_some() {
-                    return Err("--hil-target is accepted once, by hil-evidence".into());
+                if hil_target.replace(value).is_some() {
+                    return Err("duplicate --hil-target".into());
                 }
             }
             "--changed" => {
                 let value = take_value(&arguments, &mut index, "--changed")?;
-                if command != Command::CatalogAnchors {
-                    return Err("--changed is accepted by catalog anchors".into());
-                }
                 changed.push(value);
             }
             "--manifest" => {
@@ -174,44 +275,27 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             option => return Err(format!("unknown option {option:?}").into()),
         }
     }
-    if command == Command::CatalogAnchors && (manifest.is_some() || catalogs.is_empty()) {
-        return Err("catalog anchors requires --catalog and accepts no --manifest".into());
-    }
-    if matches!(
-        command,
-        Command::CatalogCheck | Command::CatalogRender | Command::CatalogAnchors
-    ) && json_report.is_some()
-    {
-        return Err("catalog commands do not accept --json-report".into());
-    }
-    if capability.is_some() && !matches!(command, Command::Status | Command::Next | Command::Plan) {
-        return Err("--capability is only accepted by status, next and plan".into());
-    }
-    if details && command != Command::Status {
-        return Err("--details is only accepted by status".into());
-    }
-    if !matches!(command, Command::CatalogRender) && output_directory.is_some() {
-        return Err("--out is only accepted by catalog render".into());
-    }
     if command == Command::CatalogRender && output_directory.is_none() {
         return Err("catalog render requires --out".into());
     }
-    if matches!(
-        command,
-        Command::CatalogCheck | Command::CatalogRender | Command::Status | Command::Next
-    ) {
-        if manifest.is_some() == !catalogs.is_empty() {
+    match command {
+        Command::CatalogAnchors if catalogs.is_empty() => {
+            return Err("catalog anchors requires --catalog".into());
+        }
+        Command::Status | Command::Next | Command::CatalogCheck | Command::CatalogRender
+            if manifest.is_some() == !catalogs.is_empty() =>
+        {
             return Err("command requires exactly one of --manifest or --catalog".into());
         }
-    } else if command == Command::CatalogAnchors {
-    } else if command == Command::HilEvidence {
-        if manifest.is_some() == hil_target.is_some() {
+        Command::HilEvidence if manifest.is_some() == hil_target.is_some() => {
             return Err("hil-evidence requires exactly one of --manifest or --hil-target".into());
         }
-    } else if manifest.is_none() {
-        return Err("missing --manifest".into());
-    } else if !catalogs.is_empty() {
-        return Err("--catalog is only accepted by catalog commands".into());
+        Command::Plan | Command::Validate | Command::Evaluate | Command::Gate
+            if manifest.is_none() =>
+        {
+            return Err("missing --manifest".into());
+        }
+        _ => {}
     }
     Ok(Arguments {
         command,
@@ -388,6 +472,10 @@ fn is_help(arguments: &[String]) -> bool {
 
 fn main() -> ExitCode {
     let raw_arguments = env::args().skip(1).collect::<Vec<_>>();
+    if oer_command_tree::requested() {
+        println!("{}", oer_command_tree::json(&command_tree()));
+        return ExitCode::SUCCESS;
+    }
     if is_help(&raw_arguments) {
         println!("{USAGE}");
         return ExitCode::SUCCESS;

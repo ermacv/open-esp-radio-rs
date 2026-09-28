@@ -8,6 +8,7 @@
       "oer-hil-runner-core",
       "rustix",
       "oer-process",
+      "oer-command-tree",
       "oer-hil-fixture-install",
       "clap",
       "tempfile",

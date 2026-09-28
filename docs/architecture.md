@@ -167,7 +167,7 @@ module and facade. The encoder never depends on the station policy or facade.
 
 ```mermaid
 flowchart LR
-    R[Reviewed register model and policy] --> P[cargo registers publication]
+    R[Reviewed register model and policy] --> P[cargo registers generate]
     P --> G[Published SVD / PAC / bindings]
     G --> D[Production driver]
     D --> C[Compiled comparison probes]

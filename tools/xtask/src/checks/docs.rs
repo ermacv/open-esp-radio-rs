@@ -13,6 +13,7 @@ use std::{
 use super::common;
 use crate::{Context, Result, paths, process};
 
+mod cli;
 mod markdown;
 use markdown::check_markdown;
 
@@ -26,8 +27,9 @@ pub fn run(ctx: &Context) -> Result<()> {
     fs::create_dir_all(&output)?;
     documents.extend(run_catalogs(ctx, &output, &groups)?);
     let links = check_markdown(ctx, &documents)?;
+    let commands = check_commands(ctx, &links.commands)?;
     println!(
-        "docs static passed: catalogs={} programs={} documents={} local-links={} code-paths={} anchors={} external-not-checked={}",
+        "docs static passed: catalogs={} programs={} documents={} local-links={} code-paths={} commands={commands} anchors={} external-not-checked={}",
         groups
             .iter()
             .map(|group| group.catalogs.len())
@@ -43,6 +45,43 @@ pub fn run(ctx: &Context) -> Result<()> {
         links.external_not_checked,
     );
     Ok(())
+}
+
+/// Check every command line of a repository Cargo alias that `texts`
+/// (document, code) show against the command trees the tools print, and
+/// return how many were checked.
+fn check_commands(ctx: &Context, texts: &[(String, String)]) -> Result<usize> {
+    use oer_command_tree::{CommandNode, REQUEST};
+    let mut nodes = Vec::new();
+    // Through the aliases of `.cargo/config.toml`, as the documents run them;
+    // each builds its tool first. The running xtask is no source: a check
+    // that also builds may replace its executable.
+    for tool in cli::TOOLS {
+        let output = process::capture(ctx.cargo().args([tool, REQUEST]))?;
+        nodes.extend(serde_json::from_slice::<Vec<CommandNode>>(&output.stdout)?);
+    }
+    let trees = cli::Trees::new(nodes);
+    let mut checked = 0;
+    let mut stale = BTreeSet::new();
+    for (document, text) in texts {
+        for words in cli::invocations(text) {
+            checked += 1;
+            if let Some(problem) = trees.check(&words) {
+                stale.insert(format!(
+                    "{document}: `cargo {}`: {problem}",
+                    words.join(" ")
+                ));
+            }
+        }
+    }
+    if !stale.is_empty() {
+        return Err(format!(
+            "Markdown shows commands the tools do not have:\n{}",
+            stale.into_iter().collect::<Vec<_>>().join("\n")
+        )
+        .into());
+    }
+    Ok(checked)
 }
 
 /// Check every catalog entry's code anchors (see the qualification
@@ -77,6 +116,9 @@ struct CatalogGroup {
 #[derive(Debug)]
 struct LinkSummary {
     documents: usize,
+    /// (document, text) of the code spans and shell blocks that show a
+    /// command of a repository Cargo alias.
+    commands: Vec<(String, String)>,
     /// Repository paths named in inline code, all present.
     code_paths: usize,
     local_links: usize,

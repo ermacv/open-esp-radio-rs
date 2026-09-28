@@ -475,3 +475,68 @@ fn execution_plan_requires_an_evaluated_program() {
     );
     assert!(parse_arguments(["plan", "--catalog", "catalog.toml"].map(str::to_owned)).is_err());
 }
+
+#[test]
+fn each_command_accepts_exactly_the_options_its_tree_lists() {
+    let every = Command::ALL
+        .iter()
+        .flat_map(|command| command.options())
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    for command in Command::ALL {
+        let required: &[&str] = match command {
+            Command::CatalogAnchors => &["--catalog", "c.toml"],
+            Command::CatalogRender => &["--manifest", "m.toml", "--out", "out"],
+            _ => &["--manifest", "m.toml"],
+        };
+        let base = command
+            .words()
+            .iter()
+            .chain(required)
+            .map(|word| word.to_string())
+            .collect::<Vec<_>>();
+        parse_arguments(base.clone()).unwrap();
+        for option in every.iter().filter(|option| !required.contains(option)) {
+            let mut arguments = base.clone();
+            // The alternatives to a manifest replace it.
+            if matches!(*option, "--catalog" | "--hil-target")
+                && let Some(at) = arguments.iter().position(|word| word == "--manifest")
+            {
+                arguments.drain(at..at + 2);
+            }
+            arguments.push(option.to_string());
+            if *option != "--details" {
+                arguments.push(String::from("value"));
+            }
+            assert_eq!(
+                parse_arguments(arguments).is_ok(),
+                command.options().contains(option),
+                "{command:?} {option}"
+            );
+        }
+    }
+    let tree = command_tree();
+    assert_eq!(
+        tree[0].subcommands,
+        [
+            "status",
+            "next",
+            "plan",
+            "validate",
+            "evaluate",
+            "gate",
+            "hil-evidence",
+            "catalog"
+        ]
+    );
+    let catalog = tree
+        .iter()
+        .find(|node| node.path == ["qualification", "catalog"])
+        .unwrap();
+    assert_eq!(catalog.subcommands, ["check", "render", "anchors"]);
+    let render = tree
+        .iter()
+        .find(|node| node.path == ["qualification", "catalog", "render"])
+        .unwrap();
+    assert!(render.flags.iter().any(|flag| flag == "--out"));
+}

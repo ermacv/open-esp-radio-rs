@@ -6,6 +6,7 @@ members = [
     "verification/harness/macros",
     "tools/process",
     "tools/chip-profile",
+    "tools/command-tree",
     "tools/firmware",
     "tools/symbol-lineage",
     "verification/esp32s31/hardware/calibration",

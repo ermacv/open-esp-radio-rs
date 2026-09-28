@@ -29,7 +29,7 @@ fn main() {
         .is_some_and(|a| a == "__command-tree")
     {
         use clap::CommandFactory as _;
-        let tree = hil_core::command_tree::command_tree(&cli::Cli::command(), &[]);
+        let tree = oer_command_tree::command_tree(&cli::Cli::command(), &[]);
         println!("{}", serde_json::to_string(&tree).unwrap_or_default());
         return;
     }

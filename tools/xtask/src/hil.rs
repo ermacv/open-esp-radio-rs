@@ -381,7 +381,7 @@ impl LeaseOptions {
 /// merged under `hil`.
 fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
     use clap::CommandFactory as _;
-    use oer_hil_runner_core::command_tree::{CommandNode, command_tree as walk};
+    use oer_command_tree::{CommandNode, command_tree as walk};
     let path = |words: &[&str]| {
         words
             .iter()
@@ -392,6 +392,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         path: path(words),
         subcommands: subcommands.iter().map(|word| word.to_string()).collect(),
         flags: flags.iter().map(|word| word.to_string()).collect(),
+        forwards: false,
     };
     let (runner, _) = prepare(ctx)?;
     let output = std::process::Command::new(&runner)

@@ -12,6 +12,7 @@ description = "Host build, placement-audit and HIL runner for open ESP radio"
 hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
 hil-wifi = { package = "oer-hil-runner-ieee80211", path = "../runner-ieee80211" }
 hil-bluetooth = { package = "oer-hil-runner-bluetooth", path = "../runner-bluetooth" }
+oer-command-tree = { path = "../../../tools/command-tree", features = ["clap"] }
 hil-system = { package = "oer-hil-runner-system", path = "../runner-system" }
 hil-ieee802154 = { package = "oer-hil-runner-ieee802154", path = "../runner-ieee802154" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }

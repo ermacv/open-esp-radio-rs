@@ -16,6 +16,7 @@ path = "src/main.rs"
 oer-register-model = { path = "model" }
 oer-register-review = { path = "review" }
 oer-register-contracts = { path = "contracts" }
+oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-process = { path = "../process" }
 clap = { version = "=4.5.48", features = ["derive"] }
 serde = { version = "=1.0.229", features = ["derive"] }

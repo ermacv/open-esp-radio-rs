@@ -155,6 +155,12 @@ fn print_value<T: serde::Serialize>(
 }
 
 fn main() -> ExitCode {
+    if oer_command_tree::requested() {
+        use clap::CommandFactory as _;
+        let tree = oer_command_tree::command_tree(&Cli::command(), &[String::from("memory")]);
+        println!("{}", oer_command_tree::json(&tree));
+        return ExitCode::SUCCESS;
+    }
     match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

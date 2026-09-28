@@ -2,7 +2,7 @@
 
 use super::LinkSummary;
 use crate::{Context, Result};
-use pulldown_cmark::{BrokenLink, CowStr, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{BrokenLink, CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -17,6 +17,8 @@ struct ParsedMarkdown {
     undefined_references: Vec<String>,
     /// Inline code spans; code blocks are examples, not references.
     code_spans: Vec<String>,
+    /// Shell code blocks, whose commands are checked like the spans'.
+    shell_blocks: Vec<String>,
 }
 
 fn parse_markdown(text: &str) -> ParsedMarkdown {
@@ -35,6 +37,8 @@ fn parse_markdown(text: &str) -> ParsedMarkdown {
     let mut duplicate_headings = BTreeMap::<String, usize>::new();
     let mut links = Vec::new();
     let mut code_spans = Vec::new();
+    let mut shell_blocks = Vec::new();
+    let mut block: Option<String> = None;
     let mut heading: Option<(Option<String>, String)> = None;
     for event in parser {
         match event {
@@ -54,9 +58,16 @@ fn parse_markdown(text: &str) -> ParsedMarkdown {
                     anchors.insert(anchor);
                 }
             }
+            Event::Start(Tag::CodeBlock(kind)) => {
+                block = shell_block(&kind).then(String::new);
+            }
+            Event::End(TagEnd::CodeBlock) => shell_blocks.extend(block.take()),
             Event::Text(text) => {
                 if let Some((_, heading)) = &mut heading {
                     heading.push_str(&text);
+                }
+                if let Some(block) = &mut block {
+                    block.push_str(&text);
                 }
             }
             Event::Code(text) => {
@@ -78,6 +89,19 @@ fn parse_markdown(text: &str) -> ParsedMarkdown {
         links,
         undefined_references,
         code_spans,
+        shell_blocks,
+    }
+}
+
+/// Whether a code block holds shell commands: indented, or fenced with no
+/// language or a shell one.
+fn shell_block(kind: &CodeBlockKind<'_>) -> bool {
+    match kind {
+        CodeBlockKind::Indented => true,
+        CodeBlockKind::Fenced(info) => matches!(
+            info.split([' ', ',']).next().unwrap_or_default(),
+            "" | "console" | "sh" | "bash" | "shell" | "fish" | "text"
+        ),
     }
 }
 
@@ -333,8 +357,21 @@ pub(super) fn check_markdown(ctx: &Context, initial: &[PathBuf]) -> Result<LinkS
             }
         }
     }
+    let mut commands = Vec::new();
+    for (document, parsed) in &documents {
+        let document = document.strip_prefix(&root)?.display().to_string();
+        for text in parsed.code_spans.iter().chain(&parsed.shell_blocks) {
+            if super::cli::TOOLS
+                .iter()
+                .any(|tool| text.contains(&format!("cargo {tool}")))
+            {
+                commands.push((document.clone(), text.clone()));
+            }
+        }
+    }
     Ok(LinkSummary {
         documents: documents.len(),
+        commands,
         code_paths,
         local_links,
         external_not_checked,

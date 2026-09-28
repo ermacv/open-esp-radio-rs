@@ -398,6 +398,12 @@ fn run() -> Result<std::process::ExitCode> {
 }
 
 fn main() -> std::process::ExitCode {
+    if oer_command_tree::requested() {
+        use clap::CommandFactory as _;
+        let tree = oer_command_tree::command_tree(&Cli::command(), &[String::from("xtask")]);
+        println!("{}", oer_command_tree::json(&tree));
+        return std::process::ExitCode::SUCCESS;
+    }
     match run() {
         Ok(status) => status,
         Err(error) => {

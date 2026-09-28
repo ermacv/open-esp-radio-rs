@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 oer-chip-profile = { path = "../chip-profile" }
+oer-command-tree = { path = "../command-tree", features = ["clap"] }
 oer-hil-arbiter = { path = "../../hil/host/arbiter" }
 oer-hil-runner-core = { path = "../../hil/host/runner-core" }
 oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }

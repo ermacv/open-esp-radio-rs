@@ -10,7 +10,10 @@ checks. A utility does not need its own Cargo package.
 | [memory-report](memory-report/README.md) | Generic ELF memory and stack analysis; the consumer supplies placement policy |
 | [symbol-lineage](symbol-lineage/README.md) | Source function names carried across obfuscated vendor archive revisions |
 | [process](process/README.md) | Host child-process ownership, cancellation and bounded cleanup shared by xtask and HIL |
-| [firmware](firmware/README.md) | Firmware image operations and shared serial-device leases |
+| [firmware](firmware/README.md) | Firmware image operations, flash segment writes and shared serial-device leases |
+| `command-tree` | The command tree every repository tool prints for `__command-tree`, which `cargo xtask check docs` holds the documented commands to |
+| `chip-profile` | Supported chips resolved from `platform/<chip>/chip.toml`: Rust target, boot flow, `espflash` chip name, silicon revisions |
+| [registers](registers/README.md) | Register model contracts, publication and generated SVD/bindings |
 | [xtask](xtask/README.md) | Cargo/source/architecture checks and their regression tests |
 
 The [qualification evaluator](../qualification/README.md) belongs to its

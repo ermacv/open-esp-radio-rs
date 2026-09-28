@@ -14,17 +14,10 @@ cd examples/esp32s31/station
 cargo check --release
 ```
 
-## Network selection
-
-The example uses the owned Xarxa/Embassy stack (`owned-network`), the only
-network implementation; the
+The example uses the owned Xarxa/Embassy stack, the only network
+implementation; the
 [implementation guide](../../../docs/network-implementations.md) explains its
-crates and the shared Wi-Fi boundary. Build a complete image from the
-repository root:
-
-```console
-cargo xtask build firmware station
-```
+crates and the shared Wi-Fi boundary.
 
 ## Application behavior
 
@@ -37,14 +30,13 @@ ESP32S31_WIFI_PASSPHRASE='your passphrase' \
 cargo check --release
 ```
 
-After scan, WPA2 and DHCP complete, all four selections expose the same UDP
-echo service on port 4321 and reply to ICMP ping. Released Embassy uses explicit
-static UDP byte rings; Xarxa uses packet pools.
-Application socket storage and IP policy live in `src/network.rs`.
+The application scans channels 1 to 13 once, then starts a WPA2-Personal
+station. Once DHCP completes, it serves UDP echo on port 4321 and replies to
+ICMP ping. Socket storage and IP policy live in `src/network.rs`.
 
-If no matching AP is present, each complete 13-channel cold scan returns its
-halted RX ring, waits 500 ms and prepares that same owner for the next scan.
-It does not recreate descriptors or panic after the first `NoCandidate` pass.
+The station request's `StaReconnectPolicy` in `src/main.rs` bounds the
+attempts and backoff when no matching access point answers or the link is
+lost.
 
 Build the complete application from the repository root:
 
@@ -61,15 +53,10 @@ flash the complete image through `xtask`. Hardware readiness still requires
 appropriate scenario evidence.
 
 See the [Wi-Fi network integration](../../../docs/wifi-egress.md#owned-tx-path)
-for packet ownership, RX scheduling and admission limits.
-
-The connected radio is a finite lifecycle epoch rather than a terminal task.
-Peer loss or an application controller request returns the IRQ, staged-RX,
-DMA, TX, sequence and CCMP-key owners, while the Embassy network stack and
-sockets stay alive across link down/up. Before the next association, a finite
-13-channel running scan temporarily owns only the quiesced hardware, stopped
-RX and ordinary TX descriptor. It returns every owner and a fresh `ScanRecord`
-before the stopped RX resources are split for reconnect. A fresh `ScanRecord`
-can select another BSSID or channel. Product readiness is determined by the
+for packet ownership, RX scheduling and admission limits, and the
+[integration crate](../../../crates/composition/esp32s31/embassy/ieee80211/README.md)
+for the station lifecycle across link loss and reconnect; the network stack
+and its sockets stay alive while the link goes down and up. Product readiness
+is determined by the
 [qualification program](../../../qualification/targets/esp32s31/wifi-sta.toml) and
-current evidence, independently of this application's source check.
+its evidence, independently of this application's source check.

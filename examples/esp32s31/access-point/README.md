@@ -11,7 +11,7 @@ explains its crates and the shared Wi-Fi boundary.
 The application requests WPA2-Personal on channel 6 with 20 MHz bandwidth and
 uses `192.168.4.1/24`. DHCP leases are drawn from `192.168.4.100..=114`; both
 echo services use port 7. `AP_CLIENT_LIMIT` in `src/main.rs` selects the admitted
-peer count, currently four, within the request type's 1..=15 resource boundary.
+peer count, four, within the request type's 1..=15 resource boundary.
 That capacity is not a hardware qualification result. TCP echo preserves the
 peer's half-close: pending replies and FIN are drained before socket reuse.
 Transport errors or a two-second close deadline trigger abort and another
@@ -42,14 +42,5 @@ relocates the separately linked application and keeps DMA and interrupt storage
 in SRAM. The command checks ELF placement and stack frames before packaging
 or flashing. `cargo build` in this example produces only the stage-two ELF;
 flash the complete image through `xtask`. Hardware readiness still requires
-appropriate scenario evidence.
-
-## Network implementation
-
-Build a complete image from the repository root:
-
-```console
-cargo xtask build firmware access-point
-```
-
-The builder checks dependency pins and archives the effective locks.
+appropriate scenario evidence. The builder also checks that the build did not
+change dependency pins and archives the effective lockfile.

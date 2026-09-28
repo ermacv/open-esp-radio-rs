@@ -69,6 +69,12 @@ fn main() -> ! {
     print(c"OER_BOOT bootstrap=START\r\n");
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
+    // The ESP-IDF bootloader leaves the analog (mode 1) brownout reset on, which
+    // resets the chip on supply dips the ESP-IDF application tolerates. Apply
+    // the application's configuration (esp_brownout_init) before any radio
+    // current flows: mode 1 reset off, mode 0 at level 7 with flash suspend,
+    // RF power-down and a system reset.
+    esp_hal::rtc_cntl::brownout::configure(esp_hal::rtc_cntl::brownout::BrownoutConfig::default());
     print(c"OER_BOOT bootstrap=INIT\r\n");
     let mut flash_mmu = FlashMmu::new(peripherals.SPI0);
     let mut flash = match esp_hal::flash::Flash::new(peripherals.FLASH, esp_hal::flash::Config::default()) {

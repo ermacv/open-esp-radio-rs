@@ -500,16 +500,21 @@ missing MPDU kept in the aggregate, all MATCH. Two reviewed differences must
 DIFF at exactly the named MPDU's Retry bit: production acknowledges the MPDU
 immediately left of the starting sequence, which the vendor retransmits, and
 production hands a single missing HT MPDU to its ordinary retry owner. One
-known gap is checked: the vendor sends a BlockAckReq after a resort whose
-station has one pending for the TID, and production sends none.
+known gap is checked: production sends no BlockAckReq, while the vendor
+(`ppFillAMPDUBar`, `ppReSendBar`) requests a BlockAck starting after the
+aggregate head when a resort discards that head as aged, or acknowledges it
+while the station has a request pending for the TID. Rate control sets that
+pending bit when it resumes aggregation (`trc_onAmpduOp`). The cases check
+the request's TID and starting sequence.
 
 The retry bound is compared too. Both sides keep a missing MPDU in the
 aggregate without counting publications (MATCH with the vendor's descriptor
 counters exhausted), bounded only by the MSDU lifetime: cases execute the
 vendor's own `lmacMSDUAged` after `lmacInit` installed its lifetimes, which
 the run reports, and give production the same lifetime; a fresh MPDU is kept
-and an expired one discarded on both sides. One reviewed difference remains
-outside the cases: production starts an MSDU's lifetime when its aggregate is
+and an expired one discarded on both sides. One reviewed difference, checked
+by a head queued long before the rest (DIFF at the head's Retry bit):
+production starts an MSDU's lifetime when its aggregate is
 committed, the moment the MSDU enters the radio, while the vendor starts it at
 the pp queue enqueue timestamp; frames waiting in production's software queue
 before commit do not age, so under queueing delay a production MSDU is
@@ -522,7 +527,11 @@ header, and checks that the vendor retries exactly while production continues.
 A CTS timeout sends no MPDU and neither side sets the Retry bit; an
 acknowledgement timeout sets it on every MPDU on both sides. Both end at the
 vendor's short retry limit, which its rate record's publication limit does
-not undercut for the compared rate (MATCH).
+not undercut for the compared rate (MATCH). There the vendor ends the frame
+exchange and recycles the aggregate, as production does, except for an
+RTS-protected aggregate whose CTS never arrived: `lmacEndRetryAMPDUFail`
+keeps it and sends a BlockAckReq starting at its head, whose BlockAck drives
+the ordinary resort, while production ends it (known gap).
 
 Each case also checks where both sides leave the MPDUs: the vendor by its
 queue record (kept in the aggregate, handed to the ordinary queue, or

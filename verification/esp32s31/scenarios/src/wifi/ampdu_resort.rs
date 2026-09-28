@@ -163,11 +163,21 @@ const PREDECESSOR: &str = "Production admits the MPDU immediately left of SSN (w
 const HT_SINGLE: &str = "production ends the HT aggregate when one MPDU is missing and hands \
     it to its ordinary retry owner, which sets the Retry bit when it republishes the MPDU; the \
     vendor keeps it in the aggregate and sets the bit here (reviewed with the Wi-Fi owner)";
+/// Reviewed difference: where an MSDU's lifetime starts.
+const LIFETIME_ORIGIN: &str = "production starts an MSDU's lifetime when its aggregate is \
+    committed, the vendor at the pp queue enqueue timestamp: a head queued long before the rest \
+    of its aggregate expires on the vendor side only, which discards it without the Retry bit \
+    while production retries it (reviewed with the Wi-Fi owner)";
 /// Known gap: production sends no BlockAckReq.
-const BAR_GAP: &str = "the vendor sends a BlockAckReq (ppFillAMPDUBar, ppReSendBar) after a \
-    resort whose station has a pending request for the TID; production sends none, so the \
-    recipient's window advances only by its own timeout (known gap, reviewed with the Wi-Fi \
-    owner)";
+const BAR_GAP: &str = "the vendor sends a BlockAckReq (ppFillAMPDUBar, ppReSendBar) with the \
+    starting sequence after the aggregate head when a resort discards that head as aged, or \
+    acknowledges it while the station has a request pending for the TID (set when rate control \
+    resumes aggregation); production sends none, so the recipient's window advances only by \
+    its own timeout (known gap, reviewed with the Wi-Fi owner)";
+/// The vendor BlockAckReq builder: its TID and starting sequence arguments.
+const FILL_BAR: &str = "ppFillAMPDUBar";
+const FILL_BAR_TID: u16 = 0;
+const FILL_BAR_SEQUENCE: u16 = 3;
 
 /// Known gap: production keeps retrying an aggregate after its agreement
 /// ended.
@@ -197,6 +207,8 @@ struct Completion {
     bitmap: u64,
     retain_single: bool,
     bar_pending: bool,
+    /// The starting sequence of the BlockAckReq the vendor sends, if any.
+    bar: Option<u16>,
     /// The vendor's MPDU publication and short counters in each transmit
     /// descriptor.
     vendor_attempts: u8,
@@ -234,10 +246,12 @@ struct Difference {
 }
 
 /// Elapsed time since the MPDUs were queued, against the vendor lifetime.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum Aging {
     Fresh,
     Expired,
+    /// Only the head was queued a lifetime earlier than the others.
+    HeadExpired,
 }
 
 const fn completion(
@@ -255,6 +269,7 @@ const fn completion(
         bitmap,
         retain_single: true,
         bar_pending: false,
+        bar: None,
         vendor_attempts: 0,
         aging: None,
         difference: None,
@@ -305,8 +320,11 @@ const COMPLETIONS: &[Completion] = &[
         }),
         ..completion("predecessor", 4, 100, 101, 0b0101)
     },
+    // The head is acknowledged while a request is pending: the vendor
+    // requests a BlockAck from the sequence after it.
     Completion {
         bar_pending: true,
+        bar: Some(101),
         ..completion("bar-pending", 4, 100, 100, 0b0101)
     },
     // The vendor keeps retrying whatever its MPDU counters say.
@@ -323,6 +341,20 @@ const COMPLETIONS: &[Completion] = &[
     Completion {
         aging: Some(Aging::Expired),
         ..completion("lifetime-expired", 4, 100, 100, 0b0101)
+    },
+    // A head queued long before the rest: the vendor discards it alone,
+    // production ages the aggregate from its commit and keeps it. Discarding
+    // the aged head moves the recipient's window past it with a
+    // BlockAckReq, pending request or not.
+    Completion {
+        aging: Some(Aging::HeadExpired),
+        bar: Some(101),
+        difference: Some(Difference {
+            reason: LIFETIME_ORIGIN,
+            mpdu: 0,
+            vendor_retry: false,
+        }),
+        ..completion("lifetime-expired-head", 4, 100, 100, 0b1010)
     },
     // The agreement ended before the resort: both sides mark the missing
     // MPDUs, but only the vendor leaves the aggregate.
@@ -649,7 +681,14 @@ fn case_rows(
         vendor_attempts: completion.vendor_attempts,
         record: None,
     };
-    for (address, bytes) in aggregate.regions() {
+    for (address, mut bytes) in aggregate.regions() {
+        if address == ARENA_DESCRIPTOR && completion.aging == Some(Aging::HeadExpired) {
+            word(
+                &mut bytes,
+                DESCRIPTOR_ENQUEUED,
+                ENQUEUED_US - lifetime - EXPIRED_MARGIN_US,
+            );
+        }
         memory.push(known(address, bytes.len() as u32, &bytes)?);
     }
     let header = |name: String, address: u32| MemorySelection {
@@ -683,7 +722,7 @@ fn case_rows(
         ARENA_ACCESS,
     ));
     let elapsed = match completion.aging {
-        None | Some(Aging::Fresh) => 0,
+        None | Some(Aging::Fresh) | Some(Aging::HeadExpired) => 0,
         Some(Aging::Expired) => lifetime + EXPIRED_MARGIN_US,
     };
     if completion.aging.is_some() {
@@ -815,6 +854,37 @@ fn case_rows(
 /// completion path.
 const DECISION_TRIGGER: u32 = 4;
 
+/// The first four argument words of the vendor's first modeled call to
+/// `target` in `case`.
+fn call_words(
+    records: &[blobray_domain::ExecutionEvidence],
+    case: u32,
+    target: u32,
+) -> Option<[Option<u32>; 4]> {
+    let mut words = None;
+    for event in crate::evidence::events(records, case, false) {
+        match event {
+            blobray_domain::ExecutionEvent::ModeledCall { target: t, .. } => {
+                if words.is_some() {
+                    break;
+                }
+                if t == target {
+                    words = Some([None; 4]);
+                }
+            }
+            blobray_domain::ExecutionEvent::CallArgument { word, value } => {
+                if let Some(words) = words.as_mut()
+                    && let Some(slot) = words.get_mut(word as usize)
+                {
+                    *slot = value;
+                }
+            }
+            _ => {}
+        }
+    }
+    words
+}
+
 /// Final bytes of observed selection `selection` of one case side.
 fn observed(
     records: &[blobray_domain::ExecutionEvidence],
@@ -898,6 +968,7 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
     let image = ctx.image_symbols()?;
     let request_bar = ctx.symbol_address(&image, "ppReSendBar")?;
     let to_ordinary = ctx.symbol_address(&image, TO_ORDINARY)?;
+    let fill_bar = ctx.symbol_address(&image, FILL_BAR)?;
     for completion in COMPLETIONS {
         let rows = case_rows(ctx, &frames, aggregate, *completion)?;
         let compared = rows.len() as u32 - 1;
@@ -976,11 +1047,16 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                 if converted { "has not " } else { "" }
             )));
         }
-        let sent_bar = called(request_bar);
-        if sent_bar != completion.bar_pending {
+        let bar = called(request_bar)
+            .then(|| call_words(&records, compared, fill_bar))
+            .flatten()
+            .map(|words| (words[usize::from(FILL_BAR_TID)], words[usize::from(FILL_BAR_SEQUENCE)]));
+        let expected_bar = completion
+            .bar
+            .map(|sequence| (Some(u32::from(TID)), Some(u32::from(sequence))));
+        if bar != expected_bar {
             return Err(invalid(format!(
-                "{label}: the vendor BlockAckReq was {}sent: {BAR_GAP}",
-                if sent_bar { "" } else { "not " }
+                "{label}: the vendor BlockAckReq (TID, starting sequence) was {bar:?}, expected {expected_bar:?}: {BAR_GAP}"
             )));
         }
     }
@@ -999,7 +1075,19 @@ struct Timeout {
     /// Whether the vendor's rate record limit bounds it besides the short
     /// retry limit.
     record_bounded: bool,
+    /// Where the vendor ends a long (RTS-protected) aggregate at its limit.
+    long_end: (&'static str, Option<u32>),
 }
+
+/// How the vendor ends an aggregate at its limit: the frame exchange ends
+/// without a retry (third argument zero) and the aggregate is recycled,
+/// which production's Finish matches.
+const END_EXCHANGE: (&str, Option<u32>) = ("lmacEndFrameExchangeSequence", Some(0));
+/// Known gap: an RTS-protected aggregate whose protection never succeeded.
+const RETRY_FAIL_GAP: &str = "when an RTS-protected A-MPDU exhausts the short retry limit \
+    without a CTS, the vendor's lmacEndRetryAMPDUFail keeps the aggregate and sends a \
+    BlockAckReq starting at its head (ppFillAMPDUBar, ppReSendBar), whose BlockAck then drives \
+    the ordinary resort; production ends the aggregate (known gap)";
 
 const TIMEOUTS: [Timeout; 2] = [
     Timeout {
@@ -1008,6 +1096,7 @@ const TIMEOUTS: [Timeout; 2] = [
         status: 5,
         continuing: STEP_RETAIN,
         record_bounded: true,
+        long_end: END_EXCHANGE,
     },
     // A protection failure sent no MPDU: neither side sets the Retry bit.
     // Both kinds end at the vendor's limits.
@@ -1017,6 +1106,7 @@ const TIMEOUTS: [Timeout; 2] = [
         status: 2,
         continuing: STEP_REPUBLISH,
         record_bounded: false,
+        long_end: ("lmacEndRetryAMPDUFail", None),
     },
 ];
 /// The production entries of a timeout sequence.
@@ -1310,6 +1400,22 @@ pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
                         "{label} phase {phase}: production decided {decision:?}, the vendor reached {continuation:?}"
                     )));
                 }
+            }
+            let expected_end = if flags == DESCRIPTOR_LONG {
+                timeout.long_end
+            } else {
+                END_EXCHANGE
+            };
+            let end = reached(&records, (first + phases - 1) as u32, &targets);
+            if end != Some(expected_end) {
+                return Err(invalid(format!(
+                    "{label}: the vendor ended at {end:?}, expected {expected_end:?}{}",
+                    if expected_end == END_EXCHANGE {
+                        String::new()
+                    } else {
+                        format!(": {RETRY_FAIL_GAP}")
+                    }
+                )));
             }
             if production_attempts != Some(vendor_attempts) {
                 return Err(invalid(format!(

@@ -104,7 +104,15 @@ pub(super) fn current_sources(root: &Path, run: &Path, manifest: &RunManifest) -
         {
             return Err("HIL build provenance identity is inconsistent with its artifact".into());
         }
-        if !provenance.source_reconstructable {
+        // An image built with other runtime features than its class's is an
+        // experiment's: it is not the class's image and never qualifies.
+        if !provenance.source_reconstructable
+            || provenance
+                .parameters
+                .as_ref()
+                .and_then(|parameters| parameters.get("features"))
+                .is_some()
+        {
             return Ok(Binding::Unavailable);
         }
         let Some(primary) = provenance.sources.first() else {

@@ -8,12 +8,13 @@ pub fn build(
     class: crate::image::ImageClass,
     network: crate::image::Integration,
     layout_seed: crate::image::LayoutSeed,
+    features: &crate::image::FeatureDelta,
 ) -> Result<crate::image::Artifacts> {
     FrozenSources::open_in_free_workspace(
         directory,
         &root.join("target/hil/esp32s31/source-build"),
     )?
-    .build(root, class, network, layout_seed)
+    .build(root, class, network, layout_seed, features)
 }
 
 impl FrozenSources {
@@ -23,6 +24,7 @@ impl FrozenSources {
         class: crate::image::ImageClass,
         network: crate::image::Integration,
         layout_seed: crate::image::LayoutSeed,
+        features: &crate::image::FeatureDelta,
     ) -> Result<crate::image::Artifacts> {
         self.verify_unchanged()?;
         let source = self.repository();
@@ -40,10 +42,11 @@ impl FrozenSources {
             .join("target/hil/esp32s31/snapshot-builds")
             .join(&self.snapshot.snapshot_id)
             .join(format!(
-                "{}-{}{}",
+                "{}-{}{}{}",
                 class.id(),
                 network.id(),
-                crate::image::seed_suffix(layout_seed)
+                crate::image::seed_suffix(layout_seed),
+                features.suffix()
             ));
         let artifacts = crate::image::build_resolved(
             &source,
@@ -58,6 +61,7 @@ impl FrozenSources {
                 output: Some(&output),
                 cache: &crate::image::shared_compile_cache(root, class, network),
                 layout_seed,
+                features,
             },
         )?;
         self.verify_unchanged()?;

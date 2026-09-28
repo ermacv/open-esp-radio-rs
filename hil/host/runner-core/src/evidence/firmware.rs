@@ -21,7 +21,12 @@ pub(super) fn archive(
     image: ImageClass,
     artifacts: &Artifacts,
 ) -> Result<(FirmwareArtifact, PathBuf)> {
-    let selection = (image, artifacts.network, artifacts.layout_seed);
+    let selection = (
+        image,
+        artifacts.network,
+        artifacts.layout_seed,
+        &artifacts.features,
+    );
     let application = &artifacts.application_image;
     let runtime_elf = &artifacts.runtime_elf;
     let runtime_bin = &artifacts.runtime_bin;

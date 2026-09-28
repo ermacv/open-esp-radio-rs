@@ -621,7 +621,12 @@ cargo hil ab --a 'rev=main' --b 'rev=main;override:xarxa=/home/me/src/xarxa' \
 is a repository revision (`rev=`, HEAD when omitted) and, after `;`, local
 checkouts that replace pinned dependencies (`override:esp-hal=`,
 `override:embassy=`, `override:xarxa=`, the checkouts `ESP_HAL_ROOT`,
-`EMBASSY_ROOT` and `OPEN_RADIO_XARXA_ROOT` name). Each arm's revision is
+`EMBASSY_ROOT` and `OPEN_RADIO_XARXA_ROOT` name). A variant may also add or remove
+runtime features of every image class it builds, `features=+trace,-psram-stack`:
+its runs build with `cargo hil run --features`, which only an experiment
+accepts, the build record keeps the delta, `report verify` checks the image's
+features against it, and qualification never counts such an image as its
+class's. Each arm's revision is
 checked out in a worktree below `target/hil/ab/<id>/` and captured with its
 overrides into a source snapshot; this checkout's runner builds and runs
 both, so both revisions must have this checkout's `PROTOCOL_VERSION`. For

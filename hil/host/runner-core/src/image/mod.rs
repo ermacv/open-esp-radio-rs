@@ -18,6 +18,8 @@ use sha2::{Digest, Sha256};
 
 pub use oer_esp32s31_firmware::network::Integration;
 
+mod features;
+pub use features::FeatureDelta;
 mod class;
 pub mod snapshot;
 pub mod source_inputs;
@@ -428,6 +430,8 @@ pub struct Artifacts {
     /// The seed the runtime's code and read-only data were shuffled by;
     /// `None` is the linker's natural order.
     pub layout_seed: Option<NonZeroU32>,
+    /// Runtime features added to or removed from the class's own.
+    pub features: FeatureDelta,
 }
 
 /// The seed of a runtime image's link order: `None` keeps the linker's
@@ -435,10 +439,13 @@ pub struct Artifacts {
 pub type LayoutSeed = Option<NonZeroU32>;
 
 /// How a run builds its images from the current sources.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CurrentBuild {
     pub network: Integration,
     pub layout_seed: LayoutSeed,
+    /// Runtime features added to or removed from each class's own; empty
+    /// outside an experiment.
+    pub features: FeatureDelta,
 }
 
 /// The build environment's layout seed variable.
@@ -449,8 +456,9 @@ pub fn build(
     class: crate::image::ImageClass,
     network: Integration,
     layout_seed: LayoutSeed,
+    features: &FeatureDelta,
 ) -> Result<Artifacts> {
-    build_selected(root, class, network, layout_seed)
+    build_selected(root, class, network, layout_seed, features)
 }
 
 fn build_selected(
@@ -458,6 +466,7 @@ fn build_selected(
     class: crate::image::ImageClass,
     network: Integration,
     layout_seed: LayoutSeed,
+    features: &FeatureDelta,
 ) -> Result<Artifacts> {
     let local_esp_hal = local_esp_hal_override()?;
     let local_embassy = local_embassy_override()?;
@@ -475,6 +484,7 @@ fn build_selected(
             output: None,
             cache: &shared_compile_cache(root, class, network),
             layout_seed,
+            features,
         },
     )
 }
@@ -492,6 +502,9 @@ pub(crate) struct BuildPlacement<'a> {
     /// The runtime's layout seed. It is part of the default artifact
     /// directory; a shared compile cache only relinks for it.
     pub(crate) layout_seed: LayoutSeed,
+    /// Runtime features added to or removed from the class's own; part of
+    /// the default artifact directory too.
+    pub(crate) features: &'a FeatureDelta,
 }
 
 /// Type-check the runtime of `class` against the committed pins, with the
@@ -592,15 +605,17 @@ fn build_resolved(
         output: output_override,
         cache,
         layout_seed,
+        features,
     } = placement;
     let output = output_override.map_or_else(
         || {
             root.join("target/hil/esp32s31").join(format!(
-                "{}-{}-{}{}",
+                "{}-{}-{}{}{}",
                 class.runtime_profile(),
                 class.id(),
                 network.id(),
-                seed_suffix(layout_seed)
+                seed_suffix(layout_seed),
+                features.suffix()
             ))
         },
         Path::to_owned,
@@ -639,7 +654,7 @@ fn build_resolved(
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
-    let runtime_features = class.build_features(network);
+    let runtime_features = features.apply(&class.build_features(network));
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
     let stack_budget = oer_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
@@ -770,6 +785,7 @@ fn build_resolved(
         source_inputs: Some(source_inputs),
         environment: crate::evidence::build::BuildEnvironment::capture(),
         layout_seed,
+        features: features.clone(),
     })
 }
 

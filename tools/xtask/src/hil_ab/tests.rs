@@ -9,7 +9,16 @@ fn a_variant_is_a_revision_and_its_dependency_overrides() {
         Ok(VariantSpec {
             revision: String::from("main"),
             overrides: vec![(Dependency::Xarxa, PathBuf::from("/src/xarxa"))],
+            features: FeatureDelta::default(),
         })
+    );
+    assert_eq!(
+        "features=+trace,-psram-stack"
+            .parse::<VariantSpec>()
+            .unwrap()
+            .features
+            .to_string(),
+        "+trace,-psram-stack"
     );
     assert_eq!(
         "override:esp-hal=/h"
@@ -23,7 +32,9 @@ fn a_variant_is_a_revision_and_its_dependency_overrides() {
         "override:xarxa=/a;override:xarxa=/b",
         "override:tokio=/t",
         "override:xarxa",
-        "features=+x",
+        "features=x",
+        "features=+a;features=+b",
+        "colour=red",
     ] {
         assert!(invalid.parse::<VariantSpec>().is_err(), "{invalid}");
     }
@@ -124,6 +135,7 @@ fn the_summary_names_the_variants_and_each_verdict() {
     let variant = |commit: &str| Variant {
         commit: commit.into(),
         overrides: Vec::new(),
+        features: FeatureDelta::default(),
     };
     let report = Report {
         schema: REPORT_SCHEMA,
@@ -137,6 +149,7 @@ fn the_summary_names_the_variants_and_each_verdict() {
                 commit: String::from("ea9385e"),
                 dirty: true,
             }],
+            features: FeatureDelta::default(),
         },
         scenarios: vec![String::from("udp-rx")],
         repetitions: 3,

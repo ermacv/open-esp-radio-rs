@@ -16,6 +16,7 @@
 //! report compares, per scenario and measurement, the arms' run means with
 //! [`crate::hil_perf::compare`] and is written to `ab-report.json`.
 
+use oer_hil_runner_core::image::FeatureDelta;
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -61,6 +62,8 @@ pub(crate) struct AbCli {
 pub struct VariantSpec {
     pub revision: String,
     pub overrides: Vec<(Dependency, PathBuf)>,
+    /// Runtime features added to or removed from each image class's own.
+    pub features: FeatureDelta,
 }
 
 impl std::str::FromStr for VariantSpec {
@@ -69,6 +72,7 @@ impl std::str::FromStr for VariantSpec {
     fn from_str(text: &str) -> std::result::Result<Self, Self::Err> {
         let mut revision = None;
         let mut overrides = Vec::new();
+        let mut features = None;
         for part in text
             .split(';')
             .map(str::trim)
@@ -87,15 +91,21 @@ impl std::str::FromStr for VariantSpec {
                     return Err(format!("`{text}` overrides {} twice", dependency.id()));
                 }
                 overrides.push((dependency, PathBuf::from(path)));
+            } else if let Some(value) = part.strip_prefix("features=") {
+                if features.replace(value.parse::<FeatureDelta>()?).is_some() {
+                    return Err(format!("`{text}` names features twice"));
+                }
             } else {
                 return Err(format!(
-                    "`{part}` is neither rev=<revision> nor override:<dependency>=<path>"
+                    "`{part}` is neither rev=<revision>, override:<dependency>=<path> nor \
+                     features=+f,-g"
                 ));
             }
         }
         Ok(Self {
             revision: revision.unwrap_or_else(|| String::from("HEAD")),
             overrides,
+            features: features.unwrap_or_default(),
         })
     }
 }
@@ -445,7 +455,11 @@ fn prepare(
     )?;
     Ok(PreparedArm {
         arm,
-        variant: Variant { commit, overrides },
+        variant: Variant {
+            commit,
+            overrides,
+            features: spec.features.clone(),
+        },
         worktree,
         snapshot: snapshot.directory().to_owned(),
     })
@@ -476,6 +490,9 @@ impl PreparedArm {
                     .arg("--source-snapshot")
                     .arg(&self.snapshot)
                     .args(["--layout-seed", &seed.to_string()]);
+                if !self.variant.features.is_empty() {
+                    command.args(["--features", &self.variant.features.to_string()]);
+                }
             }
             Launch::Replay(run) => {
                 command.args(["--firmware-from", run]);

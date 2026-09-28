@@ -37,7 +37,7 @@ pub(crate) fn prepare_run_image(
     session: &mut RunSession,
 ) -> Result<Option<Failure>> {
     match firmware {
-        RunFirmware::BuildCurrent(build) => prepare_image(root, lab, class, *build, session),
+        RunFirmware::BuildCurrent(build) => prepare_image(root, lab, class, build.clone(), session),
         RunFirmware::Replay(archived) => prepare_replayed_image(root, lab, archived, session),
     }
 }

@@ -690,7 +690,12 @@ fn provenance_records_the_network_implementation_and_its_feature() {
     let network = Integration::OwnedXarxa;
     let provenance = crate::evidence::build::create_provenance(
         &root,
-        (ImageClass::Correctness, network, None),
+        (
+            ImageClass::Correctness,
+            network,
+            None,
+            &crate::image::FeatureDelta::default(),
+        ),
         "00".repeat(32),
         vec![],
         vec![],
@@ -720,6 +725,7 @@ fn test_artifacts(
 ) -> crate::image::Artifacts {
     crate::image::Artifacts {
         layout_seed: None,
+        features: crate::image::FeatureDelta::default(),
         network: crate::image::Integration::OwnedXarxa,
         output: application.parent().unwrap().to_path_buf(),
         runtime_elf: runtime_elf.to_path_buf(),

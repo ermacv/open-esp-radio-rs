@@ -45,6 +45,7 @@ impl RunSession {
                 class,
                 build.network,
                 build.layout_seed,
+                &build.features,
             )
     }
 }

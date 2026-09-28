@@ -56,7 +56,7 @@ pub(crate) fn run_all(
         Some(PlannedFirmware::BuildCurrent),
         invocation,
     )?;
-    let prebuilt = prebuild(&mut session, lab, selected, build)?;
+    let prebuilt = prebuild(&mut session, lab, selected, build.clone())?;
     let lease = lease_stand(&mut session, lab, selected)?;
     let results = {
         let mut operations = LiveSuite {
@@ -94,7 +94,9 @@ pub(crate) fn run_one(
         invocation,
     )?;
     let prebuilt = match &firmware {
-        RunFirmware::BuildCurrent(build) => prebuild(&mut session, lab, &selected_entries, *build)?,
+        RunFirmware::BuildCurrent(build) => {
+            prebuild(&mut session, lab, &selected_entries, build.clone())?
+        }
         RunFirmware::Replay(_) => Vec::new(),
     };
     let lease = lease_stand(&mut session, lab, &selected_entries)?;
@@ -137,7 +139,7 @@ pub(crate) fn run_many(
         invocation,
     )?;
     let prebuilt = match &firmware {
-        RunFirmware::BuildCurrent(build) => prebuild(&mut session, lab, selected, *build)?,
+        RunFirmware::BuildCurrent(build) => prebuild(&mut session, lab, selected, build.clone())?,
         RunFirmware::Replay(_) => Vec::new(),
     };
     let lease = lease_stand(&mut session, lab, selected)?;
@@ -222,7 +224,7 @@ fn prebuild(
         {
             continue;
         }
-        built.push((class, firmware::build_image(class, build, session)?));
+        built.push((class, firmware::build_image(class, build.clone(), session)?));
     }
     Ok(built)
 }
@@ -449,9 +451,9 @@ impl SuiteEffects for LiveSuite<'_> {
                     archive,
                 )
             } else {
-                let failure = match self.firmware {
+                let failure = match &self.firmware {
                     FirmwarePreparation::BuildCurrent(build) => {
-                        firmware::prepare_image(self.root, self.lab, class, build, session)?
+                        firmware::prepare_image(self.root, self.lab, class, build.clone(), session)?
                     }
                     FirmwarePreparation::Selected(firmware) => {
                         firmware::prepare_run_image(self.root, self.lab, class, firmware, session)?

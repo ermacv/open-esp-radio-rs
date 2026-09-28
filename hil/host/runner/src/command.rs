@@ -138,6 +138,7 @@ pub(crate) fn run() -> Result<()> {
                                 class,
                                 image::Integration::default(),
                                 layout_seed,
+                                &image::FeatureDelta::default(),
                             )?;
                             let record = hil_core::evidence::build_record::publish(
                                 &root, snapshot, class, &artifacts,
@@ -145,9 +146,13 @@ pub(crate) fn run() -> Result<()> {
                             eprintln!("build_record={}", record.display());
                             artifacts
                         }
-                        _ => {
-                            image::build(&root, class, image::Integration::default(), layout_seed)?
-                        }
+                        _ => image::build(
+                            &root,
+                            class,
+                            image::Integration::default(),
+                            layout_seed,
+                            &image::FeatureDelta::default(),
+                        )?,
                     };
                     image::print_artifacts(class, &artifacts, false)?;
                 }
@@ -167,6 +172,7 @@ pub(crate) fn run() -> Result<()> {
             source_snapshot,
             firmware_from,
             layout_seed,
+            features,
             then,
             target,
             validate_only,
@@ -177,6 +183,17 @@ pub(crate) fn run() -> Result<()> {
                 &selected.iter().collect::<Vec<_>>(),
                 target.as_deref(),
             )?;
+            // An image with other features is not its class's image: only an
+            // experiment, whose runs never qualify, may build one.
+            if features.as_ref().is_some_and(|delta| !delta.is_empty())
+                && hil_core::experiment::Experiment::from_environment()?.is_none()
+            {
+                return Err(
+                    "--features builds an experiment's image; use `cargo hil ab` with a \
+                            `features=` variant"
+                        .into(),
+                );
+            }
             if validate_only {
                 println!(
                     "valid: {} on {target}",
@@ -207,6 +224,7 @@ pub(crate) fn run() -> Result<()> {
                 None => RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
                     network: image::Integration::default(),
                     layout_seed,
+                    features: features.clone().unwrap_or_default(),
                 }),
             };
             let lab = lab::config::LabConfig::load(&lab_path)?.for_target(&target)?;
@@ -258,6 +276,7 @@ pub(crate) fn run() -> Result<()> {
                 hil_core::image::CurrentBuild {
                     network: image::Integration::default(),
                     layout_seed,
+                    features: image::FeatureDelta::default(),
                 },
                 orchestration::Invocation {
                     arguments: invocation,

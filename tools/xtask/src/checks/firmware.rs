@@ -53,9 +53,14 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth) -> Result<()> {
         );
         let started = Instant::now();
         let result = match depth {
-            Depth::Build => {
-                oer_hil_runner_core::image::build(&ctx.root, class, network, None).map(|_| ())
-            }
+            Depth::Build => oer_hil_runner_core::image::build(
+                &ctx.root,
+                class,
+                network,
+                None,
+                &Default::default(),
+            )
+            .map(|_| ()),
             Depth::TypeCheck => oer_hil_runner_core::image::check(&ctx.root, class, network),
         };
         outcomes.push(Outcome {

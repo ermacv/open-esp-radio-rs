@@ -463,10 +463,13 @@ fn validate_build_provenance(
         || provenance.parameters.image != artifact.image
         || provenance.parameters.runtime_profile != artifact.image.runtime_profile()
         || provenance.parameters.runtime_features
-            != match &provenance.parameters.network {
-                Some(network) => artifact.image.build_features(network.parse()?),
-                None => artifact.image.runtime_features().to_owned(),
-            }
+            != provenance
+                .parameters
+                .features
+                .apply(&match &provenance.parameters.network {
+                    Some(network) => artifact.image.build_features(network.parse()?),
+                    None => artifact.image.runtime_features().to_owned(),
+                })
         || provenance.parameters.target != crate::image::TARGET
         // The manifest's seed is the one the build record says the image
         // was linked with, so a run cannot claim another layout.

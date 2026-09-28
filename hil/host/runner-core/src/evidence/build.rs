@@ -80,6 +80,10 @@ pub(super) struct BuildParameters {
     /// The seed the runtime was linked with; absent for the natural order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) layout_seed: Option<std::num::NonZeroU32>,
+    /// Runtime features added to or removed from the class's own; an image
+    /// built with any is an experiment's, never its class's.
+    #[serde(default, skip_serializing_if = "crate::image::FeatureDelta::is_empty")]
+    pub(super) features: crate::image::FeatureDelta,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -497,6 +501,7 @@ pub(super) fn create_provenance(
         ImageClass,
         crate::image::Integration,
         crate::image::LayoutSeed,
+        &crate::image::FeatureDelta,
     ),
     build_id: String,
     sources: Vec<SourceMaterial>,
@@ -504,7 +509,7 @@ pub(super) fn create_provenance(
     effective_locks: Vec<BuildFileMaterial>,
     environment: BuildEnvironment,
 ) -> Result<BuildProvenance> {
-    let (image, network, layout_seed) = selection;
+    let (image, network, layout_seed, features) = selection;
     let mut files = [
         ("workspace-lock", "Cargo.lock"),
         ("embedded-workspace", "hil/targets/esp32s31/Cargo.toml"),
@@ -530,8 +535,9 @@ pub(super) fn create_provenance(
             network: Some(network.id().to_owned()),
             runtime_profile: image.runtime_profile().to_owned(),
             target: crate::image::TARGET.to_owned(),
-            runtime_features: image.build_features(network),
+            runtime_features: features.apply(&image.build_features(network)),
             layout_seed,
+            features: features.clone(),
         },
         source_reconstructable: sources
             .iter()

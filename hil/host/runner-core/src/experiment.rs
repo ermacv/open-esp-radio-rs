@@ -47,6 +47,9 @@ pub struct Variant {
     pub commit: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overrides: Vec<DependencyOverride>,
+    /// Runtime features added to or removed from each image class's own.
+    #[serde(default, skip_serializing_if = "crate::image::FeatureDelta::is_empty")]
+    pub features: crate::image::FeatureDelta,
 }
 
 /// A local checkout that replaces a pinned dependency, as the
@@ -132,6 +135,7 @@ mod tests {
                     commit: String::from("ea9385e"),
                     dirty: false,
                 }],
+                features: "+trace".parse().unwrap(),
             },
         };
         let json = serde_json::to_string(&experiment).unwrap();

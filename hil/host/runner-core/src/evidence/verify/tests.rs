@@ -183,6 +183,7 @@ fn add_build_provenance(run: &Path) {
                 target: crate::image::TARGET.to_owned(),
                 runtime_features: ImageClass::Correctness.runtime_features().to_owned(),
                 layout_seed: None,
+                features: crate::image::FeatureDelta::default(),
             },
             sources: vec![SourceMaterial {
                 name: String::from("repository"),

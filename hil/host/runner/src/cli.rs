@@ -83,6 +83,11 @@ pub(crate) enum CliCommand {
         /// natural order.
         #[arg(long, value_name = "SEED", conflicts_with = "firmware_from")]
         layout_seed: Option<std::num::NonZeroU32>,
+        /// Runtime features added to (`+name`) or removed from (`-name`) each
+        /// image class's own, comma-separated. Only an A/B experiment builds
+        /// such an image; it never qualifies.
+        #[arg(long, value_name = "+F,-G", conflicts_with = "firmware_from")]
+        features: Option<hil_core::image::FeatureDelta>,
         /// Shell command run after the scenarios while the run still holds
         /// its stand lease, for example to read the board's reset reason.
         /// It may use the boards' ports directly; nested `cargo hil` commands

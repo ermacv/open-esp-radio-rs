@@ -232,6 +232,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         let elapsed_us = started.elapsed().as_micros().max(1);
         socket.abort();
 
+        super::session_evidence_due();
         let qualification = qualification_sample(QualificationRequester::Tcp).await;
         #[cfg(feature = "rx-ownership-telemetry")]
         let ownership_valid = crate::product_hil::rx_ownership::report().await;
@@ -326,6 +327,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             passed,
         )
         .await;
+        super::session_evidence_published();
     }
 }
 

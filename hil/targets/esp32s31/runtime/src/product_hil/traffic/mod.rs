@@ -94,3 +94,16 @@ pub(super) use udp::{
     UdpTxSessionSource, configure_multi_flow_burst_datagrams, multi_flow_burst_datagrams,
     run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark,
 };
+
+/// The session's traffic ended: its evidence must now be published. A task
+/// that stops before publishing becomes a named hang instead of silence.
+pub(in crate::product_hil) fn session_evidence_due() {
+    #[cfg(not(feature = "memory-benchmark"))]
+    crate::hang_watchdog::arm(oer_hil_protocol::TaskSlot::SessionEvidence);
+}
+
+/// The session's evidence reached the protocol owner.
+pub(in crate::product_hil) fn session_evidence_published() {
+    #[cfg(not(feature = "memory-benchmark"))]
+    crate::hang_watchdog::took_work(oer_hil_protocol::TaskSlot::SessionEvidence, false);
+}

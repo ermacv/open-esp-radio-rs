@@ -104,6 +104,7 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                     valid_pair && valid_flows && first.passed && second.passed,
                 )
                 .await;
+                super::session_evidence_published();
             }
         }
     }
@@ -128,6 +129,7 @@ async fn complete_single_direction(
         valid && result.passed,
     )
     .await;
+    super::session_evidence_published();
 }
 
 fn merge_flow_evidence(

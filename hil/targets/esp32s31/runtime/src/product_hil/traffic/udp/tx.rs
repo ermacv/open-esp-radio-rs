@@ -467,6 +467,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             .unwrap_or(0);
         // Snapshot the requested interval without guessing when stack/radio
         // queues have drained. Delivery is independently measured by the host.
+        super::super::session_evidence_due();
         let qualification_end = qualification_sample(QualificationRequester::UdpTx).await;
         let tx_vector = qualification_end.tx_vector;
         #[cfg(feature = "mac-irq-telemetry")]

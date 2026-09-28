@@ -204,6 +204,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             elapsed_us,
             task_poll_end,
         } = outcome;
+        super::super::session_evidence_due();
         let qualification_end = qualification_sample(QualificationRequester::UdpRx).await;
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let cache_interval = telemetry

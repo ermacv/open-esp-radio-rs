@@ -1672,16 +1672,32 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
 /// Suffix that marks a register or field whose meaning is not established.
 pub const OPAQUE_SUFFIX: &str = "_OPAQUE";
 
+/// Other spellings of unknown meaning; an opaque name uses [`OPAQUE_SUFFIX`].
+const UNESTABLISHED_WORDS: [&str; 2] = ["UNKNOWN", "UNNAMED"];
+
 /// A register or field name claims no more meaning than its origin supports:
-/// an opaque entity, and only an opaque one, ends in [`OPAQUE_SUFFIX`], and a
-/// vendor name cites the source it was taken from.
+/// every one is reviewed as vendor, descriptive or opaque; an opaque entity,
+/// and only an opaque one, ends in [`OPAQUE_SUFFIX`], no name spells unknown
+/// meaning another way, and a vendor name cites the source it was taken from.
 fn validate_naming(entity: &str, annotation: Option<&ReviewAnnotation>) -> Result<()> {
     use oer_register_contracts::NameOrigin;
 
     let leaf = entity.rsplit('.').next().unwrap_or(entity);
+    if let Some(word) = UNESTABLISHED_WORDS
+        .iter()
+        .find(|word| leaf.contains(**word))
+    {
+        return Err(Error::message(format!(
+            "register entity {entity:?} names unknown meaning with {word:?}; end it in {OPAQUE_SUFFIX:?} and review it as opaque"
+        )));
+    }
     let opaque_name = leaf.ends_with(OPAQUE_SUFFIX);
-    let naming = annotation.and_then(|annotation| annotation.naming);
-    match naming {
+    let Some(naming) = annotation.and_then(|annotation| annotation.naming) else {
+        return Err(Error::message(format!(
+            "register entity {entity:?} has no reviewed naming (vendor, descriptive or opaque)"
+        )));
+    };
+    match Some(naming) {
         Some(NameOrigin::Opaque) if !opaque_name => Err(Error::message(format!(
             "register entity {entity:?} is reviewed as opaque but its name does not end in {OPAQUE_SUFFIX:?}"
         ))),
@@ -2164,7 +2180,7 @@ mod tests {
         fs::write(
             directory.join("radio.toml"),
             format!(
-                "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\nbaseAddress = 0x1000\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"STATUS\"\naddressOffset = 0\nsize = 32\naccess = \"read-write\"\n{semantics}\n[[peripherals.registers.register.fields]]\nname = \"FLAG\"\nbitOffset = 3\nbitWidth = 1\n\n[[review]]\nentity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"complete\"\n\n[[review]]\nentity = \"RADIO.STATUS.FLAG\"\nsources = [\"fixture\"]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"complete\"\n"
+                "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\nbaseAddress = 0x1000\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"STATUS\"\naddressOffset = 0\nsize = 32\naccess = \"read-write\"\n{semantics}\n[[peripherals.registers.register.fields]]\nname = \"FLAG\"\nbitOffset = 3\nbitWidth = 1\n\n[[review]]\nentity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"complete\"\nnaming = \"descriptive\"\n\n[[review]]\nentity = \"RADIO.STATUS.FLAG\"\nsources = [\"fixture\"]\nprovenance = \"reviewed\"\naccuracy = \"exact\"\ncompleteness = \"complete\"\nnaming = \"descriptive\"\n"
             ),
         )
         .unwrap();
@@ -2196,7 +2212,7 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("chip/radio.review.toml"),
-            "schema = 1\n\n[[review]]\nentity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\nprovenance = \"derived\"\naccuracy = \"exact\"\ncompleteness = \"partial\"\n",
+            "schema = 1\n\n[[review]]\nentity = \"RADIO.STATUS\"\nsources = [\"fixture\"]\nprovenance = \"derived\"\naccuracy = \"exact\"\ncompleteness = \"partial\"\nnaming = \"descriptive\"\n\n[[review]]\nentity = \"RADIO.STATUS.FLAG\"\nnaming = \"descriptive\"\n",
         )
         .unwrap();
         let manifest = root.join("chip/device.toml");
@@ -2223,7 +2239,7 @@ mod tests {
                 crate_name: "fixture_pac_raw".into(),
             })
         );
-        assert_eq!(model.review.len(), 1);
+        assert_eq!(model.review.len(), 2);
         assert_eq!(model.review[0].entity, "RADIO.STATUS");
         let inputs = RegisterModel::input_paths(&manifest).unwrap();
         assert!(inputs.iter().any(|path| path.ends_with("lib/radio.toml")));
@@ -3145,7 +3161,20 @@ locator = "identity"
         );
     }
 
+    /// A one-register fragment whose entities `review` does not name are
+    /// reviewed as descriptive, so each test states only what it exercises.
     fn naming_fragment(register: &str, review: &str) -> RegisterModelFragment {
+        let mut review = review.to_owned();
+        for entity in [
+            format!("RADIO.{register}"),
+            format!("RADIO.{register}.LEVEL"),
+        ] {
+            if !review.contains(&format!("entity = \"{entity}\"\n")) {
+                review.push_str(&format!(
+                    "\n[[review]]\nentity = \"{entity}\"\nnaming = \"descriptive\"\n"
+                ));
+            }
+        }
         toml_edit::de::from_str(&format!(
             "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\nbaseAddress = 0x1000\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"{register}\"\naddressOffset = 0x0\nsize = 32\n\n[[peripherals.registers.register.fields]]\nname = \"LEVEL\"\nbitOffset = 0\nbitWidth = 4\n\n{review}"
         ))
@@ -3176,6 +3205,30 @@ locator = "identity"
                 .unwrap()
                 .contains("does not end in")
         );
+    }
+
+    #[test]
+    fn every_register_and_field_is_reviewed_and_unknown_is_spelled_opaque() {
+        let unreviewed = naming_fragment("CONTROL", "");
+        let mut unreviewed = unreviewed;
+        unreviewed
+            .review
+            .retain(|annotation| annotation.entity != "RADIO.CONTROL.LEVEL");
+        assert!(
+            validate_review_annotations(&[unreviewed])
+                .unwrap_err()
+                .to_string()
+                .contains("has no reviewed naming")
+        );
+        for name in ["BIT_3_UNKNOWN", "UNNAMED_WORD"] {
+            assert!(
+                naming_error(name, "")
+                    .unwrap()
+                    .contains("names unknown meaning"),
+                "{name}"
+            );
+        }
+        assert_eq!(naming_error("CONTROL", ""), None);
     }
 
     #[test]

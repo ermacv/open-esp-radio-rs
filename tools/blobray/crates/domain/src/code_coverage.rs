@@ -65,6 +65,9 @@ pub struct FunctionCodeCoverage {
     pub directions: CoverageCount,
     pub uncovered_blocks: Vec<u32>,
     pub uncovered_directions: Vec<BranchDirection>,
+    /// Entries of the closure functions this one calls or tail-transfers
+    /// to, ascending: the closure's call graph.
+    pub callees: Vec<u32>,
     pub modeled: Vec<u32>,
     pub unresolved: Vec<u32>,
     pub followed: Vec<u32>,

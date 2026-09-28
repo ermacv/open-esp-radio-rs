@@ -203,6 +203,7 @@ fn function_coverage(
         directions: total(2 * function.branches.len(), uncovered_directions.len()),
         uncovered_blocks,
         uncovered_directions,
+        callees: function.callees.clone(),
         modeled: function.modeled.clone(),
         unresolved: function.unresolved.clone(),
         followed: function.followed.clone(),

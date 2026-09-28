@@ -318,6 +318,10 @@ async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
 depends-on = [
   "dtm-memory-graph",
 ]
+hil-requirements = [
+  { scenario = "bluetooth-dtm-peer", minimum-repetitions = 1 },
+  { scenario = "bluetooth-dtm-bidirectional", minimum-repetitions = 1 },
+]
 gaps = [
   { axis = "vendor", id = "rx-result-low-twenty-four-physical-meanings-missing" },
   { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
@@ -409,6 +413,10 @@ vendor-anchors = [
   "docs/vendor/esp32s31/bluetooth-direct-test-mode.md",
 ]
 async-not-applicable = "pure-synchronous-transform"
+hil-requirements = [
+  { scenario = "bluetooth-dtm-peer", minimum-repetitions = 1 },
+  { scenario = "bluetooth-dtm-bidirectional", minimum-repetitions = 1 },
+]
 gaps = [
   { axis = "vendor", id = "packet-engine-header-field-reader-and-meaning-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
@@ -445,6 +453,7 @@ gaps = [
   { axis = "vendor", id = "effective-controller-counter-width-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
+  { axis = "hil", id = "dtm-2m-tx-sends-half-the-vendor-packet-rate" },
 ]
 
 [capabilities.catalog-scope]

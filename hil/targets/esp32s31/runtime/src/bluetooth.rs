@@ -1,9 +1,11 @@
 //! Bluetooth LE images over the production composition and its HCI
 //! Controller.
 //!
-//! Every image splits the radio for concurrent clients, starts the Bluetooth
-//! client on the shared radio system, runs the radio system's periodic PHY
-//! tracking on its own task and serves the typed HIL console. The
+//! Every image starts the shared radio with
+//! `oer_esp32s31_radio_system::start`, which spawns its coexistence
+//! schedule, starts the Bluetooth client on it, runs the radio's periodic PHY
+//! tracking on its own task, which reports a tracking failure, and serves the
+//! typed HIL console. The
 //! `bluetooth-hil` image drives Direct Test Mode with HCI commands and the
 //! `bluetooth-gatt` image runs the Trouble Host and the GATT application; both
 //! run the radio runner and the HCI service on their own tasks. The
@@ -34,11 +36,9 @@ use oer_esp32s31_bluetooth_system::{BluetoothEntropy, BluetoothParked, start_blu
 #[cfg(not(feature = "bluetooth-secure-gatt"))]
 use oer_esp32s31_bluetooth_system::{BluetoothHciService, BluetoothSystem};
 #[cfg(feature = "bluetooth-radio")]
-use oer_esp32s31_hal::root::{ConcurrentPartitions, RadioHardware};
+use oer_esp32s31_hal::root::ConcurrentPartitions;
 #[cfg(feature = "bluetooth-radio")]
-use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
-#[cfg(feature = "bluetooth-radio")]
-use oer_esp32s31_radio_runtime::RadioSystem;
+use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 #[cfg(feature = "bluetooth-radio")]
 use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 #[cfg(feature = "bluetooth-radio")]
@@ -49,12 +49,10 @@ use static_cell::StaticCell;
 const VERSION: LeVersionInformation = LeVersionInformation::new(0x0d, 0xffff, 1);
 
 #[cfg(feature = "bluetooth-radio")]
-pub(super) type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
+pub(super) type Radio = oer_esp32s31_radio_system::SharedRadio;
 #[cfg(feature = "wifi-ble-coex")]
 pub(super) type Radio = oer_esp32s31_ieee80211_system::SharedRadio;
 
-#[cfg(feature = "bluetooth-radio")]
-static RADIO: StaticCell<Radio> = StaticCell::new();
 #[cfg(all(feature = "bluetooth-radio", not(feature = "bluetooth-secure-gatt")))]
 static SYSTEM: StaticCell<BluetoothSystem> = StaticCell::new();
 #[cfg(feature = "bluetooth-radio")]
@@ -70,13 +68,14 @@ pub(super) fn start(
     let entropy = Entropy::new(rng);
     let boot = u64::from_le_bytes(entropy.random_bytes().expect("HIL boot entropy")).max(1);
     let entropy = ENTROPY.init(BluetoothEntropy::new(entropy));
-    let identity = platform.phy_calibration_identity();
     let public_address = platform.bluetooth_public_address();
-    let hardware = RadioHardware::take().expect("unique radio hardware");
-    let (radio, partitions) =
-        RadioSystem::new(hardware, platform, EspHalRadioClocks::new(), identity);
-    let radio = RADIO.init(radio);
     executor.run(|spawner| {
+        // The image keeps its own tracking task, which reports a tracking
+        // failure as `reason=phy-tracking` before the reset.
+        let start = oer_esp32s31_radio_system::RadioStart::new()
+            .with_tracking(oer_esp32s31_radio_system::Tracking::Caller);
+        let (radio, partitions) = oer_esp32s31_radio_system::start(spawner, platform, start)
+            .expect("the shared radio must start once");
         spawner.spawn(
             main(
                 spawner,

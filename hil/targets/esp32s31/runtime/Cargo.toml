@@ -37,6 +37,7 @@ bluetooth-radio = [
     "dep:oer-esp32s31-phy",
     "dep:oer-esp32s31-radio-esp-hal",
     "dep:oer-esp32s31-radio-runtime",
+    "dep:oer-esp32s31-radio-system",
     "dep:embassy-futures",
     "dep:embassy-sync",
     "dep:embedded-io",

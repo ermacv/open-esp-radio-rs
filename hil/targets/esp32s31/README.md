@@ -13,10 +13,11 @@ workloads. Effective dependency locks are archived beside each image. The
 explains the stack's crates and source policy.
 
 The Bluetooth images reach the radio only through HCI.
-`runtime/src/bluetooth.rs` splits the radio into the shared radio system,
+`runtime/src/bluetooth.rs` starts the shared radio with
+`oer_esp32s31_radio_system::start`, which spawns the coexistence schedule,
 starts the production Bluetooth client on it, runs the radio runner, the HCI
-Controller service and the system's periodic PHY tracking on their own tasks
-and serves the typed console. The `bluetooth-dtm` image (`bluetooth-hil`) serves the
+Controller service and its own periodic PHY tracking task, which reports a
+tracking failure as `reason=phy-tracking`, and serves the typed console. The `bluetooth-dtm` image (`bluetooth-hil`) serves the
 `bluetooth-dtm-*` scenarios: `bluetooth/dtm.rs` resets the Controller and turns
 each DTM operation into LE Transmitter Test v1 (channel 0, 37-byte PRBS9), LE
 Receiver Test v1 (channel 0), LE Test End or HCI Reset, reporting the Test End

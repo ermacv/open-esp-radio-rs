@@ -551,10 +551,12 @@ defect on a line, not a sufficient one.
 
 A point mutant confirms one finding without rebuilding the probe: each
 `--patch ADDRESS:ORIGINAL:REPLACEMENT` (hexadecimal address and bytes in
-memory order) replaces bytes of the loaded production image in every
-comparison of the run. `all` first checks every patch against an executable
-segment of the probe ELF, so a failing run means a killed mutant, not a bad
-patch; a mutant run writes no evidence index.
+memory order) replaces bytes of the loaded radio probe image in every
+comparison that loads it. The Bluetooth comparisons load the Bluetooth probe
+instead and take only `--bluetooth-patch`, in the same form. `all` and
+`bluetooth` first check every patch against an executable segment of its
+probe ELF, so a failing run means a killed mutant, not a bad patch; a mutant
+run writes no evidence index.
 
 ```console
 cargo xtask vendor-scenario --chip esp32s31 all ... --patch 1001c6bc:a30aed00:13000000
@@ -562,10 +564,12 @@ cargo xtask vendor-scenario --chip esp32s31 all ... --patch 1001c6bc:a30aed00:13
 
 A mutant of an unobserved line that survives confirms the finding; one that a
 scenario kills shows the dependence is real but indirect. Patches are for
-named addresses, not a campaign. They apply to every scenario, not only the
-PHY ones: a patch that drops the RX append doorbell bit fails `wifi-mac` at
-the doorbell model, and one that changes the HE-SIG-A2 control image fails its
-HE PPDU leaf as DIFF. A failing run writes its departing cases to the run's
+named addresses, not a campaign. Radio patches apply to every scenario that
+loads the radio probe, not only the PHY ones: a patch that drops the RX append
+doorbell bit fails `wifi-mac` at the doorbell model, and one that changes the
+HE-SIG-A2 control image fails its HE PPDU leaf as DIFF. A Bluetooth patch that
+returns from the low-power clock deselection leaf at its entry fails
+`bluetooth` as DIFF. A failing run writes its departing cases to the run's
 `failures/` directory. When a side stopped at memory its case does not
 declare, the report also lists every undeclared symbol, register or callee
 the request reaches: the engine reruns it with each one found mapped as a

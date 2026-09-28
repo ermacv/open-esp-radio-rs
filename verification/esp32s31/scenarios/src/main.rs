@@ -200,6 +200,11 @@ struct Common {
     /// The probe is not rebuilt; a failing scenario kills the mutant.
     #[arg(long = "patch", value_parser = parse_patch)]
     patches: Vec<blobray_application::in_process::ImagePatch>,
+    /// Point mutant of the Bluetooth production probe image, in the same
+    /// form: the Bluetooth comparisons load that image instead of the radio
+    /// probe, so they take only these patches.
+    #[arg(long = "bluetooth-patch", value_parser = parse_patch)]
+    bluetooth_patches: Vec<blobray_application::in_process::ImagePatch>,
     /// Write the scenario's shard of the native evidence index qualification
     /// reads into this directory; `all` writes every scenario's shard.
     #[arg(long)]
@@ -588,6 +593,7 @@ fn wifi_mac(
 }
 
 fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Outcome> {
+    check_patches(&production, &common.bluetooth_patches)?;
     let options = mac::MacOptions {
         binary: common.binary,
         suite: &ble::BLUETOOTH,
@@ -602,7 +608,7 @@ fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Ou
         linker: common.linker,
         output: common.output,
         budget: common.budget,
-        patches: common.patches,
+        patches: common.bluetooth_patches,
     };
     let mut ctx = mac::Mac::new(&options)?;
     mac::exercise(&mut ctx)?;
@@ -790,14 +796,16 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
         bluetooth_production,
         libcoexist,
     } = inputs;
-    if !common.patches.is_empty() {
+    if !common.patches.is_empty() || !common.bluetooth_patches.is_empty() {
         if common.index.is_some() {
             return Err("a point-mutant run writes no evidence index".into());
         }
         check_patches(&common.production, &common.patches)?;
+        check_patches(&bluetooth_production, &common.bluetooth_patches)?;
         println!(
-            "{} point-mutant patches applied to every production comparison",
-            common.patches.len()
+            "{} point-mutant patches applied to every radio comparison, {} to every Bluetooth comparison",
+            common.patches.len(),
+            common.bluetooth_patches.len()
         );
     }
     let within = |name: &str| Common {

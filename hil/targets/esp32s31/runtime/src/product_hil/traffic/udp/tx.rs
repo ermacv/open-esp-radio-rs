@@ -126,7 +126,7 @@ async fn transmit_multi_flow(
                     },
                 );
                 let result = core::pin::pin!(send).as_mut().poll(cx);
-                #[cfg(feature = "driver-observation")]
+                #[cfg(feature = "station-exit-evidence")]
                 if index == 1 {
                     let counters = &crate::product_hil::AGGREGATE_TX.secondary_socket;
                     let now = Instant::now().as_micros() as u32;

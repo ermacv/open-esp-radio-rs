@@ -24,7 +24,7 @@ use esp_hal::{
 };
 
 use network::{Iface, Resources as NetworkResources, Runner as NetworkRunner};
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use oer::wifi::StaLifecycleStage;
 
 use oer::wifi::{
@@ -39,8 +39,10 @@ use oer::wifi::{
 use oer_esp32s31_ieee80211_system::MacIrqObservation;
 
 #[cfg(feature = "driver-observation")]
+use oer_esp32s31_ieee80211_system::DiagnosticSnapshot;
+#[cfg(feature = "station-exit-evidence")]
 use oer_esp32s31_ieee80211_system::{
-    AccessPointObservation, DiagnosticObservers, DiagnosticSnapshot, StationAttemptObservation,
+    AccessPointObservation, DiagnosticObservers, StationAttemptObservation,
 };
 use oer_esp32s31_ieee80211_system::{
     AccessPointStatus, ConnectedDisconnectReason, Esp32s31MonitorBasebandFormat,
@@ -53,7 +55,7 @@ use oer_esp32s31_ieee80211_system::{ConnectedDatapathPollBatch, ConnectedDatapat
 use oer_esp32s31_phy::PhyCalibrationPath;
 
 #[cfg(all(
-    feature = "driver-observation",
+    feature = "station-exit-evidence",
     not(any(
         feature = "mac-irq-telemetry",
         feature = "rx-delivery-telemetry",
@@ -78,7 +80,7 @@ use oer_hil_protocol::{
     WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
     WifiStationAccessPointStopEvidence,
 };
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use oer_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
 
 use crate::console::{
@@ -108,7 +110,7 @@ mod rx_qualification;
 mod rx_rejection;
 mod traffic;
 
-#[cfg(not(feature = "driver-observation"))]
+#[cfg(not(feature = "station-exit-evidence"))]
 use oer_hil_protocol::WifiMacRxHardwareEvidence;
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
@@ -187,18 +189,18 @@ static ACCESS_POINT_NETWORK_CONFIG_REQUESTS: Channel<
 static STATION_NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
 static ACCESS_POINT_NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> =
     Channel::new();
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static QUALIFICATION_REQUESTS: Channel<CriticalSectionRawMutex, QualificationRequester, 3> =
     Channel::new();
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static UDP_RX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
     Channel::new();
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static UDP_TX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
     Channel::new();
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static TCP_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> = Channel::new();
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static CONNECTED_RX_OBSERVER: ConstStaticCell<rx_qualification::HilConnectedRxObserver> =
     ConstStaticCell::new(rx_qualification::HilConnectedRxObserver::new(4_323));
 static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
@@ -262,7 +264,7 @@ static AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
 static AP_RX_COMPLETED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
 static AP_RX_COMPLETED_DESCRIPTORS_BASELINE: AtomicU32 = AtomicU32::new(0);
 static AP_RX_RECYCLED_DESCRIPTORS_BASELINE: AtomicU32 = AtomicU32::new(0);
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static AP_RX_HARDWARE: Signal<CriticalSectionRawMutex, ObservedRxStatistics> = Signal::new();
 static AP_RETAINED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_RX_DISCARDED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
@@ -319,7 +321,7 @@ static AP_RX_REORDER_GAP_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_RADIO_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_PROTOCOL_REJECTED: AtomicU32 = AtomicU32::new(0);
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn observe_access_point(observation: AccessPointObservation) {
     AP_CHANNEL.store(u32::from(observation.channel), Ordering::Release);
     AP_BANDWIDTH_MHZ.store(u32::from(observation.bandwidth_mhz), Ordering::Release);
@@ -525,7 +527,7 @@ fn observe_access_point(observation: AccessPointObservation) {
 }
 
 fn reset_access_point_evidence() {
-    #[cfg(feature = "driver-observation")]
+    #[cfg(feature = "station-exit-evidence")]
     {
         rx_rejection::reset();
         AGGREGATE_TX.tx_retention.reset();
@@ -553,12 +555,12 @@ fn access_point_evidence(
     let observed_bandwidth_mhz = AP_BANDWIDTH_MHZ.load(Ordering::Acquire) as u16;
     let tx_failures = AP_TX_FAILURES.load(Ordering::Acquire);
     let rx = RX_PIPELINE.snapshot();
-    #[cfg(feature = "driver-observation")]
+    #[cfg(feature = "station-exit-evidence")]
     let rx_hardware = AP_RX_HARDWARE.try_take().unwrap_or_default().into();
-    #[cfg(not(feature = "driver-observation"))]
+    #[cfg(not(feature = "station-exit-evidence"))]
     let rx_hardware = WifiMacRxHardwareEvidence::default();
     WifiAccessPointEvidence {
-        tx_retention: cfg!(feature = "driver-observation")
+        tx_retention: cfg!(feature = "station-exit-evidence")
             .then(|| AGGREGATE_TX.tx_retention.snapshot()),
         generation,
         channel: if observed_channel == 0 {
@@ -715,19 +717,19 @@ fn access_point_evidence(
 enum StationLinkEdge {
     Connected,
     Disconnected(StationDisconnectReason),
-    #[cfg(feature = "driver-observation")]
+    #[cfg(feature = "station-exit-evidence")]
     AttemptFailed {
         attempt: u16,
         stage: StaLifecycleStage,
     },
-    #[cfg(feature = "driver-observation")]
+    #[cfg(feature = "station-exit-evidence")]
     RetryExhausted {
         attempts: u16,
         stage: StaLifecycleStage,
     },
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn observe_station_attempt(observation: StationAttemptObservation) {
     log_station_rx_frontier(observation);
     let edge = match observation {
@@ -743,7 +745,7 @@ fn observe_station_attempt(observation: StationAttemptObservation) {
         .expect("qualification station lifecycle queue must not overflow");
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn log_station_rx_frontier(observation: StationAttemptObservation) {
     let pipeline = RX_PIPELINE.snapshot();
     let irq = MAC_IRQ.snapshot();
@@ -771,7 +773,7 @@ fn log_station_rx_frontier(observation: StationAttemptObservation) {
 #[unsafe(link_section = ".critical.data.open_radio_rx_telemetry")]
 pub(crate) static RX_PIPELINE: RxPipelineCounters = RxPipelineCounters::new(now_micros);
 #[cfg(all(
-    feature = "driver-observation",
+    feature = "station-exit-evidence",
     not(any(
         feature = "mac-irq-telemetry",
         feature = "rx-delivery-telemetry",
@@ -1112,7 +1114,7 @@ async fn qualification_snapshot_task(snapshot: DiagnosticSnapshot) {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 pub(in crate::product_hil) async fn qualification_sample(
     requester: QualificationRequester,
 ) -> QualificationSample {
@@ -1128,7 +1130,7 @@ pub(in crate::product_hil) async fn qualification_sample(
     }
 }
 
-#[cfg(not(feature = "driver-observation"))]
+#[cfg(not(feature = "station-exit-evidence"))]
 pub(in crate::product_hil) async fn qualification_sample(
     _requester: QualificationRequester,
 ) -> QualificationSample {
@@ -1349,7 +1351,7 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                     connected = false;
                 }
             }
-            #[cfg(feature = "driver-observation")]
+            #[cfg(feature = "station-exit-evidence")]
             StationLinkEdge::AttemptFailed { attempt, stage } => {
                 publish_station_lifecycle(StationLifecycleEvent::AttemptFailed {
                     generation,
@@ -1359,7 +1361,7 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                 })
                 .await;
             }
-            #[cfg(feature = "driver-observation")]
+            #[cfg(feature = "station-exit-evidence")]
             StationLinkEdge::RetryExhausted { attempts, stage } => {
                 publish_station_lifecycle(StationLifecycleEvent::RetryExhausted {
                     generation,
@@ -1437,7 +1439,7 @@ fn station_status_edge(state: StationLinkState) -> Option<StationLinkEdge> {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 const fn hil_failure_stage(stage: StaLifecycleStage) -> StationFailureStage {
     use oer::wifi::StaLifecycleStage as DriverStage;
     match stage {
@@ -1450,7 +1452,7 @@ const fn hil_failure_stage(stage: StaLifecycleStage) -> StationFailureStage {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 const fn hil_failure_reason(stage: StaLifecycleStage) -> StationAttemptFailureReason {
     use oer::wifi::StaLifecycleStage as DriverStage;
     match stage {
@@ -1691,7 +1693,7 @@ pub async fn run(
         .expect("ESP32-S31 station eFuse address must be unicast");
     let access_point_mac = WifiMacAddress::new(access_point_address)
         .expect("ESP32-S31 AP eFuse address must be unicast");
-    #[cfg(feature = "driver-observation")]
+    #[cfg(feature = "station-exit-evidence")]
     let connected_rx_observer = CONNECTED_RX_OBSERVER.take();
     let config = RadioConfig::new(
         crate::watchdog::wifi(watchdog),
@@ -1713,7 +1715,7 @@ pub async fn run(
         320,
         record_connected_datapath_poll_batch,
     ));
-    #[cfg(feature = "driver-observation")]
+    #[cfg(feature = "station-exit-evidence")]
     let config = config.with_diagnostic_observers(DiagnosticObservers {
         rx_pipeline: {
             #[cfg(any(

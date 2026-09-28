@@ -141,7 +141,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         if session.config.active_flow_count() == 1 {
             rx_qualification::HilConnectedRxObserver::begin_delivery_session(session.session_id);
         }
-        #[cfg(feature = "driver-observation")]
+        #[cfg(feature = "station-exit-evidence")]
         rx_qualification::begin_anomalies(session.session_id);
         publish_event_reliably(
             session.session_id,
@@ -228,7 +228,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             .saturating_add(irq_classification.other_only_entries);
         let irq_auxiliary_entries = crate::product_hil::MAC_IRQ.take_auxiliary_entries();
         let irq_unhandled_entries = crate::product_hil::MAC_IRQ.take_unhandled_entries();
-        #[cfg(feature = "driver-observation")]
+        #[cfg(feature = "station-exit-evidence")]
         let anomalies = rx_qualification::end_anomalies(session.session_id);
         let pipeline_end = telemetry.pipeline.snapshot();
         let pipeline_interval = pipeline_end.wrapping_delta_since(pipeline_start);
@@ -573,7 +573,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             }),
             tx: None,
         });
-        #[cfg(feature = "driver-observation")]
+        #[cfg(feature = "station-exit-evidence")]
         rx_qualification::report_anomalies(session.session_id, anomalies).await;
         complete_open_radio_bidirectional_direction(
             config.session_source.results,

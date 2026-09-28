@@ -6,20 +6,20 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use core::cell::RefCell;
 
 use core::sync::atomic::AtomicU32;
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use core::sync::atomic::Ordering;
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use oer_esp32s31_ieee80211_system::{
     ConnectedRxObservation, ConnectedRxObserver, ReceiveEvidence, RxObservedEthernetFrame,
 };
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use oer_esp32s31_ieee80211_system::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 #[cfg(feature = "rx-delivery-telemetry")]
 use oer_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
@@ -29,7 +29,7 @@ use oer_hil_esp32s31_telemetry::rx_evidence::{RxAmpduCounters, RxPhyCounters, Rx
 use oer_hil_protocol::{RxDeliveryEvidence, RxReorderDeliveryEvidence};
 #[cfg(feature = "rx-delivery-telemetry")]
 use oer_network_interface::FrameLengthError;
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use oer_network_interface::RxEnqueueError;
 
 pub(crate) static RX_PHY: RxPhyCounters = RxPhyCounters::new();
@@ -42,19 +42,19 @@ static RX_DELIVERY: Mutex<CriticalSectionRawMutex, RefCell<Option<RxDeliveryTrac
 pub(crate) static LAST_FORMAT: AtomicU32 = AtomicU32::new(u32::MAX);
 pub(crate) static LAST_PHY: AtomicU32 = AtomicU32::new(u32::MAX);
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static ANOMALIES: Mutex<
     CriticalSectionRawMutex,
     RefCell<oer_hil_esp32s31_telemetry::rx_anomaly::Records<8>>,
 > = Mutex::new(RefCell::new(
     oer_hil_esp32s31_telemetry::rx_anomaly::Records::new(),
 ));
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 pub(crate) fn begin_anomalies(session: u64) {
     ANOMALIES.lock(|r| r.borrow_mut().begin(session));
     ARP.lock(|r| r.borrow_mut().begin(session));
 }
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 pub(crate) fn end_anomalies(session: u64) -> (Option<u32>, Option<u32>) {
     (
         ARP.lock(|r| r.borrow_mut().end(session)),
@@ -62,7 +62,7 @@ pub(crate) fn end_anomalies(session: u64) -> (Option<u32>, Option<u32>) {
     )
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 pub(crate) async fn report_anomalies(session: u64, totals: (Option<u32>, Option<u32>)) {
     use crate::console::runtime_log_reliably;
     #[cfg(feature = "rx-delivery-telemetry")]
@@ -132,14 +132,14 @@ pub(crate) async fn report_anomalies(session: u64, totals: (Option<u32>, Option<
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static ARP: Mutex<
     CriticalSectionRawMutex,
     RefCell<oer_hil_esp32s31_telemetry::arp_frontier::Records>,
 > = Mutex::new(RefCell::new(
     oer_hil_esp32s31_telemetry::arp_frontier::Records::new(),
 ));
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn observe_arp(
     frame: RxObservedEthernetFrame<'_>,
     stage: oer_hil_esp32s31_telemetry::arp_frontier::Stage,
@@ -156,12 +156,12 @@ fn observe_arp(
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 pub(crate) struct HilConnectedRxObserver {
     udp_port: u16,
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 impl HilConnectedRxObserver {
     pub(crate) const fn new(udp_port: u16) -> Self {
         Self { udp_port }
@@ -200,7 +200,7 @@ impl HilConnectedRxObserver {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 impl ConnectedRxObserver for HilConnectedRxObserver {
     fn requests_phy(&self, frame: RxObservedEthernetFrame<'_>) -> bool {
         // A strict interval vector gate cannot be based on one out of every
@@ -285,7 +285,7 @@ impl ConnectedRxObserver for HilConnectedRxObserver {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
     fn admitted(&self, event: RxNetworkDeliveryEvent<'_>) {
         observe_arp(
@@ -344,7 +344,7 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn ipv4_udp_destination_port(frame: RxObservedEthernetFrame<'_>) -> Option<u16> {
     if frame.ether_type != 0x0800 {
         return None;
@@ -363,7 +363,7 @@ fn ipv4_udp_destination_port(frame: RxObservedEthernetFrame<'_>) -> Option<u16> 
     ]))
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn ipv4_udp_sequence(frame: RxObservedEthernetFrame<'_>, destination_port: u16) -> Option<i32> {
     if ipv4_udp_destination_port(frame) != Some(destination_port) {
         return None;
@@ -378,7 +378,7 @@ fn ipv4_udp_sequence(frame: RxObservedEthernetFrame<'_>, destination_port: u16) 
     Some(i32::from_be_bytes(encoded))
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn observe_s_mpdu(counter: &RxSmpduCounters, evidence: ReceiveEvidence<bool>) {
     match evidence {
         ReceiveEvidence::Hardware(value) => counter.observe_hardware(value),
@@ -388,7 +388,7 @@ fn observe_s_mpdu(counter: &RxSmpduCounters, evidence: ReceiveEvidence<bool>) {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn observe_ampdu(counter: &RxAmpduCounters, evidence: ReceiveEvidence<bool>) {
     match evidence {
         ReceiveEvidence::Hardware(value) => counter.observe_hardware(value),
@@ -397,7 +397,7 @@ fn observe_ampdu(counter: &RxAmpduCounters, evidence: ReceiveEvidence<bool>) {
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 fn available<T>(evidence: ReceiveEvidence<T>) -> Option<T> {
     match evidence {
         ReceiveEvidence::Hardware(value) | ReceiveEvidence::Protocol(value) => Some(value),

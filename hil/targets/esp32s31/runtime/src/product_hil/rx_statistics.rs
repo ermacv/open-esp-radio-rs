@@ -1,6 +1,6 @@
 //! Value-only RX observations and conversion into HIL wire evidence.
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use oer_hil_protocol::WifiMacRxHardwareEvidence;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -100,7 +100,7 @@ impl ObservedRxStatistics {
 #[cfg(test)]
 mod tests;
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 impl From<oer_esp32s31_ieee80211_system::DiagnosticRxStatistics> for ObservedRxStatistics {
     fn from(statistics: oer_esp32s31_ieee80211_system::DiagnosticRxStatistics) -> Self {
         Self {
@@ -146,7 +146,7 @@ impl From<oer_esp32s31_ieee80211_system::DiagnosticRxStatistics> for ObservedRxS
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 impl From<ObservedRxStatistics> for WifiMacRxHardwareEvidence {
     fn from(statistics: ObservedRxStatistics) -> Self {
         Self {

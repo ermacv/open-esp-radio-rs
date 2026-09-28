@@ -1,16 +1,16 @@
 //! Preserve the first driver failure across cores; convert only at report time.
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use core::cell::Cell;
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 use oer_esp32s31_ieee80211_system::AccessPointRxRejection;
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 static FIRST: Mutex<CriticalSectionRawMutex, Cell<Option<AccessPointRxRejection>>> =
     Mutex::new(Cell::new(None));
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 pub(super) fn observe(record: Option<AccessPointRxRejection>) {
     if let Some(record) = record {
         FIRST.lock(|first| {
@@ -22,19 +22,19 @@ pub(super) fn observe(record: Option<AccessPointRxRejection>) {
 }
 
 pub(super) fn snapshot() -> Option<oer_hil_protocol::WifiRxRejection> {
-    #[cfg(feature = "driver-observation")]
+    #[cfg(feature = "station-exit-evidence")]
     {
         FIRST
             .lock(Cell::get)
             .map(oer_hil_esp32s31_telemetry::rx_rejection::evidence)
     }
-    #[cfg(not(feature = "driver-observation"))]
+    #[cfg(not(feature = "station-exit-evidence"))]
     {
         None
     }
 }
 
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 pub(super) fn reset() {
     FIRST.lock(|first| first.set(None));
 }

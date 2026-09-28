@@ -57,9 +57,9 @@ const MESSAGE_CAPACITY: usize = 384;
 // Diagnostic role transitions emit synchronous register/status bursts before
 // the logger can run. Reserve bounded burst storage only in observer images;
 // production-like measurements retain the smaller logging footprint.
-#[cfg(feature = "driver-observation")]
+#[cfg(feature = "station-exit-evidence")]
 const QUEUE_CAPACITY: usize = 32;
-#[cfg(not(feature = "driver-observation"))]
+#[cfg(not(feature = "station-exit-evidence"))]
 const QUEUE_CAPACITY: usize = 8;
 const DRAIN_BATCH: usize = 4;
 const COMMAND_QUEUE_CAPACITY: usize = 4;

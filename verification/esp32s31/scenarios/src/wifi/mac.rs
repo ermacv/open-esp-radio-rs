@@ -47,12 +47,23 @@ const WIFI_ROOTS: &[&[&str]] = &[
     &[RateTables::INDEX_CALLER],
     crate::retry::ROOTS,
     crate::rx_append::ROOTS,
+    crate::ampdu_resort::ROOTS,
 ];
 
 /// Evidence claims of the retry sequences and the RX append.
 const WIFI_CLAIMS: &[(&str, &str, &str)] = &concat_claims::<
-    { crate::retry::CLAIMS.len() + crate::rx_append::CLAIMS.len() },
->(crate::retry::CLAIMS, crate::rx_append::CLAIMS);
+    {
+        crate::retry::CLAIMS.len()
+            + crate::rx_append::CLAIMS.len()
+            + crate::ampdu_resort::CLAIMS.len()
+    },
+>(
+    &concat_claims::<{ crate::retry::CLAIMS.len() + crate::rx_append::CLAIMS.len() }>(
+        crate::retry::CLAIMS,
+        crate::rx_append::CLAIMS,
+    ),
+    crate::ampdu_resort::CLAIMS,
+);
 
 /// `first` followed by `second`, in a constant.
 const fn concat_claims<const N: usize>(

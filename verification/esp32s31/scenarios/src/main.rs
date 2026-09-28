@@ -2,7 +2,8 @@
 use clap::{Parser, Subcommand};
 use oer_esp32s31_vendor_scenarios::session::evidence_index::Index;
 use oer_esp32s31_vendor_scenarios::{
-    ble, calibration_leaves, calibration_prefix, channel, coex, coex_hw, coverage, decisions,
+    ampdu_resort, ble, calibration_leaves, calibration_prefix, channel, coex, coex_hw, coverage,
+    decisions,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
@@ -544,6 +545,7 @@ fn wifi_mac(
     mac::exercise(&mut ctx)?;
     retry::exercise(&mut ctx)?;
     rx_append::exercise(&mut ctx)?;
+    ampdu_resort::exercise(&mut ctx)?;
     let claims = ctx.session.claims(
         "wifi-mac",
         &ctx.roots,

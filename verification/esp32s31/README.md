@@ -472,6 +472,37 @@ exactly. The driver's HAL context is copied into the linked image with the
 `MODEM_SYSCON` and `MODEM_LPCON` bases of the pinned firmware, because Blobray
 binds no linker-script absolute symbol.
 
+## Wi-Fi A-MPDU completion
+
+`wifi-mac` compares `libpp.a[pp.o]::ppResortTxAMPDU` with the production
+retained A-MPDU owner ([`ampdu_resort.rs`](scenarios/src/wifi/ampdu_resort.rs)).
+Both sides hold the same encoded QoS MPDUs. The vendor side starts from the
+queue record `ppTxqUpdateBitmap` leaves: the BlockAck starting sequence and
+bitmap, the resorted aggregate's `esf_buf` chain, and each MPDU's eight-byte
+A-MPDU metadata, whose word 0 carries the PSDU length and, in bits 16..24, the
+sequence number's low byte that the resort measures against the starting
+sequence. The production probe commits the MPDUs to `RetainedDmaAmpduTx`,
+publishes them through a hardware double that returns one completion with the
+same BlockAck result, observes it through `AmpduRetryState`, and applies
+`retain_for_ampdu_retry` when the aggregate is retained. Each case compares
+every MPDU's header afterwards, so an MPDU kept for retry shows the Retry bit
+on both sides and an acknowledged MPDU shows none. Rate control, recycling,
+the next transmission and the BlockAckReq are answered calls.
+
+The cases cover every MPDU acknowledged, none, holes, a missing tail, a
+starting sequence beyond the window, sequence wrap from 4095 to 0 and a single
+missing MPDU kept in the aggregate, all MATCH. Two reviewed differences must
+DIFF at exactly the named MPDU's Retry bit: production acknowledges the MPDU
+immediately left of the starting sequence, which the vendor retransmits, and
+production hands a single missing HT MPDU to its ordinary retry owner. One
+known gap is checked: the vendor sends a BlockAckReq after a resort whose
+station has one pending for the TID, and production sends none.
+
+The comparison does not cover the vendor's aged-MSDU discard, the HE
+one-member conversion (`ppHEAMPDU2Normal`), or the all-acknowledged shortcut
+of a terminated aggregate; the aggregate attempt limit belongs to the retry
+leaves, not to the resort.
+
 ## Inputs and probes
 
 Private vendor artifacts are explicit scenario arguments; they are captured into

@@ -439,11 +439,7 @@ impl ProductionWifiEpochRunner {
         };
         diagnostics_event!("open-radio: AP prepare engine started");
         let maximum_aggregate_bytes = transmit.policy.ht_ampdu().maximum_aggregate_bytes();
-        let aggregate = ProductionAccessPointAmpdu::new(
-            aggregate_tx,
-            maximum_aggregate_bytes,
-            oer_esp32s31_ieee80211_mac::tx::runtime::VENDOR_LONG_RETRY_LIMIT,
-        );
+        let aggregate = ProductionAccessPointAmpdu::new(aggregate_tx, maximum_aggregate_bytes);
         let mac = ApMac::new(
             engine,
             transmit,

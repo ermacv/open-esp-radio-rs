@@ -824,11 +824,8 @@ impl ProductionWifiEpochRunner {
             sta_ap_register_action(access_point_transition, receive_identities),
         );
         let maximum_aggregate_bytes = ordinary.policy.ht_ampdu().maximum_aggregate_bytes();
-        let access_point_aggregate = AccessPointAmpdu::new(
-            aggregate_resources,
-            maximum_aggregate_bytes,
-            oer_esp32s31_ieee80211_mac::tx::runtime::VENDOR_LONG_RETRY_LIMIT,
-        );
+        let access_point_aggregate =
+            AccessPointAmpdu::new(aggregate_resources, maximum_aggregate_bytes);
         let access_point_mac = ApMac::new(
             engine,
             ordinary,

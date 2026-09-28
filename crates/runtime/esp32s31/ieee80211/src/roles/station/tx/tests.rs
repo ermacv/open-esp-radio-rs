@@ -264,7 +264,6 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -322,7 +321,6 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -415,7 +413,6 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::from_units_32_us(5).unwrap(),
         },
@@ -490,7 +487,6 @@ fn malformed_first_frame_reaches_ordinary_validation_before_aggregate_metadata()
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -545,7 +541,6 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -618,7 +613,6 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -716,7 +710,6 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -811,7 +804,6 @@ fn he_aggregate_above_the_txop_threshold_uses_rts_and_survives_a_cts_timeout() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -885,7 +877,6 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -965,7 +956,6 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
                 HtChannelWidth::Mhz40,
             )),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1017,7 +1007,6 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1084,7 +1073,6 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1229,7 +1217,6 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1307,7 +1294,6 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1354,7 +1340,6 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1429,7 +1414,6 @@ fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach()
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
-                attempt_limit: 2,
                 completion_timeout_us: 250_000,
                 he_txop_limit: HeEdcaTxopLimit::DEFAULT,
             },
@@ -1520,7 +1504,6 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1601,7 +1584,6 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -1688,7 +1670,6 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },

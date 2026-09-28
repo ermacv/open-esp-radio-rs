@@ -159,11 +159,12 @@ where
         };
 
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-        if let Some(observed) =
-            self.ampdu
-                .active_mut()
-                .observe_retry_completion(hardware, cookie, &mut active.retry)?
-        {
+        if let Some(observed) = self.ampdu.active_mut().observe_retry_completion(
+            hardware,
+            cookie,
+            &mut active.retry,
+            self.ordinary.now_micros(),
+        )? {
             let completion = observed.completion;
             let current_subframes = observed.subframes;
             #[cfg(any(feature = "diagnostics", test))]
@@ -247,7 +248,7 @@ where
 
             let individual_retry = matches!(active.config, AmpduTxConfig::Ht(_))
                 && missing == 1
-                && active.retry.aggregate_attempts() < self.config.attempt_limit;
+                && !active.retry.aged(self.ordinary.now_micros());
             if individual_retry {
                 let index = retry_mask.trailing_zeros() as u8;
                 let (frame_length, hardware_mic_length) = {

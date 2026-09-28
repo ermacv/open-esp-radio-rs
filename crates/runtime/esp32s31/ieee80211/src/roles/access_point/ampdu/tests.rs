@@ -2,5 +2,6 @@ use super::*;
 
 #[test]
 fn aggregate_role_handle_remains_a_small_borrowed_owner() {
-    assert!(core::mem::size_of::<AccessPointAmpdu<'static, (), 32, 0>>() <= 256);
+    // Each arena's retry state carries its aggregate's MSDU lifetime deadline.
+    assert!(core::mem::size_of::<AccessPointAmpdu<'static, (), 32, 0>>() <= 272);
 }

@@ -31,7 +31,6 @@ fn with_budget(rate: HtRate, test: impl FnOnce(ApAmpduBudget)) {
         HtAmpduTxResources::new_model(metadata.as_mut()).unwrap(),
         &mut retention,
         u16::MAX,
-        2,
     )
     .unwrap();
     test(ampdu.length_budget(rate).unwrap());

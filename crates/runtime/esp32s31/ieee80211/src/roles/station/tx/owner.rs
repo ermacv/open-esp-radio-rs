@@ -42,9 +42,6 @@ where
         if !ordinary.config().peer_qos {
             return Err(AggregateTxError::PeerDoesNotSupportQos);
         }
-        if config.attempt_limit == 0 {
-            return Err(AmpduRetryError::ZeroAttemptLimit.into());
-        }
         let AggregateTxResources {
             primary,
             primary_retention,

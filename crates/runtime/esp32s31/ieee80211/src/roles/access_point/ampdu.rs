@@ -14,13 +14,11 @@ use oer_esp32s31_ieee80211_ap::ampdu::ApAmpduTx;
 pub struct AccessPointAmpdu<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize> {
     arenas: AggregateTxArenaPair<ApAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>>,
     maximum_aggregate_bytes: u16,
-    attempt_limit: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccessPointAmpduParked {
     maximum_aggregate_bytes: u16,
-    attempt_limit: u8,
 }
 
 impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
@@ -29,15 +27,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     pub fn new(
         resources: AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>,
         maximum_aggregate_bytes: u16,
-        attempt_limit: u8,
     ) -> Self {
         let (primary, primary_retention, standby, standby_retention) = resources.into_parts();
-        let active = match ApAmpduTx::new(
-            primary,
-            primary_retention,
-            maximum_aggregate_bytes,
-            attempt_limit,
-        ) {
+        let active = match ApAmpduTx::new(primary, primary_retention, maximum_aggregate_bytes) {
             Ok(active) => active,
             Err(error) => unreachable!(
                 "static AP aggregate geometry is validated by the shared STA arena: {error:?}"
@@ -45,10 +37,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         };
         let standby = match (standby, standby_retention) {
             (Some(resources), Some(retention)) => Some(
-                ApAmpduTx::new(resources, retention, maximum_aggregate_bytes, attempt_limit)
-                    .unwrap_or_else(|error| {
-                        unreachable!("standby AP aggregate geometry is static: {error:?}")
-                    }),
+                ApAmpduTx::new(resources, retention, maximum_aggregate_bytes).unwrap_or_else(
+                    |error| unreachable!("standby AP aggregate geometry is static: {error:?}"),
+                ),
             ),
             (None, None) => None,
             _ => unreachable!("standby aggregate resources and retention move together"),
@@ -56,7 +47,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         Self {
             arenas: AggregateTxArenaPair::new(active, standby),
             maximum_aggregate_bytes,
-            attempt_limit,
         }
     }
 
@@ -111,7 +101,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         let Self {
             arenas,
             maximum_aggregate_bytes,
-            attempt_limit,
         } = self;
         let (active, standby) = arenas.into_parts();
         match active.try_into_resources() {
@@ -132,14 +121,12 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                     ),
                     AccessPointAmpduParked {
                         maximum_aggregate_bytes,
-                        attempt_limit,
                     },
                 ))
             }
             Err(active) => Err(Self {
                 arenas: AggregateTxArenaPair::new(active, standby),
                 maximum_aggregate_bytes,
-                attempt_limit,
             }),
         }
     }
@@ -148,11 +135,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         resources: AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>,
         parked: AccessPointAmpduParked,
     ) -> Self {
-        Self::new(
-            resources,
-            parked.maximum_aggregate_bytes,
-            parked.attempt_limit,
-        )
+        Self::new(resources, parked.maximum_aggregate_bytes)
     }
 
     #[allow(clippy::result_large_err)]

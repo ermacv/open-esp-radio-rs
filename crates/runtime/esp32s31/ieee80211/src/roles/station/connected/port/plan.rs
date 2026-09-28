@@ -266,7 +266,6 @@ impl ConnectedStaPlan {
         AggregateTxConfig {
             rate: self.aggregate_tx_rate,
             frame_limit: self.config.tx.aggregate_frame_limit,
-            attempt_limit: self.config.tx.unicast_attempt_limit,
             completion_timeout_us: self.config.tx.completion_timeout_us,
             he_txop_limit: self.config.tx.aggregate_he_txop_limit,
         }

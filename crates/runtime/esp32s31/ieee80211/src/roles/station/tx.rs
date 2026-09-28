@@ -51,8 +51,9 @@ use oer_esp32s31_ieee80211_mac::{
         },
         protection::{ProtectedPpdu, TxPsdu, TxReceiver},
         runtime::{
-            AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState, WifiTxTraffic,
-            WifiTxTrafficError, WmmTxopUnsupported,
+            AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState,
+            VENDOR_AMPDU_MSDU_LIFETIME_MICROS, WifiTxTraffic, WifiTxTrafficError,
+            WmmTxopUnsupported,
         },
     },
 };
@@ -161,8 +162,6 @@ pub struct AggregateTxConfig {
     pub rate: TxPhyRate,
     /// Maximum descriptors claimed for one aggregate.
     pub frame_limit: u8,
-    /// Maximum aggregate publications, including the first one.
-    pub attempt_limit: u8,
     /// Executor watchdog for each hardware publication.
     pub completion_timeout_us: u64,
     /// HE duration/APEP ceiling selected from negotiated EDCA policy.

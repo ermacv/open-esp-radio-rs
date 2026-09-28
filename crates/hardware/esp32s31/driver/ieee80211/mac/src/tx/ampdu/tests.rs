@@ -433,9 +433,10 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         SequenceNumber::new(0).unwrap(),
         4,
         AmpduRetryPolicy {
-            attempt_limit: 2,
+            lifetime_micros: crate::tx::runtime::VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
             retain_single_mpdu: true,
         },
+        0,
     )
     .unwrap();
     let mut hardware = DetachingCompletionHardware::with_bitmap(0b0101);
@@ -443,7 +444,7 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         .submit(&mut hardware, cookie, LegacyTxQueue::BestEffort, config)
         .unwrap();
     let observed = owner
-        .observe_retry_completion(&mut hardware, cookie, &mut retry)
+        .observe_retry_completion(&mut hardware, cookie, &mut retry, 0)
         .unwrap()
         .unwrap();
     assert_eq!(observed.first_sequence, SequenceNumber::new(0).unwrap());
@@ -472,7 +473,7 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         )
         .unwrap();
     let observed = owner
-        .observe_retry_completion(&mut hardware, cookie, &mut retry)
+        .observe_retry_completion(&mut hardware, cookie, &mut retry, 0)
         .unwrap()
         .unwrap();
     assert_eq!(

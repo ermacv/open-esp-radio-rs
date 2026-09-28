@@ -215,7 +215,6 @@ fn run(case: Case) {
                 &mut retained,
             ),
             4095,
-            2,
         );
         let mut ledger = AccessPointAirtimeStorage::new(us(1000));
         if matches!(case, Case::SelectionCapacity | Case::FifoReservationFailure) {

@@ -239,7 +239,6 @@ fn native_udp_selection_retries_partial_block_ack_and_returns_terminal_credits()
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -364,7 +363,6 @@ fn native_udp_ordinary_fallback_retains_unrequested_payloads_and_backlog() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -458,7 +456,6 @@ fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },

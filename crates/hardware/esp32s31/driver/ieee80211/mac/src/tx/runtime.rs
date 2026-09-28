@@ -652,11 +652,32 @@ pub fn select_p2p_retry_rate(
         .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index })
 }
 
+/// Lifetime of an A-MPDU member MSDU, in microseconds: 1536 lifetime units
+/// of 1024 us.
+///
+/// SOURCE: `libpp.a[lmac.o]::lmacMSDUAged` compares the time since the
+/// MSDU's enqueue timestamp with the `lmacConfMib` lifetime that `lmacInit`
+/// installs, 1536 units for an aggregate member (descriptor bit 22) and 1024
+/// for an ordinary MPDU, each unit `<< 10` microseconds; executed in the
+/// ampdu-resort comparison (blobray 28d6fd3e0).
+pub const VENDOR_AMPDU_MSDU_LIFETIME_MICROS: u32 = 1536 << 10;
+
+/// An MSDU with less than one lifetime unit left is aged.
+///
+/// SOURCE: `libpp.a[lmac.o]::lmacMSDUAged`, as for
+/// [`VENDOR_AMPDU_MSDU_LIFETIME_MICROS`].
+const VENDOR_MSDU_AGED_MARGIN_MICROS: u64 = 1 << 10;
+
 /// Policy for retained A-MPDU retries.
+///
+/// As the vendor's `ppResortTxAMPDU` does, a partial BlockAck keeps the
+/// missing MPDUs in the aggregate without counting publications; only their
+/// MSDU lifetime bounds the retries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmpduRetryPolicy {
-    /// Maximum number of aggregate publications, including the first one.
-    pub attempt_limit: u8,
+    /// Time from the aggregate's commit after which its MSDUs are aged and
+    /// discarded instead of retried.
+    pub lifetime_micros: u32,
     /// Keep one missing MPDU in the aggregate owner.
     ///
     /// The recovered HE path requires this because converting a one-member
@@ -669,7 +690,7 @@ pub struct AmpduRetryPolicy {
 /// Invalid construction or a disagreement with the pinned DMA owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AmpduRetryError {
-    ZeroAttemptLimit,
+    ZeroLifetime,
     EmptyAggregate,
     CapacityExceedsHardwareWindow { capacity: usize },
     AggregateExceedsCapacity { subframes: u8, capacity: usize },
@@ -689,7 +710,9 @@ pub enum AmpduRetryDecision {
     /// retry count and contention window, skips the Retry-bit leaf and
     /// re-enters `lmacEndFrameExchangeSequence` with the unchanged frame.
     RepublishUnchanged { retry_mask: u32 },
-    /// End aggregate ownership; selected MPDUs require individual retry.
+    /// End aggregate ownership. The selected MPDUs were not acknowledged;
+    /// a single one may still be retried individually while its lifetime
+    /// lasts, see [`AmpduRetryState::aged`].
     Finish { retry_mask: u32 },
     /// End ownership through the vendor Trigger-based completion path.
     ///
@@ -728,23 +751,30 @@ pub struct AmpduRetryState<const CAPACITY: usize> {
     missing_original_indices: u32,
     current_subframes: u8,
     policy: AmpduRetryPolicy,
+    /// From this instant on the aggregate's MSDUs are aged: less than one
+    /// lifetime unit remains of the lifetime that runs from their commit.
+    aged_from_micros: u64,
     aggregate_attempts: u8,
     acknowledged: u8,
     block_ack_mpdu_attempts: u16,
     trigger_flow_completions: u8,
     protection_failures: u8,
+    /// Publications that ended without any BlockAck.
+    ack_timeouts: u8,
 }
 
 impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Start at the first Sequence Control value already consumed by the
-    /// encoded aggregate.
+    /// encoded aggregate, whose MSDUs were committed at
+    /// `committed_at_micros`.
     pub fn new(
         first_sequence: SequenceNumber,
         subframes: u8,
         policy: AmpduRetryPolicy,
+        committed_at_micros: u64,
     ) -> Result<Self, AmpduRetryError> {
-        if policy.attempt_limit == 0 {
-            return Err(AmpduRetryError::ZeroAttemptLimit);
+        if policy.lifetime_micros == 0 {
+            return Err(AmpduRetryError::ZeroLifetime);
         }
         if CAPACITY > HARDWARE_BLOCK_ACK_WINDOW {
             return Err(AmpduRetryError::CapacityExceedsHardwareWindow { capacity: CAPACITY });
@@ -769,11 +799,16 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             missing_original_indices: 0,
             current_subframes: subframes,
             policy,
+            aged_from_micros: committed_at_micros
+                .saturating_add(u64::from(policy.lifetime_micros))
+                .saturating_sub(VENDOR_MSDU_AGED_MARGIN_MICROS)
+                .saturating_add(1),
             aggregate_attempts: 1,
             acknowledged: 0,
             block_ack_mpdu_attempts: 0,
             trigger_flow_completions: 0,
             protection_failures: 0,
+            ack_timeouts: 0,
         })
     }
 
@@ -784,10 +819,13 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Complete `libpp.a[lmac.o]::lmacRetryTxFrame` skips
     /// `rcGetRate` for the state written by
     /// `lmacProcessLongRetryFail`, so a retained aggregate keeps its PHY rate.
+    /// A missing MPDU stays in the aggregate until it is aged at
+    /// `now_micros`; aged MPDUs end the aggregate and are discarded.
     pub fn observe(
         &mut self,
         completion: HtAmpduTxCompletion,
         observed_subframes: u8,
+        now_micros: u64,
     ) -> Result<AmpduRetryDecision, AmpduRetryError> {
         if observed_subframes != self.current_subframes {
             return Err(AmpduRetryError::FrameCountChanged {
@@ -829,6 +867,33 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             .block_ack_mpdu_attempts
             .saturating_add(u16::from(observed_subframes));
 
+        // Without any BlockAck every MPDU is retried, and a retry counter
+        // bounds the aggregate as well as the MSDU lifetime.
+        //
+        // SOURCE: `libpp.a[lmac.o]::lmacProcessAckTimeout` enters
+        // `lmacProcessShortRetryFail`/`lmacProcessLongRetryFail`, which set
+        // the Retry bit on every MPDU and republish the aggregate until the
+        // `lmacConfMib` retry limit or `lmacMSDUAged`; executed, both
+        // descriptor lengths end on the 32nd timeout through
+        // `lmacEndFrameExchangeSequence` (blobray 156c54e0e).
+        if !completion.block_ack_received {
+            self.ack_timeouts = self.ack_timeouts.saturating_add(1);
+            self.missing_original_indices = self.pending_original_indices;
+            let retry_mask = if observed_subframes == 32 {
+                u32::MAX
+            } else {
+                (1_u32 << observed_subframes) - 1
+            };
+            let retain = (observed_subframes >= 2 || self.policy.retain_single_mpdu)
+                && self.ack_timeouts < VENDOR_SHORT_RETRY_LIMIT
+                && !self.aged(now_micros);
+            if !retain {
+                return Ok(AmpduRetryDecision::Finish { retry_mask });
+            }
+            self.aggregate_attempts = self.aggregate_attempts.saturating_add(1);
+            return Ok(AmpduRetryDecision::RetainAggregate { retry_mask });
+        }
+
         let mut retry_mask = 0_u32;
         let mut retry_original_indices = 0_u32;
         let mut index = 0_usize;
@@ -846,7 +911,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.missing_original_indices = retry_original_indices;
         let missing = retry_mask.count_ones() as u8;
         let retain = (missing >= 2 || (missing == 1 && self.policy.retain_single_mpdu))
-            && self.aggregate_attempts < self.policy.attempt_limit;
+            && !self.aged(now_micros);
         if !retain {
             return Ok(AmpduRetryDecision::Finish { retry_mask });
         }
@@ -859,6 +924,12 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
 
     pub const fn current_subframes(&self) -> u8 {
         self.current_subframes
+    }
+
+    /// Whether the aggregate's MSDUs are aged at `now_micros`: less than
+    /// one lifetime unit remains.
+    pub const fn aged(&self, now_micros: u64) -> bool {
+        now_micros >= self.aged_from_micros
     }
 
     pub const fn current_first_sequence(&self) -> SequenceNumber {

@@ -25,7 +25,10 @@ use oer_esp32s31_ieee80211_mac::tx::{
         HtAmpduTxError, HtAmpduTxResources, RetainedAmpduDmaStorage,
         RetainedAmpduRetryCompletionError, RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
     },
-    runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
+    runtime::{
+        AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState,
+        VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
+    },
 };
 
 use oer_ieee80211_ap::ApAssociationIdentity;
@@ -217,7 +220,6 @@ enum ApAmpduState<const SLOTS: usize> {
 pub struct ApAmpduTx<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize> {
     inner: RetainedDmaAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>,
     state: ApAmpduState<SLOTS>,
-    attempt_limit: u8,
 }
 
 impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
@@ -227,9 +229,8 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         resources: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
         retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
         maximum_aggregate_bytes: u16,
-        attempt_limit: u8,
     ) -> Result<Self, ApAmpduError> {
-        if SLOTS < 2 || SLOTS > 32 || attempt_limit == 0 {
+        if SLOTS < 2 || SLOTS > 32 {
             return Err(ApAmpduError::TooFewFrames);
         }
         let mut inner = RetainedDmaAmpduTx::new(resources, retention);
@@ -237,7 +238,6 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         Ok(Self {
             inner,
             state: ApAmpduState::Idle,
-            attempt_limit,
         })
     }
 
@@ -375,9 +375,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 prepared.first_sequence,
                 prepared.subframes,
                 AmpduRetryPolicy {
-                    attempt_limit: self.attempt_limit,
+                    lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
                     retain_single_mpdu: true,
                 },
+                ordinary.now_micros(),
             )?,
         };
         Ok(prepared)
@@ -404,9 +405,12 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         else {
             return Err(ApAmpduError::Idle);
         };
-        let Some(observed) = self
-            .inner
-            .observe_retry_completion(hardware, cookie, &mut retry)?
+        let Some(observed) = self.inner.observe_retry_completion(
+            hardware,
+            cookie,
+            &mut retry,
+            ordinary.now_micros(),
+        )?
         else {
             self.state = ApAmpduState::Hardware {
                 cookie,
@@ -546,15 +550,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         if !matches!(self.state, ApAmpduState::Idle) {
             return Err(self);
         }
-        let Self {
-            inner,
-            state: _,
-            attempt_limit,
-        } = self;
+        let Self { inner, state: _ } = self;
         inner.try_into_resources().map_err(|inner| Self {
             inner,
             state: ApAmpduState::Idle,
-            attempt_limit,
         })
     }
 }

@@ -351,7 +351,7 @@ where
             first_sequence,
             aggregate.subframes,
             AmpduRetryPolicy {
-                attempt_limit: self.config.attempt_limit,
+                lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
                 // An A-MSDU can exceed the ordinary descriptor's copy
                 // buffer. Retain even one missing A-MSDU in the aggregate
                 // owner so retry preserves its pinned backing, sequence and
@@ -359,6 +359,7 @@ where
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
+            self.ordinary.now_micros(),
         )?;
         let prepared = AggregatePrepared {
             traffic,
@@ -426,10 +427,11 @@ where
             prepared.first_sequence,
             aggregate.subframes,
             AmpduRetryPolicy {
-                attempt_limit: self.config.attempt_limit,
+                lifetime_micros: VENDOR_AMPDU_MSDU_LIFETIME_MICROS,
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
                     || self.block_ack_amsdu(traffic.tid()),
             },
+            self.ordinary.now_micros(),
         )?;
         Ok(prepared)
     }

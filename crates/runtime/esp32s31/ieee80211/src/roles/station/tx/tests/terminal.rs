@@ -21,7 +21,6 @@ fn exhausted_aggregate_emits_one_terminal_receipt() {
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
             completion_timeout_us: 250_000,
             he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
@@ -48,6 +47,11 @@ fn exhausted_aggregate_emits_one_terminal_receipt() {
     assert_eq!(network.tx_consumer().promotion_capacity(), 0);
     assert!(device.transmit(&mut context()).is_some());
 
+    // The missing MPDUs age out: the aggregate ends instead of retrying.
+    embassy_futures::block_on(
+        tx.ordinary
+            .wait_until_micros(u64::from(VENDOR_AMPDU_MSDU_LIFETIME_MICROS)),
+    );
     hardware.aggregate_completion = Some(aggregate_completion(8, 0b00));
     assert_eq!(
         tx.service(

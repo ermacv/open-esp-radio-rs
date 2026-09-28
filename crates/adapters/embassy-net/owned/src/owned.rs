@@ -21,8 +21,12 @@ use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPoolWaiter};
 
 use oer_ieee80211_datapath::{DestinationTxHead, DestinationTxQueues};
 
+mod external_rx;
 mod tx_budget;
 mod tx_queue;
+pub use external_rx::{
+    ExternalRxAdmission, ExternalRxCounters, ExternalRxOrigin, ExternalRxRefusal,
+};
 use tx_budget::TxCredit;
 use tx_queue::TxQueue;
 

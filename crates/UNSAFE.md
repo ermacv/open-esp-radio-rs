@@ -55,6 +55,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | --- | --- |
 | `memory` | `memory/` |
 | `trace` | `trace/` |
+| `embassy-net-owned` | `adapters/embassy-net/owned/` |
 | `esp32s31-bluetooth` | `hardware/esp32s31/driver/bluetooth/` |
 | `esp32s31-hal` | `hardware/esp32s31/hal/` |
 | `esp32s31-pac` | `hardware/esp32s31/pac/` |
@@ -71,7 +72,12 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 
 These exceptions cover distinct obligations: singleton acquisition and MMIO
 serialization, stable addresses and CPU/DMA transfer, target ABI and placement,
-and one-time static resource or interrupt binding. Preserve the proof at the
+and one-time static resource or interrupt binding. `embassy-net-owned` has one
+unsafe module, `external_rx`: it adopts a detached RX DMA buffer from an
+`oer-memory` handoff slot as a Xarxa `PacketBuf` (`ExternalPacketOrigin::new`
+and `adopt`) and returns the slot through `release_adopted` when the packet
+drops. A slot is adopted again only after that release returned, because the
+radio must first claim the slot the release freed. Preserve the proof at the
 smallest operation; a safe state machine in an audited crate remains safe.
 
 ## PAC dependency authority

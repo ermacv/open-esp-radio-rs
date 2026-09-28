@@ -1287,6 +1287,7 @@ dependencies = [
  "embassy-net-driver",
  "embassy-sync 0.8.0",
  "oer-ieee80211-datapath",
+ "oer-memory",
  "oer-network-interface",
  "xarxa-driver",
 ]

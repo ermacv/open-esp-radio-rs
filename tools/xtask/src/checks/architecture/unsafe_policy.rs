@@ -15,6 +15,7 @@ const GENERATED: &[&str] = &[
 const AUDITED_UNSAFE: &[&str] = &[
     "oer-memory",
     "oer-trace",
+    "oer-embassy-net-owned",
     "oer-esp32s31-bluetooth",
     "oer-esp32s31-hal",
     "oer-esp32s31-pac",

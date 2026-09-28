@@ -11,6 +11,80 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "vendor assertions: each block only logs the violated invariant through \
+            `wifi_log` and jumps to itself, stopping the core (a null frame or queue, an \
+            inconsistent A-MPDU length, a certification rate outside its table, a PHY enabled \
+            or disabled twice); a hang has no effect to compare, and production reports such \
+            states as typed errors instead of stopping",
+        places: &[
+            Place::Range {
+                function: "ppAssembleAMPDU",
+                start: 0xe0,
+                end: 0x10c,
+            },
+            Place::Range {
+                function: "ppCalTxAMPDULength",
+                start: 0x26a,
+                end: 0x292,
+            },
+            Place::Range {
+                function: "ppCalTxHEAMPDULength",
+                start: 0x1e,
+                end: 0x46,
+            },
+            Place::Range {
+                function: "ppCertSetRate",
+                start: 0x3c,
+                end: 0x7a,
+            },
+            Place::Range {
+                function: "ppCertSetRate",
+                start: 0x8a,
+                end: 0xc8,
+            },
+            Place::Range {
+                function: "ppCheckTxHEAMPDUlength",
+                start: 0xe6,
+                end: 0x128,
+            },
+            Place::Range {
+                function: "ppCheckTxHEAMPDUlength",
+                start: 0x1fe,
+                end: 0x23e,
+            },
+            Place::Range {
+                function: "ppEnqueueTxDone",
+                start: 0x2,
+                end: 0x2e,
+            },
+            Place::Range {
+                function: "ppProcessLifeTime",
+                start: 0x94,
+                end: 0xbc,
+            },
+            Place::Range {
+                function: "ppResortTxAMPDU",
+                start: 0x80,
+                end: 0xa8,
+            },
+            Place::Range {
+                function: "ppResortTxAMPDU",
+                start: 0x1c2,
+                end: 0x1ea,
+            },
+            Place::Range {
+                function: "wifi_rf_phy_disable",
+                start: 0x1a,
+                end: 0x42,
+            },
+            Place::Range {
+                function: "wifi_rf_phy_enable",
+                start: 0x1e,
+                end: 0x46,
+            },
+        ],
+    },
+    Decision {
         reason: "the descriptor class of word-zero bit 24, for which `mac_tx_set_plcp1` \
             publishes vector format three and `mac_tx_set_len` skips the non-HE data length: \
             production publishes vector formats zero to two only and always writes the \

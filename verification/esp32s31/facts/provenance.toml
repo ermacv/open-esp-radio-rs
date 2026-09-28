@@ -1793,6 +1793,20 @@ code = "b53255f6e4cc933ecbfdc7ea73405f01fff107c4703f7ae7ee460adad1e2b1aa"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_ioctl.o"
+symbol = "wifi_rf_phy_disable"
+code = "16655d72938ad650830de500c692a1bd91fcdfbb9886ac61f1a7e8392bf7a531"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ioctl.o"
+symbol = "wifi_rf_phy_enable"
+code = "ffd870ee65903f7425234fda66b407b0e086add2949ffd157038fc80f9e33e8c"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ioctl.o"
 symbol = "wifi_set_partial_ru_max_txpwr_process"
 code = "39260153501e905439ca9bf6d6c7f81cd0f16eabdde67ffab99a60939d18ed68"
 
@@ -4135,18 +4149,34 @@ artifact = "libpp"
 member = "pp.o"
 symbol = "ppAssembleAMPDU"
 code = "a5cbe452f0370db3da6cb303b83833c4c6058f94c52112bcb8f9ddc149a084ce"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "pp.o"
 symbol = "ppCalTxAMPDULength"
 code = "c0b0edd52a69ea0982b4e16dd443dbfa92039646d4e7c7b4b53d69d50e55e1ce"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "pp.o"
 symbol = "ppCheckTxAMPDUlength"
 code = "b8a2bc2641b9235ee8f25ce2c5e634fa3563f4c9180b6adaa54c969f6e0b506a"
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
+symbol = "ppEnqueueTxDone"
+code = "3c183a89a8620135e426021f48833e0ae4ab684baf7f60bf18487032a97844a7"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "pp.o"
+symbol = "ppProcessLifeTime"
+code = "f2e4b60c066af35ba219908ad7d7371f9b0094dbce0faf9cac9a5a1c163c39db"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -4159,6 +4189,7 @@ artifact = "libpp"
 member = "pp.o"
 symbol = "ppResortTxAMPDU"
 code = "c9ebafbfb0b2376729d34aa9a4eb9280e29c443c64147dac20df59221c005c16"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -4231,6 +4262,7 @@ artifact = "libpp"
 member = "pp_he.o"
 symbol = "ppCalTxHEAMPDULength"
 code = "0c39047015508ee806f493a1e8a086286e4487c46bb25059e2d167f02dd3b51b"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -4241,8 +4273,16 @@ code = "08d47c62c4fec35258b573c6cf5c4cd3c8825c68b4b53af5fcc8f52666fc5774"
 [[function]]
 artifact = "libpp"
 member = "pp_he.o"
+symbol = "ppCertSetRate"
+code = "096912af0079943885d316da1228c6c30552e28e8f7ce83661d7e3fefa8302a0"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "pp_he.o"
 symbol = "ppCheckTxHEAMPDUlength"
 code = "fca5d9ae1f38423a38d8fe472c6592b8fbfa2ed0b50705aa996457f57439a47e"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -6076,6 +6116,7 @@ artifact = "rom"
 member = ""
 symbol = "ppAssembleAMPDU"
 code = "bda8049993c1dee62667afdb14cd1bc7b81f4ebd4901c0f20ef8f1639b03e51b"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -6094,18 +6135,27 @@ artifact = "rom"
 member = ""
 symbol = "ppCalTxAMPDULength"
 code = "b34d9df43d2e64dcb81ce36524db3a821e993b6278091072660e538d86387186"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "ppCalTxHEAMPDULength"
 code = "d6fdb9e2f0f18958a90107fbaeccfb9f8bc4907e5cb55b1edaabde376b88cc6d"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "ppCalTxHESMPDULength"
 code = "ed2d051cda76280bad73656bf5970a8f0610f10e05c10055a4dd9101a13c516f"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "ppCertSetRate"
+code = "a51b5e77b55e04630e6b2ef3f3a31f68049f2a90d699895089ec23f35c22a5e2"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -6118,6 +6168,7 @@ artifact = "rom"
 member = ""
 symbol = "ppCheckTxHEAMPDUlength"
 code = "a9120409c3aab86fd609db4b27518673996aa167e3793cf81544917fb78a5cdb"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -6134,6 +6185,20 @@ code = "3a13a16b586bb00b693521360c7118acee2010701b5d1ac7ec081e252a75a712"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "ppEnqueueTxDone"
+code = "9e01510098176ffd9fd77d1b81accce4bd2e93cae78ee8f81819b748ff641cc4"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "ppProcessLifeTime"
+code = "6a7319903f4b1d3efe58413aca9408cc0b6f2de2167c8c1836c479844c0a7667"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "ppProcessTxQ"
 code = "11971620bcfe1d85b7b26c9c61322ea149c842e06271d6a3e67d758cae1b6bb5"
 
@@ -6142,6 +6207,7 @@ artifact = "rom"
 member = ""
 symbol = "ppResortTxAMPDU"
 code = "c71cdedd654ae3be5472c7af1446e18178abbd4a3c7f544b2f24691937bf2557"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -6390,4 +6456,18 @@ artifact = "rom"
 member = ""
 symbol = "wifi_he_get_hetb_tid_bitmap"
 code = "1179d218ab3a1124d427a87ac185d2c8b11e0c1282d278136c513f2b68486cb9"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "wifi_rf_phy_disable"
+code = "a8eda1c56fffa45d1033fd89b63b9e64c7d19c314ad36be31eea6d64c30e8ce9"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "wifi_rf_phy_enable"
+code = "3a8c41585ef3aae493fd227f5ee278d9c8d4113bb676027bfb0403ca44bc8b4d"
 decisions = ["coverage.rs"]

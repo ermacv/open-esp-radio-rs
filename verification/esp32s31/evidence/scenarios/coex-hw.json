@@ -405,11 +405,11 @@
     },
     {
       "path": "tools/blobray/crates/application/src/execution_memory.rs",
-      "sha256": "b44521deb1810792e8989616acd6b0c6d6580038418e583a990d01fa4ce0983d"
+      "sha256": "e3e3052cd77de4bb2782c025471c661721dde7db38af85db737a7aa1c6492f2d"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_observation.rs",
-      "sha256": "0dd5c9b7759830a6b84c6573af345107d7632df5b7a5d1061aa5ac2f0370ee01"
+      "sha256": "4890e8c35bb39d7a59e9e366a49d2905bb23166dbde50db965126f3d2f5bc03a"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_services.rs",
@@ -681,7 +681,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/execution.rs",
-      "sha256": "1557a1e4e2d86a0b341514ac53cfd43fcee156cc1c4ed01569fd1b7f156d12f4"
+      "sha256": "54d84f622159a08a1e9d96e2d02ffecb52c56eb494c135ccd93251cca5363f44"
     },
     {
       "path": "tools/blobray/crates/domain/src/external_call.rs",
@@ -869,11 +869,11 @@
     },
     {
       "path": "tools/blobray/crates/store/src/execution_capture.rs",
-      "sha256": "2b200cbae037a6e62856d9c941a75df93b97f88ff6918e1cd508437d30d94512"
+      "sha256": "17d48fad9eee876c0a00ac37fcad0b00f4878d847c4c435f3b4abfbaa603bb9a"
     },
     {
       "path": "tools/blobray/crates/store/src/execution_effects.rs",
-      "sha256": "167a50dcbee211820a7af16e2925abca85b0cca6a0c36bd4d1d4b33b446cfd44"
+      "sha256": "5f7d2dcc5bd0dac2a7cc7be215110588cfd7c96b47bbf32848ffcba5be0adfe6"
     },
     {
       "path": "tools/blobray/crates/store/src/execution_models.rs",
@@ -881,11 +881,11 @@
     },
     {
       "path": "tools/blobray/crates/store/src/execution_observation.rs",
-      "sha256": "ef0adcb53284c18ebdb8a22084a6d2de3d43f50622e2d4c1271148200dcf952c"
+      "sha256": "9c1ae88543e34ab76d9dc2dc9eaa2c56a9e9133e62beb49961c638b3fdb3a9d9"
     },
     {
       "path": "tools/blobray/crates/store/src/execution_projections.rs",
-      "sha256": "7d88c6ef38abc5042c4efb11550449b6ddf9d8a760cae1f394333b8fdccd615e"
+      "sha256": "09aa3746726a493a0c57e1c615e8e543fd560e509d76e348b259464e6827f6a7"
     },
     {
       "path": "tools/blobray/crates/store/src/execution_records.rs",
@@ -897,15 +897,15 @@
     },
     {
       "path": "tools/blobray/crates/store/src/execution_services.rs",
-      "sha256": "7b00a95638acf9cd10c7b4d10a86ed5093ba130491536e3ca833c750b371c9e3"
+      "sha256": "911ef84d5e59dc83dd0c1ab3cd56f38ddd64696965d9a56759a694b439d3f15a"
     },
     {
       "path": "tools/blobray/crates/store/src/execution_tables.rs",
-      "sha256": "81931dc1432f3189bee5d44b8dd1c2baad3356f17af941b07dabd07daa9e23ae"
+      "sha256": "17a99dbe9a7d9e1040db4f2fe8e2c404cef3e2a9198c7005011b145da3562c31"
     },
     {
       "path": "tools/blobray/crates/store/src/execution_timeline.rs",
-      "sha256": "08ee93ff389617355dc9b8ccc1f0f50c429fccdab0eb3166fe67431a4a106be5"
+      "sha256": "36686d9647e01ed09c124fd7749a6cba1e63dcbf89d72490f46bbc35cb38fe11"
     },
     {
       "path": "tools/blobray/crates/store/src/executions.rs",
@@ -989,7 +989,7 @@
     },
     {
       "path": "tools/blobray/crates/verification/src/projection.rs",
-      "sha256": "68fb6d84d813fc8d3fbbcaed4b8dcba3b05806c3c5bba35a33fb525f3d5eb8fa"
+      "sha256": "366feaea043a17a47c6b3a0f3258b3ec62ec60e76ee8ead27a63fbe3aa543d4a"
     },
     {
       "path": "tools/blobray/next/Cargo.toml",
@@ -1137,7 +1137,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "8095be89e682cc7596bfd967b9022f16b59d2b396c33b60952f5e2a669836467"
+      "sha256": "c4d3c4ce2e71de7ac54aaf261f4632de8b4c448474c1e6bad06e7ba24e07268f"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1213,7 +1213,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/rx_append.rs",
-      "sha256": "ffd89b7ea26b9d0f203edf9e5d099e0c8821932889cbc3fc044d5eb9280d38fe"
+      "sha256": "f24b5be2ed33231d2ed53f42655fce6e9ef357bea32052b534ed42bf990214ae"
     },
     {
       "path": "verification/harness/codegen",
@@ -1261,7 +1261,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/discovery.rs",
-      "sha256": "24d5d40f3bf88a5f10e4792b53dac1a1d1fea74dd15284611af2a2eb857f9133"
+      "sha256": "8590dbe293cfb5a51d837e3edc82759497b5ce3141813135f372adc304e2fccc"
     },
     {
       "path": "verification/harness/scenarios/src/evidence.rs",
@@ -1273,7 +1273,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
-      "sha256": "e1e26055aee8a57795c151605ca5ad8987cf9f8b8682220860f38c458f2dc134"
+      "sha256": "0e21a53cd1b00e7ac16ce6feada139ac95ff9ab8e5780221d62e91e3eaba0459"
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",

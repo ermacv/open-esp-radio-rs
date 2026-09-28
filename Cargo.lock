@@ -3470,6 +3470,7 @@ dependencies = [
  "oer-process",
  "oer-register-model",
  "pulldown-cmark",
+ "roxmltree",
  "rustc-demangle",
  "rustix",
  "serde",

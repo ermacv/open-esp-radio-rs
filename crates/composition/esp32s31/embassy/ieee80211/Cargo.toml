@@ -28,7 +28,7 @@ supported-feature-profiles = [
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 # The owned Xarxa/Embassy network stack: the maintained owner-transfer fork.
-embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "9c390fa27e636824b935d245810f03856bf5d459", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"], optional = true }
+embassy-net-owned = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "bcdbb858e81be23f96e1bee6040785575c79cd02", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"], optional = true }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 log = { version = "0.4.29", optional = true }

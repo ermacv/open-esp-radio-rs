@@ -12,7 +12,7 @@ owned-network = ["dep:embassy-net-owned", "oer/owned-xarxa"]
 
 [dependencies]
 edge-dhcp = { version = "0.8.0", default-features = false }
-embassy-net-owned = { package = "embassy-net", optional = true, git = "https://github.com/ermacv/embassy.git", rev = "9c390fa27e636824b935d245810f03856bf5d459", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
+embassy-net-owned = { package = "embassy-net", optional = true, git = "https://github.com/ermacv/embassy.git", rev = "bcdbb858e81be23f96e1bee6040785575c79cd02", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
 embassy-time = "0.5.1"
 static_cell = "2.1.1"
 

@@ -401,7 +401,7 @@ dependencies = [
 [[package]]
 name = "embassy-net-driver"
 version = "0.2.0"
-source = "git+https://github.com/ermacv/embassy.git?rev=9c390fa27e636824b935d245810f03856bf5d459#9c390fa27e636824b935d245810f03856bf5d459"
+source = "git+https://github.com/ermacv/embassy.git?rev=bcdbb858e81be23f96e1bee6040785575c79cd02#bcdbb858e81be23f96e1bee6040785575c79cd02"
 dependencies = [
  "xarxa-driver",
 ]

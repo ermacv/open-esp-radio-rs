@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Owned-packet boundary for the optimized open ESP radio Embassy/Xarxa integration"
 
 [dependencies]
-owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "9c390fa27e636824b935d245810f03856bf5d459" }
+owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "bcdbb858e81be23f96e1bee6040785575c79cd02" }
 embassy-sync = "0.8.0"
 oer-memory = { path = "../../../memory" }
 oer-network-interface = { path = "../../../network/interface" }
@@ -17,7 +17,7 @@ xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "3953379094a
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
-owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "9c390fa27e636824b935d245810f03856bf5d459", features = ["medium-ethernet", "proto-ipv4", "std", "udp"] }
+owned-embassy-net = { package = "embassy-net", git = "https://github.com/ermacv/embassy.git", rev = "bcdbb858e81be23f96e1bee6040785575c79cd02", features = ["medium-ethernet", "proto-ipv4", "std", "udp"] }
 
 [lints]
 workspace = true

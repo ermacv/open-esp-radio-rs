@@ -13,11 +13,11 @@ use blobray_domain::{
     CallResponse, ExecutionTarget, RegionLifetime, SessionReset,
 };
 pub use oer_vendor_scenario_engine::leaf::{
-    Dispatch, Domain, LEAF_EVENTS, LEAF_FILLS, Leaf, LeafCase, LeafOptions as MacOptions,
-    LeafRun as Mac, OUTPUT_FILL, Objects, Replacement, Suite, Vendor, VendorAbi, call_boundary,
-    claims, compared_bytes, dispatching, exercise, image_symbols, in_archive, leaf, objects,
-    ordered, output, prefix, quiet, released, released_when_leased, replaced, rom, ruled, stated,
-    tail_prefix, vendor_reads,
+    Dispatch, DispatchTarget, Domain, LEAF_EVENTS, LEAF_FILLS, Leaf, LeafCase,
+    LeafOptions as MacOptions, LeafRun as Mac, OUTPUT_FILL, Objects, Replacement, Suite, Vendor,
+    VendorAbi, call_boundary, claims, compared_bytes, dispatching, exercise, image_symbols,
+    in_archive, leaf, objects, ordered, output, prefix, quiet, released, released_when_leased,
+    replaced, rom, ruled, stated, tail_prefix, vendor_reads,
 };
 use std::any::Any;
 use std::collections::BTreeMap;
@@ -999,28 +999,52 @@ fn scheduled_rate_abi(
     })
 }
 
-/// Transmit-error details of status four and the retry leaf each selects.
-const TX_ERROR_DETAILS: &[u32] = &[0, 1, 2, 3, 4, 5, 6];
+/// Transmit-error details of status four and the retry leaf each selects;
+/// `0xc0` is a security-key error.
+const TX_ERROR_DETAILS: &[u32] = &[0, 1, 2, 3, 4, 5, 6, TX_ERROR_KEY];
+const TX_ERROR_KEY: u32 = 0xc0;
+/// The vendor queue contexts `our_instances_ptr` names for the key-error
+/// path, which marks the queue's exchange ending before dispatching: one
+/// `TX_ERROR_INSTANCE_BYTES` context per queue.
+const TX_ERROR_INSTANCES: u32 = 0x3fff_1000;
+const TX_ERROR_INSTANCE_BYTES: usize = 0x38;
+const TX_ERROR_QUEUE_CONTEXTS: usize = 5;
 /// Ordinary queues the dispatcher cases use: the lowest and the highest.
 const TX_ERROR_QUEUES: &[u32] = &[0, 4];
 
 /// `lmacProcessTxError` of status four: detail zero is a CTS timeout,
-/// details two and six ACK timeouts, and the others collisions.
-fn tx_error_leaf(words: &[u32]) -> (&'static str, &'static str) {
+/// details two and six ACK timeouts, `0xc0` a security-key error that ends
+/// the exchange through `lmacProcessTxseckiderr(context, queue)`, and the
+/// others collisions.
+fn tx_error_leaf(words: &[u32]) -> DispatchTarget {
     match words[1] {
-        0 => ("lmacProcessCtsTimeout", "open_libpp_tx_retry_cts_timeout"),
-        2 | 6 => ("lmacProcessAckTimeout", "open_libpp_tx_retry_ack_timeout"),
-        _ => ("lmacProcessCollision", "open_libpp_tx_retry_collision"),
+        0 => DispatchTarget::first("lmacProcessCtsTimeout", "open_libpp_tx_retry_cts_timeout"),
+        2 | 6 => DispatchTarget::first("lmacProcessAckTimeout", "open_libpp_tx_retry_ack_timeout"),
+        TX_ERROR_KEY => DispatchTarget {
+            vendor: "lmacProcessTxseckiderr",
+            production: "open_libpp_tx_retry_security_key_error",
+            vendor_word: 1,
+        },
+        _ => DispatchTarget::first("lmacProcessCollision", "open_libpp_tx_retry_collision"),
     }
 }
 
 /// `lmacProcessTxError` loads ROM `our_instances_ptr` before dispatching;
-/// only the key-error detail `0xc0`, outside these cases, dereferences it.
+/// the key-error detail writes the queue context it names.
 fn tx_error_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
     let resolve = |name: &str| vendor.symbol(name);
     Ok(Objects {
         vendor_words: words.to_vec(),
-        vendor: vec![(resolve("our_instances_ptr")?, vec![0; 4])],
+        vendor: vec![
+            (
+                resolve("our_instances_ptr")?,
+                TX_ERROR_INSTANCES.to_le_bytes().to_vec(),
+            ),
+            (
+                TX_ERROR_INSTANCES,
+                vec![0; TX_ERROR_QUEUE_CONTEXTS * TX_ERROR_INSTANCE_BYTES],
+            ),
+        ],
         ..Default::default()
     })
 }

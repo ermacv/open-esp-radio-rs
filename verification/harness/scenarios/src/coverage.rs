@@ -5,8 +5,13 @@
 //! by a decision below, with its reason, or reported as untriaged in the
 //! evidence index. A decision that no longer excludes anything fails its
 //! scenario, so the table cannot silently outlive the code it describes.
+//!
+//! A decision that excludes whole functions also excludes, in one closure,
+//! the functions no execution entered that the closure reaches only through
+//! excluded functions: their code is unreachable for the same reason.
 use crate::harness::{Result, invalid};
 use crate::session::evidence_index::{Location, LocationKind};
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 /// What one decision excludes.
@@ -117,15 +122,79 @@ impl Observed {
     }
 }
 
-/// Closure functions of one claim and the locations its executions left
-/// uncovered.
+/// Closure functions of one claim, the locations its executions left
+/// uncovered, and those among them the closure reaches only through
+/// excluded functions.
 #[derive(Clone, Debug, Default)]
 pub struct Closure {
     pub functions: BTreeSet<String>,
     pub uncovered: BTreeSet<Location>,
+    pub consequential: BTreeSet<Location>,
 }
 
-/// Locations of `untriaged` that no closure covers: a closure covers a
+/// One closure function for [`consequences`]: whether any execution entered
+/// it, and the closure functions it calls.
+pub struct CallNode {
+    pub entered: bool,
+    pub callees: BTreeSet<String>,
+}
+
+/// Functions of one closure rooted at `root` that no execution entered and
+/// that are reached only through functions `decisions` exclude whole, or
+/// through other such functions: the greatest set closed under that rule.
+pub fn consequences(
+    decisions: &[Decision],
+    root: &str,
+    graph: &BTreeMap<String, CallNode>,
+) -> BTreeSet<String> {
+    let whole: BTreeSet<&str> = decisions
+        .iter()
+        .flat_map(|d| d.places)
+        .filter_map(|place| match place {
+            Place::Function(name) | Place::Diagnostic(name) => Some(*name),
+            Place::Range { .. } => None,
+        })
+        .collect();
+    let mut callers: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (caller, node) in graph {
+        for callee in &node.callees {
+            callers
+                .entry(callee.as_str())
+                .or_default()
+                .push(caller.as_str());
+        }
+    }
+    let mut set: BTreeSet<&str> = graph
+        .iter()
+        .filter(|(name, node)| {
+            name.as_str() != root
+                && !node.entered
+                && !whole.contains(name.as_str())
+                && callers.contains_key(name.as_str())
+        })
+        .map(|(name, _)| name.as_str())
+        .collect();
+    loop {
+        let before = set.len();
+        let kept: BTreeSet<&str> = set
+            .iter()
+            .copied()
+            .filter(|name| {
+                callers[name]
+                    .iter()
+                    .all(|caller| whole.contains(caller) || set.contains(caller))
+            })
+            .collect();
+        set = kept;
+        if set.len() == before {
+            break;
+        }
+    }
+    set.into_iter().map(str::to_owned).collect()
+}
+
+/// Locations of `untriaged` that no closure covers, and that some closure
+/// reaches other than only through excluded functions: a closure covers a
 /// location when it contains the location's function and its executions
 /// reached it.
 pub fn uncovered_everywhere(
@@ -135,10 +204,13 @@ pub fn uncovered_everywhere(
     untriaged
         .into_iter()
         .filter(|location| {
-            closures.iter().all(|closure| {
-                !closure.functions.contains(&location.function)
-                    || closure.uncovered.contains(location)
-            })
+            let containing = || {
+                closures
+                    .iter()
+                    .filter(|closure| closure.functions.contains(&location.function))
+            };
+            containing().all(|closure| closure.uncovered.contains(location))
+                && containing().any(|closure| !closure.consequential.contains(location))
         })
         .collect()
 }
@@ -193,6 +265,7 @@ mod tests {
         let closure = |functions: &[&str], uncovered: &[Location]| Closure {
             functions: functions.iter().map(|f| f.to_string()).collect(),
             uncovered: uncovered.iter().cloned().collect(),
+            consequential: BTreeSet::new(),
         };
         let untriaged = BTreeSet::from([at("phy_root", 4), at("phy_root", 8)]);
         let closures = [
@@ -205,6 +278,64 @@ mod tests {
         assert_eq!(
             uncovered_everywhere(&closures, untriaged),
             BTreeSet::from([at("phy_root", 4)])
+        );
+    }
+
+    fn graph(nodes: &[(&str, bool, &[&str])]) -> BTreeMap<String, CallNode> {
+        nodes
+            .iter()
+            .map(|(name, entered, callees)| {
+                (
+                    name.to_string(),
+                    CallNode {
+                        entered: *entered,
+                        callees: callees.iter().map(|c| c.to_string()).collect(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn code_reached_only_through_an_excluded_function_is_a_consequence() {
+        // root -> helper (excluded) -> inner <-> cycle; root -> shared;
+        // helper -> shared; root -> live -> tail; helper -> tail.
+        let graph = graph(&[
+            ("root", true, &["helper", "shared", "live"]),
+            ("helper", false, &["inner", "shared", "tail"]),
+            ("inner", false, &["cycle"]),
+            ("cycle", false, &["inner"]),
+            ("shared", false, &[]),
+            ("live", false, &["tail"]),
+            ("tail", false, &[]),
+        ]);
+        assert_eq!(
+            consequences(DECISIONS, "root", &graph),
+            BTreeSet::from(["cycle".to_owned(), "inner".to_owned()])
+        );
+        // An entered function is never a consequence.
+        let mut entered = graph;
+        entered.get_mut("inner").unwrap().entered = true;
+        assert!(consequences(DECISIONS, "root", &entered).is_empty());
+    }
+
+    #[test]
+    fn a_consequence_in_every_containing_closure_is_not_untriaged() {
+        let location = at("inner", 0);
+        let closure = |consequential: bool| Closure {
+            functions: BTreeSet::from(["inner".to_owned()]),
+            uncovered: BTreeSet::from([location.clone()]),
+            consequential: if consequential {
+                BTreeSet::from([location.clone()])
+            } else {
+                BTreeSet::new()
+            },
+        };
+        let untriaged = BTreeSet::from([location.clone()]);
+        assert!(uncovered_everywhere(&[closure(true)], untriaged.clone()).is_empty());
+        assert_eq!(
+            uncovered_everywhere(&[closure(true), closure(false)], untriaged.clone()),
+            untriaged
         );
     }
 

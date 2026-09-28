@@ -999,7 +999,53 @@ impl Session {
             }
         }
         let locations: std::collections::BTreeSet<_> = located.into_values().collect();
+        // Closure functions only excluded code reaches share its exclusion.
+        let closure_functions: Vec<_> = report
+            .functions
+            .iter()
+            .filter(|f| root.functions.contains(&f.entry))
+            .collect();
+        let named = |entry: u32| {
+            closure_functions
+                .iter()
+                .find(|f| f.entry == entry)
+                .map(|f| f.name.clone().unwrap_or_else(|| format!("{entry:#x}")))
+        };
+        let graph: BTreeMap<String, crate::coverage::CallNode> = closure_functions
+            .iter()
+            .map(|f| {
+                (
+                    f.name.clone().unwrap_or_else(|| format!("{:#x}", f.entry)),
+                    crate::coverage::CallNode {
+                        entered: f.blocks.reached > 0,
+                        callees: f.callees.iter().filter_map(|c| named(*c)).collect(),
+                    },
+                )
+            })
+            .collect();
+        let root_name = named(vendor).unwrap_or_else(|| format!("{vendor:#x}"));
+        let consequences = crate::coverage::consequences(decisions, &root_name, &graph);
+        let consequential: std::collections::BTreeSet<_> = locations
+            .iter()
+            .filter(|l| consequences.contains(&l.function))
+            .cloned()
+            .collect();
         let (excluded, untriaged) = crate::coverage::Observed::classify(decisions, &locations);
+        let (excluded, untriaged): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) = (
+            excluded
+                .into_iter()
+                .chain(
+                    untriaged
+                        .iter()
+                        .filter(|l| consequential.contains(*l))
+                        .cloned(),
+                )
+                .collect(),
+            untriaged
+                .into_iter()
+                .filter(|l| !consequential.contains(l))
+                .collect(),
+        );
         let count = |c: &blobray_domain::CoverageCount| evidence_index::Count {
             reached: c.reached,
             total: c.total,
@@ -1019,6 +1065,7 @@ impl Session {
         observed.closures.push(crate::coverage::Closure {
             functions,
             uncovered: locations,
+            consequential,
         });
         let mut instructions = blobray_application::in_process::ObservedInstructions::default();
         for artifact in &selected {

@@ -216,7 +216,28 @@ pub struct Observed {
 pub type Expectation = fn(&[u32], &Observed) -> std::result::Result<(), String>;
 
 /// The vendor and production callees a dispatcher selects for the words.
-pub type Dispatch = fn(&[u32]) -> (&'static str, &'static str);
+pub type Dispatch = fn(&[u32]) -> DispatchTarget;
+
+/// The callees a dispatcher selects, and the vendor callee's argument word
+/// that carries the case's first word: the production callee takes it
+/// first, while a vendor callee may take its context first.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DispatchTarget {
+    pub vendor: &'static str,
+    pub production: &'static str,
+    pub vendor_word: u16,
+}
+
+impl DispatchTarget {
+    /// Both callees take the case's first word first.
+    pub const fn first(vendor: &'static str, production: &'static str) -> Self {
+        Self {
+            vendor,
+            production,
+            vendor_word: 0,
+        }
+    }
+}
 
 /// Objects of one case: vendor argument words, initialized vendor and
 /// production objects as (address, bytes), and vendor call models.
@@ -1077,10 +1098,11 @@ impl LeafRun {
                         observed.clone(),
                     )?;
                     if let Some(select) = leaf.dispatch {
-                        let (vendor_callee, production_callee) = select(&words);
-                        let capture = CallCapture {
+                        let target = select(&words);
+                        let (vendor_callee, production_callee) = (target.vendor, target.production);
+                        let capture = |words: u16| CallCapture {
                             include_tail: true,
-                            argument_words: 1,
+                            argument_words: words,
                             overrides: vec![],
                         };
                         vendor.goal = ExecutionGoal::ObserveCall {
@@ -1094,7 +1116,7 @@ impl LeafRun {
                             },
                             include_tail: true,
                         };
-                        vendor.observe_calls = Some(capture.clone());
+                        vendor.observe_calls = Some(capture(target.vendor_word + 1));
                         production.goal = ExecutionGoal::ObserveCall {
                             target: ExecutionSymbol {
                                 source: self.production.source.clone(),
@@ -1108,7 +1130,7 @@ impl LeafRun {
                             },
                             include_tail: true,
                         };
-                        production.observe_calls = Some(capture);
+                        production.observe_calls = Some(capture(1));
                     }
                     production.memory.extend(output_memory.clone());
                     production.memory.extend(production_memory.clone());
@@ -1217,14 +1239,18 @@ pub fn exercise(ctx: &mut LeafRun) -> Result<()> {
                     )));
                 }
             }
-            if leaf.dispatch.is_some() {
+            if let Some(select) = leaf.dispatch {
                 let expected = case_words[index][0];
+                let vendor_word = select(&case_words[index]).vendor_word;
                 for side in [false, true] {
+                    let at = if side { 0 } else { vendor_word };
                     let argument = crate::evidence::events(own, case, side)
                         .iter()
                         .rev()
                         .find_map(|e| match e {
-                            blobray_domain::ExecutionEvent::TransferArgument { word: 0, value } => {
+                            blobray_domain::ExecutionEvent::TransferArgument { word, value }
+                                if *word == at =>
+                            {
                                 value.value()
                             }
                             _ => None,

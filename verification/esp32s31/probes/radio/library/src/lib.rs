@@ -1392,6 +1392,19 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    pub fn open_libpp_tx_retry_security_key_error(queue: u32) {
+        // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
+        unsafe {
+            core::arch::asm!(
+                "addi zero, zero, 5",
+                in("a0") queue,
+                options(nomem, nostack)
+            )
+        };
+    }
+}
+
+oer_probe_macros::probe! {
     /// ABI projection around the exact production status-four classifier.
     pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, _selector: u32) {
         use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
@@ -1401,6 +1414,9 @@ oer_probe_macros::probe! {
             TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(queue),
             TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(queue),
             TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(queue),
+            TxCompletionDisposition::Terminal(
+                oer_esp32s31_ieee80211_mac::tx::TxCompletionFailure::SecurityKeyError,
+            ) => open_libpp_tx_retry_security_key_error(queue),
             TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
         }
     }

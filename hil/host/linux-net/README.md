@@ -1,6 +1,6 @@
 # Linux network fixture
 
-Use the canonical [Linux fixture software installation](../README.md#linux-fixture-software-installation)
+Use the canonical [Linux fixture software installation](../fixtures.md#linux-fixture-software-installation)
 route from the repository root:
 
 ```console

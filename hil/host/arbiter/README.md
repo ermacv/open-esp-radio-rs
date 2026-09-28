@@ -1,7 +1,7 @@
 # HIL stand arbiter
 
 `oer-hil-arbiter` orders access to the HIL stand between every checkout of one
-host user. The [host guide](../README.md#share-the-stand) describes the
+host user. The [host guide](../stand.md) describes the
 commands; this crate owns the queue, leases, claims, owner balances and the board
 journal.
 

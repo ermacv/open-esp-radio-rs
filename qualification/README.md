@@ -507,7 +507,7 @@ Original outcomes and exclusions remain visible; a commit change or another PASS
 does not establish that a failure was resolved.
 
 A run bundle stays in ignored output, in the run store every checkout of the
-user shares (see [find and compare runs](../hil/host/README.md#find-and-compare-runs)),
+user shares (see [find and compare runs](../hil/host/runs.md#find-and-compare-runs)),
 and qualifies only for a checkout whose sources it binds. The evaluator reads
 the store only through the checkout's `target/hil/<target>/runs` link, which
 any `cargo hil` command creates.

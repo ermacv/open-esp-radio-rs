@@ -97,7 +97,9 @@ files, and each fixture owner may restore only the interface/process it
 created. Loss of SSH or an identity mismatch can make restoration impossible;
 the runner records that ambiguity instead of claiming a reusable lab state.
 
-Public commands:
+The runner's own commands follow; sharing the stand, investigating runs and
+fixture installation are described in [stand](stand.md), [runs](runs.md) and
+[fixtures](fixtures.md):
 
 ```console
 cargo hil doctor

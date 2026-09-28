@@ -7,7 +7,7 @@ exchanges with the device under test run against the vendor implementation.
 
 ## Build and flash
 
-The peer is a [firmware catalog](../../host/README.md#share-the-stand) entry
+The peer is a [firmware catalog](../../host/stand.md#esp-idf-firmware-catalog) entry
 (`firmware.toml`). It builds against the one ESP-IDF revision pinned in
 [`verification/esp32s31/artifacts.toml`](../../../verification/esp32s31/artifacts.toml),
 installed below `target/` apart from any user installation:

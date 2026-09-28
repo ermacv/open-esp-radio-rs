@@ -30,8 +30,9 @@ cargo hil run <scenario-id> --firmware-from <run-id>
 
 It consumes the archived build without invoking Cargo. A scenario replay
 produces a self-contained new bundle whose provenance names the source run,
-sealed-integrity digest, build ID and firmware-source repository. Replay is
-supported for one scenario; `run-all` does not accept an archived build input.
+sealed-integrity digest, build ID and firmware-source repository. `run` replays
+one image class for every scenario it names; `run-all` does not accept an
+archived build input.
 Replayed runs are not accepted as direct current-source qualification evidence.
 
 ## Source reconstruction
@@ -92,7 +93,7 @@ target/hil/esp32s31/
 ```
 
 `runs/` is a link to the run store all checkouts of this user share
-([find and compare runs](../hil/host/README.md#find-and-compare-runs)); the
+([find and compare runs](../hil/host/runs.md#find-and-compare-runs)); the
 object store and reproducibility reports stay with the checkout.
 
 Subjects are ordinary files. A local content-addressed store permits hard-link
@@ -104,7 +105,7 @@ not provided.
 ## Reproducing a hardware observation
 
 Matching firmware does not recreate RF or host conditions. The runner records
-secret-free lab provenance before building or flashing: cell/device identity,
+secret-free lab provenance after building its images and before flashing: cell/device identity,
 host kernel/boot/interface state, routes and applicable managed OpenWrt radio
 observations. SSIDs, passphrases and SSH endpoints are omitted.
 

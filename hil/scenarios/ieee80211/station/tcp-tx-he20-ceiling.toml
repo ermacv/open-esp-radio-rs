@@ -13,7 +13,7 @@ kind = "station-tcp"
 link = { phy = "he20" }
 duration_seconds = 16
 chunk_bytes = 32768
-offer = { tx_bps = 90000000 }
+offer = { tx_bps = 130000000 }
 
 [wifi.workload.criteria]
 minimum_tx_bps = 30000000

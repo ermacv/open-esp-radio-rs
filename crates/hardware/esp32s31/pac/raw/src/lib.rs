@@ -28641,12 +28641,12 @@ pub mod wifi_mac_txrx_callbacks {
         pub const fn bb_rx_hang_control(&self) -> &BbRxHangControl {
             &self.bb_rx_hang_control
         }
-        #[doc = "0x808 - Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field."]
+        #[doc = "0x808 - Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for WDEV_RX_11G_OFDM_DELAY, while complete phy_sifs_reg_init writes 0xea to that field."]
         #[inline(always)]
         pub const fn delay_secondary(&self) -> &DelaySecondary {
             &self.delay_secondary
         }
-        #[doc = "0x80c - Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."]
+        #[doc = "0x80c - Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, WDEV_RXOFDM_DELAY and WDEV_TXOFDM_DELAY; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."]
         #[inline(always)]
         pub const fn delay_primary(&self) -> &DelayPrimary {
             &self.delay_primary
@@ -29213,10 +29213,10 @@ pub mod wifi_mac_txrx_callbacks {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "DELAY_SECONDARY (rw) register accessor: Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_secondary`] module"]
+    #[doc = "DELAY_SECONDARY (rw) register accessor: Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for WDEV_RX_11G_OFDM_DELAY, while complete phy_sifs_reg_init writes 0xea to that field.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_secondary`] module"]
     #[doc(alias = "DELAY_SECONDARY")]
     pub type DelaySecondary = crate::Reg<delay_secondary::DelaySecondarySpec>;
-    #[doc = "Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field."]
+    #[doc = "Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for WDEV_RX_11G_OFDM_DELAY, while complete phy_sifs_reg_init writes 0xea to that field."]
     pub mod delay_secondary {
         #[doc = "Register `DELAY_SECONDARY` reader"]
         pub type R = crate::R<DelaySecondarySpec>;
@@ -29226,20 +29226,20 @@ pub mod wifi_mac_txrx_callbacks {
         pub type TxCckDelayR = crate::FieldReader<u16>;
         #[doc = "Field `TX_CCK_DELAY` writer - Project-assigned name."]
         pub type TxCckDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `HIGH_DELAY_OPAQUE` reader - Opaque: meaning not established."]
-        pub type HighDelayOpaqueR = crate::FieldReader<u16>;
-        #[doc = "Field `HIGH_DELAY_OPAQUE` writer - Opaque: meaning not established."]
-        pub type HighDelayOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        #[doc = "Field `RX_11G_OFDM_DELAY` reader - Project-assigned name."]
+        pub type Rx11gOfdmDelayR = crate::FieldReader<u16>;
+        #[doc = "Field `RX_11G_OFDM_DELAY` writer - Project-assigned name."]
+        pub type Rx11gOfdmDelayW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 10:20 - Project-assigned name."]
             #[inline(always)]
             pub fn tx_cck_delay(&self) -> TxCckDelayR {
                 TxCckDelayR::new(((self.bits >> 10) & 0x07ff) as u16)
             }
-            #[doc = "Bits 21:30 - Opaque: meaning not established."]
+            #[doc = "Bits 21:30 - Project-assigned name."]
             #[inline(always)]
-            pub fn high_delay_opaque(&self) -> HighDelayOpaqueR {
-                HighDelayOpaqueR::new(((self.bits >> 21) & 0x03ff) as u16)
+            pub fn rx_11g_ofdm_delay(&self) -> Rx11gOfdmDelayR {
+                Rx11gOfdmDelayR::new(((self.bits >> 21) & 0x03ff) as u16)
             }
         }
         impl W {
@@ -29248,13 +29248,13 @@ pub mod wifi_mac_txrx_callbacks {
             pub fn tx_cck_delay(&mut self) -> TxCckDelayW<'_, DelaySecondarySpec> {
                 TxCckDelayW::new(self, 10)
             }
-            #[doc = "Bits 21:30 - Opaque: meaning not established."]
+            #[doc = "Bits 21:30 - Project-assigned name."]
             #[inline(always)]
-            pub fn high_delay_opaque(&mut self) -> HighDelayOpaqueW<'_, DelaySecondarySpec> {
-                HighDelayOpaqueW::new(self, 21)
+            pub fn rx_11g_ofdm_delay(&mut self) -> Rx11gOfdmDelayW<'_, DelaySecondarySpec> {
+                Rx11gOfdmDelayW::new(self, 21)
             }
         }
-        #[doc = "Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for WDEV_RX_11G_OFDM_DELAY, while complete phy_sifs_reg_init writes 0xea to that field.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_secondary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_secondary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct DelaySecondarySpec;
         impl crate::RegisterSpec for DelaySecondarySpec {
             type Ux = u32;
@@ -29266,62 +29266,62 @@ pub mod wifi_mac_txrx_callbacks {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "DELAY_PRIMARY (rw) register accessor: Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_primary`] module"]
+    #[doc = "DELAY_PRIMARY (rw) register accessor: Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, WDEV_RXOFDM_DELAY and WDEV_TXOFDM_DELAY; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@delay_primary`] module"]
     #[doc(alias = "DELAY_PRIMARY")]
     pub type DelayPrimary = crate::Reg<delay_primary::DelayPrimarySpec>;
-    #[doc = "Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."]
+    #[doc = "Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, WDEV_RXOFDM_DELAY and WDEV_TXOFDM_DELAY; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."]
     pub mod delay_primary {
         #[doc = "Register `DELAY_PRIMARY` reader"]
         pub type R = crate::R<DelayPrimarySpec>;
         #[doc = "Register `DELAY_PRIMARY` writer"]
         pub type W = crate::W<DelayPrimarySpec>;
-        #[doc = "Field `LOW_DELAY_OPAQUE` reader - Opaque: meaning not established."]
-        pub type LowDelayOpaqueR = crate::FieldReader<u16>;
-        #[doc = "Field `LOW_DELAY_OPAQUE` writer - Opaque: meaning not established."]
-        pub type LowDelayOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        #[doc = "Field `RX_OFDM_DELAY` reader - Project-assigned name."]
+        pub type RxOfdmDelayR = crate::FieldReader<u16>;
+        #[doc = "Field `RX_OFDM_DELAY` writer - Project-assigned name."]
+        pub type RxOfdmDelayW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `RX_CCK_DELAY` reader - Project-assigned name."]
         pub type RxCckDelayR = crate::FieldReader<u16>;
         #[doc = "Field `RX_CCK_DELAY` writer - Project-assigned name."]
         pub type RxCckDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
-        #[doc = "Field `HIGH_DELAY_OPAQUE` reader - Opaque: meaning not established."]
-        pub type HighDelayOpaqueR = crate::FieldReader<u16>;
-        #[doc = "Field `HIGH_DELAY_OPAQUE` writer - Opaque: meaning not established."]
-        pub type HighDelayOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
+        #[doc = "Field `TX_OFDM_DELAY` reader - Project-assigned name."]
+        pub type TxOfdmDelayR = crate::FieldReader<u16>;
+        #[doc = "Field `TX_OFDM_DELAY` writer - Project-assigned name."]
+        pub type TxOfdmDelayW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:9 - Opaque: meaning not established."]
+            #[doc = "Bits 0:9 - Project-assigned name."]
             #[inline(always)]
-            pub fn low_delay_opaque(&self) -> LowDelayOpaqueR {
-                LowDelayOpaqueR::new((self.bits & 0x03ff) as u16)
+            pub fn rx_ofdm_delay(&self) -> RxOfdmDelayR {
+                RxOfdmDelayR::new((self.bits & 0x03ff) as u16)
             }
             #[doc = "Bits 10:20 - Project-assigned name."]
             #[inline(always)]
             pub fn rx_cck_delay(&self) -> RxCckDelayR {
                 RxCckDelayR::new(((self.bits >> 10) & 0x07ff) as u16)
             }
-            #[doc = "Bits 21:30 - Opaque: meaning not established."]
+            #[doc = "Bits 21:30 - Project-assigned name."]
             #[inline(always)]
-            pub fn high_delay_opaque(&self) -> HighDelayOpaqueR {
-                HighDelayOpaqueR::new(((self.bits >> 21) & 0x03ff) as u16)
+            pub fn tx_ofdm_delay(&self) -> TxOfdmDelayR {
+                TxOfdmDelayR::new(((self.bits >> 21) & 0x03ff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 0:9 - Opaque: meaning not established."]
+            #[doc = "Bits 0:9 - Project-assigned name."]
             #[inline(always)]
-            pub fn low_delay_opaque(&mut self) -> LowDelayOpaqueW<'_, DelayPrimarySpec> {
-                LowDelayOpaqueW::new(self, 0)
+            pub fn rx_ofdm_delay(&mut self) -> RxOfdmDelayW<'_, DelayPrimarySpec> {
+                RxOfdmDelayW::new(self, 0)
             }
             #[doc = "Bits 10:20 - Project-assigned name."]
             #[inline(always)]
             pub fn rx_cck_delay(&mut self) -> RxCckDelayW<'_, DelayPrimarySpec> {
                 RxCckDelayW::new(self, 10)
             }
-            #[doc = "Bits 21:30 - Opaque: meaning not established."]
+            #[doc = "Bits 21:30 - Project-assigned name."]
             #[inline(always)]
-            pub fn high_delay_opaque(&mut self) -> HighDelayOpaqueW<'_, DelayPrimarySpec> {
-                HighDelayOpaqueW::new(self, 21)
+            pub fn tx_ofdm_delay(&mut self) -> TxOfdmDelayW<'_, DelayPrimarySpec> {
+                TxOfdmDelayW::new(self, 21)
             }
         }
-        #[doc = "Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, WDEV_RXOFDM_DELAY and WDEV_TXOFDM_DELAY; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`delay_primary::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`delay_primary::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct DelayPrimarySpec;
         impl crate::RegisterSpec for DelayPrimarySpec {
             type Ux = u32;

@@ -19464,8 +19464,8 @@ bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_DELAY_OPAQUE"
-method = "high_delay_opaque"
+svd-name = "RX_11G_OFDM_DELAY"
+method = "rx_11g_ofdm_delay"
 bit-offset = 21
 bit-width = 10
 access = "read-write"
@@ -19482,8 +19482,8 @@ scope = []
 register-method = "delay_primary"
 
 [[registers.fields]]
-svd-name = "LOW_DELAY_OPAQUE"
-method = "low_delay_opaque"
+svd-name = "RX_OFDM_DELAY"
+method = "rx_ofdm_delay"
 bit-offset = 0
 bit-width = 10
 access = "read-write"
@@ -19496,8 +19496,8 @@ bit-width = 11
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_DELAY_OPAQUE"
-method = "high_delay_opaque"
+svd-name = "TX_OFDM_DELAY"
+method = "tx_ofdm_delay"
 bit-offset = 21
 bit-width = 10
 access = "read-write"

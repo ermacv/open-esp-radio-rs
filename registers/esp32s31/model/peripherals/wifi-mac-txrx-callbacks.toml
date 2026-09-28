@@ -275,7 +275,7 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "DELAY_SECONDARY"
-description = "WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field."
+description = "WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for WDEV_RX_11G_OFDM_DELAY, while complete phy_sifs_reg_init writes 0xea to that field."
 addressOffset = 0x808
 size = 32
 access = "read-write"
@@ -290,7 +290,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_DELAY_OPAQUE"
+name = "RX_11G_OFDM_DELAY"
 bitOffset = 21
 bitWidth = 10
 
@@ -302,13 +302,13 @@ maximum = 0x3FF
 
 [peripherals.registers.register]
 name = "DELAY_PRIMARY"
-description = "WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."
+description = "WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, WDEV_RXOFDM_DELAY and WDEV_TXOFDM_DELAY; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields."
 addressOffset = 0x80C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_DELAY_OPAQUE"
+name = "RX_OFDM_DELAY"
 bitOffset = 0
 bitWidth = 10
 
@@ -326,7 +326,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_DELAY_OPAQUE"
+name = "TX_OFDM_DELAY"
 bitOffset = 21
 bitWidth = 10
 
@@ -561,13 +561,25 @@ entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.TXRX_SUFFIX_FIRST_ENABLE_OP
 naming = "opaque"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY.HIGH_DELAY_OPAQUE"
-naming = "opaque"
+entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY.RX_11G_OFDM_DELAY"
+naming = "descriptive"
+sources = ["BLOB_LIBPP_HAL_HE_SET_MAC_DELAY"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.LOW_DELAY_OPAQUE"
-naming = "opaque"
+entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.RX_OFDM_DELAY"
+naming = "descriptive"
+sources = ["BLOB_LIBPP_HAL_HE_SET_MAC_DELAY"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.HIGH_DELAY_OPAQUE"
-naming = "opaque"
+entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.TX_OFDM_DELAY"
+naming = "descriptive"
+sources = ["BLOB_LIBPP_HAL_HE_SET_MAC_DELAY"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

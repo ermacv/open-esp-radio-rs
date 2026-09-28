@@ -12987,7 +12987,7 @@
         </register>
         <register>
           <name>DELAY_SECONDARY</name>
-          <description>Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field.</description>
+          <description>Project-assigned name. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for WDEV_RX_11G_OFDM_DELAY, while complete phy_sifs_reg_init writes 0xea to that field.</description>
           <addressOffset>0x808</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -13005,8 +13005,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>HIGH_DELAY_OPAQUE</name>
-              <description>Opaque: meaning not established.</description>
+              <name>RX_11G_OFDM_DELAY</name>
+              <description>Project-assigned name.</description>
               <bitOffset>21</bitOffset>
               <bitWidth>10</bitWidth>
               <writeConstraint>
@@ -13020,14 +13020,14 @@
         </register>
         <register>
           <name>DELAY_PRIMARY</name>
-          <description>Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.</description>
+          <description>Project-assigned name. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, WDEV_RXOFDM_DELAY and WDEV_TXOFDM_DELAY; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.</description>
           <addressOffset>0x80C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>LOW_DELAY_OPAQUE</name>
-              <description>Opaque: meaning not established.</description>
+              <name>RX_OFDM_DELAY</name>
+              <description>Project-assigned name.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>10</bitWidth>
               <writeConstraint>
@@ -13050,8 +13050,8 @@
               </writeConstraint>
             </field>
             <field>
-              <name>HIGH_DELAY_OPAQUE</name>
-              <description>Opaque: meaning not established.</description>
+              <name>TX_OFDM_DELAY</name>
+              <description>Project-assigned name.</description>
               <bitOffset>21</bitOffset>
               <bitWidth>10</bitWidth>
               <writeConstraint>

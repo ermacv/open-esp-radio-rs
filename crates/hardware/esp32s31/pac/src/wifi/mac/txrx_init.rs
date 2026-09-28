@@ -11,13 +11,13 @@ impl WifiRadioRegisters {
         let callbacks = &self.peripherals.wifi_mac.wifi_mac_txrx_callbacks;
         callbacks
             .delay_secondary()
-            .modify(|_, w| w.high_delay_opaque().set(0xea));
+            .modify(|_, w| w.rx_11g_ofdm_delay().set(0xea));
         callbacks
             .delay_primary()
             .modify(|_, w| w.rx_cck_delay().set(0x3b8));
         callbacks
             .delay_primary()
-            .modify(|_, w| w.low_delay_opaque().set(0xf0));
+            .modify(|_, w| w.rx_ofdm_delay().set(0xf0));
     }
 
     /// Apply all eighteen direct RMW edges before the first HE callback.
@@ -101,13 +101,13 @@ impl WifiRadioRegisters {
             .modify(|_, w| w.rx_cck_delay().set(0x3b9));
         callbacks
             .delay_primary()
-            .modify(|_, w| w.low_delay_opaque().set(0xf5 + u16::from(delay_slot)));
+            .modify(|_, w| w.rx_ofdm_delay().set(0xf5 + u16::from(delay_slot)));
         callbacks
             .delay_primary()
-            .modify(|_, w| w.high_delay_opaque().set(0x5e));
+            .modify(|_, w| w.tx_ofdm_delay().set(0x5e));
         callbacks
             .delay_secondary()
-            .modify(|_, w| w.high_delay_opaque().set(0xfa + u16::from(delay_slot)));
+            .modify(|_, w| w.rx_11g_ofdm_delay().set(0xfa + u16::from(delay_slot)));
         callbacks
             .delay_secondary()
             .modify(|_, w| w.tx_cck_delay().set(0x276));

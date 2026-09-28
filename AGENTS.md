@@ -24,6 +24,8 @@ command or wait on a PID (`wait`, `tail --pid`); `cargo hil run` already
 queues behind other holders in the arbiter and waits while its boards or the
 stand are out of service. To wait for the stand itself, run `cargo hil wait
 --service [BOARD...]` in the background; never wait for a chat message.
+The agent shell is zsh: an unquoted `$VAR` holding several words stays one
+argument, so pass lists of scenarios or paths literally or as an array.
 
 ## Project Structure & Module Organization
 

@@ -225,3 +225,60 @@ mod recording {
         }
     }
 }
+
+#[derive(Debug, PartialEq)]
+struct Wake(u32);
+
+impl crate::Event for Wake {
+    const KIND: Kind = Kind::new(Domain::Phy, 4);
+    const CHANNEL: crate::Channel = crate::Channel::new(Domain::Phy, 0);
+
+    fn encode(&self) -> [u32; 2] {
+        [self.0, 0]
+    }
+
+    fn decode(words: [u32; 2]) -> Option<Self> {
+        Some(Self(words[0]))
+    }
+}
+
+impl core::fmt::Display for Wake {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "wake step {}", self.0)
+    }
+}
+
+crate::event_set!(PhySet: Wake);
+
+#[test]
+fn records_are_described_by_their_set_or_generically() {
+    use crate::{Described, EventSet as _};
+    use std::string::ToString;
+    let wake = Record {
+        tag: 1,
+        kind: Kind::new(Domain::Phy, 4).raw(),
+        t_us: 0,
+        words: [7, 0],
+    };
+    let unknown = Record {
+        kind: Kind::new(Domain::Ieee80211, 9).raw(),
+        ..wake
+    };
+    let sets: &[crate::Describer] = &[PhySet::describe];
+    assert_eq!(
+        Described {
+            record: &wake,
+            sets
+        }
+        .to_string(),
+        "wake step 7"
+    );
+    assert_eq!(
+        Described {
+            record: &unknown,
+            sets
+        }
+        .to_string(),
+        "ieee80211.9 [0x00000007, 0x00000000]"
+    );
+}

@@ -33,9 +33,11 @@
 //! and a branch at the call site; everything on the emit path is inlined
 //! into the caller, so it runs from wherever the caller runs.
 
+mod decode;
 mod event;
 mod store;
 
+pub use decode::{Described, Describer, EventSet};
 pub use event::{Channel, Domain, Event, Kind};
 pub use store::{
     Boot, Geometry, Previous, Record, Retained, SnapshotRecord, SnapshotWriter, Trace, Trigger,

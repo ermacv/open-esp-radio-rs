@@ -1276,7 +1276,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rx_gain.rs",
-      "sha256": "5c7eca3fe9742a6cc37fac36687d43974c619b5a25d79170beb73bfacd39aaa9"
+      "sha256": "84d71f0b1249408cda14edcd7ab8c9a6afa41f1d1478d011787d384bedc9f8f5"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/tracking.rs",

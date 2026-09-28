@@ -22,7 +22,7 @@ impl WifiRadioRegisters {
             writer
                 .tsf_enable()
                 .clear_bit()
-                .high_control_unknown()
+                .high_control_opaque()
                 .clear_bit()
         });
 
@@ -39,7 +39,7 @@ impl WifiRadioRegisters {
             writer
                 .tsf_enable()
                 .set_bit()
-                .high_control_unknown()
+                .high_control_opaque()
                 .set_bit()
         });
     }
@@ -59,7 +59,7 @@ impl WifiRadioRegisters {
                 writer
                     .tsf_enable()
                     .clear_bit()
-                    .high_control_unknown()
+                    .high_control_opaque()
                     .clear_bit()
             });
     }

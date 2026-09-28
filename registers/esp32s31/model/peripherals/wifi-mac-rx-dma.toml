@@ -11,14 +11,14 @@ baseAddress = 0x20104000
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_COLD_CONTROL_UNKNOWN"
+name = "RX_COLD_CONTROL_OPAQUE"
 description = "Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown."
 addressOffset = 0x7C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "COLD_LOW_UNKNOWN"
+name = "COLD_LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 8
 
@@ -49,7 +49,7 @@ bitOffset = 31
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HARDWARE_BEACON_RELOAD_UNKNOWN"
+name = "HARDWARE_BEACON_RELOAD_OPAQUE"
 description = "Complete hal_mac_set_rxbuf_reload_use_hw_beacon_enable sets bit 27 through one fresh-read RMW."
 bitOffset = 27
 bitWidth = 1
@@ -87,7 +87,7 @@ bitOffset = 0
 bitWidth = 20
 
 [[peripherals.registers.register.fields]]
-name = "UPPER_UNKNOWN"
+name = "UPPER_OPAQUE"
 description = "Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."
 bitOffset = 20
 bitWidth = 12
@@ -174,14 +174,14 @@ bitWidth = 1
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_BUFFER_LIMIT_UNKNOWN"
+name = "RX_BUFFER_LIMIT_OPAQUE"
 description = "Complete mac_rxbuf_init sets the low twenty bits before descriptor publication."
 addressOffset = 0xC68
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 20
 
@@ -192,14 +192,14 @@ maximum = 0xFFFFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "RX_BUFFER_BASE_UNKNOWN"
+name = "RX_BUFFER_BASE_OPAQUE"
 description = "Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window."
 addressOffset = 0xC6C
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 20
 
@@ -235,7 +235,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -250,7 +250,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -331,7 +331,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -359,7 +359,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -374,7 +374,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -455,7 +455,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -483,7 +483,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -498,7 +498,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -579,7 +579,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -607,7 +607,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -622,7 +622,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -703,7 +703,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -731,7 +731,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -746,7 +746,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -827,7 +827,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -855,7 +855,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -870,7 +870,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -951,7 +951,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -979,7 +979,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -994,7 +994,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -1075,7 +1075,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -1103,7 +1103,7 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 13
 
@@ -1118,7 +1118,7 @@ bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -1199,7 +1199,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 22
 bitWidth = 10
 
@@ -1236,7 +1236,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_UNKNOWN_1_11"
+name = "CONTROL_1_11_OPAQUE"
 description = "Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."
 bitOffset = 1
 bitWidth = 11
@@ -1252,7 +1252,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_UNKNOWN_16_29"
+name = "CONTROL_16_29_OPAQUE"
 description = "Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."
 bitOffset = 16
 bitWidth = 14
@@ -1310,7 +1310,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "POLICY_UNKNOWN_25_31"
+name = "POLICY_25_31_OPAQUE"
 description = "Bits cleared by every reviewed zero-based ordinary-entry policy publication."
 bitOffset = 25
 bitWidth = 7
@@ -1496,7 +1496,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_UNKNOWN_1_4"
+name = "CONTROL_1_4_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
 bitOffset = 1
 bitWidth = 4
@@ -1511,7 +1511,7 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_UNKNOWN_10_11"
+name = "CONTROL_10_11_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
 bitOffset = 10
 bitWidth = 2
@@ -1526,7 +1526,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_UNKNOWN_16_29"
+name = "CONTROL_16_29_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
 bitOffset = 16
 bitWidth = 14
@@ -1578,7 +1578,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "POLICY_UNKNOWN_25_31"
+name = "POLICY_25_31_OPAQUE"
 description = "Bits cleared by every reviewed zero-based extra-SoftAP policy publication."
 bitOffset = 25
 bitWidth = 7
@@ -1664,7 +1664,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_COLD_CONTROL_UNKNOWN"
+entity = "WIFI_MAC_RX_DMA.RX_COLD_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -1672,6 +1673,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_CONTROL"
+naming = "descriptive"
 sources = [
     "ROM_REV0_WDEV_APPEND_RX_BLOCKS",
     "ROM_REV0_HAL_MAC_RX_GATE",
@@ -1684,6 +1686,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_CONTROL.APPEND_DESCRIPTOR_RELOAD"
+naming = "descriptive"
 sources = [
     "ROM_REV0_WDEV_APPEND_RX_BLOCKS",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
@@ -1694,6 +1697,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_CONTROL.WALKER_ENABLE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_HAL_MAC_RX_GATE",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
@@ -1703,7 +1707,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_CONTROL.HARDWARE_BEACON_RELOAD_UNKNOWN"
+entity = "WIFI_MAC_RX_DMA.RX_CONTROL.HARDWARE_BEACON_RELOAD_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
 provenance = "observed"
 accuracy = "exact"
@@ -1711,6 +1716,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_DESCRIPTOR_BASE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_WDEV_APPEND_RX_BLOCKS",
     "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX",
@@ -1722,6 +1728,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR"
+naming = "descriptive"
 sources = [
     "ROM_REV0_WDEV_APPEND_RX_BLOCKS",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
@@ -1732,6 +1739,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_LAST_DESCRIPTOR"
+naming = "descriptive"
 sources = [
     "ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
@@ -1742,6 +1750,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_TEST_HAL_CSI"]
 provenance = "observed"
 accuracy = "exact"
@@ -1749,20 +1758,23 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.BEAMFORMED"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_TEST_HAL_CSI"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BUFFER_LIMIT_UNKNOWN"
+entity = "WIFI_MAC_RX_DMA.RX_BUFFER_LIMIT_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_RX_DMA.RX_BUFFER_BASE_UNKNOWN"
+entity = "WIFI_MAC_RX_DMA.RX_BUFFER_BASE_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -1770,6 +1782,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_DESCRIPTOR_HIGH_WINDOW"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX",
     "ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR",
@@ -1781,6 +1794,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -1788,6 +1802,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q7"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1795,6 +1810,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q7"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1802,6 +1818,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1809,6 +1826,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -1819,6 +1837,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1826,6 +1845,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -1833,6 +1853,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q6"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1840,6 +1861,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q6"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1847,6 +1869,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1854,6 +1877,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -1864,6 +1888,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1871,6 +1896,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -1878,6 +1904,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q5"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1885,6 +1912,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q5"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1892,6 +1920,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1899,6 +1928,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -1909,6 +1939,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1916,6 +1947,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -1923,6 +1955,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q4"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1930,6 +1963,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q4"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1937,6 +1971,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1944,6 +1979,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -1954,6 +1990,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -1961,6 +1998,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -1968,6 +2006,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q3"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -1978,6 +2017,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q3"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -1988,6 +2028,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -1998,6 +2039,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -2008,6 +2050,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -2015,6 +2058,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -2022,6 +2066,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q2"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -2032,6 +2077,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q2"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -2042,6 +2088,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -2052,6 +2099,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -2062,6 +2110,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -2069,6 +2118,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -2076,6 +2126,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q1"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -2086,6 +2137,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q1"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -2096,6 +2148,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "PROMOTED_TX_AMPDU",
@@ -2106,6 +2159,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -2116,6 +2170,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
 provenance = "observed"
 accuracy = "exact"
@@ -2123,6 +2178,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
 provenance = "observed"
 accuracy = "exact"
@@ -2130,6 +2186,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q0"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
@@ -2141,6 +2198,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q0"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
@@ -2152,6 +2210,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
@@ -2163,6 +2222,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
@@ -2174,6 +2234,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q0"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
@@ -2184,6 +2245,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2194,6 +2256,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.TID"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "BLOB_LIBNET80211_RX_BLOCK_ACK",
@@ -2204,6 +2267,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "BLOB_LIBNET80211_RX_BLOCK_ACK",
@@ -2215,6 +2279,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.WINDOW"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "BLOB_LIBNET80211_RX_BLOCK_ACK",
@@ -2225,6 +2290,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_HEAD"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2235,6 +2301,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2245,6 +2312,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_START_SEQUENCE_LOAD"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2255,6 +2323,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2265,6 +2334,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2275,6 +2345,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2285,6 +2356,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2295,6 +2367,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_AGREEMENT_UPDATE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
@@ -2305,6 +2378,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 provenance = "observed"
 accuracy = "exact"
@@ -2312,6 +2386,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 provenance = "observed"
 accuracy = "exact"
@@ -2319,6 +2394,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 provenance = "observed"
 accuracy = "exact"
@@ -2326,6 +2402,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 provenance = "observed"
 accuracy = "exact"
@@ -2333,6 +2410,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 provenance = "observed"
 accuracy = "exact"
@@ -2340,7 +2418,664 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_COLD_CONTROL_OPAQUE.COLD_LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_DESCRIPTOR_BASE.ADDRESS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR.ADDRESS_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR.UPPER_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_LAST_DESCRIPTOR.ADDRESS_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.FORCE_LLTF"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.MU"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.SU"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.VHT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.HT40"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.HT20"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.LEGACY"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.STBC_MODE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.STANDALONE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.DCM"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BUFFER_LIMIT_OPAQUE.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BUFFER_BASE_OPAQUE.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_DESCRIPTOR_HIGH_WINDOW.ADDRESS_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q7.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q7.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q6.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q6.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q5.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q5.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q4.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q4.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q3.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q3.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q2.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q2.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q1.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q1.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.LAST_TX_WAS_TRIGGER_BASED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q0.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q0.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0.STARTING_SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0.TID_OR_CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.ADDRESS_BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.ACK_TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.BLOCK_ACK_RECEIVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q0.ADDRESS_BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.CONTROL_1_11_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.CONTROL_16_29_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.WRITE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.VALID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.PEER_ADDRESS_TAIL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.INTERFACE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.POLICY_25_31_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_HEAD.PEER_ADDRESS_HEAD"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE.SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_START_SEQUENCE_LOAD.SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_AGREEMENT_UPDATE.ORDINARY_ENTRY_UPDATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_AGREEMENT_UPDATE.EXTRA_SOFTAP_COMMIT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_AGREEMENT_UPDATE.EXTRA_SOFTAP_READBACK_LATCH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.CONTROL_1_4_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.INDEX"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.CONTROL_10_11_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.CONTROL_16_29_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.WRITE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL.VALID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY.PEER_ADDRESS_TAIL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY.INTERFACE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY.WINDOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY.POLICY_25_31_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD.PEER_ADDRESS_HEAD"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE.SEQUENCE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW.BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH.BITMAP"
+naming = "descriptive"

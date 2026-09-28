@@ -28,7 +28,7 @@ pub struct MacRxDmaSnapshot {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacRxNextDescriptorObservation {
     address_low: u32,
-    upper_unknown: u16,
+    upper_opaque: u16,
 }
 
 impl MacRxNextDescriptorObservation {
@@ -37,11 +37,11 @@ impl MacRxNextDescriptorObservation {
     }
 
     pub const fn is_zero(self) -> bool {
-        self.address_low == 0 && self.upper_unknown == 0
+        self.address_low == 0 && self.upper_opaque == 0
     }
 
     pub const fn has_unknown_upper_state(self) -> bool {
-        self.upper_unknown != 0
+        self.upper_opaque != 0
     }
 }
 
@@ -68,7 +68,7 @@ pub(crate) fn read_next_descriptor(
     let observation = registers.rx_next_descriptor().read();
     MacRxNextDescriptorObservation {
         address_low: observation.address_low().bits(),
-        upper_unknown: observation.upper_unknown().bits(),
+        upper_opaque: observation.upper_opaque().bits(),
     }
 }
 
@@ -119,14 +119,14 @@ impl WifiRadioRegisters {
     /// is deliberately excluded because the RX ring owner publishes it later.
     pub fn initialize_mac_rx_buffer_prefix(&mut self) {
         let dma = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
-        dma.rx_buffer_limit_unknown()
-            .modify(|_, w| w.low_unknown().set(0x000f_ffff));
-        dma.rx_buffer_base_unknown()
-            .modify(|_, w| w.low_unknown().set(4));
+        dma.rx_buffer_limit_opaque()
+            .modify(|_, w| w.low_opaque().set(0x000f_ffff));
+        dma.rx_buffer_base_opaque()
+            .modify(|_, w| w.low_opaque().set(4));
         dma.rx_descriptor_high_window()
             .modify(|_, w| w.address_high().set(0x02f0));
-        dma.rx_cold_control_unknown()
-            .modify(|_, w| w.cold_low_unknown().set(0));
+        dma.rx_cold_control_opaque()
+            .modify(|_, w| w.cold_low_opaque().set(0));
     }
 
     pub fn mac_rx_last_descriptor_low(&self) -> u32 {

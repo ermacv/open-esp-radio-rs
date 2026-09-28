@@ -13,6 +13,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_LOW%s"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_SET_ADDR",
 ]
@@ -22,6 +23,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_SET_ADDR",
     "C5_BLOB_LIBPP_RX_POLICY",
@@ -32,6 +34,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s.RX_POLICY_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_MAC_SET_ADDR",
     "C5_BLOB_LIBPP_RX_POLICY",
@@ -40,3 +43,15 @@ sources = [
 provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_LOW%s.BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s.BYTES_4_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s.POLICY_HIGH_OPAQUE"
+naming = "opaque"

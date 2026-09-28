@@ -33,7 +33,16 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_END_STATE.STATE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_RX_END_STATE.STATE.LOW_STATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_END_STATE.STATE.HIGH_STATE"
+naming = "descriptive"

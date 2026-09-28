@@ -39,19 +39,19 @@ bitOffset = 12
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "ADVANCED_GRANT_0_UNKNOWN"
+name = "ADVANCED_GRANT_0_OPAQUE"
 description = "Advanced follower field: 1 with one wire, 0xc otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."
 bitOffset = 16
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "ADVANCED_GRANT_1_UNKNOWN"
+name = "ADVANCED_GRANT_1_OPAQUE"
 description = "Advanced follower field: 1 with one wire, 8 otherwise; hal_clr_extern_pti sets 0xf in the advanced mode."
 bitOffset = 20
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "ADVANCED_GRANT_2_UNKNOWN"
+name = "ADVANCED_GRANT_2_OPAQUE"
 description = "Advanced follower field: 1; hal_clr_extern_pti sets 0xf in the advanced mode."
 bitOffset = 24
 bitWidth = 4
@@ -63,7 +63,7 @@ bitOffset = 28
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "MODE_FLAGS_UNKNOWN"
+name = "MODE_FLAGS_OPAQUE"
 description = "Set to 0b11 by hal_set_extern_pti_mode in mode 1 and in the follower mode; the leader mode leaves them unchanged."
 bitOffset = 30
 bitWidth = 2
@@ -102,7 +102,7 @@ bitOffset = 10
 bitWidth = 10
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN"
+name = "BITS_20_31_OPAQUE"
 description = "Bits no external-coexistence leaf writes."
 bitOffset = 20
 bitWidth = 12
@@ -117,7 +117,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 description = "Bits no external-coexistence leaf writes."
 bitOffset = 0
 bitWidth = 14
@@ -128,7 +128,7 @@ bitOffset = 14
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 description = "Bits no external-coexistence leaf writes."
 bitOffset = 15
 bitWidth = 17
@@ -148,7 +148,7 @@ bitOffset = 0
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN"
+name = "BITS_4_31_OPAQUE"
 description = "Bits no external-coexistence leaf writes."
 bitOffset = 4
 bitWidth = 28
@@ -168,7 +168,7 @@ bitOffset = 0
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN"
+name = "BITS_4_31_OPAQUE"
 description = "Bits no external-coexistence leaf writes."
 bitOffset = 4
 bitWidth = 28
@@ -179,3 +179,107 @@ sources = ["BLOB_LIBCOEX_EXTERNAL"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.PRIORITY_0"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.PRIORITY_1"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.PRIORITY_2"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.ADVANCED_PRIORITY"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.ADVANCED_GRANT_0_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.ADVANCED_GRANT_1_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.ADVANCED_GRANT_2_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.WORK_MODE"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.PTI.MODE_FLAGS_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.CONTROL.VALIDATE_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.CONTROL.GRANT_DELAY"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.CONTROL.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.CONTROL.SYNC"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.CONTROL.BITS_20_31_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_1"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_1.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_1.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_1.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_MASK_0"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_MASK_0.MASK"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_MASK_0.BITS_4_31_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_MASK_1"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_MASK_1.MASK"
+naming = "descriptive"
+
+[[review]]
+entity = "COEX_EXTERNAL.ENABLE_MASK_1.BITS_4_31_OPAQUE"
+naming = "opaque"

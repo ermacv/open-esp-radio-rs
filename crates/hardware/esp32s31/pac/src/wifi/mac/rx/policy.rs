@@ -188,7 +188,7 @@ impl WifiRadioRegisters {
                 .wifi_mac_sta_beacon_filter
                 .control()
                 .read()
-                .enables_unknown()
+                .enables_opaque()
                 .bits(),
         }
     }

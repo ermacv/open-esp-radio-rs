@@ -454,14 +454,14 @@ impl WifiRadioRegisters {
             && peer_tail_and_policy.peer_address_tail().bits() == peer_tail
             && peer_tail_and_policy.interface().bits() == interface.bits() as u8
             && peer_tail_and_policy.window().bits() == window.get() as u8
-            && peer_tail_and_policy.policy_unknown_25_31().bits() == 0
+            && peer_tail_and_policy.policy_25_31_opaque().bits() == 0
             && observed_starting_sequence == starting_sequence.get() as u16
             && control.enable().bit_is_set()
-            && control.control_unknown_1_4().bits() == 0
+            && control.control_1_4_opaque().bits() == 0
             && control.index().bits() == index
-            && control.control_unknown_10_11().bits() == 0
+            && control.control_10_11_opaque().bits() == 0
             && control.tid().bits() == tid.get() as u8
-            && control.control_unknown_16_29().bits() == 0
+            && control.control_16_29_opaque().bits() == 0
             && control.write().bit_is_set()
             && control.valid().bit_is_set()
     }
@@ -574,9 +574,9 @@ impl WifiRadioRegisters {
             tid: control.tid().bits(),
             write_enabled: control.write().bit(),
             valid: control.valid().bit(),
-            control_unknown_clear: control.control_unknown_1_4().bits() == 0
-                && control.control_unknown_10_11().bits() == 0
-                && control.control_unknown_16_29().bits() == 0,
+            control_unknown_clear: control.control_1_4_opaque().bits() == 0
+                && control.control_10_11_opaque().bits() == 0
+                && control.control_16_29_opaque().bits() == 0,
             peer: [head[0], head[1], head[2], head[3], tail[0], tail[1]],
             interface: mac_interface_from_field(peer_tail_and_policy.interface().bits()),
             window: peer_tail_and_policy.window().bits(),
@@ -669,8 +669,8 @@ impl WifiRadioRegisters {
             tid: control.tid().bits(),
             write_enabled: control.write().bit(),
             valid: control.valid().bit(),
-            control_unknown_clear: control.control_unknown_1_11().bits() == 0
-                && control.control_unknown_16_29().bits() == 0,
+            control_unknown_clear: control.control_1_11_opaque().bits() == 0
+                && control.control_16_29_opaque().bits() == 0,
             peer: [
                 peer_head[0],
                 peer_head[1],

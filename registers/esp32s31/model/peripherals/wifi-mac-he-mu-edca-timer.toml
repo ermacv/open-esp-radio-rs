@@ -48,7 +48,7 @@ bitOffset = 19
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 23
 bitWidth = 9
 
@@ -63,3 +63,35 @@ sources = [
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s.TIMER_8TU"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s.RESET"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s.CURRENT_COUNT_8TU"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s.REACHED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s.AIFS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_MU_EDCA_TIMER.TIMER%s.HIGH_OPAQUE"
+naming = "opaque"

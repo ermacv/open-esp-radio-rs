@@ -53,3 +53,23 @@ sources = ["BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU.DISABLE_BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU.DISABLE_BITMAP.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU.CONTROL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU.CONTROL.GLOBAL_DISABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU.CONTROL.CLASS_DISABLE"
+naming = "descriptive"

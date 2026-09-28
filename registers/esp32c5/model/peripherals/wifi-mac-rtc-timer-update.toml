@@ -21,7 +21,7 @@ bitOffset = 21
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "RTC_UPDATE_ENABLE_UNKNOWN"
+name = "RTC_UPDATE_ENABLE_OPAQUE"
 description = "Set when the leaf's enable argument is nonzero."
 bitOffset = 27
 bitWidth = 1
@@ -292,6 +292,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.CONTROL"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
     "C5_BLOB_LIBPP_HAL_TSF",
@@ -302,6 +303,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.STA_TSF_WAKEUP_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -310,7 +312,8 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.RTC_UPDATE_ENABLE_UNKNOWN"
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.CONTROL.RTC_UPDATE_ENABLE_OPAQUE"
+naming = "opaque"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
 ]
@@ -320,6 +323,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF_RUNTIME",
     "C5_BLOB_LIBPP_HAL_PWR",
@@ -330,6 +334,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.BEACON_FILTER_FORCE_SYNC_LIMIT"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -339,6 +344,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.BEACON_FILTER_FORCE_SYNC_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -348,6 +354,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.BEACON_FILTER_FORCE_DUMP_LIMIT"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -357,6 +364,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.BEACON_FILTER_FORCE_DUMP_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -366,6 +374,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.CLEAR_BEACON_SLEEP_COUNTER"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -375,6 +384,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.CLEAR_BEACON_MISS_COUNTER"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -384,6 +394,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.CLEAR_BEACON_INFO"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -393,6 +404,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.MODEM_SLEEP_LIMIT_CONTROL"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -402,6 +414,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.MODEM_SLEEP_LIMIT_CONTROL.BEACON_MISS_LIMIT"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -411,6 +424,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.MODEM_SLEEP_LIMIT_CONTROL.BEACON_MISS_LIMIT_WAKEUP_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -420,6 +434,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.MODEM_SLEEP_LIMIT_CONTROL.MODEM_STATE_SLEEP_LIMIT"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -429,6 +444,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.MODEM_SLEEP_LIMIT_CONTROL.MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -438,6 +454,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_LIGHT_SLEEP_WAKE_AHEAD"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF_RUNTIME",
 ]
@@ -447,6 +464,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.TBTT_RF_CONTROL_WAIT_CYCLES"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_WIFI_RUNTIME_MMIO_GAPS",
 ]
@@ -456,6 +474,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.RX_BEACON_TIME_LOW"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_COEX_RUNTIME",
     "C5_BLOB_LIBPP_HAL_PWR",
@@ -466,6 +485,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
     "C5_BLOB_LIBPP_HAL_PWR",
@@ -477,6 +497,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TSF_MODE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -486,6 +507,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.MODEM_STATE_WAKEUP_PROTECT_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_PWR",
 ]
@@ -495,6 +517,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TSF_ENABLE_LOW"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -504,6 +527,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TSF_WAKEUP_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -513,6 +537,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TSF_ENABLE_HIGH"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -522,6 +547,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TBTT_INTERVAL"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF_RUNTIME",
     "C5_BLOB_LIBPP_HAL_TSF_TBTT_20260927",
@@ -532,6 +558,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TBTT_INTERVAL.INTERVAL_TSF_BITS_35_10"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
@@ -541,6 +568,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SLOW_CLOCK_CALIBRATION"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
 ]
@@ -550,6 +578,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.SLOW_CLOCK_CALIBRATION.VALUE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_INIT_TAIL",
 ]
@@ -559,6 +588,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TBTT_AHEAD_TIME"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
@@ -568,9 +598,26 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_TSF_CONTROL.STA_TBTT_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.SOC_WAKEUP_CLEAR.CLEAR_REQUEST"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_LIGHT_SLEEP_WAKE_AHEAD.TIME"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.TBTT_RF_CONTROL_WAIT_CYCLES.WAIT_CYCLES"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.RX_BEACON_TIME_LOW.VALUE"
+naming = "descriptive"

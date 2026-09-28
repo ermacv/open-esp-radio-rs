@@ -132,7 +132,7 @@ bitOffset = 28
 bitWidth = 3
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 31
 bitWidth = 1
 
@@ -148,6 +148,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TIMING"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
 provenance = "observed"
 accuracy = "exact"
@@ -155,6 +156,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.PSDU"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
 provenance = "observed"
 accuracy = "exact"
@@ -162,6 +164,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
 provenance = "observed"
 accuracy = "exact"
@@ -169,7 +172,84 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TIMING.TX_TIME"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TIMING.SYMBOL_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TIMING.PRE_FEC_PADDING_PHY"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.PSDU.PSDU_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.PSDU.MINIMUM_SUBFRAME_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.PSDU.PACKET_EXTENSION_TIME"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER.TX_20_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER.QOS_NULL_APPEND_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER.TRIGGER_TYPE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER.UPLINK_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER.GI_AND_LTF"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER.TID_LIMIT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER.ASSOCIATION_ID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER.RU_ALLOCATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER.UPLINK_MCS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER.BASIC_PREFERRED_AC"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER.BASIC_SPACING_FACTOR"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER.UPLINK_PACKET_EXTENSION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER.HIGH_OPAQUE"
+naming = "opaque"

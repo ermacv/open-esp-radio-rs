@@ -211,10 +211,10 @@ impl WifiRadioRegisters {
         );
         control
             .policy_control()
-            .modify(|_, w| w.ordinary_enable_clear_unknown().set(0));
+            .modify(|_, w| w.ordinary_enable_clear_opaque().set(0));
         control
             .interface_control(interface_index)
-            .modify(|_, w| w.mode_high_unknown().set(0));
+            .modify(|_, w| w.mode_high_opaque().set(0));
         device_fence();
 
         if !key_entry_validity(control)[index as usize] {

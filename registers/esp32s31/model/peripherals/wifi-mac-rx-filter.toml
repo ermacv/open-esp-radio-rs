@@ -44,7 +44,7 @@ bitOffset = 4
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "POLICY_BIT_5_UNKNOWN"
+name = "POLICY_BIT_5_OPAQUE"
 bitOffset = 5
 bitWidth = 1
 
@@ -121,7 +121,7 @@ bitOffset = 19
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 20
 bitWidth = 12
 
@@ -183,6 +183,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_RX_POLICY",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -193,6 +194,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.DUMP_UNICAST_CHECK_BSSID"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_RX_POLICY",
     "BLOB_LIBNET80211_WIFI_RX_POLICY",
@@ -204,6 +206,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.PASS_BEACON"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_RX_POLICY"]
 provenance = "observed"
 accuracy = "exact"
@@ -211,6 +214,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.RECEIVE_UNICAST_CHECK_BSSID"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_RX_POLICY",
     "BLOB_LIBNET80211_WIFI_RX_POLICY",
@@ -222,6 +226,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.AUTO_ACK_DISABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_SNIFFER_ENABLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -232,6 +237,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.BASEBAND_ERROR_STATUS%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
@@ -239,6 +245,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.MISC_PACKET_POLICY"
+naming = "descriptive"
 sources = [
     "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER",
     "BLOB_LIBPP_HAL_SNIFFER_MISC",
@@ -250,6 +257,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.MISC_PACKET_POLICY.OPEN_MISC_PACKET_CLASSES"
+naming = "descriptive"
 sources = ["OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER"]
 provenance = "observed"
 accuracy = "bounded"
@@ -257,7 +265,80 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.MISC_PACKET_POLICY.BASEBAND_ERROR"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.DUMP_UNICAST_CHECK_DA"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.DUMP_BROADCAST_CHECK_BSSID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.ABORT_GROUP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.POLICY_BIT_5_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.DUMP_MANAGEMENT_NOT_CHECK_BSSID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.RECEIVE_BROADCAST_CHECK_BSSID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.RECEIVE_UNICAST_CHECK_DA"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.RECEIVE_MANAGEMENT_NOT_CHECK_BSSID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.TO_DS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.FROM_DS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.CHECK_BSSID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.CHECK_DA"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.CHECK_BROADCAST_BSSID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.NOT_GROUP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.SECURITY_ERROR_DISABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.SECURITY_TKIP_ERROR_FORCE_ON"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.POLICY%s.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_RX_FILTER.BASEBAND_ERROR_STATUS%s.ERROR"
+naming = "descriptive"

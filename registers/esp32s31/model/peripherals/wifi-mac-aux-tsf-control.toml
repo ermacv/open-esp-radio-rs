@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_CONTROL_UNKNOWN"
+name = "HIGH_CONTROL_OPAQUE"
 bitOffset = 30
 bitWidth = 1
 
@@ -81,6 +81,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
@@ -88,6 +89,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_AUX_TSF_CONTROL.NAN_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
@@ -95,7 +97,40 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_AUX_TSF_CONTROL.BTWT_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL.HIGH_CONTROL_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL.TSF_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.NAN_CONTROL.TSF_MODE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.NAN_CONTROL.TSF_ENABLE_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.NAN_CONTROL.TSF_ENABLE_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.BTWT_CONTROL.TSF_MODE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.BTWT_CONTROL.TSF_ENABLE_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_AUX_TSF_CONTROL.BTWT_CONTROL.TSF_ENABLE_HIGH"
+naming = "descriptive"

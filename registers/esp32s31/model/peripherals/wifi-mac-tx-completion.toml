@@ -89,6 +89,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -100,6 +101,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s.ACK_SNR_ENCODED"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30",
@@ -110,6 +112,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s.DETAIL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -120,6 +123,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s.STATUS"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -130,6 +134,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.ALTERNATE%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -140,6 +145,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.ALTERNATE%s.DETAIL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -150,6 +156,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.ALTERNATE%s.STATUS"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -160,6 +167,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.AUX_C%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -170,6 +178,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.AUX_C%s.SECONDARY_TRIGGER_BASED_PACKET_COUNT"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",

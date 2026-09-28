@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_UNKNOWN"
+name = "LOW_CONTROL_OPAQUE"
 bitOffset = 0
 bitWidth = 12
 
@@ -72,7 +72,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_CONTROL_UNKNOWN"
+name = "HIGH_CONTROL_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -88,6 +88,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL"
+naming = "descriptive"
 sources = [
     "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER",
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
@@ -99,6 +100,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.NO_RETENTION_STOP_REQUEST"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -106,6 +108,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.ACTIVE_STATE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
     "PROMOTED_CHANNEL_SWITCH",
@@ -116,6 +119,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.TX_BLOCK_STOP_REQUEST_LOW"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
 provenance = "observed"
 accuracy = "exact"
@@ -123,6 +127,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.POWER_SAVE_TX_BLOCK"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH", "BLOB_LIBPP_PM_TX_BLOCK_20260927"]
 provenance = "observed"
 accuracy = "exact"
@@ -130,7 +135,16 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.TX_BLOCK_STOP_REQUEST_HIGH"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL.LOW_CONTROL_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL.HIGH_CONTROL_OPAQUE"
+naming = "opaque"

@@ -92,7 +92,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_ADDRESS_UNKNOWN"
+name = "HIGH_ADDRESS_OPAQUE"
 bitOffset = 16
 bitWidth = 8
 
@@ -201,7 +201,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "MODE_UNKNOWN"
+name = "MODE_OPAQUE"
 bitOffset = 30
 bitWidth = 2
 
@@ -455,7 +455,7 @@ bitOffset = 13
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "MIDDLE_UNKNOWN"
+name = "MIDDLE_OPAQUE"
 bitOffset = 21
 bitWidth = 5
 
@@ -549,7 +549,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE_UNKNOWN"
+name = "ENABLE_OPAQUE"
 bitOffset = 31
 bitWidth = 1
 
@@ -673,7 +673,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -686,6 +686,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -698,6 +699,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.BSSID_SELECT"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -708,6 +710,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.HE_BSSID_ENABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -718,6 +721,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -725,6 +729,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1"
+naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -732,6 +737,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1.BSS_COLOR"
+naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -739,6 +745,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1.BSS_COLOR_ENABLE"
+naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -746,6 +753,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -753,6 +761,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW.ASSOCIATION_ID"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID"]
 provenance = "observed"
 accuracy = "exact"
@@ -760,6 +769,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -767,6 +777,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.TX_MODE_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -774,6 +785,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.DUMP_COMPLETE_HESIGB"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -781,6 +793,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
@@ -791,6 +804,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_0"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
@@ -801,6 +815,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_1"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
@@ -811,6 +826,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_2"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
@@ -821,6 +837,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_3"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
@@ -831,6 +848,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_HE_BSR_INIT",
@@ -844,6 +862,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.BSR_ACI_HIGH_COMPARISON_METHOD"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_BSR_INIT",
     "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
@@ -854,6 +873,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.PREAC_DISABLE_LOW_AC_TX_WHEN_EMPTY"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -861,6 +881,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.PREAC_DISABLE_LOW_AC_TX_WHEN_NO_RESOURCE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -868,6 +889,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.AC_EMPTY_SINGLE_BSR"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -875,6 +897,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.PREAC_NO_RESOURCE_ENABLE_BSR"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -882,6 +905,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.QOS_DATA_UPDATE_BSR"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -889,6 +913,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.IGNORE_VALID_TB"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -896,6 +921,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.IGNORE_VALID_EDCA"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -903,6 +929,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.TB_NO_RESOURCE_CONTINUE_TX"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -910,6 +937,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.AUTO_ACK_ALLOW_ERSU"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -921,6 +949,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.HE_RESPONSE_ACK"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -928,6 +957,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.TB_CARE_CCA_AND_NAV"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -935,6 +965,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.BSR_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -942,6 +973,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_PACKET_PADDING"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HECAP",
@@ -953,6 +985,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
@@ -968,6 +1001,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.DEFAULT_PE_DURATION"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_SET_DEFAULT_PE",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
@@ -978,6 +1012,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.MPDU_LENGTH_OFFSET"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -988,6 +1023,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.TX_ACK_ENABLED_AMPDU_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -995,6 +1031,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.BSR_UPDATE_ENABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_BSR_INIT",
     "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
@@ -1005,6 +1042,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.UL_MU_DATA_DISABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_UL_MU_OMC",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -1015,6 +1053,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.UL_MU_DISABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_UL_MU_OMC",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
@@ -1025,6 +1064,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.UORA_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -1032,6 +1072,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.FEATURE_EDGES"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -1039,6 +1080,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.SHARED_ENABLE_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -1046,6 +1088,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.QOS_NULL_TRANSLATION_CONTROL%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
@@ -1053,6 +1096,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG",
@@ -1067,6 +1111,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_DBG_READ_TX_MPLEN",
@@ -1079,6 +1124,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.CO_HOSTED_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HE_CONTROL_20260904"]
 provenance = "observed"
 accuracy = "exact"
@@ -1086,7 +1132,180 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.NONTRANSMITTED_BSSID_WAKEUP_ONLY"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HE_CONTROL_20260904"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.BSSID_BYTE_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.MULTI_BSSID_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.MULTI_BSSID_MASK"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.BSS_COLOR"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.BSS_COLOR_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.PARTIAL_BSS_COLOR_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH.HIGH_ADDRESS_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH.LOW_VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH.LOW_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH.HIGH_VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH.HIGH_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.TX_MODE_CONTROL.MODE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.DUMP_COMPLETE_HESIGB.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.VHT_BW_SIGNALING_RTS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_PACKET_PADDING.BPSK_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_PACKET_PADDING.QPSK_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_PACKET_PADDING.QAM16_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_PACKET_PADDING.QAM64_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_PACKET_PADDING.QAM256_DURATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.HE_USE_SOFTWARE_TXOP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.NFRP_BUFFER_THRESHOLD"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.MIDDLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.TB_STOP_OPTION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.HE_TRS_SUPPORT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.UORA_CONTROL.HIGH_WINDOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.UORA_CONTROL.LOW_WINDOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.FEATURE_EDGES.ENABLE_0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.FEATURE_EDGES.ENABLE_1"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.SHARED_ENABLE_CONTROL.ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QOS_NULL_TRANSLATION_CONTROL%s.QOS_NULL_RA_TO_TRANSLATED_BSS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.LOW_CLEARED_BY_TB_SETUP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.QOS_NULL_TO_TRANSLATED_BSS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.TRIGGER_BASED_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.MU_EDCA_TIMER_SELECT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.MPDU_LENGTH_LINK_ADDRESS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.TID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.MINIMUM_TX_POWER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s.HIGH_CLEARED_BY_TB_SETUP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s.MPDU_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s.NEXT_LINK"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s.HIGH_OPAQUE"
+naming = "opaque"

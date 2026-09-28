@@ -109,54 +109,54 @@ pub(crate) fn observe_mac_interrupt_enable(
     interrupt: &svd::WifiMacInterrupt,
 ) -> MacInterruptEnableState {
     let enable = interrupt.enable().read();
-    let disabled = enable.unknown_0_4().bits() == 0
+    let disabled = enable.bits_0_4_opaque().bits() == 0
         && enable.rx_associated_auxiliary_5().bit_is_clear()
-        && enable.cold_rx_enable_6_unknown().bit_is_clear()
+        && enable.cold_rx_enable_6_opaque().bit_is_clear()
         && enable.tx_complete().bit_is_clear()
         && enable.bss_color_collision().bit_is_clear()
-        && enable.unknown_9_10().bits() == 0
+        && enable.bits_9_10_opaque().bits() == 0
         && enable.watchdog().bit_is_clear()
-        && enable.cold_rx_enable_12_unknown().bit_is_clear()
-        && enable.cold_rx_enable_13_unknown().bit_is_clear()
+        && enable.cold_rx_enable_12_opaque().bit_is_clear()
+        && enable.cold_rx_enable_13_opaque().bit_is_clear()
         && enable.rx_success().bit_is_clear()
         && enable.sta_beacon_filter().bit_is_clear()
-        && enable.unknown_16_18().bits() == 0
+        && enable.bits_16_18_opaque().bits() == 0
         && enable.tx_timeout().bit_is_clear()
-        && enable.unknown_20().bit_is_clear()
-        && enable.cold_rx_enable_21_unknown().bit_is_clear()
-        && enable.unknown_22().bit_is_clear()
-        && enable.cold_rx_enable_23_unknown().bit_is_clear()
+        && enable.bits_20_opaque().bit_is_clear()
+        && enable.cold_rx_enable_21_opaque().bit_is_clear()
+        && enable.bits_22_opaque().bit_is_clear()
+        && enable.cold_rx_enable_23_opaque().bit_is_clear()
         && enable.rx_associated_auxiliary_24().bit_is_clear()
-        && enable.unknown_25_26().bits() == 0
-        && enable.cold_rx_enable_27_unknown().bit_is_clear()
-        && enable.cold_rx_enable_28_unknown().bit_is_clear()
-        && enable.unknown_29_31().bits() == 0;
+        && enable.bits_25_26_opaque().bits() == 0
+        && enable.cold_rx_enable_27_opaque().bit_is_clear()
+        && enable.cold_rx_enable_28_opaque().bit_is_clear()
+        && enable.bits_29_31_opaque().bits() == 0;
     if disabled {
         return MacInterruptEnableState::Disabled;
     }
 
-    let cold_rx = enable.unknown_0_4().bits() == 0
+    let cold_rx = enable.bits_0_4_opaque().bits() == 0
         && enable.rx_associated_auxiliary_5().bit_is_set()
-        && enable.cold_rx_enable_6_unknown().bit_is_set()
+        && enable.cold_rx_enable_6_opaque().bit_is_set()
         && enable.tx_complete().bit_is_set()
         && enable.bss_color_collision().bit_is_set()
-        && enable.unknown_9_10().bits() == 0
+        && enable.bits_9_10_opaque().bits() == 0
         && enable.watchdog().bit_is_set()
-        && enable.cold_rx_enable_12_unknown().bit_is_set()
-        && enable.cold_rx_enable_13_unknown().bit_is_set()
+        && enable.cold_rx_enable_12_opaque().bit_is_set()
+        && enable.cold_rx_enable_13_opaque().bit_is_set()
         && enable.rx_success().bit_is_set()
         && enable.sta_beacon_filter().bit_is_clear()
-        && enable.unknown_16_18().bits() == 0
+        && enable.bits_16_18_opaque().bits() == 0
         && enable.tx_timeout().bit_is_set()
-        && enable.unknown_20().bit_is_clear()
-        && enable.cold_rx_enable_21_unknown().bit_is_set()
-        && enable.unknown_22().bit_is_clear()
-        && enable.cold_rx_enable_23_unknown().bit_is_set()
+        && enable.bits_20_opaque().bit_is_clear()
+        && enable.cold_rx_enable_21_opaque().bit_is_set()
+        && enable.bits_22_opaque().bit_is_clear()
+        && enable.cold_rx_enable_23_opaque().bit_is_set()
         && enable.rx_associated_auxiliary_24().bit_is_set()
-        && enable.unknown_25_26().bits() == 0
-        && enable.cold_rx_enable_27_unknown().bit_is_set()
-        && enable.cold_rx_enable_28_unknown().bit_is_set()
-        && enable.unknown_29_31().bits() == 0;
+        && enable.bits_25_26_opaque().bits() == 0
+        && enable.cold_rx_enable_27_opaque().bit_is_set()
+        && enable.cold_rx_enable_28_opaque().bit_is_set()
+        && enable.bits_29_31_opaque().bits() == 0;
     if cold_rx {
         MacInterruptEnableState::ColdRx
     } else {
@@ -174,7 +174,7 @@ fn disable_sta_beacon_filter(
     // filtering is disabled before its matching interrupt source is masked.
     control
         .control()
-        .modify(|_, writer| writer.enables_unknown().set(0));
+        .modify(|_, writer| writer.enables_opaque().set(0));
     interrupt
         .enable()
         .modify(|_, writer| writer.sta_beacon_filter().clear_bit());

@@ -140,7 +140,7 @@ minimum = 0x0
 maximum = 0xFFFFF
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_21_20_UNKNOWN"
+name = "CONTROL_21_20_OPAQUE"
 description = "Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."
 bitOffset = 20
 bitWidth = 2
@@ -150,13 +150,13 @@ minimum = 0x0
 maximum = 0x3
 
 [[peripherals.registers.register.fields]]
-name = "TXOP_DESCRIPTOR_CLASS_UNKNOWN"
+name = "TXOP_DESCRIPTOR_CLASS_OPAQUE"
 description = "Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."
 bitOffset = 22
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_23_UNKNOWN"
+name = "CONTROL_23_OPAQUE"
 description = "Recovered PLCP0 control image; mac_tx_set_plcp0 initializes this bit to zero for the ordinary direct legacy path."
 bitOffset = 23
 bitWidth = 1
@@ -172,7 +172,7 @@ minimum = 0x0
 maximum = 0x7
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_29_27_UNKNOWN"
+name = "CONTROL_29_27_OPAQUE"
 description = "Remaining low control bits before ownership publication."
 bitOffset = 27
 bitWidth = 3
@@ -203,6 +203,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_TRC_AMPDU_PARAM",
@@ -219,6 +220,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_RTS"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS", "HIL_OPEN_HT40_SOFTWARE_RTS_2026_09_21"]
 provenance = "reviewed"
 accuracy = "exact"
@@ -226,6 +228,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_CTS"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_TX_PROTECTION_ARGUMENTS", "HIL_OPEN_HT40_SOFTWARE_CTS_2026_09_21"]
 provenance = "reviewed"
 accuracy = "exact"
@@ -233,6 +236,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -244,6 +248,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s.SCHEDULER_PRIORITY"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -255,6 +260,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -269,27 +275,31 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.DESCRIPTOR_ADDRESS_LOW"
+naming = "descriptive"
 sources = ["PROMOTED_LMAC_TX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_21_20_UNKNOWN"
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_21_20_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.TXOP_DESCRIPTOR_CLASS_UNKNOWN"
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.TXOP_DESCRIPTOR_CLASS_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_23_UNKNOWN"
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_23_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 provenance = "observed"
 accuracy = "exact"
@@ -297,6 +307,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.PLCP_FORMAT"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "PROMOTED_LMAC_TX",
@@ -313,8 +324,45 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_29_27_UNKNOWN"
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_29_27_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.MINIMUM_MPDU_LENGTH_CBW20"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.MINIMUM_MPDU_LENGTH_CBW40"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.MINIMUM_MPDU_LENGTH_CBW80"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s.TIMEOUT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s.CONTENTION_WINDOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s.INTERFACE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s.AIFSN"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.VALID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.ENABLE"
+naming = "descriptive"

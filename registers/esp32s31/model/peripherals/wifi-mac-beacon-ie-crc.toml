@@ -24,3 +24,11 @@ sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_BEACON_IE_CRC.RESULT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEACON_IE_CRC.RESULT.VALUE"
+naming = "descriptive"

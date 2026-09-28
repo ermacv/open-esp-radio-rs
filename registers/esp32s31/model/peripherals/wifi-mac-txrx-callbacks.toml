@@ -42,7 +42,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -87,7 +87,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -161,7 +161,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -206,7 +206,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 24
 bitWidth = 8
 
@@ -253,7 +253,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "TIMEOUT_UNKNOWN"
+name = "TIMEOUT_OPAQUE"
 bitOffset = 0
 bitWidth = 12
 
@@ -262,12 +262,12 @@ minimum = 0x0
 maximum = 0xFFF
 
 [[peripherals.registers.register.fields]]
-name = "TXRX_SUFFIX_SECOND_ENABLE_UNKNOWN"
+name = "TXRX_SUFFIX_SECOND_ENABLE_OPAQUE"
 bitOffset = 30
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "TXRX_SUFFIX_FIRST_ENABLE_UNKNOWN"
+name = "TXRX_SUFFIX_FIRST_ENABLE_OPAQUE"
 bitOffset = 31
 bitWidth = 1
 
@@ -290,7 +290,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_DELAY_UNKNOWN"
+name = "HIGH_DELAY_OPAQUE"
 bitOffset = 21
 bitWidth = 10
 
@@ -308,7 +308,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_DELAY_UNKNOWN"
+name = "LOW_DELAY_OPAQUE"
 bitOffset = 0
 bitWidth = 10
 
@@ -326,7 +326,7 @@ minimum = 0x0
 maximum = 0x7FF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_DELAY_UNKNOWN"
+name = "HIGH_DELAY_OPAQUE"
 bitOffset = 21
 bitWidth = 10
 
@@ -343,6 +343,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
@@ -353,6 +354,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
@@ -363,6 +365,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_SCCK_RATE_TABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -370,6 +373,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
@@ -380,6 +384,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
@@ -390,6 +395,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_SCCK_RATE_TABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -397,6 +403,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX",
@@ -407,6 +414,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG",
@@ -418,6 +426,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY.TX_CCK_DELAY"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -425,6 +434,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG",
@@ -436,7 +446,128 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.RX_CCK_DELAY"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE.BPSK_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE.QPSK_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE.QAM16_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE.RATE_1M"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE.RATE_2M"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE.RATE_2M_SHORT_PREAMBLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_SCCK_RATE_TABLE.LR0_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_SCCK_RATE_TABLE.LR1_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_SCCK_RATE_TABLE.LR2_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_SCCK_RATE_TABLE.LR3_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE.BPSK_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE.QPSK_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE.QAM16_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE.RATE_1M"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE.RATE_2M"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE.RATE_2M_SHORT_PREAMBLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_SCCK_RATE_TABLE.LR0_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_SCCK_RATE_TABLE.LR1_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_SCCK_RATE_TABLE.LR2_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_SCCK_RATE_TABLE.LR3_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.TIMEOUT_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.TXRX_SUFFIX_SECOND_ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL.TXRX_SUFFIX_FIRST_ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY.HIGH_DELAY_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.LOW_DELAY_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.HIGH_DELAY_OPAQUE"
+naming = "opaque"

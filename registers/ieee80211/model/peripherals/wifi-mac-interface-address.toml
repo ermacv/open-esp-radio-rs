@@ -53,6 +53,6 @@ bitOffset = 16
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "POLICY_HIGH_UNKNOWN"
+name = "POLICY_HIGH_OPAQUE"
 bitOffset = 17
 bitWidth = 15

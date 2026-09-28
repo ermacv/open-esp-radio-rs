@@ -162,7 +162,7 @@ pub(crate) fn validation_trigger_flow_state(registers: &svd::WifiMacTxCommon) ->
         + u32::from(state.trigger_flow_queue_1().bit_is_set()) * 2
         + u32::from(state.trigger_flow_queue_2().bit_is_set()) * 4
         + u32::from(state.trigger_flow_queue_3().bit_is_set()) * 8
-        + u32::from(state.trigger_flow_high_unknown().bits()) * 16
+        + u32::from(state.trigger_flow_high_opaque().bits()) * 16
 }
 
 #[inline(always)]
@@ -175,7 +175,7 @@ pub(crate) fn acknowledge_completion(registers: &svd::WifiMacTxCommon, queue: u8
         state.queue_1().bit_is_set() || queue == 1,
         state.queue_2().bit_is_set() || queue == 2,
         state.queue_3().bit_is_set() || queue == 3,
-        state.high_state_unknown().bits(),
+        state.high_state_opaque().bits(),
     );
 }
 

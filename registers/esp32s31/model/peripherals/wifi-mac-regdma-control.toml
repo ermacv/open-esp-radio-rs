@@ -25,7 +25,7 @@ minimum = 0x0
 maximum = 0xFFFF
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_UNKNOWN"
+name = "LOW_CONTROL_OPAQUE"
 bitOffset = 16
 bitWidth = 1
 
@@ -75,6 +75,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
     "BLOB_LIBPP_HAL_PWR",
@@ -86,6 +87,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.MODEM_WAKEUP_PROTECT_EARLY_TIME"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_PWR"]
 provenance = "observed"
 accuracy = "exact"
@@ -93,6 +95,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.ACTIVE_LINK"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
     "HIL_OPEN_REGDMA_LINK4_2026_07_29",
@@ -103,6 +106,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.MODEM_TBTT_AUTO_PERIOD_INTERVAL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_PWR"]
 provenance = "observed"
 accuracy = "exact"
@@ -110,7 +114,12 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.MODEM_TBTT_AUTO_PERIOD_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_PWR"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.LOW_CONTROL_OPAQUE"
+naming = "opaque"

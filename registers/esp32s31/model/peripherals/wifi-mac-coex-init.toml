@@ -187,7 +187,7 @@ bitOffset = 4
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "COEX_PTI_INIT_UNKNOWN"
+name = "COEX_PTI_INIT_OPAQUE"
 description = "Set by complete hal_coex_pti_init."
 bitOffset = 5
 bitWidth = 1
@@ -204,6 +204,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.RX_PTI"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
 provenance = "observed"
 accuracy = "exact"
@@ -211,6 +212,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.RX_PTI.RX_ACTIVE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
 provenance = "observed"
 accuracy = "exact"
@@ -218,6 +220,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.RX_PTI.RX_ACK"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -228,6 +231,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -238,6 +242,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.BEAMFORMING"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -248,6 +253,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.BEAMFORMING.MULTI_TARGET_0"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
 provenance = "observed"
 accuracy = "exact"
@@ -255,6 +261,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -265,6 +272,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.WIFI_DEFAULT_PTI"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -275,14 +283,60 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.DEFAULT_PTI_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.COEX_PTI_INIT_UNKNOWN"
+entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.COEX_PTI_INIT_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.TB_4"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.TB_6"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.TB_5"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.TB_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.TB_2"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.TB_1"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.TB_0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING.BEAMFORMING_0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.BEAMFORMING.BEAMFORMING_2"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.BEAMFORMING.BEAMFORMING_1"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_INIT.BEAMFORMING.MULTI_TARGET_1"
+naming = "descriptive"

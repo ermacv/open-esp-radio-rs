@@ -59,7 +59,32 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_TEST_BF_SET_FEEDBACK"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION.AUXILIARY_ARGUMENT_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION.AUXILIARY_ARGUMENT_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION.FEEDBACK_SUBMODE_A"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION.FEEDBACK_SELECTOR_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION.FEEDBACK_SUBMODE_B"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION.ENABLE"
+naming = "descriptive"

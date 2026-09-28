@@ -365,22 +365,22 @@ impl MacInterruptSnapshot {
         );
         let auxiliary_event =
             self.0.rx_associated_auxiliary_5() || self.0.rx_associated_auxiliary_24();
-        let unhandled_event = self.0.unknown_0_4() != 0
-            || self.0.cold_rx_enable_6_unknown()
-            || self.0.unknown_9_10() != 0
+        let unhandled_event = self.0.bits_0_4_opaque() != 0
+            || self.0.cold_rx_enable_6_opaque()
+            || self.0.bits_9_10_opaque() != 0
             || self.0.watchdog()
-            || self.0.cold_rx_enable_12_unknown()
-            || self.0.cold_rx_enable_13_unknown()
+            || self.0.cold_rx_enable_12_opaque()
+            || self.0.cold_rx_enable_13_opaque()
             || self.0.sta_beacon_filter()
-            || self.0.unknown_16_18() != 0
-            || self.0.unknown_20()
-            || self.0.cold_rx_enable_21_unknown()
-            || self.0.unknown_22()
-            || self.0.cold_rx_enable_23_unknown()
-            || self.0.unknown_25_26() != 0
-            || self.0.cold_rx_enable_27_unknown()
-            || self.0.cold_rx_enable_28_unknown()
-            || self.0.unknown_29_31() != 0;
+            || self.0.bits_16_18_opaque() != 0
+            || self.0.bits_20_opaque()
+            || self.0.cold_rx_enable_21_opaque()
+            || self.0.bits_22_opaque()
+            || self.0.cold_rx_enable_23_opaque()
+            || self.0.bits_25_26_opaque() != 0
+            || self.0.cold_rx_enable_27_opaque()
+            || self.0.cold_rx_enable_28_opaque()
+            || self.0.bits_29_31_opaque() != 0;
         MacInterruptObservation::from_semantic_events(work_events, auxiliary_event, unhandled_event)
     }
 
@@ -409,7 +409,7 @@ impl MacPowerInterruptSnapshot {
             self.0.tsf_timer_3(),
             self.0.tbtt_0(),
             // Only the station TSF's TBTT is ever enabled.
-            self.0.tbtt_1() || self.0.tbtt_2() || self.0.tbtt_3() || self.0.unknown_8_31() != 0,
+            self.0.tbtt_1() || self.0.tbtt_2() || self.0.tbtt_3() || self.0.bits_8_31_opaque() != 0,
         )
     }
 

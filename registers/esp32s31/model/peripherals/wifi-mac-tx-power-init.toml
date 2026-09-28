@@ -37,7 +37,7 @@ minimum = 0x0
 maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
-name = "FORMAT_UNKNOWN"
+name = "FORMAT_OPAQUE"
 description = "Zero for the six legacy response words and two for the four HE response words."
 bitOffset = 22
 bitWidth = 2
@@ -182,6 +182,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TX_POWER_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -189,6 +190,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.TB_POWER%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TX_POWER_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -196,6 +198,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER_TAIL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_TX_POWER_INIT",
     "BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER",
@@ -206,6 +209,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_TX_POWER_INIT",
     "BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER",
@@ -213,3 +217,55 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s.POWER_INDEX"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s.RATE_INDEX"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s.FORMAT_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_POWER%s.POWER_0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_POWER%s.POWER_1"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_POWER%s.POWER_2"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_POWER%s.POWER_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER_TAIL.POWER_INDEX"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER%s.POWER_0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER%s.POWER_1"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER%s.POWER_2"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER%s.POWER_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER%s.POWER_4"
+naming = "descriptive"

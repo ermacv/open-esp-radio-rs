@@ -138,6 +138,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
     "C5_ROM_REV100_HAL_GET_STA_TSF",
@@ -149,6 +150,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.SNAPSHOT_STATION_TSF"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_HAL_GET_STA_TSF",
 ]
@@ -158,6 +160,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_STATION_TSF"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -167,6 +170,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_SOFTAP_TSF"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -176,6 +180,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_LOW"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -185,6 +190,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_HIGH"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF",
 ]
@@ -194,6 +200,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_LOW"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_HAL_GET_STA_TSF",
 ]
@@ -203,6 +210,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_HIGH"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_HAL_GET_STA_TSF",
 ]
@@ -212,6 +220,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_WIFI_RUNTIME_MMIO_GAPS",
 ]
@@ -221,6 +230,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_WIFI_RUNTIME_MMIO_GAPS",
 ]
@@ -230,6 +240,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.RX_BEACON_ABORT_SYNC_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_WIFI_RUNTIME_MMIO_GAPS",
 ]
@@ -239,6 +250,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION_SYNC_ENABLE"
+naming = "descriptive"
 sources = [
     "C5_ROM_REV100_WIFI_RUNTIME_MMIO_GAPS",
 ]
@@ -248,9 +260,26 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_STATION_TBTT_TARGET"
+naming = "descriptive"
 sources = [
     "C5_BLOB_LIBPP_HAL_TSF_TBTT_20260927",
 ]
 provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_LOW.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.VALUE_HIGH.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_LOW.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_HIGH.VALUE"
+naming = "descriptive"

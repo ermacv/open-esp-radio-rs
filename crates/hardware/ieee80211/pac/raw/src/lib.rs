@@ -987,10 +987,10 @@ pub mod wifi_mac_interface_address {
         pub type RxPolicyEnableR = crate::BitReader;
         #[doc = "Field `RX_POLICY_ENABLE` writer - Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
         pub type RxPolicyEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `POLICY_HIGH_UNKNOWN` reader - "]
-        pub type PolicyHighUnknownR = crate::FieldReader<u16>;
-        #[doc = "Field `POLICY_HIGH_UNKNOWN` writer - "]
-        pub type PolicyHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        #[doc = "Field `POLICY_HIGH_OPAQUE` reader - "]
+        pub type PolicyHighOpaqueR = crate::FieldReader<u16>;
+        #[doc = "Field `POLICY_HIGH_OPAQUE` writer - "]
+        pub type PolicyHighOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -1004,8 +1004,8 @@ pub mod wifi_mac_interface_address {
             }
             #[doc = "Bits 17:31"]
             #[inline(always)]
-            pub fn policy_high_unknown(&self) -> PolicyHighUnknownR {
-                PolicyHighUnknownR::new(((self.bits >> 17) & 0x7fff) as u16)
+            pub fn policy_high_opaque(&self) -> PolicyHighOpaqueR {
+                PolicyHighOpaqueR::new(((self.bits >> 17) & 0x7fff) as u16)
             }
         }
         impl W {
@@ -1021,8 +1021,8 @@ pub mod wifi_mac_interface_address {
             }
             #[doc = "Bits 17:31"]
             #[inline(always)]
-            pub fn policy_high_unknown(&mut self) -> PolicyHighUnknownW<'_, AddressHighSpec> {
-                PolicyHighUnknownW::new(self, 17)
+            pub fn policy_high_opaque(&mut self) -> PolicyHighOpaqueW<'_, AddressHighSpec> {
+                PolicyHighOpaqueW::new(self, 17)
             }
         }
         #[doc = "Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

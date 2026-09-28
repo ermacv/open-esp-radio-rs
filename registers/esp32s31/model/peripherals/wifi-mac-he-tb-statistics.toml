@@ -20,7 +20,7 @@ bitOffset = 0
 bitWidth = 16
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_COUNT_UNKNOWN"
+name = "HIGH_COUNT_OPAQUE"
 bitOffset = 16
 bitWidth = 16
 
@@ -55,6 +55,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_STATISTICS.RX_TRIGGER"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
 provenance = "observed"
 accuracy = "exact"
@@ -62,7 +63,24 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_STATISTICS.TB_TRANSMISSION"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_STATISTICS.RX_TRIGGER.COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_STATISTICS.RX_TRIGGER.HIGH_COUNT_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_STATISTICS.TB_TRANSMISSION.COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TB_STATISTICS.TB_TRANSMISSION.QOS_NULL_COUNT"
+naming = "descriptive"

@@ -64,3 +64,35 @@ sources = ["BLOB_LIBPP_PP_DEBUG_HW_STATISTICS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TX_RTS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TX_RTS.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TX_CTS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TX_CTS.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TRACK"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TRACK.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TRCTS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_STATISTICS.TRCTS.VALUE"
+naming = "descriptive"

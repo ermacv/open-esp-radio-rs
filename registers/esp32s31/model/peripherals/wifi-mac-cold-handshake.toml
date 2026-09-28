@@ -28,7 +28,7 @@ bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN"
+name = "BITS_2_31_OPAQUE"
 bitOffset = 2
 bitWidth = 30
 
@@ -97,6 +97,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -104,6 +105,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.READY"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -111,6 +113,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.REQUEST"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -118,6 +121,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_CONTROL"
+naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -125,6 +129,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_VALUE"
+naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -132,6 +137,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_CONTROL"
+naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
 accuracy = "exact"
@@ -139,7 +145,28 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_VALUE"
+naming = "descriptive"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.BITS_2_31_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_CONTROL.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_VALUE.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_CONTROL.ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_VALUE.VALUE"
+naming = "descriptive"

@@ -42,3 +42,19 @@ sources = [
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_COLOR_COLLISION.BSS_COLOR_BITMAP_LOW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_COLOR_COLLISION.BSS_COLOR_BITMAP_LOW.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_COLOR_COLLISION.BSS_COLOR_BITMAP_HIGH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_COLOR_COLLISION.BSS_COLOR_BITMAP_HIGH.VALUE"
+naming = "descriptive"

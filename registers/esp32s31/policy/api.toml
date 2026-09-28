@@ -2698,7 +2698,7 @@ sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
 name = "publish_mac_tx_prepared_control"
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
 register = "CONTROL%s"
-fields = ["DESCRIPTOR_ADDRESS_LOW", "CONTROL_21_20_UNKNOWN", "TXOP_DESCRIPTOR_CLASS_UNKNOWN", "PLCP_FORMAT"]
+fields = ["DESCRIPTOR_ADDRESS_LOW", "CONTROL_21_20_OPAQUE", "TXOP_DESCRIPTOR_CLASS_OPAQUE", "PLCP_FORMAT"]
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[zero-based-field-writes]]
@@ -2726,7 +2726,7 @@ sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 name = "acknowledge_mac_tx_completion"
 peripheral = "WIFI_MAC_TX_COMMON"
 register = "COMPLETE_CLEAR"
-fields = ["QUEUE_0", "QUEUE_1", "QUEUE_2", "QUEUE_3", "HIGH_STATE_UNKNOWN"]
+fields = ["QUEUE_0", "QUEUE_1", "QUEUE_2", "QUEUE_3", "HIGH_STATE_OPAQUE"]
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[zero-based-field-writes]]
@@ -2880,28 +2880,28 @@ sources = ["BLOB_LIBPP_HAL_MAC_SET_BSSID"]
 name = "mac_last_rx_buffer_entry_control"
 peripheral = "WIFI_MAC_LAST_RX_BUFFER"
 register = "ENTRY_CONTROL%s"
-fields = ["IMAGE_UNKNOWN"]
+fields = ["IMAGE_OPAQUE"]
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
 
 [[zero-based-field-writes]]
 name = "mac_last_rx_buffer_entry_parameter_a"
 peripheral = "WIFI_MAC_LAST_RX_BUFFER"
 register = "ENTRY_PARAMETER_A%s"
-fields = ["IMAGE_UNKNOWN"]
+fields = ["IMAGE_OPAQUE"]
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
 
 [[zero-based-field-writes]]
 name = "mac_last_rx_buffer_entry_parameter_b"
 peripheral = "WIFI_MAC_LAST_RX_BUFFER"
 register = "ENTRY_PARAMETER_B%s"
-fields = ["IMAGE_UNKNOWN"]
+fields = ["IMAGE_OPAQUE"]
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
 
 [[zero-based-field-writes]]
 name = "mac_crypto_interface_control"
 peripheral = "WIFI_MAC_CRYPTO_CONTROL"
 register = "INTERFACE_CONTROL%s"
-fields = ["CONTROL_LOW_UNKNOWN", "MODE_HIGH_UNKNOWN"]
+fields = ["CONTROL_LOW_OPAQUE", "MODE_HIGH_OPAQUE"]
 sources = ["BLOB_LIBPP_HAL_CRYPTO", "BLOB_LIBPP_HAL_CRYPTO_INIT"]
 
 [[zero-based-field-writes]]
@@ -2983,28 +2983,28 @@ sources = ["BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"]
 name = "mac_ack_rate_table"
 peripheral = "WIFI_MAC_TXRX_CALLBACKS"
 register = "ACK_RATE_TABLE"
-fields = ["BPSK_RATE", "QPSK_RATE", "QAM16_RATE", "HIGH_UNKNOWN"]
+fields = ["BPSK_RATE", "QPSK_RATE", "QAM16_RATE", "HIGH_OPAQUE"]
 sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
 
 [[zero-based-field-writes]]
 name = "mac_cts_rate_table"
 peripheral = "WIFI_MAC_TXRX_CALLBACKS"
 register = "CTS_RATE_TABLE"
-fields = ["BPSK_RATE", "QPSK_RATE", "QAM16_RATE", "HIGH_UNKNOWN"]
+fields = ["BPSK_RATE", "QPSK_RATE", "QAM16_RATE", "HIGH_OPAQUE"]
 sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
 
 [[zero-based-field-writes]]
 name = "mac_ack_cck_rate_table"
 peripheral = "WIFI_MAC_TXRX_CALLBACKS"
 register = "ACK_CCK_RATE_TABLE"
-fields = ["RATE_1M", "RATE_2M", "RATE_2M_SHORT_PREAMBLE", "HIGH_UNKNOWN"]
+fields = ["RATE_1M", "RATE_2M", "RATE_2M_SHORT_PREAMBLE", "HIGH_OPAQUE"]
 sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
 
 [[zero-based-field-writes]]
 name = "mac_cts_cck_rate_table"
 peripheral = "WIFI_MAC_TXRX_CALLBACKS"
 register = "CTS_CCK_RATE_TABLE"
-fields = ["RATE_1M", "RATE_2M", "RATE_2M_SHORT_PREAMBLE", "HIGH_UNKNOWN"]
+fields = ["RATE_1M", "RATE_2M", "RATE_2M_SHORT_PREAMBLE", "HIGH_OPAQUE"]
 sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
 
 [[zero-based-field-writes]]
@@ -3081,7 +3081,7 @@ sources = ["OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER"]
 [[zero-register-writes]]
 name = "clear_mac_crypto_init_aux"
 peripheral = "WIFI_MAC_CRYPTO_CONTROL"
-register = "INIT_AUX_UNKNOWN"
+register = "INIT_AUX_OPAQUE"
 sources = ["BLOB_LIBPP_HAL_CRYPTO_INIT"]
 
 [[zero-register-writes]]
@@ -3371,7 +3371,7 @@ sources = ["BLOB_LIBCOEX_EXTERNAL"]
 name = "set_coex_external_advanced_grant_0"
 peripheral = "COEX_EXTERNAL"
 register = "PTI"
-fields = [{ field = "ADVANCED_GRANT_0_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "ADVANCED_GRANT_0_OPAQUE", source-bit-offset = 0 }]
 domain = "ExternalCoexNibble"
 exposure = "facade"
 sources = ["BLOB_LIBCOEX_EXTERNAL"]
@@ -3380,7 +3380,7 @@ sources = ["BLOB_LIBCOEX_EXTERNAL"]
 name = "set_coex_external_advanced_grant_1"
 peripheral = "COEX_EXTERNAL"
 register = "PTI"
-fields = [{ field = "ADVANCED_GRANT_1_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "ADVANCED_GRANT_1_OPAQUE", source-bit-offset = 0 }]
 domain = "ExternalCoexNibble"
 exposure = "facade"
 sources = ["BLOB_LIBCOEX_EXTERNAL"]
@@ -3389,7 +3389,7 @@ sources = ["BLOB_LIBCOEX_EXTERNAL"]
 name = "set_coex_external_advanced_grant_2"
 peripheral = "COEX_EXTERNAL"
 register = "PTI"
-fields = [{ field = "ADVANCED_GRANT_2_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "ADVANCED_GRANT_2_OPAQUE", source-bit-offset = 0 }]
 domain = "ExternalCoexNibble"
 exposure = "facade"
 sources = ["BLOB_LIBCOEX_EXTERNAL"]
@@ -3407,7 +3407,7 @@ sources = ["BLOB_LIBCOEX_EXTERNAL"]
 name = "set_coex_external_mode_flags"
 peripheral = "COEX_EXTERNAL"
 register = "PTI"
-fields = [{ field = "MODE_FLAGS_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "MODE_FLAGS_OPAQUE", source-bit-offset = 0 }]
 value = 0x3
 exposure = "facade"
 sources = ["BLOB_LIBCOEX_EXTERNAL"]
@@ -6169,7 +6169,7 @@ sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_TSENS"]
 name = "enable_wifi_mac_core"
 peripheral = "WIFI_MAC_CORE_ENABLE"
 register = "CONTROL"
-fields = [{ field = "MAC_DISABLE_GATES_UNKNOWN", source-bit-offset = 0 }]
+fields = [{ field = "MAC_DISABLE_GATES_OPAQUE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
@@ -6597,7 +6597,7 @@ sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 name = "request_mac_rx_beacon_clear"
 peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "CLEAR_REQUEST"
-field = "REQUESTS_UNKNOWN"
+field = "REQUESTS_OPAQUE"
 domain = "MacRxBeaconClearRequest"
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
@@ -6606,7 +6606,7 @@ sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 name = "request_mac_itwt_clear"
 peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "CLEAR_REQUEST"
-field = "REQUESTS_UNKNOWN"
+field = "REQUESTS_OPAQUE"
 domain = "MacItwtClearIndex"
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]

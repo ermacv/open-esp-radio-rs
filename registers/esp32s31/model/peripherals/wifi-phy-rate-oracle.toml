@@ -76,6 +76,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.NOISE_FLOOR_MEASUREMENT"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_READ_NOISE_FLOOR",
     "HIL_OPEN_STA_RATE_CONTROL_2026_07_30",
@@ -86,6 +87,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.NOISE_FLOOR_MEASUREMENT.SIGNED_SIXTEENTH_DB_CODE"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_READ_NOISE_FLOOR",
     "HIL_OPEN_STA_RATE_CONTROL_2026_07_30",
@@ -96,6 +98,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_LOW_RATE",
     "ROM_REV0_PHY_RX11BLR_CFG",
@@ -106,6 +109,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL.LOW_RATE_ENABLE_FIRST"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_LOW_RATE"]
 provenance = "observed"
 accuracy = "exact"
@@ -113,6 +117,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.LOW_RATE_PRIMARY_CONTROL.LOW_RATE_ENABLE_SECOND"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_LOW_RATE"]
 provenance = "observed"
 accuracy = "exact"
@@ -120,6 +125,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.LOW_RATE_SECONDARY_CONTROL"
+naming = "descriptive"
 sources = [
     "ROM_REV0_PHY_LOW_RATE",
     "ROM_REV0_PHY_RX11BLR_CFG",
@@ -130,6 +136,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_PHY_RATE_ORACLE.LOW_RATE_SECONDARY_CONTROL.LOW_RATE_ENABLE"
+naming = "descriptive"
 sources = ["ROM_REV0_PHY_LOW_RATE"]
 provenance = "observed"
 accuracy = "exact"

@@ -238,7 +238,7 @@ impl WifiRadioRegisters {
         ];
         for (word, (format, encoded_rate, lookup_rate)) in RESPONSE.into_iter().enumerate() {
             let response = init.immediate_response(word);
-            response.modify(|_, w| w.format_unknown().set(format));
+            response.modify(|_, w| w.format_opaque().set(format));
             response.modify(|_, w| w.rate_index().set(encoded_rate));
             response.modify(|_, w| w.power_index().set(table.primary_index(lookup_rate)));
         }

@@ -21,7 +21,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE_UNKNOWN"
+name = "ENABLE_OPAQUE"
 bitOffset = 1
 bitWidth = 1
 
@@ -35,7 +35,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_IMAGE_UNKNOWN"
+name = "LOW_IMAGE_OPAQUE"
 bitOffset = 0
 bitWidth = 12
 
@@ -53,7 +53,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_GATE_GROUP_UNKNOWN"
+name = "LOW_GATE_GROUP_OPAQUE"
 bitOffset = 16
 bitWidth = 15
 
@@ -62,7 +62,7 @@ minimum = 0x0
 maximum = 0x7FFF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_GATE_UNKNOWN"
+name = "HIGH_GATE_OPAQUE"
 bitOffset = 31
 bitWidth = 1
 
@@ -76,7 +76,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "FIELD_UNKNOWN"
+name = "FIELD_OPAQUE"
 bitOffset = 4
 bitWidth = 4
 
@@ -93,6 +93,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.AUX_ENABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX",
     "BLOB_LIBPP_DEBUG_STATISTICS_CONTROL",
@@ -103,6 +104,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.DEFAULT_IMAGE_A"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -110,6 +112,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.GATE_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
@@ -117,7 +120,32 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.FIELD_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_SUFFIX.AUX_ENABLE.HARDWARE_STATISTICS_CLEAR_PULSE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_SUFFIX.AUX_ENABLE.ENABLE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_SUFFIX.DEFAULT_IMAGE_A.LOW_IMAGE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_SUFFIX.GATE_CONTROL.LOW_GATE_GROUP_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_SUFFIX.GATE_CONTROL.HIGH_GATE_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_SUFFIX.FIELD_CONTROL.FIELD_OPAQUE"
+naming = "opaque"

@@ -20,7 +20,7 @@ bitOffset = 0
 bitWidth = 3
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_3"
+name = "BITS_3_OPAQUE"
 bitOffset = 3
 bitWidth = 1
 
@@ -55,7 +55,7 @@ bitOffset = 9
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_10_11"
+name = "BITS_10_11_OPAQUE"
 bitOffset = 10
 bitWidth = 2
 
@@ -75,7 +75,7 @@ bitOffset = 20
 bitWidth = 6
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_26"
+name = "BITS_26_OPAQUE"
 bitOffset = 26
 bitWidth = 1
 
@@ -85,7 +85,7 @@ bitOffset = 27
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -142,7 +142,7 @@ bitOffset = 0
 bitWidth = 5
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_5_7"
+name = "BITS_5_7_OPAQUE"
 bitOffset = 5
 bitWidth = 3
 
@@ -167,7 +167,7 @@ bitOffset = 12
 bitWidth = 5
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_17_19"
+name = "BITS_17_19_OPAQUE"
 bitOffset = 17
 bitWidth = 3
 
@@ -177,7 +177,7 @@ bitOffset = 20
 bitWidth = 5
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 25
 bitWidth = 7
 
@@ -270,7 +270,7 @@ bitOffset = 16
 bitWidth = 12
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -363,7 +363,7 @@ bitOffset = 29
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 30
 bitWidth = 2
 
@@ -407,7 +407,7 @@ bitOffset = 25
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 26
 bitWidth = 6
 
@@ -461,7 +461,7 @@ bitOffset = 27
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -471,3 +471,339 @@ sources = ["BLOB_LIBPP_HAL_HE_TRIGGER_RX_DIAGNOSTICS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TRIGGER_STATE_CS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BITS_3_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TXRX_BEAM"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TXRX_CTS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TXRX_BLOCK_ACK"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TXRX_ACK"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TXRX_IS_TB"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.TXRX_IS_WAITING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BITS_10_11_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BFRP_TIMER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BFRP_DETECT_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BEAM_TIMER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.BITS_26_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.NDP_DETECT_SUCCESS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.STATE.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.LENGTH.SYMBOL_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.LENGTH.TB_APEP_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.EOF_PADDING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.EOF_PADDING.TB_BYTES"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.EOF_PADDING.SU_BYTES"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.PACKET_EXTENSION_TIME"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.BITS_5_7_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.SU_A_FACTOR"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.SU_PE_DISAMBIGUITY"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.FEEDBACK_STATUS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.SU_PRE_FEC_PADDING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.BITS_17_19_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.TB_PRE_FEC_PADDING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PADDING.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.STA_MATCH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.NFRP_MULTIPLEX_FLAG"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.BASIC_PREFERRED_AC"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.NFRP_FEEDBACK_TYPE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.BFRP_FEEDBACK_BITMAP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.BASIC_TARGET_RSSI"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.BASIC_UL_DCM"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.BASIC_SPATIAL_STREAM_ALLOCATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRIGGER_DEPENDENT.BASIC_MU_MIMO_SPATIAL_STREAM_FACTOR"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.TID_LIMIT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.UL_MCS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.FEC_CODING_TYPE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.RU_ALLOCATION_RAW"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.RX_AID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.BASIC_USER.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY.HE_SIG_A2_RESERVED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY.DOPPLER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY.STBC"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY.MU_MIMO_LTF"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY.GI_AND_LTF_TYPE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY.UL_BANDWIDTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_PHY.SPATIAL_REUSE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.UL_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.TRIGGER_TYPE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.UL_PACKET_EXTENSION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.AP_TX_POWER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.NUMBER_OF_LTF"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.CS_REQUIRED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.MORE_TF"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.COMMON_TRIGGER.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.RU_ALLOCATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.MCS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.TARGET_RSSI"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.DOWNLINK_POWER"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.UL_SYMBOL_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.CONTAINS_TRS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.TRS.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.CBW80_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.CBW40_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.CBW20_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.QOS_NULL_APPEND_PACKET_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.AX_MATCH_BSSID1"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.AX_MATCH_BSSID0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.BSS_COLOR_VALID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.RX_AMPDU_AUTO_ACK_VALID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS.PACKET_COUNTS.HIGH_OPAQUE"
+naming = "opaque"

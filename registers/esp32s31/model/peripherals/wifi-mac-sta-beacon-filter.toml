@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "ENABLES_UNKNOWN"
+name = "ENABLES_OPAQUE"
 bitOffset = 0
 bitWidth = 3
 
@@ -32,7 +32,12 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_STA_BEACON_FILTER.CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_STA_BEACON_FILTER.CONTROL.ENABLES_OPAQUE"
+naming = "opaque"

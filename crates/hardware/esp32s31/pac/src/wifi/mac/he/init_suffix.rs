@@ -12,7 +12,7 @@ pub struct MacHeTxMpduLengthLink {
     pub mpdu_length: u16,
     pub next_link: u8,
     /// Bits 31:21 are read by the blob but not assigned a field name.
-    pub high_unknown: u16,
+    pub high_opaque: u16,
 }
 
 impl WifiRadioRegisters {
@@ -44,7 +44,7 @@ impl WifiRadioRegisters {
         Some(MacHeTxMpduLengthLink {
             mpdu_length: value.mpdu_length().bits(),
             next_link: value.next_link().bits(),
-            high_unknown: value.high_unknown().bits(),
+            high_opaque: value.high_opaque().bits(),
         })
     }
 
@@ -128,13 +128,12 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_txrx_prefix
             .mode_control()
-            .modify(|_, w| w.he_enable_unknown().set_bit());
+            .modify(|_, w| w.he_enable_opaque().set_bit());
         init.shared_enable_control()
-            .modify(|_, w| w.enable_unknown().set_bit());
+            .modify(|_, w| w.enable_opaque().set_bit());
         init.feature_edges().modify(|_, w| w.enable_1().set_bit());
         init.feature_edges().modify(|_, w| w.enable_0().set_bit());
-        init.tx_mode_control()
-            .modify(|_, w| w.mode_unknown().set(1));
+        init.tx_mode_control().modify(|_, w| w.mode_opaque().set(1));
 
         // Complete hal_he_set_bcast_ru(0x7fd, 0, 0): six independent RMWs.
         let broadcast_low = init.broadcast_ru_low();
@@ -175,7 +174,7 @@ impl WifiRadioRegisters {
             multi.modify(|_, w| w.multi_bssid_mask().set(0xff));
             multi.modify(|_, w| w.bssid_byte_5().set(0));
             init.multi_bssid_high()
-                .modify(|_, w| w.high_address_unknown().set(0));
+                .modify(|_, w| w.high_address_opaque().set(0));
             for physical in (0..8).rev() {
                 init.queue_control(physical)
                     .modify(|_, w| w.qos_null_to_translated_bss().clear_bit());

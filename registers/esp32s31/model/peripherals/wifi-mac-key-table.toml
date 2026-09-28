@@ -38,7 +38,12 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_KEY_TABLE.ENTRY_WORD%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_KEY_TABLE.ENTRY_WORD%s.VALUE"
+naming = "descriptive"

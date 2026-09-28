@@ -18,7 +18,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_UNKNOWN"
+name = "LOW_CONTROL_OPAQUE"
 description = "Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer."
 bitOffset = 0
 bitWidth = 3
@@ -61,13 +61,15 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.CONTROL%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
 
 [[review]]
-entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.LOW_CONTROL_UNKNOWN"
+entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.LOW_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 provenance = "observed"
 accuracy = "exact"
@@ -75,6 +77,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.WAKEUP_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 provenance = "observed"
 accuracy = "exact"
@@ -82,6 +85,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.TIMER_ENABLE"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 provenance = "observed"
 accuracy = "exact"
@@ -89,7 +93,12 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.TARGET%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_TSF_TIMER.TARGET%s.VALUE"
+naming = "descriptive"

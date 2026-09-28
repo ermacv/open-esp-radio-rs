@@ -28,7 +28,12 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_STA_TBTT_TARGET.TARGET"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_STA_TBTT_TARGET.TARGET.TSF_BITS_35_10"
+naming = "descriptive"

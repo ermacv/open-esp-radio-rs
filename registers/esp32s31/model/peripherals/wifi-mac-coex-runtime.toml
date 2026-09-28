@@ -15,7 +15,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "REQUESTS_UNKNOWN"
+name = "REQUESTS_OPAQUE"
 bitOffset = 0
 bitWidth = 32
 [peripherals.registers.register.fields.writeConstraint.range]
@@ -50,7 +50,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_UNKNOWN"
+name = "LOW_CONTROL_OPAQUE"
 bitOffset = 0
 bitWidth = 8
 
@@ -91,6 +91,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
@@ -98,6 +99,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
@@ -105,6 +107,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.ITWT_CONTROL"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
@@ -112,6 +115,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.SHARED_RX_PTI"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
@@ -119,7 +123,28 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_PTI"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.REQUESTS_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_RUNTIME.ITWT_CONTROL.LOW_CONTROL_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_COEX_RUNTIME.SHARED_RX_PTI.PTI"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_PTI.PTI"
+naming = "descriptive"

@@ -137,7 +137,7 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 1
 bitWidth = 3
 
@@ -309,7 +309,7 @@ bitOffset = 0
 bitWidth = 2
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_2_3"
+name = "BITS_2_3_OPAQUE"
 bitOffset = 2
 bitWidth = 2
 
@@ -329,7 +329,7 @@ bitOffset = 13
 bitWidth = 9
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_22_23"
+name = "BITS_22_23_OPAQUE"
 bitOffset = 22
 bitWidth = 2
 
@@ -349,7 +349,7 @@ bitOffset = 26
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_27"
+name = "BITS_27_OPAQUE"
 bitOffset = 27
 bitWidth = 1
 
@@ -371,7 +371,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_UNKNOWN"
+name = "LOW_OPAQUE"
 bitOffset = 0
 bitWidth = 2
 
@@ -381,7 +381,7 @@ bitOffset = 2
 bitWidth = 17
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 19
 bitWidth = 13
 
@@ -520,7 +520,7 @@ bitOffset = 2
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_7_3_UNKNOWN"
+name = "CONTROL_7_3_OPAQUE"
 bitOffset = 3
 bitWidth = 5
 
@@ -535,7 +535,7 @@ bitOffset = 8
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_9_UNKNOWN"
+name = "CONTROL_9_OPAQUE"
 bitOffset = 9
 bitWidth = 1
 
@@ -677,7 +677,7 @@ minimum = 0x0
 maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 21
 bitWidth = 11
 
@@ -703,7 +703,7 @@ minimum = 0x0
 maximum = 0x7FFFF
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_19_21"
+name = "BITS_19_21_OPAQUE"
 bitOffset = 19
 bitWidth = 3
 
@@ -791,7 +791,7 @@ minimum = 0x0
 maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN_14_21"
+name = "BITS_14_21_OPAQUE"
 bitOffset = 14
 bitWidth = 8
 
@@ -820,7 +820,7 @@ minimum = 0x0
 maximum = 0xF
 
 [[peripherals.registers.register.fields]]
-name = "HIGH_UNKNOWN"
+name = "HIGH_OPAQUE"
 bitOffset = 28
 bitWidth = 4
 
@@ -865,6 +865,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_DBG_READ_KEY_ENTRY",
@@ -876,6 +877,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_RTS_CONTROL%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_TX_PROTECTION_ARGUMENTS",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
@@ -887,6 +889,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBCOEX_PTI_TABLE",
@@ -899,6 +902,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.COUNT"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29",
@@ -909,6 +913,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "BLOB_LIBNET80211_HE_CONTROL_TX",
@@ -919,6 +924,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_DBG_READ_TX_SIG",
@@ -934,6 +940,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_TX_SIG"]
 provenance = "observed"
 accuracy = "exact"
@@ -941,6 +948,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_DBG_READ_TX_SIG"]
 provenance = "observed"
 accuracy = "exact"
@@ -948,6 +956,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
@@ -961,6 +970,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.DCM"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "BLOB_LIBPP_HE_DCM",
@@ -976,6 +986,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.VECTOR_REQUIRED_14"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
@@ -986,6 +997,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.NSTS_AND_MIDAMBLE_PERIODICITY"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_DBG_DUMP_RX_PPDU",
     "ESP_WIFI_SYS_S31_HE_SU_SIG",
@@ -997,6 +1009,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.VECTOR_REQUIRED_HIGH"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
@@ -1007,6 +1020,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "BLOB_LIBPP_PP_HE_AMPDU_LENGTH",
@@ -1023,6 +1037,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.FEC_CODING"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 provenance = "reviewed"
 accuracy = "exact"
@@ -1030,6 +1045,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.DESCRIPTOR_CLASS_MATCH"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 provenance = "observed"
 accuracy = "exact"
@@ -1037,6 +1053,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.APEP_LENGTH"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_PP_HE_AMPDU_LENGTH",
     "BLOB_LIBPP_PP_HE_SMPDU_LENGTH",
@@ -1053,6 +1070,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.AMPDU_LENGTH_VALID"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
@@ -1065,6 +1083,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_MPDU_LENGTH_TAIL%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_MAC_TX_SET_TB",
     "ROM_REV0_MAC_TX_SET_TB",
@@ -1075,6 +1094,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.POWER%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 provenance = "observed"
 accuracy = "exact"
@@ -1082,6 +1102,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "HIL_VENDOR_CONNECTED_VECTOR_2026_07_29",
@@ -1094,6 +1115,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_DBG_READ_TX_SIG",
@@ -1107,6 +1129,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_DBG_READ_TX_SIG",
@@ -1124,6 +1147,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL_CONFIG%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "BLOB_LIBNET80211_HE_CONTROL_TX",
@@ -1133,3 +1157,327 @@ sources = [
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.LEGACY_SIGNAL"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.KEY_ENTRY_INDEX"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.BSSID_SELECT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.VECTOR_FORMAT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.HIGH_CONTROL_28"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.CBW40"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s.HIGH_CONTROL_31_30"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_RTS_CONTROL%s.RTS_THRESHOLD_BYTES"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_RTS_CONTROL%s.RTS_THRESHOLD_VALID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_RTS_CONTROL%s.HE_RTS_DISABLED"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.TXOP"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.PTI_0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.PTI_1"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.PTI_2"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.PTI_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL%s.IMAGE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.MCS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.CBW40"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.SMOOTHING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.NOT_SOUNDING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.REQUIRED_ONE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.AGGREGATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.STBC"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.FEC_CODING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s.SHORT_GI"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.CHANNEL_WIDTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.BITS_2_3_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.GROUP_ID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.NSTS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.SU_PARTIAL_AID"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.BITS_22_23_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.SHORT_GI"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.SHORT_GI_SYMBOL_DISAMBIGUATION"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.CODING"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.BITS_27_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s.MCS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.LOW_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.SU_CBW20_PRE_EOFPAD_UNIT4BYTES_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.FORMAT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.BEAM_CHANGE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.UPLINK"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.MCS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.BSS_COLOR"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.SPATIAL_REUSE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.BANDWIDTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.GI_LTF"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_REQUIRED_0"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_REQUIRED_2"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_7_3_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_REQUIRED_8"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_9_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_MPDU_LENGTH_TAIL%s.LINK_INDEX"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.POWER%s.DATA_PRIMARY"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.POWER%s.DATA_ALTERNATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.POWER%s.RTS_PRIMARY"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.POWER%s.RTS_ALTERNATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s.DESCRIPTOR_COUNT_A"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s.DESCRIPTOR_COUNT_B"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s.DESCRIPTOR_COUNT_A_COPY"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH%s.HT40_LENGTH"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH%s.BITS_19_21_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH%s.HT40_EOF_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH%s.HT40_TXOP_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH%s.HT40_MCS"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.TXRX_QUEUE_ANTENNA_LAST"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.TXRX_QUEUE_ANTENNA_VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.TXRX_QUEUE_ANTENNA_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.TX_QUEUE_ANTENNA_LAST"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.TX_QUEUE_ANTENNA_VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.TX_QUEUE_ANTENNA_ENABLE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.RTS_RATE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.BITS_14_21_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.HT20_EOF_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.HT20_TXOP_COUNT"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s.HIGH_OPAQUE"
+naming = "opaque"
+
+[[review]]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL_CONFIG%s.SOFTWARE_HE_CONTROL_ENABLE"
+naming = "descriptive"

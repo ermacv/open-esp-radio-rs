@@ -2551,8 +2551,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_UNKNOWN"
-method = "policy_high_unknown"
+svd-name = "POLICY_HIGH_OPAQUE"
+method = "policy_high_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2603,8 +2603,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_UNKNOWN"
-method = "policy_high_unknown"
+svd-name = "POLICY_HIGH_OPAQUE"
+method = "policy_high_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2655,8 +2655,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_UNKNOWN"
-method = "policy_high_unknown"
+svd-name = "POLICY_HIGH_OPAQUE"
+method = "policy_high_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2707,8 +2707,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "POLICY_HIGH_UNKNOWN"
-method = "policy_high_unknown"
+svd-name = "POLICY_HIGH_OPAQUE"
+method = "policy_high_opaque"
 bit-offset = 17
 bit-width = 15
 access = "read-write"
@@ -2725,8 +2725,8 @@ scope = []
 register-method = "control"
 
 [[registers.fields]]
-svd-name = "ENABLES_UNKNOWN"
-method = "enables_unknown"
+svd-name = "ENABLES_OPAQUE"
+method = "enables_opaque"
 bit-offset = 0
 bit-width = 3
 access = "read-write"
@@ -2743,8 +2743,8 @@ scope = []
 register-method = "enable"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_0_4"
-method = "unknown_0_4"
+svd-name = "BITS_0_4_OPAQUE"
+method = "bits_0_4_opaque"
 bit-offset = 0
 bit-width = 5
 access = "read-write"
@@ -2757,8 +2757,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_6_UNKNOWN"
-method = "cold_rx_enable_6_unknown"
+svd-name = "COLD_RX_ENABLE_6_OPAQUE"
+method = "cold_rx_enable_6_opaque"
 bit-offset = 6
 bit-width = 1
 access = "read-write"
@@ -2778,8 +2778,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_9_10"
-method = "unknown_9_10"
+svd-name = "BITS_9_10_OPAQUE"
+method = "bits_9_10_opaque"
 bit-offset = 9
 bit-width = 2
 access = "read-write"
@@ -2792,15 +2792,15 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_12_UNKNOWN"
-method = "cold_rx_enable_12_unknown"
+svd-name = "COLD_RX_ENABLE_12_OPAQUE"
+method = "cold_rx_enable_12_opaque"
 bit-offset = 12
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_13_UNKNOWN"
-method = "cold_rx_enable_13_unknown"
+svd-name = "COLD_RX_ENABLE_13_OPAQUE"
+method = "cold_rx_enable_13_opaque"
 bit-offset = 13
 bit-width = 1
 access = "read-write"
@@ -2820,8 +2820,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_16_18"
-method = "unknown_16_18"
+svd-name = "BITS_16_18_OPAQUE"
+method = "bits_16_18_opaque"
 bit-offset = 16
 bit-width = 3
 access = "read-write"
@@ -2834,29 +2834,29 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_20"
-method = "unknown_20"
+svd-name = "BITS_20_OPAQUE"
+method = "bits_20_opaque"
 bit-offset = 20
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_21_UNKNOWN"
-method = "cold_rx_enable_21_unknown"
+svd-name = "COLD_RX_ENABLE_21_OPAQUE"
+method = "cold_rx_enable_21_opaque"
 bit-offset = 21
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_22"
-method = "unknown_22"
+svd-name = "BITS_22_OPAQUE"
+method = "bits_22_opaque"
 bit-offset = 22
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_23_UNKNOWN"
-method = "cold_rx_enable_23_unknown"
+svd-name = "COLD_RX_ENABLE_23_OPAQUE"
+method = "cold_rx_enable_23_opaque"
 bit-offset = 23
 bit-width = 1
 access = "read-write"
@@ -2869,29 +2869,29 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_25_26"
-method = "unknown_25_26"
+svd-name = "BITS_25_26_OPAQUE"
+method = "bits_25_26_opaque"
 bit-offset = 25
 bit-width = 2
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_27_UNKNOWN"
-method = "cold_rx_enable_27_unknown"
+svd-name = "COLD_RX_ENABLE_27_OPAQUE"
+method = "cold_rx_enable_27_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_28_UNKNOWN"
-method = "cold_rx_enable_28_unknown"
+svd-name = "COLD_RX_ENABLE_28_OPAQUE"
+method = "cold_rx_enable_28_opaque"
 bit-offset = 28
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_29_31"
-method = "unknown_29_31"
+svd-name = "BITS_29_31_OPAQUE"
+method = "bits_29_31_opaque"
 bit-offset = 29
 bit-width = 3
 access = "read-write"
@@ -2926,8 +2926,8 @@ scope = []
 register-method = "status"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_0_4"
-method = "unknown_0_4"
+svd-name = "BITS_0_4_OPAQUE"
+method = "bits_0_4_opaque"
 bit-offset = 0
 bit-width = 5
 access = "read-only"
@@ -2940,8 +2940,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_6_UNKNOWN"
-method = "cold_rx_enable_6_unknown"
+svd-name = "COLD_RX_ENABLE_6_OPAQUE"
+method = "cold_rx_enable_6_opaque"
 bit-offset = 6
 bit-width = 1
 access = "read-only"
@@ -2961,8 +2961,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_9_10"
-method = "unknown_9_10"
+svd-name = "BITS_9_10_OPAQUE"
+method = "bits_9_10_opaque"
 bit-offset = 9
 bit-width = 2
 access = "read-only"
@@ -2975,15 +2975,15 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_12_UNKNOWN"
-method = "cold_rx_enable_12_unknown"
+svd-name = "COLD_RX_ENABLE_12_OPAQUE"
+method = "cold_rx_enable_12_opaque"
 bit-offset = 12
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_13_UNKNOWN"
-method = "cold_rx_enable_13_unknown"
+svd-name = "COLD_RX_ENABLE_13_OPAQUE"
+method = "cold_rx_enable_13_opaque"
 bit-offset = 13
 bit-width = 1
 access = "read-only"
@@ -3003,8 +3003,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_16_18"
-method = "unknown_16_18"
+svd-name = "BITS_16_18_OPAQUE"
+method = "bits_16_18_opaque"
 bit-offset = 16
 bit-width = 3
 access = "read-only"
@@ -3017,29 +3017,29 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_20"
-method = "unknown_20"
+svd-name = "BITS_20_OPAQUE"
+method = "bits_20_opaque"
 bit-offset = 20
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_21_UNKNOWN"
-method = "cold_rx_enable_21_unknown"
+svd-name = "COLD_RX_ENABLE_21_OPAQUE"
+method = "cold_rx_enable_21_opaque"
 bit-offset = 21
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_22"
-method = "unknown_22"
+svd-name = "BITS_22_OPAQUE"
+method = "bits_22_opaque"
 bit-offset = 22
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_23_UNKNOWN"
-method = "cold_rx_enable_23_unknown"
+svd-name = "COLD_RX_ENABLE_23_OPAQUE"
+method = "cold_rx_enable_23_opaque"
 bit-offset = 23
 bit-width = 1
 access = "read-only"
@@ -3052,29 +3052,29 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_25_26"
-method = "unknown_25_26"
+svd-name = "BITS_25_26_OPAQUE"
+method = "bits_25_26_opaque"
 bit-offset = 25
 bit-width = 2
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_27_UNKNOWN"
-method = "cold_rx_enable_27_unknown"
+svd-name = "COLD_RX_ENABLE_27_OPAQUE"
+method = "cold_rx_enable_27_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "COLD_RX_ENABLE_28_UNKNOWN"
-method = "cold_rx_enable_28_unknown"
+svd-name = "COLD_RX_ENABLE_28_OPAQUE"
+method = "cold_rx_enable_28_opaque"
 bit-offset = 28
 bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_29_31"
-method = "unknown_29_31"
+svd-name = "BITS_29_31_OPAQUE"
+method = "bits_29_31_opaque"
 bit-offset = 29
 bit-width = 3
 access = "read-only"
@@ -3109,8 +3109,8 @@ scope = []
 register-method = "cca_control"
 
 [[registers.fields]]
-svd-name = "CONTROL_LOW_UNKNOWN"
-method = "control_low_unknown"
+svd-name = "CONTROL_LOW_OPAQUE"
+method = "control_low_opaque"
 bit-offset = 0
 bit-width = 28
 access = "read-write"
@@ -3169,8 +3169,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "LOW_STATE_UNKNOWN"
-method = "low_state_unknown"
+svd-name = "LOW_STATE_OPAQUE"
+method = "low_state_opaque"
 bit-offset = 4
 bit-width = 12
 access = "write-only"
@@ -3204,8 +3204,8 @@ bit-width = 1
 access = "write-only"
 
 [[registers.fields]]
-svd-name = "HIGH_STATE_UNKNOWN"
-method = "high_state_unknown"
+svd-name = "HIGH_STATE_OPAQUE"
+method = "high_state_opaque"
 bit-offset = 20
 bit-width = 12
 access = "write-only"
@@ -3250,8 +3250,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "LOW_STATE_UNKNOWN"
-method = "low_state_unknown"
+svd-name = "LOW_STATE_OPAQUE"
+method = "low_state_opaque"
 bit-offset = 4
 bit-width = 12
 access = "read-only"
@@ -3285,8 +3285,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "MIDDLE_STATE_UNKNOWN"
-method = "middle_state_unknown"
+svd-name = "MIDDLE_STATE_OPAQUE"
+method = "middle_state_opaque"
 bit-offset = 20
 bit-width = 4
 access = "read-only"
@@ -3320,8 +3320,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "TRIGGER_FLOW_HIGH_UNKNOWN"
-method = "trigger_flow_high_unknown"
+svd-name = "TRIGGER_FLOW_HIGH_OPAQUE"
+method = "trigger_flow_high_opaque"
 bit-offset = 28
 bit-width = 4
 access = "read-only"
@@ -3366,8 +3366,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_STATE_UNKNOWN"
-method = "high_state_unknown"
+svd-name = "HIGH_STATE_OPAQUE"
+method = "high_state_opaque"
 bit-offset = 4
 bit-width = 28
 access = "read-write"
@@ -3931,8 +3931,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "RTC_UPDATE_ENABLE_UNKNOWN"
-method = "rtc_update_enable_unknown"
+svd-name = "RTC_UPDATE_ENABLE_OPAQUE"
+method = "rtc_update_enable_opaque"
 bit-offset = 27
 bit-width = 1
 access = "read-write"
@@ -4187,8 +4187,8 @@ scope = []
 register-method = "softap_control"
 
 [[registers.fields]]
-svd-name = "HIGH_CONTROL_UNKNOWN"
-method = "high_control_unknown"
+svd-name = "HIGH_CONTROL_OPAQUE"
+method = "high_control_opaque"
 bit-offset = 30
 bit-width = 1
 access = "read-write"
@@ -4350,8 +4350,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_8_31"
-method = "unknown_8_31"
+svd-name = "BITS_8_31_OPAQUE"
+method = "bits_8_31_opaque"
 bit-offset = 8
 bit-width = 24
 access = "read-write"
@@ -4424,8 +4424,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_8_31"
-method = "unknown_8_31"
+svd-name = "BITS_8_31_OPAQUE"
+method = "bits_8_31_opaque"
 bit-offset = 8
 bit-width = 24
 access = "read-only"
@@ -4498,8 +4498,8 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_8_31"
-method = "unknown_8_31"
+svd-name = "BITS_8_31_OPAQUE"
+method = "bits_8_31_opaque"
 bit-offset = 8
 bit-width = 24
 access = "read-only"
@@ -4572,8 +4572,8 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "UNKNOWN_8_31"
-method = "unknown_8_31"
+svd-name = "BITS_8_31_OPAQUE"
+method = "bits_8_31_opaque"
 bit-offset = 8
 bit-width = 24
 access = "read-write"

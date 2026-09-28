@@ -41,7 +41,7 @@ impl WifiRadioRegisters {
         let coex = &self.peripherals.wifi_mac.wifi_mac_coex_init;
 
         coex.default_control()
-            .modify(|_, w| w.coex_pti_init_unknown().set_bit());
+            .modify(|_, w| w.coex_pti_init_opaque().set_bit());
         coex.default_control()
             .modify(|_, w| w.default_pti_enable().set_bit());
 

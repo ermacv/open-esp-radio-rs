@@ -18,7 +18,7 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "MAC_DISABLE_GATES_UNKNOWN"
+name = "MAC_DISABLE_GATES_OPAQUE"
 description = "Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."
 bitOffset = 4
 bitWidth = 4
@@ -54,6 +54,7 @@ completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_CORE_ENABLE.CONTROL"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_ENABLE_MAC",
     "BLOB_LIBPP_DEBUG_STATISTICS_CONTROL",
@@ -63,8 +64,13 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "WIFI_MAC_CORE_ENABLE.CONTROL.MAC_DISABLE_GATES_UNKNOWN"
+entity = "WIFI_MAC_CORE_ENABLE.CONTROL.MAC_DISABLE_GATES_OPAQUE"
+naming = "opaque"
 sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_CORE_ENABLE.CONTROL.HARDWARE_STATISTICS_CLEAR_ARM"
+naming = "descriptive"

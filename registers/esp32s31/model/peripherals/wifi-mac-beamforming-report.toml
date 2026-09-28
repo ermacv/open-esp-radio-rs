@@ -21,7 +21,7 @@ bitOffset = 0
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "UNKNOWN"
+name = "BITS_8_31_OPAQUE"
 bitOffset = 8
 bitWidth = 24
 
@@ -31,3 +31,15 @@ sources = ["BLOB_LIBPP_BFR_AVERAGE_SNR"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_REPORT.AVERAGE_SNR"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_REPORT.AVERAGE_SNR.STREAM_0_CODE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BEAMFORMING_REPORT.AVERAGE_SNR.BITS_8_31_OPAQUE"
+naming = "opaque"

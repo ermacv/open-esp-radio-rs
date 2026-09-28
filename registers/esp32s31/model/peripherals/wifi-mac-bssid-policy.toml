@@ -92,6 +92,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_LOW%s"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_MAC_SET_BSSID"]
 provenance = "observed"
 accuracy = "exact"
@@ -99,6 +100,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_SET_BSSID",
     "BLOB_LIBPP_RX_POLICY",
@@ -112,6 +114,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.ASSOCIATION_ID"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -119,6 +122,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.MINIMUM_MPDU_START_SPACING"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
 provenance = "observed"
 accuracy = "exact"
@@ -126,6 +130,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.INTERFACE_IS_SOFT_AP"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBPP_RX_POLICY",
@@ -136,6 +141,7 @@ completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.ADDRESS_CHECK_ENABLE"
+naming = "descriptive"
 sources = [
     "BLOB_LIBPP_HAL_MAC_SET_BSSID",
     "BLOB_LIBPP_RX_POLICY",
@@ -145,3 +151,11 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_BSSID_POLICY.BSSID_LOW%s.BYTES_0_3"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.BSSID_HIGH"
+naming = "descriptive"

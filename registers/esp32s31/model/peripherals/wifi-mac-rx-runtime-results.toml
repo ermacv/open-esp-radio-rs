@@ -56,6 +56,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_RUNTIME_RESULTS.STATISTICS_CLEAR"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
@@ -63,6 +64,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_RUNTIME_RESULTS.END_RESULT_LOW"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
@@ -70,7 +72,20 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_RUNTIME_RESULTS.END_RESULT_HIGH"
+naming = "descriptive"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_RX_RUNTIME_RESULTS.STATISTICS_CLEAR.CLEAR_PULSE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_RUNTIME_RESULTS.END_RESULT_LOW.VALUE"
+naming = "descriptive"
+
+[[review]]
+entity = "WIFI_MAC_RX_RUNTIME_RESULTS.END_RESULT_HIGH.VALUE"
+naming = "descriptive"

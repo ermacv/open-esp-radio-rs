@@ -32,7 +32,6 @@ const JOURNAL_PREFIX: &str = "vendor-";
 const VENDOR_BOOT_TIMEOUT: Duration = Duration::from_secs(20);
 /// Serial read poll interval; the USB-Serial/JTAG console ignores the rate.
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
-const BAUD_RATE: u32 = 115_200;
 /// Bootstrap ELF the HIL image build leaves beside the application.
 const BOOTSTRAP_ELF: &str = "bootstrap.elf";
 /// Longest wait for one Wi-Fi radio restart on either side.
@@ -199,12 +198,13 @@ fn journal(root: &Path, image: &str, application: &Path, port: &Path) -> Result<
     Ok(())
 }
 
-/// The console port of the board, just reset.
+/// The console port of the board, just reset. The port is opened through
+/// the stand's opener, which never resets the chip on its own.
 fn reset_console(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
-    let mut serial = serialport::new(port.to_string_lossy(), BAUD_RATE)
-        .timeout(READ_TIMEOUT)
-        .open()?;
-    oer_hil_runner_core::session::reset::reset_usb_serial_jtag(&mut *serial)?;
+    use oer_hil_runner_core::session::reset::{open_without_reset, reset_usb_serial_jtag};
+    let mut serial = open_without_reset(port)?;
+    serial.set_timeout(READ_TIMEOUT)?;
+    reset_usb_serial_jtag(&mut *serial)?;
     Ok(serial)
 }
 

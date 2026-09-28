@@ -1068,7 +1068,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "6cb938249d85a6135ff393d396cf6b5b472e29df7db06afa9673eafdab42e864"
+      "sha256": "6af0936b48358e0fca560491264319a089f6ada0222c5660b912608b48a809b9"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1132,7 +1132,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
-      "sha256": "6bf23f2de012b12ebc4e293dc6900faa0376046258dd1831573c9b304c6c7dc0"
+      "sha256": "a7769eaab729a6dad50c1e902027ddf3eb9ff7816d7da9ecbe7eab3446ee1adb"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",

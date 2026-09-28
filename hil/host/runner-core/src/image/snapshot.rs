@@ -73,7 +73,23 @@ enum Checkout {
     /// keeps Cargo's unit identities stable in the shared compile cache, and
     /// unchanged files keep their modification times, so Cargo rebuilds only
     /// the packages a snapshot actually changes.
-    Workspace { path: PathBuf, _lock: fs::File },
+    Workspace { path: PathBuf, _lock: WorkspaceLock },
+}
+
+/// The exclusive lock of one build workspace, released explicitly on drop.
+///
+/// Closing this descriptor alone does not release the `flock` while a child
+/// that another thread forked, and that has not yet executed its program,
+/// still holds the shared open file description; the workspace would then
+/// look busy to the next build for that moment.
+struct WorkspaceLock(fs::File);
+
+impl Drop for WorkspaceLock {
+    fn drop(&mut self) {
+        if let Err(error) = fs2::FileExt::unlock(&self.0) {
+            eprintln!("release the source build workspace lock: {error}");
+        }
+    }
 }
 
 impl Checkout {
@@ -164,7 +180,7 @@ impl FrozenSources {
         let sources = Self {
             checkout: Checkout::Workspace {
                 path: workspace.to_owned(),
-                _lock: lock,
+                _lock: WorkspaceLock(lock),
             },
             snapshot,
             manifest,

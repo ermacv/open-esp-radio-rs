@@ -1087,17 +1087,13 @@ pub const DECISIONS: &[Decision] = &[
         ],
     },
     Decision {
-        reason: "low-power clock selection for the Wi-Fi (module 5) and coexistence (module 8) \
-            modules: production owns only the Bluetooth module's selection \
-            (`SharedRadioLease::select_bluetooth_low_power_clock`); the other modules' low-power \
-            clocks are not selected by any production path",
+        reason: "low-power clock selection for the coexistence module (8): production owns \
+            only the Bluetooth module's selection \
+            (`SharedRadioLease::select_bluetooth_low_power_clock`), and no ESP-IDF path selects \
+            the coexistence module's (reviewed with the Bluetooth owner). The Wi-Fi module (5) \
+            arm, which ESP-IDF's `esp_perip_clk_init` selects at start whenever Wi-Fi is built \
+            in, stays untriaged: production does not select it yet",
         places: &[
-            // The module comparisons past Bluetooth's and the Wi-Fi arm.
-            Place::Range {
-                function: "modem_clock_select_lp_clock_source",
-                start: 0x6e,
-                end: 0xd6,
-            },
             // The coexistence arm.
             Place::Range {
                 function: "modem_clock_select_lp_clock_source",
@@ -1106,27 +1102,20 @@ pub const DECISIONS: &[Decision] = &[
             },
             Place::Range {
                 function: "modem_clock_deselect_lp_clock_source",
-                start: 0x7e,
-                end: 0xb4,
-            },
-            Place::Range {
-                function: "modem_clock_deselect_lp_clock_source",
                 start: 0x132,
                 end: 0x146,
             },
-            Place::Function("modem_clock_hal_select_wifi_lpclk_source"),
-            Place::Function("modem_clock_hal_deselect_all_wifi_lpclk_source"),
-            Place::Function("modem_clock_hal_enable_wifipwr_clock"),
             Place::Function("modem_clock_hal_select_coex_lpclk_source"),
             Place::Function("modem_clock_hal_deselect_all_coex_lpclk_source"),
         ],
     },
     Decision {
-        reason: "low-power clock sources other than the main crystal: production selects the \
-            Bluetooth low-power clock only from the main crystal (ESP-IDF \
-            `MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL`) and implements no other source; a source the \
-            vendor maps to no module returns before any write, and a module outside the \
-            vendor's range asserts",
+        reason: "low-power clock sources other than the main crystal: production implements \
+            only the default main-crystal source (ESP-IDF `MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL`) \
+            with the ESP32-S31 Bluetooth divider, where other chips' controllers choose RC slow \
+            or a 32 kHz crystal by configuration; a source the vendor maps to no module returns \
+            before any write, and a module outside the vendor's range asserts (reviewed with the \
+            Bluetooth owner)",
         places: &[
             Place::Range {
                 function: "modem_clock_select_lp_clock_source",
@@ -1147,7 +1136,8 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         reason: "the vendor's interrupt-context critical section (`xPortInIsrContext`): the \
             ESP-IDF modem clock driver takes its spinlock through the ISR variant inside an \
-            interrupt; production's lease runs the selection in task context only",
+            interrupt; production's lease runs the selection in task context only, during the \
+            Controller clock transition (reviewed with the Bluetooth owner)",
         places: &[
             Place::Range {
                 function: "modem_clock_select_lp_clock_source",

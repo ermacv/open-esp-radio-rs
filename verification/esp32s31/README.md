@@ -597,8 +597,11 @@ or branch direction is either excluded by a reviewed decision in
 [`decisions/coverage.rs`](scenarios/src/decisions/coverage.rs), with its reason, or listed as
 untriaged in the evidence index. Decisions currently exclude vendor runtime
 helpers (diagnostic formatting, compiler arithmetic and copy helpers, prologue
-millicode) as whole functions. A decision on a closure function that is fully
-covered fails its scenario. An untriaged location has neither a case that
+millicode) as whole functions. A decision that excludes whole functions also
+excludes, within one claim's closure, the functions no execution entered that
+the closure reaches only through excluded functions: their code is
+unreachable for the same reason. A decision on a closure function that is
+fully covered fails its scenario. An untriaged location has neither a case that
 covers it nor a reviewed decision. A whole-function decision whose function
 only produces diagnostic output uses `Place::Diagnostic`.
 

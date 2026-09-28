@@ -74,6 +74,11 @@ pub fn serve(runs: &Path, args: &[std::ffi::OsString]) -> Result<std::process::E
             }
             Err(_) => {}
         }
+        if oer_process::cancellation_requested() {
+            me.withdraw(&record);
+            eprintln!("hil dashboard: stopped");
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
         if checked.elapsed() >= std::time::Duration::from_secs(2) {
             checked = std::time::Instant::now();
             if Instance::read(&record).is_none_or(|current| current.pid != me.pid) {
@@ -133,6 +138,14 @@ impl Instance {
 
     fn alive(&self) -> bool {
         oer_hil_arbiter::process_started_unix_millis(self.pid) == Some(self.started_unix_millis)
+    }
+
+    /// Remove `record` when it still names this dashboard, so a stopped
+    /// dashboard leaves no record behind while another's stays.
+    fn withdraw(&self, record: &Path) {
+        if Instance::read(record).is_some_and(|current| current == *self) {
+            let _ = std::fs::remove_file(record);
+        }
     }
 
     /// Stop this dashboard and wait up to five seconds for its port.
@@ -326,6 +339,23 @@ mod tests {
         };
         assert!(!recycled.alive());
         assert_eq!(Instance::current(9000).unwrap().build, me.build);
+    }
+
+    #[test]
+    fn a_stopped_dashboard_withdraws_only_its_own_record() {
+        let directory = tempfile::tempdir().unwrap();
+        let record = directory.path().join("dashboard.json");
+        let me = Instance::current(8765).unwrap();
+        let other = Instance {
+            pid: me.pid + 1,
+            ..me.clone()
+        };
+        other.write(&record).unwrap();
+        me.withdraw(&record);
+        assert_eq!(Instance::read(&record), Some(other));
+        me.write(&record).unwrap();
+        me.withdraw(&record);
+        assert!(!record.exists());
     }
 
     #[test]

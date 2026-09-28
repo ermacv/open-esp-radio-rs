@@ -47,8 +47,10 @@ fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
         .get("bluetooth-peripheral-local-disconnect")
         .unwrap();
     assert!(check_flashed_capabilities(connection, &dtm).is_err());
+    // An image that runs the peripheral role serves no raw HCI exchanges.
     let peripheral = FeatureCapabilities {
         bluetooth_peripheral: true,
+        bluetooth_hci: false,
         ..dtm
     };
     check_flashed_capabilities(connection, &peripheral).unwrap();

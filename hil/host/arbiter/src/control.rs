@@ -111,31 +111,38 @@ impl ResetControl {
         // Opening raises both lines, which the auto-program circuit ignores.
         // Releasing EN's line first passes through BOOT-only, which does not
         // reset; releasing BOOT's line first would pull EN low.
-        let mut set = |line: Line, asserted: bool| -> crate::Result<()> {
+        let set = |port: &mut Box<dyn serialport::SerialPort>,
+                   line: Line,
+                   asserted: bool|
+         -> crate::Result<()> {
             match line {
                 Line::Rts => port.write_request_to_send(asserted)?,
                 Line::Dtr => port.write_data_terminal_ready(asserted)?,
             }
             Ok(())
         };
-        set(self.en, false)?;
-        set(self.boot, false)?;
+        set(&mut port, self.en, false)?;
+        set(&mut port, self.boot, false)?;
+        // Drop what the bridge buffered before this reset, such as the banner
+        // of an earlier one.
+        std::thread::sleep(Duration::from_millis(50));
+        port.clear(serialport::ClearBuffer::Input)?;
         match mode {
             BootMode::Normal => {
-                set(self.en, true)?;
+                set(&mut port, self.en, true)?;
                 std::thread::sleep(Duration::from_millis(100));
-                set(self.en, false)?;
+                set(&mut port, self.en, false)?;
             }
             BootMode::Download => {
-                set(self.boot, true)?;
+                set(&mut port, self.boot, true)?;
                 std::thread::sleep(Duration::from_millis(50));
-                set(self.en, true)?;
-                set(self.boot, false)?;
+                set(&mut port, self.en, true)?;
+                set(&mut port, self.boot, false)?;
                 std::thread::sleep(Duration::from_millis(100));
-                set(self.boot, true)?;
-                set(self.en, false)?;
+                set(&mut port, self.boot, true)?;
+                set(&mut port, self.en, false)?;
                 std::thread::sleep(Duration::from_millis(50));
-                set(self.boot, false)?;
+                set(&mut port, self.boot, false)?;
             }
         }
         let started = Instant::now();
@@ -152,12 +159,12 @@ impl ResetControl {
     }
 }
 
-/// The ROM's `rst:... boot:...` line in `banner`.
+/// The ROM's last `rst:... boot:...` line in `banner`.
 pub fn reset_line(banner: &str) -> Option<&str> {
     banner
         .lines()
         .map(str::trim)
-        .find(|line| line.starts_with("rst:") && line.contains("boot:"))
+        .rfind(|line| line.starts_with("rst:") && line.contains("boot:"))
 }
 
 #[cfg(test)]

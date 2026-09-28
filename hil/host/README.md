@@ -254,11 +254,31 @@ and prints the reset reason and boot mode the ROM reports on the bridge;
 never implied. The bridge port is the stand's: a terminal that opens it with
 its default modem lines resets the chip.
 
+Tools reach a board's port only through the stand's commands, which release
+RTS before DTR so opening a port never resets the chip, and hold a lease of
+the board while they use it; a script or terminal that opens a board or
+bridge port itself can reset the chip or pull its boot strap.
+`cargo hil board reset BOARD` resets through the USB Serial/JTAG RTS line
+(default), `--via jtag` through OpenOCD and the chip's debug module, or
+`--via en` through the registered bridge, and prints the reset line the ROM
+reports. `board check` reports, without resetting, whether the board is
+attached, its last flash, maintenance, its reset paths and whether it answers
+the peer text protocol. `board console --for DUR [--until TEXT]` prints and
+saves the console under `target/hil/console/<mac>/`. `cargo hil peer send
+BOARD LINE` sends one peer command and prints the output up to that command's
+`@OK` or `@ERR`; it also claims the air shared, since a peer command may
+transmit. Every OpenOCD session the stand starts is stopped when it outlives
+its timeout (ten minutes to program, one otherwise).
+
 ```console
 cargo hil devices                     # boards: label, port, last firmware
 cargo hil devices set 38:44:BE:AA:25:64 --chip esp32c5 --name esp32c5
 cargo hil devices set 38:44:BE:AA:25:64 --reset-uart 5B90165754 --en rts --boot dtr
 cargo hil devices reset esp32c5       # rst:0x1 (POWERON),boot:0x18 (SPI_FAST_FLASH_BOOT)
+cargo hil board check esp32c5
+cargo hil board reset esp32c5 --via jtag
+cargo hil board console esp32c5 --for 30s --until @READY
+cargo hil peer send esp32c5 SYNC
 cargo hil lease --board esp32c5 --flashed ieee802154-peer --application build/peer.bin \
     --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:AA:25:64-if00 \
     --chip esp32c5 -- idf.py -p /dev/ttyACM1 flash

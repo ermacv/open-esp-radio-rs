@@ -59,7 +59,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let args = args.as_slice();
     match args.first().and_then(|argument| argument.to_str()) {
         None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
-        Some("queue") => return queue(&args[1..]),
+        Some("queue" | "status") => return queue(&args[1..]),
         Some("dashboard") => {
             return crate::hil_dashboard::serve(
                 &crate::hil_store::shared_runs(HIL_TARGET)?,
@@ -68,6 +68,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         }
         Some("lease") => return lease(ctx, options, &args[1..]),
         Some("board") => return board(ctx, &options, &args[1..]),
+        Some("peer") => return crate::hil_board::peer(options.owner(ctx), &args[1..]),
         Some("devices") => return devices(ctx, &options, &args[1..]),
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
         Some("flash") => {
@@ -145,7 +146,11 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
 const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
-  cargo hil queue [--json]            holders, queue with expected starts, boards, recent leases
+  cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases (alias: status)
+  cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
+  cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
+  cargo hil board console BOARD [--for 10s] [--until TEXT]       the console without a reset, under a lease
+  cargo hil peer send BOARD LINE... [--for 5s]                   one peer text-protocol command and its answer
   cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1
   cargo hil lease [OPTIONS] -- CMD    run CMD under one lease; nested cargo hil joins it
       --board NAME|MAC                boards CMD uses (repeatable)
@@ -556,8 +561,15 @@ fn board(
     enum BoardCli {
         /// Record a flash performed outside the HIL runner.
         Flashed(FlashedArgs),
+        #[command(flatten)]
+        Access(crate::hil_board::BoardCommand),
     }
-    let BoardCli::Flashed(flashed) = BoardCli::try_parse_from(args)?;
+    let flashed = match BoardCli::try_parse_from(args)? {
+        BoardCli::Flashed(flashed) => flashed,
+        BoardCli::Access(command) => {
+            return crate::hil_board::board(ctx, options.owner(ctx), command);
+        }
+    };
     if flashed.image.is_none() {
         return Err("cargo hil board flashed needs --image NAME".into());
     }

@@ -228,7 +228,7 @@ pub(crate) fn reset_into_application(port: &Path) -> Result<Box<dyn serialport::
 
 /// The console at `port`, opened without a reset: RTS is released before
 /// DTR, so the lines never pass through the reset-with-boot-strap state.
-fn open_without_reset(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
+pub(crate) fn open_without_reset(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
     let mut serial = serialport::new(port.to_string_lossy(), 115_200)
         .timeout(Duration::from_millis(200))
         .open()?;
@@ -238,7 +238,7 @@ fn open_without_reset(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
 }
 
 /// The lines `serial` receives, until the receiver is dropped.
-fn serial_lines(mut serial: Box<dyn serialport::SerialPort>) -> mpsc::Receiver<Vec<u8>> {
+pub(crate) fn serial_lines(mut serial: Box<dyn serialport::SerialPort>) -> mpsc::Receiver<Vec<u8>> {
     let (lines, received) = mpsc::channel();
     std::thread::spawn(move || {
         let mut pending = Vec::new();
@@ -273,7 +273,7 @@ fn serial_lines(mut serial: Box<dyn serialport::SerialPort>) -> mpsc::Receiver<V
 /// Copy `lines` to the terminal and `log` until `duration` passes or a line
 /// contains `until`; returns whether it did. Empty messages only keep the
 /// source alive and are not lines.
-fn capture(
+pub(crate) fn capture(
     lines: mpsc::Receiver<Vec<u8>>,
     duration: Duration,
     until: Option<&str>,

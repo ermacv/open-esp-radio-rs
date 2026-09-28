@@ -16,6 +16,7 @@ pub mod firmware;
 pub mod firmware_catalog;
 pub mod graph;
 pub mod hil;
+pub mod hil_board;
 pub mod hil_dashboard;
 pub mod hil_flash;
 pub mod hil_jtag;

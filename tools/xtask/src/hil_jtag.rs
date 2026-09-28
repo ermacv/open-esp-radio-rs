@@ -6,7 +6,10 @@
 //! its flasher stub and resets the CPU through the debug module, which none of
 //! those faults affect. The OpenOCD build is the one the ESP-IDF tool
 //! installation of the shared cache provides.
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use crate::Result;
 
@@ -59,14 +62,75 @@ pub fn program_arguments(
     arguments
 }
 
+/// Longest an OpenOCD flash may take; programming several megabytes over
+/// USB JTAG takes about a minute.
+const PROGRAM_TIMEOUT: Duration = Duration::from_secs(600);
+/// Longest any other OpenOCD session may take.
+const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Run OpenOCD with `arguments`, terminating it after `timeout`: a debug
+/// session on a wedged target can block forever, even against `SIGTERM`.
+fn run_openocd(arguments: &[String], timeout: Duration) -> Result<()> {
+    let (openocd, _) = openocd()?;
+    let mut command = std::process::Command::new(openocd);
+    command.args(arguments);
+    // Its log is shown only when it fails.
+    let output = oer_process::output(&mut command, Some(timeout)).map_err(|error| {
+        if error.is::<oer_process::owned::DeadlineExceeded>() {
+            format!(
+                "OpenOCD did not finish within {}s and was stopped",
+                timeout.as_secs()
+            )
+            .into()
+        } else {
+            error
+        }
+    })?;
+    if !output.status.success() {
+        let log = String::from_utf8_lossy(&output.stderr);
+        let tail = log.lines().rev().take(20).collect::<Vec<_>>();
+        return Err(format!(
+            "OpenOCD failed with {}:\n{}",
+            output.status,
+            tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+        )
+        .into());
+    }
+    Ok(())
+}
+
 /// Write `files` to the board and reset it into the application.
 pub fn program(chip: &str, mac: &str, files: &[(u64, PathBuf)]) -> Result<()> {
     if files.is_empty() {
         return Err("nothing to flash".into());
     }
-    let (openocd, scripts) = openocd()?;
-    crate::process::run(
-        std::process::Command::new(openocd).args(program_arguments(chip, mac, &scripts, files)),
+    let (_, scripts) = openocd()?;
+    run_openocd(
+        &program_arguments(chip, mac, &scripts, files),
+        PROGRAM_TIMEOUT,
+    )
+}
+
+/// Reset the CPU of the board of `chip` with USB serial number `mac` through
+/// its debug module and let it run.
+pub fn reset(chip: &str, mac: &str) -> Result<()> {
+    let (_, scripts) = openocd()?;
+    run_openocd(
+        &[
+            String::from("-s"),
+            scripts.display().to_string(),
+            String::from("-f"),
+            format!("board/{chip}-builtin.cfg"),
+            String::from("-c"),
+            format!("adapter serial {mac}"),
+            String::from("-c"),
+            String::from("init"),
+            String::from("-c"),
+            String::from("reset run"),
+            String::from("-c"),
+            String::from("shutdown"),
+        ],
+        SESSION_TIMEOUT,
     )
 }
 

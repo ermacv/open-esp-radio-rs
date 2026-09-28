@@ -60,14 +60,7 @@ fn run_profile_in(
     if dtm_version == DtmVersion::V1 {
         command.args(["--dtm-version", "v1"]);
     }
-    command.args([
-        "--profile",
-        match profile {
-            DtmProfile::ReceiveTransmit => "receive-transmit",
-            DtmProfile::Transmit => "transmit",
-            DtmProfile::ReceiveSilence => "receive-silence",
-        },
-    ]);
+    command.args(["--profile", profile.argument()]);
     // The helper has its own bounded operations and receives SIGTERM before
     // escalation. Keep enough grace for Reset, re-registration and restoration.
     let result = (|| -> crate::Result<Check> {
@@ -136,20 +129,25 @@ pub fn preflight(adapter: Adapter) -> crate::Result<()> {
     let capabilities = oer_process::output(&mut capabilities, Some(Duration::from_secs(5)))?;
     require_helper_capabilities(capabilities.status.success(), &capabilities.stdout)?;
 
-    let mut command = Command::new("sudo");
-    command.args([
-        "-n",
-        "-l",
-        HELPER,
-        "check",
-        "--adapter",
-        &adapter.to_string(),
-    ]);
-    let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
-    if !output.status.success() {
-        return Err(
-            "install the Bluetooth helper with cargo hil fixture install --provider linux-bluetooth".into(),
-        );
+    // The policy must grant every DTM profile exactly as the runner invokes it.
+    for profile in DtmProfile::ALL {
+        let mut command = Command::new("sudo");
+        command.args([
+            "-n",
+            "-l",
+            HELPER,
+            "check",
+            "--adapter",
+            &adapter.to_string(),
+            "--profile",
+            profile.argument(),
+        ]);
+        let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
+        if !output.status.success() {
+            return Err(
+                "install the Bluetooth helper with cargo hil fixture install --provider linux-bluetooth".into(),
+            );
+        }
     }
     if !Path::new("/sys/class/bluetooth")
         .join(adapter.to_string())

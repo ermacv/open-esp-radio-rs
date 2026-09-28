@@ -1249,12 +1249,13 @@ mod linux {
                             "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth {operation} --adapter {adapter}"
                         ));
                     }
-                    lines.push(format!(
-                        "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth check --adapter {adapter}"
-                    ));
-                    lines.push(format!(
-                        "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth check --adapter {adapter} --dtm-version v1"
-                    ));
+                    for version in ["", " --dtm-version v1"] {
+                        for profile in ["receive-transmit", "transmit", "receive-silence"] {
+                            lines.push(format!(
+                                "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth check --adapter {adapter}{version} --profile {profile}"
+                            ));
+                        }
+                    }
                     lines.push(format!(
                         "{operator} ALL=(root) NOPASSWD: /usr/local/libexec/open-radio-bluetooth connect-reset --adapter {adapter} --peer * --hold-ms * --termination *"
                     ));

@@ -57,6 +57,19 @@ pub enum DtmProfile {
     ReceiveSilence,
 }
 
+impl DtmProfile {
+    pub const ALL: [Self; 3] = [Self::ReceiveTransmit, Self::Transmit, Self::ReceiveSilence];
+
+    /// The helper's `--profile` argument.
+    pub const fn argument(self) -> &'static str {
+        match self {
+            Self::ReceiveTransmit => "receive-transmit",
+            Self::Transmit => "transmit",
+            Self::ReceiveSilence => "receive-silence",
+        }
+    }
+}
+
 /// Explicit command profile; v1 is diagnostic only, never an automatic fallback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -430,6 +443,18 @@ impl ConnectionReset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn profile_argument_is_the_helper_value() {
+        use clap::ValueEnum;
+        for profile in DtmProfile::ALL {
+            assert_eq!(
+                DtmProfile::from_str(profile.argument(), false),
+                Ok(profile),
+                "{profile:?}"
+            );
+        }
+        assert_eq!(DtmProfile::ALL.len(), DtmProfile::value_variants().len());
+    }
     #[test]
     fn adapter_rejects_paths_options_and_reserved_index() {
         for value in [

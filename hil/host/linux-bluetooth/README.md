@@ -60,10 +60,25 @@ The selected profile must advertise its RX, TX and Test End commands. A missing
 command, rejection or timeout fails the check; the helper never retries or
 switches versions. Reset, exclusive adapter ownership and verified restoration
 are unchanged. Reinstall with `cargo hil fixture install --provider linux-bluetooth`
-after updating its interface; installation adds only an exact v1 check grant for each admitted
-adapter, not arbitrary command or timeout access.
+after updating its interface; installation adds only exact check grants for
+each admitted adapter, command version and DTM profile, not arbitrary command
+or timeout access.
 
-Check report schema 2 records `dtm_version` and both advertised command profiles.
+### DTM profiles
+
+`--profile` selects what one check runs; the runner always names it:
+
+| Profile | Sequence |
+| --- | --- |
+| `receive-transmit` (default) | RX, Test End with the packet count, then TX and Test End. |
+| `transmit` | TX and Test End alone, for a receiving peer. |
+| `receive-silence` | RX while the peer is silent, ended by HCI Reset; the report sets `rx_ended_by_reset` instead of a count. The Intel AX211 never completes Test End after an RX test that received nothing. |
+
+The DTM scenario preflight checks that the installed policy grants every
+profile.
+
+Check report schema 3 records `dtm_version`, `profile`, `rx_ended_by_reset` and both
+advertised command profiles.
 The runner requires the reported version to match the requested version.
 DTM RF and watchdog scenarios continue to require v2; a passing diagnostic v1
 check is not substituted for their peer evidence. The helper uses a local typed

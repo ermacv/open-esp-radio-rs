@@ -1019,8 +1019,15 @@ fn policy_never_grants_installer_runner_or_wildcard_adapter() {
             assert!(policy.contains(&format!("{operation} --adapter {adapter}\n")));
             assert!(!policy.contains(&format!("{operation} --adapter *")));
         }
-        assert!(policy.contains(&format!("check --adapter {adapter}\n")));
-        assert!(policy.contains(&format!("check --adapter {adapter} --dtm-version v1\n")));
+        // The runner always names the DTM profile.
+        assert!(!policy.contains(&format!("check --adapter {adapter}\n")));
+        for version in ["", " --dtm-version v1"] {
+            for profile in ["receive-transmit", "transmit", "receive-silence"] {
+                assert!(policy.contains(&format!(
+                    "check --adapter {adapter}{version} --profile {profile}\n"
+                )));
+            }
+        }
         assert!(policy.contains(&format!(
             "security-failure --adapter {adapter} --peer * --failure missing-key --read-version-before-disconnect\n"
         )));

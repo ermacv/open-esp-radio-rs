@@ -185,7 +185,9 @@ oer_probe_macros::probe! {
     /// `retain_single` is nonzero. When `trigger_flow` is nonzero the
     /// completion is instead an acknowledgement timeout of a queue in
     /// Trigger flow with no Trigger-based packets pending, which ends the
-    /// aggregate through the vendor's Trigger-based success. A retained
+    /// aggregate through the vendor's Trigger-based success. The BlockAck
+    /// agreement is operational when `block_ack_operational` is nonzero. A
+    /// retained
     /// aggregate is compacted with the Retry bit set. Writes the decision,
     /// its retry mask, the next first sequence and subframe count to
     /// `output`; returns zero, or the step that failed.
@@ -205,6 +207,7 @@ oer_probe_macros::probe! {
         elapsed_micros: u32,
         retain_single: u32,
         trigger_flow: u32,
+        block_ack_operational: u32,
         output: *mut u32,
     ) -> u32 {
         let count = count as usize;
@@ -290,7 +293,13 @@ oer_probe_macros::probe! {
             return INVALID_INPUT;
         };
         let now = COMMITTED_MICROS + u64::from(elapsed_micros);
-        let observed = match owner.observe_retry_completion(&mut hardware, cookie, &mut retry, now, true) {
+        let observed = match owner.observe_retry_completion(
+            &mut hardware,
+            cookie,
+            &mut retry,
+            now,
+            block_ack_operational != 0,
+        ) {
             Ok(Some(observed)) => observed,
             Ok(None) => return NO_COMPLETION,
             Err(_) => return COMPLETION_FAILED,

@@ -163,6 +163,12 @@ const PREDECESSOR: &str = "Production admits the MPDU immediately left of SSN (w
 const HT_SINGLE: &str = "production ends the HT aggregate when one MPDU is missing and hands \
     it to its ordinary retry owner, which sets the Retry bit when it republishes the MPDU; the \
     vendor keeps it in the aggregate and sets the bit here (reviewed with the Wi-Fi owner)";
+/// Reviewed difference: where the Retry bit of an MPDU leaving the aggregate
+/// is set.
+const ORDINARY_RETRY: &str = "both sides hand the missing MPDUs to ordinary transmission once \
+    the agreement ended; the vendor sets their Retry bit in the resort, production's ordinary \
+    retry owner sets it on the copy it republishes, so the aggregate backing keeps the bit \
+    clear (reviewed with the Wi-Fi owner)";
 /// Reviewed difference: where an MSDU's lifetime starts.
 const LIFETIME_ORIGIN: &str = "production starts an MSDU's lifetime when its aggregate is \
     committed, the vendor at the pp queue enqueue timestamp: a head queued long before the rest \
@@ -179,13 +185,10 @@ const FILL_BAR: &str = "ppFillAMPDUBar";
 const FILL_BAR_TID: u16 = 0;
 const FILL_BAR_SEQUENCE: u16 = 3;
 
-/// Known gap: production keeps retrying an aggregate after its agreement
-/// ended.
-const SESSION_GAP: &str = "after a resort whose BlockAck agreement is no longer operational \
+/// The vendor's handover once the agreement ended.
+const AGREEMENT_ENDED: &str = "after a resort whose BlockAck agreement is no longer operational \
     (trc_isTxAmpduOperational, trc_tid_isTxAmpduOperational), the vendor moves the remaining \
-    MPDUs to the ordinary queue, converting an HE aggregate head through ppHEAMPDU2Normal; \
-    production's completion path does not consult the agreement and republishes the \
-    aggregate (known gap)";
+    MPDUs to the ordinary queue, converting a missing aggregate head through ppHEAMPDU2Normal";
 /// Whether the station's BlockAck agreement for the TID is operational.
 const OPERATIONAL: &[&str] = &["trc_isTxAmpduOperational", "trc_tid_isTxAmpduOperational"];
 /// The vendor conversion of an aggregate head to an ordinary frame.
@@ -308,7 +311,7 @@ const COMPLETIONS: &[Completion] = &[
             mpdu: 2,
             vendor_retry: true,
         }),
-        disposition: Some((Disposition::Aggregate, Disposition::Finished, HT_SINGLE)),
+        disposition: Some((Disposition::Aggregate, Disposition::Ordinary, HT_SINGLE)),
         ..completion("single-missing-ht", 4, 100, 100, 0b1011)
     },
     // The peer advanced SSN past the first MPDU, already delivered.
@@ -356,17 +359,25 @@ const COMPLETIONS: &[Completion] = &[
         }),
         ..completion("lifetime-expired-head", 4, 100, 100, 0b1010)
     },
-    // The agreement ended before the resort: both sides mark the missing
-    // MPDUs, but only the vendor leaves the aggregate.
+    // The agreement ended before the resort: both sides send the missing
+    // MPDUs individually.
     Completion {
         operational: false,
-        disposition: Some((Disposition::Ordinary, Disposition::Aggregate, SESSION_GAP)),
+        difference: Some(Difference {
+            reason: ORDINARY_RETRY,
+            mpdu: 1,
+            vendor_retry: true,
+        }),
         ..completion("agreement-ended", 4, 100, 100, 0b0101)
     },
     // With the head missing too, the vendor converts it to an ordinary frame.
     Completion {
         operational: false,
-        disposition: Some((Disposition::Ordinary, Disposition::Aggregate, SESSION_GAP)),
+        difference: Some(Difference {
+            reason: ORDINARY_RETRY,
+            mpdu: 0,
+            vendor_retry: true,
+        }),
         ..completion("agreement-ended-head-missing", 4, 100, 100, 0b1010)
     },
     // Nothing is left to hand over when every MPDU was acknowledged.
@@ -786,6 +797,10 @@ fn case_rows(
                 "trigger_flow",
                 Arg::Word(Some(i64::from(completion.trigger_based))),
             ),
+            (
+                "block_ack_operational",
+                Arg::Word(Some(i64::from(completion.operational))),
+            ),
             ("output", Arg::Word(Some(i64::from(PRODUCTION_OUTPUT)))),
         ],
         vec![],
@@ -853,6 +868,9 @@ fn case_rows(
 /// The production decision that ends an aggregate through the Trigger-based
 /// completion path.
 const DECISION_TRIGGER: u32 = 4;
+/// The production decision that hands the missing MPDUs to ordinary
+/// transmission.
+const DECISION_UNAGGREGATE: u32 = 5;
 
 /// The first four argument words of the vendor's first modeled call to
 /// `target` in `case`.
@@ -946,6 +964,7 @@ fn dispositions(
     let production = match decision {
         STEP_RETAIN => Disposition::Aggregate,
         STEP_FINISH | DECISION_TRIGGER => Disposition::Finished,
+        DECISION_UNAGGREGATE => Disposition::Ordinary,
         other => return Err(invalid(format!("production decided {other}"))),
     };
     Ok((vendor, production))
@@ -1043,7 +1062,7 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
         let converted = found.0 == Disposition::Ordinary && head_missing;
         if called(to_ordinary) != converted {
             return Err(invalid(format!(
-                "{label}: the vendor {}converted the aggregate head: {SESSION_GAP}",
+                "{label}: the vendor {}converted the aggregate head: {AGREEMENT_ENDED}",
                 if converted { "has not " } else { "" }
             )));
         }

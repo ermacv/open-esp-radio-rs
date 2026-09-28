@@ -536,15 +536,15 @@ the ordinary resort, while production ends it (known gap).
 Each case also checks where both sides leave the MPDUs: the vendor by its
 queue record (kept in the aggregate, handed to the ordinary queue, or
 ended), production by its decision. They agree except for the reviewed HT
-single-MPDU difference and one known gap: when the BlockAck agreement is no
-longer operational at the resort (`trc_isTxAmpduOperational`,
-`trc_tid_isTxAmpduOperational`), the vendor hands the remaining MPDUs to the
-ordinary queue, converting a missing aggregate head through
-`ppHEAMPDU2Normal`, while production's completion path does not consult the
-agreement and republishes the aggregate. Both still mark the same MPDUs
-(MATCH). A Trigger-based success that ends an S-MPDU, which the vendor
-resorts without reading a BlockAck, ends the aggregate without a Retry bit on
-both sides (MATCH against production's Trigger-flow completion).
+single-MPDU difference. When the BlockAck agreement is no longer operational
+at the resort (`trc_isTxAmpduOperational`, `trc_tid_isTxAmpduOperational`),
+both sides hand the missing MPDUs to ordinary transmission, the vendor
+converting a missing aggregate head through `ppHEAMPDU2Normal`; the vendor
+sets their Retry bit in the resort and production on the copy it
+republishes, a reviewed DIFF at the first missing MPDU's Retry bit. A
+Trigger-based success that ends an S-MPDU, which the vendor resorts without
+reading a BlockAck, ends the aggregate without a Retry bit on both sides
+(MATCH against production's Trigger-flow completion).
 
 Production writes zero in the metadata bits the
 vendor fills with the sequence number's low byte: the vendor writer of that

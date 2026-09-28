@@ -153,7 +153,7 @@
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "12c7ceeec71c4c6964b99c6fd96ff456dd5cbedc93ce240ff15ca9ce22309fb2"
+      "sha256": "c2b56665860c18b31d920f896fd03a68f980cc2ec517a46e1271ec931df93a90"
     },
     {
       "path": "tools/blobray/crates/artifacts",
@@ -161,7 +161,7 @@
     },
     {
       "path": "tools/blobray/crates/domain",
-      "sha256": "c5110ed8e042c799c350f4f9b9857c16c0fea065ad03b7e90c1d4315af05d26d"
+      "sha256": "02a9ed12f0e7a5290071318efaac887e97cbf9627f7d32d5d37f552a444f6fe7"
     },
     {
       "path": "tools/blobray/crates/knowledge",
@@ -173,7 +173,7 @@
     },
     {
       "path": "tools/blobray/crates/store",
-      "sha256": "6f4138cdf7e27d0d30e5150ef121c89b6c50c2e91804f67f9bbbdea72da7a054"
+      "sha256": "10592b33feaa8a040d7fe829171b1dd1cdd6bb74176e741c10277272d6735abd"
     },
     {
       "path": "tools/blobray/crates/verification",
@@ -181,7 +181,7 @@
     },
     {
       "path": "tools/blobray/next",
-      "sha256": "2849ac1bf0eeb57ea50f872005c23a24fb4aa480daae41fa51ee9e20a803c849"
+      "sha256": "fa8717a303c44a0a37d8114e2fbb6bf988037427fb2d2b354b4c8e4da6bc288c"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
@@ -201,7 +201,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios",
-      "sha256": "7356570b0cf108ebd1745704938ba79ca60fa01a40b18303c63271eca042a88a"
+      "sha256": "d293797d8b572921f631a658872cfa47439e3ffc6f4c89937acb216bf71580fb"
     },
     {
       "path": "verification/harness/codegen",
@@ -213,7 +213,7 @@
     },
     {
       "path": "verification/harness/scenarios",
-      "sha256": "ac706f635369638231a82ccbd02a49cf2dc71c497929302595d3d2e643c2c53d"
+      "sha256": "45cebed551d0d0af6ff388fa9ac37b725a90d09e9f463b6f93d6e4cbd78ebb1b"
     },
     {
       "path": "verification/schema",

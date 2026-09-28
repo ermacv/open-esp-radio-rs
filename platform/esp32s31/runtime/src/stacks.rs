@@ -7,7 +7,14 @@
 //! caller context on the hart-local SRAM stack, invokes the existing ESP
 //! interrupt dispatcher, and restores the original stack immediately before
 //! `mret`. Nested traps remain on the same SRAM stack; only the outermost trap
-//! swaps back to PSRAM. Interrupt-side code must remain integer-only.
+//! swaps back to PSRAM.
+//!
+//! No trap saves the floating-point registers, so every entry turns the FPU
+//! off (`mstatus.FS`) until its `mret`: a floating-point instruction in
+//! interrupt or exception code raises an illegal-instruction exception instead
+//! of silently corrupting the interrupted task's registers. A debug trigger
+//! watches the lowest kibibyte of each hart's interrupt stack, so an overflow
+//! traps before it reaches the state below the stack.
 
 use core::{
     arch::asm,
@@ -27,6 +34,12 @@ use oer_esp32s31_platform_layout::memory as layout;
 pub const CPU1_TASK_STACK_BYTES: usize = 16 * 1024;
 pub const CPU0_TASK_STACK_BYTES: usize = layout::CPU0_PSRAM_TASK_STACK_BYTES as usize;
 pub const IRQ_STACK_BYTES: usize = layout::IRQ_STACK_BYTES as usize;
+
+/// Aligned bytes at the bottom of each interrupt stack whose stores trap.
+const IRQ_STACK_GUARD_BYTES: usize = 1024;
+/// Debug trigger of the interrupt-stack guard. ESP-HAL owns trigger 0 (task
+/// stack guard) and trigger 1 (trap-section guard).
+const IRQ_STACK_GUARD_TRIGGER: usize = 2;
 
 #[repr(C, align(16))]
 struct AlignedStack<const BYTES: usize>(MaybeUninit<[u8; BYTES]>);
@@ -84,6 +97,9 @@ pub unsafe fn install_current_hart_interrupt_stack() {
         unsafe { watermark::paint(bottom.cast(), IRQ_STACK_BYTES / 4) };
         IRQ_PAINTED[hart].store(true, Ordering::Release);
     }
+    // SAFETY: interrupts are disabled on this hart and the trigger is not
+    // one ESP-HAL or the stack sampler uses.
+    unsafe { guard_interrupt_stack(bottom as usize) };
     let table: *mut u32;
     unsafe {
         asm!(
@@ -106,6 +122,45 @@ pub unsafe fn install_current_hart_interrupt_stack() {
             "csrw mscratch, {top}",
             "fence.i",
             top = in(reg) top,
+            options(nostack),
+        )
+    };
+}
+
+/// NAPOT `tdata2` watching `bytes` (a power of two) aligned at or above
+/// `bottom`: the aligned start with the low bits encoding the length.
+const fn napot_guard(bottom: usize, bytes: usize) -> usize {
+    let start = (bottom + bytes - 1) & !(bytes - 1);
+    start | (bytes / 2 - 1)
+}
+
+/// Make every store into the lowest aligned kibibyte of this hart's interrupt
+/// stack raise a breakpoint exception. The exception entry clears
+/// `tcontrol.mte`, so its own frame below the guard does not retrigger.
+///
+/// # Safety
+///
+/// Interrupts must be disabled on the calling hart, and no other code may own
+/// debug trigger [`IRQ_STACK_GUARD_TRIGGER`].
+unsafe fn guard_interrupt_stack(bottom: usize) {
+    // A connected debugger owns the triggers, as for ESP-HAL's stack guard.
+    if esp_hal::debugger::debugger_connected() {
+        return;
+    }
+    // mcontrol: machine mode, store, NAPOT match.
+    const TDATA1_M_STORE_NAPOT: usize = (1 << 6) | (1 << 1) | (1 << 7);
+    // tcontrol.mte: triggers fire in machine mode.
+    const TCONTROL_MTE: usize = 1 << 3;
+    unsafe {
+        asm!(
+            "csrw 0x7a0, {select}",
+            "csrw 0x7a5, {control}",
+            "csrw 0x7a1, {data1}",
+            "csrw 0x7a2, {data2}",
+            select = in(reg) IRQ_STACK_GUARD_TRIGGER,
+            control = in(reg) TCONTROL_MTE,
+            data1 = in(reg) TDATA1_M_STORE_NAPOT,
+            data2 = in(reg) napot_guard(bottom, IRQ_STACK_GUARD_BYTES),
             options(nostack),
         )
     };
@@ -254,6 +309,12 @@ _runtime_stack_bootstrap:
     sw a5, 52(sp)
     sw a6, 56(sp)
     sw a7, 60(sp)
+    // No trap saves the FP registers: run the handler with the FPU off and
+    // keep the interrupted FS state for the matching return.
+    csrr t1, mstatus
+    sw t1, 68(sp)
+    li t1, 0x6000
+    csrc mstatus, t1
     csrw mscratch, t0
     .endm
 
@@ -356,6 +417,11 @@ _runtime_psram_interrupt_continue:
     jalr ra, a0, 0
 
 _runtime_psram_trap_restore:
+    // Give the interrupted context back its FPU state (FS bits only).
+    lw t0, 68(sp)
+    li t1, 0x6000
+    and t0, t0, t1
+    csrs mstatus, t0
     lw t0, 64(sp)
     beqz t0, 92f
 

@@ -119,3 +119,44 @@ fn a_shard_records_a_changed_file_or_one_below_a_recorded_directory() {
     assert!(!records(&["crates/phy/src/lib.rs.orig", "hil/README.md"]));
     assert!(!records(&[]));
 }
+
+#[test]
+fn a_location_another_scenario_covers_leaves_the_chip_wide_untriaged_set() {
+    let at = |function: &str, offset: u32| scenario_evidence::Location {
+        function: function.into(),
+        offset,
+        kind: scenario_evidence::LocationKind::Block,
+    };
+    let shard = |untriaged: Vec<scenario_evidence::Location>, functions: &[&str]| {
+        scenario_evidence::Index {
+            schema: scenario_evidence::SCHEMA,
+            command: scenario_evidence::COMMAND.into(),
+            target: "esp32s31".into(),
+            scenario: "test".into(),
+            inputs: Default::default(),
+            sources: vec![],
+            dependence: scenario_evidence::Dependence::whole_closure("test"),
+            entries: vec![],
+            untriaged,
+            functions: functions.iter().map(|f| f.to_string()).collect(),
+            unobserved: vec![],
+            observed: vec![],
+            unprojected: vec![],
+        }
+    };
+    let shards = [
+        // Leaves `shared+0` and `shared+4` and `own+0` untriaged.
+        shard(
+            vec![at("shared", 0), at("shared", 4), at("own", 0)],
+            &["shared", "own"],
+        ),
+        // Covers `shared+0`, leaves `shared+4` untriaged too.
+        shard(vec![at("shared", 4)], &["shared"]),
+        // Contains neither function.
+        shard(vec![at("other", 0)], &["other"]),
+    ];
+    assert_eq!(
+        untriaged_everywhere(&shards),
+        BTreeSet::from([at("other", 0), at("own", 0), at("shared", 4)])
+    );
+}

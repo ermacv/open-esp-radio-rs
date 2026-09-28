@@ -13,6 +13,7 @@
 pub(crate) mod scenario_evidence;
 
 use crate::{Context, Result};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -121,8 +122,95 @@ pub fn run(
             let new = read_shard(&ctx.root.join(directory), &name);
             print!("{}", summary(&name, old.as_ref(), new.as_ref()));
         }
+        print!(
+            "{}",
+            render_untriaged(&chip_untriaged(&ctx.root.join(directory))?, false)
+        );
     }
     Ok(code)
+}
+
+/// Print the chip-wide untriaged vendor locations of `chip`'s committed
+/// shards, one per line.
+pub fn untriaged(ctx: &Context, chip: &str) -> Result<ExitCode> {
+    let directory = directory(&ctx.root, chip)?;
+    print!(
+        "{}",
+        render_untriaged(&chip_untriaged(&ctx.root.join(directory))?, true)
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Untriaged vendor locations of every shard in `directory` that no other
+/// scenario covers: a location another shard's closures contain the
+/// function of is covered there unless that shard lists it untriaged too.
+fn chip_untriaged(directory: &Path) -> Result<BTreeSet<scenario_evidence::Location>> {
+    let mut shards = vec![];
+    for entry in std::fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some(scenario_evidence::SHARD_EXTENSION) {
+            continue;
+        }
+        if let Some(shard) = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| read_shard(directory, stem))
+        {
+            shards.push(shard);
+        }
+    }
+    Ok(untriaged_everywhere(&shards))
+}
+
+fn untriaged_everywhere(
+    shards: &[scenario_evidence::Index],
+) -> BTreeSet<scenario_evidence::Location> {
+    let untriaged: Vec<BTreeSet<&scenario_evidence::Location>> = shards
+        .iter()
+        .map(|shard| shard.untriaged.iter().collect())
+        .collect();
+    let mut remaining = BTreeSet::new();
+    for (index, shard) in shards.iter().enumerate() {
+        for location in &shard.untriaged {
+            let covered_elsewhere = shards.iter().enumerate().any(|(other, candidate)| {
+                other != index
+                    && candidate.functions.contains(&location.function)
+                    && !untriaged[other].contains(location)
+            });
+            if !covered_elsewhere {
+                remaining.insert(location.clone());
+            }
+        }
+    }
+    remaining
+}
+
+/// Per-function counts of `locations`, or every location when `all`.
+fn render_untriaged(locations: &BTreeSet<scenario_evidence::Location>, all: bool) -> String {
+    let mut functions = std::collections::BTreeMap::<&str, usize>::new();
+    for location in locations {
+        *functions.entry(&location.function).or_default() += 1;
+    }
+    let mut text = format!(
+        "chip-wide untriaged: {} locations in {} functions\n",
+        locations.len(),
+        functions.len()
+    );
+    if all {
+        for location in locations {
+            text += &format!(
+                "  {}+{:#x} {:?}\n",
+                location.function, location.offset, location.kind
+            );
+        }
+    } else {
+        let mut ranked: Vec<_> = functions.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        for (function, count) in ranked {
+            text += &format!("  {count:4} {function}\n");
+        }
+    }
+    text
 }
 
 /// Repository files that differ between `revision` and the worktree.

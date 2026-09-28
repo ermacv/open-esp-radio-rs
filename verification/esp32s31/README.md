@@ -601,7 +601,14 @@ millicode) as whole functions. A decision that excludes whole functions also
 excludes, within one claim's closure, the functions no execution entered that
 the closure reaches only through excluded functions: their code is
 unreachable for the same reason. A decision on a closure function that is
-fully covered fails its scenario. An untriaged location has neither a case that
+fully covered fails its scenario.
+
+A shard lists what its own scenario leaves untriaged, so a vendor function
+several scenarios reach can appear in one shard while another scenario
+covers the location. `cargo xtask evidence --chip esp32s31 --untriaged`
+prints the chip-wide set: the locations no scenario whose closures contain
+their function covers or reviews. `cargo xtask evidence` prints its
+per-function counts after regenerating shards. An untriaged location has neither a case that
 covers it nor a reviewed decision. A whole-function decision whose function
 only produces diagnostic output uses `Place::Diagnostic`.
 

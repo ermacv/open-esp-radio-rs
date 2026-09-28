@@ -85,6 +85,10 @@ enum Task {
         /// does not parse is always rerun.
         #[arg(long, requires = "check")]
         changed_since: Option<String>,
+        /// Print every vendor location the committed shards leave untriaged
+        /// that no other scenario covers, without running a scenario.
+        #[arg(long, conflicts_with = "check")]
+        untriaged: bool,
         /// Scenarios to rewrite, or with `--check` to rerun; every stale shard,
         /// or with `--check` every shard, when empty.
         scenarios: Vec<String>,
@@ -269,8 +273,12 @@ fn run() -> Result<std::process::ExitCode> {
             output,
             check,
             changed_since,
+            untriaged,
             scenarios,
         } => {
+            if untriaged {
+                return oer_xtask::evidence::untriaged(&ctx, &chip);
+            }
             if check {
                 return oer_xtask::evidence::check(
                     &ctx,

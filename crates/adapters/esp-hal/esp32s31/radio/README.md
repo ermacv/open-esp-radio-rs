@@ -26,8 +26,8 @@ Every protocol composition reaches these singletons through the one shared
 radio system that owns this platform; the Wi-Fi ESP-HAL adapter owns only the
 `WIFI` singleton. No adapter grants a second claim of the platform resources.
 
-The pinned ESP32-S31 PAC names all three Controller sources as `BT_MAC`,
-`MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter routes those typed identities
+The pinned ESP32-S31 PAC names all three Controller sources as `MODEM_BT_MAC`,
+`MODEM_LP_TIMER`, and `MODEM_BT_MAC_INT1`. This adapter routes those typed identities
 for the reviewed source-124/source-127/source-133 policies and contains one
 same-core, level-three bind/disable set. `bind_routes` borrows the
 stable publication and returns one affine

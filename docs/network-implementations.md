@@ -54,8 +54,7 @@ defines workspace-root overrides and their transitive application.
 | Source selection | Reason and scope |
 | --- | --- |
 | Owned Embassy support crates mapped to registry | Reuse released `embassy-futures`, `embassy-sync` and `embassy-time` alongside the maintained network crates |
-| `esp-hal` family fork | Supply S31 radio ownership, clock/time, memory startup and interrupt handoff support required by the platform |
-| `esp-pacs` fork (`esp32s31` package) | Publish missing Wi-Fi, Bluetooth and IEEE 802.15.4 interrupt sources through the generated platform PAC |
+| `esp-hal` family fork | Supply S31 radio ownership, clock/time, memory startup and interrupt handoff support required by the platform; the fork's `UPSTREAM.md` records its delta and last upstream merge |
 
 Hardware pins and their exact responsibilities are owned by the
 [esp-hal dependency boundary](../crates/adapters/esp-hal/esp32s31/README.md#dependency-boundary)

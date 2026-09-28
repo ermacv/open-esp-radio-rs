@@ -48,9 +48,9 @@ use oer_esp32s31_hal::bluetooth::{
     ModemLpTimerSoftwarePendingOwner,
 };
 
-pub(crate) const PRIMARY_INTERRUPT: Interrupt = Interrupt::BT_MAC;
+pub(crate) const PRIMARY_INTERRUPT: Interrupt = Interrupt::MODEM_BT_MAC;
 pub(crate) const MODEM_LP_TIMER_INTERRUPT: Interrupt = Interrupt::MODEM_LP_TIMER;
-pub(crate) const NRT_INTERRUPT: Interrupt = Interrupt::BT_MAC_INT1;
+pub(crate) const NRT_INTERRUPT: Interrupt = Interrupt::MODEM_BT_MAC_INT1;
 const ROUTE_PRIORITY: Priority = Priority::Priority3;
 
 static INTERRUPT_REGISTERS: Mutex<RefCell<Option<InterruptRegistersOwner>>> =
@@ -65,11 +65,11 @@ static STORAGE_RESERVATION: Mutex<RefCell<InterruptStorageReservation>> =
 /// Exact semantic role of the adapter-owned handler that entered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothInterruptSource {
-    /// Controller primary source 124 (`BT_MAC`).
+    /// Controller primary source 124 (`MODEM_BT_MAC`).
     Primary,
     /// Modem low-power timer source 127 (`MODEM_LP_TIMER`).
     ModemLpTimer,
-    /// Controller default NRT source 133 (`BT_MAC_INT1`).
+    /// Controller default NRT source 133 (`MODEM_BT_MAC_INT1`).
     NrtDefault,
 }
 

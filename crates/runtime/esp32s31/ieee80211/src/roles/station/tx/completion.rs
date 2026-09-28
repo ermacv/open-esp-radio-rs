@@ -84,13 +84,18 @@ where
         if unaggregating.remaining == 0 {
             self.release_completed()?;
         }
-        let aggregate = &unaggregating.aggregate;
+        // SOURCE: `libpp.a[pp.o]::ppResortTxAMPDU` hands a missing MPDU of an
+        // ended agreement to `ppHEAMPDU2Normal`, which clears the MPDU, short
+        // and long retry counters and reselects the ordinary data schedule
+        // through `rcGetSched`: the MPDU starts a fresh ordinary exchange.
+        let selection = self.data_tx_selection();
+        let access_category = unaggregating.aggregate.traffic.selected.access_category;
         let progress = self.ordinary.start_prepared_encoded_retry_for_category(
             hardware,
             frame_length,
             hardware_mic_length,
-            aggregate.config.rate(),
-            aggregate.traffic.selected.access_category,
+            selection,
+            access_category,
         )?;
         debug_assert_eq!(progress, WifiTxProgress::Pending);
         self.active = ConnectedTxActive::Unaggregating(unaggregating);

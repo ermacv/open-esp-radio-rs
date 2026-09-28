@@ -392,12 +392,9 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
                 bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
                 peer_qos: true,
                 management_protection: false,
-                exchange: MacTxPlan {
-                    access_category: LegacyTxQueue::BestEffort.access_category(),
-                    initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                    publication_limit: 2,
-                    publication_timeout_micros: 10,
-                },
+                access_category: LegacyTxQueue::BestEffort.access_category(),
+                unicast_attempt_limit: 2,
+                publication_timeout_micros: 10,
             },
         })
         .unwrap_or_else(|_| panic!("idle owner must transfer"));
@@ -457,12 +454,9 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
             peer_qos: true,
             management_protection: false,
-            exchange: MacTxPlan {
-                access_category: LegacyTxQueue::BestEffort.access_category(),
-                initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                publication_limit: 2,
-                publication_timeout_micros: 10,
-            },
+            access_category: LegacyTxQueue::BestEffort.access_category(),
+            unicast_attempt_limit: 2,
+            publication_timeout_micros: 10,
         },
     };
 

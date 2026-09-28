@@ -19,8 +19,8 @@ use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
 use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     tx::{
-        HardwareOwnedTxDma, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate,
-        PreparedTxDma, TxSlot, ampdu::HtAmpduHardware, runtime::WifiTxRuntimePolicy,
+        HardwareOwnedTxDma, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, PreparedTxDma, TxSlot,
+        ampdu::HtAmpduHardware, runtime::WifiTxRuntimePolicy,
     },
 };
 
@@ -34,9 +34,7 @@ use oer_ieee80211_mac::{
     station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters},
 };
 
-use oer_ieee80211_softmac::MacTxPlan;
-
-use super::{TxPhyRate, WifiTxPowerProfile, WifiTxTimer};
+use super::{WifiTxPowerProfile, WifiTxTimer};
 
 pub const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
 pub const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
@@ -246,12 +244,9 @@ pub fn make_ordinary<'a, const BUFFER_SIZE: usize>(
                 bssid: BSSID,
                 peer_qos: true,
                 management_protection: false,
-                exchange: MacTxPlan {
-                    access_category: WmmAccessCategory::BestEffort,
-                    initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                    publication_limit: 2,
-                    publication_timeout_micros: 250_000,
-                },
+                access_category: WmmAccessCategory::BestEffort,
+                unicast_attempt_limit: 2,
+                publication_timeout_micros: 250_000,
             },
         },
     )

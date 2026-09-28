@@ -173,6 +173,15 @@ where
         Ok(progress)
     }
 
+    /// Rate and publication budget of the next network data MPDU, taken
+    /// from the ordinary schedule the rate control currently selects.
+    pub(super) fn data_tx_selection(&self) -> StaDataTxSelection {
+        StaDataTxSelection {
+            rate: self.rate_control.tx_rate(self.data_rate_policy),
+            publication_limit: schedule_publication_limit(self.rate_control.current_schedule()),
+        }
+    }
+
     fn start_network_ordinary<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
@@ -182,9 +191,10 @@ where
     ) -> Result<WifiTxProgress, AggregateTxError> {
         #[cfg(any(feature = "diagnostics", test))]
         let ethernet_length = first.ethernet_length();
-        let progress = self
-            .ordinary
-            .start_with_traffic(hardware, first.ethernet(), traffic)?;
+        let selection = self.data_tx_selection();
+        let progress =
+            self.ordinary
+                .start_with_traffic(hardware, first.ethernet(), traffic, selection)?;
         drop(first);
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.observer {

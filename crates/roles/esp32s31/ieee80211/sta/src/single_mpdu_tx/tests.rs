@@ -194,12 +194,9 @@ fn make_tx<'a>(
                 bssid: BSSID,
                 peer_qos: true,
                 management_protection: false,
-                exchange: MacTxPlan {
-                    access_category: LegacyTxQueue::BestEffort.access_category(),
-                    initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                    publication_limit: attempt_limit,
-                    publication_timeout_micros: 250_000,
-                },
+                access_category: LegacyTxQueue::BestEffort.access_category(),
+                unicast_attempt_limit: attempt_limit,
+                publication_timeout_micros: 250_000,
             },
         },
     )
@@ -245,7 +242,7 @@ fn completion_releases_the_slot_and_network_lease_boundary() {
     assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet()),
+        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
@@ -346,7 +343,10 @@ fn broadcast_ethernet_destination_is_protected_as_the_individual_bssid_receiver(
     let mut frame = ethernet();
     frame[..6].fill(0xff);
 
-    assert_eq!(tx.start(&mut hardware, &frame), Ok(WifiTxProgress::Pending));
+    assert_eq!(
+        tx.start(&mut hardware, &frame, data_selection(tx.config())),
+        Ok(WifiTxProgress::Pending)
+    );
     let (_, program) = hardware.legacy.unwrap();
     assert_eq!(program.control().protection, MacTxProtection::RtsCts);
     assert_eq!(program.control().rate, MacLegacyRate::Ofdm24M);
@@ -367,7 +367,7 @@ fn erp_protection_publishes_cts_to_self_at_a_dsss_rate() {
     });
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet()),
+        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
         Ok(WifiTxProgress::Pending)
     );
     let (_, program) = hardware.legacy.unwrap();
@@ -388,7 +388,10 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
     frame[14] = 0x45;
     frame[15] = 46 << 2;
 
-    assert_eq!(tx.start(&mut hardware, &frame), Ok(WifiTxProgress::Pending));
+    assert_eq!(
+        tx.start(&mut hardware, &frame, data_selection(tx.config())),
+        Ok(WifiTxProgress::Pending)
+    );
     let (queue, program) = hardware.legacy.expect("classified legacy queue image");
     assert_eq!(queue, LegacyTxQueue::Voice.hardware_index());
     assert_eq!(
@@ -440,7 +443,7 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
 
     let voice = tx.select_network_traffic(&frame).unwrap();
     assert!(matches!(
-        tx.start_with_traffic(&mut hardware, &ethernet(), voice),
+        tx.start_with_traffic(&mut hardware, &ethernet(), voice, data_selection(tx.config())),
         Err(SingleMpduTxError::TrafficSelectionMismatch { provided, .. })
             if provided == voice
     ));
@@ -479,7 +482,7 @@ fn active_connected_owner_rejects_teardown_without_losing_transaction() {
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
     assert_eq!(
-        tx.start(&mut hardware, &ethernet()),
+        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
         Ok(WifiTxProgress::Pending)
     );
 
@@ -703,7 +706,8 @@ fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame(
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    tx.start(&mut hardware, &ethernet()).unwrap();
+    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+        .unwrap();
     let sequence_after_encode = tx.sequences.peek_qos(0);
     let wake = WifiTxWake::Interrupt {
         events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
@@ -741,7 +745,7 @@ fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame(
     );
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet()),
+        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
         Ok(WifiTxProgress::Pending)
     );
     hardware.completion = Some(completion(0));
@@ -764,7 +768,8 @@ fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet()).unwrap();
+    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+        .unwrap();
     let first_work = tx.work();
     assert_eq!(first_work.publications, 1);
     assert_eq!(first_work.mpdus, 1);
@@ -837,7 +842,8 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet()).unwrap();
+    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+        .unwrap();
     let submitted = tx.work();
     hardware.timeout = true;
     let timeout = WifiTxWake::Interrupt {
@@ -900,7 +906,8 @@ fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet()).unwrap();
+    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+        .unwrap();
     hardware.timeout = true;
     tx.ordinary.timer.pending_wait = true;
     {
@@ -930,7 +937,8 @@ fn collision_retries_without_marking_an_untransmitted_mpdu_as_retry() {
         ..Hardware::default()
     };
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet()).unwrap();
+    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+        .unwrap();
     hardware.collision = true;
     let collision = WifiTxWake::Interrupt {
         events: oer_esp32s31_ieee80211_mac::irq::EVENT_COLLISION,
@@ -967,7 +975,8 @@ fn executor_deadline_quarantines_without_drop_panic() {
     };
     {
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-        tx.start(&mut hardware, &ethernet()).unwrap();
+        tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+            .unwrap();
 
         let deadline = tx.next_deadline_micros().unwrap();
         tx.ordinary.timer.now = deadline - 1;
@@ -999,10 +1008,19 @@ fn queue_rejection_cancels_the_unpublished_descriptor() {
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet()),
+        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
         Err(SingleMpduTxError::Tx(TxError::QueueActive))
     );
     assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
     assert_eq!(tx.ordinary.slot.descriptor_word0(), 0);
     assert_eq!(tx.work(), Default::default());
+}
+
+/// The rate and budget the station's rate control would hand one data MPDU;
+/// these tests keep the fixture's configured attempt limit.
+fn data_selection(config: SingleMpduTxConfig) -> StaDataTxSelection {
+    StaDataTxSelection {
+        rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+        publication_limit: config.unicast_attempt_limit,
+    }
 }

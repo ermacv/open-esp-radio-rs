@@ -33,7 +33,7 @@ use oer_esp32s31_ieee80211_mac::{
         hardware::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     },
     tx::{
-        HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxHardware, TxSlot,
+        HardwareOwnedTxDma, PreparedTxDma, TxHardware, TxSlot,
         ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
         runtime::WifiTxRuntimePolicy,
     },
@@ -60,7 +60,7 @@ use oer_ieee80211_mac::{
     },
 };
 
-use oer_ieee80211_softmac::{MacRxMetadata, MacTxPlan};
+use oer_ieee80211_softmac::MacRxMetadata;
 
 use oer_ieee80211_rsn::{
     OwnedEapolFrame, Pmk, Ptk, PtkContext, RsnInterface,
@@ -505,14 +505,9 @@ fn make_tx<'a>(
                 bssid: BSSID,
                 peer_qos: true,
                 management_protection: false,
-                exchange: MacTxPlan {
-                    access_category: WmmAccessCategory::BestEffort,
-                    initial_rate: oer_esp32s31_ieee80211_mac::tx::TxPhyRate::Legacy(
-                        LegacyRate::Ofdm54M,
-                    ),
-                    publication_limit: attempt_limit,
-                    publication_timeout_micros: 250_000,
-                },
+                access_category: WmmAccessCategory::BestEffort,
+                unicast_attempt_limit: attempt_limit,
+                publication_timeout_micros: 250_000,
             },
         },
     )

@@ -27,6 +27,7 @@ where
         ampdu: AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         config: AggregateTxConfig,
         rate_control: StaRateControlAssociation,
+        data_rate_policy: StaTxRatePolicy,
         aggregate_rate_policy: StaTxRatePolicy,
     ) -> Result<Self, AggregateTxError> {
         if SLOTS == 0
@@ -76,6 +77,7 @@ where
             block_ack_generation_exhausted: 0,
             config,
             rate_control: TeardownResource::new(rate_control),
+            data_rate_policy,
             aggregate_rate_policy,
             he_trigger_based: None,
             active: ConnectedTxActive::Idle,
@@ -166,7 +168,14 @@ where
             peer_supports_ldpc: false,
             peer_dcm_receive: HeDcmConstellation::NotSupported,
         };
-        Self::new(ordinary, ampdu, config, rate_control, rate_policy)
+        Self::new(
+            ordinary,
+            ampdu,
+            config,
+            rate_control,
+            rate_policy,
+            rate_policy,
+        )
     }
 
     /// Attach optional observations without changing TX
@@ -503,6 +512,7 @@ where
         let block_ack_generations = self.block_ack_generations;
         let block_ack_generation_exhausted = self.block_ack_generation_exhausted;
         let config = self.config;
+        let data_rate_policy = self.data_rate_policy;
         let aggregate_rate_policy = self.aggregate_rate_policy;
         let he_trigger_based = self.he_trigger_based;
         let last_aggregate_status = self.last_aggregate_status;
@@ -525,6 +535,7 @@ where
                 block_ack_generation_exhausted,
                 config,
                 rate_control,
+                data_rate_policy,
                 aggregate_rate_policy,
                 he_trigger_based,
                 last_aggregate_status,
@@ -553,6 +564,7 @@ where
             block_ack_generation_exhausted,
             config,
             rate_control,
+            data_rate_policy,
             aggregate_rate_policy,
             he_trigger_based,
             last_aggregate_status,
@@ -569,6 +581,7 @@ where
             aggregate,
             config,
             rate_control,
+            data_rate_policy,
             aggregate_rate_policy,
         ) {
             Ok(owner) => owner,

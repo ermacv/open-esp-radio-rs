@@ -34,7 +34,6 @@ mod scan;
 pub mod teardown;
 pub mod tx;
 pub mod tx_epoch;
-mod tx_service;
 #[cfg(target_arch = "riscv32")]
 mod wpa2_port;
 #[cfg(target_arch = "riscv32")]

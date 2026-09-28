@@ -45,7 +45,7 @@ use {
 };
 
 use oer_ieee80211_softmac::{
-    EspNowRxEpoch, MacServiceCapabilities, MacTxPlan, WifiPlan,
+    EspNowRxEpoch, MacServiceCapabilities, WifiPlan,
     interface::{BoundVirtualInterface, VifRole},
 };
 

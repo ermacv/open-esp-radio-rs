@@ -107,6 +107,7 @@ pub struct ConnectedStaPlan {
     pub(super) link: StaConnectedLink,
     pub(super) config: ConnectedStaConfig,
     pub(super) data_tx_rate: TxPhyRate,
+    pub(super) data_rate_policy: StaTxRatePolicy,
     pub(super) aggregate_tx_rate: TxPhyRate,
     pub(super) ht_duplicate_tx_selection: HtDuplicateTxSelection,
     pub(super) aggregate_rate_policy: StaTxRatePolicy,
@@ -253,12 +254,9 @@ impl ConnectedStaPlan {
             bssid: self.link.bssid,
             peer_qos: self.link.peer_qos,
             management_protection: self.link.management_protection,
-            exchange: MacTxPlan {
-                access_category: WmmAccessCategory::BestEffort,
-                initial_rate: self.data_tx_rate,
-                publication_limit: self.config.tx.unicast_attempt_limit,
-                publication_timeout_micros: self.config.tx.completion_timeout_us,
-            },
+            access_category: WmmAccessCategory::BestEffort,
+            unicast_attempt_limit: self.config.tx.unicast_attempt_limit,
+            publication_timeout_micros: self.config.tx.completion_timeout_us,
         }
     }
 
@@ -525,7 +523,8 @@ impl ConnectedStaPort {
             interface,
             link,
             config,
-            data_tx_rate: data_policy.fallback_rate(),
+            data_tx_rate: rate_control.tx_rate(data_policy),
+            data_rate_policy: data_policy,
             aggregate_tx_rate,
             ht_duplicate_tx_selection,
             aggregate_rate_policy: aggregate_policy,

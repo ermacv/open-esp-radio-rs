@@ -434,13 +434,28 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
         Ok(WifiTxProgress::Pending),
     );
-    assert_eq!(hardware.legacy_publications, 1);
+    // The single MPDU leaves at the rate control's HE data schedule.
+    assert_eq!(hardware.he_publications, 1);
+    assert_eq!(hardware.legacy_publications, 0);
     assert_eq!(hardware.ht_publications, 0);
     assert!(
         observer.observed(AggregateTxObservation::NetworkSingleMpdu {
             reason: NetworkSingleMpduReason::FreshAggregateCapacity,
             ethernet_length: 17,
         })
+    );
+    // Rate and publication budget come from the one schedule record the rate
+    // control currently selects, not from the association's fixed attempt
+    // limit that bounds management frames.
+    let selection = tx.data_tx_selection();
+    assert_eq!(selection.rate, tx.rate_control.tx_rate(tx.data_rate_policy));
+    assert_eq!(
+        selection.publication_limit,
+        schedule_publication_limit(tx.rate_control.current_schedule())
+    );
+    assert_ne!(
+        selection.publication_limit,
+        tx.ordinary.config().unicast_attempt_limit
     );
     hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(2, 0));
     assert_eq!(
@@ -662,8 +677,10 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
         tx.start_prepared_network(&mut hardware, &network.tx_consumer()),
         Ok(WifiTxProgress::Pending)
     );
+    // The deferred Voice MPDU leaves alone at the rate control's HT data
+    // schedule.
     assert_eq!(
-        hardware.last_legacy_queue,
+        hardware.last_ht_queue,
         Some(LegacyTxQueue::Voice.hardware_index())
     );
     assert_eq!(
@@ -889,11 +906,12 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
         Ok(WifiTxProgress::Pending)
     );
-    assert_eq!(hardware.he_publications, 0);
-    assert_eq!(hardware.legacy_publications, 1);
+    // No aggregate: one ordinary MPDU at the HE data schedule.
+    assert_eq!(hardware.he_publications, 1);
+    assert_eq!(hardware.legacy_publications, 0);
     assert_eq!(hardware.ht_publications, 0);
     assert_eq!(
-        hardware.last_legacy_queue,
+        hardware.last_he_queue,
         Some(LegacyTxQueue::Video.hardware_index())
     );
     assert_eq!(

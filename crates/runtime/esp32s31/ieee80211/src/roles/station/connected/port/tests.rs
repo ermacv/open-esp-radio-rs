@@ -160,10 +160,7 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
     assert_eq!(plan.interface().interface.role, VifRole::Station);
     assert_eq!(plan.interface().channel_context, ChannelContextId::PRIMARY);
     assert_eq!(plan.rx_config().association_id, 7);
-    assert_eq!(
-        plan.single_mpdu_tx_config().exchange.initial_rate.code(),
-        23
-    );
+    assert!(matches!(plan.data_tx_rate(), TxPhyRate::He(_)));
     assert!(matches!(plan.aggregate_tx_rate(), TxPhyRate::He(_)));
     assert_eq!(
         plan.ht_duplicate_tx_selection(),

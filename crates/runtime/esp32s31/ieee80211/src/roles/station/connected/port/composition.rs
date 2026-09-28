@@ -275,6 +275,7 @@ impl ConnectedStaPort {
             resources.aggregate,
             plan.aggregate_tx_config(),
             rate_control,
+            plan.data_rate_policy,
             plan.aggregate_rate_policy,
         )
         .expect("connected STA config and idle aggregate storage were validated before handoff")

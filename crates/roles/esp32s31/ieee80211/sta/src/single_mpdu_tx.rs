@@ -63,8 +63,26 @@ pub struct SingleMpduTxConfig {
     /// The association protects its robust management frames, so robust
     /// Action frames leave under the pairwise key.
     pub management_protection: bool,
-    /// Chip-independent exchange policy selected at the association handoff.
-    pub exchange: MacTxPlan<TxPhyRate>,
+    /// Access category of a prepared retry that does not name its own.
+    pub access_category: oer_ieee80211_mac::qos::WmmAccessCategory,
+    /// Publications of one frame whose rate is not selected per frame by
+    /// the association's rate control: management, EAPOL and
+    /// power-management Null.
+    pub unicast_attempt_limit: u8,
+    /// Watchdog applied independently to each hardware publication.
+    pub publication_timeout_micros: u64,
+}
+
+/// Rate and publication budget of one network data MPDU, selected per frame
+/// from the association's ordinary rate schedule.
+///
+/// SOURCE: `libpp.a[trc.o]::rcGetSched` selects the data schedule record
+/// that `rcGetRate` walks for the retry ladder, and complete
+/// `rcReachRetryLimit` bounds the MPDU retry counter by record byte `0x08`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaDataTxSelection {
+    pub rate: TxPhyRate,
+    pub publication_limit: u8,
 }
 
 impl SingleMpduTxConfig {
@@ -525,28 +543,12 @@ where
         Ok(frame_length)
     }
 
-    pub fn start_prepared_encoded_retry<H: TxHardware>(
-        &mut self,
-        hardware: &mut H,
-        frame_length: usize,
-        hardware_mic_length: usize,
-        rate: TxPhyRate,
-    ) -> Result<WifiTxProgress, SingleMpduTxError> {
-        self.start_prepared_encoded_retry_for_category(
-            hardware,
-            frame_length,
-            hardware_mic_length,
-            rate,
-            self.config.exchange.access_category,
-        )
-    }
-
     pub fn start_prepared_encoded_retry_for_category<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         frame_length: usize,
         hardware_mic_length: usize,
-        rate: TxPhyRate,
+        selection: StaDataTxSelection,
         access_category: oer_ieee80211_mac::qos::WmmAccessCategory,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.link_protection() == LinkProtection::Open || hardware_mic_length == 0 {
@@ -561,9 +563,9 @@ where
                     descriptor_capacity: None,
                     exchange: MacTxPlan {
                         access_category,
-                        initial_rate: rate,
-                        publication_limit: self.config.exchange.publication_limit,
-                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                        initial_rate: selection.rate,
+                        publication_limit: selection.publication_limit,
+                        publication_timeout_micros: self.config.publication_timeout_micros,
                     },
                     hardware_mic_length,
                     hardware_key_selector: self.security.hardware_key_selector(),
@@ -589,9 +591,10 @@ where
         &mut self,
         hardware: &mut H,
         ethernet: &[u8],
+        selection: StaDataTxSelection,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         let traffic = self.select_network_traffic(ethernet)?;
-        self.start_with_traffic(hardware, ethernet, traffic)
+        self.start_with_traffic(hardware, ethernet, traffic, selection)
     }
 
     /// Publish one classified network MPDU through the matching EDCA queue
@@ -601,6 +604,7 @@ where
         hardware: &mut H,
         ethernet: &[u8],
         traffic: WifiTxTraffic,
+        selection: StaDataTxSelection,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.ordinary.active() {
             return Err(SingleMpduTxError::Busy);
@@ -672,7 +676,9 @@ where
                     descriptor_capacity: None,
                     exchange: MacTxPlan {
                         access_category: traffic.access_category,
-                        ..self.config.exchange
+                        initial_rate: selection.rate,
+                        publication_limit: selection.publication_limit,
+                        publication_timeout_micros: self.config.publication_timeout_micros,
                     },
                     hardware_mic_length,
                     hardware_key_selector,
@@ -731,8 +737,8 @@ where
                         initial_rate: TxPhyRate::Legacy(
                             oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
-                        publication_limit: self.config.exchange.publication_limit,
-                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                        publication_limit: self.config.unicast_attempt_limit,
+                        publication_timeout_micros: self.config.publication_timeout_micros,
                     },
                     hardware_mic_length: TX_CCMP_MIC_SIZE,
                     hardware_key_selector: key.hardware_index(),
@@ -847,8 +853,8 @@ where
                         initial_rate: TxPhyRate::Legacy(
                             oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
-                        publication_limit: self.config.exchange.publication_limit,
-                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                        publication_limit: self.config.unicast_attempt_limit,
+                        publication_timeout_micros: self.config.publication_timeout_micros,
                     },
                     hardware_mic_length,
                     hardware_key_selector,
@@ -1004,7 +1010,7 @@ where
                             oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
                         publication_limit: 1,
-                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                        publication_timeout_micros: self.config.publication_timeout_micros,
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
@@ -1053,8 +1059,8 @@ where
                         initial_rate: TxPhyRate::Legacy(
                             oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
-                        publication_limit: self.config.exchange.publication_limit,
-                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                        publication_limit: self.config.unicast_attempt_limit,
+                        publication_timeout_micros: self.config.publication_timeout_micros,
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,

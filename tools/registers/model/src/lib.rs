@@ -291,7 +291,19 @@ impl RegisterModel {
         Ok(document.get("schema").and_then(toml_edit::Item::as_integer) == Some(3))
     }
 
+    /// Loads a model, draft or reviewed. Every naming a review states must be
+    /// consistent, but a register or field may still lack one.
     pub fn load(path: &Path) -> Result<Self> {
+        Self::load_with(path, NamingRequirement::Consistent)
+    }
+
+    /// Loads a model for publication: every register and field must carry a
+    /// reviewed naming, so no published name claims more than its origin.
+    pub fn load_for_publication(path: &Path) -> Result<Self> {
+        Self::load_with(path, NamingRequirement::Complete)
+    }
+
+    fn load_with(path: &Path, naming: NamingRequirement) -> Result<Self> {
         let input = fs::read_to_string(path)?;
         let mut loaded_inputs = BTreeMap::from([(path.canonicalize()?, input.clone())]);
         let document = input
@@ -389,7 +401,7 @@ impl RegisterModel {
         }
         validate_peripheral_names(&peripherals)
             .map_err(|error| Error::manifest("register model", path, error))?;
-        validate_review_annotations(&fragments)
+        validate_review_annotations(&fragments, naming)
             .map_err(|error| Error::manifest("register model", path, error))?;
         let review = fragments
             .into_iter()
@@ -1610,7 +1622,19 @@ fn rewrite_review_entity_prefix(review: &mut [ReviewAnnotation], old: &str, new:
     }
 }
 
-fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()> {
+/// How much reviewed naming a loaded model must carry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NamingRequirement {
+    /// Stated namings are consistent; unreviewed names are allowed (drafts).
+    Consistent,
+    /// Every register and field is reviewed (publication).
+    Complete,
+}
+
+fn validate_review_annotations(
+    fragments: &[RegisterModelFragment],
+    naming: NamingRequirement,
+) -> Result<()> {
     let mut known_entities = BTreeMap::new();
     for peripheral in fragments.iter().flat_map(|fragment| &fragment.peripherals) {
         collect_review_entities(peripheral, &mut known_entities);
@@ -1662,8 +1686,10 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
         }
     }
     for (entity, kind) in &known_entities {
-        if kind.is_named_bits() {
-            validate_naming(entity, entities.get(entity.as_str()).copied())?;
+        let annotation = entities.get(entity.as_str()).copied();
+        let stated = annotation.is_some_and(|annotation| annotation.naming.is_some());
+        if kind.is_named_bits() && (stated || naming == NamingRequirement::Complete) {
+            validate_naming(entity, annotation)?;
         }
     }
     Ok(())
@@ -3182,9 +3208,12 @@ locator = "identity"
     }
 
     fn naming_error(register: &str, review: &str) -> Option<String> {
-        validate_review_annotations(&[naming_fragment(register, review)])
-            .err()
-            .map(|error| error.to_string())
+        validate_review_annotations(
+            &[naming_fragment(register, review)],
+            NamingRequirement::Complete,
+        )
+        .err()
+        .map(|error| error.to_string())
     }
 
     #[test]
@@ -3215,7 +3244,7 @@ locator = "identity"
             .review
             .retain(|annotation| annotation.entity != "RADIO.CONTROL.LEVEL");
         assert!(
-            validate_review_annotations(&[unreviewed])
+            validate_review_annotations(&[unreviewed.clone()], NamingRequirement::Complete)
                 .unwrap_err()
                 .to_string()
                 .contains("has no reviewed naming")
@@ -3229,6 +3258,22 @@ locator = "identity"
             );
         }
         assert_eq!(naming_error("CONTROL", ""), None);
+        // A draft may lack naming; publication may not.
+        assert!(validate_review_annotations(&[unreviewed], NamingRequirement::Consistent).is_ok());
+    }
+
+    #[test]
+    fn drafts_still_reject_an_inconsistent_stated_naming() {
+        let unsuffixed = naming_fragment(
+            "CONTROL",
+            "[[review]]\nentity = \"RADIO.CONTROL\"\nnaming = \"opaque\"\n",
+        );
+        assert!(
+            validate_review_annotations(&[unsuffixed], NamingRequirement::Consistent)
+                .unwrap_err()
+                .to_string()
+                .contains("does not end in")
+        );
     }
 
     #[test]

@@ -109,7 +109,7 @@ impl ChipPublication {
             m.applicability.artifact_lineages,
             vec![],
         )?;
-        let mut model = RegisterModel::load(&base.join(&m.model))?;
+        let mut model = RegisterModel::load_for_publication(&base.join(&m.model))?;
         if context.chips != [model.chip()] {
             return Err("publication chip differs from register model".into());
         }

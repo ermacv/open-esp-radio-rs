@@ -65,8 +65,11 @@ A register or field review also records where its name comes from with
 | `descriptive` | A name this project assigned from established behavior | Published description starts with "Project-assigned name." |
 | `opaque` | The meaning is not established | The name ends in `_OPAQUE`; published description starts with "Opaque: meaning not established." |
 
-Every register and field carries `naming`. An `_OPAQUE` name and
-`naming = "opaque"` require each other, and no name spells unknown meaning as
-`UNKNOWN` or `UNNAMED`, so an unreviewed name cannot claim or hide it. `naming` applies only
+Every published register and field carries `naming`:
+`RegisterModel::load_for_publication`, which publication uses, rejects a model
+where one lacks it, while `RegisterModel::load` also opens unreviewed drafts
+such as an SVD import. An `_OPAQUE` name and `naming = "opaque"` require each
+other, and no published name spells unknown meaning as `UNKNOWN` or `UNNAMED`,
+so an unreviewed name cannot claim or hide it. `naming` applies only
 to registers and fields. The SVD description carries the marker, so raw PAC
 documentation shows it too.

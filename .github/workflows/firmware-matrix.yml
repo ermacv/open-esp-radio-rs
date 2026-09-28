@@ -1,0 +1,70 @@
+name: Firmware matrix
+
+# Every HIL image class, built and audited as the runner builds it. `CI`
+# builds and audits the two final images on every push; this workflow covers
+# all classes once a night (about 40 minutes sequentially), so a stack frame or
+# placement regression in a diagnostic class is found before it blocks a run.
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-matrix
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  classes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      ESPFLASH_VERSION: 4.5.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/espflash
+            target
+            tools/blobray/target
+          key: firmware-matrix-${{ runner.os }}-${{ env.ESPFLASH_VERSION }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            firmware-matrix-${{ runner.os }}-${{ env.ESPFLASH_VERSION }}-
+            images-${{ runner.os }}-${{ env.ESPFLASH_VERSION }}-
+      - name: Install espflash
+        run: |
+          command -v espflash >/dev/null && espflash --version | grep -q "$ESPFLASH_VERSION" || {
+            sudo apt-get update && sudo apt-get install -y libudev-dev
+            cargo install --locked espflash --version "$ESPFLASH_VERSION"
+          }
+      - name: Put the toolchain's LLVM tools on PATH
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          echo "$(rustc --print sysroot)/lib/rustlib/$host/bin" >> "$GITHUB_PATH"
+      - name: Fetch every workspace
+        run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
+      - name: Build and audit every image class
+        run: |
+          set -o pipefail
+          cargo xtask check firmware --all 2>&1 | tee firmware-matrix.log
+      - name: Summarize the classes
+        if: always()
+        run: |
+          {
+            echo '## Firmware classes'
+            echo
+            echo '```'
+            grep -E '^(PASS|FAIL) ' firmware-matrix.log || echo 'no class result was printed'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

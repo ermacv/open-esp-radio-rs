@@ -104,6 +104,15 @@ pub(crate) enum CliCommand {
         /// recorded as such in the snapshot manifest.
         #[arg(long, conflicts_with = "firmware_from")]
         include_untracked: bool,
+        /// Build from this verified source snapshot directory (`image
+        /// snapshot`, possibly of another checkout) instead of capturing the
+        /// live checkout.
+        #[arg(
+            long,
+            value_name = "DIR",
+            conflicts_with_all = ["firmware_from", "source_include", "include_untracked"]
+        )]
+        source_snapshot: Option<PathBuf>,
         /// Standalone AP: RR or deficit with the same HT/OFDM24 response-envelope model (3000-us quantum).
         #[arg(long, value_enum)]
         ap_scheduler: Option<ApScheduler>,

@@ -340,3 +340,14 @@ fn the_blocked_snapshot_error_names_arguments_ready_to_paste() {
         "--source-include a/new.rs --source-include esp-hal:b.rs"
     );
 }
+
+#[test]
+fn a_captured_snapshot_loads_again_from_its_directory() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let snapshot = capture_roots(&roots, &[], &[], output.path()).unwrap();
+    let loaded = Snapshot::load(snapshot.directory()).unwrap();
+    assert_eq!(loaded.directory(), snapshot.directory());
+    assert!(Snapshot::load(output.path()).is_err());
+}

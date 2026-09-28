@@ -87,6 +87,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("evidence") => return crate::hil_evidence::command(ctx, &args[1..]),
         Some("perf") => return perf(ctx, &options, &args[1..]),
         Some("profile") => return profile(&args[1..]),
+        Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
     }
     // The runner has no lease options: take them from after the command
@@ -167,12 +168,15 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .lines()
             .map(str::to_owned)
             .collect::<Vec<_>>();
+        forward_run_receipt(&run_ids)?;
         let created = runs_dirty(&run_ids)?;
         match evidence_skip_reason(
             record_forced,
             args.iter().any(|arg| {
                 arg.to_str().is_some_and(|arg| {
-                    arg.starts_with("--source-include") || arg == "--include-untracked"
+                    arg.starts_with("--source-include")
+                        || arg.starts_with("--source-snapshot")
+                        || arg == "--include-untracked"
                 })
             }),
             &created,
@@ -197,6 +201,7 @@ const STAND_HELP: &str = "\
 Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
   cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
+  cargo hil bisect --good A --bad B --scenario S [--layout-seed N]   first commit at which S stops passing
   cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases (alias: status)
   cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
   cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
@@ -1352,6 +1357,23 @@ const RECORD_EVIDENCE: &str = "--record-evidence";
 
 /// The runner's run receipt variable; see oer-hil-runner-core.
 const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
+
+/// Name `run_ids` in the receipt of whatever invoked this command (a
+/// bisection's step), when it asked for one.
+fn forward_run_receipt(run_ids: &[String]) -> Result<()> {
+    let Some(path) = std::env::var_os(RUN_RECEIPT_ENV) else {
+        return Ok(());
+    };
+    use std::io::Write as _;
+    let mut receipt = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    for id in run_ids {
+        writeln!(receipt, "{id}")?;
+    }
+    Ok(())
+}
 
 /// Whether each of `run_ids` was built from a dirty tree; a run whose
 /// manifest cannot be read counts as dirty.

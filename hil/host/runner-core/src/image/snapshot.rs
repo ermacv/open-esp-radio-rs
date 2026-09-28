@@ -89,6 +89,22 @@ impl Snapshot {
     pub fn directory(&self) -> &Path {
         &self.directory
     }
+
+    /// The snapshot captured earlier into `directory`, whose archive and
+    /// manifest are verified before they are used.
+    pub fn load(directory: &Path) -> Result<Self> {
+        let directory = directory.canonicalize()?;
+        let snapshot: Self = serde_json::from_slice(&fs::read(directory.join("snapshot.json"))?)?;
+        if snapshot.directory.canonicalize()? != directory {
+            return Err(format!(
+                "{} holds the record of another snapshot directory",
+                directory.display()
+            )
+            .into());
+        }
+        FrozenSources::open(&directory)?;
+        Ok(snapshot)
+    }
 }
 
 /// A source's identity: the SHA-256 of its manifest entry.

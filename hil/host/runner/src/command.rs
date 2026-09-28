@@ -283,6 +283,7 @@ pub(crate) fn run() -> Result<()> {
             scenarios,
             source_include,
             include_untracked,
+            source_snapshot,
             ap_scheduler,
             firmware_from,
             network,
@@ -299,14 +300,14 @@ pub(crate) fn run() -> Result<()> {
             for scenario in &mut selected {
                 preflight::configure_run_selection(scenario, ap_scheduler.map(Into::into))?;
             }
-            let snapshot = if firmware_from.is_none() {
-                Some(image::snapshot::capture(
+            let snapshot = match (&firmware_from, source_snapshot) {
+                (Some(_), _) => None,
+                (None, Some(directory)) => Some(image::snapshot::Snapshot::load(&directory)?),
+                (None, None) => Some(image::snapshot::capture(
                     &root,
                     &source_include,
                     include_untracked,
-                )?)
-            } else {
-                None
+                )?),
             };
             let firmware = match firmware_from {
                 Some(run_id) => {

@@ -539,6 +539,33 @@ run manifest's `firmware[]` entry carries `layout_seed`, which `report
 verify` requires to equal the build record's. Comparing several seeds of the
 same commit separates placement from the source change under test.
 
+### Bisecting a scenario
+
+```console
+cargo hil bisect --good <commit> --bad <commit> --scenario <id> [--layout-seed N]
+```
+
+`bisect` searches the commits after `--good` up to `--bad` (which must
+descend from it) for the first one at which the scenario does not pass. Each
+tested commit is checked out, detached, in the bisection's worktree below
+`target/hil/bisect/<id>/`. When its `PROTOCOL_VERSION` is this checkout's,
+this checkout's runner judges it: `run --source-snapshot DIR` builds the
+revision's firmware from a snapshot of the worktree and runs this checkout's
+host code and scenario. A commit with another protocol version runs its own
+runner, built in the worktree, while the bisection holds a whole-stand lease;
+that runner uses a private arbiter directory with a copy of the stand's
+`devices.json`.
+
+A passed run makes the commit good and a failed one bad. A commit whose image
+does not compile or does not link (told apart from the run's archived build
+log), or whose own runner starts no run, is broken: neither good nor bad, and
+the search probes the untested commit nearest the middle instead. Any other
+run outcome (blocked, broken, interrupted, a quarantined board) stops the
+bisection, since the next steps would meet the same stand. `report.json`
+records every step (commit, subject, runner, verdict and run) and the
+conclusion: the first bad commit (exit 0), the commits broken revisions leave
+ambiguous (exit 1), or why it stopped (exit 2). Its runs record no evidence.
+
 ### Performance across commits
 
 A scenario's gated measurements, those with an `at-least` or `at-most`

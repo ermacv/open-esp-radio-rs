@@ -175,7 +175,6 @@ fn entropy() -> u32 {
 fn make_tx<'a>(
     slot: Pin<&'a mut TxSlot<512>>,
     hardware: &mut Hardware,
-    attempt_limit: u8,
 ) -> SingleMpduTx<'a, Power, fn() -> u32, TestTimer, 512> {
     let key = install_sta_pairwise_ccmp(hardware, BSSID, &[0x5a; 16]).unwrap();
     SingleMpduTx::new(
@@ -195,7 +194,8 @@ fn make_tx<'a>(
                 peer_qos: true,
                 management_protection: false,
                 access_category: LegacyTxQueue::BestEffort.access_category(),
-                unicast_attempt_limit: attempt_limit,
+                control_schedule:
+                    oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
                 publication_timeout_micros: 250_000,
             },
         },
@@ -237,12 +237,12 @@ fn completion_releases_the_slot_and_network_lease_boundary() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
+        tx.start(&mut hardware, &ethernet(), data_selection(4)),
         Ok(WifiTxProgress::Pending)
     );
     assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
@@ -277,7 +277,7 @@ fn rejected_lr_frontier_does_not_consume_the_shared_sequence() {
     ] {
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware::default();
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
         let (protocol, peer, station, channel) = esp_now_protocol(EspNowPhyMode::LongRange(rate));
         let config = EspNowTxConfig::new(4, 250_000).unwrap();
 
@@ -310,7 +310,7 @@ fn successful_esp_now_publication_commits_one_sequence_exactly_once() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let (protocol, peer, station, channel) = esp_now_protocol(EspNowPhyMode::LegacyDsss1M);
 
     assert_eq!(
@@ -337,14 +337,14 @@ fn broadcast_ethernet_destination_is_protected_as_the_individual_bssid_receiver(
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     tx.policy_mut()
         .set_rts_length_threshold(Some(RtsLengthThreshold::new(16)));
     let mut frame = ethernet();
     frame[..6].fill(0xff);
 
     assert_eq!(
-        tx.start(&mut hardware, &frame, data_selection(tx.config())),
+        tx.start(&mut hardware, &frame, data_selection(4)),
         Ok(WifiTxProgress::Pending)
     );
     let (_, program) = hardware.legacy.unwrap();
@@ -360,14 +360,14 @@ fn erp_protection_publishes_cts_to_self_at_a_dsss_rate() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     tx.policy_mut().install_bss_protection(BssProtection {
         erp: ErpProtection::new(true, false),
         ..BssProtection::UNPROTECTED
     });
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
+        tx.start(&mut hardware, &ethernet(), data_selection(4)),
         Ok(WifiTxProgress::Pending)
     );
     let (_, program) = hardware.legacy.unwrap();
@@ -383,13 +383,13 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let mut frame = ethernet();
     frame[14] = 0x45;
     frame[15] = 46 << 2;
 
     assert_eq!(
-        tx.start(&mut hardware, &frame, data_selection(tx.config())),
+        tx.start(&mut hardware, &frame, data_selection(4)),
         Ok(WifiTxProgress::Pending)
     );
     let (queue, program) = hardware.legacy.expect("classified legacy queue image");
@@ -443,7 +443,7 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
 
     let voice = tx.select_network_traffic(&frame).unwrap();
     assert!(matches!(
-        tx.start_with_traffic(&mut hardware, &ethernet(), voice, data_selection(tx.config())),
+        tx.start_with_traffic(&mut hardware, &ethernet(), voice, data_selection(4)),
         Err(SingleMpduTxError::TrafficSelectionMismatch { provided, .. })
             if provided == voice
     ));
@@ -453,7 +453,7 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
 fn idle_connected_owner_returns_descriptor_key_and_sequences_for_teardown() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let tx = make_tx(slot.as_mut(), &mut hardware);
 
     let (resources, handoff) = match tx.try_into_parts() {
         Ok(parts) => parts,
@@ -480,9 +480,9 @@ fn active_connected_owner_rejects_teardown_without_losing_transaction() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     assert_eq!(
-        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
+        tx.start(&mut hardware, &ethernet(), data_selection(4)),
         Ok(WifiTxProgress::Pending)
     );
 
@@ -511,7 +511,7 @@ fn connected_action_uses_the_shared_slot_as_plaintext_voice_tx() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let body = [3, 2, 0, 0, 37, 0];
 
     assert_eq!(
@@ -553,7 +553,7 @@ fn a_robust_action_leaves_protected_under_management_frame_protection() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     tx.config.management_protection = true;
     let sa_query_response = [8, 1, 0x12, 0x34];
 
@@ -599,7 +599,7 @@ fn a_leaving_deauthentication_is_protected_only_under_management_frame_protectio
             prepare: true,
             ..Hardware::default()
         };
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
         tx.config.management_protection = protection;
         assert_eq!(
             tx.start_deauthentication(&mut hardware, 3),
@@ -636,7 +636,7 @@ fn a_public_action_stays_plaintext_under_management_frame_protection() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     tx.config.management_protection = true;
     // Category 4 (Public) is not robust.
     let body = [4, 0, 0, 0];
@@ -655,7 +655,7 @@ fn power_save_null_uses_shared_retried_tx_and_exact_pm_bit() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 4);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(
         tx.start_power_management_null(&mut hardware, StaPowerManagement::PowerSave),
@@ -705,8 +705,8 @@ fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame(
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
-    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    tx.start(&mut hardware, &ethernet(), data_selection(1))
         .unwrap();
     let sequence_after_encode = tx.sequences.peek_qos(0);
     let wake = WifiTxWake::Interrupt {
@@ -745,7 +745,7 @@ fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame(
     );
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
+        tx.start(&mut hardware, &ethernet(), data_selection(1)),
         Ok(WifiTxProgress::Pending)
     );
     hardware.completion = Some(completion(0));
@@ -767,8 +767,8 @@ fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    tx.start(&mut hardware, &ethernet(), data_selection(2))
         .unwrap();
     let first_work = tx.work();
     assert_eq!(first_work.publications, 1);
@@ -841,8 +841,8 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    tx.start(&mut hardware, &ethernet(), data_selection(2))
         .unwrap();
     let submitted = tx.work();
     hardware.timeout = true;
@@ -905,8 +905,8 @@ fn cancelling_poll_wait_keeps_abort_state_and_dma_ownership() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    tx.start(&mut hardware, &ethernet(), data_selection(2))
         .unwrap();
     hardware.timeout = true;
     tx.ordinary.timer.pending_wait = true;
@@ -936,8 +936,8 @@ fn collision_retries_without_marking_an_untransmitted_mpdu_as_retry() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-    tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
+    tx.start(&mut hardware, &ethernet(), data_selection(2))
         .unwrap();
     hardware.collision = true;
     let collision = WifiTxWake::Interrupt {
@@ -974,8 +974,8 @@ fn executor_deadline_quarantines_without_drop_panic() {
         ..Hardware::default()
     };
     {
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-        tx.start(&mut hardware, &ethernet(), data_selection(tx.config()))
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
+        tx.start(&mut hardware, &ethernet(), data_selection(2))
             .unwrap();
 
         let deadline = tx.next_deadline_micros().unwrap();
@@ -1005,10 +1005,10 @@ fn executor_deadline_quarantines_without_drop_panic() {
 fn queue_rejection_cancels_the_unpublished_descriptor() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(
-        tx.start(&mut hardware, &ethernet(), data_selection(tx.config())),
+        tx.start(&mut hardware, &ethernet(), data_selection(2)),
         Err(SingleMpduTxError::Tx(TxError::QueueActive))
     );
     assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
@@ -1017,10 +1017,10 @@ fn queue_rejection_cancels_the_unpublished_descriptor() {
 }
 
 /// The rate and budget the station's rate control would hand one data MPDU;
-/// these tests keep the fixture's configured attempt limit.
-fn data_selection(config: SingleMpduTxConfig) -> StaDataTxSelection {
+/// each test names the publication budget its scenario exercises.
+fn data_selection(publication_limit: u8) -> StaDataTxSelection {
     StaDataTxSelection {
         rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-        publication_limit: config.unicast_attempt_limit,
+        publication_limit,
     }
 }

@@ -74,8 +74,6 @@ pub trait WifiTxTimer {
 /// scheduling owns the ordinary descriptor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ControlTxConfig {
-    /// Maximum hardware publications for one unicast MPDU.
-    pub unicast_attempt_limit: u8,
     /// Executor watchdog for each hardware publication.
     pub completion_timeout_us: u64,
     /// Cooperative polling interval before the MAC IRQ owner is installed.

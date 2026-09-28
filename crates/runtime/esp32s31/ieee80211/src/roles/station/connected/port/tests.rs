@@ -105,7 +105,6 @@ fn config() -> ConnectedStaConfig {
                 he_guard_interval_and_ltf_override: None,
                 he_dcm_override: None,
             },
-            unicast_attempt_limit: 4,
             completion_timeout_us: 250_000,
             aggregate_frame_limit: 32,
             aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,

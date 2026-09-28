@@ -17,7 +17,7 @@ use oer_esp32s31_ieee80211_mac::{
         CcmpKeyHardware, CcmpTxPacketNumberError, CryptoKeyError, StaGroupCcmpKeyMaterial,
         StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_sta_group_ccmp, install_sta_pairwise_ccmp,
     },
-    tx::{LegacyRate, LegacyTxQueue, TxCompletion, TxPhyRate},
+    tx::{LegacyTxQueue, TxCompletion},
 };
 
 use oer_ieee80211_mac::station::{StaDataFrame, StaProtectedDataFrame, StaTxSequenceCounters};
@@ -63,7 +63,6 @@ pub trait HandshakeTransmit<H> {
         hardware: &'a mut H,
         frame: StaProtectedDataFrame<'a>,
         queue: LegacyTxQueue,
-        rate: TxPhyRate,
         hardware_key_selector: u8,
         reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a;
@@ -497,7 +496,6 @@ where
                             payload: frame.as_bytes(),
                         },
                         LegacyTxQueue::Voice,
-                        TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
                         keys.pairwise.hardware_index(),
                         reconnect,
                     )

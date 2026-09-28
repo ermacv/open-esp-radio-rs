@@ -893,7 +893,6 @@ impl ProductionWifiEpochRunner {
                     tx_entropy as fn() -> u32,
                     oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
                     ControlTxConfig {
-                        unicast_attempt_limit: 4,
                         completion_timeout_us: TX_COMPLETION_TIMEOUT_US,
                         poll_interval_us: 1,
                     },

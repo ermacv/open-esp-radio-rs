@@ -480,7 +480,6 @@ fn completion(status: u8) -> MacTxCompletionObservation {
 fn make_tx<'a>(
     slot: Pin<&'a mut TxSlot<512>>,
     hardware: &mut Hardware,
-    attempt_limit: u8,
 ) -> SingleMpduTx<'a, Power, fn() -> u32, Timer, 512> {
     fn entropy() -> u32 {
         0x1234_5678
@@ -506,7 +505,8 @@ fn make_tx<'a>(
                 peer_qos: true,
                 management_protection: false,
                 access_category: WmmAccessCategory::BestEffort,
-                unicast_attempt_limit: attempt_limit,
+                control_schedule:
+                    oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
                 publication_timeout_micros: 250_000,
             },
         },
@@ -646,7 +646,7 @@ fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
         }),
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -694,7 +694,7 @@ fn peer_accepted_explicit_twt_kicks_teardown_into_connected_tx() {
         twt_admit: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(DatapathControlProgress::TxPending)
@@ -868,7 +868,7 @@ fn duplicate_message3_reuses_connected_key_and_pn_while_forged_frames_are_ignore
         bad_mic_message3,
         wrong_replay_message3,
     } = completed_wpa2_fixture(&mut hardware);
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     assert_eq!(hardware.key_install_count, 2);
 
     let before = tx
@@ -949,7 +949,7 @@ fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     for tid in STA_TX_BLOCK_ACK_TIDS {
         assert_eq!(
@@ -1003,7 +1003,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let action = BlockAckAction::AddbaRequest {
         dialog_token: 9,
         tid: 3,
@@ -1094,7 +1094,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let action = BlockAckAction::AddbaRequest {
         dialog_token: 9,
         tid: 3,
@@ -1174,7 +1174,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(DatapathControlProgress::TxPending)
@@ -1253,7 +1253,7 @@ fn beacon_loss_disconnects_only_after_bounded_active_probes() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -1301,7 +1301,7 @@ fn associated_probe_response_cancels_beacon_loss_recovery() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -1345,7 +1345,7 @@ fn peer_deauthentication_disconnects_with_its_reason_code() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     publisher.publish(ConnectedRxEvent::PeerDisconnect(StaDisconnect {
         kind: StaDisconnectKind::Deauthentication,
@@ -1376,7 +1376,7 @@ fn mailbox_overflow_fails_closed_before_processing_an_incomplete_event_stream() 
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let action = BlockAckAction::Delba {
         tid: 1,
         initiator: true,
@@ -1416,7 +1416,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     publisher.publish(ConnectedRxEvent::BlockAck {
         action: BlockAckAction::AddbaRequest {
@@ -1537,7 +1537,7 @@ fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
 
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware::default();
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     assert_eq!(
         control.shutdown(&mut hardware, &mut tx),
         Ok(ConnectedControlShutdown::default())
@@ -1567,7 +1567,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -1612,7 +1612,7 @@ fn connected_beacon_protection_updates_the_tx_bss_facts() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let associated = BssProtection {
         basic_rates: BasicRates::from_rate_elements(&[0x82, 0x84], &[]),
         short_preamble: true,
@@ -1702,7 +1702,7 @@ fn a_shared_station_leaves_the_air_at_its_slice_end_and_holds_its_frames() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let mut performed = std::vec::Vec::new();
 
     // The start places the TBTT on the join beacon's boundary and publishes
@@ -1819,7 +1819,7 @@ fn frames_wait_until_the_agent_performed_the_commands_before_them() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     service(
         &mut control,
         &mut hardware,
@@ -1849,7 +1849,7 @@ fn a_controlled_stop_wakes_and_sends_one_leaving_deauthentication() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let mut performed = std::vec::Vec::new();
     settle(
         &mut control,
@@ -1914,7 +1914,7 @@ fn shutdown_stops_power_management_and_hands_the_releases_to_the_agent() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let mut performed = std::vec::Vec::new();
     settle(
         &mut control,
@@ -1940,7 +1940,7 @@ fn group_rekey_replaces_different_key_id_before_message2() {
     };
     let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let installs_before = hardware.key_install_count;
 
     assert_eq!(
@@ -1984,7 +1984,7 @@ fn group_rekey_rejects_a_retired_key_id_before_hardware_mutation() {
     };
     let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
 
     assert_eq!(
         embassy_futures::block_on(security.process(
@@ -2031,7 +2031,7 @@ fn same_key_id_rekey_is_rsc_only_for_identical_gtk_and_rejects_changed_gtk() {
         };
         let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
         let installs_before = hardware.key_install_count;
 
         assert_eq!(
@@ -2060,7 +2060,7 @@ fn same_key_id_rekey_is_rsc_only_for_identical_gtk_and_rejects_changed_gtk() {
         };
         let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
         let installs_before = hardware.key_install_count;
 
         assert_eq!(
@@ -2096,7 +2096,7 @@ fn group_rekey_hardware_failure_restores_old_epoch_or_quarantines() {
         };
         let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
         hardware.ccmp_reject_installs = 1;
 
         assert_eq!(
@@ -2130,7 +2130,7 @@ fn group_rekey_hardware_failure_restores_old_epoch_or_quarantines() {
         };
         let (mut security, mut replay_rx, ptk) = make_connected_security(&mut hardware);
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+        let mut tx = make_tx(slot.as_mut(), &mut hardware);
         hardware.ccmp_reject_installs = 2;
 
         assert_eq!(
@@ -2214,7 +2214,7 @@ fn an_unanswered_sa_query_ends_the_association_after_1024_ms() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let (mut publisher, mut control) = management_protected_control(&resources, &mut hardware);
 
     publisher.publish(ConnectedRxEvent::UnprotectedDisconnect(StaDisconnect {
@@ -2256,7 +2256,7 @@ fn a_forged_protected_frame_is_counted_and_keeps_the_association() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let (mut publisher, mut control) = management_protected_control(&resources, &mut hardware);
 
     let mut forged = [0_u8; 50];
@@ -2306,7 +2306,7 @@ fn the_station_takes_the_access_point_tsf_at_power_start_and_from_each_beacon() 
         station_tsf: 7,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     embassy_futures::block_on(tx.wait_until_micros(6_000));
     let mut performed = std::vec::Vec::new();
     settle(
@@ -2357,7 +2357,7 @@ fn a_beacon_queued_behind_power_inputs_takes_the_next_step() {
         prepare: true,
         ..Hardware::default()
     };
-    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let mut tx = make_tx(slot.as_mut(), &mut hardware);
     let mut performed = std::vec::Vec::new();
     settle(
         &mut control,

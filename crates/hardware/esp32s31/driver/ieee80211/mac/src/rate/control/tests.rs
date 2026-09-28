@@ -711,3 +711,63 @@ fn recovered_rate_callbacks_and_ampdu_table_are_finite() {
     assert_eq!(rate_to_schedule_index(RateIndexMap::Dot11Ax, 0x2a), 14);
     assert_eq!(rate_to_schedule_index(RateIndexMap::Lora, 0x28), 0xff);
 }
+
+fn association(phy: StaRateControlPhy, p2p: bool) -> StaRateControlAssociation {
+    StaRateControlAssociation::new(StaRateControlAssociationInput {
+        phy,
+        link_metric: StaLinkMetric::from_estimator(70),
+        p2p,
+        peer_highest_rate: None,
+        long_range_rates_present: false,
+        he_low_metric_report: HeLowMetricReportFeatures::default(),
+    })
+}
+
+#[test]
+fn non_data_frames_use_the_association_control_schedule() {
+    let basic_ofdm = RateScheduleRef::new(RateScheduleKind::BasicOfdm, 0).unwrap();
+    for phy in [
+        StaRateControlPhy::Dot11G,
+        StaRateControlPhy::Ht,
+        StaRateControlPhy::He,
+    ] {
+        assert_eq!(association(phy, false).control_schedule(), basic_ofdm);
+    }
+    assert_eq!(
+        association(StaRateControlPhy::Dot11B, false).control_schedule(),
+        DEFAULT_CONTROL_SCHEDULE
+    );
+    assert_eq!(
+        association(StaRateControlPhy::Dot11G, true).control_schedule(),
+        RateScheduleRef::new(RateScheduleKind::P2pDot11G, 7).unwrap()
+    );
+    assert_eq!(
+        association(StaRateControlPhy::He, true).control_schedule(),
+        DEFAULT_CONTROL_SCHEDULE
+    );
+}
+
+#[test]
+fn basic_ofdm_control_schedule_walks_six_then_one_megabit_within_thirty_two_publications() {
+    use crate::{
+        rate::schedule::schedule_publication_limit,
+        tx::{TxPhyRate, runtime::select_schedule_retry_rate},
+    };
+    let schedule = association(StaRateControlPhy::He, false).control_schedule();
+    for attempt in 0..7 {
+        assert_eq!(
+            select_schedule_retry_rate(schedule, attempt),
+            Ok(TxPhyRate::Legacy(LegacyRate::Ofdm6M))
+        );
+    }
+    assert_eq!(
+        select_schedule_retry_rate(schedule, 7),
+        Ok(TxPhyRate::Legacy(LegacyRate::Dsss1MLong))
+    );
+    assert_eq!(schedule_publication_limit(schedule), 32);
+    assert_eq!(schedule_publication_limit(DEFAULT_CONTROL_SCHEDULE), 32);
+    assert_eq!(
+        select_schedule_retry_rate(DEFAULT_CONTROL_SCHEDULE, 0),
+        Ok(TxPhyRate::Legacy(LegacyRate::Dsss1MLong))
+    );
+}

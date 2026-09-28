@@ -1274,7 +1274,6 @@ pub(super) const fn connected_config(power: StationPowerMode) -> ConnectedStaCon
                 he_guard_interval_and_ltf_override: None,
                 he_dcm_override: None,
             },
-            unicast_attempt_limit: 4,
             completion_timeout_us: 250_000,
             aggregate_frame_limit: TX_AMPDU_FRAME_COUNT as u8,
             aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,

@@ -731,6 +731,7 @@ impl StaLinkMetric {
 #[derive(Debug, Eq, PartialEq)]
 pub struct StaRateControlAssociation {
     selection: PhyModeSelection,
+    control_schedule: RateScheduleRef,
     beamforming_report: BeamformingReportRate,
     ack_snr: AckSnrFilter,
     runtime: RateControlState,
@@ -900,6 +901,7 @@ impl StaRateControlAssociation {
         });
         Self {
             selection,
+            control_schedule: control_schedule(input.phy, input.p2p),
             beamforming_report,
             ack_snr: AckSnrFilter::new(),
             runtime: RateControlState {
@@ -924,6 +926,12 @@ impl StaRateControlAssociation {
 
     pub const fn current_schedule(&self) -> RateScheduleRef {
         self.runtime.current_schedule.reference
+    }
+
+    /// Schedule record of every non-data frame this association sends:
+    /// management, BlockAck control, power-management Null and EAPOL.
+    pub const fn control_schedule(&self) -> RateScheduleRef {
+        self.control_schedule
     }
 
     pub const fn fallback_schedule(&self) -> RateScheduleRef {
@@ -1077,6 +1085,39 @@ pub(crate) struct PhyModeSelection {
     pub index_map: RateIndexMap,
     /// The rate byte used to derive the initial AMPDU limit for HT/HE.
     pub ampdu_limit_rate: Option<u8>,
+}
+
+/// Non-data schedule of an interface whose association has not selected
+/// one: `rc11BSchedTbl` record 3, 1 Mbit/s with a 32-publication budget.
+///
+/// SOURCE: `libpp.a[trc.o]::trc_init` stores this record at trc `+0x68`
+/// (and `+0x64`, `+0x6c`) of the interface's default trc, which every frame
+/// uses until `ic_set_sta` enables the association's own trc; station
+/// authentication and association frames therefore use it.
+pub const DEFAULT_CONTROL_SCHEDULE: RateScheduleRef = schedule(RateScheduleKind::Dot11B, 3);
+
+/// Non-data schedule `rcUpdatePhyMode` stores at trc `+0x68`.
+///
+/// `rcGetSched` selects it for every frame that is not ordinary data
+/// (descriptor word 0 bit 3 clear or bit 25 set): management, BlockAck
+/// control, power-management Null and EAPOL, whose classification sets bit 25.
+///
+/// SOURCE: `libpp.a[trc.o]::rcUpdatePhyMode` and `rcGetSched`, and
+/// `libnet80211.a::ic_set_vif`, whose flag is set only by
+/// `esp_wifi_config_11b_rate`: an 802.11b-only association keeps
+/// `rc11BSchedTbl` record 3, 802.11g/n/ax use `BasicOFDMSched`, the flagged
+/// 802.11g association uses `rcP2P11GSchedTbl` record 7 while flagged n/ax
+/// keep the `trc_init` record, and LoRa uses `rcLoRaSchedTbl`.
+const fn control_schedule(phy: StaRateControlPhy, flagged: bool) -> RateScheduleRef {
+    match (phy, flagged) {
+        (StaRateControlPhy::Dot11B, _) => DEFAULT_CONTROL_SCHEDULE,
+        (StaRateControlPhy::Lora, _) => schedule(RateScheduleKind::Lora, 0),
+        (StaRateControlPhy::Dot11G, true) => schedule(RateScheduleKind::P2pDot11G, 7),
+        (StaRateControlPhy::Ht | StaRateControlPhy::He, true) => DEFAULT_CONTROL_SCHEDULE,
+        (StaRateControlPhy::Dot11G | StaRateControlPhy::Ht | StaRateControlPhy::He, false) => {
+            schedule(RateScheduleKind::BasicOfdm, 0)
+        }
+    }
 }
 
 const fn schedule(kind: RateScheduleKind, index: u8) -> RateScheduleRef {

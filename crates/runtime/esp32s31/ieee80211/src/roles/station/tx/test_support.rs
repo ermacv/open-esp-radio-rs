@@ -245,7 +245,8 @@ pub fn make_ordinary<'a, const BUFFER_SIZE: usize>(
                 peer_qos: true,
                 management_protection: false,
                 access_category: WmmAccessCategory::BestEffort,
-                unicast_attempt_limit: 2,
+                control_schedule:
+                    oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
                 publication_timeout_micros: 250_000,
             },
         },

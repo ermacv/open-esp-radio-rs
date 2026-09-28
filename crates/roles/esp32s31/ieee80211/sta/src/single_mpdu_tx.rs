@@ -20,10 +20,14 @@ use oer_esp32s31_ieee80211::{
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpTxPacketNumberError, StaPairwiseCcmpSlot},
+    rate::schedule::{RateScheduleRef, schedule_publication_limit},
     tx::{
         LegacyTxQueue, TxControlFrame, TxError, TxHardware, TxPhyRate,
         protection::{ProtectedPpdu, TxProtectionDecision},
-        runtime::{OrdinaryRetryError, WifiTxRuntimePolicy, WifiTxTraffic, WifiTxTrafficError},
+        runtime::{
+            OrdinaryRetryError, OrdinaryRetryRatePolicy, WifiTxRuntimePolicy, WifiTxTraffic,
+            WifiTxTrafficError, select_schedule_retry_rate,
+        },
     },
 };
 
@@ -65,10 +69,10 @@ pub struct SingleMpduTxConfig {
     pub management_protection: bool,
     /// Access category of a prepared retry that does not name its own.
     pub access_category: oer_ieee80211_mac::qos::WmmAccessCategory,
-    /// Publications of one frame whose rate is not selected per frame by
-    /// the association's rate control: management, EAPOL and
-    /// power-management Null.
-    pub unicast_attempt_limit: u8,
+    /// Schedule record of every non-data frame: management, EAPOL and
+    /// power-management Null. It selects their rate, retry rates and
+    /// publication budget.
+    pub control_schedule: RateScheduleRef,
     /// Watchdog applied independently to each hardware publication.
     pub publication_timeout_micros: u64,
 }
@@ -578,6 +582,32 @@ where
             .map_err(Into::into)
     }
 
+    /// Exchange and retry ladder of one non-data frame: the association's
+    /// control schedule selects its first rate, every retry rate and its
+    /// publication budget.
+    ///
+    /// SOURCE: `libpp.a[pp.o]::ppTxProtoProc` leaves management frames,
+    /// power-management (QoS-)Null and BlockAck control without the data bit,
+    /// and `trc_set_per_pkt_rate` sets bit 25 on EAPOL; `rcGetSched` then
+    /// selects trc `+0x68`, `rcGetRate` walks it and `rcReachRetryLimit`
+    /// bounds it by record byte `0x08`. A unicast probe request additionally
+    /// selects `BasicOFDMSched`, which is the connected station's `+0x68`.
+    fn control_exchange(
+        config: &SingleMpduTxConfig,
+    ) -> (MacTxPlan<TxPhyRate>, OrdinaryRetryRatePolicy) {
+        let schedule = config.control_schedule;
+        (
+            MacTxPlan {
+                access_category: LegacyTxQueue::Voice.access_category(),
+                initial_rate: select_schedule_retry_rate(schedule, 0)
+                    .expect("every recovered control schedule starts with a legacy rate"),
+                publication_limit: schedule_publication_limit(schedule),
+                publication_timeout_micros: config.publication_timeout_micros,
+            },
+            OrdinaryRetryRatePolicy::Schedule(schedule),
+        )
+    }
+
     pub fn now_micros(&self) -> u64 {
         self.ordinary.now_micros()
     }
@@ -726,20 +756,14 @@ where
             .encode(&mut buffer[TX_METADATA_SIZE..])
             .map_err(SingleMpduTxError::Encode)?
         };
+        let (exchange, retry_rate_policy) = Self::control_exchange(&self.config);
         self.ordinary
-            .start(
+            .start_with_retry_rate_policy(
                 hardware,
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    exchange: MacTxPlan {
-                        access_category: LegacyTxQueue::Voice.access_category(),
-                        initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
-                        ),
-                        publication_limit: self.config.unicast_attempt_limit,
-                        publication_timeout_micros: self.config.publication_timeout_micros,
-                    },
+                    exchange,
                     hardware_mic_length: TX_CCMP_MIC_SIZE,
                     hardware_key_selector: key.hardware_index(),
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
@@ -747,6 +771,7 @@ where
                     packet_priority: LegacyTxQueue::Voice.vendor_data_packet_priority(),
                     priority_count: 1,
                 },
+                retry_rate_policy,
             )
             .map_err(Into::into)
     }
@@ -842,20 +867,14 @@ where
             .map_err(SingleMpduTxError::Encode)?;
             (frame_length, 0, 0)
         };
+        let (exchange, retry_rate_policy) = Self::control_exchange(&self.config);
         self.ordinary
-            .start(
+            .start_with_retry_rate_policy(
                 hardware,
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    exchange: MacTxPlan {
-                        access_category: LegacyTxQueue::Voice.access_category(),
-                        initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
-                        ),
-                        publication_limit: self.config.unicast_attempt_limit,
-                        publication_timeout_micros: self.config.publication_timeout_micros,
-                    },
+                    exchange,
                     hardware_mic_length,
                     hardware_key_selector,
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
@@ -863,6 +882,7 @@ where
                     packet_priority: config.packet_priority,
                     priority_count: 1,
                 },
+                retry_rate_policy,
             )
             .map_err(Into::into)
     }
@@ -998,20 +1018,14 @@ where
             .encode(&mut buffer[TX_METADATA_SIZE..])
             .map_err(|_| SingleMpduTxError::ProbeEncode)?
         };
+        let (exchange, retry_rate_policy) = Self::control_exchange(&self.config);
         self.ordinary
-            .start(
+            .start_with_retry_rate_policy(
                 hardware,
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    exchange: MacTxPlan {
-                        access_category: LegacyTxQueue::Voice.access_category(),
-                        initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
-                        ),
-                        publication_limit: 1,
-                        publication_timeout_micros: self.config.publication_timeout_micros,
-                    },
+                    exchange,
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
@@ -1019,6 +1033,7 @@ where
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
                     priority_count: 1,
                 },
+                retry_rate_policy,
             )
             .map_err(Into::into)
     }
@@ -1048,20 +1063,14 @@ where
             .encode(&mut buffer[TX_METADATA_SIZE..])
             .map_err(SingleMpduTxError::Encode)?
         };
+        let (exchange, retry_rate_policy) = Self::control_exchange(&self.config);
         self.ordinary
-            .start(
+            .start_with_retry_rate_policy(
                 hardware,
                 OrdinaryTxPlan {
                     frame_length,
                     descriptor_capacity: None,
-                    exchange: MacTxPlan {
-                        access_category: LegacyTxQueue::Voice.access_category(),
-                        initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
-                        ),
-                        publication_limit: self.config.unicast_attempt_limit,
-                        publication_timeout_micros: self.config.publication_timeout_micros,
-                    },
+                    exchange,
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
                     interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
@@ -1069,6 +1078,7 @@ where
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
                     priority_count: 1,
                 },
+                retry_rate_policy,
             )
             .map_err(Into::into)
     }

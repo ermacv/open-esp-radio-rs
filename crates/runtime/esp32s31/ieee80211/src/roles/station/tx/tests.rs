@@ -453,10 +453,6 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
         selection.publication_limit,
         schedule_publication_limit(tx.rate_control.current_schedule())
     );
-    assert_ne!(
-        selection.publication_limit,
-        tx.ordinary.config().unicast_attempt_limit
-    );
     hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(2, 0));
     assert_eq!(
         tx.service(

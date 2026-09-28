@@ -3,7 +3,6 @@ use super::*;
 #[test]
 fn epoch_never_overwrites_or_duplicates_the_phase_owner() {
     let config = ControlTxConfig {
-        unicast_attempt_limit: 4,
         completion_timeout_us: 250_000,
         poll_interval_us: 1,
     };

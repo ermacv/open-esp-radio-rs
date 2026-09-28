@@ -7,8 +7,8 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 use crate::connection_coex::ReconnectFramePriority;
 
 use oer_esp32s31_hal::types::{
-    MacKeyInstallOutcome, MacLegacyRate, MacLegacyTxProgram, MacTxCompletionObservation,
-    MacTxControlFrame, MacTxDetachOutcome, MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
 };
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
@@ -150,7 +150,6 @@ fn make_tx<'a>(
             timer: Timer::default(),
         },
         ControlTxConfig {
-            unicast_attempt_limit: 2,
             completion_timeout_us: 10,
             poll_interval_us: 1,
         },
@@ -193,7 +192,9 @@ fn authentication_is_encoded_and_completed_by_the_shared_owner() {
 }
 
 #[test]
-fn erp_protected_eapol_data_publishes_cts_to_self_with_the_control_rate_power() {
+/// Join-path EAPOL follows the default interface schedule (1 Mbit/s DSSS),
+/// which ERP protection never covers: only OFDM rates need CTS-to-Self.
+fn erp_protected_join_eapol_leaves_at_the_dsss_schedule_rate_without_protection() {
     let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -219,22 +220,13 @@ fn erp_protected_eapol_data_publishes_cts_to_self_with_the_control_rate_power() 
             payload: &[1, 2, 3, 4],
         },
         LegacyTxQueue::Voice,
-        TxPhyRate::Legacy(LegacyRate::Ofdm24M),
         1,
         None,
     ));
     assert!(result.is_ok());
     assert_eq!(hardware.publications, 1);
     let (_, program) = hardware.legacy.unwrap();
-    assert_eq!(
-        program.control(),
-        MacTxControlFrame {
-            protection: MacTxProtection::CtsToSelf,
-            rate: MacLegacyRate::Cck11MLong,
-            power_primary: 5,
-            power_alternate: 6,
-        }
-    );
+    assert_eq!(program.control().protection, MacTxProtection::None);
 }
 
 #[test]
@@ -393,7 +385,8 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
                 peer_qos: true,
                 management_protection: false,
                 access_category: LegacyTxQueue::BestEffort.access_category(),
-                unicast_attempt_limit: 2,
+                control_schedule:
+                    oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
                 publication_timeout_micros: 10,
             },
         })
@@ -455,7 +448,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
             peer_qos: true,
             management_protection: false,
             access_category: LegacyTxQueue::BestEffort.access_category(),
-            unicast_attempt_limit: 2,
+            control_schedule: oer_esp32s31_ieee80211_mac::rate::control::DEFAULT_CONTROL_SCHEDULE,
             publication_timeout_micros: 10,
         },
     };

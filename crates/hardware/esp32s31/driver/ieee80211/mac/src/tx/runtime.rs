@@ -311,6 +311,10 @@ pub enum OrdinaryRetryError {
         initial: TxPhyRate,
         scheduled: TxPhyRate,
     },
+    ScheduleInitialRateMismatch {
+        initial: TxPhyRate,
+        scheduled: TxPhyRate,
+    },
     P2pHtSgiFallbackMismatch {
         initial: TxPhyRate,
         scheduled: TxPhyRate,
@@ -349,6 +353,9 @@ pub enum OrdinaryRetryRatePolicy {
     /// the initial hardware rate.
     #[default]
     Normal,
+    /// Walk one explicitly selected rate-control record, such as the
+    /// association's non-data schedule.
+    Schedule(RateScheduleRef),
     /// Use one exact recovered P2P record for every retained publication.
     P2p(P2pRetryRateSchedule),
     /// Publish one explicitly selected HT20 SGI rate, then enter the exact
@@ -444,6 +451,15 @@ impl OrdinaryMpduRetryState {
         let mut state = Self::new(queue, initial_rate, mpdu_retry_limit, frame_class)?;
         match rate_policy {
             OrdinaryRetryRatePolicy::Normal => {}
+            OrdinaryRetryRatePolicy::Schedule(schedule) => {
+                let scheduled = select_schedule_retry_rate(schedule, 0)?;
+                if scheduled != initial_rate {
+                    return Err(OrdinaryRetryError::ScheduleInitialRateMismatch {
+                        initial: initial_rate,
+                        scheduled,
+                    });
+                }
+            }
             OrdinaryRetryRatePolicy::P2p(schedule) => {
                 let scheduled = select_p2p_retry_rate(schedule, 0)?;
                 if scheduled != initial_rate {
@@ -512,6 +528,9 @@ impl OrdinaryMpduRetryState {
                     long: 0,
                 },
             ),
+            OrdinaryRetryRatePolicy::Schedule(schedule) => {
+                select_schedule_retry_rate(schedule, failed_attempts)
+            }
             OrdinaryRetryRatePolicy::P2p(schedule) => {
                 select_p2p_retry_rate(schedule, failed_attempts)
             }
@@ -646,7 +665,17 @@ pub fn select_p2p_retry_rate(
     schedule: P2pRetryRateSchedule,
     retry_index: u8,
 ) -> Result<TxPhyRate, OrdinaryRetryError> {
-    let code = schedule_rate_after_failures(schedule.schedule(), retry_index)
+    select_schedule_retry_rate(schedule.schedule(), retry_index)
+}
+
+/// Select one `rcGetRate` attempt of an exact recovered record. Rates decode
+/// as 20-MHz one-stream values, as for the P2P records.
+#[inline(never)]
+pub fn select_schedule_retry_rate(
+    schedule: RateScheduleRef,
+    retry_index: u8,
+) -> Result<TxPhyRate, OrdinaryRetryError> {
+    let code = schedule_rate_after_failures(schedule, retry_index)
         .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index })?;
     TxPhyRate::from_code(code, HtChannelWidth::Mhz20)
         .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index })

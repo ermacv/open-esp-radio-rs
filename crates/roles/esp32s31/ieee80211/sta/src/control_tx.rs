@@ -30,11 +30,18 @@ use oer_esp32s31_ieee80211::{
 
 use oer_esp32s31_ieee80211_mac::{
     edca::EdcaParametersError,
+    rate::{
+        control::DEFAULT_CONTROL_SCHEDULE,
+        schedule::{RateScheduleRef, schedule_publication_limit},
+    },
     tx::{
         HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError, TxHardware,
         TxPhyRate,
         protection::BssProtection,
-        runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
+        runtime::{
+            OrdinaryRetryError, OrdinaryRetryRatePolicy, WifiTxRuntimePolicy,
+            select_schedule_retry_rate,
+        },
     },
 };
 
@@ -72,14 +79,28 @@ const MANAGEMENT_PACKET_PRIORITY: u8 = 1;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Publication {
     queue: LegacyTxQueue,
-    rate: TxPhyRate,
-    attempt_limit: u8,
+    retry: ControlRetry,
     hardware_mic_length: usize,
     hardware_key_selector: u8,
     descriptor_capacity: Option<u32>,
     scheduler_priority: u8,
     packet_priority: u8,
     priority_count: u16,
+}
+
+/// Rate and retry series of one control-path publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ControlRetry {
+    /// A frame no receiver acknowledges: one publication at this rate.
+    Single(TxPhyRate),
+    /// An acknowledged frame on the interface's non-data schedule record,
+    /// which selects its rate, retry rates and publication budget.
+    ///
+    /// SOURCE: `libnet80211.a::ieee80211_set_tx_desc` binds a frame to the
+    /// interface's default trc until `ic_set_sta` enables the association's
+    /// own; `trc_init` gave that trc `rc11BSchedTbl` record 3 at `+0x68`,
+    /// which `rcGetSched` selects for authentication, association and EAPOL.
+    Schedule(RateScheduleRef),
 }
 
 impl Publication {
@@ -377,8 +398,7 @@ where
             frame_length,
             Publication {
                 queue: LegacyTxQueue::Voice,
-                rate: TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
-                attempt_limit: 1,
+                retry: ControlRetry::Single(TxPhyRate::Legacy(LegacyRate::Dsss1MLong)),
                 hardware_mic_length: 0,
                 hardware_key_selector: 0,
                 descriptor_capacity,
@@ -448,8 +468,7 @@ where
             frame_length,
             Publication {
                 queue: LegacyTxQueue::Voice,
-                rate: TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
-                attempt_limit: self.config.unicast_attempt_limit,
+                retry: ControlRetry::Schedule(DEFAULT_CONTROL_SCHEDULE),
                 hardware_mic_length: 0,
                 hardware_key_selector: 0,
                 descriptor_capacity: None,
@@ -467,7 +486,6 @@ where
         hardware: &mut H,
         frame: StaProtectedDataFrame<'_>,
         queue: LegacyTxQueue,
-        rate: TxPhyRate,
         hardware_key_selector: u8,
         reconnect: Option<ReconnectFramePriority>,
     ) -> Result<TxCompletion, ControlTxError> {
@@ -479,8 +497,7 @@ where
             frame_length,
             Publication {
                 queue,
-                rate,
-                attempt_limit: self.config.unicast_attempt_limit,
+                retry: ControlRetry::Schedule(DEFAULT_CONTROL_SCHEDULE),
                 hardware_mic_length: TX_CCMP_MIC_SIZE,
                 hardware_key_selector,
                 descriptor_capacity: None,
@@ -531,8 +548,7 @@ where
             frame_length,
             Publication {
                 queue: LegacyTxQueue::Voice,
-                rate: TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
-                attempt_limit: self.config.unicast_attempt_limit,
+                retry: ControlRetry::Schedule(DEFAULT_CONTROL_SCHEDULE),
                 hardware_mic_length: 0,
                 hardware_key_selector: 0,
                 descriptor_capacity: None,
@@ -551,15 +567,24 @@ where
         frame_length: usize,
         publication: Publication,
     ) -> Result<TxCompletion, ControlTxError> {
-        self.ordinary.start(
+        let (initial_rate, publication_limit, retry_rate_policy) = match publication.retry {
+            ControlRetry::Single(rate) => (rate, 1, OrdinaryRetryRatePolicy::Normal),
+            ControlRetry::Schedule(schedule) => (
+                select_schedule_retry_rate(schedule, 0)
+                    .expect("every recovered control schedule starts with a legacy rate"),
+                schedule_publication_limit(schedule),
+                OrdinaryRetryRatePolicy::Schedule(schedule),
+            ),
+        };
+        self.ordinary.start_with_retry_rate_policy(
             hardware,
             OrdinaryTxPlan {
                 frame_length,
                 descriptor_capacity: publication.descriptor_capacity,
                 exchange: MacTxPlan {
                     access_category: publication.queue.access_category(),
-                    initial_rate: publication.rate,
-                    publication_limit: publication.attempt_limit,
+                    initial_rate,
+                    publication_limit,
                     publication_timeout_micros: self.config.completion_timeout_us,
                 },
                 hardware_mic_length: publication.hardware_mic_length,
@@ -569,6 +594,7 @@ where
                 packet_priority: publication.packet_priority,
                 priority_count: publication.priority_count,
             },
+            retry_rate_policy,
         )?;
         loop {
             if self
@@ -687,18 +713,10 @@ where
         hardware: &'a mut H,
         frame: StaProtectedDataFrame<'a>,
         queue: LegacyTxQueue,
-        rate: TxPhyRate,
         hardware_key_selector: u8,
         reconnect: Option<ReconnectFramePriority>,
     ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        self.transmit_protected_data(
-            hardware,
-            frame,
-            queue,
-            rate,
-            hardware_key_selector,
-            reconnect,
-        )
+        self.transmit_protected_data(hardware, frame, queue, hardware_key_selector, reconnect)
     }
 }
 

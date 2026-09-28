@@ -27,7 +27,6 @@ pub struct ConnectedStaConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedStaTxPolicy {
     pub rate: ConnectedStaRateConfig,
-    pub unicast_attempt_limit: u8,
     pub completion_timeout_us: u64,
     pub aggregate_frame_limit: u8,
     pub aggregate_he_txop_limit: HeEdcaTxopLimit,
@@ -81,7 +80,6 @@ pub enum ConnectedStaConfigError {
         window: u16,
         capacity: usize,
     },
-    ZeroUnicastAttemptLimit,
     ZeroTxBlockAckNegotiationAttemptLimit,
     HeTriggerTidMismatch {
         configured: u8,
@@ -108,6 +106,7 @@ pub struct ConnectedStaPlan {
     pub(super) config: ConnectedStaConfig,
     pub(super) data_tx_rate: TxPhyRate,
     pub(super) data_rate_policy: StaTxRatePolicy,
+    pub(super) control_schedule: oer_esp32s31_ieee80211_mac::rate::schedule::RateScheduleRef,
     pub(super) aggregate_tx_rate: TxPhyRate,
     pub(super) ht_duplicate_tx_selection: HtDuplicateTxSelection,
     pub(super) aggregate_rate_policy: StaTxRatePolicy,
@@ -255,7 +254,7 @@ impl ConnectedStaPlan {
             peer_qos: self.link.peer_qos,
             management_protection: self.link.management_protection,
             access_category: WmmAccessCategory::BestEffort,
-            unicast_attempt_limit: self.config.tx.unicast_attempt_limit,
+            control_schedule: self.control_schedule,
             publication_timeout_micros: self.config.tx.completion_timeout_us,
         }
     }
@@ -437,12 +436,6 @@ impl ConnectedStaPort {
                 peer,
             });
         }
-        if config.tx.unicast_attempt_limit == 0 {
-            return Err(ConnectedStaPrepareFailure {
-                error: ConnectedStaConfigError::ZeroUnicastAttemptLimit,
-                peer,
-            });
-        }
         if config.block_ack.tx_block_ack_negotiation_attempt_limit == 0 {
             return Err(ConnectedStaPrepareFailure {
                 error: ConnectedStaConfigError::ZeroTxBlockAckNegotiationAttemptLimit,
@@ -525,6 +518,7 @@ impl ConnectedStaPort {
             config,
             data_tx_rate: rate_control.tx_rate(data_policy),
             data_rate_policy: data_policy,
+            control_schedule: rate_control.control_schedule(),
             aggregate_tx_rate,
             ht_duplicate_tx_selection,
             aggregate_rate_policy: aggregate_policy,

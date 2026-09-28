@@ -234,8 +234,8 @@ reason = "initial join future retains the recoverable scan, authentication (incl
 [[reviewed_frames]]
 function_contains = "::run_reconnected_epoch::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/station_epoch.rs"]
-max_bytes = 15360
-reason = "reconnect future retains the recoverable connected owner, the SAE exchange of a WPA3 reauthentication with the attempt's selected RSN elements (a resumed PMKSA's PMKID), split pairwise/group replay, the TX-power tracking restarted from its registration reference and expanded protocol policy until the typed join disposition is returned; measured 15136 bytes"
+max_bytes = 15872
+reason = "reconnect future retains the recoverable connected owner, the SAE exchange of a WPA3 reauthentication with the attempt's selected RSN elements (a resumed PMKSA's PMKID), split pairwise/group replay, the TX-power tracking restarted from its registration reference, the association control rate schedule and expanded protocol policy until the typed join disposition is returned; measured 15376 bytes"
 
 [[reviewed_frames]]
 function_contains = "::run_connected_epoch::{closure#0}"

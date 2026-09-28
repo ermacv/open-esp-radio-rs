@@ -133,7 +133,6 @@ fn running_scan_tx<'a>(
             timer: ScanTxTimer::default(),
         },
         ControlTxConfig {
-            unicast_attempt_limit: 2,
             completion_timeout_us: 10,
             poll_interval_us: 1,
         },

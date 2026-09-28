@@ -163,6 +163,16 @@ reason = "live state: the last PBus command word"
 excluded = true
 reason = "clock policy: the modem XTAL clock enable follows the active radio modules"
 
+[[registers."MODEM_LPCON_SHARED_CLOCK.COEX_LP_CLK_CONF"]]
+excluded = true
+lifecycle = "ieee802154"
+reason = "lifecycle: the coex timer clock (XTAL/50, 0x314) is selected before any coex request; the vendor selects it at system start in coex_pre_init (esp_coex coexist.c init_coexist, linked with software coex), production in RadioSystem::enable_coex on the first coex client (CoexArbiter::configure_timer_clock, from libcoexist coex_core_pre_init). The production IEEE 802.15.4 session runs without a coex client, whose timers are then unused (reviewed with the PHY owner)"
+
+[[registers."MODEM_LPCON_SHARED_CLOCK.COEX_LP_CLK_CONF"]]
+excluded = true
+lifecycle = "ieee802154-restart"
+reason = "lifecycle: the coex timer clock (XTAL/50, 0x314) is selected before any coex request; the vendor selects it at system start in coex_pre_init (esp_coex coexist.c init_coexist, linked with software coex), production in RadioSystem::enable_coex on the first coex client (CoexArbiter::configure_timer_clock, from libcoexist coex_core_pre_init). The production IEEE 802.15.4 session runs without a coex client, whose timers are then unused (reviewed with the PHY owner)"
+
 [registers."PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL"]
 excluded = true
 lifecycle = "cold"

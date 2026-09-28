@@ -81,6 +81,11 @@ pub fn plan(
         if path.starts_with("qualification") && !path.starts_with("qualification/evaluator") {
             plan.packages.insert(String::from("oer-qualification"));
         }
+        // The runner's evidence workflow tests run the evaluator binary, so
+        // an evaluator change that no Cargo edge reaches can break them.
+        if path.starts_with("qualification/evaluator") {
+            plan.packages.insert(String::from("oer-hil-runner-core"));
+        }
         if ["hil/targets", "hil/protocol", "hil/target-core"]
             .iter()
             .any(|prefix| path.starts_with(prefix))
@@ -459,6 +464,25 @@ mod tests {
             BTreeSet::from([PathBuf::from("/r/Cargo.toml")])
         );
         assert!(!plan.docs && !plan.metadata);
+    }
+
+    #[test]
+    fn rust_sources_and_catalogs_check_capability_anchors() {
+        let plan = run(&["crates/hal/nested/src/lib.rs", "docs/guide.md"]);
+        assert_eq!(
+            plan.capabilities,
+            Some(BTreeSet::from([PathBuf::from(
+                "crates/hal/nested/src/lib.rs"
+            )]))
+        );
+        let plan = run(&["qualification/catalog/esp32s31/coex.toml"]);
+        assert_eq!(plan.capabilities, Some(BTreeSet::new()));
+        assert!(
+            run(&["qualification/evaluator/src/main.rs"])
+                .packages
+                .contains("oer-hil-runner-core")
+        );
+        assert_eq!(run(&["docs/guide.md"]).capabilities, None);
     }
 
     #[test]

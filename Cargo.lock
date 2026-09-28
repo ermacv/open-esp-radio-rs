@@ -3062,6 +3062,7 @@ dependencies = [
  "oer-hil-target-core",
  "oer-ieee80211-trace",
  "oer-memory-report",
+ "oer-phy-trace",
  "oer-process",
  "oer-trace",
  "roxmltree",

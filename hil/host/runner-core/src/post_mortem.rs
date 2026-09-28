@@ -129,8 +129,11 @@ fn drain_trace(capture: &SerialCapture, directory: &Path) {
         return;
     }
     let entries = capture.trace_entries(status.entries).unwrap_or_default();
-    let snapshots = (0..status.snapshot_slots)
+    let slots = (0..status.snapshot_slots)
         .filter_map(|slot| capture.trace_snapshot(slot).ok().flatten())
+        .collect::<Vec<_>>();
+    let snapshots = slots
+        .iter()
         .map(|(header, words)| {
             serde_json::json!({"slot": header.slot, "point": header.point,
             "tag": header.tag, "t_us": header.t_us, "len": header.len,
@@ -143,7 +146,11 @@ fn drain_trace(capture: &SerialCapture, directory: &Path) {
         &serde_json::json!({"schema": 1, "status": status, "entries": entries,
                             "snapshots": snapshots}),
     );
-    let _ = std::fs::write(directory.join("trace.txt"), decode_trace(&status, &entries));
+    let mut text = decode_trace(&status, &entries);
+    for (header, words) in &slots {
+        text.push_str(&describe_snapshot(header, words));
+    }
+    let _ = std::fs::write(directory.join("trace.txt"), text);
     if status.holding_previous {
         let _ = capture.trace_control(oer_hil_protocol::TraceControl::Start { mask: u64::MAX });
     }
@@ -191,11 +198,32 @@ fn decode_trace(
     text
 }
 
+/// One snapshot slot, one line: its point, the tag it was taken at, and the
+/// decoded state when a domain knows the point, else its word count.
+fn describe_snapshot(header: &oer_hil_protocol::TraceSnapshotPage, words: &[u32]) -> String {
+    let decoded = (header.point == oer_phy_trace::PhySnapshot::POINT.raw() && !header.truncated)
+        .then(|| oer_phy_trace::PhySnapshot::decode(words))
+        .flatten()
+        .map(|snapshot| snapshot.to_string());
+    format!(
+        "{:>12} us  tag {:>5}  snapshot {}: {}\n",
+        header.t_us,
+        header.tag,
+        event_name(header.point),
+        decoded.unwrap_or_else(|| format!(
+            "{} words{}",
+            words.len(),
+            if header.truncated { ", truncated" } else { "" }
+        ))
+    )
+}
+
 /// The event sets a drained trace is described with; an event of another
 /// domain is shown as its domain, id and words.
 const TRACE_EVENT_SETS: &[oer_trace::Describer] = &[
     <oer_hil_target_core::trace::PlatformTrace as oer_trace::EventSet>::describe,
     <oer_ieee80211_trace::StationTrace as oer_trace::EventSet>::describe,
+    <oer_phy_trace::PhyTrace as oer_trace::EventSet>::describe,
 ];
 
 /// A trace kind's name: the platform's own, else its domain and event id.
@@ -357,6 +385,55 @@ pub(crate) fn symbol(loader: Option<&addr2line::Loader>, address: u32) -> String
 mod tests {
     use super::*;
     use oer_hil_protocol::{HartState, PostMortemSummary};
+
+    fn slot(point: u16, words: &[u32], truncated: bool) -> oer_hil_protocol::TraceSnapshotPage {
+        oer_hil_protocol::TraceSnapshotPage {
+            slot: 0,
+            point,
+            tag: 7,
+            t_us: 1_000,
+            len: words.len() as u16,
+            truncated,
+            offset: 0,
+            words: Default::default(),
+        }
+    }
+
+    #[test]
+    fn a_phy_snapshot_is_decoded_and_another_point_shows_its_size() {
+        use oer_phy_trace::{
+            BusRead, Client, Clients, Fault, FaultStage, PhySnapshot, Poison, PoisonedBy, Slot,
+            TemperatureReferences,
+        };
+        let snapshot = PhySnapshot {
+            poison: Poison {
+                by: PoisonedBy::Tracking,
+                fault: Fault {
+                    stage: FaultStage::Deadline,
+                    detail: 0xbeef,
+                },
+            },
+            slot: Slot::Pending,
+            clients: Clients::NONE.with(Client::Wifi),
+            temperatures: TemperatureReferences {
+                rfpll: 24,
+                calibration: 23,
+                transmit: 25,
+                power: 22,
+                observed: 26,
+            },
+            bus: BusRead::DomainOff,
+        };
+        let words = snapshot.encode();
+        let point = PhySnapshot::POINT.raw();
+        let line = describe_snapshot(&slot(point, &words, false), &words);
+        assert!(line.contains(&snapshot.to_string()), "{line}");
+        // A truncated or foreign slot is shown by size, never misdecoded.
+        let truncated = describe_snapshot(&slot(point, &words, true), &words);
+        assert!(truncated.contains("12 words, truncated"), "{truncated}");
+        let other = describe_snapshot(&slot(0x0181, &[1, 2, 3], false), &[1, 2, 3]);
+        assert!(other.ends_with("3 words\n"), "{other}");
+    }
 
     fn boot(reset_reason: ResetReason, fault: Option<Fault>) -> BootEvidence {
         BootEvidence {

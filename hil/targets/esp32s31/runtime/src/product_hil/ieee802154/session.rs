@@ -83,6 +83,7 @@ async fn restart(
 
 /// Run one peer session until the host stops it. The image is terminal.
 pub(in crate::product_hil) async fn run_session(
+    spawner: embassy_executor::Spawner,
     platform: EspHalRadioPlatform,
     request_id: u32,
     config: Ieee802154SessionConfig,
@@ -96,7 +97,7 @@ pub(in crate::product_hil) async fn run_session(
         .await;
         return;
     };
-    let Some((mut client, parked)) = Client::claim(platform) else {
+    let Some((mut client, parked)) = Client::claim(spawner, platform) else {
         publish_event_reliably(
             0,
             request_id,

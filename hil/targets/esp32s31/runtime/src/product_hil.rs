@@ -1609,8 +1609,11 @@ pub async fn run(
         #[cfg(feature = "ieee802154-radio")]
         PreInitializationRequest::Ieee802154AirCheck(check) => {
             // The check holds the composition's bring-up future; pin it in place.
-            let air_check =
-                core::pin::pin!(ieee802154::run_air_check(platforms.radio, check.request));
+            let air_check = core::pin::pin!(ieee802154::run_air_check(
+                spawner,
+                platforms.radio,
+                check.request
+            ));
             let evidence = air_check.await;
             publish_event_reliably(
                 0,
@@ -1624,6 +1627,7 @@ pub async fn run(
         PreInitializationRequest::Ieee802154Session(start) => {
             // The session holds the composition's bring-up future; pin it.
             let session = core::pin::pin!(ieee802154::run_session(
+                spawner,
                 platforms.radio,
                 start.request_id,
                 start.config
@@ -1635,6 +1639,7 @@ pub async fn run(
         PreInitializationRequest::Ieee802154Thread(start) => {
             // The session holds the composition's bring-up future; pin it.
             let thread = core::pin::pin!(ieee802154::run_thread(
+                spawner,
                 platforms.radio,
                 start.request_id,
                 start.request

@@ -39,6 +39,7 @@ struct Stop(Ieee802154AirCheckStop);
 
 /// Run the air check. The image is terminal: the radio stays split.
 pub(in crate::product_hil) async fn run_air_check(
+    spawner: embassy_executor::Spawner,
     platform: EspHalRadioPlatform,
     request: Ieee802154AirCheckRequest,
 ) -> Ieee802154AirCheckEvidence {
@@ -46,7 +47,7 @@ pub(in crate::product_hil) async fn run_air_check(
     let Ok(channel) = Channel::new(request.channel) else {
         return evidence;
     };
-    let Some((mut client, mut parked)) = Client::claim(platform) else {
+    let Some((mut client, mut parked)) = Client::claim(spawner, platform) else {
         return evidence;
     };
     for index in 0..usize::from(request.cycles) {

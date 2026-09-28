@@ -234,12 +234,13 @@ fn start_openthread(
 
 /// Run one Thread session until the host stops it. The image is terminal.
 pub(in crate::product_hil) async fn run_thread(
+    spawner: embassy_executor::Spawner,
     platform: EspHalRadioPlatform,
     request_id: u32,
     request: Ieee802154ThreadStartRequest,
 ) {
     let started = |result| HilEvent::Ieee802154ThreadStarted(result);
-    let Some((mut client, parked)) = Client::claim(platform) else {
+    let Some((mut client, parked)) = Client::claim(spawner, platform) else {
         publish_event_reliably(
             0,
             request_id,

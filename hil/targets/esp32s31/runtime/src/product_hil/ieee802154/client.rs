@@ -2,15 +2,10 @@
 
 use core::pin::pin;
 
-use esp_hal::{efuse, time::Instant};
-use oer_esp32s31_hal::root::RadioHardware;
+use esp_hal::time::Instant;
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
-use oer_esp32s31_phy::{
-    PhyCalibrationIdentity, concurrent::MaintenancePolicy, phy_get_rf_cal_version,
-};
-use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
+use oer_esp32s31_phy::concurrent::MaintenancePolicy;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
-use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy};
 use oer_ieee802154::TxStatus;
 use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
@@ -19,20 +14,7 @@ pub(super) fn now_micros() -> u64 {
     Instant::now().duration_since_epoch().as_micros()
 }
 
-fn calibration_identity() -> PhyCalibrationIdentity {
-    let mut base_mac_address = [0; 6];
-    base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
-    PhyCalibrationIdentity {
-        rf_cal_version: phy_get_rf_cal_version(),
-        base_mac_address,
-        mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
-    }
-}
-
-type Radio = RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
-
-/// The image's one radio; the images are terminal, so it is claimed once.
-static RADIO: static_cell::StaticCell<Radio> = static_cell::StaticCell::new();
+type Radio = oer_esp32s31_radio_system::SharedRadio;
 
 /// The concurrently split radio and the IEEE 802.15.4 client's owners. The
 /// images are terminal: the radio stays split. The radio is placed by the
@@ -43,16 +25,18 @@ pub(super) struct Client {
 }
 
 impl Client {
-    /// Claim the radio once for this image.
-    pub(super) fn claim(platform: EspHalRadioPlatform) -> Option<(Self, Ieee802154Parked)> {
-        let hardware = RadioHardware::take()?;
-        let (radio, partitions) = RadioSystem::new(
-            hardware,
-            platform,
-            EspHalRadioClocks::new(),
-            calibration_identity(),
-        );
-        let radio: &'static Radio = RADIO.try_init(radio)?;
+    /// Start the radio once for this image. The image runs the coexistence
+    /// schedule and PHY tracking itself, for the length of a session.
+    pub(super) fn claim(
+        spawner: embassy_executor::Spawner,
+        platform: EspHalRadioPlatform,
+    ) -> Option<(Self, Ieee802154Parked)> {
+        use oer_esp32s31_radio_system::{RadioStart, Schedule, Tracking};
+        let start = RadioStart::new()
+            .with_tracking(Tracking::Caller)
+            .with_schedule(Schedule::Caller);
+        let (radio, partitions) =
+            oer_esp32s31_radio_system::start(spawner, platform, start).ok()?;
         crate::product_hil::phy_register_image::adopt(radio);
         let defaults = Ieee802154PibDefaults::default();
         let parked = Ieee802154Parked::new(partitions.ieee802154, defaults)?;

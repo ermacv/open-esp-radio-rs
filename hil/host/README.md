@@ -155,7 +155,11 @@ cargo hil flash --board esp32c5 --monitor 30s --until READY target/.../app.elf
 port) that refreshes every two seconds: holders with their time held, the
 queue in service order with every owner's balance and expected starts, every board's port and last flash, the newest runs
 of the shared store and recent leases with their outcomes. It only reads the
-arbiter's state and run manifests; Ctrl+C stops it.
+arbiter's state and run manifests; Ctrl+C stops it. One dashboard serves the
+host and names itself in `dashboard.json` of the arbiter directory: starting
+the same build again prints the running one's address, and another build
+stops it and takes over. A dashboard exits once another replaced it or once
+the stand's state has a schema newer than it reads.
 
 `run --then 'COMMAND'` runs a shell command after the scenarios while the run
 still holds its lease, so nobody flashes the board in between: read the reset

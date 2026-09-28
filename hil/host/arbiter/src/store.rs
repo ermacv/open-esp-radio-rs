@@ -56,6 +56,16 @@ impl Arbiter {
         Ok(Self { directory })
     }
 
+    /// Whether the stand's state was written by a newer build, whose schema
+    /// this build cannot read.
+    pub fn outdated(&self) -> bool {
+        fs::read(self.directory.join("state.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|state| state["schema"].as_u64())
+            .is_some_and(|schema| schema > u64::from(STATE_SCHEMA))
+    }
+
     pub fn directory(&self) -> &Path {
         &self.directory
     }

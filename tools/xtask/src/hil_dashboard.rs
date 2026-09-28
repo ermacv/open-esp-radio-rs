@@ -3,8 +3,14 @@
 //! A single-threaded HTTP server bound to the loopback interface serves one
 //! page and `status.json`: the arbiter's holders, queue, boards and recent
 //! leases, plus the newest runs of the shared run store. The page polls the
-//! JSON, so it reflects the stand without reloading. Nothing is written; the
-//! server only reads the arbiter's state and the run manifests.
+//! JSON, so it reflects the stand without reloading. The server only reads
+//! the arbiter's state and the run manifests.
+//!
+//! One dashboard serves the host. It names itself in `dashboard.json` of the
+//! arbiter directory: a second start of the same build prints the running
+//! one's address, and a different build stops it and takes over. A running
+//! dashboard exits once another replaced it, or once the stand's state has a
+//! schema newer than it reads, instead of serving errors.
 use std::{
     io::{BufRead as _, BufReader, Write as _},
     net::{Ipv4Addr, TcpListener, TcpStream},
@@ -30,18 +36,117 @@ pub fn serve(runs: &Path, args: &[std::ffi::OsString]) -> Result<std::process::E
             .ok_or("--port takes a port number")?,
         _ => return Err("usage: cargo hil dashboard [--port PORT]".into()),
     };
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let record = arbiter.directory().join("dashboard.json");
+    let me = Instance::current(port)?;
+    if let Some(running) = Instance::read(&record).filter(Instance::alive) {
+        if running.build == me.build {
+            eprintln!(
+                "hil dashboard: already served at http://127.0.0.1:{}",
+                running.port
+            );
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
+        eprintln!(
+            "hil dashboard: replacing the dashboard of another build (pid {})",
+            running.pid
+        );
+        running.stop();
+    }
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .map_err(|error| format!("cannot listen on 127.0.0.1:{port}: {error}"))?;
+    me.write(&record)?;
     eprintln!(
         "hil dashboard: http://{} (Ctrl+C stops it)",
         listener.local_addr()?
     );
-    for stream in listener.incoming() {
-        let Ok(stream) = stream else { continue };
-        // A client that disconnects mid-request only loses its response.
-        let _ = handle(stream, runs);
+    listener.set_nonblocking(true)?;
+    let mut checked = std::time::Instant::now();
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(false)?;
+                // A client that disconnects mid-request only loses its response.
+                let _ = handle(stream, runs);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(_) => {}
+        }
+        if checked.elapsed() >= std::time::Duration::from_secs(2) {
+            checked = std::time::Instant::now();
+            if Instance::read(&record).is_none_or(|current| current.pid != me.pid) {
+                eprintln!("hil dashboard: another dashboard took over; exiting");
+                return Ok(std::process::ExitCode::SUCCESS);
+            }
+            if arbiter.outdated() {
+                eprintln!(
+                    "hil dashboard: the stand's state is newer than this build reads; \
+                     exiting. Start the dashboard of the current build."
+                );
+                let _ = std::fs::remove_file(&record);
+                return Ok(std::process::ExitCode::SUCCESS);
+            }
+        }
     }
-    Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// A running dashboard, as `dashboard.json` names it.
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
+struct Instance {
+    pid: u32,
+    /// When the process started, telling it from a later process with a
+    /// reused PID.
+    started_unix_millis: u64,
+    port: u16,
+    /// The executable and its modification time: another build differs.
+    build: String,
+}
+
+impl Instance {
+    fn current(port: u16) -> Result<Self> {
+        let exe = std::env::current_exe()?;
+        let modified = std::fs::metadata(&exe)?
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+        Ok(Self {
+            pid: std::process::id(),
+            started_unix_millis: oer_hil_arbiter::process_started_unix_millis(std::process::id())
+                .ok_or("cannot read this process's start time")?,
+            port,
+            build: format!("{}@{modified}", exe.display()),
+        })
+    }
+
+    fn read(path: &Path) -> Option<Self> {
+        serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+    }
+
+    fn write(&self, path: &Path) -> Result<()> {
+        let mut file = tempfile::NamedTempFile::new_in(path.parent().ok_or("no parent")?)?;
+        serde_json::to_writer(&mut file, self)?;
+        file.persist(path)?;
+        Ok(())
+    }
+
+    fn alive(&self) -> bool {
+        oer_hil_arbiter::process_started_unix_millis(self.pid) == Some(self.started_unix_millis)
+    }
+
+    /// Stop this dashboard and wait up to five seconds for its port.
+    fn stop(&self) {
+        if let Some(pid) = rustix::process::Pid::from_raw(self.pid as i32) {
+            let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
+        }
+        for _ in 0..50 {
+            if !self.alive() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
 }
 
 fn handle(mut stream: TcpStream, runs: &Path) -> Result<()> {
@@ -203,6 +308,24 @@ mod tests {
             json!({"state": "completed", "outcome": outcome, "started_at_unix_ms": 1}).to_string(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_dashboard_record_names_a_live_process_of_one_build() {
+        let directory = tempfile::tempdir().unwrap();
+        let record = directory.path().join("dashboard.json");
+        let me = Instance::current(8765).unwrap();
+        me.write(&record).unwrap();
+        let read = Instance::read(&record).unwrap();
+        assert_eq!(read, me);
+        assert!(read.alive());
+        // A reused PID started at another time is not the dashboard.
+        let recycled = Instance {
+            started_unix_millis: me.started_unix_millis + 1_000,
+            ..me.clone()
+        };
+        assert!(!recycled.alive());
+        assert_eq!(Instance::current(9000).unwrap().build, me.build);
     }
 
     #[test]

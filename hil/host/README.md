@@ -108,7 +108,7 @@ boards by MAC, fixtures such as the laptop radio, the OpenWrt host or the
 Bluetooth adapter, and the air, shared by all radio work and exclusive for
 scenarios tagged `air-exclusive` that measure the radio environment. Leases
 whose claims do not conflict run in parallel; conflicting requests are served
-in arrival order. Hardware commands (`run`, `run-all`, `run-plan`,
+by their owners' balances (below). Hardware commands (`run`, `run-all`, `run-plan`,
 `image flash`, `image replay`, `device status`, `fixture check`, the Bluetooth
 fixture commands and `cargo xtask build firmware <example> --flash`) wait for
 their claims instead of failing when they are busy. A run builds its images
@@ -117,10 +117,10 @@ before it queues, so the lease covers flashing and execution only.
 ```console
 cargo hil queue                       # holders, queue with expected starts, board state
 cargo hil dashboard                   # the same, live, with recent runs: http://127.0.0.1:8765
-cargo hil --budget 10m run <scenario> # one run, one lease
-cargo hil --budget 15m run a b c      # one run of three scenarios, one lease
-cargo hil lease --board esp32c5 --budget 5m -- idf.py -p <port> flash
-cargo hil --owner phy lease --board esp32s31 --budget 20m -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
+cargo hil run <scenario>              # one run, one lease
+cargo hil run a b c                   # one run of three scenarios, one lease
+cargo hil lease --board esp32c5 -- idf.py -p <port> flash
+cargo hil --owner phy lease --board esp32s31 -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
 `flash --board NAME|MAC ELF` is the manual cycle for images outside the
@@ -148,12 +148,12 @@ catalog image, writing each of its flash files at its address. The OpenOCD
 build comes from the ESP-IDF tools in the shared cache. The lease ends with the capture, so an open monitor never holds a board.
 
 ```console
-cargo hil --budget 3m flash --board esp32c5 --monitor 30s --until READY target/.../app.elf
+cargo hil flash --board esp32c5 --monitor 30s --until READY target/.../app.elf
 ```
 
 `dashboard` serves a page on the loopback interface (`--port` changes the
-port) that refreshes every two seconds: holders with their budget used, the
-queue with expected starts, every board's port and last flash, the newest runs
+port) that refreshes every two seconds: holders with their time held, the
+queue in service order with every owner's balance and expected starts, every board's port and last flash, the newest runs
 of the shared store and recent leases with their outcomes. It only reads the
 arbiter's state and run manifests; Ctrl+C stops it.
 
@@ -166,7 +166,7 @@ recorded as a `then-succeeded` or `then-failed` event, never as the run's
 outcome.
 
 ```console
-cargo hil --budget 10m run wifi-station-wpa3-restart --then 'python tools/read-rtc.py /dev/ttyACM0'
+cargo hil run wifi-station-wpa3-restart --then 'python tools/read-rtc.py /dev/ttyACM0'
 ```
 
 `run` accepts several scenarios: it builds every needed image class before
@@ -185,34 +185,37 @@ with `--stand`. The lease options precede the HIL command, or follow
 | Option | Meaning |
 | --- | --- |
 | `--owner NAME` | Who holds the lease; defaults to an enclosing lease's owner, then the checkout directory name |
-| `--budget DURATION` | `90s`, `15m`, `1h30m`; defaults to the longest of the last five completed leases of the same command, else the sum of that over the run's scenarios from earlier single-scenario runs, otherwise 15 minutes |
-| `--short` | A budget of at most two minutes; granted ahead of earlier conflicting requests, never twice in a row |
 
-The environment variables `OER_HIL_OWNER`, `OER_HIL_BUDGET` and `OER_HIL_SHORT=1`
-carry the same choices.
+The environment variable `OER_HIL_OWNER` carries the same choice. There is no
+budget to request; `--budget`, `--short`, `OER_HIL_BUDGET` and `OER_HIL_SHORT`
+are refused.
 
-Choose a budget you expect to use, not a ceiling: the budget is a slot, and
-when it is spent the lease gives way to waiting requests that need its
-resources. A run of several scenarios finishes its current scenario, releases
-the lease, queues again behind them and continues its remaining scenarios in
-the same run bundle after flashing its image again. A single scenario and a
-`lease` command have no such boundary: they are stopped with `SIGTERM`, which
-runs the ordinary cancellation and fixture cleanup, and a `lease` stopped
-this way exits with status 75. While nobody waits, over-budget work
-continues; at twice its budget it is stopped regardless (`lease` exit status
-124), and `SIGKILL` follows five minutes after `SIGTERM`. A run of several
-scenarios also gives way within its budget, at its next scenario boundary, to
-a waiting request of at most five minutes that needs its resources, so brief
-work runs between the steps of long series instead of after them.
-`cargo xtask build firmware --flash --monitor` holds a lease without a budget
-watchdog for its interactive monitor. A top-level run records its evidence
-shards after its lease is released. `cargo hil doctor` reports conflicting
-holders without queueing.
+Every lease charges its owner's balance the time it holds, and an owner whose
+request waits behind a conflicting lease is credited the time it waits, once
+however many requests it queued; an owner doing neither accrues nothing.
+Among conflicting requests the owner with the highest balance is served first,
+the earlier request on a tie. Balances halve every two hours, stay within an
+hour either way, and after each grant the mean over the owners active in the
+last day is subtracted. `cargo hil queue` and the dashboard show every balance
+and who is served next; the lease history records each lease's charge, its
+owner's balance at release and the balances its grant was decided by.
+
+A run of several scenarios that has held its lease for ten minutes finishes
+its current scenario when a waiting request that needs its resources belongs
+to an owner with a higher balance: it releases the lease, queues again and
+continues its remaining scenarios in the same run bundle after flashing its
+image again. A single scenario and a `lease` command run to their end. Every
+lease ends at one hour: it is stopped with `SIGTERM`, which runs the ordinary
+cancellation and fixture cleanup, a `lease` stopped this way exits with status
+124, and `SIGKILL` follows five minutes later. Estimates from earlier leases of
+the same work only predict when a waiting request starts. A top-level run
+records its evidence shards after its lease is released. `cargo hil doctor`
+reports conflicting holders without queueing.
 
 A command started in the background returns when its lease ends; its exit is
 the notification for an agent. The user receives desktop notifications through
 `notify-send` when a waiting owner is granted a lease, when the stand becomes
-free, and when a lease exceeds its budget or is stopped for waiting requests; `OER_HIL_NOTIFY=0` disables them.
+free, and when a lease reaches the hard limit; `OER_HIL_NOTIFY=0` disables them.
 
 The stand holds several equal boards, currently an ESP32-S31 and an ESP32-C5.
 No board has a fixed role: a scenario or other consumer chooses which board it
@@ -279,7 +282,7 @@ archives every image builds against. Builds are reproducible
 ```console
 cargo hil firmware list
 cargo hil firmware build ieee802154-peer
-cargo hil --budget 5m firmware flash ieee802154-peer --board esp32c5
+cargo hil firmware flash ieee802154-peer --board esp32c5
 ```
 
 `firmware flash` builds the image, leases only the named board with the air

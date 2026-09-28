@@ -1,32 +1,49 @@
 //! Grant order and waiting-time estimates over conflicting claims.
 //!
-//! Requests are served in arrival order among those that conflict: a ticket
-//! is granted once no holder and no earlier waiting ticket conflicts with it.
-//! Tickets that claim disjoint resources proceed in parallel. A short ticket
-//! may pass earlier conflicting tickets, but never two grants in a row.
+//! Requests that conflict are served by their owners' balances
+//! ([`crate::balance`]), the earlier request on a tie: a ticket is granted
+//! once no holder and no waiting ticket served before it conflicts with it.
+//! Tickets that claim disjoint resources proceed in parallel.
 
-use crate::state::{State, Ticket, conflict};
+use std::time::Duration;
 
-/// Whether the ticket `id` can be granted now, and whether that grant jumps
-/// ahead of earlier conflicting tickets.
-pub(crate) fn grantable(state: &State, id: u64) -> Option<bool> {
-    let index = state.queue.iter().position(|ticket| ticket.id == id)?;
-    let ticket = &state.queue[index];
-    if state
+use crate::{
+    balance,
+    state::{State, Ticket, conflict},
+};
+
+/// The waiting tickets served before `ticket` that conflict with it, in
+/// service order.
+fn ahead<'a>(state: &'a State, ticket: &Ticket) -> Vec<&'a Ticket> {
+    let mut ahead = state
+        .queue
+        .iter()
+        .filter(|other| {
+            other.id != ticket.id
+                && balance::before(state, other, ticket)
+                && conflict(&other.claims, &ticket.claims)
+        })
+        .collect::<Vec<_>>();
+    ahead.sort_by(|a, b| {
+        if balance::before(state, a, b) {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        }
+    });
+    ahead
+}
+
+/// Whether the ticket `id` can be granted now.
+pub(crate) fn grantable(state: &State, id: u64) -> bool {
+    let Some(ticket) = state.queue.iter().find(|ticket| ticket.id == id) else {
+        return false;
+    };
+    !state
         .holders
         .iter()
         .any(|holder| conflict(&holder.ticket.claims, &ticket.claims))
-    {
-        return None;
-    }
-    let behind = state.queue[..index]
-        .iter()
-        .any(|earlier| conflict(&earlier.claims, &ticket.claims));
-    match (behind, ticket.short && !state.jumped) {
-        (false, _) => Some(false),
-        (true, true) => Some(true),
-        (true, false) => None,
-    }
+        && ahead(state, ticket).is_empty()
 }
 
 /// Whether a waiting ticket conflicts with the claims of holder `id`.
@@ -43,42 +60,57 @@ pub(crate) fn blocks_waiters(state: &State, id: u64) -> bool {
         })
 }
 
-/// Whether a waiting ticket of at most `brief_secs` conflicts with the claims
-/// of holder `id`.
-pub(crate) fn blocks_brief_waiters(state: &State, id: u64, brief_secs: u64) -> bool {
+/// The owner and balance of the waiting ticket that holder `id` blocks and
+/// whose owner's balance exceeds the holder's, when that holder has held for
+/// at least `slice`: divisible work then yields at its next boundary.
+pub(crate) fn outranked_by(
+    state: &State,
+    id: u64,
+    now_unix: u64,
+    slice: Duration,
+) -> Option<(String, i64)> {
+    let holder = state.holders.iter().find(|holder| holder.ticket.id == id)?;
+    if now_unix.saturating_sub(holder.granted_unix) < slice.as_secs() {
+        return None;
+    }
+    let own = balance::of(&state.balances, &holder.ticket.owner);
     state
-        .holders
+        .queue
         .iter()
-        .find(|holder| holder.ticket.id == id)
-        .is_some_and(|holder| {
-            state.queue.iter().any(|ticket| {
-                ticket.budget_secs <= brief_secs && conflict(&ticket.claims, &holder.ticket.claims)
-            })
+        .filter(|ticket| {
+            ticket.owner != holder.ticket.owner && conflict(&ticket.claims, &holder.ticket.claims)
         })
+        .map(|ticket| {
+            (
+                ticket.owner.clone(),
+                balance::of(&state.balances, &ticket.owner),
+            )
+        })
+        .filter(|(_, balance)| *balance > own)
+        .max_by_key(|(_, balance)| *balance)
 }
 
-/// Earlier conflicting tickets and the expected wait in seconds of every
-/// queued ticket, assuming every lease uses its budget.
+/// The conflicting tickets served earlier and the expected wait in seconds of
+/// every queued ticket, from the estimates of the leases ahead of it.
 pub(crate) fn expected_starts(state: &State, now: u64) -> Vec<(u64, usize, u64)> {
     let remaining = |ticket: &Ticket| {
         state
             .holders
             .iter()
             .filter(|holder| conflict(&holder.ticket.claims, &ticket.claims))
-            .map(|holder| (holder.granted_unix + holder.ticket.budget_secs).saturating_sub(now))
+            .map(|holder| (holder.granted_unix + holder.ticket.estimate_secs).saturating_sub(now))
             .max()
             .unwrap_or(0)
     };
     state
         .queue
         .iter()
-        .enumerate()
-        .map(|(index, ticket)| {
-            let ahead = state.queue[..index]
+        .map(|ticket| {
+            let ahead = ahead(state, ticket);
+            let queued = ahead
                 .iter()
-                .filter(|earlier| conflict(&earlier.claims, &ticket.claims))
-                .collect::<Vec<_>>();
-            let queued = ahead.iter().map(|earlier| earlier.budget_secs).sum::<u64>();
+                .map(|earlier| earlier.estimate_secs)
+                .sum::<u64>();
             (ticket.id, ahead.len(), remaining(ticket) + queued)
         })
         .collect()
@@ -88,19 +120,17 @@ pub(crate) fn expected_starts(state: &State, now: u64) -> Vec<(u64, usize, u64)>
 mod tests {
     use super::*;
     use crate::{
-        budget::BudgetSource,
+        balance::Balance,
         process::ProcessIdentity,
         state::{AIR, Claim, Holder},
     };
 
-    pub(crate) fn ticket(id: u64, short: bool, budget_secs: u64, claims: Vec<Claim>) -> Ticket {
+    pub(crate) fn ticket(id: u64, estimate_secs: u64, claims: Vec<Claim>) -> Ticket {
         Ticket {
             id,
             owner: format!("owner-{id}"),
             work: format!("work-{id}"),
-            budget_secs,
-            budget_source: BudgetSource::Explicit,
-            short,
+            estimate_secs,
             process: ProcessIdentity {
                 pid: 1,
                 start_ticks: 1,
@@ -120,62 +150,82 @@ mod tests {
             ticket,
             token: "t".into(),
             granted_unix: 1000,
-            over_budget: false,
+            reason: None,
             unknown: Default::default(),
         }
     }
 
+    fn balance(state: &mut State, owner: &str, minutes: i64) {
+        state.balances.insert(
+            owner.into(),
+            Balance {
+                balance_ms: minutes * 60_000,
+                ..Balance::default()
+            },
+        );
+    }
+
     #[test]
-    fn disjoint_requests_proceed_while_conflicting_ones_keep_arrival_order() {
+    fn disjoint_requests_proceed_while_conflicting_ones_wait() {
         let state = State {
-            holders: vec![holder(ticket(1, false, 300, board("esp32s31")))],
+            holders: vec![holder(ticket(1, 300, board("esp32s31")))],
             queue: vec![
-                ticket(2, false, 60, board("esp32s31")),
-                ticket(3, false, 60, board("esp32c5")),
-                ticket(
-                    4,
-                    false,
-                    60,
-                    vec![Claim::board("esp32c5"), Claim::exclusive(AIR)],
-                ),
+                ticket(2, 60, board("esp32s31")),
+                ticket(3, 60, board("esp32c5")),
+                ticket(4, 60, vec![Claim::board("esp32c5"), Claim::exclusive(AIR)]),
             ],
             ..State::default()
         };
-        assert_eq!(grantable(&state, 2), None, "esp32s31 is held");
-        assert_eq!(grantable(&state, 3), Some(false), "esp32c5 is free");
-        assert_eq!(
-            grantable(&state, 4),
-            None,
-            "exclusive air waits for the holder"
-        );
+        assert!(!grantable(&state, 2), "esp32s31 is held");
+        assert!(grantable(&state, 3), "esp32c5 is free");
+        assert!(!grantable(&state, 4), "exclusive air waits for the holder");
         assert!(blocks_waiters(&state, 1));
     }
 
     #[test]
-    fn a_short_ticket_passes_earlier_conflicting_ones_once() {
+    fn the_owner_with_the_higher_balance_is_served_first() {
         let mut state = State {
             queue: vec![
-                ticket(1, false, 600, board("esp32s31")),
-                ticket(2, true, 60, board("esp32s31")),
+                ticket(1, 600, board("esp32s31")),
+                ticket(2, 60, board("esp32s31")),
             ],
-            holders: vec![],
             ..State::default()
         };
-        // A free board goes to the earliest ticket.
-        assert_eq!(grantable(&state, 1), Some(false));
-        assert_eq!(grantable(&state, 2), Some(true));
-        state.jumped = true;
-        assert_eq!(grantable(&state, 2), None);
+        // Equal balances keep arrival order.
+        assert!(grantable(&state, 1));
+        assert!(!grantable(&state, 2));
+        balance(&mut state, "owner-2", 5);
+        assert!(!grantable(&state, 1));
+        assert!(grantable(&state, 2));
     }
 
     #[test]
-    fn expected_starts_count_only_conflicting_work() {
+    fn a_holder_is_outranked_only_after_its_slice_by_a_higher_balance() {
+        let mut state = State {
+            holders: vec![holder(ticket(1, 300, board("esp32s31")))],
+            queue: vec![ticket(2, 60, board("esp32s31"))],
+            ..State::default()
+        };
+        balance(&mut state, "owner-1", -3);
+        balance(&mut state, "owner-2", 4);
+        let slice = Duration::from_secs(600);
+        assert_eq!(outranked_by(&state, 1, 1000 + 599, slice), None);
+        assert_eq!(
+            outranked_by(&state, 1, 1000 + 600, slice),
+            Some((String::from("owner-2"), 4 * 60_000))
+        );
+        balance(&mut state, "owner-2", -5);
+        assert_eq!(outranked_by(&state, 1, 1000 + 600, slice), None);
+    }
+
+    #[test]
+    fn expected_starts_count_only_conflicting_work_served_earlier() {
         let state = State {
-            holders: vec![holder(ticket(9, false, 300, board("esp32s31")))],
+            holders: vec![holder(ticket(9, 300, board("esp32s31")))],
             queue: vec![
-                ticket(1, false, 600, board("esp32s31")),
-                ticket(2, false, 60, board("esp32c5")),
-                ticket(3, false, 60, board("esp32s31")),
+                ticket(1, 600, board("esp32s31")),
+                ticket(2, 60, board("esp32c5")),
+                ticket(3, 60, board("esp32s31")),
             ],
             ..State::default()
         };

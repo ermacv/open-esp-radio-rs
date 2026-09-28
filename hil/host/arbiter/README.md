@@ -2,7 +2,7 @@
 
 `oer-hil-arbiter` orders access to the HIL stand between every checkout of one
 host user. The [host guide](../README.md#share-the-stand) describes the
-commands; this crate owns the queue, leases, claims, budgets and the board
+commands; this crate owns the queue, leases, claims, owner balances and the board
 journal.
 
 ## Ownership
@@ -12,19 +12,26 @@ journal.
   claim of a request that names nothing. Holders whose claims do not conflict
   hold leases at once.
 - `Arbiter::acquire` enqueues a ticket and waits until no holder and no
-  earlier waiting ticket conflicts with it. A short ticket (budget at most two
-  minutes) may pass earlier conflicting tickets, but never two grants in a row.
+  waiting ticket served before it conflicts with it: the ticket whose owner
+  has the higher balance, the earlier one on a tie (`balance`). Every
+  transaction first advances the balances to now: they decay with a two-hour
+  half-life, every held lease charges its owner the elapsed time, an owner
+  with a ticket blocked by a holder is credited it once, and they are clamped
+  to an hour either way. After each grant the mean over the owners active in
+  the last day is subtracted.
   A process that already holds a lease, or carries its token in
   `OER_HIL_LEASE`, joins it without waiting when the lease covers its claims;
   a token of an ended lease or a claim outside the lease is an error.
 - `Grant` releases the lease on drop and records it in the history with its
-  outcome. `supervise_self` makes the holder its own watchdog: within its
-  budget, divisible work sees `yield_requested` when a waiting ticket with a
-  budget of at most five minutes (`BRIEF_BUDGET`) conflicts with it; past its budget,
-  while a waiting ticket conflicts with it, divisible work sees
-  `yield_requested` and yields at its next boundary; indivisible work receives
-  `SIGTERM`. At twice the budget it receives `SIGTERM` regardless. `cargo hil
-  lease` supervises its command group the same way.
+  outcome, the time charged, the owner's balance and the balances the grant
+  was decided by. `supervise_self` makes the holder its own watchdog:
+  divisible work that has held `MIN_SLICE` (ten minutes) sees
+  `yield_requested` when a waiting ticket it blocks belongs to an owner with a
+  higher balance, and yields at its next boundary; indivisible work runs to
+  its end. At `HARD_LIMIT` (one hour) the holder receives `SIGTERM`, and
+  `SIGKILL` after the shutdown grace. `cargo hil lease` stops its command at
+  the same limit. Nothing is requested in advance; the retired budget options
+  and variables are refused.
 - The runner's fixture lock and the firmware flash command take the lease before
   their device and fixture `flock`s, which remain the final exclusion.
 
@@ -45,8 +52,8 @@ Every change happens under `arbiter.lock`:
 
 | File | Content |
 | --- | --- |
-| `state.json` | Schema 2: queue tickets and holders with their claims, each with PID and kernel start time. Schema 1 (one whole-stand holder) is migrated once its holder and waiting processes have ended; newer requests wait until then |
-| `history.jsonl` | Completed leases: owner, work, scenarios, duration, budget and `released`, `yielded`, `preempted`, `budget-exceeded` or `abandoned` |
+| `state.json` | Schema 3: queue tickets and holders with their claims, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Schema 2 is read with each budget as the estimate and every balance zero; schema 1 (one whole-stand holder) is migrated once its holder and waiting processes have ended; newer requests wait until then |
+| `history.jsonl` | Completed leases: owner, work, scenarios, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit` or `abandoned` (older records also `yielded`, `preempted`, `budget-exceeded`) |
 | `board.jsonl` | Flashes and startup-artifact uploads and writes, with owner, checkout and board MAC |
 | `devices.json` | Schema 1: board MAC to chip and name; boards have no fixed role |
 
@@ -57,8 +64,9 @@ JSON-lines files keep their newest 2000 records once they exceed 1 MiB.
 ## Limitations
 
 The arbiter is local to one host and user account and polls every 500 ms; it is
-not a distributed reservation. Budget estimates count only released leases of
-the identical command line or of single scenarios. Claims are cooperative: a
+not a distributed reservation. Duration estimates, used only for expected
+starts, count only released leases of the identical command line or of single
+scenarios. Claims are cooperative: a
 command that claims one board and uses another is not detected. Commands that bypass `cargo hil` and `cargo xtask
 build firmware --flash`, such as a manual `espflash`, are not ordered unless run
 as `cargo hil lease --board NAME -- COMMAND`.

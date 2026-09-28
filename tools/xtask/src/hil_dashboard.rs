@@ -97,6 +97,7 @@ fn snapshot(runs: &Path) -> Result<Value> {
             .as_secs(),
         "holders": status.holders,
         "queue": status.queue,
+        "balances": status.balances,
         "devices": status.devices,
         "maintenance": status.maintenance,
         "leases": history,

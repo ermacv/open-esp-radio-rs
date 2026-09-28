@@ -2,9 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{budget::BudgetSource, process::ProcessIdentity};
+use std::collections::BTreeMap;
 
-pub(crate) const STATE_SCHEMA: u32 = 2;
+use crate::{balance::Balance, process::ProcessIdentity};
+
+/// Schema 3 serves requests by owner balance instead of arrival and budget.
+pub(crate) const STATE_SCHEMA: u32 = 3;
 
 /// Claims everything: a lease that names no resources.
 pub const STAND: &str = "stand";
@@ -140,9 +143,12 @@ pub(crate) struct State {
     pub(crate) next_id: u64,
     pub(crate) queue: Vec<Ticket>,
     pub(crate) holders: Vec<Holder>,
-    /// The previous grant went to a short request ahead of earlier
-    /// conflicting requests, so the next grant may not jump.
-    pub(crate) jumped: bool,
+    /// Every recently active owner's balance; see [`crate::balance`].
+    #[serde(default)]
+    pub(crate) balances: BTreeMap<String, Balance>,
+    /// When the balances were last advanced; 0 before the first settlement.
+    #[serde(default)]
+    pub(crate) settled_unix_ms: u64,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub(crate) unknown: crate::Unknown,
@@ -155,7 +161,8 @@ impl Default for State {
             next_id: 1,
             queue: Vec::new(),
             holders: Vec::new(),
-            jumped: false,
+            balances: BTreeMap::new(),
+            settled_unix_ms: 0,
             unknown: crate::Unknown::default(),
         }
     }
@@ -166,9 +173,10 @@ pub(crate) struct Ticket {
     pub(crate) id: u64,
     pub(crate) owner: String,
     pub(crate) work: String,
-    pub(crate) budget_secs: u64,
-    pub(crate) budget_source: BudgetSource,
-    pub(crate) short: bool,
+    /// Expected duration from earlier leases, for waiting-time estimates
+    /// only; never a limit.
+    #[serde(default)]
+    pub(crate) estimate_secs: u64,
     pub(crate) process: ProcessIdentity,
     pub(crate) enqueued_unix: u64,
     pub(crate) claims: Vec<Claim>,
@@ -183,7 +191,9 @@ pub(crate) struct Holder {
     /// Exported to commands inside the lease, which then join it.
     pub(crate) token: String,
     pub(crate) granted_unix: u64,
-    pub(crate) over_budget: bool,
+    /// The balances the grant was decided by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reason: Option<crate::history::GrantReason>,
     /// Fields a newer build wrote, kept when this build rewrites the record.
     #[serde(flatten)]
     pub(crate) unknown: crate::Unknown,
@@ -202,7 +212,8 @@ pub(crate) fn legacy_live(value: &serde_json::Value) -> bool {
 }
 
 /// Read schema 1, one whole-stand holder, as schema 2 with that holder and
-/// every ticket claiming the whole stand.
+/// every ticket claiming the whole stand; read schema 2's budgets as
+/// estimates, starting every balance at zero.
 pub(crate) fn migrate(mut value: serde_json::Value) -> crate::Result<State> {
     if value["schema"] == 1 {
         let whole = serde_json::to_value(vec![Claim::stand()])?;
@@ -230,6 +241,32 @@ pub(crate) fn migrate(mut value: serde_json::Value) -> crate::Result<State> {
             .remove("head_next")
             .unwrap_or(serde_json::Value::Bool(false));
         object.insert("jumped".into(), jumped);
+        object.insert("schema".into(), 2.into());
+    }
+    if value["schema"] == 2 {
+        let object = value
+            .as_object_mut()
+            .ok_or("arbiter state is not an object")?;
+        object.remove("jumped");
+        let budget_to_estimate = |ticket: &mut serde_json::Value| {
+            if let Some(ticket) = ticket.as_object_mut() {
+                let budget = ticket.remove("budget_secs").unwrap_or(0.into());
+                ticket.insert("estimate_secs".into(), budget);
+                ticket.remove("budget_source");
+                ticket.remove("short");
+            }
+        };
+        if let Some(queue) = object.get_mut("queue").and_then(|q| q.as_array_mut()) {
+            queue.iter_mut().for_each(budget_to_estimate);
+        }
+        if let Some(holders) = object.get_mut("holders").and_then(|h| h.as_array_mut()) {
+            for holder in holders {
+                budget_to_estimate(&mut holder["ticket"]);
+                if let Some(holder) = holder.as_object_mut() {
+                    holder.remove("over_budget");
+                }
+            }
+        }
         object.insert("schema".into(), STATE_SCHEMA.into());
     }
     Ok(serde_json::from_value(value)?)
@@ -341,7 +378,13 @@ mod tests {
         assert_eq!(state.holders.len(), 1);
         assert_eq!(state.queue[0].claims, [Claim::stand()]);
         assert_eq!(state.holders[0].ticket.claims, [Claim::stand()]);
-        assert!(state.jumped);
+        // The schema 2 budget becomes the estimate; balances start empty.
+        assert_eq!(state.queue[0].estimate_secs, 60);
+        assert!(state.balances.is_empty());
+        assert!(
+            state.queue[0].unknown == crate::Unknown::default(),
+            "no budget field is kept"
+        );
     }
 
     #[test]

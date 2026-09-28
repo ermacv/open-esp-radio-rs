@@ -5,9 +5,10 @@ use std::{fmt::Write as _, time::Duration};
 use serde::Serialize;
 
 use crate::{
-    Arbiter, BoardEvent, BudgetSource, LeaseRecord,
+    Arbiter, BoardEvent, LeaseRecord, balance,
     board::{device_label, latest},
-    budget::format_duration,
+    estimate::format_duration,
+    grant::signed_duration,
     queue,
 };
 
@@ -17,8 +18,10 @@ const RECENT_LEASES: usize = 5;
 pub struct Status {
     /// Leases held now; leases on disjoint resources run in parallel.
     pub holders: Vec<HolderStatus>,
-    /// In arrival order.
+    /// In service order: by owner balance, then arrival.
     pub queue: Vec<QueuedStatus>,
+    /// Every recently active owner's balance, highest first.
+    pub balances: Vec<BalanceStatus>,
     /// Registered, attached or journaled boards.
     pub devices: Vec<DeviceStatus>,
     /// The newest event of every startup-artifact host file.
@@ -46,10 +49,19 @@ pub struct HolderStatus {
     pub work: String,
     pub pid: u32,
     pub elapsed_secs: u64,
-    pub budget_secs: u64,
-    pub budget_source: BudgetSource,
-    pub over_budget: bool,
+    /// Expected duration from earlier leases; never a limit.
+    pub estimate_secs: u64,
+    pub balance_ms: i64,
     pub claims: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BalanceStatus {
+    pub owner: String,
+    pub balance_ms: i64,
+    pub holding: bool,
+    pub waiting: bool,
+    pub last_active_unix_ms: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -58,11 +70,10 @@ pub struct QueuedStatus {
     pub owner: String,
     pub work: String,
     pub pid: u32,
-    pub short: bool,
     pub waiting_secs: u64,
-    pub budget_secs: u64,
-    pub budget_source: BudgetSource,
-    /// Earlier waiting requests that conflict with this one.
+    pub estimate_secs: u64,
+    pub balance_ms: i64,
+    /// Conflicting waiting requests served before this one.
     pub ahead: usize,
     pub expected_start_secs: u64,
     pub claims: String,
@@ -91,7 +102,12 @@ impl Arbiter {
     pub fn status(&self) -> crate::Result<Status> {
         let now = crate::unix_now();
         let state = self.transaction(|state| Ok(state.clone()))?;
-        let starts = queue::expected_starts(&state, now);
+        let mut starts = queue::expected_starts(&state, now);
+        let order = |id: u64| state.queue.iter().find(|ticket| ticket.id == id);
+        starts.sort_by(|(a, ..), (b, ..)| match (order(*a), order(*b)) {
+            (Some(a), Some(b)) if balance::before(&state, a, b) => std::cmp::Ordering::Less,
+            _ => std::cmp::Ordering::Greater,
+        });
         let queue = starts
             .iter()
             .filter_map(|(id, ahead, start)| {
@@ -101,10 +117,9 @@ impl Arbiter {
                     owner: ticket.owner.clone(),
                     work: ticket.work.clone(),
                     pid: ticket.process.pid,
-                    short: ticket.short,
                     waiting_secs: now.saturating_sub(ticket.enqueued_unix),
-                    budget_secs: ticket.budget_secs,
-                    budget_source: ticket.budget_source,
+                    estimate_secs: ticket.estimate_secs,
+                    balance_ms: balance::of(&state.balances, &ticket.owner),
                     ahead: *ahead,
                     expected_start_secs: *start,
                     claims: crate::grant::describe_claims(&ticket.claims),
@@ -148,20 +163,32 @@ impl Arbiter {
             .collect();
         let history = self.history()?;
         let maintenance = self.maintenance()?;
+        let mut balances = state
+            .balances
+            .iter()
+            .map(|(owner, balance)| BalanceStatus {
+                owner: owner.clone(),
+                balance_ms: balance.balance_ms,
+                holding: state.holders.iter().any(|h| &h.ticket.owner == owner),
+                waiting: state.queue.iter().any(|t| &t.owner == owner),
+                last_active_unix_ms: balance.last_active_unix_ms,
+            })
+            .collect::<Vec<_>>();
+        balances.sort_by_key(|balance| std::cmp::Reverse(balance.balance_ms));
         Ok(Status {
             maintenance,
+            balances,
             holders: state
                 .holders
                 .into_iter()
                 .map(|holder| HolderStatus {
                     id: holder.ticket.id,
-                    owner: holder.ticket.owner,
                     work: holder.ticket.work,
                     pid: holder.ticket.process.pid,
                     elapsed_secs: now.saturating_sub(holder.granted_unix),
-                    budget_secs: holder.ticket.budget_secs,
-                    budget_source: holder.ticket.budget_source,
-                    over_budget: holder.over_budget,
+                    estimate_secs: holder.ticket.estimate_secs,
+                    balance_ms: balance::of(&state.balances, &holder.ticket.owner),
+                    owner: holder.ticket.owner,
                     claims: crate::grant::describe_claims(&holder.ticket.claims),
                 })
                 .collect(),
@@ -186,19 +213,15 @@ impl std::fmt::Display for Status {
         for holder in &self.holders {
             writeln!(
                 text,
-                "held:    #{} {} `{}` on {} pid {}, {} of budget {}{}",
+                "held:    #{} {} `{}` on {} pid {}, {} (estimated {}), balance {}",
                 holder.id,
                 holder.owner,
                 holder.work,
                 holder.claims,
                 holder.pid,
                 duration(holder.elapsed_secs),
-                duration(holder.budget_secs),
-                if holder.over_budget {
-                    " (over budget)"
-                } else {
-                    ""
-                }
+                duration(holder.estimate_secs),
+                signed_duration(holder.balance_ms)
             )?;
         }
         if self.queue.is_empty() {
@@ -207,20 +230,48 @@ impl std::fmt::Display for Status {
         for (position, entry) in self.queue.iter().enumerate() {
             writeln!(
                 text,
-                "queue {}: #{} {} `{}`{} on {} pid {}, behind {}, waiting {}, budget {} ({}), \
-                 start in ~{}",
+                "queue {}: #{} {} `{}` on {} pid {}, balance {}, behind {}, waiting {}, \
+                 estimated {}, start in ~{}",
                 position + 1,
                 entry.id,
                 entry.owner,
                 entry.work,
-                if entry.short { " [short]" } else { "" },
                 entry.claims,
                 entry.pid,
+                signed_duration(entry.balance_ms),
                 entry.ahead,
                 duration(entry.waiting_secs),
-                duration(entry.budget_secs),
-                entry.budget_source,
+                duration(entry.estimate_secs),
                 duration(entry.expected_start_secs)
+            )?;
+        }
+        if let Some(next) = self.queue.first() {
+            writeln!(
+                text,
+                "next:    {} (balance {}) is served first among conflicting requests; the \
+                 highest balance goes first",
+                next.owner,
+                signed_duration(next.balance_ms)
+            )?;
+        }
+        if !self.balances.is_empty() {
+            writeln!(
+                text,
+                "balances (held time is charged, blocked waiting is credited, halving every 2h):"
+            )?;
+        }
+        for balance in &self.balances {
+            writeln!(
+                text,
+                "  {:>8} {}{}",
+                signed_duration(balance.balance_ms),
+                balance.owner,
+                match (balance.holding, balance.waiting) {
+                    (true, true) => " (holding, waiting)",
+                    (true, false) => " (holding)",
+                    (false, true) => " (waiting)",
+                    (false, false) => "",
+                }
             )?;
         }
         let describe = |event: &Option<BoardEvent>| {
@@ -256,13 +307,13 @@ impl std::fmt::Display for Status {
         for record in &self.recent {
             writeln!(
                 text,
-                "  #{} {} `{}` {} of {} {:?}",
+                "  #{} {} `{}` {} {:?}, balance after {}",
                 record.id,
                 record.owner,
                 record.work,
                 duration(record.duration_secs()),
-                duration(record.budget_secs),
-                record.outcome
+                record.outcome,
+                signed_duration(record.balance_after_ms)
             )?;
         }
         f.write_str(text.trim_end())

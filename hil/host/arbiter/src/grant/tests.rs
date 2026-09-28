@@ -4,14 +4,12 @@ use std::{
 };
 
 use super::*;
-use crate::{AIR, BoardEventKind, budget::BudgetSource, state::State};
+use crate::{AIR, BoardEventKind, balance::Balance, state::State};
 
 fn request(owner: &str, work: &str) -> Request {
     Request {
         owner: owner.into(),
         work: work.into(),
-        budget: Some(Duration::from_secs(60)),
-        short: false,
         scenarios: Vec::new(),
         claims: Vec::new(),
     }
@@ -41,9 +39,7 @@ fn ticket(id: u64, owner: &str, process: ProcessIdentity, claims: Vec<Claim>) ->
         id,
         owner: owner.into(),
         work: format!("work {id}"),
-        budget_secs: 60,
-        budget_source: BudgetSource::Explicit,
-        short: false,
+        estimate_secs: 60,
         process,
         enqueued_unix: crate::unix_now(),
         claims: normalize(&claims),
@@ -58,7 +54,7 @@ fn hold(arbiter: &Arbiter, ticket: Ticket) {
                 ticket,
                 token: "other".into(),
                 granted_unix: crate::unix_now(),
-                over_budget: false,
+                reason: None,
                 unknown: Default::default(),
             });
             Ok(())
@@ -71,6 +67,22 @@ fn queue(arbiter: &Arbiter, ticket: Ticket) {
         .transaction(|state| {
             state.next_id = state.next_id.max(ticket.id + 1);
             state.queue.push(ticket);
+            Ok(())
+        })
+        .unwrap();
+}
+
+fn set_balance(arbiter: &Arbiter, owner: &str, minutes: i64) {
+    arbiter
+        .transaction(|state| {
+            state.balances.insert(
+                owner.into(),
+                Balance {
+                    balance_ms: minutes * 60_000,
+                    last_active_unix_ms: crate::unix_now_ms(),
+                    ..Balance::default()
+                },
+            );
             Ok(())
         })
         .unwrap();
@@ -229,139 +241,111 @@ fn waiting_follows_arrival_order_and_dead_waiters_are_reaped() {
 }
 
 #[test]
-fn a_short_request_is_granted_ahead_of_the_head_and_must_be_short() {
+fn a_waiter_with_a_higher_balance_is_served_before_an_earlier_one() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     let (head, head_identity) = other_process();
     queue(&arbiter, ticket(1, "head", head_identity, vec![]));
-    let short = Request {
-        short: true,
-        ..request("wifi", "smoke")
+    set_balance(&arbiter, "head", 5);
+    set_balance(&arbiter, "wifi", -5);
+    let waiter = {
+        let arbiter = arbiter.clone();
+        std::thread::spawn(move || {
+            let grant = arbiter.acquire_within(&request("wifi", "smoke"), None);
+            grant.map(drop).is_ok()
+        })
     };
-    let grant = arbiter.acquire_within(&short, None).unwrap();
-    assert_eq!(state(&arbiter).queue.len(), 1);
-    assert!(state(&arbiter).jumped);
-    drop(grant);
-    let long = Request {
-        budget: Some(Duration::from_secs(600)),
-        ..short
-    };
-    assert!(arbiter.acquire_within(&long, None).is_err());
+    std::thread::sleep(Duration::from_millis(700));
+    assert!(
+        state(&arbiter).holders.is_empty(),
+        "the head's balance is higher"
+    );
+    set_balance(&arbiter, "wifi", 10);
+    assert!(waiter.join().unwrap(), "a higher balance is served first");
+    let record = &arbiter.history().unwrap()[0];
+    assert_eq!(record.owner, "wifi");
+    let reason = record.reason.as_ref().unwrap();
+    assert!(
+        reason.over.iter().any(|over| over.owner == "head"),
+        "{reason:?}"
+    );
     stop(head);
 }
 
 #[test]
-fn over_budget_and_termination_are_recorded() {
+fn a_lease_is_charged_the_time_it_holds_and_budgets_are_refused() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     let grant = arbiter
         .acquire_within(&request("phy", "run"), None)
         .unwrap();
-    grant.warn_over_budget();
-    assert!(state(&arbiter).holders[0].over_budget);
-    grant.mark_budget_exceeded();
+    std::thread::sleep(Duration::from_millis(300));
+    grant.mark_yielded();
     drop(grant);
-    let yielded = arbiter
-        .acquire_within(&request("phy", "run"), None)
-        .unwrap();
-    yielded.mark_yielded();
-    drop(yielded);
-    let outcomes = arbiter
-        .history()
-        .unwrap()
-        .iter()
-        .map(|record| record.outcome)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        outcomes,
-        [LeaseOutcome::BudgetExceeded, LeaseOutcome::Yielded]
-    );
+    let record = &arbiter.history().unwrap()[0];
+    assert_eq!(record.outcome, LeaseOutcome::YieldedToBalance);
+    assert!(record.charged_ms >= 300, "{record:?}");
+    let set = |name: &str| (name == "OER_HIL_SHORT").then(|| std::ffi::OsString::from("1"));
+    assert_eq!(retired_variable(set), Some("OER_HIL_SHORT"));
+    assert_eq!(retired_variable(|_| None), None);
+    assert!(NO_BUDGETS.contains("no budget"));
 }
 
 #[test]
-fn divisible_work_is_asked_to_yield_only_while_it_blocks_a_waiter() {
+fn divisible_work_yields_after_its_slice_to_a_waiter_with_a_higher_balance() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
-    // The supervisor terminates this test process at twice the budget, so
-    // every assertion completes within four seconds of the grant.
     let mut grant = arbiter
-        .acquire_within(
-            &Request {
-                budget: Some(Duration::from_secs(2)),
-                ..on_board("esp32s31", request("phy", "series"))
-            },
-            None,
-        )
+        .acquire_within(&on_board("esp32s31", request("phy", "series")), None)
         .unwrap();
-    grant.supervise_self(true);
-    let granted = Instant::now();
+    grant.supervise_with(true, Duration::from_secs(1), Duration::from_secs(60));
     let (child, identity) = other_process();
     queue(
         &arbiter,
         ticket(
             50,
-            "esp32c5",
+            "wifi",
             identity,
             vec![Claim::board("esp32c5"), Claim::shared(AIR)],
         ),
     );
-    std::thread::sleep(Duration::from_millis(2300).saturating_sub(granted.elapsed()));
+    set_balance(&arbiter, "wifi", 10);
+    std::thread::sleep(Duration::from_millis(2500));
     assert!(!grant.yield_requested(), "a waiter on another board");
-    assert!(!grant.blocks_waiters());
     arbiter
         .transaction(|state| {
             state.queue[0].claims = normalize(&[Claim::board("esp32s31")]);
             Ok(())
         })
         .unwrap();
-    std::thread::sleep(Duration::from_millis(3300).saturating_sub(granted.elapsed()));
-    assert!(grant.blocks_waiters());
+    set_balance(&arbiter, "phy", 20);
+    std::thread::sleep(Duration::from_millis(2500));
+    assert!(!grant.yield_requested(), "the waiter's balance is lower");
+    set_balance(&arbiter, "phy", -20);
+    std::thread::sleep(Duration::from_millis(2500));
     assert!(grant.yield_requested());
     grant.mark_yielded();
     drop(grant);
-    assert!(granted.elapsed() < Duration::from_secs(4));
     stop(child);
 }
 
 #[test]
-fn divisible_work_within_its_budget_yields_only_to_brief_waiters() {
+fn indivisible_work_runs_on_while_a_waiter_has_a_higher_balance() {
     let directory = tempfile::tempdir().unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     let mut grant = arbiter
-        .acquire_within(
-            &Request {
-                budget: Some(Duration::from_secs(600)),
-                ..on_board("esp32s31", request("phy", "long series"))
-            },
-            None,
-        )
+        .acquire_within(&on_board("esp32s31", request("phy", "flash")), None)
         .unwrap();
-    grant.supervise_self(true);
+    grant.supervise_with(false, Duration::ZERO, Duration::from_secs(60));
     let (child, identity) = other_process();
-    // A long request on the same board waits for the series' budget.
     queue(
         &arbiter,
-        Ticket {
-            budget_secs: 1800,
-            ..ticket(60, "wifi", identity, vec![Claim::board("esp32s31")])
-        },
+        ticket(51, "wifi", identity, vec![Claim::board("esp32s31")]),
     );
-    std::thread::sleep(Duration::from_secs(6));
-    assert!(grant.blocks_waiters());
-    assert!(
-        !grant.yield_requested(),
-        "a long waiter waits for the budget"
-    );
-    // A brief one is let in at the next boundary.
-    arbiter
-        .transaction(|state| {
-            state.queue[0].budget_secs = 180;
-            Ok(())
-        })
-        .unwrap();
-    std::thread::sleep(Duration::from_secs(6));
-    assert!(grant.yield_requested());
-    grant.mark_yielded();
+    set_balance(&arbiter, "wifi", 30);
+    std::thread::sleep(Duration::from_millis(2500));
+    assert!(!grant.yield_requested());
+    assert_eq!(state(&arbiter).holders.len(), 1);
     drop(grant);
     stop(child);
 }
@@ -404,7 +388,7 @@ fn status_and_board_report_the_latest_state() {
 #[test]
 fn a_newer_state_schema_is_refused() {
     let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("state.json"), r#"{"schema":3}"#).unwrap();
+    std::fs::write(directory.path().join("state.json"), r#"{"schema":4}"#).unwrap();
     let arbiter = Arbiter::at(directory.path()).unwrap();
     assert!(arbiter.status().is_err());
 }
@@ -444,56 +428,27 @@ fn hold_supervised_lease(directory: std::ffi::OsString) {
     let _signals = oer_process::install_signal_handlers().unwrap();
     let arbiter = Arbiter::at(std::path::PathBuf::from(directory)).unwrap();
     let mut grant = arbiter
-        .acquire_within(
-            &Request {
-                budget: Some(Duration::from_secs(1)),
-                ..on_board("esp32s31", request("phy", "hung"))
-            },
-            None,
-        )
+        .acquire_within(&on_board("esp32s31", request("phy", "hung")), None)
         .unwrap();
-    grant.supervise_self(false);
+    grant.supervise_with(false, MIN_SLICE, Duration::from_secs(1));
     // The ordinary cancellation path releases the lease.
     while oer_process::sleep(Duration::from_secs(60)).is_ok() {}
 }
 
 #[test]
-fn the_watchdog_cancels_its_process_at_twice_the_budget() {
+fn every_lease_is_terminated_at_the_hard_limit() {
     if let Some(directory) = std::env::var_os(WATCHDOG_CHILD) {
         return hold_supervised_lease(directory);
     }
     let directory = tempfile::tempdir().unwrap();
     let (elapsed, outcome) = supervised_child(
-        "grant::tests::the_watchdog_cancels_its_process_at_twice_the_budget",
+        "grant::tests::every_lease_is_terminated_at_the_hard_limit",
         directory.path(),
         |_| {},
     );
-    assert!(elapsed >= Duration::from_millis(1900), "{elapsed:?}");
-    assert!(elapsed < Duration::from_secs(30), "{elapsed:?}");
-    assert_eq!(outcome, LeaseOutcome::BudgetExceeded);
-}
-
-#[test]
-fn indivisible_work_is_preempted_at_its_budget_when_others_wait() {
-    if let Some(directory) = std::env::var_os(WATCHDOG_CHILD) {
-        return hold_supervised_lease(directory);
-    }
-    let directory = tempfile::tempdir().unwrap();
-    let (waiter, identity) = other_process();
-    let (elapsed, outcome) = supervised_child(
-        "grant::tests::indivisible_work_is_preempted_at_its_budget_when_others_wait",
-        directory.path(),
-        |arbiter| {
-            queue(
-                arbiter,
-                ticket(1000, "wifi", identity, vec![Claim::board("esp32s31")]),
-            )
-        },
-    );
     assert!(elapsed >= Duration::from_millis(900), "{elapsed:?}");
-    assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
-    assert_eq!(outcome, LeaseOutcome::Preempted);
-    stop(waiter);
+    assert!(elapsed < Duration::from_secs(30), "{elapsed:?}");
+    assert_eq!(outcome, LeaseOutcome::HardLimit);
 }
 
 #[test]

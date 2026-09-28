@@ -12,9 +12,10 @@ use std::{
 
 use crate::{
     Arbiter,
+    balance::{self, HARD_LIMIT, MIN_SLICE},
     board::{device_label, latest},
-    budget::{self, MAX_SHORT_BUDGET, format_duration},
-    history::{self, LeaseOutcome, LeaseRecord},
+    estimate::{self, format_duration},
+    history::{self, GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance},
     notify,
     process::ProcessIdentity,
     queue,
@@ -25,17 +26,16 @@ use crate::{
 pub const LEASE_ENV: &str = "OER_HIL_LEASE";
 /// Who asks for the stand; defaults to the checkout directory name.
 pub const OWNER_ENV: &str = "OER_HIL_OWNER";
-/// Explicit budget of an implicit lease, e.g. `15m`.
-pub const BUDGET_ENV: &str = "OER_HIL_BUDGET";
-/// `1` marks an implicit lease as short.
-pub const SHORT_ENV: &str = "OER_HIL_SHORT";
+/// Variables of lease budgets, which balances replaced; setting one fails.
+const RETIRED_ENV: [&str; 2] = ["OER_HIL_BUDGET", "OER_HIL_SHORT"];
+/// Why budgets are refused.
+pub const NO_BUDGETS: &str =
+    "the stand charges the time a lease holds; there is no budget or short lease to request";
 
 /// Time a terminated holder has to clean up before it is killed.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(300);
-/// How often an over-budget holder looks for requests it blocks.
-const WAITER_CHECK: Duration = Duration::from_millis(500);
-/// How often divisible work within its budget looks for brief requests.
-const BRIEF_CHECK: Duration = Duration::from_secs(5);
+/// How often a holder checks the hard limit and waiters that outrank it.
+const SUPERVISION: Duration = Duration::from_secs(1);
 const POLL: Duration = Duration::from_millis(500);
 /// Waits shorter than this do not notify the user when granted.
 const NOTIFY_AFTER_WAIT: Duration = Duration::from_secs(30);
@@ -63,10 +63,8 @@ pub(crate) fn owner_from_environment() -> String {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Request {
     pub owner: String,
-    /// What the lease is for; leases of equal work share budget estimates.
+    /// What the lease is for; leases of equal work share duration estimates.
     pub work: String,
-    pub budget: Option<Duration>,
-    pub short: bool,
     /// HIL scenarios the lease executes, recorded for per-scenario estimates.
     pub scenarios: Vec<String>,
     /// Resources the lease needs; none claims the whole stand.
@@ -74,21 +72,25 @@ pub struct Request {
 }
 
 impl Request {
-    /// A request described by the owner, budget and short-lease environment.
+    /// A request by the owner the environment names.
     pub fn from_environment(work: impl Into<String>) -> crate::Result<Self> {
+        if let Some(variable) = retired_variable(|name| std::env::var_os(name)) {
+            return Err(format!("{variable} is set, but {NO_BUDGETS}").into());
+        }
         Ok(Self {
             owner: owner_from_environment(),
             work: work.into(),
-            budget: std::env::var(BUDGET_ENV)
-                .ok()
-                .filter(|budget| !budget.is_empty())
-                .map(|budget| budget::parse_duration(&budget))
-                .transpose()?,
-            short: std::env::var(SHORT_ENV).is_ok_and(|short| short == "1"),
             scenarios: Vec::new(),
             claims: Vec::new(),
         })
     }
+}
+
+/// The retired budget variable `lookup` finds set, if any.
+fn retired_variable(lookup: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<&'static str> {
+    RETIRED_ENV
+        .into_iter()
+        .find(|variable| lookup(variable).is_some_and(|value| !value.is_empty()))
 }
 
 /// Ownership of the stand. A nested grant belongs to an enclosing lease and
@@ -104,7 +106,7 @@ struct Held {
     owner: String,
     work: String,
     scenarios: Vec<String>,
-    budget: Duration,
+    held_since: Instant,
     ending: Arc<Ending>,
     watchdog: Option<(mpsc::Sender<()>, std::thread::JoinHandle<()>)>,
 }
@@ -112,10 +114,8 @@ struct Held {
 /// Why a lease ends early, set by its supervisor or holder.
 #[derive(Default)]
 struct Ending {
-    /// Terminated at twice its budget.
-    exceeded: AtomicBool,
-    /// Terminated at its budget because it blocked waiting requests.
-    preempted: AtomicBool,
+    /// Terminated at the hard limit.
+    hard_limit: AtomicBool,
     /// Asked to yield at its next boundary, for divisible work.
     yield_requested: AtomicBool,
     /// Released at a boundary to requeue its remaining work.
@@ -124,12 +124,10 @@ struct Ending {
 
 impl Ending {
     fn outcome(&self) -> LeaseOutcome {
-        if self.exceeded.load(Ordering::Relaxed) {
-            LeaseOutcome::BudgetExceeded
-        } else if self.preempted.load(Ordering::Relaxed) {
-            LeaseOutcome::Preempted
+        if self.hard_limit.load(Ordering::Relaxed) {
+            LeaseOutcome::HardLimit
         } else if self.yielded.load(Ordering::Relaxed) {
-            LeaseOutcome::Yielded
+            LeaseOutcome::YieldedToBalance
         } else {
             LeaseOutcome::Released
         }
@@ -139,13 +137,12 @@ impl Ending {
 enum Poll {
     Granted {
         waited: Duration,
+        /// The owner's balance at the grant, in milliseconds.
+        balance: i64,
     },
     /// A description that changes only with the position or holder, and the
     /// message including the expected start.
-    Waiting {
-        key: String,
-        message: String,
-    },
+    Waiting { key: String, message: String },
 }
 
 /// A waiting message is repeated at this interval when nothing changed.
@@ -178,21 +175,7 @@ impl Arbiter {
         {
             return Err(refusal.into());
         }
-        let (budget, source) = budget::resolve(
-            request.budget,
-            &request.work,
-            &request.scenarios,
-            &self.history()?,
-        );
-        if request.short && budget > MAX_SHORT_BUDGET {
-            return Err(format!(
-                "a short lease must fit {}; `{}` has budget {} ({source})",
-                format_duration(MAX_SHORT_BUDGET),
-                request.work,
-                format_duration(budget)
-            )
-            .into());
-        }
+        let (estimate, _) = estimate::estimate(&request.work, &request.scenarios, &self.history()?);
         let id = self.transaction_after_legacy(|state| {
             let id = state.next_id;
             state.next_id += 1;
@@ -200,9 +183,7 @@ impl Arbiter {
                 id,
                 owner: request.owner.clone(),
                 work: request.work.clone(),
-                budget_secs: budget.as_secs(),
-                budget_source: source,
-                short: request.short,
+                estimate_secs: estimate.as_secs(),
                 process: me,
                 enqueued_unix: crate::unix_now(),
                 claims: claims.clone(),
@@ -218,9 +199,9 @@ impl Arbiter {
         let token = token()?;
         let started = Instant::now();
         let mut reported: Option<(String, Instant)> = None;
-        let waited = loop {
+        let (waited, balance) = loop {
             match self.poll(id, &token, started)? {
-                Poll::Granted { waited } => break waited,
+                Poll::Granted { waited, balance } => break (waited, balance),
                 Poll::Waiting { key, message } => {
                     if reported.as_ref().is_none_or(|(previous, at)| {
                         *previous != key || at.elapsed() >= REPORT_INTERVAL
@@ -234,13 +215,15 @@ impl Arbiter {
         };
         waiting.granted = true;
         eprintln!(
-            "hil-arbiter: lease #{id} granted to {} for `{}` on {}; budget {} ({source}); \
-             at its budget it yields to waiting requests, at {} it is terminated",
+            "hil-arbiter: lease #{id} granted to {} for `{}` on {}; balance {}; the time it \
+             holds is charged, divisible work yields after {} to a waiter with a higher \
+             balance, and every lease ends at {}",
             request.owner,
             request.work,
             describe_claims(&claims),
-            format_duration(budget),
-            format_duration(budget * 2)
+            signed_duration(balance),
+            format_duration(MIN_SLICE),
+            format_duration(HARD_LIMIT)
         );
         if waited >= NOTIFY_AFTER_WAIT {
             notify::send(
@@ -262,7 +245,7 @@ impl Arbiter {
                 owner: request.owner.clone(),
                 work: request.work.clone(),
                 scenarios: request.scenarios.clone(),
-                budget,
+                held_since: Instant::now(),
                 ending: Arc::new(Ending::default()),
                 watchdog: None,
             }),
@@ -303,23 +286,39 @@ impl Arbiter {
 
     fn poll(&self, id: u64, token: &str, started: Instant) -> crate::Result<Poll> {
         self.transaction(|state| {
-            if let Some(jumped) = queue::grantable(state, id) {
+            if queue::grantable(state, id) {
                 let index = state
                     .queue
                     .iter()
                     .position(|ticket| ticket.id == id)
                     .ok_or("this request left the HIL queue")?;
                 let ticket = state.queue.remove(index);
-                state.jumped = jumped;
+                let balance = balance::of(&state.balances, &ticket.owner);
+                let over = state
+                    .queue
+                    .iter()
+                    .filter(|other| {
+                        other.owner != ticket.owner && conflict(&other.claims, &ticket.claims)
+                    })
+                    .map(|other| OwnerBalance {
+                        owner: other.owner.clone(),
+                        balance_ms: balance::of(&state.balances, &other.owner),
+                    })
+                    .collect();
                 state.holders.push(Holder {
                     ticket,
                     token: token.to_owned(),
                     granted_unix: crate::unix_now(),
-                    over_budget: false,
+                    reason: Some(GrantReason {
+                        balance_ms: balance,
+                        over,
+                    }),
                     unknown: Default::default(),
                 });
+                balance::normalize(state, crate::unix_now_ms());
                 return Ok(Poll::Granted {
                     waited: started.elapsed(),
+                    balance,
                 });
             }
             let (_, ahead, wait) = queue::expected_starts(state, crate::unix_now())
@@ -343,9 +342,17 @@ impl Arbiter {
             } else {
                 format!("held by {}", blocking.join(", "))
             };
+            let owner = state
+                .queue
+                .iter()
+                .find(|ticket| ticket.id == id)
+                .map(|ticket| ticket.owner.clone())
+                .unwrap_or_default();
             let key = format!(
-                "waiting as #{id} for {} behind {ahead} earlier conflicting request(s); {holders}",
-                describe_claims(&claims)
+                "waiting as #{id} for {} with balance {}, behind {ahead} conflicting request(s) \
+                 of owners with a higher balance; {holders}",
+                describe_claims(&claims),
+                signed_duration(balance::of(&state.balances, &owner))
             );
             Ok(Poll::Waiting {
                 message: format!(
@@ -422,10 +429,6 @@ impl Grant {
         self.held.is_none()
     }
 
-    pub fn budget(&self) -> Option<Duration> {
-        self.held.as_ref().map(|held| held.budget)
-    }
-
     /// Variables that make commands started inside the lease join it.
     pub fn environment(&self) -> Vec<(&'static str, String)> {
         self.held.as_ref().map_or_else(Vec::new, |held| {
@@ -446,11 +449,25 @@ impl Grant {
     }
 
     /// Whether the supervisor asked divisible work to yield at its next
-    /// boundary: the budget is used and a waiting request needs its resources.
+    /// boundary: a waiter it blocks has a higher balance and the lease has
+    /// held its minimum slice.
     pub fn yield_requested(&self) -> bool {
         self.held
             .as_ref()
             .is_some_and(|held| held.ending.yield_requested.load(Ordering::Relaxed))
+    }
+
+    /// Record that the holder is being terminated at the hard limit.
+    pub fn mark_hard_limit(&self) {
+        if let Some(held) = &self.held {
+            held.ending.hard_limit.store(true, Ordering::Relaxed);
+            eprintln!(
+                "hil-arbiter: {}: `{}` reached the hard limit {}; terminating",
+                held.owner,
+                held.work,
+                format_duration(HARD_LIMIT)
+            );
+        }
     }
 
     /// Record that the holder releases at a boundary to requeue its work.
@@ -458,56 +475,35 @@ impl Grant {
         if let Some(held) = &self.held {
             held.ending.yielded.store(true, Ordering::Relaxed);
             eprintln!(
-                "hil-arbiter: lease #{} of {} yields to waiting requests and queues again",
+                "hil-arbiter: lease #{} of {} yields to a waiter with a higher balance and \
+                 queues again",
                 held.id, held.owner
             );
         }
     }
 
-    /// Record and announce that the lease has used its budget.
-    pub fn warn_over_budget(&self) {
-        if let Some(held) = &self.held {
-            over_budget(&held.arbiter, held.id, &held.owner, &held.work, held.budget);
-        }
-    }
-
-    /// Record that the holder is being terminated at twice its budget.
-    pub fn mark_budget_exceeded(&self) {
-        if let Some(held) = &self.held {
-            held.ending.exceeded.store(true, Ordering::Relaxed);
-            budget_exceeded(&held.owner, &held.work, held.budget);
-        }
-    }
-
-    /// Record that the holder is being terminated at its budget because it
-    /// blocks waiting requests.
-    pub fn mark_preempted(&self) {
-        if let Some(held) = &self.held {
-            held.ending.preempted.store(true, Ordering::Relaxed);
-            preempted(&held.owner, &held.work, held.budget);
-        }
-    }
-
-    /// Supervise this process. Within its budget, divisible work is asked to
-    /// yield at its next boundary when a brief request (a budget of at most
-    /// [`budget::BRIEF_BUDGET`]) needs its resources. At its budget the lease
-    /// is reported; from then on, while a waiting request needs its
-    /// resources, divisible work is
-    /// asked to yield at its next boundary ([`Self::yield_requested`]) and
-    /// indivisible work receives `SIGTERM` (its ordinary cancellation and
-    /// cleanup). At twice the budget the process receives `SIGTERM`
-    /// regardless, and `SIGKILL` after the shutdown grace.
+    /// Supervise this process. Divisible work is asked to yield at its next
+    /// boundary ([`Self::yield_requested`]) once it has held
+    /// [`MIN_SLICE`] and a waiter it blocks has a higher balance; indivisible
+    /// work runs to completion. At [`HARD_LIMIT`] the process receives
+    /// `SIGTERM`, its ordinary cancellation and cleanup, and `SIGKILL` after
+    /// the shutdown grace.
     pub fn supervise_self(&mut self, divisible: bool) {
+        self.supervise_with(divisible, MIN_SLICE, HARD_LIMIT);
+    }
+
+    /// [`Self::supervise_self`] with explicit limits, for tests.
+    pub(crate) fn supervise_with(&mut self, divisible: bool, slice: Duration, limit: Duration) {
         let Some(held) = &mut self.held else {
             return;
         };
         let (stop, stopped) = mpsc::channel::<()>();
-        let (arbiter, id, owner, work, budget) = (
+        let (arbiter, id, owner, work, since) = (
             held.arbiter.clone(),
             held.id,
             held.owner.clone(),
             held.work.clone(),
-            held.budget,
+            held.held_since,
         );
         let ending = held.ending.clone();
         let thread = std::thread::spawn(move || {
@@ -517,72 +513,53 @@ impl Grant {
                     Err(mpsc::RecvTimeoutError::Timeout)
                 )
             };
-            let terminate = || {
-                signal_self(rustix::process::Signal::TERM);
-                if wait(SHUTDOWN_GRACE) {
-                    signal_self(rustix::process::Signal::KILL);
-                }
-            };
-            // Within its budget, divisible work yields at its next boundary
-            // to a brief request that needs its resources.
-            let over = Instant::now() + budget;
             loop {
-                let now = Instant::now();
-                if now >= over {
-                    break;
+                if since.elapsed() >= limit {
+                    ending.hard_limit.store(true, Ordering::Relaxed);
+                    eprintln!(
+                        "hil-arbiter: {owner}: `{work}` reached the hard limit {}; terminating \
+                         with cleanup",
+                        format_duration(limit)
+                    );
+                    notify::send(
+                        "HIL stand lease terminated",
+                        &format!("{owner}: {work} reached {}", format_duration(limit)),
+                    );
+                    signal_self(rustix::process::Signal::TERM);
+                    if wait(SHUTDOWN_GRACE) {
+                        signal_self(rustix::process::Signal::KILL);
+                    }
+                    return;
                 }
                 if divisible
                     && !ending.yield_requested.load(Ordering::Relaxed)
-                    && arbiter
-                        .transaction(|state| {
-                            Ok(queue::blocks_brief_waiters(
-                                state,
-                                id,
-                                budget::BRIEF_BUDGET.as_secs(),
-                            ))
-                        })
-                        .unwrap_or(false)
+                    && let Ok(Some((waiter, balance))) = arbiter.transaction(|state| {
+                        Ok(queue::outranked_by(state, id, crate::unix_now(), slice))
+                    })
                 {
                     ending.yield_requested.store(true, Ordering::Relaxed);
                     eprintln!(
-                        "hil-arbiter: lease #{id} of {owner} yields to a brief waiting request \
-                         after the current step"
+                        "hil-arbiter: lease #{id} of {owner} yields after the current step to \
+                         {waiter}, whose balance {} is higher",
+                        signed_duration(balance)
                     );
                 }
-                if !wait(BRIEF_CHECK.min(over - now)) {
-                    return;
-                }
-            }
-            over_budget(&arbiter, id, &owner, &work, budget);
-            let ceiling = Instant::now() + budget;
-            loop {
-                let now = Instant::now();
-                if now >= ceiling {
-                    ending.exceeded.store(true, Ordering::Relaxed);
-                    budget_exceeded(&owner, &work, budget);
-                    return terminate();
-                }
-                let blocking = arbiter
-                    .transaction(|state| Ok(queue::blocks_waiters(state, id)))
-                    .unwrap_or(false);
-                if blocking && divisible {
-                    if !ending.yield_requested.swap(true, Ordering::Relaxed) {
-                        eprintln!(
-                            "hil-arbiter: lease #{id} of {owner} is over budget and blocks \
-                             waiting requests; it yields after the current step"
-                        );
-                    }
-                } else if blocking {
-                    ending.preempted.store(true, Ordering::Relaxed);
-                    preempted(&owner, &work, budget);
-                    return terminate();
-                }
-                if !wait(WAITER_CHECK.min(ceiling - now)) {
+                if !wait(SUPERVISION) {
                     return;
                 }
             }
         });
         held.watchdog = Some((stop, thread));
+    }
+}
+
+/// `+12m`, `-3m30s`, `0s`.
+pub(crate) fn signed_duration(milliseconds: i64) -> String {
+    let magnitude = format_duration(Duration::from_millis(milliseconds.unsigned_abs()));
+    match milliseconds.signum() {
+        1 => format!("+{magnitude}"),
+        -1 => format!("-{magnitude}"),
+        _ => magnitude,
     }
 }
 
@@ -600,55 +577,6 @@ pub(crate) fn describe_claims(claims: &[Claim]) -> String {
 
 fn signal_self(signal: rustix::process::Signal) {
     let _ = rustix::process::kill_process(rustix::process::getpid(), signal);
-}
-
-fn over_budget(arbiter: &Arbiter, id: u64, owner: &str, work: &str, budget: Duration) {
-    eprintln!(
-        "hil-arbiter: lease #{id} of {owner} used its budget {}; it yields to waiting \
-         requests and is terminated at {}",
-        format_duration(budget),
-        format_duration(budget * 2)
-    );
-    let _ = arbiter.transaction(|state| {
-        if let Some(holder) = state
-            .holders
-            .iter_mut()
-            .find(|holder| holder.ticket.id == id)
-        {
-            holder.over_budget = true;
-        }
-        Ok(())
-    });
-    notify::send(
-        "HIL stand over budget",
-        &format!("{owner}: {work} exceeded {}", format_duration(budget)),
-    );
-}
-
-fn preempted(owner: &str, work: &str, budget: Duration) {
-    eprintln!(
-        "hil-arbiter: {owner}: `{work}` used its budget {} and blocks waiting requests; \
-         terminating with cleanup",
-        format_duration(budget)
-    );
-    notify::send(
-        "HIL stand lease preempted",
-        &format!(
-            "{owner}: {work} used {} while others wait",
-            format_duration(budget)
-        ),
-    );
-}
-
-fn budget_exceeded(owner: &str, work: &str, budget: Duration) {
-    eprintln!(
-        "hil-arbiter: {owner}: `{work}` reached twice its budget {}; terminating with cleanup",
-        format_duration(budget)
-    );
-    notify::send(
-        "HIL stand lease terminated",
-        &format!("{owner}: {work} reached {}", format_duration(budget * 2)),
-    );
 }
 
 impl Drop for Grant {
@@ -675,12 +603,14 @@ impl Drop for Grant {
                 &history_path,
                 &LeaseRecord {
                     id: held.id,
+                    balance_after_ms: balance::of(&state.balances, &holder.ticket.owner),
                     owner: holder.ticket.owner,
                     work: holder.ticket.work,
                     granted_unix: holder.granted_unix,
                     released_unix: crate::unix_now(),
-                    budget_secs: holder.ticket.budget_secs,
                     outcome,
+                    charged_ms: held.held_since.elapsed().as_millis() as u64,
+                    reason: holder.reason,
                     scenarios: held.scenarios.clone(),
                     unknown: Default::default(),
                 },

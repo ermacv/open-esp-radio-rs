@@ -1,4 +1,8 @@
-//! Lease budgets: parsing, display and estimation from earlier leases.
+//! Lease duration estimates from earlier leases, and duration text.
+//!
+//! Estimates only predict when a waiting request starts; no lease is
+//! limited by one. Leases are charged the time they hold instead
+//! ([`crate::balance`]).
 
 use std::time::Duration;
 
@@ -6,13 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::history::{LeaseOutcome, LeaseRecord};
 
-/// Budget of work with neither an explicit budget nor completed history.
-pub const DEFAULT_BUDGET: Duration = Duration::from_secs(15 * 60);
-/// Largest budget a short request may declare to be granted ahead of the head.
-pub const MAX_SHORT_BUDGET: Duration = Duration::from_secs(2 * 60);
-/// Largest budget of a brief request: divisible work yields to it at its next
-/// boundary even before its own budget is used.
-pub const BRIEF_BUDGET: Duration = Duration::from_secs(5 * 60);
+/// Estimate of work without completed history.
+pub const DEFAULT_ESTIMATE: Duration = Duration::from_secs(15 * 60);
 /// Completed leases of the same work considered by the estimate.
 const HISTORY_SAMPLES: usize = 5;
 const MIN_ESTIMATE: u64 = 60;
@@ -20,8 +19,7 @@ const ESTIMATE_GRANULARITY: u64 = 30;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "kind")]
-pub enum BudgetSource {
-    Explicit,
+pub enum EstimateSource {
     /// The longest of the most recent completed leases of the same work, or
     /// the sum of that for each scenario.
     History {
@@ -30,28 +28,23 @@ pub enum BudgetSource {
     Default,
 }
 
-impl std::fmt::Display for BudgetSource {
+impl std::fmt::Display for EstimateSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Explicit => f.write_str("explicit"),
             Self::History { samples } => write!(f, "from {samples} earlier lease(s)"),
             Self::Default => f.write_str("default; no history for this work"),
         }
     }
 }
 
-/// Resolve the budget of `work`: an explicit value wins, then earlier leases
-/// of the same work, then the sum over `scenarios` of earlier single-scenario
-/// leases of each, then the default.
-pub(crate) fn resolve(
-    explicit: Option<Duration>,
+/// Estimate how long `work` holds the stand: earlier leases of the same
+/// work, then the sum over `scenarios` of earlier single-scenario leases of
+/// each, then the default.
+pub(crate) fn estimate(
     work: &str,
     scenarios: &[String],
     history: &[LeaseRecord],
-) -> (Duration, BudgetSource) {
-    if let Some(budget) = explicit {
-        return (budget, BudgetSource::Explicit);
-    }
+) -> (Duration, EstimateSource) {
     let longest = |matches: &dyn Fn(&LeaseRecord) -> bool| {
         let durations = history
             .iter()
@@ -83,10 +76,10 @@ pub(crate) fn resolve(
             let rounded = seconds.div_ceil(ESTIMATE_GRANULARITY) * ESTIMATE_GRANULARITY;
             (
                 Duration::from_secs(rounded.max(MIN_ESTIMATE)),
-                BudgetSource::History { samples },
+                EstimateSource::History { samples },
             )
         }
-        None => (DEFAULT_BUDGET, BudgetSource::Default),
+        None => (DEFAULT_ESTIMATE, EstimateSource::Default),
     }
 }
 
@@ -148,8 +141,10 @@ mod tests {
             work: work.into(),
             granted_unix: 1000,
             released_unix: 1000 + seconds,
-            budget_secs: 600,
             outcome,
+            charged_ms: 0,
+            balance_after_ms: 0,
+            reason: None,
             scenarios: Vec::new(),
             unknown: Default::default(),
         }
@@ -184,25 +179,18 @@ mod tests {
             record("run a", 131, LeaseOutcome::Released),
         ];
         assert_eq!(
-            resolve(None, "run a", &[], &history),
+            estimate("run a", &[], &history),
             (
                 Duration::from_secs(420),
-                BudgetSource::History { samples: 3 }
+                EstimateSource::History { samples: 3 }
             )
         );
         assert_eq!(
-            resolve(None, "run c", &[], &history),
-            (DEFAULT_BUDGET, BudgetSource::Default)
-        );
-        assert_eq!(
-            resolve(Some(Duration::from_secs(5)), "run a", &[], &history).1,
-            BudgetSource::Explicit
+            estimate("run c", &[], &history),
+            (DEFAULT_ESTIMATE, EstimateSource::Default)
         );
         let short = [record("smoke", 3, LeaseOutcome::Released)];
-        assert_eq!(
-            resolve(None, "smoke", &[], &short).0,
-            Duration::from_secs(60)
-        );
+        assert_eq!(estimate("smoke", &[], &short).0, Duration::from_secs(60));
     }
 
     #[test]
@@ -215,16 +203,16 @@ mod tests {
         let history = [single("a", 100), single("a", 200), single("b", 50)];
         let series = [String::from("a"), String::from("b")];
         assert_eq!(
-            resolve(None, "run a b", &series, &history),
+            estimate("run a b", &series, &history),
             (
                 Duration::from_secs(270),
-                BudgetSource::History { samples: 3 }
+                EstimateSource::History { samples: 3 }
             )
         );
         let unknown = [String::from("a"), String::from("c")];
         assert_eq!(
-            resolve(None, "run a c", &unknown, &history).1,
-            BudgetSource::Default
+            estimate("run a c", &unknown, &history).1,
+            EstimateSource::Default
         );
     }
 }

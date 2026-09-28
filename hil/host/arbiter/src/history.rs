@@ -1,4 +1,4 @@
-//! Completed leases, the input of budget estimates and the status report.
+//! Completed leases, the input of duration estimates and the status report.
 
 use std::{fs, io::Write, path::Path};
 
@@ -12,14 +12,34 @@ const RETAINED_RECORDS: usize = 2000;
 #[serde(rename_all = "kebab-case")]
 pub enum LeaseOutcome {
     Released,
-    /// The holder was terminated at twice its budget.
+    /// Terminated at twice a requested budget; leases before balances only.
     BudgetExceeded,
     /// The holder exited without releasing; another process reaped it.
     Abandoned,
-    /// Terminated at its budget because waiting requests needed its resources.
+    /// Terminated at a requested budget; leases before balances only.
     Preempted,
-    /// Released at a boundary after its budget to queue its remaining work.
+    /// Released at a boundary after a requested budget; leases before
+    /// balances only.
     Yielded,
+    /// Released at a boundary to a waiter with a higher balance, to queue
+    /// its remaining work.
+    YieldedToBalance,
+    /// Terminated at the hard limit every lease has.
+    HardLimit,
+}
+
+/// Why a lease was granted: its owner's balance against the other owners
+/// whose conflicting requests waited.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct GrantReason {
+    pub balance_ms: i64,
+    pub over: Vec<OwnerBalance>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OwnerBalance {
+    pub owner: String,
+    pub balance_ms: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -29,8 +49,15 @@ pub struct LeaseRecord {
     pub work: String,
     pub granted_unix: u64,
     pub released_unix: u64,
-    pub budget_secs: u64,
     pub outcome: LeaseOutcome,
+    /// The held time charged to the owner.
+    #[serde(default)]
+    pub charged_ms: u64,
+    /// The owner's balance at release.
+    #[serde(default)]
+    pub balance_after_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<GrantReason>,
     /// HIL scenarios the lease executed, when its holder named them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenarios: Vec<String>,
@@ -113,8 +140,10 @@ mod tests {
             work: "run x".into(),
             granted_unix: 10,
             released_unix: 70,
-            budget_secs: 60,
             outcome: LeaseOutcome::Released,
+            charged_ms: 60_000,
+            balance_after_ms: -60_000,
+            reason: None,
             scenarios: Vec::new(),
             unknown: Default::default(),
         };

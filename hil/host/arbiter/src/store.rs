@@ -140,6 +140,7 @@ impl Arbiter {
             Err(error) => return Err(error.into()),
         };
         let mut state = before.clone();
+        crate::balance::settle(&mut state, crate::unix_now_ms());
         self.reap(&mut state)?;
         let result = action(&mut state)?;
         if state != before {
@@ -165,8 +166,12 @@ impl Arbiter {
                     work: holder.ticket.work.clone(),
                     granted_unix: holder.granted_unix,
                     released_unix: crate::unix_now(),
-                    budget_secs: holder.ticket.budget_secs,
                     outcome: LeaseOutcome::Abandoned,
+                    charged_ms: crate::unix_now()
+                        .saturating_sub(holder.granted_unix)
+                        .saturating_mul(1000),
+                    balance_after_ms: crate::balance::of(&state.balances, &holder.ticket.owner),
+                    reason: holder.reason.clone(),
                     scenarios: Vec::new(),
                     unknown: Default::default(),
                 },

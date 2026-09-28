@@ -74,8 +74,6 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             let request = oer_hil_arbiter::Request {
                 owner: options.owner(ctx),
                 work: String::new(),
-                budget: options.budget,
-                short: options.short,
                 scenarios: Vec::new(),
                 claims: Vec::new(),
             };
@@ -175,32 +173,38 @@ Stand commands (shared by every checkout of this user):
 
 Lease options, before any HIL command or after `lease`:
   --owner NAME     default: enclosing lease owner, else the checkout directory name
-  --budget DUR     90s, 15m, 1h30m; default: history of the same work or scenarios, else 15m
-  --short          budget of at most 2m, granted ahead of earlier conflicting requests
 
-Leases on different boards run in parallel. Choose a budget you expect to
-use: once it is spent and a waiting request needs the same resources, a run
-of several scenarios yields after its current scenario and queues again, and
-a single scenario or lease command is stopped (lease exit status 75). At
-twice the budget work is stopped regardless (lease exit status 124). A run of
-several scenarios also yields after its current scenario, within its budget,
-to a waiting request with a budget of at most 5m, so brief work is let in
-between the steps of long series.
+Leases on different boards run in parallel. There is no budget to request:
+every lease charges its owner's balance the time it holds, and waiting for a
+lease that blocks you credits your balance the time waited. Among
+conflicting requests the owner with the highest balance goes first, the
+earlier request on a tie; balances halve every 2h and stay within 1h either
+way. A run of several scenarios that has held 10m yields after its current
+scenario to a waiter with a higher balance and queues again; a single
+scenario or lease command runs to its end. Every lease ends at 1h (lease
+exit status 124). `cargo hil queue` shows every balance and who goes next.
 Scenarios tagged `air-exclusive` claim the air exclusively.
 
 Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";
+
+/// How the stand orders conflicting requests, for `cargo hil queue --help`.
+const BALANCE_RULE: &str = "\
+Who goes next: every lease charges its owner's balance the time it holds, and
+waiting behind a conflicting lease credits the time waited. The owner with the
+highest balance is served first, the earlier request on a tie; balances halve
+every 2h and stay within 1h either way. A run of several scenarios that has
+held 10m yields after its current scenario to a waiter with a higher balance.
+Every lease ends at 1h. There is no budget to request.";
 
 /// Stand lease options accepted before the HIL command, or after `lease`.
 #[derive(Debug, Default, PartialEq)]
 struct LeaseOptions {
     owner: Option<String>,
-    budget: Option<std::time::Duration>,
-    short: bool,
 }
 
 impl LeaseOptions {
-    /// Split leading `--owner NAME`, `--budget DURATION` and `--short` from
-    /// the remaining arguments.
+    /// Split a leading `--owner NAME` from the remaining arguments; the
+    /// retired `--budget` and `--short` are refused.
     fn split(args: &[OsString]) -> Result<(Self, Vec<OsString>)> {
         let mut options = Self::default();
         let mut rest = args.iter();
@@ -222,10 +226,9 @@ impl LeaseOptions {
             };
             match name {
                 "--owner" => options.owner = Some(value()?),
-                "--budget" => {
-                    options.budget = Some(oer_hil_arbiter::parse_duration(&value()?)?);
+                "--budget" | "--short" => {
+                    return Err(format!("{name}: {}", oer_hil_arbiter::NO_BUDGETS).into());
                 }
-                "--short" if inline.is_none() => options.short = true,
                 _ => {
                     remaining.push(argument.clone());
                     remaining.extend(rest.cloned());
@@ -255,17 +258,7 @@ impl LeaseOptions {
     }
 
     fn environment(&self, ctx: &Context) -> Vec<(&'static str, String)> {
-        let mut environment = vec![(oer_hil_arbiter::OWNER_ENV, self.owner(ctx))];
-        if let Some(budget) = self.budget {
-            environment.push((
-                oer_hil_arbiter::BUDGET_ENV,
-                format!("{}s", budget.as_secs()),
-            ));
-        }
-        if self.short {
-            environment.push((oer_hil_arbiter::SHORT_ENV, String::from("1")));
-        }
-        environment
+        vec![(oer_hil_arbiter::OWNER_ENV, self.owner(ctx))]
     }
 }
 
@@ -274,6 +267,10 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
     let json = match args {
         [] => false,
         [flag] if flag == "--json" => true,
+        [flag] if flag == "--help" || flag == "-h" => {
+            println!("usage: cargo hil queue [--json]\n\n{BALANCE_RULE}");
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
         _ => return Err("usage: cargo hil queue [--json]".into()),
     };
     let status = oer_hil_arbiter::Arbiter::open()?.status()?;
@@ -285,8 +282,8 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
     Ok(std::process::ExitCode::SUCCESS)
 }
 
-/// Exit status of a lease command terminated at twice its budget.
-const BUDGET_EXCEEDED_EXIT: u8 = 124;
+/// Exit status of a lease command terminated at the hard limit.
+const HARD_LIMIT_EXIT: u8 = 124;
 
 /// How a lease command uses the radio environment; `None` claims no air.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -344,12 +341,12 @@ fn lease_claims(
     Ok(claims)
 }
 
-/// Exit status of a lease command terminated at its budget because waiting
-/// requests needed its resources; run it again to queue behind them.
-const PREEMPTED_EXIT: u8 = 75;
-
 fn parse_budget(text: &str) -> std::result::Result<std::time::Duration, String> {
     oer_hil_arbiter::parse_duration(text).map_err(|error| error.to_string())
+}
+
+fn retired_budget(_: &str) -> std::result::Result<String, String> {
+    Err(String::from(oer_hil_arbiter::NO_BUDGETS))
 }
 
 /// `cargo hil lease [OPTIONS] -- COMMAND...`
@@ -359,11 +356,11 @@ struct LeaseCli {
     /// Who holds the lease.
     #[arg(long)]
     owner: Option<String>,
-    /// Lease budget, e.g. 90s, 15m or 1h30m.
-    #[arg(long, value_parser = parse_budget)]
-    budget: Option<std::time::Duration>,
-    /// A budget of at most two minutes, granted ahead of the queue head.
-    #[arg(long)]
+    /// Retired: the stand charges the time a lease holds.
+    #[arg(long, hide = true, value_parser = retired_budget)]
+    budget: Option<String>,
+    /// Retired: there are no short leases.
+    #[arg(long, hide = true)]
     short: bool,
     /// A board the command uses, by registered name, chip or MAC;
     /// repeatable.
@@ -471,10 +468,11 @@ impl FlashedArgs {
 fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = LeaseCli::try_parse_from(args)?;
+    if cli.short {
+        return Err(format!("--short: {}", oer_hil_arbiter::NO_BUDGETS).into());
+    }
     let options = LeaseOptions {
         owner: cli.owner.or(outer.owner),
-        budget: cli.budget.or(outer.budget),
-        short: cli.short || outer.short,
     };
     let (program, arguments) = cli
         .command
@@ -490,8 +488,6 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
     let request = oer_hil_arbiter::Request {
         owner: options.owner(ctx),
         work,
-        budget: options.budget,
-        short: options.short,
         scenarios: Vec::new(),
         claims: lease_claims(&cli.boards, cli.air, cli.stand, &arbiter.devices()?)?,
     };
@@ -503,7 +499,7 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
             .envs(grant.environment()),
         std::time::Duration::from_secs(300),
     )?;
-    let (code, succeeded) = supervise(&grant, &mut child)?;
+    let (code, succeeded) = supervise(&grant, &mut child, oer_hil_arbiter::HARD_LIMIT)?;
     if cli.flashed.image.is_some() {
         if succeeded {
             cli.flashed.record(
@@ -518,21 +514,19 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
     Ok(code)
 }
 
-/// Supervise an indivisible command: at its budget it is reported, and it is
-/// terminated as soon as a waiting request needs its resources; at twice the
-/// budget it is terminated regardless. Returns the exit code and whether the
-/// command succeeded.
+/// Supervise an indivisible command: it runs to its end, charged the time it
+/// holds, and is terminated only at the hard limit every lease has. Returns
+/// the exit code and whether the command succeeded.
 fn supervise(
     grant: &oer_hil_arbiter::Grant,
     child: &mut oer_process::owned::Child,
+    limit: std::time::Duration,
 ) -> Result<(std::process::ExitCode, bool)> {
     let finished = |status: std::process::ExitStatus| (exit_code(status), status.success());
-    let Some(budget) = grant.budget() else {
+    if grant.is_nested() {
         return Ok(finished(child.wait_forwarding_cancellation()?));
-    };
+    }
     let started = std::time::Instant::now();
-    let mut warned = false;
-    let mut checked = started;
     loop {
         if let Some(status) = child.try_wait()? {
             return Ok(finished(status));
@@ -541,23 +535,10 @@ fn supervise(
             child.kill()?;
             return Ok((std::process::ExitCode::from(130), false));
         }
-        let elapsed = started.elapsed();
-        if !warned && elapsed >= budget {
-            grant.warn_over_budget();
-            warned = true;
-        }
-        if elapsed >= budget * 2 {
-            grant.mark_budget_exceeded();
+        if started.elapsed() >= limit {
+            grant.mark_hard_limit();
             child.kill()?;
-            return Ok((std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT), false));
-        }
-        if warned && checked.elapsed() >= std::time::Duration::from_millis(500) {
-            checked = std::time::Instant::now();
-            if grant.blocks_waiters() {
-                grant.mark_preempted();
-                child.kill()?;
-                return Ok((std::process::ExitCode::from(PREEMPTED_EXIT), false));
-            }
+            return Ok((std::process::ExitCode::from(HARD_LIMIT_EXIT), false));
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
@@ -936,8 +917,6 @@ fn firmware(
             let request = oer_hil_arbiter::Request {
                 owner: options.owner(ctx),
                 work: format!("firmware flash {image} --board {board}"),
-                budget: options.budget,
-                short: options.short,
                 scenarios: Vec::new(),
                 claims: Vec::new(),
             };
@@ -1055,8 +1034,6 @@ fn devices(
                     "devices reset {board}{}",
                     if download { " --download" } else { "" }
                 ),
-                budget: options.budget,
-                short: options.short,
                 scenarios: Vec::new(),
                 claims: vec![oer_hil_arbiter::Claim::board(&mac)],
             };
@@ -1384,43 +1361,31 @@ mod tests {
     #[test]
     fn lease_options_precede_the_command_and_stop_at_the_first_other_argument() {
         let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
-        let (options, rest) = LeaseOptions::split(&args(&[
-            "--owner",
-            "phy",
-            "--budget=40m",
-            "--short",
-            "run",
-            "x",
-            "--owner",
-            "kept",
-        ]))
-        .unwrap();
+        let (options, rest) =
+            LeaseOptions::split(&args(&["--owner", "phy", "run", "x", "--owner", "kept"])).unwrap();
         assert_eq!(
             options,
             LeaseOptions {
                 owner: Some("phy".into()),
-                budget: Some(std::time::Duration::from_secs(2400)),
-                short: true,
             }
         );
         assert_eq!(rest, args(&["run", "x", "--owner", "kept"]));
-        assert!(LeaseOptions::split(&args(&["--budget"])).is_err());
-        assert!(LeaseOptions::split(&args(&["--budget", "soon"])).is_err());
+        // Budgets are retired: the stand charges held time.
+        assert!(LeaseOptions::split(&args(&["--budget", "15m"])).is_err());
+        assert!(LeaseOptions::split(&args(&["--short", "run"])).is_err());
         let (options, rest) = LeaseOptions::split(&args(&["run", "x"])).unwrap();
         assert_eq!(options, LeaseOptions::default());
         assert_eq!(rest.len(), 2);
     }
 
     #[test]
-    fn a_lease_command_is_terminated_at_twice_its_budget() {
+    fn a_lease_command_is_terminated_at_the_hard_limit() {
         let directory = tempfile::tempdir().unwrap();
         let arbiter = oer_hil_arbiter::Arbiter::at(directory.path()).unwrap();
         let grant = arbiter
             .acquire(&oer_hil_arbiter::Request {
                 owner: "test".into(),
                 work: "sleep".into(),
-                budget: Some(std::time::Duration::from_secs(3)),
-                short: false,
                 scenarios: Vec::new(),
                 claims: Vec::new(),
             })
@@ -1431,14 +1396,15 @@ mod tests {
             std::time::Duration::from_secs(1),
         )
         .unwrap();
-        let (code, succeeded) = supervise(&grant, &mut child).unwrap();
+        let (code, succeeded) =
+            supervise(&grant, &mut child, std::time::Duration::from_secs(1)).unwrap();
         assert!(!succeeded);
-        assert_eq!(code, std::process::ExitCode::from(BUDGET_EXCEEDED_EXIT));
-        assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+        assert_eq!(code, std::process::ExitCode::from(HARD_LIMIT_EXIT));
+        assert!(started.elapsed() >= std::time::Duration::from_secs(1));
         drop(grant);
         assert_eq!(
             arbiter.history().unwrap()[0].outcome,
-            oer_hil_arbiter::LeaseOutcome::BudgetExceeded
+            oer_hil_arbiter::LeaseOutcome::HardLimit
         );
     }
 
@@ -1471,72 +1437,6 @@ mod tests {
             [Claim::board("38:44:BE:AA:25:64")]
         );
         assert!(lease_claims(&[], Some(AirArg(None)), false, &devices).is_err());
-    }
-
-    #[test]
-    fn a_lease_command_is_preempted_at_its_budget_when_others_wait() {
-        let directory = tempfile::tempdir().unwrap();
-        let arbiter = oer_hil_arbiter::Arbiter::at(directory.path()).unwrap();
-        let grant = arbiter
-            .acquire(&oer_hil_arbiter::Request {
-                owner: "test".into(),
-                work: "sleep".into(),
-                budget: Some(std::time::Duration::from_secs(1)),
-                short: false,
-                scenarios: Vec::new(),
-                claims: vec![oer_hil_arbiter::Claim::board("AA")],
-            })
-            .unwrap();
-        let mut waiter = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "hil::tests::queue_behind_board_aa", "--ignored"])
-            .env(oer_hil_arbiter::DIRECTORY_ENV, directory.path())
-            .spawn()
-            .unwrap();
-        // The helper is another process; under load it may take a while to
-        // queue, and preemption needs a waiter.
-        let queued = std::time::Instant::now();
-        while arbiter.status().unwrap().queue.is_empty() {
-            assert!(
-                queued.elapsed() < std::time::Duration::from_secs(60),
-                "the helper never queued"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        let started = std::time::Instant::now();
-        let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
-            Command::new("sleep").arg("60"),
-            std::time::Duration::from_secs(1),
-        )
-        .unwrap();
-        let (code, succeeded) = supervise(&grant, &mut child).unwrap();
-        assert!(!succeeded);
-        assert_eq!(code, std::process::ExitCode::from(PREEMPTED_EXIT));
-        // Preempted at its budget, well before twice the budget.
-        assert!(started.elapsed() < std::time::Duration::from_secs(6));
-        drop(grant);
-        assert!(waiter.wait().unwrap().success());
-        assert_eq!(
-            arbiter.history().unwrap()[0].outcome,
-            oer_hil_arbiter::LeaseOutcome::Preempted
-        );
-    }
-
-    /// Helper process for the preemption test: waits for board AA.
-    #[test]
-    #[ignore = "run by a_lease_command_is_preempted_at_its_budget_when_others_wait"]
-    fn queue_behind_board_aa() {
-        let arbiter = oer_hil_arbiter::Arbiter::open().unwrap();
-        let grant = arbiter
-            .acquire(&oer_hil_arbiter::Request {
-                owner: "waiter".into(),
-                work: "wait".into(),
-                budget: Some(std::time::Duration::from_secs(60)),
-                short: false,
-                scenarios: Vec::new(),
-                claims: vec![oer_hil_arbiter::Claim::board("AA")],
-            })
-            .unwrap();
-        drop(grant);
     }
 
     #[test]

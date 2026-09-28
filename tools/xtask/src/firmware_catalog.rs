@@ -508,8 +508,6 @@ mod tests {
         let request = oer_hil_arbiter::Request {
             owner: "test".into(),
             work: "flash".into(),
-            budget: None,
-            short: false,
             scenarios: Vec::new(),
             claims: Vec::new(),
         };

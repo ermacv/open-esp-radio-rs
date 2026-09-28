@@ -84,6 +84,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 <main>
   <section><h2>Holding now</h2><div id="holders"></div></section>
   <section><h2>Queue</h2><div id="queue"></div></section>
+  <section><h2>Balances</h2><div id="balances"></div></section>
   <section class="wide"><h2>Boards</h2><div id="devices"></div></section>
   <section class="wide"><h2>Recent runs</h2><div id="runs"></div></section>
   <section class="wide"><h2>Recent leases</h2><div id="leases"></div></section>
@@ -111,23 +112,24 @@ function when(unix) {
 function tone(outcome) {
   switch (outcome) {
     case "passed": case "released": case "Released": return "ok";
-    case "failed": case "broken": case "budget-exceeded": case "abandoned": return "bad";
-    case "blocked": case "interrupted": case "preempted": case "yielded": case "running": return "warn";
+    case "failed": case "broken": case "budget-exceeded": case "hard-limit": case "abandoned": return "bad";
+    case "blocked": case "interrupted": case "preempted": case "yielded": case "yielded-to-balance": case "running": return "warn";
     default: return "muted";
   }
 }
+const signed = (ms) => (ms > 0 ? "+" : ms < 0 ? "−" : "") + duration(Math.abs(ms) / 1000);
 const pill = (text) => `<span class="pill ${tone(text)}">${esc(text)}</span>`;
 
 function holders(list) {
   if (!list.length) return '<p class="empty">The stand is free.</p>';
   return list.map((h) => {
-    const share = Math.min(100, (h.elapsed_secs / Math.max(1, h.budget_secs)) * 100);
+    const share = Math.min(100, (h.elapsed_secs / 3600) * 100);
     return `<div class="item">
       <div class="row"><span class="owner">${esc(h.owner)}</span><span class="id">#${h.id}</span>
-        <span class="meta${h.over_budget ? " bad" : ""}">${duration(h.elapsed_secs)} of ${duration(h.budget_secs)}</span></div>
+        <span class="meta">${duration(h.elapsed_secs)} held · est. ${duration(h.estimate_secs)} · balance ${signed(h.balance_ms)}</span></div>
       <div class="work">${esc(h.work)}</div>
       <div class="claims">${esc(h.claims)}</div>
-      <div class="bar${h.over_budget ? " over" : ""}"><div style="width:${share}%"></div></div>
+      <div class="bar${share >= 100 ? " over" : ""}"><div style="width:${share}%"></div></div>
     </div>`;
   }).join("");
 }
@@ -136,11 +138,20 @@ function queue(list) {
   if (!list.length) return '<p class="empty">Nobody is waiting.</p>';
   return list.map((q, index) => `<div class="item">
       <div class="row"><span class="id">${index + 1}.</span><span class="owner">${esc(q.owner)}</span>
-        <span class="id">#${q.id}</span>${q.short ? pill("short") : ""}
-        <span class="meta">starts in ~${duration(q.expected_start_secs)} · waited ${duration(q.waiting_secs)} · budget ${duration(q.budget_secs)}</span></div>
+        <span class="id">#${q.id}</span>
+        <span class="meta">balance ${signed(q.balance_ms)} · starts in ~${duration(q.expected_start_secs)} · waited ${duration(q.waiting_secs)}</span></div>
       <div class="work">${esc(q.work)}</div>
       <div class="claims">${esc(q.claims)}${q.ahead ? ` · ${q.ahead} conflicting ahead` : ""}</div>
     </div>`).join("");
+}
+
+function balances(list) {
+  if (!list || !list.length) return '<p class="empty">No owner has waited or held recently.</p>';
+  const rows = list.map((b) => `<tr><td><b>${esc(b.owner)}</b></td>
+      <td class="num ${b.balance_ms >= 0 ? "ok" : "bad"}">${signed(b.balance_ms)}</td>
+      <td class="muted">${b.holding ? "holding" : ""}${b.holding && b.waiting ? ", " : ""}${b.waiting ? "waiting" : ""}</td></tr>`).join("");
+  return `<p class="muted">Held time is charged, blocked waiting is credited; the highest balance goes first. Balances halve every 2h.</p>
+    <div class="table-wrap"><table><tr><th>Owner</th><th>Balance</th><th></th></tr>${rows}</table></div>`;
 }
 
 function devices(list, maintenance) {
@@ -183,7 +194,7 @@ function leases(list) {
   const rows = list.map((l) => `<tr><td class="num">${when(l.granted_unix)}</td>
       <td><b>${esc(l.owner)}</b> <span class="id">#${l.id}</span></td>
       <td class="work">${esc(l.work)}</td>
-      <td class="num">${duration(l.released_unix - l.granted_unix)} of ${duration(l.budget_secs)}</td>
+      <td class="num">${duration(l.released_unix - l.granted_unix)} · balance ${signed(l.balance_after_ms ?? 0)}</td>
       <td>${pill(l.outcome)}</td></tr>`).join("");
   return `<div class="table-wrap"><table><tr><th>Granted</th><th>Owner</th><th>Work</th><th>Held</th><th>Outcome</th></tr>${rows}</table></div>`;
 }
@@ -196,6 +207,7 @@ async function refresh() {
     if (data.error) throw new Error(data.error);
     $("holders").innerHTML = holders(data.holders);
     $("queue").innerHTML = queue(data.queue);
+    $("balances").innerHTML = balances(data.balances);
     $("devices").innerHTML = devices(data.devices, data.maintenance);
     $("runs").innerHTML = runs(data.runs);
     $("leases").innerHTML = leases(data.leases);

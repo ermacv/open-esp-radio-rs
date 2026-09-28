@@ -1157,7 +1157,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "eea38b0aaaef2491add382209f35f5ef6c389cfcb0fabc918d8d35dcaa1edc46"
+      "sha256": "6e7bad546086ed8dbaca46690258406d9f2f64c6c957f97bfb0de556c76a7071"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",
@@ -1385,7 +1385,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/triage.rs",
-      "sha256": "e28cbb9d9728fd7cf9069e36f65aa84495de7d91e30a6b14b6285307310657c4"
+      "sha256": "2255b63b6aabbeec8aee6181548f3d355c1420ed0c6dc2d03310ce05cb7f6d5a"
     },
     {
       "path": "verification/schema",
@@ -2549,8 +2549,8 @@
           "total": 2064
         },
         "open": 113,
-        "excluded": 552,
-        "untriaged": 3630
+        "excluded": 578,
+        "untriaged": 3604
       },
       "observation": {
         "executed": 2,
@@ -2651,8 +2651,8 @@
           "total": 2038
         },
         "open": 113,
-        "excluded": 494,
-        "untriaged": 3535
+        "excluded": 520,
+        "untriaged": 3509
       },
       "observation": {
         "executed": 10,
@@ -2685,8 +2685,8 @@
           "total": 2094
         },
         "open": 113,
-        "excluded": 494,
-        "untriaged": 3603
+        "excluded": 520,
+        "untriaged": 3577
       },
       "observation": {
         "executed": 10,
@@ -2719,8 +2719,8 @@
           "total": 2122
         },
         "open": 113,
-        "excluded": 524,
-        "untriaged": 3640
+        "excluded": 550,
+        "untriaged": 3614
       },
       "observation": {
         "executed": 17,
@@ -2753,8 +2753,8 @@
           "total": 1744
         },
         "open": 109,
-        "excluded": 500,
-        "untriaged": 3011
+        "excluded": 522,
+        "untriaged": 2989
       },
       "observation": {
         "executed": 23,
@@ -9859,16 +9859,6 @@
     },
     {
       "function": "ppAssembleAMPDU",
-      "offset": 224,
-      "kind": "block"
-    },
-    {
-      "function": "ppAssembleAMPDU",
-      "offset": 266,
-      "kind": "block"
-    },
-    {
-      "function": "ppAssembleAMPDU",
       "offset": 268,
       "kind": "block"
     },
@@ -10339,16 +10329,6 @@
     },
     {
       "function": "ppCalTxAMPDULength",
-      "offset": 618,
-      "kind": "block"
-    },
-    {
-      "function": "ppCalTxAMPDULength",
-      "offset": 656,
-      "kind": "block"
-    },
-    {
-      "function": "ppCalTxAMPDULength",
       "offset": 658,
       "kind": "block"
     },
@@ -10501,16 +10481,6 @@
       "function": "ppCalTxHEAMPDULength",
       "offset": 28,
       "kind": "fallthrough"
-    },
-    {
-      "function": "ppCalTxHEAMPDULength",
-      "offset": 30,
-      "kind": "block"
-    },
-    {
-      "function": "ppCalTxHEAMPDULength",
-      "offset": 68,
-      "kind": "block"
     },
     {
       "function": "ppCalTxHEAMPDULength",
@@ -11279,16 +11249,6 @@
     },
     {
       "function": "ppCertSetRate",
-      "offset": 60,
-      "kind": "block"
-    },
-    {
-      "function": "ppCertSetRate",
-      "offset": 120,
-      "kind": "block"
-    },
-    {
-      "function": "ppCertSetRate",
       "offset": 122,
       "kind": "block"
     },
@@ -11316,16 +11276,6 @@
       "function": "ppCertSetRate",
       "offset": 134,
       "kind": "fallthrough"
-    },
-    {
-      "function": "ppCertSetRate",
-      "offset": 138,
-      "kind": "block"
-    },
-    {
-      "function": "ppCertSetRate",
-      "offset": 198,
-      "kind": "block"
     },
     {
       "function": "ppCertSetRate",
@@ -11719,16 +11669,6 @@
     },
     {
       "function": "ppCheckTxHEAMPDUlength",
-      "offset": 230,
-      "kind": "block"
-    },
-    {
-      "function": "ppCheckTxHEAMPDUlength",
-      "offset": 294,
-      "kind": "block"
-    },
-    {
-      "function": "ppCheckTxHEAMPDUlength",
       "offset": 296,
       "kind": "block"
     },
@@ -11895,16 +11835,6 @@
     {
       "function": "ppCheckTxHEAMPDUlength",
       "offset": 494,
-      "kind": "block"
-    },
-    {
-      "function": "ppCheckTxHEAMPDUlength",
-      "offset": 510,
-      "kind": "block"
-    },
-    {
-      "function": "ppCheckTxHEAMPDUlength",
-      "offset": 572,
       "kind": "block"
     },
     {
@@ -12421,16 +12351,6 @@
       "function": "ppEnqueueTxDone",
       "offset": 0,
       "kind": "fallthrough"
-    },
-    {
-      "function": "ppEnqueueTxDone",
-      "offset": 2,
-      "kind": "block"
-    },
-    {
-      "function": "ppEnqueueTxDone",
-      "offset": 44,
-      "kind": "block"
     },
     {
       "function": "ppEnqueueTxDone",
@@ -13443,16 +13363,6 @@
       "kind": "fallthrough"
     },
     {
-      "function": "ppProcessLifeTime",
-      "offset": 148,
-      "kind": "block"
-    },
-    {
-      "function": "ppProcessLifeTime",
-      "offset": 186,
-      "kind": "block"
-    },
-    {
       "function": "ppProcessTxQ",
       "offset": 0,
       "kind": "block"
@@ -14334,16 +14244,6 @@
     },
     {
       "function": "ppResortTxAMPDU",
-      "offset": 128,
-      "kind": "block"
-    },
-    {
-      "function": "ppResortTxAMPDU",
-      "offset": 166,
-      "kind": "block"
-    },
-    {
-      "function": "ppResortTxAMPDU",
       "offset": 168,
       "kind": "block"
     },
@@ -14551,16 +14451,6 @@
       "function": "ppResortTxAMPDU",
       "offset": 448,
       "kind": "fallthrough"
-    },
-    {
-      "function": "ppResortTxAMPDU",
-      "offset": 450,
-      "kind": "block"
-    },
-    {
-      "function": "ppResortTxAMPDU",
-      "offset": 488,
-      "kind": "block"
     },
     {
       "function": "ppResortTxAMPDU",
@@ -20204,16 +20094,6 @@
     },
     {
       "function": "wifi_rf_phy_disable",
-      "offset": 26,
-      "kind": "block"
-    },
-    {
-      "function": "wifi_rf_phy_disable",
-      "offset": 64,
-      "kind": "block"
-    },
-    {
-      "function": "wifi_rf_phy_disable",
       "offset": 66,
       "kind": "block"
     },
@@ -20286,16 +20166,6 @@
       "function": "wifi_rf_phy_enable",
       "offset": 28,
       "kind": "fallthrough"
-    },
-    {
-      "function": "wifi_rf_phy_enable",
-      "offset": 30,
-      "kind": "block"
-    },
-    {
-      "function": "wifi_rf_phy_enable",
-      "offset": 68,
-      "kind": "block"
     },
     {
       "function": "wifi_rf_phy_enable",

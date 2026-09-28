@@ -1032,7 +1032,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
-      "sha256": "eea38b0aaaef2491add382209f35f5ef6c389cfcb0fabc918d8d35dcaa1edc46"
+      "sha256": "6e7bad546086ed8dbaca46690258406d9f2f64c6c957f97bfb0de556c76a7071"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",
@@ -1260,7 +1260,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/triage.rs",
-      "sha256": "e28cbb9d9728fd7cf9069e36f65aa84495de7d91e30a6b14b6285307310657c4"
+      "sha256": "2255b63b6aabbeec8aee6181548f3d355c1420ed0c6dc2d03310ce05cb7f6d5a"
     },
     {
       "path": "verification/schema",

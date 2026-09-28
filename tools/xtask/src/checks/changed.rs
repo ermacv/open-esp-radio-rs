@@ -315,6 +315,10 @@ pub enum FirmwareSet {
     BluetoothSecureGatt,
     /// Wi-Fi and Bluetooth together.
     WifiBleCoex,
+    /// The IEEE 802.15.4 client on the shared radio.
+    Ieee802154Radio,
+    /// OpenThread over that client.
+    Ieee802154Thread,
 }
 
 impl FirmwareSet {
@@ -331,6 +335,8 @@ impl FirmwareSet {
         Self::WifiBleCoex,
     ];
 
+    const IEEE802154: [Self; 2] = [Self::Ieee802154Radio, Self::Ieee802154Thread];
+
     fn class(self) -> oer_hil_runner_core::image::ImageClass {
         use oer_hil_runner_core::image::ImageClass;
         match self {
@@ -341,29 +347,36 @@ impl FirmwareSet {
             Self::BluetoothGatt => ImageClass::BluetoothGatt,
             Self::BluetoothSecureGatt => ImageClass::BluetoothSecureGatt,
             Self::WifiBleCoex => ImageClass::WifiBleCoex,
+            Self::Ieee802154Radio => ImageClass::DiagnosticIeee802154Radio,
+            Self::Ieee802154Thread => ImageClass::DiagnosticIeee802154Thread,
         }
     }
 
     /// The sets a change of `path` can break: a Bluetooth file the
-    /// Bluetooth images and coexistence, a Wi-Fi file the Wi-Fi images and
-    /// coexistence, a coexistence file coexistence, anything shared all.
+    /// Bluetooth images and coexistence, an IEEE 802.15.4 file the IEEE
+    /// 802.15.4 images, a coexistence file coexistence, a Wi-Fi file the
+    /// Wi-Fi images and coexistence, and any other file of the product HIL
+    /// module, which the IEEE 802.15.4 images also compile, those too;
+    /// anything shared all.
     fn affected_by(path: &Path) -> Vec<Self> {
         let text = path.to_string_lossy();
         let named = |words: &[&str]| words.iter().any(|word| text.contains(word));
         if named(&["bluetooth"]) {
             Self::BLUETOOTH.to_vec()
+        } else if named(&["ieee802154", "thread"]) {
+            Self::IEEE802154.to_vec()
         } else if named(&["coex"]) {
             vec![Self::WifiBleCoex]
-        } else if named(&[
-            "ieee80211",
-            "wifi",
-            "product_hil",
-            "station",
-            "access_point",
-        ]) {
+        } else if named(&["ieee80211", "wifi", "station", "access_point"]) {
             Self::WIFI.to_vec()
+        } else if named(&["product_hil"]) {
+            Self::WIFI.into_iter().chain(Self::IEEE802154).collect()
         } else {
-            Self::WIFI.into_iter().chain(Self::BLUETOOTH).collect()
+            Self::WIFI
+                .into_iter()
+                .chain(Self::BLUETOOTH)
+                .chain(Self::IEEE802154)
+                .collect()
         }
     }
 }
@@ -472,11 +485,27 @@ mod tests {
             ]
         );
         assert_eq!(
-            sets("hil/targets/esp32s31/runtime/src/product_hil/traffic/tcp.rs"),
+            sets("hil/targets/esp32s31/runtime/src/product_hil/station/mod.rs"),
             [Performance, Correctness, DiagnosticStationExit, WifiBleCoex]
         );
+        assert_eq!(
+            sets("hil/targets/esp32s31/runtime/src/product_hil/ieee802154/client.rs"),
+            [Ieee802154Radio, Ieee802154Thread]
+        );
+        // The IEEE 802.15.4 images compile the product HIL module too.
+        assert_eq!(
+            sets("hil/targets/esp32s31/runtime/src/product_hil/phy_register_image.rs"),
+            [
+                Performance,
+                Correctness,
+                DiagnosticStationExit,
+                WifiBleCoex,
+                Ieee802154Radio,
+                Ieee802154Thread
+            ]
+        );
         // A shared file can break every image.
-        assert_eq!(sets("hil/targets/esp32s31/runtime/src/console.rs").len(), 7);
+        assert_eq!(sets("hil/targets/esp32s31/runtime/src/console.rs").len(), 9);
     }
 
     #[test]

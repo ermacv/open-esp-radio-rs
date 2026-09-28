@@ -222,3 +222,31 @@ fn conversions_carry_the_text_since_the_previous_one() {
         ["a=%d", " 100%% b=%08lx"]
     );
 }
+
+#[test]
+fn a_tail_call_prints_like_a_call() {
+    // As a_printed_register_field_is_tied_to_its_conversion, but the print
+    // is a tail call: auipc t1; jalr zero, 0(t1).
+    let mut corpus = corpus(
+        "gauge",
+        code(&[
+            "2010e7b7", "83078793", "0007a583", "0045d593", "00f5f593", "00000537", "00050513",
+            "00000317", "00030067",
+        ]),
+    );
+    let format = |kind| Reference {
+        kind,
+        target: ".rodata".into(),
+        addend: 0,
+        literal: Some("gain=%d\n".into()),
+    };
+    corpus.functions[0].references = BTreeMap::from([
+        (0x14, format(object::elf::R_RISCV_HI20)),
+        (0x18, format(object::elf::R_RISCV_LO12_I)),
+    ]);
+    let text = prints(&corpus, 0x2010_d830, 0x2010_d834);
+    assert!(
+        text.contains("bits 4,5,6,7 >> 4 -> \"gain=%d\" test::gauge+0x20"),
+        "{text}"
+    );
+}

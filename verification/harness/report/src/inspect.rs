@@ -39,6 +39,8 @@ const STRING_LIMIT: usize = 160;
 const WORD_BYTES: u8 = 4;
 /// All bits of a word.
 const ALL: u32 = u32::MAX;
+/// The return-address register `ra`, through which a function returns.
+const RETURN_ADDRESS: u8 = 1;
 /// The argument registers `a0` to `a7`.
 const ARGUMENTS: std::ops::Range<u8> = 10..18;
 /// Most loads a followed pointer may take from its root.
@@ -434,7 +436,13 @@ impl Corpus {
             &mut notes,
             &self.registers,
         );
-        let print = if call { state.print() } else { None };
+        // A tail call jumps through a register other than the return
+        // address and passes its arguments like any call.
+        let tail = matches!(
+            op.flow,
+            InstructionFlow::Indirect { base, link: false, .. } if base != RETURN_ADDRESS
+        );
+        let print = if call || tail { state.print() } else { None };
         if call {
             state.call();
         }

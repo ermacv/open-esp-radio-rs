@@ -15,10 +15,15 @@ pub use bluetooth_secure_gatt::{
     BluetoothNumericChallenge, BluetoothNumericDecision, BluetoothSecureGattEvidence,
 };
 mod system;
+mod trace;
 pub use system::{
     BootEvidence, CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HangTarget, HartState,
     POST_MORTEM_CHECKPOINT_PAGE, POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints,
     PostMortemSummary, ResetReason, TaskSlot, TaskStall, WatchdogTestMode,
+};
+pub use trace::{
+    TRACE_ENTRY_PAGE, TRACE_SNAPSHOT_PAGE, TraceControl, TraceEntries, TraceEntry,
+    TraceSnapshotPage, TraceStatus,
 };
 mod phy_fault;
 mod phy_register_image;

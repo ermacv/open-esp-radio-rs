@@ -45,11 +45,23 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
                     format!("the hang post-mortem does not name the stall: {hang:?}").into(),
                 );
             }
+            // The trace froze at the hang and waits, untouched, for the host.
+            let trace = capture.trace_control(oer_hil_protocol::TraceControl::Status)?;
+            let hang_kind = <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND.raw();
+            if !trace.holding_previous || trace.trigger.map(|(kind, _)| kind) != Some(hang_kind) {
+                return Err(format!("the trace did not freeze at the hang: {trace:?}").into());
+            }
+            let entries = capture.trace_entries(trace.entries)?;
+            let restarted =
+                capture.trace_control(oer_hil_protocol::TraceControl::Start { mask: u64::MAX })?;
+            if !restarted.running || restarted.holding_previous {
+                return Err(format!("the trace did not restart: {restarted:?}").into());
+            }
             hil_core::durable::atomic_json(
                 &directory.join("hang.json"),
                 &serde_json::json!({
                     "schema": 1, "target": target, "reboot": reboot, "fresh_boot": fresh,
-                    "passed": true
+                    "trace": trace, "trace_entries": entries.len(), "passed": true
                 }),
             )
         })?;

@@ -8,6 +8,9 @@ publish.workspace = true
 build = "build.rs"
 
 [features]
+# Two RTC-retained trace snapshot slots of 1024 words, for images that
+# capture register windows.
+trace-snapshots = []
 # Experimental direct RX-gain transaction SRAM placement for an otherwise
 # identical diagnostic image.
 phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-ieee80211-system?/phy-rx-hot-sram"]
@@ -97,7 +100,7 @@ driver-observation = [
 ]
 # The Wi-Fi system's diagnostics alone: the station's exit evidence and
 # observers, without the executor timer and PHY registration observers.
-station-exit-evidence = ["oer-esp32s31-ieee80211-system/diagnostics"]
+station-exit-evidence = ["oer-esp32s31-ieee80211-system/diagnostics", "oer-esp32s31-ieee80211-runtime?/trace"]
 # Intrusive hard-IRQ classification. This is never part of correctness or
 # performance images because it extends the SRAM-closed MAC ISR call graph.
 mac-irq-telemetry = [
@@ -253,6 +256,9 @@ tinyrlibc = { workspace = true, optional = true }
 oer-esp32s31-radio-runtime = { workspace = true, optional = true }
 oer-ieee802154 = { workspace = true, optional = true }
 oer-esp32s31-soc-esp-hal.workspace = true
+# Recording is on in every image; only freeze triggers record unless a
+# domain feature adds its trace points.
+oer-trace = { path = "../../../../crates/trace", features = ["record"] }
 oer-esp32s31-executor-embassy.workspace = true
 oer-esp32s31-ieee80211-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }

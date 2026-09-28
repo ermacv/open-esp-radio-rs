@@ -119,6 +119,8 @@ mod stack_evidence;
 ))]
 mod system;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+mod trace;
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod watchdog;
 #[cfg(all(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
 compile_error!(
@@ -282,6 +284,12 @@ use oer_esp32s31_platform_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
+    // The trace keeps what happened before the panic.
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    oer_trace::freeze(
+        <oer_hil_target_core::trace::Panic as oer_trace::Event>::KIND,
+        0,
+    );
     #[cfg(any(
         feature = "system-watchdog",
         feature = "open-radio-hil",
@@ -348,6 +356,8 @@ extern "C" fn runtime_main() -> ! {
         feature = "bluetooth-radio"
     ))]
     system::postmortem::begin();
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    trace::install();
     // The bootstrap configured PSRAM before entering this separately linked
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
     // across that ELF boundary, so stage two explicitly adopts the live
@@ -489,6 +499,10 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
+            #[cfg(not(feature = "memory-benchmark"))]
+            if let Ok(hold) = trace::hold_limit_task() {
+                spawner.spawn(hold);
+            }
             #[cfg(feature = "memory-benchmark")]
             spawner.spawn(
                 memory_benchmark::task(peripherals.DMA_AXI_CH0).unwrap_or_else(|_| {

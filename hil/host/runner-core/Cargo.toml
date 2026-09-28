@@ -13,6 +13,8 @@ description = "Shared HIL runner core: scenarios, laboratory, session, context, 
 test-support = []
 
 [dependencies]
+oer-hil-target-core = { path = "../../target-core" }
+oer-trace = { path = "../../../crates/trace" }
 oer-hil-arbiter = { path = "../arbiter" }
 oer-hil-schema = { path = "../../schema" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }

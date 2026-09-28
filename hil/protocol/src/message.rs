@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 190;
+pub const PROTOCOL_VERSION: u16 = 191;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -514,6 +514,17 @@ pub enum Command {
     /// Diagnostic: stall `HangTarget`'s executor with interrupts enabled, so
     /// the hang watchdog records a post-mortem and resets the chip.
     InjectHang(crate::HangTarget),
+    /// Report, start or re-mask the reset-retained event trace.
+    TraceControl(crate::TraceControl),
+    /// Page through the trace's storage slots from `first`.
+    GetTraceEntries {
+        first: u16,
+    },
+    /// Page through the snapshot in `slot` from word `offset`.
+    GetTraceSnapshot {
+        slot: u8,
+        offset: u16,
+    },
     PhyFault(crate::PhyFaultCommand),
     /// Suspend, resume or report the shared PHY's periodic tracking timer.
     PhyTracking(crate::PhyTrackingCommand),
@@ -1114,6 +1125,10 @@ pub enum Event {
     PostMortemCheckpoints(crate::PostMortemCheckpoints),
     /// The stall is armed; the chip resets once the watchdog detects it.
     HangInjected(crate::HangTarget),
+    TraceStatus(crate::TraceStatus),
+    TraceEntries(crate::TraceEntries),
+    /// `None` when the slot holds no snapshot, or another one by now.
+    TraceSnapshot(Option<crate::TraceSnapshotPage>),
     PhyFault(crate::PhyFaultEvidence),
     PhyTracking(crate::PhyTrackingEvidence),
     BluetoothPeripheral(crate::BluetoothPeripheralEvidence),

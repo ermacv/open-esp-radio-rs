@@ -1248,6 +1248,45 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         )
                         .await;
                     }
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Command::TraceControl(control) => {
+                        let response = if session_id == 0 {
+                            Event::TraceStatus(crate::trace::control(control))
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Command::GetTraceEntries { first } => {
+                        let response = if session_id == 0 {
+                            Event::TraceEntries(crate::trace::entries(first))
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Command::GetTraceSnapshot { slot, offset } => {
+                        let response = if session_id == 0 {
+                            Event::TraceSnapshot(crate::trace::snapshot(slot, offset))
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    // The memory benchmark image links no trace.
+                    #[cfg(feature = "memory-benchmark")]
+                    Command::TraceControl(_)
+                    | Command::GetTraceEntries { .. }
+                    | Command::GetTraceSnapshot { .. } => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
                     Command::QueryStackUsage | Command::QueryInterruptStackUsage => {
                         let response = if initialized
                             && state == SessionState::Idle

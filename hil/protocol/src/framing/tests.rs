@@ -1882,3 +1882,53 @@ fn the_largest_post_mortem_fits_a_frame() {
         .encode(&Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, page))
         .unwrap();
 }
+
+#[test]
+fn full_trace_pages_fit_a_frame_and_round_trip() {
+    let entry = crate::TraceEntry {
+        tag: u16::MAX,
+        kind: u16::MAX,
+        t_us: u32::MAX,
+        words: [u32::MAX; 2],
+    };
+    let events = [
+        Event::TraceEntries(crate::TraceEntries {
+            first: u16::MAX,
+            next: u16::MAX,
+            entries: core::iter::repeat_n(entry, crate::TRACE_ENTRY_PAGE).collect(),
+        }),
+        Event::TraceSnapshot(Some(crate::TraceSnapshotPage {
+            slot: u8::MAX,
+            point: u16::MAX,
+            tag: u16::MAX,
+            t_us: u32::MAX,
+            len: u16::MAX,
+            truncated: true,
+            offset: u16::MAX,
+            words: core::iter::repeat_n(u32::MAX, crate::TRACE_SNAPSHOT_PAGE).collect(),
+        })),
+        Event::TraceStatus(crate::TraceStatus {
+            installed: true,
+            entries: u16::MAX,
+            snapshot_slots: u8::MAX,
+            snapshot_words: u16::MAX,
+            running: true,
+            frozen: true,
+            mask: u64::MAX,
+            trigger: Some((u16::MAX, u16::MAX)),
+            holding_previous: true,
+            stored_entries: u16::MAX,
+            stored_snapshots: u8::MAX,
+        }),
+    ];
+    let mut encoder = FrameEncoder::new();
+    for body in events {
+        let expected = Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, body);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(encoder.encode(&expected).unwrap(), |result| {
+            observed = Some(result.unwrap())
+        });
+        assert_eq!(observed, Some(expected));
+    }
+}

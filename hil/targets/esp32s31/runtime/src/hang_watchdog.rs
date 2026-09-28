@@ -293,6 +293,11 @@ fn check() {
         samples: core::array::from_fn(|index| SAMPLES[index].load(Ordering::Relaxed)),
         stalled_task: task,
     };
+    // The trace keeps what happened before the hang.
+    oer_trace::freeze(
+        <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND,
+        0,
+    );
     crate::system::postmortem::record_hang(&hang);
     crate::console::emergency_log(format_args!(
         "hil-postmortem: hang stalled={stalled:#04b} task={:?} core0 mepc={:08x} ra={:08x} sp={:08x} \

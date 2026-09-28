@@ -105,6 +105,7 @@ pub fn inspect(
         let symbols = elf.and_then(|elf| addr2line::Loader::new(elf).ok());
         let name = |address: u32| symbol(symbols.as_ref(), address);
         let failure = classify(&boot, &checkpoints, &name);
+        drain_trace(&capture, &output.join("post-mortem"));
         Finding {
             boot,
             checkpoints,
@@ -113,6 +114,91 @@ pub fn inspect(
     });
     let _ = capture.finish_with(Ok(()));
     finding
+}
+
+/// Save the target's event trace in `directory` as `trace.json` (raw) and
+/// `trace.txt` (decoded, oldest first): the previous boot's when the target
+/// holds it, else the current boot's. A held trace is then restarted, so the
+/// new boot records. A target without a trace, or one that does not answer,
+/// leaves nothing.
+fn drain_trace(capture: &SerialCapture, directory: &Path) {
+    let Ok(status) = capture.trace_control(oer_hil_protocol::TraceControl::Status) else {
+        return;
+    };
+    if !status.installed || status.stored_entries == 0 && status.stored_snapshots == 0 {
+        return;
+    }
+    let entries = capture.trace_entries(status.entries).unwrap_or_default();
+    let snapshots = (0..status.snapshot_slots)
+        .filter_map(|slot| capture.trace_snapshot(slot).ok().flatten())
+        .map(|(header, words)| {
+            serde_json::json!({"slot": header.slot, "point": header.point,
+            "tag": header.tag, "t_us": header.t_us, "len": header.len,
+            "truncated": header.truncated, "words": words})
+        })
+        .collect::<Vec<_>>();
+    let _ = std::fs::create_dir_all(directory);
+    let _ = crate::durable::atomic_json(
+        &directory.join("trace.json"),
+        &serde_json::json!({"schema": 1, "status": status, "entries": entries,
+                            "snapshots": snapshots}),
+    );
+    let _ = std::fs::write(directory.join("trace.txt"), decode_trace(&status, &entries));
+    if status.holding_previous {
+        let _ = capture.trace_control(oer_hil_protocol::TraceControl::Start { mask: u64::MAX });
+    }
+}
+
+/// The trace's entries, oldest first, one per line: time, event and words.
+fn decode_trace(
+    status: &oer_hil_protocol::TraceStatus,
+    entries: &[oer_hil_protocol::TraceEntry],
+) -> String {
+    let mut records = entries
+        .iter()
+        .map(|entry| oer_trace::Record {
+            tag: entry.tag,
+            kind: entry.kind,
+            t_us: entry.t_us,
+            words: entry.words,
+        })
+        .collect::<Vec<_>>();
+    oer_trace::oldest_first(&mut records);
+    let mut text = format!(
+        "# {} entries{}; {}\n",
+        records.len(),
+        status
+            .trigger
+            .map(|(kind, tag)| format!(", frozen by {} at tag {tag}", event_name(kind)))
+            .unwrap_or_default(),
+        if status.holding_previous {
+            "left by the previous boot"
+        } else {
+            "of the current boot"
+        }
+    );
+    for record in records {
+        text.push_str(&format!(
+            "{:>12} us  tag {:>5}  {:<28} {:#010x} {:#010x}\n",
+            record.t_us,
+            record.tag,
+            event_name(record.kind),
+            record.words[0],
+            record.words[1]
+        ));
+    }
+    text
+}
+
+/// A trace kind's name: the platform's own, else its domain and event id.
+fn event_name(kind: u16) -> String {
+    match oer_trace::Kind::from_raw(kind) {
+        Some(kind) => oer_hil_target_core::trace::platform_name(kind).map_or_else(
+            || format!("{:?}.{}", kind.domain, kind.event).to_lowercase(),
+            str::to_owned,
+        ),
+        None => format!("unknown-kind-{kind:#06x}"),
+    }
 }
 
 /// The failure `boot` establishes, naming code addresses with `name`.
@@ -368,6 +454,38 @@ mod tests {
             "{}",
             failure.message
         );
+    }
+
+    #[test]
+    fn a_trace_is_decoded_oldest_first_with_platform_names() {
+        let hang = <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND.raw();
+        let station = oer_trace::Kind::new(oer_trace::Domain::Ieee80211, 5).raw();
+        let entry = |tag, kind, t_us| oer_hil_protocol::TraceEntry {
+            tag,
+            kind,
+            t_us,
+            words: [1, 2],
+        };
+        let status = oer_hil_protocol::TraceStatus {
+            installed: true,
+            entries: 4,
+            snapshot_slots: 0,
+            snapshot_words: 0,
+            running: false,
+            frozen: false,
+            mask: u64::MAX,
+            trigger: Some((hang, 3)),
+            holding_previous: true,
+            stored_entries: 2,
+            stored_snapshots: 0,
+        };
+        // Storage order is not time order: the ring wrapped.
+        let text = decode_trace(&status, &[entry(3, hang, 200), entry(2, station, 100)]);
+        let lines = text.lines().collect::<Vec<_>>();
+        assert!(lines[0].contains("frozen by platform.hang"), "{text}");
+        assert!(lines[0].contains("previous boot"), "{text}");
+        assert!(lines[1].contains("ieee80211.5"), "{text}");
+        assert!(lines[2].contains("platform.hang"), "{text}");
     }
 
     #[test]

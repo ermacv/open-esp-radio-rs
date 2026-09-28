@@ -2171,6 +2171,7 @@ dependencies = [
  "oer-ieee802154",
  "oer-ieee802154-engine",
  "oer-network-interface",
+ "oer-trace",
  "open-esp-radio",
  "openthread",
  "static_cell",
@@ -2217,6 +2218,7 @@ dependencies = [
  "heapless 0.9.3",
  "oer-example-bluetooth-gatt",
  "oer-hil-protocol",
+ "oer-trace",
  "trouble-host",
  "xarxa",
 ]
@@ -2344,6 +2346,9 @@ dependencies = [
 [[package]]
 name = "oer-trace"
 version = "0.1.0"
+dependencies = [
+ "embassy-time",
+]
 
 [[package]]
 name = "once_cell"

@@ -3036,8 +3036,10 @@ dependencies = [
  "oer-hil-fixture-install",
  "oer-hil-protocol",
  "oer-hil-schema",
+ "oer-hil-target-core",
  "oer-memory-report",
  "oer-process",
+ "oer-trace",
  "roxmltree",
  "rustix",
  "serde",
@@ -3085,7 +3087,9 @@ version = "0.1.0"
 dependencies = [
  "oer-hil-protocol",
  "oer-hil-runner-core",
+ "oer-hil-target-core",
  "oer-process",
+ "oer-trace",
  "serde",
  "serde_json",
  "toml",
@@ -3121,6 +3125,7 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-example-bluetooth-gatt",
  "oer-hil-protocol",
+ "oer-trace",
  "trouble-host",
  "xarxa",
 ]

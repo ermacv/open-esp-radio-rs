@@ -628,10 +628,24 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
                     text.push_str(&format!("        | {}\n", printable(line)));
                 }
             }
+            // The target's own trace of what led there, when it had one.
+            if let Ok(trace) = fs::read_to_string(directory.join("post-mortem/trace.txt")) {
+                let mut lines = trace.lines();
+                let heading = lines.next().unwrap_or_default().trim_start_matches("# ");
+                let events = lines.collect::<Vec<_>>();
+                let shown = TRACE_EVENTS_SHOWN.min(events.len());
+                text.push_str(&format!("      trace ({heading}), last {shown} events:\n"));
+                for line in &events[events.len() - shown..] {
+                    text.push_str(&format!("        | {line}\n"));
+                }
+            }
         }
     }
     text
 }
+
+/// Trace events `why` shows per failed repetition.
+const TRACE_EVENTS_SHOWN: usize = 64;
 
 /// A log line with control and replacement characters of raw binary output
 /// shown as `·`.
@@ -1064,6 +1078,17 @@ mod tests {
             "boot\nready\npanic: x\u{1}\u{fffd}\n",
         )
         .unwrap();
+        if failed {
+            fs::create_dir_all(repetition.join("post-mortem")).unwrap();
+            let events = (0..70)
+                .map(|index| format!("{index:>12} us  event-{index}\n"))
+                .collect::<String>();
+            fs::write(
+                repetition.join("post-mortem/trace.txt"),
+                format!("# 70 entries; of the current boot\n{events}"),
+            )
+            .unwrap();
+        }
     }
 
     #[test]
@@ -1101,6 +1126,15 @@ mod tests {
             "{why}"
         );
         assert!(why.contains("| panic: x··"), "{why}");
+        assert!(
+            why.contains("trace (70 entries; of the current boot), last 64 events"),
+            "{why}"
+        );
+        assert!(
+            why.contains("event-69") && why.contains("event-6\n"),
+            "{why}"
+        );
+        assert!(!why.contains("event-5\n"), "{why}");
         assert!(!why.contains("| boot"), "{why}");
         let compared = compare(&runs[0], &runs[1], Some("rx"));
         assert!(compared.contains("-50.0%"), "{compared}");

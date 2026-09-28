@@ -19,4 +19,5 @@ pub mod liveness;
 pub mod memory_benchmark;
 pub mod network;
 pub mod postmortem;
+pub mod trace;
 pub mod traffic;

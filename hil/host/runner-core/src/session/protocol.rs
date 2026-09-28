@@ -1093,6 +1093,80 @@ impl SerialCapture {
         Ok(checkpoints)
     }
 
+    /// Report, start or re-mask the target's event trace.
+    pub fn trace_control(
+        &self,
+        control: oer_hil_protocol::TraceControl,
+    ) -> Result<oer_hil_protocol::TraceStatus> {
+        match self
+            .send_command(0, Command::TraceControl(control), Duration::from_secs(5))?
+            .body
+        {
+            Event::TraceStatus(status) => Ok(status),
+            response => Err(format!("trace control {control:?} rejected: {response:?}").into()),
+        }
+    }
+
+    /// Every complete trace entry in storage, in storage order.
+    pub fn trace_entries(&self, slots: u16) -> Result<Vec<oer_hil_protocol::TraceEntry>> {
+        let mut entries = Vec::new();
+        let mut first = 0;
+        while first < slots {
+            match self
+                .send_command(
+                    0,
+                    Command::GetTraceEntries { first },
+                    Duration::from_secs(5),
+                )?
+                .body
+            {
+                Event::TraceEntries(page) if page.first == first && page.next > first => {
+                    entries.extend(page.entries);
+                    first = page.next;
+                }
+                response => {
+                    return Err(format!("invalid trace page {first}: {response:?}").into());
+                }
+            }
+        }
+        Ok(entries)
+    }
+
+    /// The words of the snapshot in `slot`, with its page header; `None`
+    /// when the slot holds none or was overwritten while it was read.
+    pub fn trace_snapshot(
+        &self,
+        slot: u8,
+    ) -> Result<Option<(oer_hil_protocol::TraceSnapshotPage, Vec<u32>)>> {
+        let mut words = Vec::new();
+        let mut header = None;
+        loop {
+            let offset = u16::try_from(words.len())?;
+            match self
+                .send_command(
+                    0,
+                    Command::GetTraceSnapshot { slot, offset },
+                    Duration::from_secs(5),
+                )?
+                .body
+            {
+                Event::TraceSnapshot(None) => return Ok(None),
+                Event::TraceSnapshot(Some(page)) if page.offset == offset => {
+                    let done = page.words.is_empty()
+                        || words.len() + page.words.len() >= usize::from(page.len);
+                    words.extend(page.words.iter().copied());
+                    header.get_or_insert(page);
+                    if done {
+                        return Ok(header.map(|header| (header, words)));
+                    }
+                }
+                response => {
+                    return Err(format!("invalid trace snapshot page: {response:?}").into());
+                }
+            }
+        }
+    }
+
     /// Stall `target`'s executor; the target's hang watchdog then resets it.
     pub fn inject_hang(&self, target: oer_hil_protocol::HangTarget) -> Result<()> {
         match self

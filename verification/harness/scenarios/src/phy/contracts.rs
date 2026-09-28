@@ -109,10 +109,9 @@ pub fn port_polling(maximum: u32) -> Vec<EffectRule> {
         .to_vec()
 }
 
-/// Transport reads, read-mask and host-map writes, and the single-microsecond
-/// wait immediately before a transport read or a read of one of
-/// `wait_status`. Every other delay, including readiness waits, stays compared.
-pub fn plumbing(wait_status: &[u32], maximum: u32) -> Vec<EffectRule> {
+/// Transport reads and read-mask and host-map writes, for roots whose analog
+/// I2C commands never wait.
+pub fn transport(maximum: u32) -> Vec<EffectRule> {
     let mut rules = vec![];
     for address in transport_reads() {
         rules.push(ignored(
@@ -130,6 +129,14 @@ pub fn plumbing(wait_status: &[u32], maximum: u32) -> Vec<EffectRule> {
             "analog I2C transport configuration around each command",
         ));
     }
+    rules
+}
+
+/// [`transport`], and the single-microsecond wait immediately before a
+/// transport read or a read of one of `wait_status`. Every other delay,
+/// including readiness waits, stays compared.
+pub fn plumbing(wait_status: &[u32], maximum: u32) -> Vec<EffectRule> {
+    let mut rules = transport(maximum);
     let reads = transport_reads();
     let mut polled: Vec<u32> = reads.to_vec();
     polled.extend(wait_status.iter().filter(|a| !reads.contains(a)));

@@ -9,7 +9,7 @@
 //! calibration, and the SAR observation limit is a failure distinct from time
 //! or work limits. Synthetic measurements establish software effects, not RF
 //! accuracy.
-use crate::contracts::{OutputField, omitted_read, output_projection, phy_contract, plumbing};
+use crate::contracts::{OutputField, omitted_read, output_projection, phy_contract};
 use crate::evidence::{events, output, stop};
 use crate::harness::{Buffer, Result, case, known, selection, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
@@ -263,11 +263,10 @@ pub fn tx_models(profile: &Profile, status: u32, detector: u32) -> Vec<DeviceDec
     models
 }
 
-/// Reviewed rules of the TX-DC root: transport plumbing, the PBus status
-/// polling interval and the three SAR result words the vendor snapshots but
-/// never consumes.
+/// Reviewed rules of the TX-DC root, which issues no analog I2C command:
+/// the three SAR result words the vendor snapshots but never consumes.
 pub fn tx_rules() -> Vec<EffectRule> {
-    let mut rules = plumbing(&[PBUS_STATUS], TXDC_EVENTS);
+    let mut rules = vec![];
     for address in SAR_UNUSED {
         rules.push(omitted_read(
             format!("sar-unused-{address:08x}"),
@@ -342,7 +341,7 @@ impl TxDc {
             "txdc-effects",
             "esp32s31.phy.tx-dc-pwdet.effects",
             contract,
-            "every TX-DC register effect compares exactly except transport polling and unused SAR snapshots",
+            "every TX-DC register effect compares exactly except unused SAR snapshots",
         )?;
         let committed = image.review_projection(
             "txdc-committed",

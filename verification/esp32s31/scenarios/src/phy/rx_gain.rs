@@ -9,7 +9,7 @@
 //! shared budget to leave coefficients and gain memory unpublished. Software
 //! comparison under explicit peripheral inputs, never hardware qualification.
 use crate::contracts::{
-    OutputField, omitted_read_before, output_projection, phy_contract, plumbing,
+    OutputField, omitted_read_before, output_projection, phy_contract, transport,
 };
 use crate::evidence::{PhyEffect, events, output, phy_effects, steps};
 use crate::harness::{Buffer, Result, case, selection, with_stack_fill};
@@ -558,11 +558,11 @@ pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
     models
 }
 
-/// Reviewed rules of the RX root: transport plumbing, the PBus status polling
-/// interval and the vendor's unused skipped-DC snapshot, each selecting at
-/// most `maximum` effects.
+/// Reviewed rules of the RX root: transport plumbing, whose commands never
+/// wait, and the vendor's unused skipped-DC snapshot, each selecting at most
+/// `maximum` effects.
 pub fn rx_rules(maximum: u32) -> Vec<EffectRule> {
-    let mut rules = plumbing(&[PBUS_STATUS], maximum);
+    let mut rules = transport(maximum);
     for successor in SKIPPED_DC_SUCCESSORS {
         rules.push(omitted_read_before(
             format!("skipped-dc-snapshot-{successor:08x}"),
@@ -1090,7 +1090,7 @@ mod tests {
     }
 
     #[test]
-    fn contract_selects_only_the_skipped_dc_snapshot_and_polling_waits() {
+    fn contract_selects_only_the_skipped_dc_snapshot_and_transport() {
         crate::install();
         let rules = rx_rules(MAX_EVENTS);
         let selected = |event: &ExecutionEvent, next: &ExecutionEvent| {
@@ -1101,10 +1101,9 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let delay = ExecutionEvent::DelayMicros { value: 1 };
-        // A wait before an estimator readiness read is compared; one before a
-        // PBus status read is polling.
+        // The RX root never polls with a wait: every wait compares.
         assert!(selected(&delay, &read(ESTIMATOR_READY, 0)).is_empty());
-        assert_eq!(selected(&delay, &read(PBUS_STATUS, 0)).len(), 1);
+        assert!(selected(&delay, &read(PBUS_STATUS, 0)).is_empty());
         // Only the snapshot before a skipped-path successor may be omitted.
         for successor in SKIPPED_DC_SUCCESSORS {
             assert_eq!(selected(&read(DC_CONTROL, 7), &read(successor, 0)).len(), 1);

@@ -7,6 +7,7 @@
 //! project. A changed executable, input or request selects another entry.
 use crate::harness::{Result, sha256};
 use serde::{Serialize, de::DeserializeOwned};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +20,29 @@ pub struct SetupCache {
     salt: String,
 }
 
+/// The content digest of the Blobray executable at `binary`, hashed once per
+/// process while its size and modification time stay the same: every
+/// scenario of `all` salts its cache with it, and the executable is large.
+fn binary_identity(binary: &Path) -> Result<String> {
+    type Key = (PathBuf, u64, Option<std::time::SystemTime>);
+    static KNOWN: std::sync::Mutex<BTreeMap<Key, String>> = std::sync::Mutex::new(BTreeMap::new());
+    let metadata = fs::metadata(binary)?;
+    let key = (
+        binary.to_path_buf(),
+        metadata.len(),
+        metadata.modified().ok(),
+    );
+    let mut known = KNOWN
+        .lock()
+        .map_err(|_| crate::harness::invalid("binary digest cache poisoned"))?;
+    if let Some(digest) = known.get(&key) {
+        return Ok(digest.clone());
+    }
+    let digest = sha256(&fs::read(binary)?);
+    known.insert(key, digest.clone());
+    Ok(digest)
+}
+
 impl SetupCache {
     pub fn new(
         output: &Path,
@@ -27,7 +51,7 @@ impl SetupCache {
         identities: &[String],
     ) -> Result<Self> {
         let salt = serde_json::json!({
-            "blobray": sha256(&fs::read(binary)?),
+            "blobray": binary_identity(binary)?,
             "roles": roles,
             "inputs": identities,
         });

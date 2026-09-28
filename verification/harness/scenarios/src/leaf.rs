@@ -1205,9 +1205,12 @@ pub fn exercise(ctx: &mut LeafRun) -> Result<()> {
             )?
             .records
             .clone();
+        // Each case reads only its own records.
+        let slices = crate::evidence::case_slices(&records);
         for (index, case) in positions.into_iter().enumerate() {
+            let own = slices.get(&case).copied().unwrap_or_default();
             for side in [false, true] {
-                if !all_complete(&records, case, side) {
+                if !all_complete(own, case, side) {
                     return Err(invalid(format!(
                         "{} case {case} did not complete",
                         leaf.vendor
@@ -1217,7 +1220,7 @@ pub fn exercise(ctx: &mut LeafRun) -> Result<()> {
             if leaf.dispatch.is_some() {
                 let expected = case_words[index][0];
                 for side in [false, true] {
-                    let argument = crate::evidence::events(&records, case, side)
+                    let argument = crate::evidence::events(own, case, side)
                         .iter()
                         .rev()
                         .find_map(|e| match e {
@@ -1237,12 +1240,12 @@ pub fn exercise(ctx: &mut LeafRun) -> Result<()> {
             }
             if let Some(expect) = leaf.expect {
                 let observed = Observed {
-                    returned: match crate::evidence::stop(&records, case, false) {
+                    returned: match crate::evidence::stop(own, case, false) {
                         blobray_domain::ExecutionStop::Returned { low, .. } => low,
                         _ => None,
                     },
                     effects: crate::evidence::phy_effects(&crate::evidence::events(
-                        &records, case, false,
+                        own, case, false,
                     )),
                 };
                 expect(&case_words[index], &observed).map_err(|error| {
@@ -1256,10 +1259,9 @@ pub fn exercise(ctx: &mut LeafRun) -> Result<()> {
             // object it is compared through, or a compared return word.
             let initial = &initial[index];
             if !leaf.returns
-                && crate::evidence::phy_effects(&crate::evidence::events(&records, case, false))
+                && crate::evidence::phy_effects(&crate::evidence::events(own, case, false))
                     .is_empty()
-                && (initial.is_empty()
-                    || crate::evidence::output(&records, case, false) == *initial)
+                && (initial.is_empty() || crate::evidence::output(own, case, false) == *initial)
             {
                 return Err(invalid(format!(
                     "{} case {case} has no register effect and changes no compared object",

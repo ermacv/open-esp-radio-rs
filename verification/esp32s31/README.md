@@ -545,7 +545,11 @@ cargo xtask vendor-scenario --chip esp32s31 all ... --patch 1001c6bc:a30aed00:13
 
 A mutant of an unobserved line that survives confirms the finding; one that a
 scenario kills shows the dependence is real but indirect. Patches are for
-named addresses, not a campaign.
+named addresses, not a campaign. They apply to every scenario, not only the
+PHY ones: a patch that drops the RX append doorbell bit fails `wifi-mac` at
+the doorbell model, and one that changes the HE-SIG-A2 control image fails its
+HE PPDU leaf as DIFF. A failing run writes its departing cases to the run's
+`failures/` directory.
 
 ## Contract ownership
 

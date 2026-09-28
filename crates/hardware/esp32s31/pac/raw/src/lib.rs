@@ -54112,15 +54112,22 @@ pub mod ieee802154_mac {
         timer1_value: Timer1Value,
         _reserved24: [u8; 0x18],
         tx_dma_address: TxDmaAddress,
-        _reserved25: [u8; 0x0c],
+        _reserved25: [u8; 0x04],
+        txdma_err: TxdmaErr,
+        _reserved26: [u8; 0x04],
         rx_dma_address: RxDmaAddress,
-        _reserved26: [u8; 0x20],
-        txon_delay: TxonDelay,
         _reserved27: [u8; 0x04],
+        rxdma_err: RxdmaErr,
+        _reserved28: [u8; 0x14],
+        paon_delay: PaonDelay,
+        txon_delay: TxonDelay,
+        txen_stop_delay: TxenStopDelay,
         txoff_delay: TxoffDelay,
         rxon_delay: RxonDelay,
         txrx_switch_delay: TxrxSwitchDelay,
-        _reserved30: [u8; 0x10],
+        cont_rx_delay: ContRxDelay,
+        dcdc_ctrl: DcdcCtrl,
+        _reserved36: [u8; 0x08],
         security_control: SecurityControl,
         security_address_low: SecurityAddressLow,
         security_address_high: SecurityAddressHigh,
@@ -54435,15 +54442,35 @@ pub mod ieee802154_mac {
         pub const fn tx_dma_address(&self) -> &TxDmaAddress {
             &self.tx_dma_address
         }
+        #[doc = "0xd8 - Transmit DMA error code, named by the public register header; no public LL accessor reads it."]
+        #[inline(always)]
+        pub const fn txdma_err(&self) -> &TxdmaErr {
+            &self.txdma_err
+        }
         #[doc = "0xe0 - Project-assigned name. Complete receive frame-buffer address written by the public common LL. Address validity and buffer lifetime remain HAL responsibilities."]
         #[inline(always)]
         pub const fn rx_dma_address(&self) -> &RxDmaAddress {
             &self.rx_dma_address
         }
+        #[doc = "0xe8 - Receive DMA error code, named by the public register header; no public LL accessor reads it."]
+        #[inline(always)]
+        pub const fn rxdma_err(&self) -> &RxdmaErr {
+            &self.rxdma_err
+        }
+        #[doc = "0x100 - Power-amplifier-on delay. The pinned public driver and LL never write it; the reset value applies unless another owner does. Physical units remain outside the PAC."]
+        #[inline(always)]
+        pub const fn paon_delay(&self) -> &PaonDelay {
+            &self.paon_delay
+        }
         #[doc = "0x104 - Transmit-on delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 45 is reviewed; Physical units remain outside the PAC."]
         #[inline(always)]
         pub const fn txon_delay(&self) -> &TxonDelay {
             &self.txon_delay
+        }
+        #[doc = "0x108 - Transmit-enable stop delay. The pinned public driver and LL never write it; physical units remain outside the PAC."]
+        #[inline(always)]
+        pub const fn txen_stop_delay(&self) -> &TxenStopDelay {
+            &self.txen_stop_delay
         }
         #[doc = "0x10c - Transmit-off delay written by the pinned ESP32-S31 IEEE 802.15.4 MAC initializer. The literal value 5 is reviewed; Physical units remain outside the PAC."]
         #[inline(always)]
@@ -54459,6 +54486,16 @@ pub mod ieee802154_mac {
         #[inline(always)]
         pub const fn txrx_switch_delay(&self) -> &TxrxSwitchDelay {
             &self.txrx_switch_delay
+        }
+        #[doc = "0x118 - Continuous-receive delay. The pinned public driver and LL never write it; physical units remain outside the PAC."]
+        #[inline(always)]
+        pub const fn cont_rx_delay(&self) -> &ContRxDelay {
+            &self.cont_rx_delay
+        }
+        #[doc = "0x11c - MAC control of the DC-DC converter around transmission. The pinned public driver and LL never write it; physical units of the delays remain outside the PAC."]
+        #[inline(always)]
+        pub const fn dcdc_ctrl(&self) -> &DcdcCtrl {
+            &self.dcdc_ctrl
         }
         #[doc = "0x128 - Project-assigned name. Transmit-security enable and payload-offset fields used by the public common LL."]
         #[inline(always)]
@@ -57667,6 +57704,252 @@ pub mod ieee802154_mac {
         }
         #[doc = "`write(|w| ..)` method takes [`diagnostic_counter_clear::W`](W) writer structure"]
         impl crate::Writable for DiagnosticCounterClearSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TXDMA_ERR (r) register accessor: Transmit DMA error code, named by the public register header; no public LL accessor reads it.\n\nYou can [`read`](crate::Reg::read) this register and get [`txdma_err::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@txdma_err`] module"]
+    #[doc(alias = "TXDMA_ERR")]
+    pub type TxdmaErr = crate::Reg<txdma_err::TxdmaErrSpec>;
+    #[doc = "Transmit DMA error code, named by the public register header; no public LL accessor reads it."]
+    pub mod txdma_err {
+        #[doc = "Register `TXDMA_ERR` reader"]
+        pub type R = crate::R<TxdmaErrSpec>;
+        #[doc = "Field `TXDMA_ERR` reader - Transmit DMA error code; no value is assigned a meaning."]
+        pub type TxdmaErrR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:3 - Transmit DMA error code; no value is assigned a meaning."]
+            #[inline(always)]
+            pub fn txdma_err(&self) -> TxdmaErrR {
+                TxdmaErrR::new((self.bits & 0x0f) as u8)
+            }
+        }
+        #[doc = "Transmit DMA error code, named by the public register header; no public LL accessor reads it.\n\nYou can [`read`](crate::Reg::read) this register and get [`txdma_err::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxdmaErrSpec;
+        impl crate::RegisterSpec for TxdmaErrSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`txdma_err::R`](R) reader structure"]
+        impl crate::Readable for TxdmaErrSpec {}
+    }
+    #[doc = "RXDMA_ERR (r) register accessor: Receive DMA error code, named by the public register header; no public LL accessor reads it.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxdma_err::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rxdma_err`] module"]
+    #[doc(alias = "RXDMA_ERR")]
+    pub type RxdmaErr = crate::Reg<rxdma_err::RxdmaErrSpec>;
+    #[doc = "Receive DMA error code, named by the public register header; no public LL accessor reads it."]
+    pub mod rxdma_err {
+        #[doc = "Register `RXDMA_ERR` reader"]
+        pub type R = crate::R<RxdmaErrSpec>;
+        #[doc = "Field `RXDMA_ERR` reader - Receive DMA error code; no value is assigned a meaning."]
+        pub type RxdmaErrR = crate::FieldReader;
+        impl R {
+            #[doc = "Bits 0:3 - Receive DMA error code; no value is assigned a meaning."]
+            #[inline(always)]
+            pub fn rxdma_err(&self) -> RxdmaErrR {
+                RxdmaErrR::new((self.bits & 0x0f) as u8)
+            }
+        }
+        #[doc = "Receive DMA error code, named by the public register header; no public LL accessor reads it.\n\nYou can [`read`](crate::Reg::read) this register and get [`rxdma_err::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RxdmaErrSpec;
+        impl crate::RegisterSpec for RxdmaErrSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`rxdma_err::R`](R) reader structure"]
+        impl crate::Readable for RxdmaErrSpec {}
+    }
+    #[doc = "PAON_DELAY (rw) register accessor: Power-amplifier-on delay. The pinned public driver and LL never write it; the reset value applies unless another owner does. Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`paon_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`paon_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@paon_delay`] module"]
+    #[doc(alias = "PAON_DELAY")]
+    pub type PaonDelay = crate::Reg<paon_delay::PaonDelaySpec>;
+    #[doc = "Power-amplifier-on delay. The pinned public driver and LL never write it; the reset value applies unless another owner does. Physical units remain outside the PAC."]
+    pub mod paon_delay {
+        #[doc = "Register `PAON_DELAY` reader"]
+        pub type R = crate::R<PaonDelaySpec>;
+        #[doc = "Register `PAON_DELAY` writer"]
+        pub type W = crate::W<PaonDelaySpec>;
+        #[doc = "Field `PAON_DELAY` reader - Ten-bit power-amplifier-on delay."]
+        pub type PaonDelayR = crate::FieldReader<u16>;
+        #[doc = "Field `PAON_DELAY` writer - Ten-bit power-amplifier-on delay."]
+        pub type PaonDelayW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        impl R {
+            #[doc = "Bits 0:9 - Ten-bit power-amplifier-on delay."]
+            #[inline(always)]
+            pub fn paon_delay(&self) -> PaonDelayR {
+                PaonDelayR::new((self.bits & 0x03ff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:9 - Ten-bit power-amplifier-on delay."]
+            #[inline(always)]
+            pub fn paon_delay(&mut self) -> PaonDelayW<'_, PaonDelaySpec> {
+                PaonDelayW::new(self, 0)
+            }
+        }
+        #[doc = "Power-amplifier-on delay. The pinned public driver and LL never write it; the reset value applies unless another owner does. Physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`paon_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`paon_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct PaonDelaySpec;
+        impl crate::RegisterSpec for PaonDelaySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`paon_delay::R`](R) reader structure"]
+        impl crate::Readable for PaonDelaySpec {}
+        #[doc = "`write(|w| ..)` method takes [`paon_delay::W`](W) writer structure"]
+        impl crate::Writable for PaonDelaySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "TXEN_STOP_DELAY (rw) register accessor: Transmit-enable stop delay. The pinned public driver and LL never write it; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txen_stop_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txen_stop_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@txen_stop_delay`] module"]
+    #[doc(alias = "TXEN_STOP_DELAY")]
+    pub type TxenStopDelay = crate::Reg<txen_stop_delay::TxenStopDelaySpec>;
+    #[doc = "Transmit-enable stop delay. The pinned public driver and LL never write it; physical units remain outside the PAC."]
+    pub mod txen_stop_delay {
+        #[doc = "Register `TXEN_STOP_DELAY` reader"]
+        pub type R = crate::R<TxenStopDelaySpec>;
+        #[doc = "Register `TXEN_STOP_DELAY` writer"]
+        pub type W = crate::W<TxenStopDelaySpec>;
+        #[doc = "Field `TXEN_STOP_DLY` reader - Six-bit transmit-enable stop delay."]
+        pub type TxenStopDlyR = crate::FieldReader;
+        #[doc = "Field `TXEN_STOP_DLY` writer - Six-bit transmit-enable stop delay."]
+        pub type TxenStopDlyW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        impl R {
+            #[doc = "Bits 0:5 - Six-bit transmit-enable stop delay."]
+            #[inline(always)]
+            pub fn txen_stop_dly(&self) -> TxenStopDlyR {
+                TxenStopDlyR::new((self.bits & 0x3f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - Six-bit transmit-enable stop delay."]
+            #[inline(always)]
+            pub fn txen_stop_dly(&mut self) -> TxenStopDlyW<'_, TxenStopDelaySpec> {
+                TxenStopDlyW::new(self, 0)
+            }
+        }
+        #[doc = "Transmit-enable stop delay. The pinned public driver and LL never write it; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`txen_stop_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`txen_stop_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct TxenStopDelaySpec;
+        impl crate::RegisterSpec for TxenStopDelaySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`txen_stop_delay::R`](R) reader structure"]
+        impl crate::Readable for TxenStopDelaySpec {}
+        #[doc = "`write(|w| ..)` method takes [`txen_stop_delay::W`](W) writer structure"]
+        impl crate::Writable for TxenStopDelaySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "CONT_RX_DELAY (rw) register accessor: Continuous-receive delay. The pinned public driver and LL never write it; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`cont_rx_delay::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cont_rx_delay::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cont_rx_delay`] module"]
+    #[doc(alias = "CONT_RX_DELAY")]
+    pub type ContRxDelay = crate::Reg<cont_rx_delay::ContRxDelaySpec>;
+    #[doc = "Continuous-receive delay. The pinned public driver and LL never write it; physical units remain outside the PAC."]
+    pub mod cont_rx_delay {
+        #[doc = "Register `CONT_RX_DELAY` reader"]
+        pub type R = crate::R<ContRxDelaySpec>;
+        #[doc = "Register `CONT_RX_DELAY` writer"]
+        pub type W = crate::W<ContRxDelaySpec>;
+        #[doc = "Field `CONT_RX_DELAY` reader - Six-bit continuous-receive delay."]
+        pub type ContRxDelayR = crate::FieldReader;
+        #[doc = "Field `CONT_RX_DELAY` writer - Six-bit continuous-receive delay."]
+        pub type ContRxDelayW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        impl R {
+            #[doc = "Bits 0:5 - Six-bit continuous-receive delay."]
+            #[inline(always)]
+            pub fn cont_rx_delay(&self) -> ContRxDelayR {
+                ContRxDelayR::new((self.bits & 0x3f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - Six-bit continuous-receive delay."]
+            #[inline(always)]
+            pub fn cont_rx_delay(&mut self) -> ContRxDelayW<'_, ContRxDelaySpec> {
+                ContRxDelayW::new(self, 0)
+            }
+        }
+        #[doc = "Continuous-receive delay. The pinned public driver and LL never write it; physical units remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`cont_rx_delay::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cont_rx_delay::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ContRxDelaySpec;
+        impl crate::RegisterSpec for ContRxDelaySpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`cont_rx_delay::R`](R) reader structure"]
+        impl crate::Readable for ContRxDelaySpec {}
+        #[doc = "`write(|w| ..)` method takes [`cont_rx_delay::W`](W) writer structure"]
+        impl crate::Writable for ContRxDelaySpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DCDC_CTRL (rw) register accessor: MAC control of the DC-DC converter around transmission. The pinned public driver and LL never write it; physical units of the delays remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`dcdc_ctrl::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dcdc_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@dcdc_ctrl`] module"]
+    #[doc(alias = "DCDC_CTRL")]
+    pub type DcdcCtrl = crate::Reg<dcdc_ctrl::DcdcCtrlSpec>;
+    #[doc = "MAC control of the DC-DC converter around transmission. The pinned public driver and LL never write it; physical units of the delays remain outside the PAC."]
+    pub mod dcdc_ctrl {
+        #[doc = "Register `DCDC_CTRL` reader"]
+        pub type R = crate::R<DcdcCtrlSpec>;
+        #[doc = "Register `DCDC_CTRL` writer"]
+        pub type W = crate::W<DcdcCtrlSpec>;
+        #[doc = "Field `DCDC_PRE_UP_DELAY` reader - Delay before the DC-DC raise."]
+        pub type DcdcPreUpDelayR = crate::FieldReader;
+        #[doc = "Field `DCDC_PRE_UP_DELAY` writer - Delay before the DC-DC raise."]
+        pub type DcdcPreUpDelayW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `DCDC_DOWN_DELAY` reader - Delay before the DC-DC drop."]
+        pub type DcdcDownDelayR = crate::FieldReader;
+        #[doc = "Field `DCDC_DOWN_DELAY` writer - Delay before the DC-DC drop."]
+        pub type DcdcDownDelayW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `DCDC_CTRL_EN` reader - The MAC controls the DC-DC converter."]
+        pub type DcdcCtrlEnR = crate::BitReader;
+        #[doc = "Field `DCDC_CTRL_EN` writer - The MAC controls the DC-DC converter."]
+        pub type DcdcCtrlEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_DCDC_UP` reader - Raise the DC-DC converter for transmission."]
+        pub type TxDcdcUpR = crate::BitReader;
+        #[doc = "Field `TX_DCDC_UP` writer - Raise the DC-DC converter for transmission."]
+        pub type TxDcdcUpW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:7 - Delay before the DC-DC raise."]
+            #[inline(always)]
+            pub fn dcdc_pre_up_delay(&self) -> DcdcPreUpDelayR {
+                DcdcPreUpDelayR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15 - Delay before the DC-DC drop."]
+            #[inline(always)]
+            pub fn dcdc_down_delay(&self) -> DcdcDownDelayR {
+                DcdcDownDelayR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bit 16 - The MAC controls the DC-DC converter."]
+            #[inline(always)]
+            pub fn dcdc_ctrl_en(&self) -> DcdcCtrlEnR {
+                DcdcCtrlEnR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Raise the DC-DC converter for transmission."]
+            #[inline(always)]
+            pub fn tx_dcdc_up(&self) -> TxDcdcUpR {
+                TxDcdcUpR::new(((self.bits >> 31) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7 - Delay before the DC-DC raise."]
+            #[inline(always)]
+            pub fn dcdc_pre_up_delay(&mut self) -> DcdcPreUpDelayW<'_, DcdcCtrlSpec> {
+                DcdcPreUpDelayW::new(self, 0)
+            }
+            #[doc = "Bits 8:15 - Delay before the DC-DC drop."]
+            #[inline(always)]
+            pub fn dcdc_down_delay(&mut self) -> DcdcDownDelayW<'_, DcdcCtrlSpec> {
+                DcdcDownDelayW::new(self, 8)
+            }
+            #[doc = "Bit 16 - The MAC controls the DC-DC converter."]
+            #[inline(always)]
+            pub fn dcdc_ctrl_en(&mut self) -> DcdcCtrlEnW<'_, DcdcCtrlSpec> {
+                DcdcCtrlEnW::new(self, 16)
+            }
+            #[doc = "Bit 31 - Raise the DC-DC converter for transmission."]
+            #[inline(always)]
+            pub fn tx_dcdc_up(&mut self) -> TxDcdcUpW<'_, DcdcCtrlSpec> {
+                TxDcdcUpW::new(self, 31)
+            }
+        }
+        #[doc = "MAC control of the DC-DC converter around transmission. The pinned public driver and LL never write it; physical units of the delays remain outside the PAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`dcdc_ctrl::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`dcdc_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DcdcCtrlSpec;
+        impl crate::RegisterSpec for DcdcCtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`dcdc_ctrl::R`](R) reader structure"]
+        impl crate::Readable for DcdcCtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`dcdc_ctrl::W`](W) writer structure"]
+        impl crate::Writable for DcdcCtrlSpec {
             type Safety = crate::Unsafe;
         }
     }

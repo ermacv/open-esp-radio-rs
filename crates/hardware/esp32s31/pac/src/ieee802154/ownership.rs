@@ -1677,7 +1677,7 @@ pub fn reunite(task: TaskRegisters, interrupt: InterruptRegisters) -> crate::svd
 
 mod single_field;
 
-pub(crate) use single_field::{RawDebugCounter, RawEvent};
+pub(crate) use single_field::{RawDebugCounter, RawEvent, RawPowerSequence};
 
 #[cfg(test)]
 mod tests;

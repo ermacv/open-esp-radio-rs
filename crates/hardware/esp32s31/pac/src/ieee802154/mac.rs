@@ -1466,6 +1466,107 @@ impl Ieee802154RegisterLease<'_> {
     }
 }
 
+/// The MAC power-sequencing fields: the power-amplifier-on, transmit-enable
+/// stop and continuous-receive delays and the MAC's control of the DC-DC
+/// converter around transmission.
+///
+/// The pinned public driver and LL never write these fields, so they keep
+/// the values another owner or reset left. Values are field values; the PAC
+/// assigns them no physical units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ieee802154PowerSequence {
+    pa_on_delay: u16,
+    tx_enable_stop_delay: u8,
+    continuous_rx_delay: u8,
+    dcdc_pre_raise_delay: u8,
+    dcdc_drop_delay: u8,
+    dcdc_control_enabled: bool,
+    dcdc_raise_for_tx: bool,
+}
+
+impl Ieee802154PowerSequence {
+    const fn from_raw(raw: crate::ieee802154::ownership::RawPowerSequence) -> Self {
+        Self {
+            pa_on_delay: raw.paon_delay,
+            tx_enable_stop_delay: raw.txen_stop_delay,
+            continuous_rx_delay: raw.cont_rx_delay,
+            dcdc_pre_raise_delay: raw.dcdc_pre_up_delay,
+            dcdc_drop_delay: raw.dcdc_down_delay,
+            dcdc_control_enabled: raw.dcdc_ctrl_enabled,
+            dcdc_raise_for_tx: raw.tx_dcdc_up,
+        }
+    }
+
+    /// `PAON_DELAY`: ten-bit power-amplifier-on delay.
+    pub const fn pa_on_delay(self) -> u16 {
+        self.pa_on_delay
+    }
+
+    /// `TXEN_STOP_DELAY`: six-bit transmit-enable stop delay.
+    pub const fn tx_enable_stop_delay(self) -> u8 {
+        self.tx_enable_stop_delay
+    }
+
+    /// `CONT_RX_DELAY`: six-bit continuous-receive delay.
+    pub const fn continuous_rx_delay(self) -> u8 {
+        self.continuous_rx_delay
+    }
+
+    /// `DCDC_CTRL.DCDC_PRE_UP_DELAY`: delay before the DC-DC raise.
+    pub const fn dcdc_pre_raise_delay(self) -> u8 {
+        self.dcdc_pre_raise_delay
+    }
+
+    /// `DCDC_CTRL.DCDC_DOWN_DELAY`: delay before the DC-DC drop.
+    pub const fn dcdc_drop_delay(self) -> u8 {
+        self.dcdc_drop_delay
+    }
+
+    /// `DCDC_CTRL.DCDC_CTRL_EN`: the MAC controls the DC-DC converter.
+    pub const fn dcdc_control_enabled(self) -> bool {
+        self.dcdc_control_enabled
+    }
+
+    /// `DCDC_CTRL.TX_DCDC_UP`: raise the DC-DC converter for transmission.
+    pub const fn dcdc_raise_for_tx(self) -> bool {
+        self.dcdc_raise_for_tx
+    }
+}
+
+/// The transmit and receive DMA error codes (`TXDMA_ERR`, `RXDMA_ERR`); no
+/// code is assigned a meaning.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Ieee802154DmaErrorCodes {
+    transmit: u8,
+    receive: u8,
+}
+
+impl Ieee802154DmaErrorCodes {
+    /// The four-bit transmit DMA error code.
+    pub const fn transmit(self) -> u8 {
+        self.transmit
+    }
+
+    /// The four-bit receive DMA error code.
+    pub const fn receive(self) -> u8 {
+        self.receive
+    }
+}
+
+impl Ieee802154RegisterLease<'_> {
+    /// Read the MAC power-sequencing fields, for comparison with the vendor
+    /// image on hardware.
+    pub fn power_sequence(&self) -> Ieee802154PowerSequence {
+        Ieee802154PowerSequence::from_raw(self.registers.power_sequence())
+    }
+
+    /// Read the transmit and receive DMA error codes.
+    pub fn dma_error_codes(&self) -> Ieee802154DmaErrorCodes {
+        let (transmit, receive) = self.registers.dma_error_codes();
+        Ieee802154DmaErrorCodes { transmit, receive }
+    }
+}
+
 pub use etm::{Ieee802154EtmChannel, Ieee802154EtmRoute};
 
 pub use single_field::{Ieee802154DebugCounter, Ieee802154RxStatus};

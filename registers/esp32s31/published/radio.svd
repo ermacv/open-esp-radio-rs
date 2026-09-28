@@ -24505,6 +24505,114 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
             </field>
           </fields>
         </register>
+        <register>
+          <name>TXDMA_ERR</name>
+          <description>Transmit DMA error code, named by the public register header; no public LL accessor reads it.</description>
+          <addressOffset>0xD8</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>TXDMA_ERR</name>
+              <description>Transmit DMA error code; no value is assigned a meaning.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>RXDMA_ERR</name>
+          <description>Receive DMA error code, named by the public register header; no public LL accessor reads it.</description>
+          <addressOffset>0xE8</addressOffset>
+          <size>0x20</size>
+          <access>read-only</access>
+          <fields>
+            <field>
+              <name>RXDMA_ERR</name>
+              <description>Receive DMA error code; no value is assigned a meaning.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>PAON_DELAY</name>
+          <description>Power-amplifier-on delay. The pinned public driver and LL never write it; the reset value applies unless another owner does. Physical units remain outside the PAC.</description>
+          <addressOffset>0x100</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>PAON_DELAY</name>
+              <description>Ten-bit power-amplifier-on delay.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>10</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>TXEN_STOP_DELAY</name>
+          <description>Transmit-enable stop delay. The pinned public driver and LL never write it; physical units remain outside the PAC.</description>
+          <addressOffset>0x108</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>TXEN_STOP_DLY</name>
+              <description>Six-bit transmit-enable stop delay.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CONT_RX_DELAY</name>
+          <description>Continuous-receive delay. The pinned public driver and LL never write it; physical units remain outside the PAC.</description>
+          <addressOffset>0x118</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>CONT_RX_DELAY</name>
+              <description>Six-bit continuous-receive delay.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DCDC_CTRL</name>
+          <description>MAC control of the DC-DC converter around transmission. The pinned public driver and LL never write it; physical units of the delays remain outside the PAC.</description>
+          <addressOffset>0x11C</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>DCDC_PRE_UP_DELAY</name>
+              <description>Delay before the DC-DC raise.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>DCDC_DOWN_DELAY</name>
+              <description>Delay before the DC-DC drop.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>DCDC_CTRL_EN</name>
+              <description>The MAC controls the DC-DC converter.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_DCDC_UP</name>
+              <description>Raise the DC-DC converter for transmission.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
       </registers>
     </peripheral>
     <peripheral>

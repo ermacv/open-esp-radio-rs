@@ -10488,6 +10488,24 @@ bit-width = 32
 access = "write-only"
 
 [[registers]]
+address = 537931992
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.TXDMA_ERR"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "txdma_err"
+
+[[registers.fields]]
+svd-name = "TXDMA_ERR"
+method = "txdma_err"
+bit-offset = 0
+bit-width = 4
+access = "read-only"
+
+[[registers]]
 address = 537932000
 width = 32
 access = "write-only"
@@ -10506,6 +10524,42 @@ bit-width = 32
 access = "write-only"
 
 [[registers]]
+address = 537932008
+width = 32
+access = "read-only"
+identity = "IEEE802154_MAC.RXDMA_ERR"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "rxdma_err"
+
+[[registers.fields]]
+svd-name = "RXDMA_ERR"
+method = "rxdma_err"
+bit-offset = 0
+bit-width = 4
+access = "read-only"
+
+[[registers]]
+address = 537932032
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.PAON_DELAY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "paon_delay"
+
+[[registers.fields]]
+svd-name = "PAON_DELAY"
+method = "paon_delay"
+bit-offset = 0
+bit-width = 10
+access = "read-write"
+
+[[registers]]
 address = 537932036
 width = 32
 access = "read-write"
@@ -10521,6 +10575,24 @@ svd-name = "TXON_DELAY"
 method = "txon_delay"
 bit-offset = 0
 bit-width = 10
+access = "read-write"
+
+[[registers]]
+address = 537932040
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.TXEN_STOP_DELAY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "txen_stop_delay"
+
+[[registers.fields]]
+svd-name = "TXEN_STOP_DLY"
+method = "txen_stop_dly"
+bit-offset = 0
+bit-width = 6
 access = "read-write"
 
 [[registers]]
@@ -10575,6 +10647,63 @@ svd-name = "TXRX_SWITCH_DELAY"
 method = "txrx_switch_delay"
 bit-offset = 0
 bit-width = 10
+access = "read-write"
+
+[[registers]]
+address = 537932056
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.CONT_RX_DELAY"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "cont_rx_delay"
+
+[[registers.fields]]
+svd-name = "CONT_RX_DELAY"
+method = "cont_rx_delay"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers]]
+address = 537932060
+width = 32
+access = "read-write"
+identity = "IEEE802154_MAC.DCDC_CTRL"
+peripheral = "IEEE802154_MAC"
+peripheral-type = "Ieee802154Mac"
+peripheral-module = "ieee802154_mac"
+scope = []
+register-method = "dcdc_ctrl"
+
+[[registers.fields]]
+svd-name = "DCDC_PRE_UP_DELAY"
+method = "dcdc_pre_up_delay"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DCDC_DOWN_DELAY"
+method = "dcdc_down_delay"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DCDC_CTRL_EN"
+method = "dcdc_ctrl_en"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_DCDC_UP"
+method = "tx_dcdc_up"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]

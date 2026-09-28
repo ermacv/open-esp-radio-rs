@@ -394,6 +394,32 @@ impl InventorySink for Inventory<'_> {
         Ok(())
     }
 }
+/// Present the records of `inputs` of `revision` (current when absent) to
+/// `sink` in input order, verifying only their captures. A link operation
+/// reads nothing else of its revision, so the other inputs' payloads are
+/// neither read nor hashed.
+pub(crate) fn read_inputs(
+    project: &Project,
+    revision: Option<&RevisionId>,
+    inputs: impl IntoIterator<Item = u64>,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+    sink: &mut dyn InventorySink,
+) -> Result<()> {
+    let revision = match revision {
+        Some(revision) => revision.clone(),
+        None => project
+            .current()?
+            .ok_or_else(|| Error::new(ErrorCode::NotFound, "project has no imported revision"))?,
+    };
+    let mut selected: Vec<u64> = inputs.into_iter().collect();
+    selected.sort_unstable();
+    selected.dedup();
+    for input in selected {
+        project.read_scoped(&revision, input, None, memory, control, sink)?;
+    }
+    Ok(())
+}
 struct Collected {
     members: Vec<Member>,
     roots: Vec<blobray_artifacts::LinkRootFacts>,
@@ -427,7 +453,14 @@ fn collect(
         seen: Vec::new(),
         blockers: Vec::new(),
     };
-    project.read_inventory(Some(revision), memory, control, &mut inventory)?;
+    read_inputs(
+        project,
+        Some(revision),
+        request.inputs.iter().copied(),
+        memory,
+        control,
+        &mut inventory,
+    )?;
     for input in &request.inputs {
         if !inventory.seen.contains(input) {
             inventory.input = *input;

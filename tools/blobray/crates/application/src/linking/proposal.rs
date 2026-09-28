@@ -204,7 +204,14 @@ pub(crate) fn propose_companions(
         executable: false,
         found: Vec::new(),
     };
-    project.read_inventory(request.revision.as_ref(), memory, control, &mut scan)?;
+    crate::linking::read_inputs(
+        &project,
+        request.revision.as_ref(),
+        candidates.iter().copied(),
+        memory,
+        control,
+        &mut scan,
+    )?;
     let mut proposal = CompanionProposal {
         resolved: Vec::new(),
         unresolved: Vec::new(),

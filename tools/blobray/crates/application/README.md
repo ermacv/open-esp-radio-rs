@@ -101,7 +101,9 @@ for accounting, defaults, observations and cleanup limits.
 
 `linking` owns the synthetic image policy and the `LinkerHost` port. `LinkPlan`
 retains a frozen description and captured manifest; image admission revalidates
-its project and revision. `LinkInvocation` passes layout, exact ordered members,
+its project and revision. Link operations read only the selected inputs of the
+revision through the store's scoped reads, so an unselected capture is never
+hashed. `LinkInvocation` passes layout, exact ordered members,
 roots and companion definitions to an identified ElfAnalysisLinkV1 adapter.
 `LinkWorkspace` lends quota-admitted files and a bounded capability probe;
 `LinkOutputSink` receives raw output, normalized observations and reaped seekable

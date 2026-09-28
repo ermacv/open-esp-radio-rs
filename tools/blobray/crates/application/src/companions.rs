@@ -89,7 +89,14 @@ pub(crate) fn resolve(
         matches: vec![None; request.companions.len()],
         definitions: Vec::new(),
     };
-    project.read_inventory(request.revision.as_ref(), memory, c, &mut scan)?;
+    crate::linking::read_inputs(
+        project,
+        request.revision.as_ref(),
+        request.companions.iter().map(|s| s.input),
+        memory,
+        c,
+        &mut scan,
+    )?;
     let mut definitions = Vec::new();
     for (selection, record) in request.companions.iter().zip(&scan.matches) {
         let record = record
@@ -123,7 +130,15 @@ pub(crate) fn resolve(
         scan.definitions.push(name.as_bytes().to_vec());
         definitions.push((name, address));
     }
-    project.read_inventory(request.revision.as_ref(), memory, c, &mut scan)?;
+    // Only the link inputs can define a companion's name a second time.
+    crate::linking::read_inputs(
+        project,
+        request.revision.as_ref(),
+        request.inputs.iter().copied(),
+        memory,
+        c,
+        &mut scan,
+    )?;
     for (name, address) in absent {
         if definitions.iter().any(|(old, _)| *old == name) {
             return Err(Error::new(

@@ -903,6 +903,36 @@ fn bad_link_output_and_corrupt_retained_payload_fail_closed() {
     );
 }
 #[test]
+fn linking_reads_only_the_selected_inputs_of_its_revision() {
+    let mut f = custom_fixture(
+        vec![
+            ("entry.o", dependency_object(b"entry", None)),
+            ("unused.o", object(false)),
+        ],
+        0,
+        0,
+    );
+    f.request.inputs = vec![0];
+    let revision = app::inventory(&f.project, None).unwrap().revision;
+    let payload = |input: usize| {
+        f.project
+            .join(".blobray-next/objects")
+            .join(revision.inputs[input].capture.artifact().unwrap().as_str())
+    };
+    fs::write(payload(1), b"corrupt").unwrap();
+    let run = prepare(&f);
+    assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
+    fs::write(payload(0), b"corrupt").unwrap();
+    assert_eq!(
+        f.app
+            .link_plan(&f.project, f.request.clone(), &linker(), budget())
+            .err()
+            .unwrap()
+            .code,
+        ErrorCode::Integrity
+    );
+}
+#[test]
 fn unsupported_abi_and_map_line_injection_are_plan_blockers() {
     for mutation in [0, 1] {
         let mut helper = object(false);

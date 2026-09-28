@@ -94,8 +94,10 @@ The application equivalents are `start_link_plan`/`link_plan`,
 `RunHandle::take_link_plan`, `LinkPlan::write`, `read_link_plan`,
 `start_prepare_image`, and `ReadQuery::{Images,Image}`. Plan clones retain one
 application slot, immutable captured manifest and temporary workspace. Preparing
-uses another slot and revalidates the frozen revision and all selected captures
-in the explicitly selected project. Dropping a plan does not cancel an admitted
+uses another slot and revalidates, in the explicitly selected project, the
+frozen revision's records and captures of the link inputs, companion inputs and
+companion candidates only. Other inputs of the revision are neither read nor
+hashed. Dropping a plan does not cancel an admitted
 image job. A saved description needs that project's retained source closure;
 it cannot reopen original source paths. The store currently retains all revisions
 and images without pruning. Reopening an image verifies retained digests and

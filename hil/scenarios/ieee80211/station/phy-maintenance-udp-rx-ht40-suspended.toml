@@ -13,5 +13,5 @@ kind = "station-udp"
 link = { phy = "ht40" }
 duration_seconds = 16
 payload_bytes = 1472
-offer = { rx_bps = 120000000 }
+offer = { rx_bps = 115000000 }
 suspend_phy_tracking = true

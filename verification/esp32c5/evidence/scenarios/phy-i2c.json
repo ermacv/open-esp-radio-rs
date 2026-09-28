@@ -943,7 +943,7 @@
     },
     {
       "path": "verification/esp32c5/scenarios/src/lib.rs",
-      "sha256": "ee9d89dd93c4793edfc1d4b40b776fab3daca1efb39fd645a33ba0b18420aa19"
+      "sha256": "a20299a76e2267ec4878edb57b62ea2cc4a52e9a8ead6a313ba1fd7afebfe613"
     },
     {
       "path": "verification/esp32c5/scenarios/src/main.rs",
@@ -987,15 +987,19 @@
     },
     {
       "path": "verification/harness/scenarios/src/chip.rs",
-      "sha256": "4cb0345984b5b98c0fbe860f4c1b38b6c26de7d584e2094234c0423e2fa7ddd4"
+      "sha256": "314f83582f849e73a9678f6afae7462cad96ee46f31cc5db22871ddf495df5bc"
     },
     {
       "path": "verification/harness/scenarios/src/coverage.rs",
-      "sha256": "bce3ea1a246322e0bb923d3f29ba5f96f51a4734c50c743a701cbb4963fc1614"
+      "sha256": "82b5ca9bc605c4c4f2310a5fc62f033b39721e4df2b51d2a089358d1b16c6e35"
     },
     {
       "path": "verification/harness/scenarios/src/dependencies.rs",
       "sha256": "271c7a44f01c8a32c6d0ae370ddd113cc3a1e2a8d7f7ec269f930992d8ae69b5"
+    },
+    {
+      "path": "verification/harness/scenarios/src/discovery.rs",
+      "sha256": "24d5d40f3bf88a5f10e4792b53dac1a1d1fea74dd15284611af2a2eb857f9133"
     },
     {
       "path": "verification/harness/scenarios/src/evidence.rs",
@@ -1003,7 +1007,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/failure.rs",
-      "sha256": "9e3aa6d172a677f3157ea5115ef0d370e492f379d05ddf6f6c30fa9e037c75f6"
+      "sha256": "82a6da4e19fe0a2bc4c065b6c607b541875423d78ebf9355e96547345c15d4c9"
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
@@ -1015,7 +1019,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/lib.rs",
-      "sha256": "f1360f5bdb36c70c612d57d112b365f94056958817fe0f14860525f866a1f97f"
+      "sha256": "c5162b09fbf5f3bce64dca7887b533417acd4c23b8f82af7242494ed201883e3"
     },
     {
       "path": "verification/harness/scenarios/src/observation.rs",
@@ -1034,8 +1038,12 @@
       "sha256": "9682dbefc4b116f795e4163861637b94c7f18fe6571318616f621cf6e01e7c0f"
     },
     {
+      "path": "verification/harness/scenarios/src/registers.rs",
+      "sha256": "55cc9cb47f9a5d7d30166d7a4786c58f23acbcfebe6620967a6586383c9a5231"
+    },
+    {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "d0c1bf3643984a479c8a62601eee1e917db35d2408d5bb95ba57e93b849fb238"
+      "sha256": "1a443a451f1495ec167d0121bef53735f6d669f7e10e642cda194a93dc107392"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1051,7 +1059,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/triage.rs",
-      "sha256": "8030ad87069e60aed389e520c1b26d42994a76062eb5be827db5f85d7f8eb989"
+      "sha256": "e28cbb9d9728fd7cf9069e36f65aa84495de7d91e30a6b14b6285307310657c4"
     },
     {
       "path": "verification/schema",

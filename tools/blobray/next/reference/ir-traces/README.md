@@ -8,7 +8,7 @@ Package saved facts and extract or compare selected static observable paths.
 
 `ir build` packages an explicitly selected saved research scope. `FunctionRecord`
 and `FunctionManifest` remain the semantic representation. Building profiles does
-not reread live binaries or schedule analysis; prepare an image and analyze/research
+not reread live binaries or schedule analysis; prepare an image and analyze
 it first when linked addresses and callees are required.
 
 A request contains `scope` (frozen `revision`, `publications`, `analyses`, optional
@@ -22,14 +22,12 @@ name. Empty root matches and duplicate profile names fail.
 
 ```sh
 blobray ir --project research --limit-mode watchdog build --request ir-build.json
-blobray ir --project research --limit-mode watchdog show <semantic-ir-id>
-blobray ir --project research --limit-mode watchdog show <semantic-ir-id> --output ir.json
 ```
 
-`Application::start_build_ir` owns one durable run and publishes `run.semantic_ir`.
-`ReadQuery::SemanticIr` / `QuerySink::semantic_ir` provide the same result as CLI
-show/export. JSON export is an atomic single-file query export. The saved index
-references immutable original streams; read/export expands every original fact
+`Application::start_build_ir` owns one durable run and publishes `run.semantic_ir`,
+which `trace` selects. `ReadQuery::SemanticIr` / `QuerySink::semantic_ir` read it
+through the library API. The saved index
+references immutable original streams; a read expands every original fact
 with its analysis ID and record ordinal. It includes original coverage, physical
 links and ambiguity, profile memberships/roots, and the explicitly selected frozen
 knowledge entries for the source revision, retaining their review state.

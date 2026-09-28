@@ -233,10 +233,10 @@ fn assert_source_free_roundtrip(
     assert_eq!(rows, saved.0);
     let path = f.dir.path().join("trace.json");
     fs::write(&path, serde_json::to_vec(&q).unwrap()).unwrap();
-    let document = interfaces::cli(f, &["trace", "--request", path.to_str().unwrap()]);
+    let document = review::cli(f, &["trace", "--request", path.to_str().unwrap()]);
     assert_eq!(document["summary"]["summary"]["verdict"], verdict);
     let export = f.dir.path().join("trace-export.json");
-    interfaces::cli(
+    review::cli(
         f,
         &[
             "trace",

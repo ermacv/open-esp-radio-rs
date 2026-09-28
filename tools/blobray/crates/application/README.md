@@ -176,7 +176,7 @@ from ordered candidate inputs.
 It rejects name collisions and synthetic-placement overlap; the host still only
 executes the explicit linker invocation. Knowledge occurrence validation shares
 input/image identity with function analysis. See the
-[native workflow](../../next/reference/analysis/README.md#phyrom-research).
+[native workflow](../../next/reference/analysis/README.md#explicit-rom-companions).
 
 ## Concrete execution
 

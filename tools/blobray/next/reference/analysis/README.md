@@ -1,4 +1,4 @@
-# Function, library and PHY analysis
+# Function and library analysis
 
 Analyze captured code and inspect coverage, symbolic values and explicit gaps.
 
@@ -33,53 +33,26 @@ admission and emitted records use the existing temporary disk quota. Result read
 never rerun analysis. Prepared-image results retain their `PreparedImageId`;
 imported executable results retain their input occurrence and payload identity.
 
-### Analyze and reopen a function
+### Reopen a function analysis
 
-`analyze-function --request request.json` accepts `FunctionRequest` with `revision`
-(ID or null to freeze selection at admission), `source`, `selector`, optional
-`extent` and optional `research`. Source is `{"kind":"input","input":0}` for
-captured inputs or `{"kind":"image","image":"IMAGE_ID"}` for a prepared image.
-Image selection freezes the image's original revision independently of current;
-its object identity addresses the retained ELF.
-
-- `selector: {"kind":"symbol","symbol": SYMBOL_ID}` selects an exact physical
-  static/dynamic table occurrence. Optional `extent: {"start": 0, "length": 64}`
-  overrides its declared size, starts at that symbol and is mandatory for zero
-  size. Names enumerate candidates, including undefined references; they never
-  choose an occurrence implicitly.
-- `selector: {"kind":"range","object": OBJECT_ID,"section": 1,"extent":
-  {"start": 8,"length": 16}}` selects explicit code bytes without a symbol.
-  The outer `extent` must be null or absent. No symbol is fabricated and an ELF
-  without either symbol table is valid for this selection.
-
-Extents use section offsets for ET_REL and virtual addresses for ET_EXEC. They
-must be nonempty, start at a halfword boundary and stay in the selected
-file-backed executable section. Captured archive/member identity, ELF section
-and exact extent survive analysis and export. Unselected executable bytes do
-not acquire boundaries or semantic coverage.
+`analyze-project` saves one function analysis per selected occurrence;
+`functions` lists them with their analysis IDs. `analysis --id` reopens one:
 
 ```console
-cargo blobray analyze-function --project /path/to/investigation \
-  --request /path/to/function.json --limit-mode watchdog --format json
-cargo blobray analyses --project /path/to/investigation \
-  --limit-mode watchdog --format json
 cargo blobray analysis --project /path/to/investigation \
   --id <analysis-id> --limit-mode watchdog --format json
-cargo blobray export-analysis --project /path/to/investigation \
-  --id <analysis-id> --output /path/to/new-directory --limit-mode watchdog
 ```
 
-The API uses `Application::start_analyze_function`, `FunctionRequest`,
-`ReadQuery::{Analyses,Analysis}`, borrowed `QuerySink::function_record` callbacks
-and `QueryOutput::export_analysis`. `FunctionAnalysisId` identifies the exact
-manifest, including recipe, coverage/counts and the digest of `records.jsonl`.
-An export contains those records and `manifest.json`, written last to a new
-directory. Existing destinations are never overwritten; interrupted exports can
-leave an incomplete directory. Reopening verifies retained digests and requires
-neither original input paths nor a decoder invocation. The store retains all
-source revisions; there is no pruning or automatic analysis cache lookup.
+Captured archive/member identity, ELF section and exact extent survive analysis.
+Extents use section offsets for ET_REL and virtual addresses for ET_EXEC.
+Unselected executable bytes do not acquire boundaries or semantic coverage.
+`FunctionAnalysisId` identifies the exact manifest, including recipe,
+coverage/counts and the digest of `records.jsonl`. Reopening verifies retained
+digests and requires neither original input paths nor a decoder invocation. The
+store retains all source revisions; there is no pruning or automatic analysis
+cache lookup.
 
-### Research a linked image
+### Analyze a linked image
 
 From the repository root, build `cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next`.
 Use `tools/blobray/target/blobray/blobray` as `blobray` below. Linking requires the
@@ -93,10 +66,6 @@ blobray prepare-image --project research --plan research/link-plan.json --linker
 blobray analyze-project --project research --image IMAGE_ID --limit-mode watchdog
 blobray functions --project research --id PUBLICATION_ID --name entry_function --limit-mode watchdog
 blobray analysis --project research --id ANALYSIS_ID --limit-mode watchdog
-blobray calls --project research --id PUBLICATION_ID --caller 0x10000000 --limit-mode watchdog
-blobray calls --project research --id PUBLICATION_ID --callee 0x10000100 --limit-mode watchdog
-blobray find-accesses --project research --id PUBLICATION_ID --address 0x20000000 --limit-mode watchdog
-blobray find-references --project research --id PUBLICATION_ID --address 0x10000100 --limit-mode watchdog
 blobray image --project research --id IMAGE_ID --limit-mode watchdog
 ```
 
@@ -113,23 +82,18 @@ semantics remain unsupported in static research; concrete execution uses the sep
 [execution contract](../execution/README.md#concrete-execution-and-comparison). Unsupported instructions stay gaps.
 
 For an existing static linked ELF, import it and run `analyze-project --project
-research` without `--image`. With no `--plan`, the command creates a frozen plan
-and executes it within one application operation, worker and original budget. Its publication
-retains that plan. `plan-investigation --image IMAGE_ID --output study.json`
-also produces an explicit reusable selection. Existing saved plans remain
-immutable; callers choose them with `analyze-project --plan`.
+research` without `--image`. The command creates a frozen plan and executes it
+within one application operation, worker and original budget. Its publication
+retains that plan.
 
 `functions` lists every matching occurrence, its declared extent and analysis ID,
-including blocked functions. `calls` reads saved calls and outgoing jump/tail
-candidates; `--unresolved-only` keeps unknown targets. A resolved transfer does
-not establish callee effects or prove return. Computed indirect destinations do
-not expand the local CFG. Canonical return edges are calling-convention patterns;
-a known outgoing target is retained separately as a transfer. Queries identify
-the function source so equal numeric addresses in different images are distinct.
-`find-references --address` includes resolved static relocations, image-address
-formation and memory accesses. Unqualified integer constants are not treated as
-pointers merely because their values match. `image` streams source mappings including their `exact` flag, then the synthetic
-image manifest. Inexact mappings never become exact original instruction offsets.
+including blocked functions. A resolved transfer does not establish callee
+effects or prove return. Computed indirect destinations do not expand the local
+CFG. Canonical return edges are calling-convention patterns; a known outgoing
+target is retained separately as a transfer. Queries identify the function
+source so equal numeric addresses in different images are distinct. `image`
+streams source mappings including their `exact` flag, then the synthetic image
+manifest. Inexact mappings never become exact original instruction offsets.
 
 The artifact view verifies nonoverlapping RV32 load segments and that selected
 code agrees with executable file-backed bytes. Dynamic loading, runtime
@@ -227,11 +191,8 @@ symbolic expressions and incomplete relocation uppers still join to unknown.
 Alternative storage and its lookup index belong to the analysis phase and consume
 admitted memory and work; failures publish no analysis. JSON uses
 `{"kind":"alternatives","values":[{"kind":"image-address","address":4096},{"kind":"image-address","address":8192}]}`;
-human output uses `one-of{... | ...}`. Saved access/reference/call filters match
-membership and preserve the complete set. `calls --unresolved-only` includes
-multiple-target transfers. Research never selects one of these callees or composes
-it as a definite call. Expressions and callee effects retain alternative operands;
-imported image addresses remain qualified by their callee source/object.
+human output uses `one-of{... | ...}`. Analysis never selects one of these
+callees or composes it as a definite call. Expressions retain alternative operands.
 Branches are not pruned and computed indirect destinations do not extend the CFG.
 
 Loads retain address and width. In the static ELF image profile, file-backed
@@ -239,7 +200,7 @@ bytes in readable, non-writable PT_LOAD segments supply constants, with signed
 byte/halfword extension. Writable memory, zero-fill tails, unmapped addresses
 remain symbolic loads; atomic load results remain unknown. Stores retain address, width and source value. Atomic operations retain their read/write kind and
 conditional store behavior without modeling memory or reservations. Calls are
-opaque effects by default: their possible continuation forgets registers except x0 and symbolic x10/x11 call results. `research --abi-contract riscv-integer` explicitly preserves integer callee-saved registers, sp, gp and tp across calls; ELF flags do not select this assumption. Unknown operations and conflicting instruction
+opaque effects: their possible continuation forgets registers except x0 and symbolic x10/x11 call results. Unknown operations and conflicting instruction
 boundaries are explicit gaps and cannot propagate stale values. Missing decoded
 regions remain structural gaps. Semantic coverage is separate from value
 precision: an unknown input does not make a modeled instruction unsupported.
@@ -248,7 +209,7 @@ HI/LO address formation requires compatible relocation identities and an actual
 flowing upper value. PC-relative pairs use their recorded label relationship;
 a partial pair never becomes a complete address. RV32 integers wrap according to
 the ISA; symbolic address arithmetic keeps provenance only for representable
-transformations. Reviewed MMIO naming and bounded call composition belong to the explicit research operation below. Mutable memory forwarding, table models and machine execution remain outside this profile.
+transformations. MMIO naming, call composition, mutable memory forwarding, table models and machine execution remain outside this profile.
 
 The solver reserves input-dependent state and queue capacity before allocation,
 keeps at most one queued item per node, and charges every transfer to the shared
@@ -270,63 +231,7 @@ expression becomes unknown. Both linked calls and relocation-identified tail
 calls are opaque effects at the transfer instruction; their AUIPC upper alone
 is not a resolved address or an unknown relocation diagnostic.
 
-## PHY/ROM research
-
-`research` selects exactly one function from a retained publication and saves a
-new function analysis. It uses the same decoder, local CFG/value engine, staging
-and supervisor as `analyze-function`. Selection, computation and retention share
-one application run and the original deadline, work, memory and disk budgets. Missing or ambiguous names fail with
-no preferred candidate; `functions` lists candidates and exact addresses.
-
-```console
-blobray research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --limit-mode watchdog
-blobray analysis --project research --id ANALYSIS_ID --limit-mode watchdog
-blobray knowledge --project research --limit-mode watchdog propose-register --analysis ANALYSIS_ID --subject phy.force-dig-gain --name FORCE_DIG_GAIN --address 0x20100408 --width 4 --field ENABLE:16:1 --field GAIN_0:0:8 --field GAIN_1:8:8 --actor researcher --reason "Reviewed register evidence"
-blobray knowledge --project research --limit-mode watchdog show
-blobray knowledge --project research --limit-mode watchdog accept --base PROPOSAL_REVISION --assertion ASSERTION_ID --actor researcher --reason "Accepted interpretation"
-blobray research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --knowledge ACCEPTED_REVISION --limit-mode watchdog
-```
-
-The register example is scoped to the exact selected function's source/object
-and revision. Its address and fields must be reviewed for the supplied artifact;
-the command does not infer hardware meaning from a write. `--base` is required
-for proposing into an existing knowledge history. Proposal and acceptance are
-separate explicit operations; `accept` cannot silently supersede a conflict.
-Advanced `knowledge apply` accepts the same native typed claims.
-
-`mmio-register` has `register: {name,address,width,fields}`; width is in bytes and
-must be 1, 2 or 4. Fields have `{name,lsb,width}` in bits; names are bounded, fields
-must fit and cannot overlap. `mmio-region` has `region: {name,range:{start,length}}`.
-Overlapping contradictory accepted interpretations in the same source/object
-scope conflict. A selected knowledge revision annotates matching local accesses;
-read values remain symbolic. The frozen knowledge ID is in the research recipe.
-Knowledge about an image cannot silently become knowledge about an archive member.
-
-The human analysis is a flat pseudo-code listing: `vN` definitions, typed integer
-operations, symbolic loads, branch conditions, returns, calls and memory writes.
-The JSON records are the same representation, not a separate decompiler.
-Expression nodes carry instruction offsets and, for imported callee expressions,
-the original analysis ID. Imported image addresses retain their source/object;
-callee stack addresses are not equated with the caller's stack. CFG conditions
-are structural alternatives, not path-feasibility or termination proofs.
-
-Call composition requires the explicit integer ABI assumption. It substitutes
-entry-register values and return expressions through uniquely resolved calls.
-`callee-effect` records are **may-effects**: callsite, original analysis/instruction,
-address, width and value. They do not establish unconditional execution or a total
-cross-call effect order. Local counts in the semantic summary exclude these
-transitive records. Unknown/partial callees cannot supply a proven return value
-or remove an opaque-call gap. Inspect their original analyses for local CFG
-conditions. Tail candidates and computed local branches are not expanded.
-
-Application walks a maximum of 1024 reachable functions iteratively. Acyclic
-callees are composed before callers. Recursive components and dependent summaries
-retain local facts and an explicit reason; there is no recursive analyzer call.
-Working capacity, temporary disk, deadline and work counters cover the whole
-operation. Expression buffers grow in admitted chunks; composition retains its
-reservation until its records have been staged. Exhaustion aborts publication.
-
-### Explicit ROM companions
+## Explicit ROM companions
 
 Capture the archive and ROM in one revision, in that order. Analyze that revision
 to obtain a ROM/source publication. Synthetic linking does not treat ET_EXEC as
@@ -337,7 +242,6 @@ external definitions:
 blobray link-plan --project research --entry phy_set_ftm_en --entry-input 0 --inputs 0 --companion 1:ets_delay_us --companion 1:phy_wait_i2c_sdm_stable --code-start 0x10000000 --data-start 0x20000000 --linker /usr/bin/ld.lld --output ftm.json --limit-mode watchdog
 blobray prepare-image --project research --plan ftm.json --linker /usr/bin/ld.lld --limit-mode watchdog
 blobray analyze-project --project research --image IMAGE_ID --limit-mode watchdog
-blobray research --project research --id IMAGE_PUBLICATION --name phy_set_ftm_en --abi-contract riscv-integer --companion-publication SOURCE_PUBLICATION --limit-mode watchdog
 ```
 
 `LinkRequest.absent` and `LinkRecipe.absent` name at most 64 undefined
@@ -387,15 +291,8 @@ selections into its link request, which the plan then retains and validates as
 usual. A hidden undefined name cannot be left for a companion and fails the
 trial link.
 
-`FunctionRequest.research` and `FunctionRecipe.research` contain `publication`,
-`companions`, optional `abi` (`riscv-integer`) and optional `knowledge`. Companion
-publications must belong to the same revision. A cross-image callee is eligible
-only through an exact companion selection in the prepared-image recipe. Equal
-numeric addresses in unrelated sources do not create a call association.
-Definitions do not map ROM into writable memory or authorize execution. The
-existing memory profile supplies constants only from each function's own
-validated immutable ELF view. Missing providers, FP semantics, mutable alias
-analysis remains limited; concrete comparison uses the separate
+Definitions do not map ROM into writable memory or authorize execution.
+Concrete comparison uses the separate
 [execution contract](../execution/README.md#concrete-execution-and-comparison).
 
 ## Library investigations
@@ -423,37 +320,19 @@ is still current. Status reports stale publications after later imports; opening
 a saved publication verifies bytes and never recomputes them. These publications
 are research scope and coverage, not review acceptance or verification verdicts.
 
-
-### Library workflow and query contract
+### Library workflow
 
 ```console
-blobray plan-investigation --project research --output library-plan.json
-blobray analyze-project --project research --plan library-plan.json
+blobray analyze-project --project research
 blobray status --project research
-blobray investigations --project research
-blobray investigation --project research --id PUBLICATION
-blobray find-accesses --project research --id PUBLICATION --address 0x60000124
-blobray find-accesses --project research --id PUBLICATION --unknown-only
-blobray find-references --project research --id PUBLICATION --symbol symbol-id.json
 ```
 
 These commands accept the same resource options as function analysis. Choose
 `--limit-mode watchdog` explicitly on hosts without delegated cgroup enforcement.
-`--format json` returns streamed records and a summary. `plan-investigation`
-requires a new output path; optional `--request request.json` accepts:
-
-```json
-{"revision":null,"inputs":null,"extents":[]}
-```
-
-Admission resolves a null revision once. `inputs` is either null (all inputs) or
-a nonempty set of distinct ordinals; enumeration preserves inventory order.
-Each extent override is `{ "source": {"kind":"input","input":0}, "symbol": SYMBOL_ID, "extent":
-{ "start": 0, "length": 32 } }`. An unused or repeated override is rejected;
-an invalid selected extent is a blocked function outcome. The saved recipe
+`--format json` returns streamed records and a summary. The saved recipe
 includes decoder and semantic producer identities, but excludes runtime budgets
-and local paths. Changing the producer requires a new plan. Inspection `plan` /
-`run` commands remain a separate read-only operation.
+and local paths. Inspection `plan` / `run` commands remain a separate read-only
+operation.
 
 Enumeration selects static and dynamic `STT_FUNC` symbols defined in nonempty executable
 sections. Aliases and occurrences in different tables remain separate selections
@@ -477,21 +356,13 @@ semantically partial results; `complete_functions` requires both coverages.
 A publication can be current and partial. `current` compares source revisions;
 the publication's plan still defines which inputs were selected.
 
-Without filters, access/reference queries include unknown addresses and unresolved
-references. `--address` accepts an RV32 decimal or `0x` constant; `--symbol` reads
-an exact `SymbolId` JSON file. These queries never resolve an external name to an
-implementation or read memory contents. Findings include publication, exact
-function request, analysis ID and original instruction offset or relocation site.
-No match in a partial publication is not proof of absence. Read queries verify
-saved closures under their own budgets and never schedule analysis.
-
 ### Library ownership and failure boundaries
 
 | Owner | Responsibility and lifetime |
 | --- | --- |
 | Domain | Revision-qualified requests, plan/publication identities, membership, coverage and findings |
 | Application investigation operation | Stream and validate selection, cache one captured container/object, call the shared function engine sequentially, stage membership |
-| Function engine / analysis / RISC-V port | Same local algorithm and recipe as `analyze-function`; function-local reservations end before the next function |
+| Function engine / analysis / RISC-V port | Same local algorithm and recipe for every selected function; function-local reservations end before the next function |
 | Store | Verify membership digest and child recipes, retain closures, atomically publish child rows, publication, current pointer and completed run |
 | Host / CLI | One contained worker, signals, resource policy and presentation |
 

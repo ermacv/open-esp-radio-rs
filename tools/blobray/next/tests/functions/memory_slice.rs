@@ -1,4 +1,3 @@
-use super::interfaces::cli;
 use super::*;
 
 fn saved(words: &[u32]) -> (Fixture, FunctionAnalysisId, Vec<FunctionRecord>) {
@@ -101,65 +100,6 @@ fn location(rows: &[MemorySliceRecord]) -> (IncomingState, &[SliceIssue]) {
         unreachable!()
     };
     (*incoming, issues)
-}
-
-#[test]
-fn saved_slice_kills_old_writes_excludes_current_anchor_and_reopens_without_sources() {
-    let (f, id, records) = saved(&[0x00b52023, 0x00c52023, 0x00852703, 0x00d52223, 0x00008067]);
-    let mut q = request(id, &records, 12);
-    let (summary, rows) = query(&f, &q);
-    assert_eq!(summary.anchor_offset, 12);
-    assert_eq!(definitions(&rows), vec![(4, DefinitionClass::Must)]);
-    assert_eq!(location(&rows), (IncomingState::Overwritten, &[][..]));
-    let definition = rows
-        .iter()
-        .find(|r| matches!(r, MemorySliceRecord::Definition { .. }))
-        .unwrap();
-    let MemorySliceRecord::Definition {
-        record,
-        fact,
-        witness,
-        ..
-    } = definition
-    else {
-        unreachable!()
-    };
-    assert_eq!(**fact, records[*record as usize]);
-    assert_eq!(witness, &[4, 8, 12]);
-    q.locations = vec![MemorySliceSelection::Access {
-        record: access(&records, 8),
-    }];
-    let (_, incoming) = query(&f, &q);
-    assert_eq!(location(&incoming), (IncomingState::Possible, &[][..]));
-    assert!(definitions(&incoming).is_empty());
-    q.locations.clear();
-    let expected = query(&f, &q);
-    assert_eq!(expected.0.locations, 1); // Current anchor writes +4, but has not run yet.
-    fs::remove_file(f.dir.path().join("entry.o")).unwrap();
-    fs::remove_file(f.dir.path().join("entry.a")).unwrap();
-    assert_eq!(query(&f, &q), expected);
-    let path = f.dir.path().join("slice.json");
-    fs::write(&path, serde_json::to_vec(&q).unwrap()).unwrap();
-    let result = cli(&f, &["memory-slice", "--request", path.to_str().unwrap()]);
-    assert_eq!(
-        result["summary"]["summary"],
-        serde_json::to_value(&expected.0).unwrap()
-    );
-    let output = f.dir.path().join("slice-export.json");
-    cli(
-        &f,
-        &[
-            "memory-slice",
-            "--request",
-            path.to_str().unwrap(),
-            "--output",
-            output.to_str().unwrap(),
-        ],
-    );
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&fs::read(output).unwrap()).unwrap(),
-        result
-    );
 }
 
 #[test]

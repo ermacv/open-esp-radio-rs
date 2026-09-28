@@ -1,25 +1,20 @@
 # Registers, tables and constants
 
-Inspect MMIO candidates and captured data before proposing a reviewed interpretation.
+Inspect MMIO candidates and captured data.
 
 [Choose a task](../../../README.md#choose-a-task) · [All command references](../../README.md#reference-navigation).
 
 ## Captured data, tables and coefficients
 
 `data` reads exact ranges and selected saved analyses from one captured object.
-It does not run an analyzer or infer a table boundary. `export-data` selects a
-reviewed integer table or constant at an explicit knowledge revision. Both use
-the same application-owned query, supervision and delivery budget as other reads.
+It does not run an analyzer or infer a table boundary. It uses the same
+application-owned query, supervision and delivery budget as other reads.
 
 ```console
 blobray data --project research --request data-request.json --limit-mode watchdog
 blobray data --project research --request data-request.json --output observations --limit-mode watchdog
-blobray knowledge --project research --limit-mode watchdog propose-data --request table-proposal.json
-blobray knowledge --project research --limit-mode watchdog propose-constant --request constant-proposal.json
-blobray knowledge --project research --limit-mode watchdog show
-blobray knowledge --project research --limit-mode watchdog accept --base PROPOSAL_REVISION --assertion ASSERTION_ID --actor researcher --reason "Checked exact source evidence"
-blobray export-data --project research --revision ACCEPTED_REVISION --assertion ASSERTION_ID --output accepted-data --limit-mode watchdog
 ```
+
 
 The `DataRequest` JSON has `occurrence`, `ranges`, `analyses` and optional
 `pointer_table` (null/absent for ordinary byte observations). Copy the exact
@@ -50,66 +45,30 @@ compressed sections and NOBITS are explicit errors. Requests never guess length
 from the next symbol. Several ranges share one prepared ELF owner and section
 metadata; borrowed views cannot escape its callback.
 
-A `DataProposalRequest` contains `occurrence`, `analyses`, `subject`, `selector`,
-`layout`, `purpose`, `applicability`, `expected_base`, `actor` and `reason`.
-For example, a signed little-endian array of 100 contiguous 16-bit elements has:
-
-```json
-{"kind":"integer","encoding":{"width":2,"signed":true,"byte_order":"little"},"count":100,"stride":2}
-```
-
-Widths are 1, 2, 4 or 8 bytes; byte order is `little` or `big`. Stride is in bytes
-and cannot be less than element width. The layout must cover exactly the selected
-range, including internal padding. The application canonicalizes symbol/image selectors to exact section ranges,
-adds matching payload/range evidence and validates it again during review.
-Generic knowledge changes, specialized proposals, review and export share physical
-occurrence validation. An optional image data symbol must exist in its declared
-object/table even when the selector is a canonical section range. Source evidence
-and the selected range are validated against that same prepared object.
-This also detects conflicts between physical aliases of the same table. `purpose` and `applicability`
-record the proposed meaning; their presence is not automatic semantic acceptance.
-
-A `ConstantProposalRequest` contains `analysis`, `record`, `operand`, `value`,
-`subject`, `purpose`, `applicability`, `expected_base`, `actor` and `reason`.
-`value` is an RV32 unsigned bit pattern. The operand is a tagged object such as
-`{"kind":"value"}`, `{"kind":"write-value"}`, `{"kind":"address"}`,
-`{"kind":"call-argument","index":0}`, `{"kind":"return-low"}` or
-`{"kind":"return-high"}`. It must match a known constant in that exact saved
-record. Unknown values and expressions are not accepted as numeric constants.
-Instruction-derived coefficients retain their analysis evidence; no fictitious
-contiguous data table is created for them.
-
-Export creates a new directory containing `manifest.json`, `object.elf`,
+`--output` creates a new directory containing `manifest.json`, `object.elf`,
 `data.bin` and `records.jsonl`. The object is the exact captured ELF member/image,
 not its enclosing archive. The manifest records its digest, occurrence, source
 file and section ranges, optional image addresses, per-range digests and offsets
 into concatenated `data.bin`. The records preserve analysis IDs and ordinals;
 `ranges` links known relocation references into the selected ranges. Empty links
-do not assert absence of other uses. The source object's byte order is distinct
-from a reviewed table's explicit interpretation.
+do not assert absence of other uses.
 
-For tables, integer records decode captured bytes. Writable sections are marked
-as initialization data, never current runtime state. All section relocations are
-retained. Data manifest schema 3 reports `overlapping_relocations` for the selected
-byte range and `unknown_relocation_extents` for the section. Integer decoding is
-withheld with an explicit `unresolved` record if either count is nonzero, even
-when the layout is accepted. Known fixed-width writes ending at the range start
+Writable sections are marked as initialization data, never current runtime
+state. All section relocations are retained. Data manifest schema 3 reports
+`overlapping_relocations` for the selected byte range and
+`unknown_relocation_extents` for the section. Known fixed-width writes ending at the range start
 or starting at its end do not overlap. Unknown transformations cannot establish
 nonoverlap from their offset alone. The pinned structural parser currently
 supplies RV32 NONE/32/64 classifications; other types retain unknown extents.
 Known writes beyond the section are rejected. ET_EXEC relocation sites are
 normalized from virtual to section-relative coordinates. No relocation is
-applied by data export. For constants, `data.bin` is empty; the object and
-analysis instruction/value records are the evidence. Analysis coverage remains
-in each retained function manifest and is not promoted by successful export.
+applied by the export. Analysis coverage remains in each retained function
+manifest and is not promoted by a successful export.
 
 Pointer observations use `pointer_table: {"count":11,"stride":4}` in a `DataRequest`
 with exactly one selected range. The captured RV32 little-endian profile reads
-four-byte slots; count/stride must cover that range exactly. For proposal through
-the same `knowledge propose-data` command, use
-`layout: {"kind":"pointers","count":11,"stride":4}`. Acceptance records this
-layout and exact source evidence; it does not accept inferred callback signatures
-or manufacture resolved external definitions.
+four-byte slots; count/stride must cover that range exactly. The observation
+does not infer callback signatures or manufacture resolved external definitions.
 
 The injected RISC-V profile `rv32-absolute-rela/1` interprets `R_RISCV_32` RELA
 as a physical symbol plus addend. Defined and external symbols remain distinct.
@@ -128,14 +87,11 @@ there is no blanket resolved/complete verdict. `pointer_producer` identifies the
 interpretation. Slot lookup uses the sorted section relocation index and bounded
 write widths; it does not restart a whole-section scan for every slot.
 
-Unreviewed observation exports have no accepted assertion. Reviewed exports
-include the assertion and selected knowledge revision; pending, rejected and
-superseded assertions are refused at that revision. Historical acceptance can
-still be read at its original revision. The output remains available after
-source removal, project move and backup/restore. Review/export does not generate
-Rust, publish register definitions or claim qualification. Export never overwrites
-an existing directory; a failed delivery may leave a prefix and cannot be retried
-implicitly.
+Observation exports have no accepted assertion. The output remains available
+after source removal, project move and backup/restore. An export does not
+generate Rust, publish register definitions or claim qualification. It never
+overwrites an existing directory; a failed delivery may leave a prefix and
+cannot be retried implicitly.
 
 A data export contains the selected object and explicitly selected analyses.
 Interprocedural provenance may reference analyses outside that bundle; IDs do not
@@ -182,9 +138,7 @@ its own applicable declarations. Proposed/rejected declarations remain visible;
 only accepted matches contribute to the accepted-binding counter. The summary
 does not promise complete hardware coverage, absence of register accesses or PASS.
 
-Use generic knowledge proposal/review or `knowledge propose-register` for an
-explicit physical interpretation; `--width` is required and is in bytes. Fields
-remain explicit nonoverlapping declarations. The independent
-[register tool](../../../../registers/README.md) owns source-model initialization,
-SVD import, reviewed source applicability and four-output publication. A Next
-review is scoped research knowledge, not an automatic hardware-source promotion.
+The independent [register tool](../../../../registers/README.md) owns
+source-model initialization, SVD import, reviewed source applicability and
+four-output publication. A Blobray observation is research evidence, not an
+automatic hardware-source promotion.

@@ -49,39 +49,6 @@ enum KnowledgeCommand {
         #[arg(long)]
         request: PathBuf,
     },
-    /// Propose an integer or pointer layout for exact captured bytes.
-    ProposeData {
-        #[arg(long)]
-        request: PathBuf,
-    },
-    /// Propose a constant supported by an exact retained analysis record.
-    ProposeConstant {
-        #[arg(long)]
-        request: PathBuf,
-    },
-    /// Propose a reviewed register interpretation supported by a retained analysis.
-    ProposeRegister {
-        #[arg(long)]
-        analysis: blobray_domain::FunctionAnalysisId,
-        #[arg(long)]
-        subject: String,
-        #[arg(long)]
-        name: String,
-        #[arg(long, value_parser=parse_address)]
-        address: u32,
-        /// Physical declaration width in bytes; never inferred from an observed instruction.
-        #[arg(long)]
-        width: u8,
-        /// NAME:LSB:WIDTH, repeat for each nonoverlapping field.
-        #[arg(long)]
-        field: Vec<String>,
-        #[arg(long)]
-        base: Option<blobray_domain::KnowledgeRevisionId>,
-        #[arg(long)]
-        actor: String,
-        #[arg(long)]
-        reason: String,
-    },
     /// Accept a specific proposal against the selected knowledge revision.
     Accept {
         #[arg(long)]
@@ -93,32 +60,10 @@ enum KnowledgeCommand {
         #[arg(long)]
         reason: String,
     },
-    /// Validate a proposed change against the current base without publication.
-    Validate {
-        #[arg(long)]
-        change: PathBuf,
-    },
-    /// Apply a KnowledgeChange JSON document (propose, accept/reject, or supersede).
-    Apply {
-        #[arg(long)]
-        change: PathBuf,
-    },
     /// List assertion states at an explicit revision or the current head.
     Show {
         #[arg(long)]
         revision: Option<blobray_domain::KnowledgeRevisionId>,
-    },
-    /// Stream immutable proposals and review decisions.
-    History {
-        #[arg(long)]
-        revision: Option<blobray_domain::KnowledgeRevisionId>,
-    },
-    /// Export review events and evidence references; excludes private binary payloads.
-    Export {
-        #[arg(long)]
-        revision: Option<blobray_domain::KnowledgeRevisionId>,
-        #[arg(long)]
-        output: PathBuf,
     },
 }
 
@@ -127,12 +72,6 @@ enum IrCommand {
     Build {
         #[arg(long)]
         request: PathBuf,
-    },
-    /// Stream original facts with profile and evidence identities; --output exports atomically.
-    Show {
-        id: ArtifactId,
-        #[arg(long)]
-        output: Option<PathBuf>,
     },
 }
 
@@ -170,62 +109,6 @@ enum Command {
         limits: ResourceOptions,
     },
 
-    /// Inspect exact saved bindings and temporal obligations of a conditional event route.
-    EventRoute {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Inspect local write definitions immediately before an exact saved publication site.
-    MemorySlice {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Inspect structural paths and effects in an explicitly selected saved graph.
-    Flow {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Navigate explicitly selected saved functions, calls, object accesses and context fields.
-    Navigate {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Discover captured pointer slots or saved indirect-call paths with explicit review selection.
-    Interfaces {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        /// Atomically export the completed JSON observation stream to a new file.
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
     /// Report executable intervals inside and outside selected function extents.
     Coverage {
         #[arg(long)]
@@ -250,19 +133,6 @@ enum Command {
         request: PathBuf,
         #[arg(long)]
         output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Export one accepted table or constant at an explicit knowledge revision.
-    ExportData {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        revision: blobray_domain::KnowledgeRevisionId,
-        #[arg(long)]
-        assertion: blobray_domain::AssertionId,
-        #[arg(long)]
-        output: PathBuf,
         #[command(flatten)]
         limits: ResourceOptions,
     },
@@ -330,26 +200,6 @@ enum Command {
         limits: ResourceOptions,
     },
 
-    /// Research one exact function selected from a saved publication.
-    Research {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PublicationId,
-        #[arg(long, required_unless_present = "address", conflicts_with = "address")]
-        name: Option<String>,
-        #[arg(long, value_parser=parse_address)]
-        address: Option<u32>,
-        /// Explicit integer calling-convention assumption, independent of ELF flags.
-        #[arg(long, value_parser=["riscv-integer"])]
-        abi_contract: Option<String>,
-        #[arg(long)]
-        knowledge: Option<blobray_domain::KnowledgeRevisionId>,
-        #[arg(long)]
-        companion_publication: Vec<blobray_domain::PublicationId>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
     /// Export exact preserved bytes using a digest from the evidence catalog.
     ExportPayload {
         #[arg(long)]
@@ -388,36 +238,13 @@ enum Command {
         #[command(flatten)]
         limits: ResourceOptions,
     },
-    /// Freeze all selected functions and coverage gaps into a portable plan.
-    PlanInvestigation {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: Option<PathBuf>,
-        /// Analyze this retained image instead of the revision's object inputs.
-        #[arg(long, conflicts_with = "request")]
-        image: Option<blobray_domain::PreparedImageId>,
-        #[arg(long)]
-        output: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
     /// Execute a frozen library plan and atomically publish its results.
     AnalyzeProject {
         #[arg(long)]
         project: PathBuf,
+        /// Analyze this prepared image; without it, analyze the current inputs.
         #[arg(long)]
-        plan: Option<PathBuf>,
-        /// Without a saved plan, select this prepared image; otherwise analyze current inputs.
-        #[arg(long, conflicts_with = "plan")]
         image: Option<blobray_domain::PreparedImageId>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// List immutable library publications.
-    Investigations {
-        #[arg(long)]
-        project: PathBuf,
         #[command(flatten)]
         limits: ResourceOptions,
     },
@@ -434,79 +261,8 @@ enum Command {
         #[command(flatten)]
         limits: ResourceOptions,
     },
-    /// List retained calls and out-of-function jumps, including unresolved targets.
-    Calls {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PublicationId,
-        /// Function entry virtual address (callees of this function).
-        #[arg(long, value_parser=parse_address)]
-        caller: Option<u32>,
-        /// Target virtual address (callers of this address).
-        #[arg(long, value_parser=parse_address, conflicts_with="unresolved_only")]
-        callee: Option<u32>,
-        #[arg(long)]
-        unresolved_only: bool,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Read function outcomes and gaps in a saved publication.
-    Investigation {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PublicationId,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Search saved memory accesses, preserving function/instruction provenance.
-    FindAccesses {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PublicationId,
-        #[arg(long, value_parser=parse_address, conflicts_with_all=["symbol", "unknown_only"])]
-        address: Option<u32>,
-        /// JSON file containing an exact SymbolId, including its object occurrence.
-        #[arg(long, conflicts_with = "unknown_only")]
-        symbol: Option<PathBuf>,
-        #[arg(long)]
-        unknown_only: bool,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Search saved relocations, or image-address uses and memory accesses.
-    FindReferences {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PublicationId,
-        #[arg(long)]
-        symbol: Option<PathBuf>,
-        #[arg(long, value_parser=parse_address, conflicts_with="symbol")]
-        address: Option<u32>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
     /// Show publication coverage and whether it describes the current revision.
     Status {
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Analyze a selected captured function and retain its local graph.
-    AnalyzeFunction {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// List retained function analyses.
-    Analyses {
         #[arg(long)]
         project: PathBuf,
         #[command(flatten)]
@@ -518,17 +274,6 @@ enum Command {
         project: PathBuf,
         #[arg(long)]
         id: blobray_domain::FunctionAnalysisId,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Export saved function records and manifest into a new directory.
-    ExportAnalysis {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::FunctionAnalysisId,
-        #[arg(long)]
-        output: PathBuf,
         #[command(flatten)]
         limits: ResourceOptions,
     },
@@ -862,24 +607,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             }
             return read_query(project, query, limits, format);
         }
-        Command::ExportData {
-            project,
-            revision,
-            assertion,
-            output,
-            limits,
-        } => {
-            return export_data_query(
-                project,
-                ReadQuery::ReviewedData {
-                    revision,
-                    assertion,
-                },
-                output,
-                limits,
-                format,
-            );
-        }
         Command::AuditTargets {
             artifact,
             forbid,
@@ -1017,15 +744,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                     ExitCode::FAILURE
                 });
             }
-            IrCommand::Show { id, output } => {
-                return read_query_output(
-                    project,
-                    ReadQuery::SemanticIr { id },
-                    limits,
-                    format,
-                    output,
-                );
-            }
         },
         Command::Registers {
             project,
@@ -1036,86 +754,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             return read_query_output(
                 project,
                 ReadQuery::Registers {
-                    request: read_json_file(&request)?,
-                },
-                limits,
-                format,
-                output,
-            );
-        }
-        Command::EventRoute {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            return read_query_output(
-                project,
-                ReadQuery::EventRoute {
-                    request: read_json_file(&request)?,
-                },
-                limits,
-                format,
-                output,
-            );
-        }
-        Command::MemorySlice {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            return read_query_output(
-                project,
-                ReadQuery::MemorySlice {
-                    request: read_json_file(&request)?,
-                },
-                limits,
-                format,
-                output,
-            );
-        }
-        Command::Flow {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            return read_query_output(
-                project,
-                ReadQuery::Flow {
-                    request: read_json_file(&request)?,
-                },
-                limits,
-                format,
-                output,
-            );
-        }
-        Command::Navigate {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            return read_query_output(
-                project,
-                ReadQuery::Navigate {
-                    request: read_json_file(&request)?,
-                },
-                limits,
-                format,
-                output,
-            );
-        }
-        Command::Interfaces {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            return read_query_output(
-                project,
-                ReadQuery::Interfaces {
                     request: read_json_file(&request)?,
                 },
                 limits,
@@ -1149,12 +787,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             KnowledgeCommand::ProposeCallPair { request } => {
                 return propose_command(project, request, limits, format, ProposalInput::CallPair);
             }
-            KnowledgeCommand::ProposeData { request } => {
-                return propose_command(project, request, limits, format, ProposalInput::Data);
-            }
-            KnowledgeCommand::ProposeConstant { request } => {
-                return propose_command(project, request, limits, format, ProposalInput::Constant);
-            }
             KnowledgeCommand::Accept {
                 assertion,
                 base,
@@ -1179,100 +811,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                     limits.budget()?,
                 );
             }
-            KnowledgeCommand::ProposeRegister {
-                analysis,
-                subject,
-                name,
-                address,
-                width,
-                field,
-                base,
-                actor,
-                reason,
-            } => {
-                let fields = field
-                    .iter()
-                    .map(|s| {
-                        let parts: Vec<_> = s.split(':').collect();
-                        if parts.len() != 3 {
-                            return Err(invalid("field must be NAME:LSB:WIDTH"));
-                        }
-                        Ok(blobray_domain::MmioField {
-                            name: parts[0].into(),
-                            lsb: parts[1].parse().map_err(|_| invalid("invalid field lsb"))?,
-                            width: parts[2]
-                                .parse()
-                                .map_err(|_| invalid("invalid field width"))?,
-                        })
-                    })
-                    .collect::<Result<_>>()?;
-                let application = limits.application()?;
-                let _diagnostics = TemporaryDiagnostics(&application, format);
-                let signals = Signals::new()?;
-                let handle = application.start_propose_register(
-                    &project,
-                    blobray_domain::RegisterProposalRequest {
-                        analysis,
-                        subject: subject.try_into()?,
-                        register: blobray_domain::MmioRegister {
-                            name,
-                            address,
-                            width,
-                            fields,
-                        },
-                        expected_base: base,
-                        actor,
-                        reason,
-                    },
-                    limits.budget()?,
-                )?;
-                if !wait_handle(&handle, &signals, format) {
-                    return Ok(ExitCode::FAILURE);
-                }
-                let run = handle.wait();
-                match format {
-                    Format::Json => println!(
-                        "{}",
-                        serde_json::json!(blobray_next_host::wire::RunDocument {
-                            schema: 6,
-                            run: &run
-                        })
-                    ),
-                    Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
-                }
-                return Ok(ExitCode::SUCCESS);
-            }
-            KnowledgeCommand::Validate { change } => {
-                return read_query(
-                    project,
-                    ReadQuery::ValidateKnowledge {
-                        change: read_json_file(&change)?,
-                    },
-                    limits,
-                    format,
-                );
-            }
-            KnowledgeCommand::Apply { change } => {
-                let change = read_json_file(&change)?;
-                let application = limits.application()?;
-                let _diagnostics = TemporaryDiagnostics(&application, format);
-                let signals = Signals::new()?;
-                let handle = application.start_knowledge(&project, &change, limits.budget()?)?;
-                if !wait_handle(&handle, &signals, format) {
-                    return Ok(ExitCode::FAILURE);
-                }
-                let record = handle.wait();
-                match format {
-                    Format::Json => println!(
-                        "{}",
-                        serde_json::json!(blobray_next_host::wire::RunDocument {
-                            schema: 6,
-                            run: &record
-                        })
-                    ),
-                    Format::Human => println!("Knowledge revision {}", record.knowledge.unwrap()),
-                }
-            }
             KnowledgeCommand::Show { revision } => {
                 return read_query(
                     project,
@@ -1284,126 +822,26 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                     format,
                 );
             }
-            KnowledgeCommand::History { revision } => {
-                return read_query(
-                    project,
-                    ReadQuery::Knowledge {
-                        revision,
-                        history: true,
-                    },
-                    limits,
-                    format,
-                );
-            }
-            KnowledgeCommand::Export { revision, output } => {
-                let application = limits.application()?;
-                let _diagnostics = TemporaryDiagnostics(&application, format);
-                let signals = Signals::new()?;
-                let handle = application.start_query(
-                    &project,
-                    ReadQuery::Knowledge {
-                        revision,
-                        history: true,
-                    },
-                    limits.budget()?,
-                )?;
-                if !wait_handle(&handle, &signals, format) {
-                    return Ok(ExitCode::FAILURE);
-                }
-                let parent = output
-                    .parent()
-                    .filter(|p| !p.as_os_str().is_empty())
-                    .unwrap_or(std::path::Path::new("."));
-                let mut file = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
-                queries::render(
-                    &mut handle.take_output()?,
-                    Format::Json,
-                    file.as_file_mut(),
-                    &|| signals.cancelled(),
-                )?;
-                file.as_file().sync_all().map_err(io_error)?;
-                file.persist_noclobber(output)
-                    .map_err(|e| io_error(e.error))?;
-            }
         },
-        Command::PlanInvestigation {
-            project,
-            request,
-            image,
-            output,
-            limits,
-        } => {
-            use blobray_domain::{FunctionDecoder, FunctionSemantics};
-            let mut request: blobray_domain::InvestigationRequest = request
-                .as_ref()
-                .map(|p| read_json_file(p))
-                .transpose()?
-                .unwrap_or_default();
-            if image.is_some() {
-                request.image = image;
-            }
-            let decoder = blobray_backend_riscv::RiscvDecoder;
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_query(
-                &project,
-                ReadQuery::PlanInvestigation {
-                    request,
-                    producer: blobray_domain::FunctionProducer {
-                        decoder: decoder.identity().into(),
-                        semantics: decoder.semantic_identity().into(),
-                    },
-                },
-                limits.budget()?,
-            )?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let mut result = handle.take_output()?;
-            let app::QuerySummary::InvestigationPlan { plan } = result.summary() else {
-                return Err(invalid("unexpected plan summary"));
-            };
-            let parent = output
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(std::path::Path::new("."));
-            let mut file = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
-            app::write_control_message(file.as_file_mut(), plan)?;
-            file.as_file().sync_all().map_err(io_error)?;
-            file.persist_noclobber(&output)
-                .map_err(|e| io_error(e.error))?;
-            queries::render(&mut result, format, &mut std::io::stdout().lock(), &|| {
-                signals.cancelled()
-            })?;
-            return Ok(ExitCode::SUCCESS);
-        }
         Command::AnalyzeProject {
             project,
-            plan,
             image,
             limits,
         } => {
             let application = limits.application()?;
             let _diagnostics = TemporaryDiagnostics(&application, format);
             let signals = Signals::new()?;
-            let input = if let Some(plan) = plan {
-                blobray_domain::InvestigationInput::Plan {
-                    plan: read_json_file(&plan)?,
-                }
-            } else {
-                use blobray_domain::{FunctionDecoder, FunctionSemantics};
-                let decoder = blobray_backend_riscv::RiscvDecoder;
-                blobray_domain::InvestigationInput::Automatic {
-                    request: blobray_domain::InvestigationRequest {
-                        image,
-                        ..Default::default()
-                    },
-                    producer: blobray_domain::FunctionProducer {
-                        decoder: decoder.identity().into(),
-                        semantics: decoder.semantic_identity().into(),
-                    },
-                }
+            use blobray_domain::{FunctionDecoder, FunctionSemantics};
+            let decoder = blobray_backend_riscv::RiscvDecoder;
+            let input = blobray_domain::InvestigationInput::Automatic {
+                request: blobray_domain::InvestigationRequest {
+                    image,
+                    ..Default::default()
+                },
+                producer: blobray_domain::FunctionProducer {
+                    decoder: decoder.identity().into(),
+                    semantics: decoder.semantic_identity().into(),
+                },
             };
             let handle = application.start_analyze_project(&project, input, limits.budget()?)?;
             while !handle.wait_timeout(CANCEL_POLL) {
@@ -1441,9 +879,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ExitCode::FAILURE
             });
         }
-        Command::Investigations { project, limits } => {
-            return read_query(project, ReadQuery::Publications, limits, format);
-        }
         Command::Functions {
             project,
             id,
@@ -1461,135 +896,8 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 format,
             );
         }
-        Command::Calls {
-            project,
-            id,
-            caller,
-            callee,
-            unresolved_only,
-            limits,
-        } => {
-            return read_query(
-                project,
-                ReadQuery::Publication {
-                    id,
-                    filter: blobray_domain::InvestigationFilter::Calls {
-                        caller,
-                        callee,
-                        unresolved_only,
-                    },
-                },
-                limits,
-                format,
-            );
-        }
-        Command::Investigation {
-            project,
-            id,
-            limits,
-        } => {
-            return read_query(
-                project,
-                ReadQuery::Publication {
-                    id,
-                    filter: blobray_domain::InvestigationFilter::Members,
-                },
-                limits,
-                format,
-            );
-        }
-        Command::FindAccesses {
-            project,
-            id,
-            address,
-            symbol,
-            unknown_only,
-            limits,
-        } => {
-            let symbol = symbol.as_ref().map(|p| read_json_file(p)).transpose()?;
-            return read_query(
-                project,
-                ReadQuery::Publication {
-                    id,
-                    filter: blobray_domain::InvestigationFilter::Accesses {
-                        address,
-                        symbol,
-                        unknown_only,
-                    },
-                },
-                limits,
-                format,
-            );
-        }
-        Command::FindReferences {
-            project,
-            id,
-            symbol,
-            address,
-            limits,
-        } => {
-            let symbol = symbol.as_ref().map(|p| read_json_file(p)).transpose()?;
-            return read_query(
-                project,
-                ReadQuery::Publication {
-                    id,
-                    filter: blobray_domain::InvestigationFilter::References { symbol, address },
-                },
-                limits,
-                format,
-            );
-        }
         Command::Status { project, limits } => {
             return read_query(project, ReadQuery::InvestigationStatus, limits, format);
-        }
-        Command::Research {
-            project,
-            id,
-            name,
-            address,
-            abi_contract,
-            knowledge,
-            companion_publication,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let request = blobray_domain::ResearchRequest {
-                publication: id.clone(),
-                name,
-                address,
-                options: blobray_domain::ResearchOptions {
-                    companions: companion_publication,
-                    publication: id,
-                    abi: abi_contract.map(|_| blobray_domain::CallAbi::RiscvInteger),
-                    knowledge,
-                },
-            };
-            let handle = application.start_research(&project, request, limits.budget()?)?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let run = handle.wait();
-            match format {
-                Format::Json => println!(
-                    "{}",
-                    serde_json::json!(blobray_next_host::wire::RunDocument {
-                        schema: 4,
-                        run: &run
-                    })
-                ),
-                Format::Human => println!(
-                    "Research saved: {} ({})",
-                    run.analysis.as_ref().map_or("", |id| id.as_str()),
-                    if run.assessment.as_ref().is_some_and(|a| a.is_complete()) {
-                        "complete in selected static profile"
-                    } else {
-                        "partial; inspect retained gaps"
-                    }
-                ),
-            }
-            return Ok(ExitCode::SUCCESS);
         }
         Command::Execute {
             project,
@@ -1658,60 +966,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             )?;
             return Ok(finish_execution(&handle, &signals, format));
         }
-        Command::AnalyzeFunction {
-            project,
-            request,
-            limits,
-        } => {
-            let request = read_json_file(&request)?;
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_analyze_function(&project, request, limits.budget()?)?;
-            while !handle.wait_timeout(CANCEL_POLL) {
-                if signals.cancelled() {
-                    handle.cancel();
-                }
-            }
-            let record = handle.wait();
-            let success = record.state == RunState::Completed;
-            let text = match format {
-                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
-                    schema: 4,
-                    run: &record
-                })
-                .to_string(),
-                Format::Human => {
-                    let mut text = format!("Function analysis {:?}", record.state);
-                    if let Some(id) = &record.analysis {
-                        let coverage =
-                            if record.assessment.as_ref().is_some_and(|a| a.is_complete()) {
-                                "complete"
-                            } else {
-                                "partial"
-                            };
-                        text.push_str(&format!(": {} ({coverage})", id.as_str()));
-                    }
-                    if let Some(error) = &record.error {
-                        text.push_str(&format!(": {:?}: {}", error.code, error.message));
-                    }
-                    text
-                }
-            };
-            if success {
-                println!("{text}");
-            } else {
-                eprintln!("{text}");
-            }
-            return Ok(if success {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            });
-        }
-        Command::Analyses { project, limits } => {
-            return read_query(project, ReadQuery::Analyses, limits, format);
-        }
         Command::Analysis {
             project,
             id,
@@ -1723,27 +977,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 limits,
                 format,
             );
-        }
-        Command::ExportAnalysis {
-            project,
-            id,
-            output,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_query(
-                &project,
-                ReadQuery::Analysis { id, export: true },
-                limits.budget()?,
-            )?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            handle
-                .take_output()?
-                .export_analysis(&output, &|| signals.cancelled())?;
         }
 
         Command::LinkPlan {
@@ -2902,8 +2135,6 @@ fn export_data_query(
 enum ProposalInput {
     EffectContract,
     Projection,
-    Data,
-    Constant,
     CallPair,
 }
 fn propose_command(
@@ -2917,14 +2148,6 @@ fn propose_command(
     let _diagnostics = TemporaryDiagnostics(&application, format);
     let signals = Signals::new()?;
     let handle = match kind {
-        ProposalInput::Constant => application.start_propose_constant(
-            &project,
-            read_json_file(&request)?,
-            limits.budget()?,
-        )?,
-        ProposalInput::Data => {
-            application.start_propose_data(&project, read_json_file(&request)?, limits.budget()?)?
-        }
         ProposalInput::EffectContract => application.start_propose_effect_contract(
             &project,
             read_json_file(&request)?,

@@ -1,7 +1,6 @@
 # Blobray Next: captured inputs and bounded operations
 
-`blobray-next` imports immutable inputs, analyzes selected RV32 functions or
-whole libraries, prepares synthetic images, executes explicit RV32 scenarios,
+`blobray-next` imports immutable inputs, analyzes RV32 libraries and images, prepares synthetic images, executes explicit RV32 scenarios,
 compares compiled observations, retains reviewed knowledge and
 preserves projects through backup/restore. The API and CLI share supervised
 work, cancellation, publication and recovery; `cargo blobray` selects this host.
@@ -17,9 +16,9 @@ comparison verdicts. `Completed` can legitimately describe partial research or a
 `DIFF`/`INCOMPLETE` comparison. See [result assessment](../docs/design/contracts.md#result-assessment).
 
 Implemented profiles include archive/thin-archive inventory, RV32 ELF inspection,
-local and whole-library static analysis, linked-image PHY/ROM research, explicit
-MMIO review, bounded integer execution/comparison/replay, target auditing and
-project preservation. Unsupported ISA semantics remain explicit gaps. There is
+whole-library static analysis, linked images with explicit ROM companions,
+bounded integer execution/comparison/replay, target auditing and project
+preservation. Unsupported ISA semantics remain explicit gaps. There is
 no general equivalence proof, TUI, CAS pruning or allocation-free core.
 
 ## Reference navigation
@@ -37,9 +36,8 @@ tracked tree differs from the command line; run it with
 | Reference | Use it to |
 | --- | --- |
 | [Capture, selection and linked images](reference/capture-images/README.md) | Capture caller-owned artifacts, choose exact code/data scope and prepare linked images. |
-| [Function, library and PHY analysis](reference/analysis/README.md) | Analyze captured code and inspect coverage, symbolic values and explicit gaps. |
-| [Navigate saved research](reference/navigation/README.md) | Find physical references, structural paths, memory definitions and conditional event routes. |
-| [Registers, tables and constants](reference/registers-data/README.md) | Inspect MMIO candidates and captured data before proposing a reviewed interpretation. |
+| [Function and library analysis](reference/analysis/README.md) | Analyze captured code and inspect coverage, symbolic values and explicit gaps. |
+| [Registers, tables and constants](reference/registers-data/README.md) | Inspect MMIO candidates and captured data. |
 | [Knowledge and review](reference/knowledge-review/README.md) | Retain explicit assertions, applicability and review decisions for a captured revision. |
 | [Semantic IR and static traces](reference/ir-traces/README.md) | Package saved facts and extract or compare selected static observable paths. |
 | [Concrete execution and comparison](reference/execution/README.md) | Run explicit RV32 scenarios with selected inputs, device models and comparison observations. |
@@ -124,13 +122,13 @@ See [Current formats](reference/interfaces-formats/README.md#current-formats).
 
 See [Function analysis contract](reference/analysis/README.md#function-analysis-contract).
 
-### Analyze and reopen a function
+### Reopen a function analysis
 
-See [Analyze and reopen a function](reference/analysis/README.md#analyze-and-reopen-a-function).
+See [Reopen a function analysis](reference/analysis/README.md#reopen-a-function-analysis).
 
-### Research a linked image
+### Analyze a linked image
 
-See [Research a linked image](reference/analysis/README.md#research-a-linked-image).
+See [Analyze a linked image](reference/analysis/README.md#analyze-a-linked-image).
 
 ### Structural decoding
 
@@ -140,11 +138,7 @@ See [Structural decoding](reference/analysis/README.md#structural-decoding).
 
 See [Values and memory effects](reference/analysis/README.md#values-and-memory-effects).
 
-## PHY/ROM research
-
-See [PHY/ROM research](reference/analysis/README.md#phyrom-research).
-
-### Explicit ROM companions
+## Explicit ROM companions
 
 See [Explicit ROM companions](reference/analysis/README.md#explicit-rom-companions).
 
@@ -152,9 +146,9 @@ See [Explicit ROM companions](reference/analysis/README.md#explicit-rom-companio
 
 See [Library investigations](reference/analysis/README.md#library-investigations).
 
-### Library workflow and query contract
+### Library workflow
 
-See [Library workflow and query contract](reference/analysis/README.md#library-workflow-and-query-contract).
+See [Library workflow](reference/analysis/README.md#library-workflow).
 
 ### Library ownership and failure boundaries
 
@@ -183,34 +177,6 @@ See [Final-image target audit](reference/analysis/README.md#final-image-target-a
 ## Captured data, tables and coefficients
 
 See [Captured data, tables and coefficients](reference/registers-data/README.md#captured-data-tables-and-coefficients).
-
-### Reviewed interface declarations
-
-See [Reviewed interface declarations](reference/knowledge-review/README.md#reviewed-interface-declarations).
-
-### Interface discovery and selected bindings
-
-See [Interface discovery and selected bindings](reference/knowledge-review/README.md#interface-discovery-and-selected-bindings).
-
-### Reviewed function and context contracts
-
-See [Reviewed function and context contracts](reference/knowledge-review/README.md#reviewed-function-and-context-contracts).
-
-### Navigation over saved research
-
-See [Navigation over saved research](reference/navigation/README.md#navigation-over-saved-research).
-
-### Structural flow and effect inventory
-
-See [Structural flow and effect inventory](reference/navigation/README.md#structural-flow-and-effect-inventory).
-
-### Memory definitions at a publication point
-
-See [Memory definitions at a publication point](reference/navigation/README.md#memory-definitions-at-a-publication-point).
-
-### Conditional event routes
-
-See [Conditional event routes](reference/navigation/README.md#conditional-event-routes).
 
 ## Saved register research
 

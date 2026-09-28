@@ -475,14 +475,9 @@ fn killed_library_coordinator_leaves_no_publication_and_recovery_never_promotes_
     };
     let code = [1, 0].repeat(262144);
     let f = fixture(object(&code, code.len() as u64, false), false);
-    let plan = plan(&f, InvestigationRequest::default());
-    let request = f.dir.path().join("plan.json");
-    fs::write(&request, serde_json::to_vec(&plan).unwrap()).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["analyze-project", "--project"])
         .arg(&f.project)
-        .arg("--plan")
-        .arg(request)
         .args(["--limit-mode", "watchdog"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -491,10 +486,7 @@ fn killed_library_coordinator_leaves_no_publication_and_recovery_never_promotes_
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Ok(runs) = app::runs(&f.project)
-            && runs.iter().any(|r| {
-                matches!(r.operation, app::RunOperation::Investigate { .. })
-                    && r.state == RunState::Running
-            })
+            && runs.iter().any(|r| r.state == RunState::Running)
         {
             break;
         }

@@ -1,4 +1,4 @@
-use super::interfaces::{cli, propose, review};
+use super::review::{cli, propose, review};
 use super::*;
 #[derive(Default)]
 struct Sink(Vec<RegisterRecord>);

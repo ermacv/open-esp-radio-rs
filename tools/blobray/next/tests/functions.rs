@@ -326,80 +326,6 @@ fn cyclic_function_terminates_and_capacity_failure_does_not_publish() {
     );
 }
 #[test]
-fn cli_analyzes_lists_reads_and_exports() {
-    let f = fixture(object(BRANCH, BRANCH.len() as u64, false), false);
-    let request = f.dir.path().join("request.json");
-    fs::write(&request, serde_json::to_vec(&f.request).unwrap()).unwrap();
-    let run = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["analyze-function", "--project"])
-        .arg(&f.project)
-        .arg("--request")
-        .arg(&request)
-        .args(["--limit-mode", "watchdog", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(
-        run.status.success(),
-        "{}",
-        String::from_utf8_lossy(&run.stderr)
-    );
-    let report: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
-    let id = report["run"]["analysis"].as_str().unwrap();
-    for command in ["analyses", "analysis", "export-analysis"] {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_blobray"));
-        cmd.arg(command).arg("--project").arg(&f.project).args([
-            "--limit-mode",
-            "watchdog",
-            "--format",
-            "json",
-        ]);
-        if command != "analyses" {
-            cmd.args(["--id", id]);
-        }
-        if command == "export-analysis" {
-            cmd.arg("--output").arg(f.dir.path().join("cli-export"));
-        }
-        let result = cmd.output().unwrap();
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-    }
-}
-
-#[test]
-fn human_cli_reports_extent_failure_and_partial_coverage() {
-    for (bytes, size, expected, success) in [
-        (BRANCH, 0, "NeedsExtent", false),
-        (&[0xff, 0xff, 0xff, 0xff][..], 4, "(partial)", true),
-        (BRANCH, BRANCH.len() as u64, "(complete)", true),
-    ] {
-        let f = fixture(object(bytes, size, false), false);
-        let request = f.dir.path().join("request.json");
-        fs::write(&request, serde_json::to_vec(&f.request).unwrap()).unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-            .args(["analyze-function", "--project"])
-            .arg(&f.project)
-            .arg("--request")
-            .arg(&request)
-            .args(["--limit-mode", "watchdog"])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.success(), success);
-        let text = String::from_utf8_lossy(if success {
-            &output.stdout
-        } else {
-            &output.stderr
-        });
-        assert!(text.contains(expected), "{text}");
-        if !success {
-            assert!(text.contains("extent"), "{text}");
-        }
-    }
-}
-
-#[test]
 fn target_inside_instruction_and_truncation_are_visible_gaps() {
     // beq zero, zero, +2 targets the second halfword of itself.
     for bytes in [&[0x63, 0x01, 0, 0, 0x67, 0x80, 0, 0][..], &[0x13, 0, 0][..]] {
@@ -524,61 +450,6 @@ fn function_cancellation_timeout_and_disk_limit_never_publish() {
         f.revision
     );
 }
-#[test]
-fn killed_function_coordinator_requires_explicit_recovery() {
-    use std::{
-        process::Stdio,
-        time::{Duration, Instant},
-    };
-    let code = [1, 0].repeat(262144);
-    let f = fixture(object(&code, code.len() as u64, false), false);
-    let request = f.dir.path().join("request.json");
-    fs::write(&request, serde_json::to_vec(&f.request).unwrap()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["analyze-function", "--project"])
-        .arg(&f.project)
-        .arg("--request")
-        .arg(request)
-        .args(["--limit-mode", "watchdog"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Ok(runs) = app::runs(&f.project)
-            && runs.iter().any(|r| {
-                matches!(r.operation, app::RunOperation::AnalyzeFunction { .. })
-                    && r.state == RunState::Running
-            })
-        {
-            break;
-        }
-        assert!(Instant::now() < deadline, "worker did not start");
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    child.kill().unwrap();
-    child.wait().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let recovered = loop {
-        match f.app.recover(&f.project) {
-            Ok(r) => break r,
-            Err(e) if e.code == ErrorCode::Busy && Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10))
-            }
-            Err(e) => panic!("{e}"),
-        }
-    };
-    assert_eq!(recovered.len(), 1);
-    assert_eq!(recovered[0].state, RunState::Abandoned);
-    assert!(recovered[0].analysis.is_none());
-    assert!(f.app.recover(&f.project).unwrap().is_empty());
-    assert_eq!(
-        app::inventory(&f.project, None).unwrap().revision_id,
-        f.revision
-    );
-}
-
 fn words(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|w| w.to_le_bytes()).collect()
 }
@@ -912,10 +783,10 @@ mod investigations;
 
 #[path = "functions/data.rs"]
 mod data;
-#[path = "functions/interfaces.rs"]
-mod interfaces;
 #[path = "functions/knowledge.rs"]
 mod knowledge;
+#[path = "functions/review.rs"]
+mod review;
 
 #[test]
 fn ten_thousand_section_relocations_fit_small_function_capacity() {
@@ -969,22 +840,11 @@ mod reports;
 #[path = "functions/ranges.rs"]
 mod ranges;
 
-#[path = "functions/contracts.rs"]
-mod contracts;
-
-#[path = "functions/navigation.rs"]
-mod navigation;
-
-#[path = "functions/event_routes.rs"]
-mod event_routes;
 #[path = "functions/memory_slice.rs"]
 mod memory_slice;
 
 #[path = "functions/registers.rs"]
 mod registers;
-
-#[path = "functions/semantic_ir.rs"]
-mod semantic_ir;
 
 #[path = "functions/trace.rs"]
 mod trace;

@@ -11,39 +11,23 @@
       "trace",
       "ir",
       "registers",
-      "event-route",
-      "memory-slice",
-      "flow",
-      "navigate",
-      "interfaces",
       "coverage",
       "storage-usage",
       "data",
-      "export-data",
       "audit-targets",
       "execute",
       "compare",
       "replay",
       "code-coverage",
       "execution",
-      "research",
       "export-payload",
       "backup",
       "restore",
       "knowledge",
-      "plan-investigation",
       "analyze-project",
-      "investigations",
       "functions",
-      "calls",
-      "investigation",
-      "find-accesses",
-      "find-references",
       "status",
-      "analyze-function",
-      "analyses",
       "analysis",
-      "export-analysis",
       "link-plan",
       "prepare-image",
       "propose-companions",
@@ -107,8 +91,7 @@
       "ir"
     ],
     "subcommands": [
-      "build",
-      "show"
+      "build"
     ]
   },
   {
@@ -120,18 +103,6 @@
       "blobray",
       "ir",
       "build"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--output"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "ir",
-      "show"
     ],
     "subcommands": []
   },
@@ -156,126 +127,6 @@
     "path": [
       "blobray",
       "registers"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "event-route"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "memory-slice"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "flow"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "navigate"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "interfaces"
     ],
     "subcommands": []
   },
@@ -345,31 +196,6 @@
     "path": [
       "blobray",
       "data"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--revision",
-      "--assertion",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "export-data"
     ],
     "subcommands": []
   },
@@ -517,34 +343,6 @@
     "flags": [
       "--project",
       "--id",
-      "--name",
-      "--address",
-      "--abi-contract",
-      "--knowledge",
-      "--companion-publication",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "research"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--id",
       "--output",
       "--temporary-root",
       "--temporary-mib",
@@ -635,15 +433,8 @@
       "propose-effect-contract",
       "propose-projection",
       "propose-call-pair",
-      "propose-data",
-      "propose-constant",
-      "propose-register",
       "accept",
-      "validate",
-      "apply",
-      "show",
-      "history",
-      "export"
+      "show"
     ]
   },
   {
@@ -684,50 +475,6 @@
   },
   {
     "flags": [
-      "--request"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "propose-data"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--request"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "propose-constant"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--analysis",
-      "--subject",
-      "--name",
-      "--address",
-      "--width",
-      "--field",
-      "--base",
-      "--actor",
-      "--reason"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "propose-register"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
       "--assertion",
       "--base",
       "--actor",
@@ -738,30 +485,6 @@
       "blobray",
       "knowledge",
       "accept"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--change"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "validate"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--change"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "apply"
     ],
     "subcommands": []
   },
@@ -779,58 +502,7 @@
   },
   {
     "flags": [
-      "--revision"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "history"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--revision",
-      "--output"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "export"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
       "--project",
-      "--request",
-      "--image",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "plan-investigation"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--plan",
       "--image",
       "--temporary-root",
       "--temporary-mib",
@@ -848,28 +520,6 @@
     "path": [
       "blobray",
       "analyze-project"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "investigations"
     ],
     "subcommands": []
   },
@@ -901,106 +551,6 @@
   {
     "flags": [
       "--project",
-      "--id",
-      "--caller",
-      "--callee",
-      "--unresolved-only",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "calls"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--id",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "investigation"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--id",
-      "--address",
-      "--symbol",
-      "--unknown-only",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "find-accesses"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--id",
-      "--symbol",
-      "--address",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "find-references"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
       "--temporary-root",
       "--temporary-mib",
       "--temporary-total-mib",
@@ -1017,51 +567,6 @@
     "path": [
       "blobray",
       "status"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "analyze-function"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "analyses"
     ],
     "subcommands": []
   },
@@ -1085,30 +590,6 @@
     "path": [
       "blobray",
       "analysis"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--id",
-      "--output",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "export-analysis"
     ],
     "subcommands": []
   },

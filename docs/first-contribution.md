@@ -109,9 +109,9 @@ families are:
 | Exercise step | Operator entry point | Detailed input contract |
 | --- | --- | --- |
 | Capture and select code | `init`, `import`, `inventory`, `select` | [Capture and selection](../tools/blobray/next/reference/capture-images/README.md) |
-| Analyze a function | `analyze-function` | [Function analysis](../tools/blobray/next/reference/analysis/README.md#function-analysis-contract) |
+| Analyze functions | `analyze-project`, `functions`, `analysis` | [Function analysis](../tools/blobray/next/reference/analysis/README.md#function-analysis-contract) |
 | Inspect candidates | `registers` | [Saved register research](../tools/blobray/next/reference/registers-data/README.md#saved-register-research) |
-| Propose and review | `knowledge propose-register`, `knowledge accept` | [Knowledge and review](../tools/blobray/next/reference/knowledge-review/README.md) |
+| Review | `knowledge show`, `knowledge accept` | [Knowledge and review](../tools/blobray/next/reference/knowledge-review/README.md) |
 | Preserve the investigation | `backup`, `restore` | [Preservation](../tools/blobray/next/reference/knowledge-review/README.md#knowledge-and-preservation) |
 
 For command discovery without changing a project, run from the repository root:

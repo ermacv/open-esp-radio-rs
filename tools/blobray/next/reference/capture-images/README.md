@@ -20,8 +20,8 @@ cargo blobray revisions --project /path/to/investigation
 ```
 
 `import`, `inventory`, `doctor`, `select`, `plan`, `run`, `link-plan`,
-`prepare-image`, `images`, `image`, `export-image`, `analyze-function`,
-`analyses`, `analysis` and `export-analysis` require Linux containment in the CLI. The default `--limit-mode kernel` requires a writable
+`prepare-image`, `images`, `image`, `export-image`, `analyze-project`
+and `analysis` require Linux containment in the CLI. The default `--limit-mode kernel` requires a writable
 cgroup v2 parent delegated to this user, with the memory controller available and
 no processes in the parent when enabling that controller. `--cgroup-root` selects
 that parent; without it the host tries its current cgroup. The adapter enables

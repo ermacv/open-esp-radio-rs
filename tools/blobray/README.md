@@ -23,13 +23,12 @@ reference for required selectors, request files and supported subcommands.
 | Task | Current command families | Reference |
 | --- | --- | --- |
 | Capture and inspect inputs | `init`, `import`, `inventory`, `select`, `doctor` | [Capture](next/reference/capture-images/README.md#use), [selection](next/reference/capture-images/README.md#selection-and-inspection-plans), [diagnosis](next/reference/resources-storage/README.md#diagnosis-and-recovery) |
-| Investigate code | `analyze-function`, `analyze-project`, `research` | [Function analysis](next/reference/analysis/README.md#function-analysis-contract), [library research](next/reference/analysis/README.md#library-investigations) |
-| Find accesses and relationships | `find-accesses`, `find-references`, `navigate`, `flow`, `memory-slice` | [Navigation](next/reference/navigation/README.md#navigation-over-saved-research), [flow](next/reference/navigation/README.md#structural-flow-and-effect-inventory), [memory](next/reference/navigation/README.md#memory-definitions-at-a-publication-point) |
-| Investigate registers and data | `registers`, `data`, `export-data`, `knowledge` | [Register research](next/reference/registers-data/README.md#saved-register-research), [tables and coefficients](next/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
+| Investigate code | `analyze-project`, `functions`, `analysis` | [Function analysis](next/reference/analysis/README.md#function-analysis-contract), [library investigations](next/reference/analysis/README.md#library-investigations) |
+| Investigate registers and data | `registers`, `data` | [Register research](next/reference/registers-data/README.md#saved-register-research), [tables and coefficients](next/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
 | Prepare a linked image | `link-plan`, `prepare-image`, `images` | [Prepared images](next/reference/capture-images/README.md#synthetic-prepared-images) |
 | Inspect static representations | `ir`, `trace` | [Semantic IR](next/reference/ir-traces/README.md#saved-semantic-ir-profiles), [static traces](next/reference/ir-traces/README.md#static-observable-traces) |
 | Execute and compare | `execute`, `compare`, `replay`, `code-coverage` | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
-| Preserve research | `backup`, `restore`, explicit export commands | [Knowledge and preservation](next/reference/knowledge-review/README.md#knowledge-and-preservation) |
+| Preserve research | `backup`, `restore`, `export-payload` | [Knowledge and preservation](next/reference/knowledge-review/README.md#knowledge-and-preservation) |
 
 ### Choose a research method
 

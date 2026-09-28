@@ -656,7 +656,7 @@ this implemented review vocabulary. Reviewed MMIO region/register interpretation
 
 ### Implemented PHY/ROM research boundary
 
-The [native research operation](../../next/reference/analysis/README.md#phyrom-research) extends the
+The library research operation extends the
 same local engine with a bounded expression DAG and acyclic call composition.
 Application selects exact published callees; analysis receives borrowed facts and
 returns admitted owned output. Recursive components retain local facts and gaps.
@@ -1052,8 +1052,7 @@ shared query staging and optional atomic JSON export. An explicit accepted contr
 maps logical context arguments to physical incoming words; unknown signatures require
 caller-supplied mappings. A known signature rejects contradictory maps. `AccessRoot`
 and `AccessStep` are the shared physical vocabulary for interface and field paths;
-entry words and index domains use `word`, not logical `argument` ordinals. ABI
-placement and command examples are in the [operator reference](../../next/reference/navigation/README.md#navigation-over-saved-research).
+entry words and index domains use `word`, not logical `argument` ordinals.
 
 `store::AnalysisReader` owns at most 256 admitted, verified immediate dependency
 handles until the query ends. Shared revision/publication/member roots are hashed

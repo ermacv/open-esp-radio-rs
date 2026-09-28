@@ -692,7 +692,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     ///
     /// Once polled, drive this future to a terminal result.
     pub async fn close_phy_if_idle(&mut self) -> Result<bool, ConcurrentRfError> {
-        let (lease, platform, clocks) = self.parts();
+        let (lease, platform, _) = self.parts();
         let idle = !lease.attachment().rf_closed()
             && lease
                 .attachment()
@@ -701,7 +701,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         if !idle {
             return Ok(false);
         }
-        close_concurrent_rf::<P, EmbassyPhyTime>(lease, platform, clocks)
+        close_concurrent_rf::<P, EmbassyPhyTime>(lease, platform)
             .await
             .map(|()| true)
     }
@@ -893,7 +893,7 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     /// # Errors
     ///
     /// External coexistence does not run, a coexistence timer could not be
-    /// withdrawn, or releasing the module clock failed.
+    /// withdrawn, or the planner rejected releasing the module clock.
     pub fn stop_external_coex(&mut self) -> Result<(), ExternalCoexStopError> {
         if self.lease.external_coex().is_none() {
             return Err(ExternalCoexStopError::External(
@@ -902,9 +902,9 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
         }
         self.clear_coex_status_bits(CoexStatusType::ExternalCoex, EXTERNAL_COEX_STATUS);
         self.disable_coex().map_err(ExternalCoexStopError::Coex)?;
-        let (lease, _, clocks) = self.parts();
+        let (lease, _, _) = self.parts();
         lease
-            .stop_external_coex(clocks)
+            .stop_external_coex()
             .map_err(ExternalCoexStopError::External)
     }
 

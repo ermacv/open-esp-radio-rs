@@ -6,9 +6,7 @@ use oer_esp32s31_hal::{
     ieee80211::client::{WifiClocked, WifiClocksOn, WifiPowered},
     owner::{MacInterruptSetup, RadioRuntimeOwner},
     root::WifiPartition,
-    shared_radio::{
-        CommonRadioPowerError, ModemClockError, PlatformClockProvider, SharedRadioLease,
-    },
+    shared_radio::{CommonRadioPowerError, ModemClockError, SharedRadioLease},
     types::MacInterruptEnableState,
 };
 
@@ -147,7 +145,6 @@ impl<W> WifiStopped<W> {
     pub fn release(
         self,
         lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-        clocks: &mut impl PlatformClockProvider,
     ) -> Result<WifiReleased<W>, WifiReleaseFailure<W>> {
         let Self {
             platform,
@@ -218,7 +215,7 @@ impl<W> WifiStopped<W> {
                 frontier: WifiReleaseFrontier::Clocked { clocked, platform },
             });
         }
-        let powered = match clocked.disable_clocks(lease, clocks) {
+        let powered = match clocked.disable_clocks(lease) {
             Ok(powered) => powered,
             Err(failure) => {
                 return Err(WifiReleaseFailure {
@@ -230,7 +227,7 @@ impl<W> WifiStopped<W> {
                 });
             }
         };
-        match powered.power_down(lease, clocks) {
+        match powered.power_down(lease) {
             Ok(cold) => Ok(WifiReleased {
                 partition: cold.into_partition(),
                 platform,

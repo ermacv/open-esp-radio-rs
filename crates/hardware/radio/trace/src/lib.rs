@@ -779,10 +779,17 @@ pub struct PhySnapshot {
     pub clients: Clients,
     pub temperatures: TemperatureReferences,
     pub bus: BusRead,
+    /// References the radio held to each platform-owned clock, indexed as
+    /// the chip's platform clocks (ESP32-S31: 160 MHz PLL, analog-I2C
+    /// master, MPLL, modem coexistence, modem low-power timer), saturating.
+    pub platform_clocks: [u8; PLATFORM_CLOCKS],
 }
 
-const SNAPSHOT_VERSION: u32 = 1;
-const SNAPSHOT_WORDS: usize = 12;
+/// Platform clock slots a [`PhySnapshot`] carries.
+pub const PLATFORM_CLOCKS: usize = 8;
+
+const SNAPSHOT_VERSION: u32 = 2;
+const SNAPSHOT_WORDS: usize = 14;
 
 impl PhySnapshot {
     /// The capture point of the snapshot.
@@ -818,6 +825,18 @@ impl PhySnapshot {
             pair(6, results[7]),
             pair(8, results[9]),
             pair(10, 0),
+            u32::from_le_bytes([
+                self.platform_clocks[0],
+                self.platform_clocks[1],
+                self.platform_clocks[2],
+                self.platform_clocks[3],
+            ]),
+            u32::from_le_bytes([
+                self.platform_clocks[4],
+                self.platform_clocks[5],
+                self.platform_clocks[6],
+                self.platform_clocks[7],
+            ]),
         ]
     }
 
@@ -845,6 +864,9 @@ impl PhySnapshot {
             1 => BusRead::Read(bus),
             _ => return None,
         };
+        let mut platform_clocks = [0; PLATFORM_CLOCKS];
+        platform_clocks[..4].copy_from_slice(&words[12].to_le_bytes());
+        platform_clocks[4..].copy_from_slice(&words[13].to_le_bytes());
         Some(Self {
             poison: Poison {
                 by: PoisonedBy::from_raw(words[1])?,
@@ -857,6 +879,7 @@ impl PhySnapshot {
                 u16::try_from(words[4]).ok()? as i16,
             ),
             bus,
+            platform_clocks,
         })
     }
 }
@@ -869,13 +892,14 @@ impl fmt::Display for PhySnapshot {
             self.poison, self.slot, self.clients, self.temperatures
         )?;
         match self.bus {
-            BusRead::DomainOff => f.write_str("; bus not read: domain off"),
+            BusRead::DomainOff => f.write_str("; bus not read: domain off")?,
             BusRead::Read(bus) => write!(
                 f,
                 "; pbus busy={} results={:03x?}; analog i2c busy={:?}",
                 bus.pbus_busy, bus.pbus_results, bus.analog_i2c_busy
-            ),
+            )?,
         }
+        write!(f, "; platform clocks held {:?}", self.platform_clocks)
     }
 }
 

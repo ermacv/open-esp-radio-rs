@@ -15,12 +15,14 @@ result remains in canonical EUI-48 order; the generic HCI bootstrap type
 performs the reviewed conversion to HCI `BD_ADDR` byte order.
 
 `EspHalRadioClocks` implements the HAL `PlatformClockProvider` for the radio
-arbiter's modem clocks. The two platform-owned sources stay under ESP-HAL's
-own reference counts: the 160 MHz PLL output through its clock-tree node
-(`clock::ll::request_pll_f160m`/`release_pll_f160m`) and the analog-I2C
-master clock shared with ESP-HAL's regi2c accesses
-(`clock::ll::acquire_analog_i2c_master_clock`/`release_analog_i2c_master_clock`,
-added by the pinned fork).
+arbiter. Every platform-owned clock stays under ESP-HAL's own reference
+counts: the 160 MHz PLL output and the MPLL through their clock-tree nodes
+(`clock::ll::request_pll_f160m`, `request_mpll_clk`) and the three
+`MODEM_LPCON.CLK_CONF` gates (analog-I2C master, coexistence and low-power
+timer) under the lock ESP-HAL's regi2c accesses share, added by the pinned
+fork. `acquire` returns a `PlatformClockGuard`; dropping it calls the
+matching ESP-HAL release. The provider is a zero-size capability and a
+guard does not borrow it, because ESP-HAL's counts are global.
 
 Every protocol composition reaches these singletons through the one shared
 radio system that owns this platform; the Wi-Fi ESP-HAL adapter owns only the

@@ -46,9 +46,13 @@ use crate::coex::{
 };
 use crate::power::clock::{
     ModemClockLease, ModemClockModule, ModemClockPlanner, ModemClockPlannerIdentity,
-    PoisonedModemClockAcquire, PoisonedModemClockRelease, execute_acquire, execute_release,
+    ModemPlatformClocks, PoisonedModemClockAcquire, PoisonedModemClockRelease, execute_acquire,
+    execute_release,
 };
-pub use crate::power::{PlatformClock, PlatformClockError, PlatformClockProvider};
+pub use crate::power::{
+    PlatformClock, PlatformClockError, PlatformClockGuard, PlatformClockHolds,
+    PlatformClockProvider,
+};
 use crate::{
     clock::CommonRadioPower,
     owner::{PhyRegistrationEpoch, SharedPhyHal, route},
@@ -122,9 +126,13 @@ struct SharedRadioState<T> {
     power: CommonRadioPower,
     btbb_clients: u8,
     clocks: ModemClocks,
+    /// Platform references of the modem clock planner's enabled
+    /// dependencies; a poisoned planner keeps them held.
+    modem_platform_clocks: ModemPlatformClocks,
     coex_pti: CoexPtiTable,
     phy_grant_protected: bool,
-    bluetooth_low_power_clock: bool,
+    /// The low-power timer gate reference while Bluetooth selects its clock.
+    bluetooth_low_power_clock: Option<PlatformClockGuard>,
     external_coex: Option<crate::coex::ExternalCoexConfig>,
     attachment: T,
 }
@@ -281,9 +289,10 @@ impl<T> SharedRadio<T> {
                 power: CommonRadioPower::default(),
                 btbb_clients: 0,
                 clocks: ModemClocks::new(),
+                modem_platform_clocks: ModemPlatformClocks::default(),
                 coex_pti: CoexPtiTable::VENDOR,
                 phy_grant_protected: false,
-                bluetooth_low_power_clock: false,
+                bluetooth_low_power_clock: None,
                 external_coex: None,
                 attachment,
             }),
@@ -355,7 +364,7 @@ impl<T> SharedRadio<T> {
                 SharedRadioReleaseError::PhyGrantProtectHeld,
             ));
         }
-        if state.bluetooth_low_power_clock {
+        if state.bluetooth_low_power_clock.is_some() {
             return Err((
                 Self::from_state(state),
                 SharedRadioReleaseError::BluetoothLowPowerClockSelected,
@@ -578,6 +587,18 @@ impl<T> SharedRadioLease<'_, T> {
         self.state().power.holds(client)
     }
 
+    /// The platform clock references the radio holds: common power, the
+    /// modem clock dependencies (also while poisoned) and the Bluetooth
+    /// low-power timer gate.
+    pub fn platform_clock_holds(&self) -> PlatformClockHolds {
+        let state = self.state();
+        let mut holds = PlatformClockHolds::default();
+        state.power.count_platform_clocks(&mut holds);
+        state.modem_platform_clocks.count_into(&mut holds);
+        holds.count(state.bluetooth_low_power_clock.as_ref());
+        holds
+    }
+
     /// Enter common radio power as the protocol that owns `owner`.
     ///
     /// Only the first client runs the modem/PHY power sequence; it pulses the
@@ -594,7 +615,7 @@ impl<T> SharedRadioLease<'_, T> {
     pub fn enter_common_power<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
-        clocks: &mut impl PlatformClockProvider,
+        clocks: &impl PlatformClockProvider,
     ) -> Result<(), CommonRadioPowerError> {
         let state = self.state_mut();
         state
@@ -610,18 +631,15 @@ impl<T> SharedRadioLease<'_, T> {
     ///
     /// # Errors
     ///
-    /// The client does not hold power, the baseline did not read back or the
-    /// platform refused a release; the client then stays entered so the exit
-    /// can be retried.
+    /// The client does not hold power, or the baseline did not read back; the
+    /// client then stays entered so the exit can be retried. Releasing a
+    /// platform reference drops its guard and cannot fail.
     pub fn exit_common_power<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
-        clocks: &mut impl PlatformClockProvider,
     ) -> Result<(), CommonRadioPowerError> {
         let state = self.state_mut();
-        state
-            .power
-            .exit(state.registers.radio_phy_mut(), clocks, O::CLIENT)
+        state.power.exit(state.registers.radio_phy_mut(), O::CLIENT)
     }
 
     /// Whether `client` currently holds the shared BTBB baseband.
@@ -736,7 +754,7 @@ impl<T> SharedRadioLease<'_, T> {
     pub fn enable_modem_clocks<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
         self.enable_slot(client_index(O::CLIENT), client_module(O::CLIENT), platform)
     }
@@ -747,14 +765,13 @@ impl<T> SharedRadioLease<'_, T> {
     /// # Errors
     ///
     /// The client does not hold its clocks, the planner rejected the release
-    /// before any access, or a platform request failed and poisoned the modem
-    /// clocks.
+    /// before any access, or the modem clocks are poisoned. Platform
+    /// references are released by dropping their guards.
     pub fn disable_modem_clocks<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
-        platform: &mut impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
-        self.disable_slot(client_index(O::CLIENT), platform)
+        self.disable_slot(client_index(O::CLIENT))
     }
 
     /// Record whether Wi-Fi is initialized, as ESP-IDF's
@@ -781,7 +798,7 @@ impl<T> SharedRadioLease<'_, T> {
 
     /// Whether Bluetooth currently selects its low-power timer clock.
     pub fn bluetooth_low_power_clock_selected(&self) -> bool {
-        self.state().bluetooth_low_power_clock
+        self.state().bluetooth_low_power_clock.is_some()
     }
 
     /// Select the main crystal as the Bluetooth low-power timer clock.
@@ -804,17 +821,17 @@ impl<T> SharedRadioLease<'_, T> {
     pub fn select_bluetooth_low_power_clock(
         &mut self,
         _owner: &BluetoothTaskRegisters,
-        clocks: &mut impl PlatformClockProvider,
+        clocks: &impl PlatformClockProvider,
     ) -> Result<(), LowPowerClockError> {
         let state = self.state_mut();
-        if state.bluetooth_low_power_clock {
+        if state.bluetooth_low_power_clock.is_some() {
             return Err(LowPowerClockError::AlreadySelected);
         }
         select_bluetooth_low_power_clock(state.registers.radio_phy_mut());
-        clocks
+        let timer = clocks
             .acquire(PlatformClock::ModemLowPowerTimer)
             .map_err(LowPowerClockError::PlatformClock)?;
-        state.bluetooth_low_power_clock = true;
+        state.bluetooth_low_power_clock = Some(timer);
         Ok(())
     }
 
@@ -826,22 +843,17 @@ impl<T> SharedRadioLease<'_, T> {
     ///
     /// # Errors
     ///
-    /// Bluetooth does not select its clock, or the platform refused the
-    /// release after the selector writes; the clock then stays selected.
+    /// Bluetooth does not select its clock.
     pub fn deselect_bluetooth_low_power_clock(
         &mut self,
         _owner: &BluetoothTaskRegisters,
-        clocks: &mut impl PlatformClockProvider,
     ) -> Result<(), LowPowerClockError> {
         let state = self.state_mut();
-        if !state.bluetooth_low_power_clock {
+        let Some(timer) = state.bluetooth_low_power_clock.take() else {
             return Err(LowPowerClockError::NotSelected);
-        }
+        };
         deselect_bluetooth_low_power_clock(state.registers.radio_phy_mut());
-        clocks
-            .release(PlatformClock::ModemLowPowerTimer)
-            .map_err(LowPowerClockError::PlatformClock)?;
-        state.bluetooth_low_power_clock = false;
+        drop(timer);
         Ok(())
     }
 
@@ -854,7 +866,7 @@ impl<T> SharedRadioLease<'_, T> {
     pub fn enable_phy_modem_clocks(
         &mut self,
         module: PhyClockModule,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
         self.enable_slot(phy_index(module), phy_module(module), platform)
     }
@@ -872,7 +884,7 @@ impl<T> SharedRadioLease<'_, T> {
     pub fn start_external_coex(
         &mut self,
         config: crate::coex::ExternalCoexConfig,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
     ) -> Result<(), crate::coex::ExternalCoexError> {
         if self.state().external_coex.is_some() {
             return Err(crate::coex::ExternalCoexError::AlreadyActive);
@@ -895,19 +907,16 @@ impl<T> SharedRadioLease<'_, T> {
     ///
     /// # Errors
     ///
-    /// External coexistence does not run, or releasing the module clock
-    /// failed after the registers were stopped.
-    pub fn stop_external_coex(
-        &mut self,
-        platform: &mut impl PlatformClockProvider,
-    ) -> Result<(), crate::coex::ExternalCoexError> {
+    /// External coexistence does not run, or the planner rejected releasing
+    /// the module clock after the registers were stopped.
+    pub fn stop_external_coex(&mut self) -> Result<(), crate::coex::ExternalCoexError> {
         let state = self.state_mut();
         let Some(config) = state.external_coex.take() else {
             return Err(crate::coex::ExternalCoexError::NotActive);
         };
         state.registers.clear_external_coex_priorities(config.role);
         state.registers.set_external_coex_enabled(false);
-        self.disable_slot(EXTERNAL_COEX_SLOT, platform)
+        self.disable_slot(EXTERNAL_COEX_SLOT)
             .map_err(crate::coex::ExternalCoexError::Clock)
     }
 
@@ -924,16 +933,15 @@ impl<T> SharedRadioLease<'_, T> {
     pub fn disable_phy_modem_clocks(
         &mut self,
         module: PhyClockModule,
-        platform: &mut impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
-        self.disable_slot(phy_index(module), platform)
+        self.disable_slot(phy_index(module))
     }
 
     fn enable_slot(
         &mut self,
         index: usize,
         module: ModemClockModule,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
     ) -> Result<(), ModemClockError> {
         let state = self.state_mut();
         let (planner, mut leases) =
@@ -961,7 +969,7 @@ impl<T> SharedRadioLease<'_, T> {
         let phy = state.registers.radio_phy_mut();
         phy.prepare_modem_syscon_clock_map();
         phy.prepare_shared_modem_clock_map();
-        match execute_acquire(prepared, phy, platform) {
+        match execute_acquire(prepared, phy, &mut state.modem_platform_clocks, platform) {
             Ok((planner, lease)) => {
                 leases[index] = Some(lease);
                 state.clocks = ModemClocks::Ready { planner, leases };
@@ -978,11 +986,7 @@ impl<T> SharedRadioLease<'_, T> {
         }
     }
 
-    fn disable_slot(
-        &mut self,
-        index: usize,
-        platform: &mut impl PlatformClockProvider,
-    ) -> Result<(), ModemClockError> {
+    fn disable_slot(&mut self, index: usize) -> Result<(), ModemClockError> {
         let state = self.state_mut();
         let (planner, mut leases) =
             match core::mem::replace(&mut state.clocks, ModemClocks::InFlight) {
@@ -1005,7 +1009,11 @@ impl<T> SharedRadioLease<'_, T> {
                 return Err(ModemClockError::Rejected);
             }
         };
-        match execute_release(prepared, state.registers.radio_phy_mut(), platform) {
+        match execute_release(
+            prepared,
+            state.registers.radio_phy_mut(),
+            &mut state.modem_platform_clocks,
+        ) {
             Ok(planner) => {
                 state.clocks = ModemClocks::Ready { planner, leases };
                 Ok(())

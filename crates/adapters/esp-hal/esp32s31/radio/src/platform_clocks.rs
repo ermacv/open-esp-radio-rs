@@ -13,9 +13,15 @@ use esp_hal::clock::ll::{
     release_modem_coexistence_clock, release_modem_low_power_timer_clock, release_mpll_clk,
     release_pll_f160m, request_mpll_clk, request_pll_f160m,
 };
-use oer_esp32s31_hal::power::{PlatformClock, PlatformClockError, PlatformClockProvider};
+use oer_esp32s31_hal::power::{
+    PlatformClock, PlatformClockError, PlatformClockGuard, PlatformClockProvider,
+};
 
 /// Platform clock provider backed by ESP-HAL's reference-counted clocks.
+///
+/// It is a zero-size capability: ESP-HAL's counts are global, so each
+/// [`PlatformClockGuard`] it returns releases its reference on drop without
+/// borrowing the provider.
 #[derive(Debug, Default)]
 // CAPABILITY: whole-radio-cold-power-and-clocks-shared-clock-lifetime
 pub struct EspHalRadioClocks {
@@ -28,8 +34,18 @@ impl EspHalRadioClocks {
     }
 }
 
+fn release(clock: PlatformClock) {
+    match clock {
+        PlatformClock::Pll160m => ClockTree::with(release_pll_f160m),
+        PlatformClock::Mpll => ClockTree::with(release_mpll_clk),
+        PlatformClock::AnalogI2cMaster => release_analog_i2c_master_clock(),
+        PlatformClock::ModemCoexistence => release_modem_coexistence_clock(),
+        PlatformClock::ModemLowPowerTimer => release_modem_low_power_timer_clock(),
+    }
+}
+
 impl PlatformClockProvider for EspHalRadioClocks {
-    fn acquire(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
+    fn acquire(&self, clock: PlatformClock) -> Result<PlatformClockGuard, PlatformClockError> {
         match clock {
             PlatformClock::Pll160m => ClockTree::with(request_pll_f160m),
             PlatformClock::Mpll => ClockTree::with(request_mpll_clk),
@@ -37,17 +53,6 @@ impl PlatformClockProvider for EspHalRadioClocks {
             PlatformClock::ModemCoexistence => acquire_modem_coexistence_clock(),
             PlatformClock::ModemLowPowerTimer => acquire_modem_low_power_timer_clock(),
         }
-        Ok(())
-    }
-
-    fn release(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
-        match clock {
-            PlatformClock::Pll160m => ClockTree::with(release_pll_f160m),
-            PlatformClock::Mpll => ClockTree::with(release_mpll_clk),
-            PlatformClock::AnalogI2cMaster => release_analog_i2c_master_clock(),
-            PlatformClock::ModemCoexistence => release_modem_coexistence_clock(),
-            PlatformClock::ModemLowPowerTimer => release_modem_low_power_timer_clock(),
-        }
-        Ok(())
+        Ok(PlatformClockGuard::new(clock, release))
     }
 }

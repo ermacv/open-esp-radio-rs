@@ -26,9 +26,10 @@ records lifecycle edges.
 `record_poison` emits `Poison`, freezes the trace 16 entries later and
 captures a `PhySnapshot` at point `phy.128`: the poisoning operation and
 fault, the slot it started from, the active clients, the temperature
-references and, when their clock and power domain was on, the PBus and
-analog-I2C host busy flags and the PBus result windows of the vendor
-`phy_pbus_rd` tables. The caller
+references, the references the radio held to each platform-owned clock
+(saturating at 255, in the chip's platform clock order) and, when their
+clock and power domain was on, the PBus and analog-I2C host busy flags and
+the PBus result windows of the vendor `phy_pbus_rd` tables. The caller
 decides from its own state whether that domain is on; otherwise the snapshot
 records `BusRead::DomainOff` instead of reading a gated peripheral. The
 function takes no lock and does not wait. Without the `oer-trace/record`

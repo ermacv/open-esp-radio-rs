@@ -1,5 +1,8 @@
 #![no_std]
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
+// A forgotten owner never releases what it holds, such as a platform clock
+// reference, so radio ownership must end in `Drop`.
+#![deny(clippy::mem_forget)]
 
 //! ESP32-S31 register transactions and affine radio ownership.
 //!

@@ -1,5 +1,8 @@
 #![no_std]
 #![forbid(unsafe_code)]
+// A forgotten owner never releases what it holds, such as a platform clock
+// reference, so radio ownership must end in `Drop`.
+#![deny(clippy::mem_forget)]
 #![deny(missing_docs)]
 
 //! The shared ESP32-S31 radio on the chip, as ESP-IDF's `esp_phy` component.

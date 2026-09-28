@@ -156,7 +156,7 @@ impl<W> WifiColdStartFailure<W> {
 pub async fn start_esp32s31_wifi<P, W, D, O>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
-    clocks: &mut impl PlatformClockProvider,
+    clocks: &impl PlatformClockProvider,
     partition: WifiPartition,
     wifi_platform: W,
     config: WifiColdStartConfig,

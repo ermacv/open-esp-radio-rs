@@ -95,6 +95,19 @@ pub(crate) const fn committed_reference(outcome: &PhyParamTrackingOutcome) -> bo
         || outcome.tx_power.bluetooth_ieee802154
 }
 
+#[cfg(feature = "trace")]
+/// The radio's platform clock references, saturating, in
+/// [`PlatformClock::index`](oer_esp32s31_hal::power::PlatformClock::index) order.
+pub(crate) fn platform_clocks(
+    holds: oer_esp32s31_hal::power::PlatformClockHolds,
+) -> [u8; oer_phy_trace::PLATFORM_CLOCKS] {
+    let mut counts = [0; oer_phy_trace::PLATFORM_CLOCKS];
+    for clock in oer_esp32s31_hal::power::PlatformClock::ALL {
+        counts[clock.index()] = u8::try_from(holds.get(clock)).unwrap_or(u8::MAX);
+    }
+    counts
+}
+
 pub(crate) fn temperatures(state: &PhyState) -> TemperatureReferences {
     let references = state.temperature_references();
     let narrow = |celsius: i16| celsius.clamp(i16::from(i8::MIN), i16::from(i8::MAX)) as i8;

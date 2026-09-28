@@ -36,6 +36,10 @@ fn only_one_lease_exists_at_a_time() {
 }
 
 #[test]
+#[allow(
+    clippy::mem_forget,
+    reason = "the test models a lease that is never dropped"
+)]
 fn a_validation_lease_holds_and_releases_the_arbiter() {
     let mut radio = arbiter();
     core::mem::forget(radio.lease_for_validation());
@@ -51,6 +55,10 @@ fn a_validation_lease_holds_and_releases_the_arbiter() {
 }
 
 #[test]
+#[allow(
+    clippy::mem_forget,
+    reason = "the test models a lease that is never dropped"
+)]
 fn a_forgotten_lease_keeps_the_arbiter_busy() {
     let radio = arbiter();
     core::mem::forget(
@@ -102,11 +110,11 @@ fn common_power_membership_follows_the_proving_owner() {
 
     // Leaving before entering is rejected before any register access.
     assert_eq!(
-        lease.exit_common_power(&wifi, &mut crate::power::TestPlatformClocks),
+        lease.exit_common_power(&wifi),
         Err(CommonRadioPowerError::NotEntered)
     );
     assert_eq!(
-        lease.exit_common_power(&bluetooth, &mut crate::power::TestPlatformClocks),
+        lease.exit_common_power(&bluetooth),
         Err(CommonRadioPowerError::NotEntered)
     );
     assert!(!lease.holds_common_power(RadioClient::Wifi));
@@ -188,23 +196,6 @@ fn an_until_proof_needs_a_non_empty_window() {
     );
 }
 
-struct NoPlatform;
-
-impl crate::power::PlatformClockProvider for NoPlatform {
-    fn acquire(
-        &mut self,
-        _clock: crate::power::PlatformClock,
-    ) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-    fn release(
-        &mut self,
-        _clock: crate::power::PlatformClock,
-    ) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-}
-
 #[test]
 fn a_client_cannot_disable_modem_clocks_it_never_enabled() {
     let wifi =
@@ -215,7 +206,7 @@ fn a_client_cannot_disable_modem_clocks_it_never_enabled() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     // Rejected before any register access.
     assert_eq!(
-        lease.disable_modem_clocks(&wifi, &mut NoPlatform),
+        lease.disable_modem_clocks(&wifi),
         Err(ModemClockError::NotEnabled)
     );
     drop(lease);
@@ -231,7 +222,7 @@ fn the_phy_domain_cannot_disable_a_clock_module_it_never_enabled() {
     // Rejected before any register access, per module slot.
     for module in [PhyClockModule::Phy, PhyClockModule::Calibration] {
         assert_eq!(
-            lease.disable_phy_modem_clocks(module, &mut NoPlatform),
+            lease.disable_phy_modem_clocks(module),
             Err(ModemClockError::NotEnabled)
         );
     }
@@ -307,7 +298,7 @@ fn stopping_external_coexistence_that_never_started_is_rejected() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
     assert_eq!(lease.external_coex(), None);
     assert_eq!(
-        lease.stop_external_coex(&mut NoPlatform),
+        lease.stop_external_coex(),
         Err(crate::coex::ExternalCoexError::NotActive)
     );
 }

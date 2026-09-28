@@ -624,7 +624,7 @@ impl BluetoothSystem {
                 FailStopOwner::Retired(role, retired),
             ));
         }
-        let (lease, _, clocks) = guard.parts();
+        let (lease, _, _) = guard.parts();
         let shut_down = match retired.shut_down(lease, &CELLS) {
             Ok(shut_down) => shut_down,
             Err(failure) => {
@@ -641,7 +641,7 @@ impl BluetoothSystem {
             reset,
         } = shut_down;
         let radio_memory = role.into_memory(&reset);
-        let powered = match clocked.disable_clocks(lease, clocks) {
+        let powered = match clocked.disable_clocks(lease) {
             Ok(powered) => powered,
             Err(failure) => {
                 let error = failure.error();
@@ -663,7 +663,7 @@ impl BluetoothSystem {
             direction_finding,
             radio: radio_memory,
         };
-        match powered.power_down(lease, clocks) {
+        match powered.power_down(lease) {
             Ok(cold) => Ok(BluetoothParked {
                 partition: cold.into_partition(),
                 memory,
@@ -756,13 +756,12 @@ fn dispatch(source: EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptD
 
 fn unwind_powered(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
     powered: PoweredOwner,
     memory: ControllerMemory,
     published: Option<&'static Storage>,
     error: BluetoothStartError,
 ) -> BluetoothStartFailure {
-    match powered.power_down(lease, clocks) {
+    match powered.power_down(lease) {
         Ok(cold) => BluetoothStartFailure {
             error,
             owner: Ok(BluetoothParked {
@@ -842,7 +841,6 @@ pub async fn start<P, C: PlatformClockProvider>(
             }
             return Err(unwind_powered(
                 lease,
-                clocks,
                 failure.into_owner(),
                 memory,
                 published,

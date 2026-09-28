@@ -11,8 +11,10 @@
 //!
 //! For the modem PLL-source dependency the executor acquires the 160 MHz
 //! source before opening the modem gate and releases it after closing the
-//! gate, in the vendor order. A provider failure poisons the transaction: the
-//! planner cannot tell a refused request from a partially applied one.
+//! gate, in the vendor order. Each platform reference lives in
+//! [`ModemPlatformClocks`] while its dependency is enabled. A refused request
+//! poisons the transaction: the planner cannot tell a refused request from a
+//! partially applied one.
 
 use oer_esp32s31_pac::{ModemClockDevice, RadioPhyRegisters};
 
@@ -47,12 +49,158 @@ pub enum PlatformClock {
 /// Platform-owned clocks that radio modules depend on.
 ///
 /// The platform clock owner (ESP-HAL) keeps its own reference count of each,
-/// because other SoC users share them.
+/// because other SoC users share them. The radio holds each reference as a
+/// [`PlatformClockGuard`] for as long as it needs the clock; dropping the
+/// guard releases the reference, so there is no separate release call.
 pub trait PlatformClockProvider {
     /// Acquire one reference to `clock`.
-    fn acquire(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError>;
-    /// Release one reference to `clock`.
-    fn release(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError>;
+    ///
+    /// # Errors
+    ///
+    /// The platform refused the reference; nothing is held.
+    fn acquire(&self, clock: PlatformClock) -> Result<PlatformClockGuard, PlatformClockError>;
+}
+
+/// One platform clock reference held by the radio.
+///
+/// Dropping it releases the reference through the provider that created it.
+/// The platform's counts are global, so a guard needs no borrow of its
+/// provider and may live in a static radio owner.
+#[must_use = "dropping the guard releases the platform clock reference"]
+pub struct PlatformClockGuard {
+    clock: PlatformClock,
+    release: fn(PlatformClock),
+}
+
+impl PlatformClockGuard {
+    /// Wrap one reference to `clock` that the caller just acquired from its
+    /// platform; `release(clock)` drops exactly that reference.
+    ///
+    /// Only a [`PlatformClockProvider`] implementation creates guards.
+    pub const fn new(clock: PlatformClock, release: fn(PlatformClock)) -> Self {
+        Self { clock, release }
+    }
+
+    /// The clock this guard holds.
+    pub const fn clock(&self) -> PlatformClock {
+        self.clock
+    }
+}
+
+impl Drop for PlatformClockGuard {
+    fn drop(&mut self) {
+        (self.release)(self.clock);
+    }
+}
+
+impl core::fmt::Debug for PlatformClockGuard {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("PlatformClockGuard")
+            .field(&self.clock)
+            .finish()
+    }
+}
+
+/// How many references the radio's guards hold, per platform clock.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlatformClockHolds {
+    counts: [u16; PlatformClock::COUNT],
+}
+
+impl PlatformClockHolds {
+    /// The references held to `clock`.
+    pub const fn get(&self, clock: PlatformClock) -> u16 {
+        self.counts[clock.index()]
+    }
+
+    /// Record `count` references to `clock`.
+    pub const fn set(&mut self, clock: PlatformClock, count: u16) {
+        self.counts[clock.index()] = count;
+    }
+
+    /// Whether no reference is held.
+    pub fn is_empty(&self) -> bool {
+        self.counts.iter().all(|&count| count == 0)
+    }
+
+    /// Count the reference `guard` holds.
+    pub(crate) fn count(&mut self, guard: Option<&PlatformClockGuard>) {
+        if let Some(guard) = guard {
+            let index = guard.clock().index();
+            self.counts[index] = self.counts[index].saturating_add(1);
+        }
+    }
+}
+
+impl PlatformClock {
+    /// Every platform clock, in index order.
+    pub const ALL: [Self; 5] = [
+        Self::Pll160m,
+        Self::AnalogI2cMaster,
+        Self::Mpll,
+        Self::ModemCoexistence,
+        Self::ModemLowPowerTimer,
+    ];
+
+    /// The number of platform clocks.
+    pub const COUNT: usize = Self::ALL.len();
+
+    /// This clock's position in [`Self::ALL`].
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Pll160m => 0,
+            Self::AnalogI2cMaster => 1,
+            Self::Mpll => 2,
+            Self::ModemCoexistence => 3,
+            Self::ModemLowPowerTimer => 4,
+        }
+    }
+}
+
+/// Platform clock references the modem clock planner's dependency edges
+/// hold, one per platform-owned dependency.
+#[derive(Debug, Default)]
+pub(crate) struct ModemPlatformClocks {
+    pll_f160m: Option<PlatformClockGuard>,
+    analog_i2c: Option<PlatformClockGuard>,
+    coexistence: Option<PlatformClockGuard>,
+}
+
+impl ModemPlatformClocks {
+    fn slot(&mut self, clock: PlatformClock) -> &mut Option<PlatformClockGuard> {
+        match clock {
+            PlatformClock::Pll160m => &mut self.pll_f160m,
+            PlatformClock::AnalogI2cMaster => &mut self.analog_i2c,
+            PlatformClock::ModemCoexistence => &mut self.coexistence,
+            PlatformClock::Mpll | PlatformClock::ModemLowPowerTimer => {
+                unreachable!("no modem clock dependency holds this platform clock")
+            }
+        }
+    }
+
+    fn acquire(
+        &mut self,
+        clock: PlatformClock,
+        platform: &impl PlatformClockProvider,
+    ) -> Result<(), PlatformClockError> {
+        let slot = self.slot(clock);
+        debug_assert!(slot.is_none(), "the planner enables a dependency once");
+        if slot.is_none() {
+            *slot = Some(platform.acquire(clock)?);
+        }
+        Ok(())
+    }
+
+    fn release(&mut self, clock: PlatformClock) {
+        drop(self.slot(clock).take());
+    }
+
+    /// Count the references held into `holds`.
+    pub(crate) fn count_into(&self, holds: &mut PlatformClockHolds) {
+        for guard in [&self.pll_f160m, &self.analog_i2c, &self.coexistence] {
+            holds.count(guard.as_ref());
+        }
+    }
 }
 
 /// Modem clock gates driven by the radio PAC.
@@ -93,15 +241,16 @@ const fn modem_device(dependency: Dependency) -> Option<ModemClockDevice> {
 fn perform_acquire(
     dependency: Dependency,
     port: &mut impl ModemClockPort,
-    platform: &mut impl PlatformClockProvider,
+    held: &mut ModemPlatformClocks,
+    platform: &impl PlatformClockProvider,
 ) -> Result<(), PlatformClockError> {
     match dependency {
         Dependency::Pll160AndModemSource => {
-            platform.acquire(PlatformClock::Pll160m)?;
+            held.acquire(PlatformClock::Pll160m, platform)?;
             port.configure_device(ModemClockDevice::PllSourceGate, true);
         }
-        Dependency::AnalogI2cMaster => platform.acquire(PlatformClock::AnalogI2cMaster)?,
-        Dependency::Coexistence => platform.acquire(PlatformClock::ModemCoexistence)?,
+        Dependency::AnalogI2cMaster => held.acquire(PlatformClock::AnalogI2cMaster, platform)?,
+        Dependency::Coexistence => held.acquire(PlatformClock::ModemCoexistence, platform)?,
         other => {
             if let Some(device) = modem_device(other) {
                 port.configure_device(device, true);
@@ -114,15 +263,15 @@ fn perform_acquire(
 fn perform_release(
     dependency: Dependency,
     port: &mut impl ModemClockPort,
-    platform: &mut impl PlatformClockProvider,
+    held: &mut ModemPlatformClocks,
 ) -> Result<(), PlatformClockError> {
     match dependency {
         Dependency::Pll160AndModemSource => {
             port.configure_device(ModemClockDevice::PllSourceGate, false);
-            platform.release(PlatformClock::Pll160m)?;
+            held.release(PlatformClock::Pll160m);
         }
-        Dependency::AnalogI2cMaster => platform.release(PlatformClock::AnalogI2cMaster)?,
-        Dependency::Coexistence => platform.release(PlatformClock::ModemCoexistence)?,
+        Dependency::AnalogI2cMaster => held.release(PlatformClock::AnalogI2cMaster),
+        Dependency::Coexistence => held.release(PlatformClock::ModemCoexistence),
         other => {
             if let Some(device) = modem_device(other) {
                 port.configure_device(device, false);
@@ -144,13 +293,14 @@ fn perform_release(
 pub(crate) fn execute_acquire<'identity>(
     prepared: PreparedModemClockAcquire<'identity>,
     port: &mut impl ModemClockPort,
-    platform: &mut impl PlatformClockProvider,
+    held: &mut ModemPlatformClocks,
+    platform: &impl PlatformClockProvider,
 ) -> Result<
     (ModemClockPlanner<'identity>, ModemClockLease<'identity>),
     PoisonedModemClockAcquire<'identity>,
 > {
     oer_radio_clock::execute_acquire(prepared, |dependency| {
-        perform_acquire(dependency, port, platform)
+        perform_acquire(dependency, port, held, platform)
     })
 }
 
@@ -158,7 +308,8 @@ pub(crate) fn execute_acquire<'identity>(
 ///
 /// # Errors
 ///
-/// A refused platform request poisons the transaction at that edge.
+/// Releasing never fails; the planner's release contract still reports a
+/// poisoned transaction.
 #[allow(
     clippy::result_large_err,
     reason = "the poisoned transaction retains the planner and lease without allocation"
@@ -166,10 +317,10 @@ pub(crate) fn execute_acquire<'identity>(
 pub(crate) fn execute_release<'planner, 'lease>(
     prepared: PreparedModemClockRelease<'planner, 'lease>,
     port: &mut impl ModemClockPort,
-    platform: &mut impl PlatformClockProvider,
+    held: &mut ModemPlatformClocks,
 ) -> Result<ModemClockPlanner<'planner>, PoisonedModemClockRelease<'planner, 'lease>> {
     oer_radio_clock::execute_release(prepared, |dependency| {
-        perform_release(dependency, port, platform)
+        perform_release(dependency, port, held)
     })
 }
 

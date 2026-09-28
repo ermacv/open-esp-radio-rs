@@ -1,8 +1,8 @@
-use core::cell::RefCell;
-use std::vec::Vec;
+use std::{cell::RefCell, rc::Rc, vec::Vec};
 
 use super::*;
 use crate::power::clock::{ModemClockModule, ModemClockPlannerIdentity};
+use crate::power::test_clocks::{ClockEvent, CountingPlatformClocks, held, holding};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
@@ -16,65 +16,53 @@ enum Operation {
 }
 
 /// One ordered log shared by the modem port and the platform provider.
-#[derive(Default)]
-struct Log {
-    operations: Vec<Operation>,
-    refuse: Option<Operation>,
-}
+type Log = Rc<RefCell<Vec<Operation>>>;
 
-struct Port<'log>(&'log RefCell<Log>);
+struct Port(Log);
 
-impl ModemClockPort for Port<'_> {
+impl ModemClockPort for Port {
     fn configure_device(&mut self, device: ModemClockDevice, enable: bool) {
-        self.0
-            .borrow_mut()
-            .operations
-            .push(Operation::Device(device, enable));
+        self.0.borrow_mut().push(Operation::Device(device, enable));
     }
 }
 
-struct Platform<'log>(&'log RefCell<Log>);
-
-impl Platform<'_> {
-    fn request(&mut self, operation: Operation) -> Result<(), PlatformClockError> {
-        let mut log = self.0.borrow_mut();
-        if log.refuse == Some(operation) {
-            return Err(PlatformClockError);
-        }
-        log.operations.push(operation);
-        Ok(())
-    }
-}
-
-impl PlatformClockProvider for Platform<'_> {
-    fn acquire(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
-        self.request(match clock {
-            PlatformClock::Pll160m => Operation::AcquirePll,
-            PlatformClock::AnalogI2cMaster => Operation::AcquireAnalogI2c,
-            other => Operation::Acquire(other),
-        })
-    }
-    fn release(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
-        self.request(match clock {
-            PlatformClock::Pll160m => Operation::ReleasePll,
-            PlatformClock::AnalogI2cMaster => Operation::ReleaseAnalogI2c,
-            other => Operation::Release(other),
-        })
-    }
+fn setup() -> (Log, Port, CountingPlatformClocks) {
+    let log = Log::default();
+    let sink = log.clone();
+    let platform = CountingPlatformClocks::logging(move |event| {
+        sink.borrow_mut().push(match event {
+            ClockEvent::Acquire(PlatformClock::Pll160m) => Operation::AcquirePll,
+            ClockEvent::Acquire(PlatformClock::AnalogI2cMaster) => Operation::AcquireAnalogI2c,
+            ClockEvent::Acquire(other) => Operation::Acquire(other),
+            ClockEvent::Release(PlatformClock::Pll160m) => Operation::ReleasePll,
+            ClockEvent::Release(PlatformClock::AnalogI2cMaster) => Operation::ReleaseAnalogI2c,
+            ClockEvent::Release(other) => Operation::Release(other),
+        });
+    });
+    (log.clone(), Port(log), platform)
 }
 
 #[test]
 fn the_pll_source_brackets_the_modem_gate_and_the_analog_clock_goes_to_the_platform() {
-    let log = RefCell::new(Log::default());
+    let (log, mut port, platform) = setup();
+    let mut held_clocks = ModemPlatformClocks::default();
     let identity = ModemClockPlannerIdentity::new();
     let planner = ModemClockPlanner::managed(&identity);
     let prepared = planner
         .prepare_acquire(ModemClockModule::Phy.dependencies())
         .unwrap_or_else(|_| panic!("PHY"));
-    let (planner, lease) = execute_acquire(prepared, &mut Port(&log), &mut Platform(&log))
+    let (planner, lease) = execute_acquire(prepared, &mut port, &mut held_clocks, &platform)
         .unwrap_or_else(|_| panic!("acquire"));
     assert_eq!(
-        log.borrow().operations,
+        held(),
+        holding(&[PlatformClock::Pll160m, PlatformClock::AnalogI2cMaster])
+    );
+    // The owner's own count is what a post-mortem snapshot reports.
+    let mut counted = PlatformClockHolds::default();
+    held_clocks.count_into(&mut counted);
+    assert_eq!(counted, held());
+    assert_eq!(
+        *log.borrow(),
         [
             Operation::Device(ModemClockDevice::ModemAdcCommonFe, true),
             Operation::Device(ModemClockDevice::ModemPrivateFe, true),
@@ -85,14 +73,15 @@ fn the_pll_source_brackets_the_modem_gate_and_the_analog_clock_goes_to_the_platf
         ]
     );
 
-    log.borrow_mut().operations.clear();
+    log.borrow_mut().clear();
     let prepared = planner
         .prepare_release(lease)
         .unwrap_or_else(|_| panic!("release"));
-    let _planner = execute_release(prepared, &mut Port(&log), &mut Platform(&log))
+    let _planner = execute_release(prepared, &mut port, &mut held_clocks)
         .unwrap_or_else(|_| panic!("release"));
+    assert!(held().is_empty());
     assert_eq!(
-        log.borrow().operations,
+        *log.borrow(),
         [
             Operation::Device(ModemClockDevice::ModemAdcCommonFe, false),
             Operation::Device(ModemClockDevice::ModemPrivateFe, false),
@@ -106,19 +95,42 @@ fn the_pll_source_brackets_the_modem_gate_and_the_analog_clock_goes_to_the_platf
 
 #[test]
 fn a_refused_platform_request_poisons_the_transaction_before_the_gate() {
-    let log = RefCell::new(Log {
-        refuse: Some(Operation::AcquirePll),
-        ..Log::default()
-    });
+    let (log, mut port, platform) = setup();
+    platform.set_refused(PlatformClock::Pll160m, true);
+    let mut held_clocks = ModemPlatformClocks::default();
     let identity = ModemClockPlannerIdentity::new();
     let planner = ModemClockPlanner::managed(&identity);
     let prepared = planner
         .prepare_acquire(ModemClockModule::Coexistence.dependencies())
         .unwrap_or_else(|_| panic!("coexistence"));
-    let Err(poisoned) = execute_acquire(prepared, &mut Port(&log), &mut Platform(&log)) else {
+    let Err(poisoned) = execute_acquire(prepared, &mut port, &mut held_clocks, &platform) else {
         panic!("a refused PLL request must poison the acquisition");
     };
     assert_eq!(poisoned.dependency(), Dependency::Pll160AndModemSource);
     // The modem gate was not opened without its upstream source.
-    assert!(log.borrow().operations.is_empty());
+    assert!(log.borrow().is_empty());
+    assert!(held().is_empty());
+}
+
+#[test]
+fn a_poisoned_acquisition_keeps_its_references_until_the_owner_drops() {
+    let (_, mut port, platform) = setup();
+    platform.set_refused(PlatformClock::AnalogI2cMaster, true);
+    let mut held_clocks = ModemPlatformClocks::default();
+    let identity = ModemClockPlannerIdentity::new();
+    let planner = ModemClockPlanner::managed(&identity);
+    let prepared = planner
+        .prepare_acquire(ModemClockModule::Phy.dependencies())
+        .unwrap_or_else(|_| panic!("PHY"));
+    let Err(poisoned) = execute_acquire(prepared, &mut port, &mut held_clocks, &platform) else {
+        panic!("a refused analog-I2C request must poison the acquisition");
+    };
+    assert_eq!(poisoned.dependency(), Dependency::AnalogI2cMaster);
+    // The 160 MHz source taken before the refusal stays with the poisoned
+    // owner; it is released with the owner, never by a separate call.
+    assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
+    drop(poisoned);
+    assert_eq!(held(), holding(&[PlatformClock::Pll160m]));
+    drop(held_clocks);
+    assert!(held().is_empty());
 }

@@ -39,7 +39,7 @@ pub(crate) trait PowerSequenceBackend {
 pub(crate) struct RoutePower<'route, P> {
     pub(crate) phy: &'route mut RadioPhyRegisters,
     pub(crate) refs: &'route mut PlatformClockRefs,
-    pub(crate) platform: &'route mut P,
+    pub(crate) platform: &'route P,
 }
 
 impl<P: PlatformClockProvider> PowerSequenceBackend for RoutePower<'_, P> {
@@ -274,24 +274,14 @@ fn verify_state(checkpoint: PowerCheckpoint, observed: bool) -> Result<(), Power
     }
 }
 
-/// A platform clock owner that grants every request, for tests that stop
-/// before any platform clock edge matters.
 #[cfg(test)]
-#[derive(Default)]
-pub(crate) struct TestPlatformClocks;
-
-#[cfg(test)]
-impl PlatformClockProvider for TestPlatformClocks {
-    fn acquire(&mut self, _clock: PlatformClock) -> Result<(), PlatformClockError> {
-        Ok(())
-    }
-    fn release(&mut self, _clock: PlatformClock) -> Result<(), PlatformClockError> {
-        Ok(())
-    }
-}
+pub(crate) mod test_clocks;
 
 #[cfg(test)]
 mod tests;
 
 pub(crate) mod clock;
-pub use clock::{PlatformClock, PlatformClockError, PlatformClockProvider};
+pub use clock::{
+    PlatformClock, PlatformClockError, PlatformClockGuard, PlatformClockHolds,
+    PlatformClockProvider,
+};

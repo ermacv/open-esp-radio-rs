@@ -259,26 +259,24 @@ fn fail_stop(error: Ieee802154StartError, owner: FailStopOwner) -> Ieee802154Sta
 /// Roll a clocked client back to its partition.
 fn unwind_clocked(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
     clocked: Ieee802154Clocked,
     engine: Ieee802154Engine<'static>,
     error: Ieee802154StartError,
 ) -> Ieee802154StartFailure {
-    let powered = match clocked.disable_clocks(lease, clocks) {
+    let powered = match clocked.disable_clocks(lease) {
         Ok(powered) => powered,
         Err(failure) => return fail_stop(error, FailStopOwner::Clocked(failure.into_owner())),
     };
-    unwind_powered(lease, clocks, powered, engine, error)
+    unwind_powered(lease, powered, engine, error)
 }
 
 fn unwind_powered(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
     powered: Ieee802154Powered,
     engine: Ieee802154Engine<'static>,
     error: Ieee802154StartError,
 ) -> Ieee802154StartFailure {
-    match powered.power_down(lease, clocks) {
+    match powered.power_down(lease) {
         Ok(cold) => Ieee802154StartFailure {
             error,
             owner: Ok(Ieee802154Parked {
@@ -350,13 +348,7 @@ pub async fn start<P, C: PlatformClockProvider>(
                     FailStopOwner::Powered(failure.into_owner()),
                 ));
             }
-            return Err(unwind_powered(
-                lease,
-                clocks,
-                failure.into_owner(),
-                engine,
-                error,
-            ));
+            return Err(unwind_powered(lease, failure.into_owner(), engine, error));
         }
     };
 
@@ -377,11 +369,11 @@ pub async fn start<P, C: PlatformClockProvider>(
                 Ieee802154JoinError::Phy(error) => Ieee802154StartError::Phy(error),
                 Ieee802154JoinError::Client(error) => Ieee802154StartError::PhyClient(error),
             };
-            let (lease, _, clocks) = guard.parts();
-            return Err(unwind_clocked(lease, clocks, clocked, engine, error));
+            let (lease, _, _) = guard.parts();
+            return Err(unwind_clocked(lease, clocked, engine, error));
         }
     };
-    let (lease, platform, clocks) = guard.parts();
+    let (lease, platform, _) = guard.parts();
     if acquired == ConcurrentAcquire::TrackingDue {
         let issued_at = Instant::now().as_micros();
         let tracked = match clocked.quiescence(issued_at, issued_at + TRACKING_WINDOW_MICROS) {
@@ -423,7 +415,6 @@ pub async fn start<P, C: PlatformClockProvider>(
             let error = Ieee802154StartError::Reset(failure.error());
             return Err(leave_and_unwind(
                 lease,
-                clocks,
                 failure.into_clocked(),
                 membership,
                 engine,
@@ -437,7 +428,6 @@ pub async fn start<P, C: PlatformClockProvider>(
             let error = Ieee802154StartError::Foundation(failure.error());
             return Err(leave_and_unwind(
                 lease,
-                clocks,
                 failure.into_reset().into_clocked(),
                 membership,
                 engine,
@@ -507,7 +497,6 @@ pub async fn start<P, C: PlatformClockProvider>(
 
 fn leave_and_unwind(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
     clocked: Ieee802154Clocked,
     membership: Ieee802154PhyMembership,
     engine: Ieee802154Engine<'static>,
@@ -516,7 +505,7 @@ fn leave_and_unwind(
     if leave_ieee802154(lease, &clocked, membership).is_err() {
         return fail_stop(error, FailStopOwner::Clocked(clocked));
     }
-    unwind_clocked(lease, clocks, clocked, engine, error)
+    unwind_clocked(lease, clocked, engine, error)
 }
 
 /// The shared radio is a software-coexistence build: the MAC publishes the
@@ -855,8 +844,8 @@ impl Ieee802154System {
                 FailStopOwner::Clocked(clocked),
             ));
         }
-        let (lease, _, clocks) = guard.parts();
-        let powered = match clocked.disable_clocks(lease, clocks) {
+        let (lease, _, _) = guard.parts();
+        let powered = match clocked.disable_clocks(lease) {
             Ok(powered) => powered,
             Err(failure) => {
                 return Err(stop_fail_stop(
@@ -865,7 +854,7 @@ impl Ieee802154System {
                 ));
             }
         };
-        match powered.power_down(lease, clocks) {
+        match powered.power_down(lease) {
             Ok(cold) => Ok(Ieee802154Parked {
                 partition: cold.into_partition(),
                 engine,

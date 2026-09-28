@@ -44,9 +44,10 @@ fn a_rejected_power_entry_returns_the_unchanged_cold_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
-    let failure = match Ieee802154Cold::from_partition(partitions.ieee802154)
-        .power_up(&mut lease, &mut crate::power::TestPlatformClocks)
-    {
+    let failure = match Ieee802154Cold::from_partition(partitions.ieee802154).power_up(
+        &mut lease,
+        &crate::power::test_clocks::CountingPlatformClocks::new(),
+    ) {
         Ok(_) => panic!("a client cannot enter common power twice"),
         Err(failure) => failure,
     };
@@ -74,23 +75,6 @@ fn the_btbb_steps_require_the_ieee802154_reference() {
     assert!(!lease.holds_btbb(RadioClient::Ieee802154));
 }
 
-struct NoPlatform;
-
-impl crate::power::PlatformClockProvider for NoPlatform {
-    fn acquire(
-        &mut self,
-        _clock: crate::power::PlatformClock,
-    ) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-    fn release(
-        &mut self,
-        _clock: crate::power::PlatformClock,
-    ) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-}
-
 #[test]
 fn releasing_clocks_the_planner_never_granted_keeps_the_clocked_owner() {
     let radio = arbiter();
@@ -101,7 +85,7 @@ fn releasing_clocks_the_planner_never_granted_keeps_the_clocked_owner() {
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
     // Rejected by the planner before any register access.
-    let failure = match clocked.disable_clocks(&mut lease, &mut NoPlatform) {
+    let failure = match clocked.disable_clocks(&mut lease) {
         Ok(_) => panic!("clocks the planner never granted cannot be released"),
         Err(failure) => failure,
     };

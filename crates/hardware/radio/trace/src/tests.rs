@@ -185,6 +185,7 @@ fn snapshot(bus: BusRead) -> PhySnapshot {
             observed: 26,
         },
         bus,
+        platform_clocks: [1, 2, 1, 0, 255, 0, 0, 7],
     }
 }
 

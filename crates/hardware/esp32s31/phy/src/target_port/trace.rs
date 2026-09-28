@@ -83,6 +83,7 @@ pub(crate) fn record_poison(
     slot: oer_phy_trace::Slot,
     clients: PhyClientSnapshot,
     state: &PhyState,
+    platform_clocks: oer_esp32s31_hal::power::PlatformClockHolds,
     registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
 ) {
     #[cfg(feature = "trace")]
@@ -98,6 +99,7 @@ pub(crate) fn record_poison(
                 analog_i2c_busy: bus.analog_i2c_busy,
                 pbus_results: bus.pbus_results,
             }),
+            platform_clocks: crate::trace::platform_clocks(platform_clocks),
         });
     }
 }

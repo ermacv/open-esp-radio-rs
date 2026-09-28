@@ -92,16 +92,14 @@ pub enum ConcurrentRfError {
 /// calibration or RF wake.
 fn enable_phy_clocks(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
+    clocks: &impl PlatformClockProvider,
 ) -> Result<(), ModemClockError> {
     lease.enable_phy_modem_clocks(PhyClockModule::Phy, clocks)?;
     if let Err(error) = lease.enable_phy_modem_clocks(PhyClockModule::Calibration, clocks) {
-        return Err(
-            match lease.disable_phy_modem_clocks(PhyClockModule::Phy, clocks) {
-                Ok(()) => error,
-                Err(rollback) => rollback,
-            },
-        );
+        return Err(match lease.disable_phy_modem_clocks(PhyClockModule::Phy) {
+            Ok(()) => error,
+            Err(rollback) => rollback,
+        });
     }
     Ok(())
 }
@@ -109,10 +107,9 @@ fn enable_phy_clocks(
 /// Release both modules after a registration that did not complete.
 fn release_phy_clocks(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
 ) -> Result<(), ModemClockError> {
-    let calibration = lease.disable_phy_modem_clocks(PhyClockModule::Calibration, clocks);
-    let phy = lease.disable_phy_modem_clocks(PhyClockModule::Phy, clocks);
+    let calibration = lease.disable_phy_modem_clocks(PhyClockModule::Calibration);
+    let phy = lease.disable_phy_modem_clocks(PhyClockModule::Phy);
     calibration.and(phy)
 }
 
@@ -145,7 +142,7 @@ pub enum ConcurrentPhyTrackingError {
 pub async fn register_concurrent_phy<P, D, O>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
-    clocks: &mut impl PlatformClockProvider,
+    clocks: &impl PlatformClockProvider,
     config: PhyRegisterConfig,
     observer: O,
 ) -> Result<ConcurrentPhyRegistration, ConcurrentPhyRegisterFailure>
@@ -182,7 +179,7 @@ where
 async fn register_concurrent_phy_untraced<P, D, O>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
-    clocks: &mut impl PlatformClockProvider,
+    clocks: &impl PlatformClockProvider,
     config: PhyRegisterConfig,
     observer: O,
 ) -> Result<ConcurrentPhyRegistration, ConcurrentPhyRegisterFailure>
@@ -217,7 +214,7 @@ where
                 outcome,
                 counters,
             };
-            match lease.disable_phy_modem_clocks(PhyClockModule::Calibration, clocks) {
+            match lease.disable_phy_modem_clocks(PhyClockModule::Calibration) {
                 Ok(()) => Ok(registration),
                 Err(error) => Err(ConcurrentPhyRegisterFailure::CalibrationClock {
                     registration,
@@ -227,7 +224,7 @@ where
         }
         Err(failure) => Err(ConcurrentPhyRegisterFailure::Failed {
             failure,
-            clocks: release_phy_clocks(lease, clocks),
+            clocks: release_phy_clocks(lease),
         }),
     }
 }
@@ -256,12 +253,11 @@ where
 pub async fn close_concurrent_rf<P, D>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
-    clocks: &mut impl PlatformClockProvider,
 ) -> Result<(), ConcurrentRfError>
 where
     D: PhyAsyncDelay,
 {
-    let result = close_concurrent_rf_untraced::<P, D>(lease, platform, clocks).await;
+    let result = close_concurrent_rf_untraced::<P, D>(lease, platform).await;
     emit_rf(RfOperation::Close, &result);
     result
 }
@@ -269,7 +265,6 @@ where
 async fn close_concurrent_rf_untraced<P, D>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
-    clocks: &mut impl PlatformClockProvider,
 ) -> Result<(), ConcurrentRfError>
 where
     D: PhyAsyncDelay,
@@ -278,6 +273,7 @@ where
         .attachment_mut()
         .idle_domain()
         .map_err(ConcurrentRfError::Rejected)?;
+    let platform_clocks = lease.platform_clock_holds();
     let (mut registers, phy) = lease.phy_hal_with_attachment();
     if !domain.clients.describes(&registers) {
         *phy.slot_mut() = Slot::Registered(domain);
@@ -307,7 +303,7 @@ where
         Ok(()) => {
             *phy.slot_mut() = Slot::RfClosed(domain);
             lease
-                .disable_phy_modem_clocks(PhyClockModule::Phy, clocks)
+                .disable_phy_modem_clocks(PhyClockModule::Phy)
                 .map_err(ConcurrentRfError::Clock)
         }
         Err(PhyRfCloseTemperatureFailure::Recoverable(error)) => {
@@ -321,6 +317,7 @@ where
                 oer_phy_trace::Slot::Registered,
                 domain.client_snapshot(),
                 domain.phy_state(),
+                platform_clocks,
                 &mut registers,
             );
             *phy.slot_mut() = Slot::Poisoned;
@@ -350,7 +347,7 @@ where
 // CAPABILITY: phy-lifecycle-boundaries-rf-wake-from-retained-sleep, whole-radio-active-operation-power-saving-and-shutdown-rf-wake-resume, phy-protocol-consumer-resume-after-rf-sleep-wifi
 pub async fn wake_concurrent_rf<D>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
+    clocks: &impl PlatformClockProvider,
 ) -> Result<(), ConcurrentRfError>
 where
     D: PhyAsyncDelay,
@@ -362,7 +359,7 @@ where
 
 async fn wake_concurrent_rf_untraced<D>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
-    clocks: &mut impl PlatformClockProvider,
+    clocks: &impl PlatformClockProvider,
 ) -> Result<(), ConcurrentRfError>
 where
     D: PhyAsyncDelay,
@@ -387,6 +384,7 @@ where
             error,
         )));
     }
+    let platform_clocks = lease.platform_clock_holds();
     let (mut registers, phy) = lease.phy_hal_with_attachment();
     if let Err(error) =
         radio_lifecycle::execute_rf_wake_with_hal::<D>(&mut registers, domain.phy_state()).await
@@ -397,6 +395,7 @@ where
             oer_phy_trace::Slot::RfClosed,
             domain.client_snapshot(),
             domain.phy_state(),
+            platform_clocks,
             &mut registers,
         );
         *phy.slot_mut() = Slot::Poisoned;
@@ -404,7 +403,7 @@ where
     }
     *phy.slot_mut() = Slot::Registered(domain);
     lease
-        .disable_phy_modem_clocks(PhyClockModule::Calibration, clocks)
+        .disable_phy_modem_clocks(PhyClockModule::Calibration)
         .map_err(ConcurrentRfError::Clock)
 }
 
@@ -469,6 +468,7 @@ where
     let clients_before = pending.snapshot();
     let mut tracking = pending.begin_tracking(registered.tracking_policy());
 
+    let platform_clocks = lease.platform_clock_holds();
     let (mut registers, phy, mut grant) = lease.phy_hal_with_attachment_and_grant();
     if !tracking.describes(&registers) {
         let error = TargetPhyParamTrackingError::EpochMismatch;
@@ -478,6 +478,7 @@ where
             oer_phy_trace::Slot::Pending,
             clients_before,
             registered.target_state_mut(),
+            platform_clocks,
             &mut registers,
         );
         *phy.slot_mut() = Slot::Poisoned;
@@ -515,6 +516,7 @@ where
                 oer_phy_trace::Slot::Pending,
                 clients_before,
                 registered.target_state_mut(),
+                platform_clocks,
                 &mut registers,
             );
             *phy.slot_mut() = Slot::Poisoned;
@@ -534,6 +536,7 @@ where
                 oer_phy_trace::Slot::Pending,
                 clients_before,
                 registered.target_state_mut(),
+                platform_clocks,
                 &mut registers,
             );
             *phy.slot_mut() = Slot::Poisoned;

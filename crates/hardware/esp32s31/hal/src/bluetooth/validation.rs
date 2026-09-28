@@ -114,7 +114,7 @@ pub fn select_low_power_clock() -> bool {
     let task = oer_esp32s31_pac::BluetoothTaskRegisters::new(controller);
     let accepted = match shared.try_acquire() {
         Ok(mut lease) => lease
-            .select_bluetooth_low_power_clock(&task, &mut GrantedPlatformClocks)
+            .select_bluetooth_low_power_clock(&task, &GrantedPlatformClocks)
             .is_ok(),
         Err(_) => false,
     };
@@ -243,15 +243,10 @@ struct GrantedPlatformClocks;
 
 impl crate::shared_radio::PlatformClockProvider for GrantedPlatformClocks {
     fn acquire(
-        &mut self,
-        _clock: crate::shared_radio::PlatformClock,
-    ) -> Result<(), crate::shared_radio::PlatformClockError> {
-        Ok(())
-    }
-    fn release(
-        &mut self,
-        _clock: crate::shared_radio::PlatformClock,
-    ) -> Result<(), crate::shared_radio::PlatformClockError> {
-        Ok(())
+        &self,
+        clock: crate::shared_radio::PlatformClock,
+    ) -> Result<crate::shared_radio::PlatformClockGuard, crate::shared_radio::PlatformClockError>
+    {
+        Ok(crate::shared_radio::PlatformClockGuard::new(clock, |_| {}))
     }
 }

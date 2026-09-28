@@ -10,7 +10,10 @@
 
 use oer_esp32s31_pac::{RadioPhyRegisters, WifiPowerBaseline, WifiPowerRestoreReadback};
 
-use crate::power::{PlatformClock, PlatformClockError, PlatformClockProvider};
+use crate::power::{
+    PlatformClock, PlatformClockError, PlatformClockGuard, PlatformClockHolds,
+    PlatformClockProvider,
+};
 use crate::root::WifiPowerRestoreCheckpoint;
 
 /// Register transactions consumed by route clock policy.
@@ -25,7 +28,7 @@ pub(crate) trait ClockPort {
     fn run_common_power_sequence(
         &mut self,
         refs: &mut PlatformClockRefs,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
         entry: crate::power::PowerEntry,
     ) -> Result<(), crate::power::PowerError>;
 }
@@ -43,7 +46,7 @@ impl ClockPort for RadioPhyRegisters {
     fn run_common_power_sequence(
         &mut self,
         refs: &mut PlatformClockRefs,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
         entry: crate::power::PowerEntry,
     ) -> Result<(), crate::power::PowerError> {
         crate::power::execute_owned(
@@ -61,18 +64,18 @@ impl ClockPort for RadioPhyRegisters {
 ///
 /// The 160 MHz reference, the analog-I2C master clock and the MPLL are shared
 /// with other SoC users, so their platform owner (ESP-HAL) counts references
-/// and alone writes their gates. Common power takes one reference to each for
-/// as long as any client holds it; the flags make a retried power-up or
-/// power-down take or drop each reference exactly once.
-#[derive(Default)]
+/// and alone writes their gates. Common power holds one guard for each for as
+/// long as any client holds it; a retried power-up takes only the references
+/// it does not hold yet.
+#[derive(Debug, Default)]
 pub(crate) struct PlatformClockRefs {
-    pll_f160m: bool,
-    analog_i2c: bool,
-    mpll: bool,
+    pll_f160m: Option<PlatformClockGuard>,
+    analog_i2c: Option<PlatformClockGuard>,
+    mpll: Option<PlatformClockGuard>,
 }
 
 impl PlatformClockRefs {
-    fn held(&mut self, clock: PlatformClock) -> &mut bool {
+    fn slot(&mut self, clock: PlatformClock) -> &mut Option<PlatformClockGuard> {
         match clock {
             PlatformClock::Pll160m => &mut self.pll_f160m,
             PlatformClock::AnalogI2cMaster => &mut self.analog_i2c,
@@ -86,25 +89,23 @@ impl PlatformClockRefs {
     pub(crate) fn acquire(
         &mut self,
         clock: PlatformClock,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
     ) -> Result<(), PlatformClockError> {
-        if !*self.held(clock) {
-            platform.acquire(clock)?;
-            *self.held(clock) = true;
+        let slot = self.slot(clock);
+        if slot.is_none() {
+            *slot = Some(platform.acquire(clock)?);
         }
         Ok(())
     }
 
-    fn release(
-        &mut self,
-        clock: PlatformClock,
-        platform: &mut impl PlatformClockProvider,
-    ) -> Result<(), PlatformClockError> {
-        if *self.held(clock) {
-            platform.release(clock)?;
-            *self.held(clock) = false;
+    fn release(&mut self, clock: PlatformClock) {
+        drop(self.slot(clock).take());
+    }
+
+    fn count_into(&self, holds: &mut PlatformClockHolds) {
+        for guard in [&self.pll_f160m, &self.analog_i2c, &self.mpll] {
+            holds.count(guard.as_ref());
         }
-        Ok(())
     }
 }
 
@@ -137,8 +138,6 @@ pub enum CommonRadioPowerError {
     Power(crate::power::PowerError),
     /// The last client's cold-power baseline did not read back.
     Restore(WifiPowerRestoreCheckpoint),
-    /// The platform clock owner refused to release a reference.
-    PlatformClock(PlatformClockError),
 }
 
 /// Common modem/PHY power shared by concurrently running clients.
@@ -173,6 +172,11 @@ impl CommonRadioPower {
         self.clients != 0
     }
 
+    /// Count the platform references common power holds into `holds`.
+    pub(crate) fn count_platform_clocks(&self, holds: &mut PlatformClockHolds) {
+        self.refs.count_into(holds);
+    }
+
     #[cfg(test)]
     pub(crate) fn hold_for_test(&mut self, client: RadioClient) {
         self.clients |= client.bit();
@@ -186,7 +190,7 @@ impl CommonRadioPower {
     pub(crate) fn enter(
         &mut self,
         port: &mut impl ClockPort,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
         client: RadioClient,
     ) -> Result<(), CommonRadioPowerError> {
         if self.holds(client) {
@@ -215,24 +219,18 @@ impl CommonRadioPower {
     pub(crate) fn exit(
         &mut self,
         port: &mut impl ClockPort,
-        platform: &mut impl PlatformClockProvider,
         client: RadioClient,
     ) -> Result<(), CommonRadioPowerError> {
         if !self.holds(client) {
             return Err(CommonRadioPowerError::NotEntered);
         }
         if self.clients == client.bit() {
-            self.refs
-                .release(PlatformClock::AnalogI2cMaster, platform)
-                .map_err(CommonRadioPowerError::PlatformClock)?;
+            self.refs.release(PlatformClock::AnalogI2cMaster);
             self.power
                 .restore(port)
                 .map_err(CommonRadioPowerError::Restore)?;
-            for clock in [PlatformClock::Pll160m, PlatformClock::Mpll] {
-                self.refs
-                    .release(clock, platform)
-                    .map_err(CommonRadioPowerError::PlatformClock)?;
-            }
+            self.refs.release(PlatformClock::Pll160m);
+            self.refs.release(PlatformClock::Mpll);
         }
         self.clients &= !client.bit();
         Ok(())

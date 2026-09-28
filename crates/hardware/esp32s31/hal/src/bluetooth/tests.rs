@@ -270,10 +270,7 @@ fn an_unselected_low_power_clock_cannot_be_deselected() {
     let mut lease = shared.try_acquire().expect("the arbiter is free");
     // Rejected before any register access, so the validation root is safe.
     assert_eq!(
-        lease.deselect_bluetooth_low_power_clock(
-            &task.registers,
-            &mut crate::power::TestPlatformClocks
-        ),
+        lease.deselect_bluetooth_low_power_clock(&task.registers),
         Err(LowPowerClockError::NotSelected)
     );
     assert!(!lease.bluetooth_low_power_clock_selected());

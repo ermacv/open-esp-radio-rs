@@ -536,8 +536,8 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     crate::WatchdogConfig::complete(protection);
                     return Err(RADIO_LIFECYCLE_FAULT.init(fault));
                 }
-                let (lease, _, clocks) = guard.parts();
-                let released = match wifi.release(lease, clocks) {
+                let (lease, _, _) = guard.parts();
+                let released = match wifi.release(lease) {
                     Ok(released) => released,
                     Err(failure) => {
                         let ambiguous = !matches!(

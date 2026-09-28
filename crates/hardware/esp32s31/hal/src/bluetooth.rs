@@ -142,7 +142,7 @@ impl ColdOwner {
     pub fn power_up<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
-        clocks: &mut impl PlatformClockProvider,
+        clocks: &impl PlatformClockProvider,
     ) -> Result<PoweredOwner, PowerTransitionFailure<Self>> {
         match lease.enter_common_power(&self.partition.task, clocks) {
             Ok(()) => Ok(PoweredOwner {
@@ -173,9 +173,8 @@ impl PoweredOwner {
     pub fn power_down<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
-        clocks: &mut impl PlatformClockProvider,
     ) -> Result<ColdOwner, PowerTransitionFailure<Self>> {
-        match lease.exit_common_power(&self.partition.task, clocks) {
+        match lease.exit_common_power(&self.partition.task) {
             Ok(()) => Ok(ColdOwner {
                 partition: self.partition,
             }),
@@ -202,7 +201,7 @@ impl PoweredOwner {
     pub fn enable_clocks<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
-        platform: &mut impl PlatformClockProvider,
+        platform: &impl PlatformClockProvider,
     ) -> Result<ClockedOwner, ClockTransitionFailure<Self>> {
         let task = &self.partition.task;
         if let Err(error) = lease.enable_modem_clocks(task, platform) {
@@ -217,7 +216,7 @@ impl PoweredOwner {
             .reset_controller_domains(lease.registers_mut());
         let task = &partition.task;
         if let Err(error) = lease.select_bluetooth_low_power_clock(task, platform) {
-            let _ = lease.disable_modem_clocks(task, platform);
+            let _ = lease.disable_modem_clocks(task);
             return Err(ClockTransitionFailure {
                 owner: Self { partition },
                 error: BluetoothClockError::LowPowerClock(error),
@@ -227,8 +226,8 @@ impl PoweredOwner {
         let clocks = task.controller_clock_observation(shared);
         let (_, low_power) = task.bluetooth_shared_clock_observation(shared);
         if let Some(checkpoint) = clock_checkpoint(clocks, low_power) {
-            let _ = lease.deselect_bluetooth_low_power_clock(task, platform);
-            let _ = lease.disable_modem_clocks(task, platform);
+            let _ = lease.deselect_bluetooth_low_power_clock(task);
+            let _ = lease.disable_modem_clocks(task);
             return Err(ClockTransitionFailure {
                 owner: Self { partition },
                 error: BluetoothClockError::Readback(checkpoint),
@@ -307,19 +306,18 @@ impl ClockedOwner {
     pub fn disable_clocks<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
-        platform: &mut impl PlatformClockProvider,
     ) -> Result<PoweredOwner, ClockTransitionFailure<Self>> {
         let task = &self.partition.task;
         // A retry after a planner failure finds the clock already deselected.
         if lease.bluetooth_low_power_clock_selected()
-            && let Err(error) = lease.deselect_bluetooth_low_power_clock(task, platform)
+            && let Err(error) = lease.deselect_bluetooth_low_power_clock(task)
         {
             return Err(ClockTransitionFailure {
                 owner: self,
                 error: BluetoothClockError::LowPowerClock(error),
             });
         }
-        match lease.disable_modem_clocks(task, platform) {
+        match lease.disable_modem_clocks(task) {
             Ok(()) => Ok(PoweredOwner {
                 partition: self.partition,
             }),

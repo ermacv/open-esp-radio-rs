@@ -424,6 +424,7 @@ mod tests {
                 observed: 26,
             },
             bus: BusRead::DomainOff,
+            platform_clocks: [1, 1, 1, 0, 0, 0, 0, 0],
         };
         let words = snapshot.encode();
         let point = PhySnapshot::POINT.raw();
@@ -431,7 +432,7 @@ mod tests {
         assert!(line.contains(&snapshot.to_string()), "{line}");
         // A truncated or foreign slot is shown by size, never misdecoded.
         let truncated = describe_snapshot(&slot(point, &words, true), &words);
-        assert!(truncated.contains("12 words, truncated"), "{truncated}");
+        assert!(truncated.contains("14 words, truncated"), "{truncated}");
         let other = describe_snapshot(&slot(0x0181, &[1, 2, 3], false), &[1, 2, 3]);
         assert!(other.ends_with("3 words\n"), "{other}");
     }

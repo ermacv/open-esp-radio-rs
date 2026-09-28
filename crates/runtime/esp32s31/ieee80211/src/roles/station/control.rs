@@ -136,19 +136,16 @@ pub struct ConnectedControl<'resources, M: RawMutex, const CAPACITY: usize> {
     power: Option<&'resources StationPowerLink<M>>,
     hardware_beacon_monitor: Option<StationHardwareBeaconMonitorEpoch>,
     unverified_management: u32,
-    /// Control steps of the current report second, by outcome.
+    /// Consecutive steps that asked the scheduler to run control again.
     #[cfg(feature = "diagnostics")]
-    step_trace: ControlStepTrace,
+    more_streak: u32,
 }
 
-/// Control steps by outcome (More, TX pending, Idle, Exit, error) since
-/// `since_micros`, reported once per second.
+/// Consecutive `More` steps after which control is taken to spin: the
+/// scheduler runs control again without awaiting, so a step that never
+/// consumes its input starves every task of its executor.
 #[cfg(feature = "diagnostics")]
-#[derive(Default)]
-struct ControlStepTrace {
-    steps: [u32; 5],
-    since_micros: u64,
-}
+const CONTROL_SPIN_STEPS: u32 = 200_000;
 
 /// Robust management input one association dropped.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -215,7 +212,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             hardware_beacon_monitor: None,
             unverified_management: 0,
             #[cfg(feature = "diagnostics")]
-            step_trace: ControlStepTrace::default(),
+            more_streak: 0,
         }
     }
 
@@ -237,7 +234,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             hardware_beacon_monitor: None,
             unverified_management: 0,
             #[cfg(feature = "diagnostics")]
-            step_trace: ControlStepTrace::default(),
+            more_streak: 0,
         }
     }
 
@@ -732,54 +729,36 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     {
         let progress = self.service_step(hardware, tx, context).await;
         #[cfg(feature = "diagnostics")]
-        self.trace_step(&progress, tx.now_micros(), hardware.station_tsf());
+        self.observe_spin(&progress, tx.now_micros());
         progress
     }
 
     #[cfg(feature = "diagnostics")]
-    fn trace_step(
+    fn observe_spin(
         &mut self,
         progress: &Result<
             DatapathControlProgress<ConnectedDisconnectReason>,
             ConnectedControlError,
         >,
         now_micros: u64,
-        station_tsf: u64,
     ) {
-        let outcome = match progress {
-            Ok(DatapathControlProgress::More) => 0,
-            Ok(DatapathControlProgress::TxPending) => 1,
-            Ok(DatapathControlProgress::Idle) => 2,
-            Ok(DatapathControlProgress::Exit(_)) => 3,
-            Err(_) => 4,
-        };
-        let trace = &mut self.step_trace;
-        trace.steps[outcome] = trace.steps[outcome].saturating_add(1);
-        if now_micros.saturating_sub(trace.since_micros) < 1_000_000 {
+        if !matches!(progress, Ok(DatapathControlProgress::More)) {
+            self.more_streak = 0;
             return;
         }
-        log::info!(
-            "open-radio: station control steps={:?} deferred={:?} mailbox_empty={} core_tx={} \
-             outstanding={}",
-            trace.steps,
-            self.deferred_control_event,
-            self.receiver.is_empty(),
-            self.core.tx_in_flight(),
-            self.power.is_some_and(StationPowerLink::outstanding),
-        );
-        log::info!(
-            "open-radio: station tsf={} last_beacon_tsf={:?}",
-            station_tsf,
-            self.core
-                .beacon_monitor()
-                .and_then(|monitor| monitor.last_observation())
-                .map(|observation| observation.timestamp_tsf),
-        );
-        log::info!("open-radio: station power {:?}", self.core.power_debug());
-        *trace = ControlStepTrace {
-            steps: [0; 5],
-            since_micros: now_micros,
-        };
+        self.more_streak += 1;
+        if self.more_streak == CONTROL_SPIN_STEPS {
+            panic!(
+                "station control spins: now={} deferred={:?} mailbox_empty={} core_tx={} \
+                 outstanding={} power={:?}",
+                now_micros,
+                self.deferred_control_event,
+                self.receiver.is_empty(),
+                self.core.tx_in_flight(),
+                self.power.is_some_and(StationPowerLink::outstanding),
+                self.core.power_debug(),
+            );
+        }
     }
 
     async fn service_step<'a, H, X>(

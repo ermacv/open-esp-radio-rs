@@ -368,31 +368,16 @@ mod agent {
                 select(radio.wifi_coex_preemption_end(), power_irq.wait()),
             )
             .await;
-            #[cfg(feature = "diagnostics")]
-            if let Either3::First(command) = &event {
-                log::info!("open-radio: power agent command {command:?} awaits the radio");
-            }
             let mut guard = radio.lock().await;
             match event {
                 Either3::First(command) => {
-                    #[cfg(feature = "diagnostics")]
-                    log::info!("open-radio: power agent performs {command:?}");
-                    let performed = perform(&mut guard, rf, command).await;
-                    #[cfg(feature = "diagnostics")]
-                    log::info!("open-radio: power agent performed {:?}", performed.is_ok());
-                    if let Err(failure) = performed {
+                    if let Err(failure) = perform(&mut guard, rf, command).await {
                         link.fail(failure);
                         return failure;
                     }
                     link.performed.fetch_add(1, Ordering::AcqRel);
                 }
                 Either3::Second(phase) => {
-                    #[cfg(feature = "diagnostics")]
-                    log::info!(
-                        "open-radio: power agent coex phase share={} wifi={}",
-                        phase.share_percent(),
-                        phase.wifi()
-                    );
                     link.phase.lock(|cell| {
                         cell.set(Some(CoexPhaseView {
                             share_percent: phase.share_percent(),
@@ -408,8 +393,6 @@ mod agent {
                     link.preemption.lock(|cell| cell.set(Some(end)));
                 }
                 Either3::Third(Either::Second(observation)) => {
-                    #[cfg(feature = "diagnostics")]
-                    log::info!("open-radio: power agent power irq {observation:?}");
                     if !observation.sta_tbtt() {
                         continue;
                     }

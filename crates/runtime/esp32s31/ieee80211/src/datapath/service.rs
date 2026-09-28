@@ -455,10 +455,6 @@ where
                     pending().await
                 }
             };
-            #[cfg(feature = "diagnostics")]
-            crate::diagnostics::runner_await::mark(
-                crate::diagnostics::runner_await::RunnerAwait::ActiveTx,
-            );
             let wake = select4(
                 wait_rx,
                 self.irq.wait_tx(),
@@ -540,10 +536,6 @@ where
     pub(super) async fn drain_active_tx(&mut self) -> Result<(), B::Error> {
         let mut progress = WifiTxProgress::Pending;
         while progress == WifiTxProgress::Pending {
-            #[cfg(feature = "diagnostics")]
-            crate::diagnostics::runner_await::mark(
-                crate::diagnostics::runner_await::RunnerAwait::DrainTx,
-            );
             match select(self.irq.wait_tx(), self.services.wait_tx_deadline()).await {
                 Either::First(events) => {
                     progress = self

@@ -255,20 +255,9 @@ fn check() {
 /// The core 0 protocol executor's heartbeat.
 #[embassy_executor::task]
 pub(super) async fn protocol_heartbeat_task() {
-    #[cfg(feature = "wifi-ble-coex")]
-    let mut beats = 0_u32;
     loop {
         stall_if_injected(Executor::Protocol);
         heartbeat(Executor::Protocol);
-        #[cfg(feature = "wifi-ble-coex")]
-        {
-            beats += 1;
-            if beats.is_multiple_of(10) {
-                let (point, count) =
-                    oer_esp32s31_ieee80211_runtime::diagnostics::runner_await::current();
-                log::info!("hil-hang: radio loop await point={point} entered={count}");
-            }
-        }
         embassy_time::Timer::after_millis(100).await;
     }
 }
@@ -276,18 +265,9 @@ pub(super) async fn protocol_heartbeat_task() {
 /// The core 1 network executor's heartbeat.
 #[embassy_executor::task]
 pub(super) async fn network_heartbeat_task() {
-    #[cfg(feature = "wifi-ble-coex")]
-    let mut beats = 0_u32;
     loop {
         stall_if_injected(Executor::Network);
         heartbeat(Executor::Network);
-        #[cfg(feature = "wifi-ble-coex")]
-        {
-            beats += 1;
-            if beats.is_multiple_of(10) {
-                log::info!("hil-hang: network core alive seconds={}", beats / 10);
-            }
-        }
         embassy_time::Timer::after_millis(100).await;
     }
 }

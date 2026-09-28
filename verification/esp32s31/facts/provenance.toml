@@ -1715,14 +1715,32 @@ code = "65546c346d5f5b2bb29e7189ce50ffa4fd6a226bac2650c8912c233903caaf31"
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_he.o"
+symbol = "sta_recv_ctl"
+code = "5dea52e0e3aa74d95f5d21f1d02ff36586e8c317571bfa6da6e938bb8b836439"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_he.o"
 symbol = "wifi_htc_omc_txcb"
 code = "af7f9d9a308d38672d490428cb6bbe50dcd62ffa17c57efce7f375a8d975063d"
 
 [[function]]
 artifact = "libnet80211"
 member = "ieee80211_hostap.o"
+symbol = "hostap_recv_ctl"
+code = "08abfd6d5d9605c04d12f9b5479b1d441b711a6ae6be594f882a1051aa329aee"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_hostap.o"
 symbol = "ieee80211_is_action_category_robust"
 code = "b87d58e20de879861835baa6700cb0a44310437f0a0b599db8398e35c21f7b34"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ht.o"
+symbol = "ampdu_dispatch_upto"
+code = "b2c67a70a8a80c32281be7d93f3db690921a9777b7bd25fd25c642a31329cdbd"
 
 [[function]]
 artifact = "libnet80211"
@@ -1759,6 +1777,18 @@ artifact = "libnet80211"
 member = "ieee80211_ht.o"
 symbol = "ieee80211_ampdu_request"
 code = "003dbc8c07e988a40a1fa8b8ae9799183d2e3eef135394c954ab771216ec0bc8"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ht.o"
+symbol = "ieee80211_process_bar_info"
+code = "8369399970397cd8f1467d63de3a4eaf86a6ab18df8b23727fc44065dfe2b9e5"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_ht.o"
+symbol = "ieee80211_recv_bar"
+code = "fcef7440be640cbdb44c1acb7dabd151ce519b9a1d9dc86641362e489ec97a48"
 
 [[function]]
 artifact = "libnet80211"
@@ -4648,6 +4678,12 @@ member = ""
 symbol = "_cvt"
 code = "b4899d8b0c378c219ed9664a5582b1c4482f20617a8cba827ab37fad91e33d3c"
 decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "ampdu_dispatch_upto"
+code = "5af40c79a0b15b874d63ea61dec0e28ecb8f25fcf844fcb7e6e9a2bc209fdf93"
 
 [[function]]
 artifact = "rom"

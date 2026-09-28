@@ -6,14 +6,17 @@
 //! command; this crate splits every command into a start and an observed
 //! completion, so an outer owner decides how to wait.
 //!
-//! A chip implements [`AnalogRegisterBus`] over its PAC. Its address type is
-//! opaque: host selection, read masks and block aliases stay in the chip
+//! The vendor transactions are transitions: [`FieldReadTransition`],
+//! [`FieldWriteTransition`], [`ConfigurationTransition`] and
+//! [`ParallelTransition`] name the next whole-byte read or write, or the host
+//! map step, and accept its completion, without touching the bus. A chip
+//! implements [`AnalogRegisterBus`] over its PAC. Its address type is opaque:
+//! host selection, read masks and block aliases stay in the chip
 //! implementation, and every completion is observed with the same address
-//! that started the command. [`FieldRead`] and [`FieldWrite`] are the
-//! vendor field transactions `phy_i2c_readReg_Mask` and
-//! `phy_i2c_writeReg_Mask` as polled machines over that contract, and
-//! [`ParallelWrites`] the vendor parallel sequence `phy_i2c_paral_write_num`
-//! over [`ParallelAnalogBus`].
+//! that started the command. [`Driver`] runs a transition over that bus;
+//! [`FieldRead`], [`FieldWrite`], [`Configuration`] and [`ParallelWrites`] are
+//! the polled forms, and a chip may drive the transitions from its own
+//! executor instead.
 //!
 //! This crate performs no MMIO and holds no delay or deadline; those belong
 //! to the executor that polls it.

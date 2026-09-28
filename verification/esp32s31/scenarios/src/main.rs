@@ -430,7 +430,7 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<Outcome> {
         "gain",
         &g.roots,
         &GAIN_CLAIMS,
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(
@@ -479,9 +479,12 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     if options.phy_sdk.is_some() {
         list.extend(I2C_RFPLL_CLAIMS);
     }
-    let claims = ctx
-        .session
-        .claims("i2c", &ctx.roots, &list, decisions::coverage::DECISIONS)?;
+    let claims = ctx.session.claims(
+        "i2c",
+        &ctx.roots,
+        &list,
+        oer_vendor_scenario_engine::coverage::decisions()?,
+    )?;
     Ok((
         finish(&unmet, "authenticated PHY comparisons passed", &ctx.run),
         claims,
@@ -511,7 +514,7 @@ fn channel(common: Common) -> Result<Outcome> {
         "channel",
         &ctx.roots,
         &CHANNEL_CLAIMS,
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(
@@ -551,7 +554,7 @@ fn wifi_mac(
         "wifi-mac",
         &ctx.roots,
         &mac::claims(&ctx),
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(&[], "authenticated Wi-Fi MAC HAL leaves passed", &ctx.run),
@@ -582,7 +585,7 @@ fn bluetooth(common: Common, production: PathBuf, phy_sdk: PathBuf) -> Result<Ou
         "bluetooth",
         &ctx.roots,
         &mac::claims(&ctx),
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(
@@ -617,7 +620,7 @@ fn coex_hw(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
         "coex-hw",
         &ctx.roots,
         &mac::claims(&ctx),
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(
@@ -646,7 +649,7 @@ fn coex(common: Common, libcoexist: PathBuf) -> Result<Outcome> {
         "coex",
         &ctx.roots,
         coex::CLAIMS,
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(&[], "authenticated coexistence schedule passed", &ctx.run),
@@ -661,7 +664,7 @@ fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
         "rx-gain",
         &ctx.roots,
         &RX_GAIN_CLAIMS,
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(
@@ -680,7 +683,7 @@ fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
         "tx-dc",
         &ctx.roots,
         &TX_DC_CLAIMS,
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(
@@ -699,7 +702,7 @@ fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
         "tracking",
         &ctx.roots,
         &TRACKING_CLAIMS,
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     Ok((
         finish(
@@ -923,7 +926,8 @@ fn all(common: Common, inputs: AllInputs) -> Result<ExitCode> {
     }
     // Decisions are shared by every scenario, so one is stale only when no
     // scenario's closures leave a location it excludes uncovered.
-    coverage::Observed::of(&closures).check("all", decisions::coverage::DECISIONS)?;
+    coverage::Observed::of(&closures)
+        .check("all", oer_vendor_scenario_engine::coverage::decisions()?)?;
     // A state decision is stale when no claim writes a byte it reviews
     // without comparing it.
     state::check(decisions::state::DECISIONS, &unprojected)?;

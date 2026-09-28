@@ -34,6 +34,7 @@ pub static CHIP: oer_vendor_scenario_engine::Chip = oer_vendor_scenario_engine::
     rom_input: layout::ROM_INPUT,
     rom_symbols: &layout::ROM_SYMBOLS,
     stack: (layout::STACK_ADDRESS, layout::STACK_BYTES),
+    coverage: "verification/esp32s31/decisions/coverage.toml",
     observation: decisions::observation::DECISIONS,
     state: decisions::state::DECISIONS,
     phy: Some(&layout::PHY_LAYOUT),

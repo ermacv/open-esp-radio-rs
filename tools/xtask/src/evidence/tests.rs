@@ -81,7 +81,7 @@ fn a_shard_tracking_executed_files_stays_current_when_another_file_changes() {
 
 #[test]
 fn a_shard_of_the_previous_schema_is_rejected() {
-    let text = r#"{"schema":8,"command":"vendor-scenario","target":"esp32s31","scenario":"a",
+    let text = r#"{"schema":9,"command":"vendor-scenario","target":"esp32s31","scenario":"a",
         "inputs":{},"sources":[],"entries":[],"untriaged":[],"functions":[],"unobserved":[],
         "observed":[],"unprojected":[]}"#;
     assert!(serde_json::from_str::<scenario_evidence::Index>(text).is_err());
@@ -109,8 +109,13 @@ fn a_shard_records_a_changed_file_or_one_below_a_recorded_directory() {
         observed: vec![],
         unprojected: vec![],
     };
-    let records =
-        |paths: &[&str]| records_any(&shard, &paths.iter().map(PathBuf::from).collect::<Vec<_>>());
+    let records = |paths: &[&str]| {
+        records_any(
+            Path::new("."),
+            &shard,
+            &paths.iter().map(PathBuf::from).collect::<Vec<_>>(),
+        )
+    };
     assert!(records(&["crates/phy/src/lib.rs"]));
     assert!(records(&[
         "hil/README.md",
@@ -159,4 +164,72 @@ fn a_location_another_scenario_covers_leaves_the_chip_wide_untriaged_set() {
         untriaged_everywhere(&shards),
         BTreeSet::from([at("other", 0), at("own", 0), at("shared", 4)])
     );
+}
+
+#[test]
+fn only_a_decision_that_applies_to_a_shard_makes_it_stale() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path();
+    std::fs::create_dir_all(root.join("sources")).unwrap();
+    std::fs::write(root.join("sources/lib.rs"), "one").unwrap();
+    std::fs::create_dir_all(root.join("decisions")).unwrap();
+    let decisions = PathBuf::from("decisions/coverage.toml");
+    let file = |applied: &str, other: &str| {
+        let text = format!(
+            "[[decision]]\nreason = \"{applied}\"\n[[decision.place]]\nfunction = \"closure\"\n\
+             start = 0x2\nend = 0x8\n\n[[decision]]\nreason = \"{other}\"\n\
+             [[decision.place]]\nfunction = \"elsewhere\"\n"
+        );
+        std::fs::write(root.join(&decisions), text).unwrap();
+    };
+    file("applied", "other");
+    let functions = vec!["closure".to_owned()];
+    let digest = scenario_evidence::CoverageDecisions::read(root, &decisions)
+        .unwrap()
+        .applicable_digest(&functions);
+    let directory = Path::new("shards");
+    std::fs::create_dir_all(root.join(directory)).unwrap();
+    let mut dependence = scenario_evidence::Dependence::whole_closure("test");
+    dependence.coverage_decisions = Some(scenario_evidence::DecisionDigest {
+        path: decisions.clone(),
+        sha256: digest,
+    });
+    let shard = scenario_evidence::Index {
+        schema: scenario_evidence::SCHEMA,
+        command: scenario_evidence::COMMAND.into(),
+        target: "esp32s31".into(),
+        scenario: "leaf".into(),
+        inputs: Default::default(),
+        sources: vec![scenario_evidence::SourceDigest {
+            sha256: scenario_evidence::digest_directory(root, Path::new("sources")).unwrap(),
+            path: PathBuf::from("sources"),
+        }],
+        dependence,
+        entries: vec![],
+        untriaged: vec![],
+        functions,
+        unobserved: vec![],
+        observed: vec![],
+        unprojected: vec![],
+    };
+    shard.validate("esp32s31").unwrap();
+    std::fs::write(
+        root.join(directory).join("leaf.json"),
+        serde_json::to_string(&shard).unwrap(),
+    )
+    .unwrap();
+    let changed = [decisions.clone()];
+    file("applied", "edited");
+    assert!(stale(root, directory).unwrap().is_empty());
+    assert!(!records_any(root, &shard, &changed));
+    file("edited", "edited");
+    assert_eq!(stale(root, directory).unwrap(), ["leaf"]);
+    assert!(records_any(root, &shard, &changed));
+    std::fs::write(
+        root.join(&decisions),
+        "[[decision]]\nreason = \"no place\"\nplace = []\n",
+    )
+    .unwrap();
+    assert!(scenario_evidence::CoverageDecisions::read(root, &decisions).is_err());
+    assert_eq!(stale(root, directory).unwrap(), ["leaf"]);
 }

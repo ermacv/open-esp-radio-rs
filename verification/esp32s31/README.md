@@ -582,8 +582,12 @@ scenarios and the reviewed data:
 - `phy/`, `wifi/`, `bluetooth/`, `coexistence/`: the scenarios of each domain,
   with `wifi/mac.rs` also owning the leaf-suite machinery the Bluetooth and
   coexistence leaves reuse;
-- `decisions/`: the reviewed coverage, observation and state decisions, one
-  module per kind. Their types and stale-decision checks stay in the engine.
+- `decisions/`: the reviewed observation and state decisions, one module per
+  kind. Their types and stale-decision checks stay in the engine.
+
+The reviewed coverage decisions are data outside the crate, in
+[`decisions/coverage.toml`](decisions/coverage.toml), so that a shard does not
+record them as a scenario source.
 
 Domain modules keep their crate-root paths (`crate::gain`, `crate::ble`) as
 re-exports, and `main.rs` holds the command line.
@@ -594,7 +598,7 @@ Every claimed vendor root reports the coverage of its closure: the code
 statically reachable from the root through direct transfers and the observed
 targets of executed indirect ones, excluding call models. Each uncovered block
 or branch direction is either excluded by a reviewed decision in
-[`decisions/coverage.rs`](scenarios/src/decisions/coverage.rs), with its reason, or listed as
+[`decisions/coverage.toml`](decisions/coverage.toml), with its reason, or listed as
 untriaged in the evidence index. Decisions currently exclude vendor runtime
 helpers (diagnostic formatting, compiler arithmetic and copy helpers, prologue
 millicode) as whole functions. A decision that excludes whole functions also
@@ -603,6 +607,13 @@ the closure reaches only through excluded functions: their code is
 unreachable for the same reason. A decision on a closure function that is
 fully covered fails its scenario.
 
+Each decision has a `reason` and one or more places: a vendor `function`,
+optionally with offsets `start` up to `end` or `diagnostic = true`. A shard
+records the SHA-256 of the decisions with a place in one of its closure
+functions, so editing, adding or removing a decision stales only the shards
+whose closures it names; `cargo xtask evidence --check --changed-since` reruns
+only those shards.
+
 A shard lists what its own scenario leaves untriaged, so a vendor function
 several scenarios reach can appear in one shard while another scenario
 covers the location. `cargo xtask evidence --chip esp32s31 --untriaged`
@@ -610,13 +621,13 @@ prints the chip-wide set: the locations no scenario whose closures contain
 their function covers or reviews. `cargo xtask evidence` prints its
 per-function counts after regenerating shards. An untriaged location has neither a case that
 covers it nor a reviewed decision. A whole-function decision whose function
-only produces diagnostic output uses `Place::Diagnostic`.
+only produces diagnostic output sets `diagnostic = true` on its place.
 
 A run with untriaged locations writes `untriaged-<scenario>.txt` beside its
 results: each location's instructions, decoded and lifted by Blobray's RISC-V
 decoder, with constants folded and addresses and bit masks named by the
 published register bindings, the definitions of the registers its instruction
-reads, and a candidate mark on a block that only calls `Place::Diagnostic`
+reads, and a candidate mark on a block that only calls diagnostic
 functions, stores nothing outside the stack and reads nothing outside it
 after its last call. The mark names how the block ends: an assertion that
 spins after its output, an early return (behavior, not diagnostics), or

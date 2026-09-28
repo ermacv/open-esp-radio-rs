@@ -87,7 +87,7 @@ fn phy_i2c(common: &Common) -> Result<session::Claims> {
         phy_i2c::PHY_I2C.id,
         &run.roots,
         &leaf::claims(&run),
-        decisions::coverage::DECISIONS,
+        oer_vendor_scenario_engine::coverage::decisions()?,
     )?;
     println!(
         "authenticated PHY I2C transport leaves passed {}",
@@ -131,7 +131,7 @@ fn all(common: &Common) -> Result<()> {
         println!("  untriaged line {}:{}", line.0.display(), line.1);
     }
     oer_vendor_scenario_engine::coverage::Observed::of(&claims.closures)
-        .check("all", decisions::coverage::DECISIONS)?;
+        .check("all", oer_vendor_scenario_engine::coverage::decisions()?)?;
     state::check(decisions::state::DECISIONS, &claims.unprojected)?;
     record(common, "phy-i2c", &claims)
 }

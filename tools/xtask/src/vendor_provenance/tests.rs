@@ -188,11 +188,10 @@ fn an_untagged_neutral_block_fails_only_the_chips_it_cites() {
 fn decisions_cite_the_code_shaped_names_their_places_quote() {
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(
-        directory.path().join("coverage.rs"),
-        r#"Decision { reason: "the TXOP holding path, not used", places: &[
-            Place::Range { function: "mac_tx_set_txop_q", start: 0x30, end: 0x34 },
-            Place::Function("hal_mac_fill_hwtxop"),
-        ] }"#,
+        directory.path().join("coverage.toml"),
+        "[[decision]]\nreason = \"\"\"\nthe TXOP holding path, \\\nnot used\"\"\"\n\
+         [[decision.place]]\nfunction = \"mac_tx_set_txop_q\"\nstart = 0x30\nend = 0x34\n\
+         [[decision.place]]\nfunction = \"hal_mac_fill_hwtxop\"\n",
     )
     .unwrap();
     std::fs::write(
@@ -208,16 +207,16 @@ fn decisions_cite_the_code_shaped_names_their_places_quote() {
     );
     assert_eq!(
         words["mac_tx_set_txop_q"].iter().collect::<Vec<_>>(),
-        ["coverage.rs", "state.rs"]
+        ["coverage.toml", "state.rs"]
     );
 }
 
 #[test]
 fn a_changed_decision_function_names_the_exclusions_to_review() {
-    let files: BTreeSet<String> = ["coverage.rs".to_owned()].into();
+    let files: BTreeSet<String> = ["coverage.toml".to_owned()].into();
     assert_eq!(
         review_hint(Some(&files)),
-        "; re-review the exclusions in decisions/coverage.rs"
+        "; re-review the exclusions in decisions/coverage.toml"
     );
     assert_eq!(review_hint(None), "");
 }

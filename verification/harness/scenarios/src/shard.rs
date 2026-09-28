@@ -256,6 +256,14 @@ pub fn shard(
         );
         unprojected.extend(untriaged);
     }
+    let functions: Vec<String> = claims
+        .closures
+        .iter()
+        .flat_map(|c| c.functions.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let decisions = PathBuf::from(crate::chip().coverage);
     let index = Index {
         schema: evidence_index::SCHEMA,
         command: evidence_index::COMMAND.into(),
@@ -266,18 +274,17 @@ pub fn shard(
         dependence: evidence_index::Dependence {
             read_data: dependencies.read_data.clone(),
             fallback: dependencies.fallback.clone(),
+            coverage_decisions: Some(evidence_index::DecisionDigest {
+                sha256: evidence_index::CoverageDecisions::read(&root, &decisions)?
+                    .applicable_digest(&functions),
+                path: decisions,
+            }),
         },
         entries: claims.entries.clone(),
         untriaged: coverage::uncovered_everywhere(&claims.closures, claims.untriaged.clone())
             .into_iter()
             .collect(),
-        functions: claims
-            .closures
-            .iter()
-            .flat_map(|c| c.functions.iter().cloned())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect(),
+        functions,
         unobserved: unobserved.into_iter().map(line).collect(),
         observed: claims.lines.observed.iter().cloned().map(line).collect(),
         unprojected: state::ranges(&unprojected)

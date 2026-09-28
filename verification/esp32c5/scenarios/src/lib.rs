@@ -80,6 +80,7 @@ pub static CHIP: Chip = Chip {
     rom_input: ROM_INPUT,
     rom_symbols: &[],
     stack: STACK,
+    coverage: "verification/esp32c5/decisions/coverage.toml",
     observation: decisions::observation::DECISIONS,
     state: decisions::state::DECISIONS,
     phy: Some(&PHY_LAYOUT),

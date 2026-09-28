@@ -27,6 +27,10 @@ pub struct Chip {
     pub rom_symbols: &'static [(&'static str, u32, u64)],
     /// Caller-owned stack of every compared call, as (address, bytes).
     pub stack: (u32, u32),
+    /// The reviewed coverage decisions of every scenario, relative to the
+    /// repository root and outside the scenario crate, so that a shard
+    /// depends only on the decisions that apply to its closures.
+    pub coverage: &'static str,
     /// Reviewed decisions on unobserved production lines.
     pub observation: &'static [crate::observation::Decision],
     /// Reviewed decisions on unprojected vendor state.
@@ -101,6 +105,7 @@ pub(crate) static TEST: Chip = Chip {
     rom_input: 1,
     rom_symbols: &[],
     stack: (0, 0),
+    coverage: "verification/test/decisions/coverage.toml",
     observation: &[],
     state: &[],
     phy: Some(&TEST_PHY),

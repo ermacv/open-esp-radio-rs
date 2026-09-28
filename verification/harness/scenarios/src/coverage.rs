@@ -10,9 +10,10 @@
 //! the functions no execution entered that the closure reaches only through
 //! excluded functions: their code is unreachable for the same reason.
 use crate::harness::{Result, invalid};
-use crate::session::evidence_index::{Location, LocationKind};
+use crate::session::evidence_index::{CoverageDecisions, Location, LocationKind};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::path::Path;
 
 /// What one decision excludes.
 #[derive(Clone, Copy, Debug)]
@@ -58,6 +59,50 @@ impl Place {
 pub struct Decision {
     pub reason: &'static str,
     pub places: &'static [Place],
+}
+
+/// The installed chip's reviewed decisions, read once from its decision
+/// file ([`crate::Chip::coverage`]).
+pub fn decisions() -> Result<&'static [Decision]> {
+    static DECISIONS: std::sync::OnceLock<&'static [Decision]> = std::sync::OnceLock::new();
+    if let Some(decisions) = DECISIONS.get() {
+        return Ok(decisions);
+    }
+    let file = CoverageDecisions::read(
+        &crate::observation::root()?,
+        Path::new(crate::chip().coverage),
+    )
+    .map_err(|error| invalid(error.to_string()))?;
+    Ok(DECISIONS.get_or_init(|| convert(file)))
+}
+
+/// `file`'s decisions, for the rest of the process.
+fn convert(file: CoverageDecisions) -> &'static [Decision] {
+    let text = |value: String| -> &'static str { Box::leak(value.into_boxed_str()) };
+    let decisions: Vec<Decision> = file
+        .decisions
+        .into_iter()
+        .map(|decision| {
+            let places: Vec<Place> = decision
+                .places
+                .into_iter()
+                .map(|place| match (place.diagnostic, place.start, place.end) {
+                    (true, _, _) => Place::Diagnostic(text(place.function)),
+                    (false, Some(start), Some(end)) => Place::Range {
+                        function: text(place.function),
+                        start,
+                        end,
+                    },
+                    (false, _, _) => Place::Function(text(place.function)),
+                })
+                .collect();
+            Decision {
+                reason: text(decision.reason),
+                places: Vec::leak(places),
+            }
+        })
+        .collect();
+    Vec::leak(decisions)
 }
 
 /// The reason of the first decision that excludes `location`.
@@ -294,6 +339,22 @@ pub fn location(function: &str, entry: u32, address: u32, kind: LocationKind) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_decision_file_place_excludes_its_function_range_or_diagnostic_output() {
+        let file: CoverageDecisions = toml::from_str(
+            "[[decision]]\nreason = \"r\"\n[[decision.place]]\nfunction = \"whole\"\n\
+             [[decision.place]]\nfunction = \"part\"\nstart = 0x4\nend = 0x8\n\
+             [[decision.place]]\nfunction = \"log\"\ndiagnostic = true\n",
+        )
+        .unwrap();
+        let decisions = convert(file);
+        let at = |function: &str, offset| location(function, 0, offset, LocationKind::Block);
+        assert_eq!(reason(decisions, &at("whole", 0x40)), Some("r"));
+        assert_eq!(reason(decisions, &at("part", 0x4)), Some("r"));
+        assert_eq!(reason(decisions, &at("part", 0x8)), None);
+        assert_eq!(diagnostic(decisions), BTreeSet::from(["log".to_owned()]));
+    }
 
     const DECISIONS: &[Decision] = &[Decision {
         reason: "test",

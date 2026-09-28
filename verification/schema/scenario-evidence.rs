@@ -20,7 +20,7 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Shard format.
-pub const SCHEMA: u32 = 9;
+pub const SCHEMA: u32 = 10;
 /// Producer command recorded in every shard.
 pub const COMMAND: &str = "vendor-scenario";
 /// Extension of a shard file; its stem is the scenario name.
@@ -83,6 +83,109 @@ pub struct Dependence {
     /// Why `sources` holds the probe's whole production closure rather than
     /// the executed files, when it does.
     pub fallback: Option<String>,
+    /// The chip's reviewed coverage decisions the shard's `untriaged` set
+    /// depends on: those with a place in one of its `functions`
+    /// ([`CoverageDecisions::applicable_digest`]), so an edit to another
+    /// decision leaves the shard current. None for a shard without claimed
+    /// closures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage_decisions: Option<DecisionDigest>,
+}
+
+/// SHA-256 of the applicable decisions of a decision file.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct DecisionDigest {
+    /// The decision file, relative to the repository root.
+    pub path: PathBuf,
+    pub sha256: String,
+}
+
+/// A chip's reviewed coverage decisions, as its decision file holds them.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageDecisions {
+    #[serde(rename = "decision", default)]
+    pub decisions: Vec<CoverageDecision>,
+}
+
+/// One reviewed exclusion of uncovered vendor locations, with its reason.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageDecision {
+    pub reason: String,
+    #[serde(rename = "place")]
+    pub places: Vec<CoveragePlace>,
+}
+
+/// What one decision excludes of vendor `function`: every uncovered
+/// location, those of a function that only produces diagnostic output, or
+/// those at offsets from `start` up to `end`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CoveragePlace {
+    pub function: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub diagnostic: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<u32>,
+}
+
+impl CoverageDecisions {
+    /// Read and validate the decision file at `relative` below `root`.
+    pub fn read(root: &Path, relative: &Path) -> Result<Self> {
+        let text = fs::read_to_string(root.join(relative))
+            .map_err(|error| format!("coverage decisions {}: {error}", relative.display()))?;
+        let decisions: Self = toml::from_str(&text)
+            .map_err(|error| format!("coverage decisions {}: {error}", relative.display()))?;
+        for decision in &decisions.decisions {
+            if decision.places.is_empty() {
+                return Err(
+                    format!("coverage decision without a place: {}", decision.reason).into(),
+                );
+            }
+            for place in &decision.places {
+                let range = match (place.start, place.end) {
+                    (None, None) => false,
+                    (Some(start), Some(end)) if start < end => true,
+                    _ => {
+                        return Err(format!(
+                            "coverage decision place in {} needs an ascending start and end",
+                            place.function
+                        )
+                        .into());
+                    }
+                };
+                if range && place.diagnostic {
+                    return Err(format!(
+                        "diagnostic coverage decision place in {} names a range",
+                        place.function
+                    )
+                    .into());
+                }
+            }
+        }
+        Ok(decisions)
+    }
+
+    /// SHA-256 of the decisions with a place in one of `functions`, in file
+    /// order: what a shard whose closures contain `functions` depends on.
+    pub fn applicable_digest(&self, functions: &[String]) -> String {
+        let applicable: Vec<&CoverageDecision> = self
+            .decisions
+            .iter()
+            .filter(|decision| {
+                decision
+                    .places
+                    .iter()
+                    .any(|place| functions.contains(&place.function))
+            })
+            .collect();
+        let bytes = serde_json::to_vec(&applicable).expect("decisions serialize");
+        format!("{:x}", Sha256::digest(bytes))
+    }
 }
 
 impl Dependence {
@@ -92,6 +195,7 @@ impl Dependence {
         Self {
             read_data: format!("{:x}", Sha256::new().finalize()),
             fallback: Some(reason.into()),
+            coverage_decisions: None,
         }
     }
 }
@@ -320,6 +424,11 @@ impl Index {
                 .any(|s| !valid(&s.sha256) || !is_relative(&s.path))
             || self.sources.windows(2).any(|w| w[0].path >= w[1].path)
             || !valid(&self.dependence.read_data)
+            || self
+                .dependence
+                .coverage_decisions
+                .as_ref()
+                .is_some_and(|d| !valid(&d.sha256) || !is_relative(&d.path))
             || self.inputs.values().any(|v| !valid(v))
         {
             return Err("scenario evidence index has invalid digests".into());
@@ -399,11 +508,19 @@ impl Index {
         Ok(())
     }
 
-    /// Every recorded source directory still has its recorded digest.
+    /// Every recorded source directory still has its recorded digest, and
+    /// the decisions that apply to the shard's closures are unchanged.
     pub fn is_current(&self, root: &Path) -> bool {
         self.sources.iter().all(|source| {
             digest_source(root, &source.path).is_ok_and(|digest| digest == source.sha256)
-        })
+        }) && self
+            .dependence
+            .coverage_decisions
+            .as_ref()
+            .is_none_or(|decisions| {
+                CoverageDecisions::read(root, &decisions.path)
+                    .is_ok_and(|file| file.applicable_digest(&self.functions) == decisions.sha256)
+            })
     }
 }
 

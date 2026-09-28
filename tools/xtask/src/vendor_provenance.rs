@@ -35,8 +35,11 @@ fn register_directories(chip: &str) -> [String; 2] {
 /// Production sources scanned for `SOURCE:` blocks.
 const PRODUCTION: &str = "crates";
 /// The chip's reviewed verification decisions, relative to its
-/// verification directory.
-const DECISIONS: &str = "scenarios/src/decisions";
+/// verification directory: the coverage decisions' data and the scenario
+/// crate's decision modules.
+const DECISIONS: [&str; 2] = ["decisions", "scenarios/src/decisions"];
+/// Extensions of the decision files.
+const DECISION_EXTENSIONS: [&str; 2] = ["toml", "rs"];
 /// Shortest identifier taken as a reference; shorter words are prose.
 const MINIMUM_NAME: usize = 4;
 
@@ -161,7 +164,11 @@ fn decision_words(directory: &Path) -> Result<BTreeMap<String, BTreeSet<String>>
     };
     for entry in entries {
         let path = entry?.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+        if !path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| DECISION_EXTENSIONS.contains(&e))
+        {
             continue;
         }
         let file = path
@@ -416,7 +423,12 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
     for directory in register_directories(chip) {
         register_words(&ctx.root.join(directory), &mut words)?;
     }
-    let decisions = decision_words(&ctx.root.join(scanned.verification(DECISIONS)))?;
+    let mut decisions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for directory in DECISIONS {
+        for (word, files) in decision_words(&ctx.root.join(scanned.verification(directory)))? {
+            decisions.entry(word).or_default().extend(files);
+        }
+    }
     words.extend(decisions.keys().cloned());
     let known: BTreeSet<&str> = current
         .keys()

@@ -237,14 +237,23 @@ fn changed_files(ctx: &Context, revision: &str) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-/// Whether `shard` records one of `changed`: a recorded file itself, or a
-/// file below a recorded directory.
-fn records_any(shard: &scenario_evidence::Index, changed: &[PathBuf]) -> bool {
+/// Whether `shard` records one of `changed`: a recorded file itself, a
+/// file below a recorded directory, or a changed decision file whose
+/// decisions that apply to the shard differ from those it recorded.
+fn records_any(root: &Path, shard: &scenario_evidence::Index, changed: &[PathBuf]) -> bool {
     shard.sources.iter().any(|source| {
         changed
             .iter()
             .any(|path| path == &source.path || path.starts_with(&source.path))
-    })
+    }) || shard
+        .dependence
+        .coverage_decisions
+        .as_ref()
+        .is_some_and(|decisions| {
+            changed.contains(&decisions.path)
+                && !scenario_evidence::CoverageDecisions::read(root, &decisions.path)
+                    .is_ok_and(|file| file.applicable_digest(&shard.functions) == decisions.sha256)
+        })
 }
 
 /// The committed shard `name` in `directory`, when it parses.
@@ -314,7 +323,7 @@ pub fn check(
                 .partition(|name| match read_shard(&directory, name) {
                     // An unreadable shard is checked: skipping fails closed.
                     None => true,
-                    Some(shard) => records_any(&shard, &changed),
+                    Some(shard) => records_any(&ctx.root, &shard, &changed),
                 });
         for name in &skipped {
             println!(

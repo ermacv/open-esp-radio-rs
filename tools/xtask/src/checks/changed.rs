@@ -254,11 +254,13 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             {
                 continue;
             }
-            if ctx.root.join("target/vendor").join(&chip).is_dir() {
+            let unfetched = crate::vendor_fetch::unfetched(ctx, &chip)?;
+            if unfetched.is_empty() {
                 crate::vendor_provenance::check(ctx, &chip)?;
             } else {
                 println!(
-                    "check changed: vendor provenance of {chip} skipped: run `cargo xtask vendor-fetch {chip}` to check citations"
+                    "check changed: vendor provenance of {chip} skipped: {} not fetched as pinned; run `cargo xtask vendor-fetch {chip}` to check citations",
+                    unfetched.join(", ")
                 );
             }
         }

@@ -235,9 +235,38 @@ pub struct Pinned {
 /// missing or differs, naming `cargo xtask vendor-fetch` for fetched ones.
 /// Local builds are skipped when absent: they are not vendor sources.
 pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
+    let resolved = resolve(ctx, chip)?;
+    match resolved.unfetched.first() {
+        None => Ok(resolved.pinned),
+        Some(id) => Err(format!(
+            "{id} is not fetched as pinned; run `cargo xtask vendor-fetch {chip}`"
+        )
+        .into()),
+    }
+}
+
+/// The fetched vendor artifacts of `chip` that are missing or differ from
+/// their pin; empty when every citation can be checked.
+pub fn unfetched(ctx: &Context, chip: &str) -> Result<Vec<String>> {
+    Ok(resolve(ctx, chip)?.unfetched)
+}
+
+struct Resolved {
+    pinned: Vec<Pinned>,
+    unfetched: Vec<String>,
+}
+
+fn resolve(ctx: &Context, chip: &str) -> Result<Resolved> {
     let manifest = manifest_path(&ctx.root, chip)?;
-    let (sources, artifacts) = parse(&std::fs::read_to_string(ctx.root.join(manifest))?)?;
-    let mut pinned = vec![];
+    resolve_manifest(&ctx.root, &std::fs::read_to_string(ctx.root.join(manifest))?)
+}
+
+fn resolve_manifest(root: &Path, manifest: &str) -> Result<Resolved> {
+    let (sources, artifacts) = parse(manifest)?;
+    let mut resolved = Resolved {
+        pinned: vec![],
+        unfetched: vec![],
+    };
     for artifact in artifacts {
         let source = sources
             .iter()
@@ -245,28 +274,24 @@ pub fn pinned(ctx: &Context, chip: &str) -> Result<Vec<Pinned>> {
             .expect("parsed sources");
         let local = source.kind == Kind::Local;
         let path = if local {
-            ctx.root.join(&artifact.path)
+            root.join(&artifact.path)
         } else {
-            cache_directory(&ctx.root, source)?.join(&artifact.path)
+            cache_directory(root, source)?.join(&artifact.path)
         };
         if !verified(&path, &artifact.sha256)? {
-            if local {
-                continue;
+            if !local {
+                resolved.unfetched.push(artifact.id);
             }
-            return Err(format!(
-                "{} is not fetched as pinned; run `cargo xtask vendor-fetch {chip}`",
-                artifact.id
-            )
-            .into());
+            continue;
         }
-        pinned.push(Pinned {
+        resolved.pinned.push(Pinned {
             id: artifact.id,
             source: artifact.source,
             path,
             local,
         });
     }
-    Ok(pinned)
+    Ok(resolved)
 }
 
 /// A pinned git source of `chip` with its artifacts' paths and SHA-256.
@@ -373,5 +398,27 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("unknown source"));
+    }
+
+    #[test]
+    fn unfetched_names_missing_vendor_artifacts_in_the_source_keyed_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let cached = root.path().join(CACHE).join("vendor/0123/lib.a");
+        std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+        std::fs::write(&cached, b"pinned").unwrap();
+        let manifest = format!(
+            "schema = 1\n\
+             [[source]]\nid = \"vendor\"\nkind = \"git\"\n\
+             repository = \"https://github.com/o/r\"\nrevision = \"0123\"\n\
+             [[source]]\nid = \"build\"\nkind = \"local\"\n\
+             [[artifact]]\nid = \"fetched\"\nsource = \"vendor\"\npath = \"lib.a\"\nsha256 = \"{}\"\n\
+             [[artifact]]\nid = \"missing\"\nsource = \"vendor\"\npath = \"other.a\"\nsha256 = \"00\"\n\
+             [[artifact]]\nid = \"unbuilt\"\nsource = \"build\"\npath = \"out.elf\"\nsha256 = \"00\"\n",
+            sha256(&cached).unwrap()
+        );
+        let resolved = resolve_manifest(root.path(), &manifest).unwrap();
+        assert_eq!(resolved.unfetched, ["missing"]);
+        let pinned: Vec<_> = resolved.pinned.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(pinned, ["fetched"]);
     }
 }

@@ -140,8 +140,9 @@ impl ColdOwner {
     pub fn power_up<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<PoweredOwner, PowerTransitionFailure<Self>> {
-        match lease.enter_common_power(&self.partition.task) {
+        match lease.enter_common_power(&self.partition.task, clocks) {
             Ok(()) => Ok(PoweredOwner {
                 partition: self.partition,
             }),
@@ -170,8 +171,9 @@ impl PoweredOwner {
     pub fn power_down<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<ColdOwner, PowerTransitionFailure<Self>> {
-        match lease.exit_common_power(&self.partition.task) {
+        match lease.exit_common_power(&self.partition.task, clocks) {
             Ok(()) => Ok(ColdOwner {
                 partition: self.partition,
             }),

@@ -6210,7 +6210,7 @@ sources = ["S31_MODEM_LPCON_STRUCT", "ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP"]
 name = "observe_shared_modem_clock_gates"
 peripheral = "MODEM_LPCON_SHARED_CLOCK"
 register = "CLK_CONF"
-fields = ["CLK_COEX_EN", "CLK_I2C_MST_EN", "CLK_LP_TIMER_EN"]
+fields = ["CLK_COEX_EN", "CLK_LP_TIMER_EN"]
 sources = ["S31_MODEM_LPCON_STRUCT"]
 
 [[field-snapshot-reads]]
@@ -6275,24 +6275,6 @@ name = "disable_shared_modem_coexistence_clock"
 peripheral = "MODEM_LPCON_SHARED_CLOCK"
 register = "CLK_CONF"
 fields = [{ field = "CLK_COEX_EN", source-bit-offset = 0 }]
-value = 0
-exposure = "facade"
-sources = ["S31_MODEM_LPCON_STRUCT"]
-
-[[field-replace-modifies]]
-name = "enable_shared_modem_phy_i2c_master_clock"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = [{ field = "CLK_I2C_MST_EN", source-bit-offset = 0 }]
-value = 1
-exposure = "facade"
-sources = ["S31_MODEM_LPCON_STRUCT"]
-
-[[field-replace-modifies]]
-name = "disable_shared_modem_phy_i2c_master_clock"
-peripheral = "MODEM_LPCON_SHARED_CLOCK"
-register = "CLK_CONF"
-fields = [{ field = "CLK_I2C_MST_EN", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT"]
@@ -6651,15 +6633,6 @@ exposure = "facade"
 sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
-name = "enable_modem_reference_160m_clock"
-peripheral = "HP_SYS_CLKRST_RADIO"
-register = "REF_160M_CTRL0"
-fields = [{ field = "REF_160M_CLK_EN", source-bit-offset = 0 }]
-value = 1
-exposure = "facade"
-sources = ["S31_ESP_PACS_SVD"]
-
-[[field-replace-modifies]]
 name = "configure_modem_source_clocks"
 peripheral = "HP_SYS_CLKRST_RADIO"
 register = "MODEM_CONF"
@@ -6689,13 +6662,6 @@ register = "MODEM_CTRL0"
 field = "MODEM_CLK_EN"
 sources = ["S31_ESP_PACS_SVD"]
 
-[[field-reads]]
-name = "observe_modem_reference_160m_clock"
-peripheral = "HP_SYS_CLKRST_RADIO"
-register = "REF_160M_CTRL0"
-field = "REF_160M_CLK_EN"
-sources = ["S31_ESP_PACS_SVD"]
-
 [[field-snapshot-reads]]
 name = "observe_modem_source_clocks"
 peripheral = "HP_SYS_CLKRST_RADIO"
@@ -6708,15 +6674,6 @@ fields = [
     "MODEM_PLL_CLK_EN",
     "MODEM_XTAL_CLK_EN",
 ]
-sources = ["S31_ESP_PACS_SVD"]
-
-[[field-replace-modifies]]
-name = "disable_modem_reference_160m_clock"
-peripheral = "HP_SYS_CLKRST_RADIO"
-register = "REF_160M_CTRL0"
-fields = [{ field = "REF_160M_CLK_EN", source-bit-offset = 0 }]
-value = 0
-exposure = "facade"
 sources = ["S31_ESP_PACS_SVD"]
 
 [[field-argument-modifies]]

@@ -13670,9 +13670,7 @@ pub mod hp_sys_clkrst_radio {
     pub struct RegisterBlock {
         _reserved0: [u8; 0x40],
         modem_ctrl0: ModemCtrl0,
-        _reserved1: [u8; 0x013c],
-        ref_160m_ctrl0: Ref160mCtrl0,
-        _reserved2: [u8; 0x5c],
+        _reserved1: [u8; 0x019c],
         modem_conf: ModemConf,
     }
     impl RegisterBlock {
@@ -13680,11 +13678,6 @@ pub mod hp_sys_clkrst_radio {
         #[inline(always)]
         pub const fn modem_ctrl0(&self) -> &ModemCtrl0 {
             &self.modem_ctrl0
-        }
-        #[doc = "0x180 - 160 MHz reference divider and clock gate."]
-        #[inline(always)]
-        pub const fn ref_160m_ctrl0(&self) -> &Ref160mCtrl0 {
-            &self.ref_160m_ctrl0
         }
         #[doc = "0x1e0 - Modem APB, reset and source-clock configuration."]
         #[inline(always)]
@@ -13733,106 +13726,6 @@ pub mod hp_sys_clkrst_radio {
         #[doc = "`reset()` method sets MODEM_CTRL0 to value 0x01"]
         impl crate::Resettable for ModemCtrl0Spec {
             const RESET_VALUE: u32 = 0x01;
-        }
-    }
-    #[doc = "REF_160M_CTRL0 (rw) register accessor: 160 MHz reference divider and clock gate.\n\nYou can [`read`](crate::Reg::read) this register and get [`ref_160m_ctrl0::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ref_160m_ctrl0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ref_160m_ctrl0`] module"]
-    #[doc(alias = "REF_160M_CTRL0")]
-    pub type Ref160mCtrl0 = crate::Reg<ref_160m_ctrl0::Ref160mCtrl0Spec>;
-    #[doc = "160 MHz reference divider and clock gate."]
-    pub mod ref_160m_ctrl0 {
-        #[doc = "Register `REF_160M_CTRL0` reader"]
-        pub type R = crate::R<Ref160mCtrl0Spec>;
-        #[doc = "Register `REF_160M_CTRL0` writer"]
-        pub type W = crate::W<Ref160mCtrl0Spec>;
-        #[doc = "160 MHz reference divider programmed by the platform clock tree.\n\nValue on reset: 2"]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #[repr(u8)]
-        pub enum Ref160mDivider {
-            #[doc = "2: Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source."]
-            Fixed480mhzSource = 2,
-        }
-        impl From<Ref160mDivider> for u8 {
-            #[inline(always)]
-            fn from(variant: Ref160mDivider) -> Self {
-                variant as _
-            }
-        }
-        impl crate::FieldSpec for Ref160mDivider {
-            type Ux = u8;
-        }
-        impl crate::IsEnum for Ref160mDivider {}
-        #[doc = "Field `REF_160M_CLK_DIV_NUM` reader - 160 MHz reference divider programmed by the platform clock tree."]
-        pub type Ref160mClkDivNumR = crate::FieldReader<Ref160mDivider>;
-        impl Ref160mClkDivNumR {
-            #[doc = "Get enumerated values variant"]
-            #[inline(always)]
-            pub const fn variant(&self) -> Option<Ref160mDivider> {
-                match self.bits {
-                    2 => Some(Ref160mDivider::Fixed480mhzSource),
-                    _ => None,
-                }
-            }
-            #[doc = "Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source."]
-            #[inline(always)]
-            pub fn is_fixed_480mhz_source(&self) -> bool {
-                *self == Ref160mDivider::Fixed480mhzSource
-            }
-        }
-        #[doc = "Field `REF_160M_CLK_DIV_NUM` writer - 160 MHz reference divider programmed by the platform clock tree."]
-        pub type Ref160mClkDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 8, Ref160mDivider>;
-        impl<'a, REG> Ref160mClkDivNumW<'a, REG>
-        where
-            REG: crate::Writable + crate::RegisterSpec,
-            REG::Ux: From<u8>,
-        {
-            #[doc = "Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source."]
-            #[inline(always)]
-            pub fn fixed_480mhz_source(self) -> &'a mut crate::W<REG> {
-                self.variant(Ref160mDivider::Fixed480mhzSource)
-            }
-        }
-        #[doc = "Field `REF_160M_CLK_EN` reader - 160 MHz reference clock gate shared by the radio lifecycles."]
-        pub type Ref160mClkEnR = crate::BitReader;
-        #[doc = "Field `REF_160M_CLK_EN` writer - 160 MHz reference clock gate shared by the radio lifecycles."]
-        pub type Ref160mClkEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        impl R {
-            #[doc = "Bits 0:7 - 160 MHz reference divider programmed by the platform clock tree."]
-            #[inline(always)]
-            pub fn ref_160m_clk_div_num(&self) -> Ref160mClkDivNumR {
-                Ref160mClkDivNumR::new((self.bits & 0xff) as u8)
-            }
-            #[doc = "Bit 8 - 160 MHz reference clock gate shared by the radio lifecycles."]
-            #[inline(always)]
-            pub fn ref_160m_clk_en(&self) -> Ref160mClkEnR {
-                Ref160mClkEnR::new(((self.bits >> 8) & 1) != 0)
-            }
-        }
-        impl W {
-            #[doc = "Bits 0:7 - 160 MHz reference divider programmed by the platform clock tree."]
-            #[inline(always)]
-            pub fn ref_160m_clk_div_num(&mut self) -> Ref160mClkDivNumW<'_, Ref160mCtrl0Spec> {
-                Ref160mClkDivNumW::new(self, 0)
-            }
-            #[doc = "Bit 8 - 160 MHz reference clock gate shared by the radio lifecycles."]
-            #[inline(always)]
-            pub fn ref_160m_clk_en(&mut self) -> Ref160mClkEnW<'_, Ref160mCtrl0Spec> {
-                Ref160mClkEnW::new(self, 8)
-            }
-        }
-        #[doc = "160 MHz reference divider and clock gate.\n\nYou can [`read`](crate::Reg::read) this register and get [`ref_160m_ctrl0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ref_160m_ctrl0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Ref160mCtrl0Spec;
-        impl crate::RegisterSpec for Ref160mCtrl0Spec {
-            type Ux = u32;
-        }
-        #[doc = "`read()` method returns [`ref_160m_ctrl0::R`](R) reader structure"]
-        impl crate::Readable for Ref160mCtrl0Spec {}
-        #[doc = "`write(|w| ..)` method takes [`ref_160m_ctrl0::W`](W) writer structure"]
-        impl crate::Writable for Ref160mCtrl0Spec {
-            type Safety = crate::Unsafe;
-        }
-        #[doc = "`reset()` method sets REF_160M_CTRL0 to value 0x0102"]
-        impl crate::Resettable for Ref160mCtrl0Spec {
-            const RESET_VALUE: u32 = 0x0102;
         }
     }
     #[doc = "MODEM_CONF (rw) register accessor: Modem APB, reset and source-clock configuration.\n\nYou can [`read`](crate::Reg::read) this register and get [`modem_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`modem_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@modem_conf`] module"]
@@ -15460,10 +15353,6 @@ pub mod modem_lpcon_shared_clock {
         pub type ClkCoexEnR = crate::BitReader;
         #[doc = "Field `CLK_COEX_EN` writer - Coexistence clock gate."]
         pub type ClkCoexEnW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CLK_I2C_MST_EN` reader - PHY I2C master clock gate."]
-        pub type ClkI2cMstEnR = crate::BitReader;
-        #[doc = "Field `CLK_I2C_MST_EN` writer - PHY I2C master clock gate."]
-        pub type ClkI2cMstEnW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CLK_LP_TIMER_EN` reader - Bluetooth low-power timer clock gate."]
         pub type ClkLpTimerEnR = crate::BitReader;
         #[doc = "Field `CLK_LP_TIMER_EN` writer - Bluetooth low-power timer clock gate."]
@@ -15478,11 +15367,6 @@ pub mod modem_lpcon_shared_clock {
             #[inline(always)]
             pub fn clk_coex_en(&self) -> ClkCoexEnR {
                 ClkCoexEnR::new(((self.bits >> 1) & 1) != 0)
-            }
-            #[doc = "Bit 2 - PHY I2C master clock gate."]
-            #[inline(always)]
-            pub fn clk_i2c_mst_en(&self) -> ClkI2cMstEnR {
-                ClkI2cMstEnR::new(((self.bits >> 2) & 1) != 0)
             }
             #[doc = "Bit 3 - Bluetooth low-power timer clock gate."]
             #[inline(always)]
@@ -15500,11 +15384,6 @@ pub mod modem_lpcon_shared_clock {
             #[inline(always)]
             pub fn clk_coex_en(&mut self) -> ClkCoexEnW<'_, ClkConfSpec> {
                 ClkCoexEnW::new(self, 1)
-            }
-            #[doc = "Bit 2 - PHY I2C master clock gate."]
-            #[inline(always)]
-            pub fn clk_i2c_mst_en(&mut self) -> ClkI2cMstEnW<'_, ClkConfSpec> {
-                ClkI2cMstEnW::new(self, 2)
             }
             #[doc = "Bit 3 - Bluetooth low-power timer clock gate."]
             #[inline(always)]
@@ -60653,12 +60532,6 @@ pub mod field_read {
         registers.modem_ctrl0().read().modem_clk_en().bit()
     }
 
-    /// Read `HP_SYS_CLKRST_RADIO`.`REF_160M_CTRL0`.`REF_160M_CLK_EN` without exposing its register block.
-    #[inline]
-    pub fn observe_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) -> bool {
-        registers.ref_160m_ctrl0().read().ref_160m_clk_en().bit()
-    }
-
     /// Read `PMU_RADIO`.`ANA_PERI_PWR_CTRL`.`XPD_PERIF_I2C` without exposing its register block.
     #[inline]
     pub fn observe_analog_i2c_power(registers: &crate::PmuRadio) -> bool {
@@ -61109,18 +60982,14 @@ pub mod field_snapshot_read {
         )
     }
 
-    /// Read `CLK_COEX_EN`, `CLK_I2C_MST_EN`, `CLK_LP_TIMER_EN` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF` sample.
+    /// Read `CLK_COEX_EN`, `CLK_LP_TIMER_EN` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF` sample.
     #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_shared_modem_clock_gates(
         registers: &crate::ModemLpconSharedClock,
-    ) -> (bool, bool, bool) {
+    ) -> (bool, bool) {
         let sample = registers.clk_conf().read();
-        (
-            sample.clk_coex_en().bit(),
-            sample.clk_i2c_mst_en().bit(),
-            sample.clk_lp_timer_en().bit(),
-        )
+        (sample.clk_coex_en().bit(), sample.clk_lp_timer_en().bit())
     }
 
     /// Read `CLK_WIFIPWR_ST_MAP_BIT_ONE`, `CLK_WIFIPWR_ST_MAP_BIT_TWO`, `CLK_COEX_ST_MAP_BIT_ONE`, `CLK_COEX_ST_MAP_BIT_TWO`, `CLK_I2C_MST_ST_MAP_BIT_ONE`, `CLK_I2C_MST_ST_MAP_BIT_TWO`, `CLK_LP_APB_ST_MAP_BIT_ONE`, `CLK_LP_APB_ST_MAP_BIT_TWO` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF_POWER_ST` sample.
@@ -62943,7 +62812,7 @@ pub mod register_image_write {
 pub mod partition_image_read {
 
     /// Registers of `RadioPhyPeripherals` that [`radio_phy_register_image`] observes.
-    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 212;
+    pub const RADIO_PHY_REGISTER_IMAGE_LEN: usize = 211;
 
     /// Read register `index` of the `RadioPhyPeripherals` image; `None` past its end.
     pub fn radio_phy_register_image(
@@ -63763,18 +63632,17 @@ pub mod partition_image_read {
             197 => registers.i2c_ana_mst.i2c1_ctrl1().read().bits(),
             198 => registers.i2c_ana_mst.hw_i2c_ctrl().read().bits(),
             199 => registers.hp_sys_clkrst_radio.modem_ctrl0().read().bits(),
-            200 => registers.hp_sys_clkrst_radio.ref_160m_ctrl0().read().bits(),
-            201 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
-            202 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
-            203 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
-            204 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
-            205 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
-            206 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
-            207 => registers.pmu_radio.rf_pwc().read().bits(),
-            208 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
-            209 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
-            210 => registers.lp_tsens.ctrl().read().bits(),
-            211 => registers.lp_tsens.clk_conf().read().bits(),
+            200 => registers.hp_sys_clkrst_radio.modem_conf().read().bits(),
+            201 => registers.lp_aon_clkrst.root_clk_conf().read().bits(),
+            202 => registers.lp_aon_clkrst.rtc_sar2_pwdet_cct().read().bits(),
+            203 => registers.pmu_radio.hp_active_icg_modem().read().bits(),
+            204 => registers.pmu_radio.hp_active_hp_ck_power().read().bits(),
+            205 => registers.pmu_radio.imm_hp_ck_power_0().read().bits(),
+            206 => registers.pmu_radio.rf_pwc().read().bits(),
+            207 => registers.pmu_radio.ana_peri_pwr_ctrl().read().bits(),
+            208 => registers.lp_periclkrst.tsens_ctrl().read().bits(),
+            209 => registers.lp_tsens.ctrl().read().bits(),
+            210 => registers.lp_tsens.clk_conf().read().bits(),
             _ => return None,
         })
     }
@@ -69729,28 +69597,6 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_I2C_MST_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn enable_shared_modem_phy_i2c_master_clock(registers: &crate::ModemLpconSharedClock) {
-        registers.clk_conf().modify(|_, writer| {
-            let input = 0x00000001_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.clk_i2c_mst_en().bit((input & 0x00000001) != 0)
-        });
-    }
-
-    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_I2C_MST_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn disable_shared_modem_phy_i2c_master_clock(registers: &crate::ModemLpconSharedClock) {
-        registers.clk_conf().modify(|_, writer| {
-            let input = 0x00000000_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.clk_i2c_mst_en().bit((input & 0x00000001) != 0)
-        });
-    }
-
     /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields `[CLK_LP_TIMER_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn enable_shared_modem_low_power_timer_clock(registers: &crate::ModemLpconSharedClock) {
@@ -70115,17 +69961,6 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields `[REF_160M_CLK_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn enable_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) {
-        registers.ref_160m_ctrl0().modify(|_, writer| {
-            let input = 0x00000001_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.ref_160m_clk_en().bit((input & 0x00000001) != 0)
-        });
-    }
-
     /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields `[MODEM_APB_CLK_EN, MODEM_RST_EN, MODEM_CLK_EN, MODEM_CLK_SOURCE_SEL, MODEM_PLL_CLK_EN, MODEM_XTAL_CLK_EN]` from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_modem_source_clocks(registers: &crate::HpSysClkrstRadio) {
@@ -70146,17 +69981,6 @@ pub mod field_replace_modify {
                 .bit(((input >> 4) & 0x00000001) != 0)
                 .modem_xtal_clk_en()
                 .bit(((input >> 5) & 0x00000001) != 0)
-        });
-    }
-
-    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields `[REF_160M_CLK_EN]` from one reviewed logical image while preserving every other bit.
-    #[inline]
-    pub fn disable_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) {
-        registers.ref_160m_ctrl0().modify(|_, writer| {
-            let input = 0x00000000_u32;
-            // SAFETY: generator validation proves every logical input projection
-            // fits its named SVD field; no whole-register image crosses this API.
-            writer.ref_160m_clk_en().bit((input & 0x00000001) != 0)
         });
     }
 

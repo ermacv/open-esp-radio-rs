@@ -1,43 +1,36 @@
-//! Route-owned modem clock leases and the reversible cold-power baseline.
+//! Common radio power, its platform clock references and the reversible
+//! cold-power baseline.
 //!
-//! The restricted PAC exposes straight-line gate, configuration and baseline
-//! transactions. This module decides when a route enables a shared clock,
-//! which state it restores on release and when the captured cold-power
-//! baseline may be committed. Every value here is route-scoped: a route
-//! releases all leases and restores the baseline before the neutral root is
-//! reconstructed.
+//! The restricted PAC exposes straight-line configuration and baseline
+//! transactions. This module decides when common power takes and drops the
+//! platform-owned 160 MHz and analog-I2C references, which state it restores
+//! on release and when the captured cold-power baseline may be committed.
+//! Every value here is route-scoped: a route drops its references and
+//! restores the baseline before the neutral root is reconstructed.
 
-use oer_esp32s31_pac::{
-    RadioPhyRegisters, SharedModemClockGate, WifiPowerBaseline, WifiPowerRestoreReadback,
-};
+use oer_esp32s31_pac::{RadioPhyRegisters, WifiPowerBaseline, WifiPowerRestoreReadback};
 
+use crate::power::{PlatformClockError, PlatformClockProvider};
 use crate::root::WifiPowerRestoreCheckpoint;
 
 /// Register transactions consumed by route clock policy.
 pub(crate) trait ClockPort {
-    fn gate_enabled(&self, gate: SharedModemClockGate) -> bool;
-    fn set_gate(&mut self, gate: SharedModemClockGate, enabled: bool);
     fn capture_power_baseline(&self) -> WifiPowerBaseline;
     fn restore_power_baseline(
         &mut self,
         baseline: WifiPowerBaseline,
     ) -> Result<(), WifiPowerRestoreReadback>;
-    /// Run the common modem/PHY power sequence, retaining the PHY-I2C gate
-    /// in `leases` at its exact late edge.
+    /// Run the common modem/PHY power sequence, taking the platform clock
+    /// references into `refs` at their exact edges.
     fn run_common_power_sequence(
         &mut self,
-        leases: &mut SharedClockLeases,
+        refs: &mut PlatformClockRefs,
+        platform: &mut impl PlatformClockProvider,
         entry: crate::power::PowerEntry,
     ) -> Result<(), crate::power::PowerError>;
 }
 
 impl ClockPort for RadioPhyRegisters {
-    fn gate_enabled(&self, gate: SharedModemClockGate) -> bool {
-        self.shared_modem_clock_gate_enabled(gate)
-    }
-    fn set_gate(&mut self, gate: SharedModemClockGate, enabled: bool) {
-        self.set_shared_modem_clock_gate(gate, enabled);
-    }
     fn capture_power_baseline(&self) -> WifiPowerBaseline {
         self.capture_wifi_power_baseline()
     }
@@ -49,58 +42,77 @@ impl ClockPort for RadioPhyRegisters {
     }
     fn run_common_power_sequence(
         &mut self,
-        leases: &mut SharedClockLeases,
+        refs: &mut PlatformClockRefs,
+        platform: &mut impl PlatformClockProvider,
         entry: crate::power::PowerEntry,
     ) -> Result<(), crate::power::PowerError> {
-        crate::power::execute_owned(&mut crate::power::RoutePower { phy: self, leases }, entry)
+        crate::power::execute_owned(
+            &mut crate::power::RoutePower {
+                phy: self,
+                refs,
+                platform,
+            },
+            entry,
+        )
     }
 }
 
-/// One retained shared gate and the state observed before retention.
-struct GateLease {
-    gate: SharedModemClockGate,
-    baseline: bool,
-}
-
-impl GateLease {
-    fn retain(port: &mut impl ClockPort, gate: SharedModemClockGate) -> Self {
-        let baseline = port.gate_enabled(gate);
-        if !baseline {
-            port.set_gate(gate, true);
-        }
-        Self { gate, baseline }
-    }
-
-    fn release(self, port: &mut impl ClockPort) {
-        if port.gate_enabled(self.gate) != self.baseline {
-            port.set_gate(self.gate, self.baseline);
-        }
-    }
-}
-
-/// The shared PHY-I2C gate retained while common radio power is held.
+/// The platform clock references common radio power holds.
+///
+/// The 160 MHz reference and the analog-I2C master clock gate are shared with
+/// other SoC users, so their platform owner (ESP-HAL) counts references and
+/// alone writes the gates. Common power takes one reference to each for as
+/// long as any client holds it; the flags make a retried power-up or
+/// power-down take or drop each reference exactly once.
 #[derive(Default)]
-pub(crate) struct SharedClockLeases {
-    phy_i2c: Option<GateLease>,
+pub(crate) struct PlatformClockRefs {
+    pll_f160m: bool,
+    analog_i2c: bool,
 }
 
-impl SharedClockLeases {
-    /// Retain the PHY-I2C gate at its exact late power-sequence edge.
-    pub(crate) fn retain_phy_i2c(&mut self, port: &mut impl ClockPort) {
-        if self.phy_i2c.is_none() {
-            self.phy_i2c = Some(GateLease::retain(port, SharedModemClockGate::PhyI2cMaster));
+impl PlatformClockRefs {
+    pub(crate) fn acquire_pll_f160m(
+        &mut self,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), PlatformClockError> {
+        if !self.pll_f160m {
+            platform.acquire_pll_f160m()?;
+            self.pll_f160m = true;
         }
+        Ok(())
     }
 
-    pub(crate) fn release_phy_i2c(&mut self, port: &mut impl ClockPort) {
-        if let Some(lease) = self.phy_i2c.take() {
-            lease.release(port);
+    pub(crate) fn acquire_analog_i2c(
+        &mut self,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), PlatformClockError> {
+        if !self.analog_i2c {
+            platform.acquire_analog_i2c_clock()?;
+            self.analog_i2c = true;
         }
+        Ok(())
     }
 
-    /// Release every retained gate.
-    pub(crate) fn release_all(&mut self, port: &mut impl ClockPort) {
-        self.release_phy_i2c(port);
+    fn release_analog_i2c(
+        &mut self,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), PlatformClockError> {
+        if self.analog_i2c {
+            platform.release_analog_i2c_clock()?;
+            self.analog_i2c = false;
+        }
+        Ok(())
+    }
+
+    fn release_pll_f160m(
+        &mut self,
+        platform: &mut impl PlatformClockProvider,
+    ) -> Result<(), PlatformClockError> {
+        if self.pll_f160m {
+            platform.release_pll_f160m()?;
+            self.pll_f160m = false;
+        }
+        Ok(())
     }
 }
 
@@ -133,6 +145,8 @@ pub enum CommonRadioPowerError {
     Power(crate::power::PowerError),
     /// The last client's cold-power baseline did not read back.
     Restore(WifiPowerRestoreCheckpoint),
+    /// The platform clock owner refused to release a reference.
+    PlatformClock(PlatformClockError),
 }
 
 /// Common modem/PHY power shared by concurrently running clients.
@@ -149,7 +163,7 @@ pub enum CommonRadioPowerError {
 #[derive(Default)]
 pub(crate) struct CommonRadioPower {
     clients: u8,
-    leases: SharedClockLeases,
+    refs: PlatformClockRefs,
     power: PowerEpoch,
     /// The Wi-Fi baseband and MAC resets were pulsed by a successful
     /// power-up since boot.
@@ -175,10 +189,12 @@ impl CommonRadioPower {
     /// Enter common power; only the first client runs the power sequence.
     ///
     /// A failed sequence admits no client. It keeps the original baseline
-    /// and any retained gate, so a retry restarts from the same cold state.
+    /// and any platform reference already taken, so a retry restarts from
+    /// the same cold state without taking a reference twice.
     pub(crate) fn enter(
         &mut self,
         port: &mut impl ClockPort,
+        platform: &mut impl PlatformClockProvider,
         client: RadioClient,
     ) -> Result<(), CommonRadioPowerError> {
         if self.holds(client) {
@@ -191,7 +207,7 @@ impl CommonRadioPower {
             } else {
                 crate::power::PowerEntry::FirstSinceBoot
             };
-            port.run_common_power_sequence(&mut self.leases, entry)
+            port.run_common_power_sequence(&mut self.refs, platform, entry)
                 .map_err(CommonRadioPowerError::Power)?;
             self.wifi_resets_pulsed = true;
         }
@@ -199,22 +215,30 @@ impl CommonRadioPower {
         Ok(())
     }
 
-    /// Leave common power; the last client restores the cold baseline.
+    /// Leave common power; the last client drops the analog-I2C reference,
+    /// restores the cold baseline and then drops the 160 MHz reference, as
+    /// the vendor closes a gate before releasing its source.
     ///
-    /// A failed restore keeps `client` entered so the exit can be retried.
+    /// A failed step keeps `client` entered so the exit can be retried.
     pub(crate) fn exit(
         &mut self,
         port: &mut impl ClockPort,
+        platform: &mut impl PlatformClockProvider,
         client: RadioClient,
     ) -> Result<(), CommonRadioPowerError> {
         if !self.holds(client) {
             return Err(CommonRadioPowerError::NotEntered);
         }
         if self.clients == client.bit() {
-            self.leases.release_all(port);
+            self.refs
+                .release_analog_i2c(platform)
+                .map_err(CommonRadioPowerError::PlatformClock)?;
             self.power
                 .restore(port)
                 .map_err(CommonRadioPowerError::Restore)?;
+            self.refs
+                .release_pll_f160m(platform)
+                .map_err(CommonRadioPowerError::PlatformClock)?;
         }
         self.clients &= !client.bit();
         Ok(())
@@ -240,7 +264,7 @@ impl PowerEpoch {
 
     /// Restore every non-monotonic field changed by the cold-power path.
     ///
-    /// Shared gate leases must be released first. The baseline is committed
+    /// The analog-I2C reference must be released first. The baseline is committed
     /// only after every readback matches.
     pub(crate) fn restore(
         &mut self,

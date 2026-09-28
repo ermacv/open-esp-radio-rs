@@ -5622,22 +5622,6 @@ pub(crate) fn disable_shared_modem_coexistence_clock(
     crate::svd::field_replace_modify::disable_shared_modem_coexistence_clock(registers);
 }
 
-/// Typed bridge for the reviewed `enable_shared_modem_phy_i2c_master_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn enable_shared_modem_phy_i2c_master_clock(
-    registers: &crate::svd::ModemLpconSharedClock,
-) {
-    crate::svd::field_replace_modify::enable_shared_modem_phy_i2c_master_clock(registers);
-}
-
-/// Typed bridge for the reviewed `disable_shared_modem_phy_i2c_master_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn disable_shared_modem_phy_i2c_master_clock(
-    registers: &crate::svd::ModemLpconSharedClock,
-) {
-    crate::svd::field_replace_modify::disable_shared_modem_phy_i2c_master_clock(registers);
-}
-
 /// Typed bridge for the reviewed `enable_shared_modem_low_power_timer_clock` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn enable_shared_modem_low_power_timer_clock(
@@ -5849,22 +5833,10 @@ pub(crate) fn restore_modem_register_bus_clock(
     crate::svd::field_replace_modify::restore_modem_register_bus_clock(registers, value.bits());
 }
 
-/// Typed bridge for the reviewed `enable_modem_reference_160m_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn enable_modem_reference_160m_clock(registers: &crate::svd::HpSysClkrstRadio) {
-    crate::svd::field_replace_modify::enable_modem_reference_160m_clock(registers);
-}
-
 /// Typed bridge for the reviewed `configure_modem_source_clocks` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn configure_modem_source_clocks(registers: &crate::svd::HpSysClkrstRadio) {
     crate::svd::field_replace_modify::configure_modem_source_clocks(registers);
-}
-
-/// Typed bridge for the reviewed `disable_modem_reference_160m_clock` fixed field-replacement transaction.
-#[inline]
-pub(crate) fn disable_modem_reference_160m_clock(registers: &crate::svd::HpSysClkrstRadio) {
-    crate::svd::field_replace_modify::disable_modem_reference_160m_clock(registers);
 }
 
 /// Typed bridge for the reviewed `power_on_rf_circuits` fixed field-replacement transaction.

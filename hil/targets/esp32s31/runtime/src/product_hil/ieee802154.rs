@@ -112,7 +112,7 @@ fn ieee802154_foundation(_radio: EspHalRadioPlatform) -> Option<Ieee802154Founda
     let (shared, partitions) = RadioHardware::take()?.into_concurrent(());
     let mut lease = shared.try_acquire().ok()?;
     let powered = Ieee802154Cold::from_partition(partitions.ieee802154)
-        .power_up(&mut lease)
+        .power_up(&mut lease, &mut EspHalRadioClocks::new())
         .ok()?;
     let clocked = powered
         .enable_clocks(&mut lease, &mut EspHalRadioClocks::new())

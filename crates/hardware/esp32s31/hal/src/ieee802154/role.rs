@@ -176,8 +176,9 @@ impl Ieee802154Cold {
     pub fn power_up<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<Ieee802154Powered, Ieee802154PowerTransitionFailure<Self>> {
-        match lease.enter_common_power(&self.mac.task) {
+        match lease.enter_common_power(&self.mac.task, clocks) {
             Ok(()) => Ok(Ieee802154Powered { mac: self.mac }),
             Err(error) => Err(Ieee802154PowerTransitionFailure { owner: self, error }),
         }
@@ -203,8 +204,9 @@ impl Ieee802154Powered {
     pub fn power_down<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<Ieee802154Cold, Ieee802154PowerTransitionFailure<Self>> {
-        match lease.exit_common_power(&self.mac.task) {
+        match lease.exit_common_power(&self.mac.task, clocks) {
             Ok(()) => Ok(Ieee802154Cold { mac: self.mac }),
             Err(error) => Err(Ieee802154PowerTransitionFailure { owner: self, error }),
         }

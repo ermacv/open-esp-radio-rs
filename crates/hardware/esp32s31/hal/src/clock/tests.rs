@@ -1,57 +1,46 @@
-use std::vec::Vec;
+use std::{cell::RefCell, rc::Rc, vec::Vec};
 
-use oer_esp32s31_pac::{SharedModemClockGate, WifiPowerBaseline, WifiPowerRestoreReadback};
+use oer_esp32s31_pac::{WifiPowerBaseline, WifiPowerRestoreReadback};
 
-use crate::power::PowerEntry;
+use crate::power::{PlatformClockError, PlatformClockProvider, PowerEntry};
 
 use super::{
-    ClockPort, CommonRadioPower, CommonRadioPowerError, PowerEpoch, RadioClient, SharedClockLeases,
+    ClockPort, CommonRadioPower, CommonRadioPowerError, PlatformClockRefs, PowerEpoch, RadioClient,
     WifiPowerRestoreCheckpoint,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    SetGate(SharedModemClockGate, bool),
+    AcquirePll160m,
+    ReleasePll160m,
+    AcquireAnalogI2c,
+    ReleaseAnalogI2c,
     RestorePower(WifiPowerBaseline),
     PowerSequence(PowerEntry),
 }
 
+type Log = Rc<RefCell<Vec<Operation>>>;
+
 struct Port {
-    gates: [bool; 3],
     power: WifiPowerBaseline,
     power_readback: Result<(), WifiPowerRestoreReadback>,
+    /// Fail the sequence after it took the 160 MHz reference.
     power_sequence_failure: Option<crate::power::PowerError>,
-    operations: Vec<Operation>,
+    log: Log,
 }
 
 impl Port {
-    fn new() -> Self {
+    fn new(log: &Log) -> Self {
         Self {
-            gates: [false; 3],
             power: WifiPowerBaseline::for_validation(false),
             power_readback: Ok(()),
             power_sequence_failure: None,
-            operations: Vec::new(),
-        }
-    }
-
-    const fn gate_index(gate: SharedModemClockGate) -> usize {
-        match gate {
-            SharedModemClockGate::Coexistence => 0,
-            SharedModemClockGate::PhyI2cMaster => 1,
-            SharedModemClockGate::LowPowerTimer => 2,
+            log: log.clone(),
         }
     }
 }
 
 impl ClockPort for Port {
-    fn gate_enabled(&self, gate: SharedModemClockGate) -> bool {
-        self.gates[Self::gate_index(gate)]
-    }
-    fn set_gate(&mut self, gate: SharedModemClockGate, enabled: bool) {
-        self.operations.push(Operation::SetGate(gate, enabled));
-        self.gates[Self::gate_index(gate)] = enabled;
-    }
     fn capture_power_baseline(&self) -> WifiPowerBaseline {
         self.power
     }
@@ -59,55 +48,75 @@ impl ClockPort for Port {
         &mut self,
         baseline: WifiPowerBaseline,
     ) -> Result<(), WifiPowerRestoreReadback> {
-        self.operations.push(Operation::RestorePower(baseline));
+        self.log
+            .borrow_mut()
+            .push(Operation::RestorePower(baseline));
         self.power_readback
     }
     fn run_common_power_sequence(
         &mut self,
-        leases: &mut SharedClockLeases,
+        refs: &mut PlatformClockRefs,
+        platform: &mut impl PlatformClockProvider,
         entry: PowerEntry,
     ) -> Result<(), crate::power::PowerError> {
-        self.operations.push(Operation::PowerSequence(entry));
+        self.log.borrow_mut().push(Operation::PowerSequence(entry));
+        refs.acquire_pll_f160m(platform).unwrap();
         if let Some(error) = self.power_sequence_failure {
             return Err(error);
         }
-        leases.retain_phy_i2c(self);
+        refs.acquire_analog_i2c(platform).unwrap();
         Ok(())
     }
 }
 
-#[test]
-fn shared_gate_restores_exactly_the_state_observed_before_retain() {
-    let mut port = Port::new();
-    let mut leases = SharedClockLeases::default();
-    leases.retain_phy_i2c(&mut port);
-    leases.retain_phy_i2c(&mut port);
-    assert_eq!(
-        port.operations,
-        [Operation::SetGate(SharedModemClockGate::PhyI2cMaster, true)]
-    );
-    leases.release_all(&mut port);
-    assert_eq!(
-        port.operations[1..],
-        [Operation::SetGate(
-            SharedModemClockGate::PhyI2cMaster,
-            false
-        )]
-    );
+struct Platform {
+    refuse_analog_i2c_release: bool,
+    log: Log,
+}
 
-    let mut port = Port::new();
-    port.gates = [true; 3];
-    leases.retain_phy_i2c(&mut port);
-    leases.release_all(&mut port);
-    assert!(port.operations.is_empty());
-    assert!(port.gates.iter().all(|&enabled| enabled));
+impl Platform {
+    fn new(log: &Log) -> Self {
+        Self {
+            refuse_analog_i2c_release: false,
+            log: log.clone(),
+        }
+    }
+}
+
+impl PlatformClockProvider for Platform {
+    fn acquire_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
+        self.log.borrow_mut().push(Operation::AcquirePll160m);
+        Ok(())
+    }
+    fn release_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
+        self.log.borrow_mut().push(Operation::ReleasePll160m);
+        Ok(())
+    }
+    fn acquire_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
+        self.log.borrow_mut().push(Operation::AcquireAnalogI2c);
+        Ok(())
+    }
+    fn release_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
+        if self.refuse_analog_i2c_release {
+            return Err(PlatformClockError);
+        }
+        self.log.borrow_mut().push(Operation::ReleaseAnalogI2c);
+        Ok(())
+    }
+}
+
+fn setup() -> (Log, Port, Platform) {
+    let log = Log::default();
+    let port = Port::new(&log);
+    let platform = Platform::new(&log);
+    (log, port, platform)
 }
 
 #[test]
 fn power_retry_preserves_the_original_cold_baseline_until_commit() {
     let original = WifiPowerBaseline::for_validation(false);
     let retry_observation = WifiPowerBaseline::for_validation(true);
-    let mut port = Port::new();
+    let (log, mut port, _) = setup();
     port.power = original;
     let mut epoch = PowerEpoch::default();
 
@@ -115,19 +124,19 @@ fn power_retry_preserves_the_original_cold_baseline_until_commit() {
     port.power = retry_observation;
     epoch.prepare(&port);
     assert_eq!(epoch.restore(&mut port), Ok(()));
-    assert_eq!(port.operations, [Operation::RestorePower(original)]);
+    assert_eq!(*log.borrow(), [Operation::RestorePower(original)]);
 
     epoch.prepare(&port);
     assert_eq!(epoch.restore(&mut port), Ok(()));
     assert_eq!(
-        port.operations[1..],
+        log.borrow()[1..],
         [Operation::RestorePower(retry_observation)]
     );
 }
 
 #[test]
 fn power_restore_failure_retains_the_baseline_for_retry() {
-    let mut port = Port::new();
+    let (log, mut port, _) = setup();
     let mut epoch = PowerEpoch::default();
     epoch.prepare(&port);
 
@@ -138,101 +147,168 @@ fn power_restore_failure_retains_the_baseline_for_retry() {
     );
     port.power_readback = Ok(());
     assert_eq!(epoch.restore(&mut port), Ok(()));
-    assert_eq!(port.operations.len(), 2);
+    assert_eq!(log.borrow().len(), 2);
 }
 
 #[test]
-fn only_the_first_client_runs_the_power_sequence() {
+fn common_power_holds_one_platform_reference_of_each_shared_gate() {
     let cold = WifiPowerBaseline::for_validation(false);
-    let mut port = Port::new();
+    let (log, mut port, mut platform) = setup();
     port.power = cold;
     let mut power = CommonRadioPower::default();
 
-    assert_eq!(power.enter(&mut port, RadioClient::Wifi), Ok(()));
-    // A later protocol must not pulse the Wi-Fi resets again.
-    port.power = WifiPowerBaseline::for_validation(true);
-    assert_eq!(power.enter(&mut port, RadioClient::Bluetooth), Ok(()));
     assert_eq!(
-        port.operations,
+        power.enter(&mut port, &mut platform, RadioClient::Wifi),
+        Ok(())
+    );
+    // A later protocol must not pulse the Wi-Fi resets or take references.
+    port.power = WifiPowerBaseline::for_validation(true);
+    assert_eq!(
+        power.enter(&mut port, &mut platform, RadioClient::Bluetooth),
+        Ok(())
+    );
+    assert_eq!(
+        *log.borrow(),
         [
             Operation::PowerSequence(PowerEntry::FirstSinceBoot),
-            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, true),
+            Operation::AcquirePll160m,
+            Operation::AcquireAnalogI2c,
         ]
     );
     assert_eq!(
-        power.enter(&mut port, RadioClient::Bluetooth),
+        power.enter(&mut port, &mut platform, RadioClient::Bluetooth),
         Err(CommonRadioPowerError::AlreadyEntered)
     );
 
-    port.operations.clear();
-    assert_eq!(power.exit(&mut port, RadioClient::Wifi), Ok(()));
-    assert!(port.operations.is_empty());
-    assert_eq!(power.exit(&mut port, RadioClient::Bluetooth), Ok(()));
-    // The last client restores the baseline captured before the first edge.
+    log.borrow_mut().clear();
     assert_eq!(
-        port.operations,
+        power.exit(&mut port, &mut platform, RadioClient::Wifi),
+        Ok(())
+    );
+    assert!(log.borrow().is_empty());
+    assert_eq!(
+        power.exit(&mut port, &mut platform, RadioClient::Bluetooth),
+        Ok(())
+    );
+    // The last client closes the analog-I2C gate, restores the baseline
+    // captured before the first edge, then drops the 160 MHz source.
+    assert_eq!(
+        *log.borrow(),
         [
-            Operation::SetGate(SharedModemClockGate::PhyI2cMaster, false),
+            Operation::ReleaseAnalogI2c,
             Operation::RestorePower(cold),
+            Operation::ReleasePll160m,
         ]
     );
     assert_eq!(
-        power.exit(&mut port, RadioClient::Bluetooth),
+        power.exit(&mut port, &mut platform, RadioClient::Bluetooth),
         Err(CommonRadioPowerError::NotEntered)
     );
 }
 
 #[test]
-fn a_failed_power_sequence_admits_no_client() {
-    let mut port = Port::new();
+fn a_failed_power_sequence_admits_no_client_and_retries_without_a_second_reference() {
+    let (log, mut port, mut platform) = setup();
     let error = crate::power::PowerError {
-        checkpoint: crate::power::PowerCheckpoint::I2cClock,
+        checkpoint: crate::power::PowerCheckpoint::ModemClockSource,
         expected: true,
         observed: false,
     };
     port.power_sequence_failure = Some(error);
     let mut power = CommonRadioPower::default();
     assert_eq!(
-        power.enter(&mut port, RadioClient::Ieee802154),
+        power.enter(&mut port, &mut platform, RadioClient::Ieee802154),
         Err(CommonRadioPowerError::Power(error))
     );
     assert!(!power.holds(RadioClient::Ieee802154));
     assert_eq!(
-        power.exit(&mut port, RadioClient::Ieee802154),
+        power.exit(&mut port, &mut platform, RadioClient::Ieee802154),
         Err(CommonRadioPowerError::NotEntered)
     );
 
     port.power_sequence_failure = None;
-    assert_eq!(power.enter(&mut port, RadioClient::Ieee802154), Ok(()));
+    assert_eq!(
+        power.enter(&mut port, &mut platform, RadioClient::Ieee802154),
+        Ok(())
+    );
+    let acquisitions = log
+        .borrow()
+        .iter()
+        .filter(|operation| **operation == Operation::AcquirePll160m)
+        .count();
+    assert_eq!(acquisitions, 1);
 }
 
 #[test]
 fn a_failed_restore_keeps_the_last_client_for_retry() {
-    let mut port = Port::new();
+    let (log, mut port, mut platform) = setup();
     let mut power = CommonRadioPower::default();
-    assert_eq!(power.enter(&mut port, RadioClient::Wifi), Ok(()));
+    assert_eq!(
+        power.enter(&mut port, &mut platform, RadioClient::Wifi),
+        Ok(())
+    );
     port.power_readback = Err(WifiPowerRestoreReadback::ModemSyscon);
     assert_eq!(
-        power.exit(&mut port, RadioClient::Wifi),
+        power.exit(&mut port, &mut platform, RadioClient::Wifi),
         Err(CommonRadioPowerError::Restore(
             WifiPowerRestoreCheckpoint::ModemSyscon
         ))
     );
     assert!(power.holds(RadioClient::Wifi));
     port.power_readback = Ok(());
-    assert_eq!(power.exit(&mut port, RadioClient::Wifi), Ok(()));
+    assert_eq!(
+        power.exit(&mut port, &mut platform, RadioClient::Wifi),
+        Ok(())
+    );
+    let releases = log
+        .borrow()
+        .iter()
+        .filter(|operation| **operation == Operation::ReleaseAnalogI2c)
+        .count();
+    assert_eq!(releases, 1);
+}
+
+#[test]
+fn a_refused_release_keeps_the_last_client_for_retry() {
+    let (log, mut port, mut platform) = setup();
+    let mut power = CommonRadioPower::default();
+    assert_eq!(
+        power.enter(&mut port, &mut platform, RadioClient::Bluetooth),
+        Ok(())
+    );
+    platform.refuse_analog_i2c_release = true;
+    assert_eq!(
+        power.exit(&mut port, &mut platform, RadioClient::Bluetooth),
+        Err(CommonRadioPowerError::PlatformClock(PlatformClockError))
+    );
+    assert!(power.holds(RadioClient::Bluetooth));
+    assert!(
+        !log.borrow()
+            .iter()
+            .any(|operation| matches!(operation, Operation::RestorePower(_)))
+    );
+    platform.refuse_analog_i2c_release = false;
+    assert_eq!(
+        power.exit(&mut port, &mut platform, RadioClient::Bluetooth),
+        Ok(())
+    );
 }
 
 #[test]
 fn power_up_after_every_client_left_keeps_the_wifi_resets() {
-    let mut port = Port::new();
+    let (log, mut port, mut platform) = setup();
     let mut power = CommonRadioPower::default();
 
-    assert_eq!(power.enter(&mut port, RadioClient::Ieee802154), Ok(()));
-    assert_eq!(power.exit(&mut port, RadioClient::Ieee802154), Ok(()));
-    assert_eq!(power.enter(&mut port, RadioClient::Ieee802154), Ok(()));
-    let sequences: Vec<_> = port
-        .operations
+    for step in 0..3 {
+        let result = if step == 1 {
+            power.exit(&mut port, &mut platform, RadioClient::Ieee802154)
+        } else {
+            power.enter(&mut port, &mut platform, RadioClient::Ieee802154)
+        };
+        assert_eq!(result, Ok(()));
+    }
+    let sequences: Vec<_> = log
+        .borrow()
         .iter()
         .filter_map(|operation| match operation {
             Operation::PowerSequence(entry) => Some(*entry),
@@ -247,22 +323,33 @@ fn power_up_after_every_client_left_keeps_the_wifi_resets() {
 
 #[test]
 fn a_failed_first_power_up_still_pulses_the_wifi_resets_on_retry() {
-    let mut port = Port::new();
+    let (log, mut port, mut platform) = setup();
     port.power_sequence_failure = Some(crate::power::PowerError {
         checkpoint: crate::power::PowerCheckpoint::ResetReleased,
         expected: true,
         observed: false,
     });
     let mut power = CommonRadioPower::default();
-    assert!(power.enter(&mut port, RadioClient::Wifi).is_err());
+    assert!(
+        power
+            .enter(&mut port, &mut platform, RadioClient::Wifi)
+            .is_err()
+    );
     port.power_sequence_failure = None;
-    assert_eq!(power.enter(&mut port, RadioClient::Wifi), Ok(()));
-    assert!(matches!(
-        port.operations.as_slice(),
-        [
-            Operation::PowerSequence(PowerEntry::FirstSinceBoot),
-            Operation::PowerSequence(PowerEntry::FirstSinceBoot),
-            ..
-        ]
-    ));
+    assert_eq!(
+        power.enter(&mut port, &mut platform, RadioClient::Wifi),
+        Ok(())
+    );
+    let sequences: Vec<_> = log
+        .borrow()
+        .iter()
+        .filter_map(|operation| match operation {
+            Operation::PowerSequence(entry) => Some(*entry),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sequences,
+        [PowerEntry::FirstSinceBoot, PowerEntry::FirstSinceBoot]
+    );
 }

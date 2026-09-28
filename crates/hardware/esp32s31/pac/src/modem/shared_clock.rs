@@ -12,7 +12,6 @@ use crate::{RadioPhyRegisters, generated::ModemLowPowerClockDivider};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SharedModemClockGate {
     Coexistence,
-    PhyI2cMaster,
     LowPowerTimer,
 }
 
@@ -21,7 +20,6 @@ pub enum SharedModemClockGate {
 pub struct SharedModemClockObservation {
     pub power_state_map_configured: bool,
     pub coexistence_clock_enabled: bool,
-    pub phy_i2c_master_clock_enabled: bool,
     pub low_power_timer_clock_enabled: bool,
 }
 
@@ -147,11 +145,8 @@ impl RadioPhyRegisters {
     #[doc(hidden)]
     pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
-        let (
-            coexistence_clock_enabled,
-            phy_i2c_master_clock_enabled,
-            low_power_timer_clock_enabled,
-        ) = crate::svd::field_snapshot_read::observe_shared_modem_clock_gates(registers);
+        let (coexistence_clock_enabled, low_power_timer_clock_enabled) =
+            crate::svd::field_snapshot_read::observe_shared_modem_clock_gates(registers);
         let (
             wifi_power_map_bit_one,
             wifi_power_map_bit_two,
@@ -172,7 +167,6 @@ impl RadioPhyRegisters {
                 && low_power_apb_map_bit_one
                 && low_power_apb_map_bit_two,
             coexistence_clock_enabled,
-            phy_i2c_master_clock_enabled,
             low_power_timer_clock_enabled,
         }
     }
@@ -217,13 +211,12 @@ impl RadioPhyRegisters {
     /// Read whether one shared clock gate is enabled.
     #[doc(hidden)]
     pub fn shared_modem_clock_gate_enabled(&self, gate: SharedModemClockGate) -> bool {
-        let (coexistence, phy_i2c_master, low_power_timer) =
+        let (coexistence, low_power_timer) =
             crate::svd::field_snapshot_read::observe_shared_modem_clock_gates(
                 &self.peripherals.modem_lpcon_shared_clock,
             );
         match gate {
             SharedModemClockGate::Coexistence => coexistence,
-            SharedModemClockGate::PhyI2cMaster => phy_i2c_master,
             SharedModemClockGate::LowPowerTimer => low_power_timer,
         }
     }
@@ -238,12 +231,6 @@ impl RadioPhyRegisters {
             }
             (SharedModemClockGate::Coexistence, false) => {
                 crate::generated::disable_shared_modem_coexistence_clock(registers);
-            }
-            (SharedModemClockGate::PhyI2cMaster, true) => {
-                crate::generated::enable_shared_modem_phy_i2c_master_clock(registers);
-            }
-            (SharedModemClockGate::PhyI2cMaster, false) => {
-                crate::generated::disable_shared_modem_phy_i2c_master_clock(registers);
             }
             (SharedModemClockGate::LowPowerTimer, true) => {
                 crate::generated::enable_shared_modem_low_power_timer_clock(registers);

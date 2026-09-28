@@ -10,13 +10,16 @@ use oer_esp32s31_pac::{
     RtcSlowClockSource, SharedModemClockObservation, WifiLowPowerClockSource,
 };
 
-use crate::clock::SharedClockLeases;
+use crate::clock::PlatformClockRefs;
 
 pub(crate) trait PowerSequenceBackend {
     fn select_hp_active_modem_icg(&mut self);
     fn apply_modem_icg_selection(&mut self);
     fn apply_sleep_icg_selection(&mut self);
     fn enable_modem_register_bus_clock(&mut self);
+    /// Take the platform's 160 MHz reference, which gates the modem PLL
+    /// source.
+    fn acquire_reference_160m(&mut self) -> Result<(), PlatformClockError>;
     fn configure_modem_source_clocks(&mut self);
     fn platform_clock_power_observation(&self) -> oer_esp32s31_pac::PlatformClockPowerObservation;
     fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool);
@@ -29,17 +32,20 @@ pub(crate) trait PowerSequenceBackend {
     /// Select the Wi-Fi power-domain low-power clock from the RTC slow-clock
     /// source and enable the Wi-Fi power clock.
     fn select_wifi_low_power_clock(&mut self);
-    fn retain_phy_i2c_master_clock(&mut self);
+    /// Take the platform's analog-I2C master clock reference.
+    fn acquire_analog_i2c_master_clock(&mut self) -> Result<(), PlatformClockError>;
     fn shared_modem_clock_observation(&self) -> oer_esp32s31_pac::SharedModemClockObservation;
 }
 
-/// Power-sequence port over one route's shared PHY and its clock leases.
-pub(crate) struct RoutePower<'route> {
+/// Power-sequence port over one route's shared PHY, its platform clock
+/// references and the platform clock owner.
+pub(crate) struct RoutePower<'route, P> {
     pub(crate) phy: &'route mut RadioPhyRegisters,
-    pub(crate) leases: &'route mut SharedClockLeases,
+    pub(crate) refs: &'route mut PlatformClockRefs,
+    pub(crate) platform: &'route mut P,
 }
 
-impl PowerSequenceBackend for RoutePower<'_> {
+impl<P: PlatformClockProvider> PowerSequenceBackend for RoutePower<'_, P> {
     fn select_hp_active_modem_icg(&mut self) {
         self.phy.select_hp_active_modem_icg();
     }
@@ -51,6 +57,9 @@ impl PowerSequenceBackend for RoutePower<'_> {
     }
     fn enable_modem_register_bus_clock(&mut self) {
         self.phy.enable_modem_register_bus_clock();
+    }
+    fn acquire_reference_160m(&mut self) -> Result<(), PlatformClockError> {
+        self.refs.acquire_pll_f160m(self.platform)
     }
     fn configure_modem_source_clocks(&mut self) {
         self.phy.configure_modem_source_clocks();
@@ -91,8 +100,8 @@ impl PowerSequenceBackend for RoutePower<'_> {
         };
         self.phy.select_wifi_low_power_clock(source);
     }
-    fn retain_phy_i2c_master_clock(&mut self) {
-        self.leases.retain_phy_i2c(self.phy);
+    fn acquire_analog_i2c_master_clock(&mut self) -> Result<(), PlatformClockError> {
+        self.refs.acquire_analog_i2c(self.platform)
     }
     fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         self.phy.shared_modem_clock_observation()
@@ -114,7 +123,6 @@ pub struct PowerClockReadback {
     pub modem_source_clocks_configured: bool,
     pub phy_calibration_clocks_enabled: bool,
     pub phy_i2c_160mhz_selected: bool,
-    pub phy_i2c_master_clock_enabled: bool,
 }
 
 /// Read-back checkpoint following the finite prerequisite sequence.
@@ -130,13 +138,15 @@ pub enum PowerCheckpoint {
     HpActiveClockMap,
     /// Shared low-power modem clocks are ungated.
     SharedClockMap,
+    /// The platform clock owner granted the 160 MHz reference.
+    Reference160m,
     /// The modem PLL/XTAL source configuration is active.
     ModemClockSource,
     /// All PHY frontend and calibration clocks are enabled.
     PhyClocks,
     /// PHY-I²C uses the 160 MHz source.
     I2cSource,
-    /// The PHY-I²C master clock is enabled.
+    /// The platform clock owner granted the PHY-I²C master clock.
     I2cClock,
 }
 
@@ -187,12 +197,19 @@ pub(crate) fn execute_owned(
     registers.enable_modem_register_bus_clock();
     registers.configure_wifi_power_clock_map();
     registers.prepare_shared_modem_clock_map();
+    // The platform owns the 160 MHz gate; its reference replaces the gate
+    // write that ESP-IDF's modem clock performs first for this source.
+    registers
+        .acquire_reference_160m()
+        .map_err(|PlatformClockError| refused(PowerCheckpoint::Reference160m))?;
     registers.configure_modem_source_clocks();
     registers.set_wifi_baseband_reset(true);
     registers.set_wifi_baseband_reset(false);
     registers.enable_phy_calibration_clocks();
     registers.select_phy_i2c_160mhz_source();
-    registers.retain_phy_i2c_master_clock();
+    registers
+        .acquire_analog_i2c_master_clock()
+        .map_err(|PlatformClockError| refused(PowerCheckpoint::I2cClock))?;
 
     let platform = registers.platform_clock_power_observation();
     let modem = registers.modem_syscon_power_observation();
@@ -206,7 +223,6 @@ pub(crate) fn execute_owned(
         modem_source_clocks_configured: platform.modem_source_clocks_configured,
         phy_calibration_clocks_enabled: modem.phy_calibration_clocks_enabled,
         phy_i2c_160mhz_selected: modem.phy_i2c_160mhz_selected,
-        phy_i2c_master_clock_enabled: shared.phy_i2c_master_clock_enabled,
     };
     verify_state(PowerCheckpoint::ResetReleased, readback.reset_released)?;
     verify_state(
@@ -233,11 +249,16 @@ pub(crate) fn execute_owned(
         PowerCheckpoint::PhyClocks,
         readback.phy_calibration_clocks_enabled,
     )?;
-    verify_state(PowerCheckpoint::I2cSource, readback.phy_i2c_160mhz_selected)?;
-    verify_state(
-        PowerCheckpoint::I2cClock,
-        readback.phy_i2c_master_clock_enabled,
-    )
+    verify_state(PowerCheckpoint::I2cSource, readback.phy_i2c_160mhz_selected)
+}
+
+/// The platform clock owner refused a reference at `checkpoint`.
+const fn refused(checkpoint: PowerCheckpoint) -> PowerError {
+    PowerError {
+        checkpoint,
+        expected: true,
+        observed: false,
+    }
 }
 
 fn verify_state(checkpoint: PowerCheckpoint, observed: bool) -> Result<(), PowerError> {
@@ -249,6 +270,28 @@ fn verify_state(checkpoint: PowerCheckpoint, observed: bool) -> Result<(), Power
             expected: true,
             observed,
         })
+    }
+}
+
+/// A platform clock owner that grants every request, for tests that stop
+/// before any platform clock edge matters.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct TestPlatformClocks;
+
+#[cfg(test)]
+impl PlatformClockProvider for TestPlatformClocks {
+    fn acquire_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
+        Ok(())
+    }
+    fn release_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
+        Ok(())
+    }
+    fn acquire_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
+        Ok(())
+    }
+    fn release_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
+        Ok(())
     }
 }
 

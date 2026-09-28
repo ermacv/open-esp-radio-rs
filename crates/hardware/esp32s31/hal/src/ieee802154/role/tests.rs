@@ -44,7 +44,9 @@ fn a_rejected_power_entry_returns_the_unchanged_cold_client() {
         .try_acquire()
         .unwrap_or_else(|_| panic!("a free arbiter grants its lease"));
 
-    let failure = match Ieee802154Cold::from_partition(partitions.ieee802154).power_up(&mut lease) {
+    let failure = match Ieee802154Cold::from_partition(partitions.ieee802154)
+        .power_up(&mut lease, &mut crate::power::TestPlatformClocks)
+    {
         Ok(_) => panic!("a client cannot enter common power twice"),
         Err(failure) => failure,
     };

@@ -42494,13 +42494,6 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "CLK_I2C_MST_EN"
-method = "clk_i2c_mst_en"
-bit-offset = 2
-bit-width = 1
-access = "read-write"
-
-[[registers.fields]]
 svd-name = "CLK_LP_TIMER_EN"
 method = "clk_lp_timer_en"
 bit-offset = 3
@@ -45350,31 +45343,6 @@ register-method = "modem_ctrl0"
 svd-name = "MODEM_CLK_EN"
 method = "modem_clk_en"
 bit-offset = 0
-bit-width = 1
-access = "read-write"
-
-[[registers]]
-address = 542667136
-width = 32
-access = "read-write"
-identity = "HP_SYS_CLKRST_RADIO.REF_160M_CTRL0"
-peripheral = "HP_SYS_CLKRST_RADIO"
-peripheral-type = "HpSysClkrstRadio"
-peripheral-module = "hp_sys_clkrst_radio"
-scope = []
-register-method = "ref_160m_ctrl0"
-
-[[registers.fields]]
-svd-name = "REF_160M_CLK_DIV_NUM"
-method = "ref_160m_clk_div_num"
-bit-offset = 0
-bit-width = 8
-access = "read-write"
-
-[[registers.fields]]
-svd-name = "REF_160M_CLK_EN"
-method = "ref_160m_clk_en"
-bit-offset = 8
 bit-width = 1
 access = "read-write"
 

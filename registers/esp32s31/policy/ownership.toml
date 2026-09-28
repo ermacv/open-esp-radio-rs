@@ -22,7 +22,6 @@ owned-ranges = [
     "ieee802154-core0-route",
     "ieee802154-core1-route",
     "hp-sys-clkrst-radio-modem-control",
-    "hp-sys-clkrst-radio-ref160",
     "hp-sys-clkrst-radio-modem-configuration",
     "pmu-radio-active-icg-modem",
     "pmu-radio-active-clock-power",

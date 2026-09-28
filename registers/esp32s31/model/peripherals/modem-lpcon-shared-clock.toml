@@ -168,12 +168,6 @@ bitOffset = 1
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "CLK_I2C_MST_EN"
-description = "PHY I2C master clock gate."
-bitOffset = 2
-bitWidth = 1
-
-[[peripherals.registers.register.fields]]
 name = "CLK_LP_TIMER_EN"
 description = "Bluetooth low-power timer clock gate."
 bitOffset = 3

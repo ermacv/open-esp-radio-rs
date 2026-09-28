@@ -583,35 +583,44 @@ impl<T> SharedRadioLease<'_, T> {
     /// Wi-Fi baseband and MAC resets, so it never runs while another client
     /// holds power.
     ///
+    /// The first client also takes the platform's 160 MHz and analog-I2C
+    /// references from `clocks`; ESP-HAL alone writes those shared gates.
+    ///
     /// # Errors
     ///
     /// The client already holds power, or the first client's sequence failed
-    /// a read-back checkpoint and admitted no client.
+    /// a read-back checkpoint or a platform reference and admitted no client.
     pub fn enter_common_power<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<(), CommonRadioPowerError> {
         let state = self.state_mut();
         state
             .power
-            .enter(state.registers.radio_phy_mut(), O::CLIENT)
+            .enter(state.registers.radio_phy_mut(), clocks, O::CLIENT)
     }
 
     /// Leave common radio power as the protocol that owns `owner`.
     ///
-    /// The last client releases the PHY-I2C gate and restores the cold-power
-    /// baseline captured before the first power edge.
+    /// The last client drops the platform's analog-I2C reference, restores
+    /// the cold-power baseline captured before the first power edge and then
+    /// drops the 160 MHz reference.
     ///
     /// # Errors
     ///
-    /// The client does not hold power, or the baseline did not read back; the
-    /// client then stays entered so the exit can be retried.
+    /// The client does not hold power, the baseline did not read back or the
+    /// platform refused a release; the client then stays entered so the exit
+    /// can be retried.
     pub fn exit_common_power<O: RadioClientOwner>(
         &mut self,
         _owner: &O,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<(), CommonRadioPowerError> {
         let state = self.state_mut();
-        state.power.exit(state.registers.radio_phy_mut(), O::CLIENT)
+        state
+            .power
+            .exit(state.registers.radio_phy_mut(), clocks, O::CLIENT)
     }
 
     /// Whether `client` currently holds the shared BTBB baseband.

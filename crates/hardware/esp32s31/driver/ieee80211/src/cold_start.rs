@@ -167,7 +167,7 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let powered = match WifiCold::from_partition(partition).power_up(lease) {
+    let powered = match WifiCold::from_partition(partition).power_up(lease, clocks) {
         Ok(powered) => powered,
         Err(failure) => {
             return Err(WifiColdStartFailure {

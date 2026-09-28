@@ -230,7 +230,7 @@ impl<W> WifiStopped<W> {
                 });
             }
         };
-        match powered.power_down(lease) {
+        match powered.power_down(lease, clocks) {
             Ok(cold) => Ok(WifiReleased {
                 partition: cold.into_partition(),
                 platform,

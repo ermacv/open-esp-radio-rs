@@ -231,26 +231,10 @@ end-exclusive = 0x20587044
 permissions = "rw"
 
 [[regions]]
-name = "hp-system-between-radio-modem-control-and-ref160"
+name = "hp-system-between-radio-modem-control-and-modem-configuration"
 address-space = "cpu"
 kind = "mmio"
 start = 0x20587044
-end-exclusive = 0x20587180
-permissions = "rw"
-
-[[regions]]
-name = "hp-sys-clkrst-radio-ref160"
-address-space = "cpu"
-kind = "mmio"
-start = 0x20587180
-end-exclusive = 0x20587184
-permissions = "rw"
-
-[[regions]]
-name = "hp-system-between-radio-ref160-and-modem-configuration"
-address-space = "cpu"
-kind = "mmio"
-start = 0x20587184
 end-exclusive = 0x205871E0
 permissions = "rw"
 

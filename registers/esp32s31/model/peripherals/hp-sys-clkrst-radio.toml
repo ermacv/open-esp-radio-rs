@@ -22,39 +22,6 @@ bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "REF_160M_CTRL0"
-description = "160 MHz reference divider and clock gate."
-addressOffset = 0x180
-size = 32
-access = "read-write"
-resetValue = 0x00000102
-
-[[peripherals.registers.register.fields]]
-name = "REF_160M_CLK_DIV_NUM"
-description = "160 MHz reference divider programmed by the platform clock tree."
-bitOffset = 0
-bitWidth = 8
-
-[peripherals.registers.register.fields.writeConstraint]
-useEnumeratedValues = true
-
-[[peripherals.registers.register.fields.enumeratedValues]]
-name = "Ref160mDivider"
-usage = "read-write"
-
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "FIXED_480MHZ_SOURCE"
-description = "Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source."
-value = 2
-
-[[peripherals.registers.register.fields]]
-name = "REF_160M_CLK_EN"
-description = "160 MHz reference clock gate shared by the radio lifecycles."
-bitOffset = 8
-bitWidth = 1
-
-[[peripherals.registers]]
-[peripherals.registers.register]
 name = "MODEM_CONF"
 description = "Modem APB, reset and source-clock configuration."
 addressOffset = 0x1E0
@@ -114,27 +81,6 @@ completeness = "complete"
 
 [[review]]
 entity = "HP_SYS_CLKRST_RADIO.MODEM_CTRL0.MODEM_CLK_EN"
-sources = ["S31_ESP_PACS_SVD"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "HP_SYS_CLKRST_RADIO.REF_160M_CTRL0"
-sources = ["S31_ESP_PACS_SVD"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "HP_SYS_CLKRST_RADIO.REF_160M_CTRL0.REF_160M_CLK_DIV_NUM"
-sources = ["S31_ESP_PACS_SVD"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "HP_SYS_CLKRST_RADIO.REF_160M_CTRL0.REF_160M_CLK_EN"
 sources = ["S31_ESP_PACS_SVD"]
 provenance = "observed"
 accuracy = "exact"

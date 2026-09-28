@@ -102,11 +102,11 @@ fn common_power_membership_follows_the_proving_owner() {
 
     // Leaving before entering is rejected before any register access.
     assert_eq!(
-        lease.exit_common_power(&wifi),
+        lease.exit_common_power(&wifi, &mut crate::power::TestPlatformClocks),
         Err(CommonRadioPowerError::NotEntered)
     );
     assert_eq!(
-        lease.exit_common_power(&bluetooth),
+        lease.exit_common_power(&bluetooth, &mut crate::power::TestPlatformClocks),
         Err(CommonRadioPowerError::NotEntered)
     );
     assert!(!lease.holds_common_power(RadioClient::Wifi));

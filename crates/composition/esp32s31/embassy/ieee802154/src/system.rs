@@ -268,16 +268,17 @@ fn unwind_clocked(
         Ok(powered) => powered,
         Err(failure) => return fail_stop(error, FailStopOwner::Clocked(failure.into_owner())),
     };
-    unwind_powered(lease, powered, engine, error)
+    unwind_powered(lease, clocks, powered, engine, error)
 }
 
 fn unwind_powered(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    clocks: &mut impl PlatformClockProvider,
     powered: Ieee802154Powered,
     engine: Ieee802154Engine<'static>,
     error: Ieee802154StartError,
 ) -> Ieee802154StartFailure {
-    match powered.power_down(lease) {
+    match powered.power_down(lease, clocks) {
         Ok(cold) => Ieee802154StartFailure {
             error,
             owner: Ok(Ieee802154Parked {
@@ -327,7 +328,7 @@ pub async fn start<P, C: PlatformClockProvider>(
     let mut guard = radio.lock().await;
     let (lease, _, clocks) = guard.parts();
 
-    let powered = match Ieee802154Cold::from_partition(partition).power_up(lease) {
+    let powered = match Ieee802154Cold::from_partition(partition).power_up(lease, clocks) {
         Ok(powered) => powered,
         Err(failure) => {
             return Err(Ieee802154StartFailure {
@@ -349,7 +350,13 @@ pub async fn start<P, C: PlatformClockProvider>(
                     FailStopOwner::Powered(failure.into_owner()),
                 ));
             }
-            return Err(unwind_powered(lease, failure.into_owner(), engine, error));
+            return Err(unwind_powered(
+                lease,
+                clocks,
+                failure.into_owner(),
+                engine,
+                error,
+            ));
         }
     };
 
@@ -858,7 +865,7 @@ impl Ieee802154System {
                 ));
             }
         };
-        match powered.power_down(lease) {
+        match powered.power_down(lease, clocks) {
             Ok(cold) => Ok(Ieee802154Parked {
                 partition: cold.into_partition(),
                 engine,

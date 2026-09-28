@@ -5707,40 +5707,6 @@
           </fields>
         </register>
         <register>
-          <name>REF_160M_CTRL0</name>
-          <description>160 MHz reference divider and clock gate.</description>
-          <addressOffset>0x180</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <resetValue>0x00000102</resetValue>
-          <fields>
-            <field>
-              <name>REF_160M_CLK_DIV_NUM</name>
-              <description>160 MHz reference divider programmed by the platform clock tree.</description>
-              <bitOffset>0</bitOffset>
-              <bitWidth>8</bitWidth>
-              <writeConstraint>
-                <useEnumeratedValues>true</useEnumeratedValues>
-              </writeConstraint>
-              <enumeratedValues>
-                <name>Ref160mDivider</name>
-                <usage>read-write</usage>
-                <enumeratedValue>
-                  <name>FIXED_480MHZ_SOURCE</name>
-                  <description>Divider image two programmed by official ESP-HAL for the fixed 480 MHz BBPLL source.</description>
-                  <value>2</value>
-                </enumeratedValue>
-              </enumeratedValues>
-            </field>
-            <field>
-              <name>REF_160M_CLK_EN</name>
-              <description>160 MHz reference clock gate shared by the radio lifecycles.</description>
-              <bitOffset>8</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
           <name>MODEM_CONF</name>
           <description>Modem APB, reset and source-clock configuration.</description>
           <addressOffset>0x1E0</addressOffset>
@@ -6357,12 +6323,6 @@
               <name>CLK_COEX_EN</name>
               <description>Coexistence clock gate.</description>
               <bitOffset>1</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_I2C_MST_EN</name>
-              <description>PHY I2C master clock gate.</description>
-              <bitOffset>2</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>

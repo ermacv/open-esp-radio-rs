@@ -138,8 +138,9 @@ impl WifiCold {
     pub fn power_up<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<WifiPowered, WifiTransitionFailure<Self, CommonRadioPowerError>> {
-        match lease.enter_common_power(&self.registers.mac) {
+        match lease.enter_common_power(&self.registers.mac, clocks) {
             Ok(()) => Ok(WifiPowered {
                 registers: self.registers,
             }),
@@ -157,8 +158,9 @@ impl WifiPowered {
     pub fn power_down<T>(
         self,
         lease: &mut SharedRadioLease<'_, T>,
+        clocks: &mut impl PlatformClockProvider,
     ) -> Result<WifiCold, WifiTransitionFailure<Self, CommonRadioPowerError>> {
-        match lease.exit_common_power(&self.registers.mac) {
+        match lease.exit_common_power(&self.registers.mac, clocks) {
             Ok(()) => Ok(WifiCold {
                 registers: self.registers,
             }),

@@ -110,7 +110,14 @@ fn select_pair_tx_slot(pending: [bool; 2], served: [u64; 2]) -> Option<usize> {
     }
 }
 
-fn charge_pair_tx_frames(served: &mut [u64; 2], slot: usize, frames: usize) {
+/// Charge `frames` to `slot`. Only a VIF whose peer also waits builds a lead:
+/// frames served while the peer is idle would otherwise accumulate a lead
+/// the returning peer then claims turn after turn.
+fn charge_pair_tx_frames(served: &mut [u64; 2], slot: usize, frames: usize, peer_pending: bool) {
+    if !peer_pending {
+        *served = [0; 2];
+        return;
+    }
     served[slot] = served[slot].saturating_add(u64::try_from(frames.max(1)).unwrap_or(u64::MAX));
     let shared = served[0].min(served[1]);
     served[0] -= shared;
@@ -271,13 +278,14 @@ where
         let DatapathInterfaceScope::Pair { first, second } = self.interfaces else {
             return;
         };
-        let slot = if interface == first {
-            0
+        let (slot, peer) = if interface == first {
+            (0, second)
         } else {
             assert_eq!(interface, second);
-            1
+            (1, first)
         };
-        charge_pair_tx_frames(&mut self.pair_tx_served_frames, slot, frames);
+        let peer_pending = self.network.tx_queue_len(peer) != 0;
+        charge_pair_tx_frames(&mut self.pair_tx_served_frames, slot, frames, peer_pending);
     }
 
     pub(super) fn tx_interface_for(&self, frame: &N::TxFrame) -> NetworkInterfaceId {

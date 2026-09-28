@@ -426,8 +426,8 @@ entry of any catalog. The rules follow the declared source status:
 | Declared state | Anchors required |
 | --- | --- |
 | `implemented`, `partial`, `fail-closed` | At least one in a package whose `open-radio` scope is `production` |
-| `host-only` | At least one, and only in `portable` or `host` packages |
 | `diagnostic` | At least one, in any package |
+| `host-only` | Optional: the entry belongs to an upper protocol stack, not the radio |
 | `absent` | None |
 | Capability with `implementation = "complete"` | A production anchor on the capability, or `source-fact-refs` whose facts are all implemented and anchored |
 | Capability with `implementation = "incomplete"` | Optional |

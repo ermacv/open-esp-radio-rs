@@ -8,8 +8,9 @@
 //!
 //! - an implemented, partial or fail-closed entry needs an anchor in a
 //!   production package;
-//! - a host-only entry needs anchors, and only in portable or host packages;
 //! - a diagnostic entry needs an anchor anywhere;
+//! - a host-only entry belongs to an upper protocol stack outside the radio
+//!   and may be anchored or not;
 //! - an absent entry has no anchor;
 //! - a capability declared `implementation = "complete"` is anchored itself
 //!   or through source facts that are all implemented and anchored;
@@ -42,20 +43,11 @@ pub(crate) enum Scope {
     Development,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum Platform {
-    Portable,
-    Host,
-    Chip,
-}
-
 /// The package that owns an anchored file, as its manifest classifies it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Package {
     pub(crate) name: String,
     pub(crate) scope: Scope,
-    pub(crate) platform: Platform,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -101,14 +93,13 @@ impl EntryKind {
 pub(crate) enum Expectation {
     /// Implemented, partial or fail-closed: owned by production code.
     Production,
-    HostOnly,
     Diagnostic,
     Absent,
     /// A complete capability: anchored itself or through these facts.
     Complete {
         facts: Vec<String>,
     },
-    /// An incomplete capability may be anchored or not.
+    /// A host-only entry or an incomplete capability may be anchored or not.
     Unconstrained,
 }
 
@@ -201,7 +192,7 @@ const fn expectation(status: SourceStatus) -> Expectation {
         SourceStatus::Implemented | SourceStatus::Partial | SourceStatus::FailClosed => {
             Expectation::Production
         }
-        SourceStatus::HostOnly => Expectation::HostOnly,
+        SourceStatus::HostOnly => Expectation::Unconstrained,
         SourceStatus::Diagnostic => Expectation::Diagnostic,
         SourceStatus::Absent => Expectation::Absent,
     }
@@ -240,10 +231,6 @@ pub(crate) enum Problem {
         entry: Entry,
         anchors: Vec<Location>,
     },
-    NotHost {
-        entry: Entry,
-        location: Location,
-    },
     Anchored {
         entry: Entry,
         location: Location,
@@ -265,7 +252,7 @@ impl fmt::Display for Problem {
             ),
             Self::Unclassified { location } => write!(
                 f,
-                "{location}: CAPABILITY anchor outside a package with open-radio scope and platform"
+                "{location}: CAPABILITY anchor outside a package with open-radio scope"
             ),
             Self::Unknown { location, id } => {
                 write!(
@@ -290,10 +277,6 @@ impl fmt::Display for Problem {
                 f,
                 "{entry}: anchored only outside production packages ({})",
                 list(anchors)
-            ),
-            Self::NotHost { entry, location } => write!(
-                f,
-                "{entry}: host-only but anchored in a chip package at {location}"
             ),
             Self::Anchored { entry, location } => {
                 write!(f, "{entry}: absent but anchored at {location}")
@@ -509,7 +492,6 @@ struct ManifestMetadata {
 #[derive(Deserialize)]
 struct OpenRadio {
     scope: Scope,
-    platform: Platform,
 }
 
 /// `None` when the manifest is a virtual workspace; `Some(None)` for a
@@ -524,7 +506,6 @@ fn classify(text: &str, path: &Path) -> Result<Option<Option<Package>>> {
             .map(|open_radio| Package {
                 name: package.name,
                 scope: open_radio.scope,
-                platform: open_radio.platform,
             })
     }))
 }
@@ -599,21 +580,10 @@ pub(crate) fn check(ledger: &Ledger, anchors: &[Anchor]) -> Vec<Problem> {
                     anchors: locations(),
                 });
             }
-            Expectation::HostOnly | Expectation::Diagnostic if own.is_empty() => {
+            Expectation::Diagnostic if own.is_empty() => {
                 problems.push(Problem::Missing {
                     entry: entry.clone(),
                 });
-            }
-            Expectation::HostOnly => {
-                if let Some(anchor) = own
-                    .iter()
-                    .find(|anchor| anchor.package.platform == Platform::Chip)
-                {
-                    problems.push(Problem::NotHost {
-                        entry: entry.clone(),
-                        location: anchor.location.clone(),
-                    });
-                }
             }
             Expectation::Absent => {
                 if let Some(anchor) = own.first() {

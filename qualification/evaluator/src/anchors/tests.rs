@@ -57,7 +57,7 @@ fn entry(id: &str, kind: EntryKind, expectation: Expectation) -> Entry {
     }
 }
 
-fn anchor(id: &str, scope: Scope, platform: Platform) -> Anchor {
+fn anchor(id: &str, scope: Scope) -> Anchor {
     Anchor {
         id: id.into(),
         location: Location {
@@ -68,7 +68,6 @@ fn anchor(id: &str, scope: Scope, platform: Platform) -> Anchor {
         package: Package {
             name: "owner".into(),
             scope,
-            platform,
         },
     }
 }
@@ -133,7 +132,7 @@ fn a_scan_attributes_markers_above_items_to_their_package() {
         [
             "crates/wifi/src/lib.rs:11: CAPABILITY anchor must sit directly above the Rust item it names",
             "crates/wifi/src/lib.rs:14: malformed CAPABILITY anchor: `Bad_Id` is not a catalog id",
-            "stray/lib.rs:1: CAPABILITY anchor outside a package with open-radio scope and platform",
+            "stray/lib.rs:1: CAPABILITY anchor outside a package with open-radio scope",
         ]
     );
 }
@@ -146,8 +145,7 @@ fn declared_states_require_matching_anchors() {
             entry("owned", EntryKind::Item, Production),
             entry("unowned", EntryKind::Item, Production),
             entry("tooling-only", EntryKind::Item, Production),
-            entry("host-model", EntryKind::Item, HostOnly),
-            entry("chip-model", EntryKind::Item, HostOnly),
+            entry("gatt-caching", EntryKind::Item, Unconstrained),
             entry("probe", EntryKind::Item, Diagnostic),
             entry("missing-probe", EntryKind::Item, Diagnostic),
             entry("nan", EntryKind::Item, Absent),
@@ -157,17 +155,14 @@ fn declared_states_require_matching_anchors() {
         projections: BTreeMap::new(),
     };
     let anchors = [
-        anchor("owned", Scope::Production, Platform::Chip),
-        anchor("tooling-only", Scope::Development, Platform::Host),
-        anchor("host-model", Scope::Production, Platform::Portable),
-        anchor("chip-model", Scope::Production, Platform::Chip),
-        anchor("probe", Scope::Development, Platform::Host),
-        anchor("claimed-nan", Scope::Production, Platform::Chip),
+        anchor("owned", Scope::Production),
+        anchor("tooling-only", Scope::Development),
+        anchor("probe", Scope::Development),
+        anchor("claimed-nan", Scope::Production),
     ];
     assert_eq!(
         messages(&check(&ledger, &anchors)),
         [
-            "wifi item `chip-model`: host-only but anchored in a chip package at crates/chip-model.rs:1",
             "wifi item `claimed-nan`: absent but anchored at crates/claimed-nan.rs:1",
             "wifi item `missing-probe`: no CAPABILITY anchor in code",
             "wifi item `tooling-only`: anchored only outside production packages (crates/tooling-only.rs:1)",
@@ -203,9 +198,9 @@ fn a_complete_capability_is_backed_by_itself_or_by_all_its_facts() {
         projections: BTreeMap::new(),
     };
     let anchors = [
-        anchor("anchored-fact", Scope::Production, Platform::Chip),
-        anchor("other-fact", Scope::Production, Platform::Chip),
-        anchor("direct", Scope::Production, Platform::Chip),
+        anchor("anchored-fact", Scope::Production),
+        anchor("other-fact", Scope::Production),
+        anchor("direct", Scope::Production),
     ];
     let problems = messages(&check(&ledger, &anchors));
     assert_eq!(problems.len(), 2, "{problems:#?}");
@@ -225,10 +220,10 @@ fn anchors_name_known_unambiguous_entries_and_projected_items_through_their_fact
         projections: BTreeMap::from([("projection".into(), "shared-owner".into())]),
     };
     let anchors = [
-        anchor("shared-owner", Scope::Production, Platform::Chip),
-        anchor("projection", Scope::Production, Platform::Chip),
-        anchor("clash", Scope::Production, Platform::Chip),
-        anchor("typo", Scope::Production, Platform::Chip),
+        anchor("shared-owner", Scope::Production),
+        anchor("projection", Scope::Production),
+        anchor("clash", Scope::Production),
+        anchor("typo", Scope::Production),
     ];
     let problems = messages(&check(&ledger, &anchors));
     assert_eq!(
@@ -245,8 +240,8 @@ fn anchors_name_known_unambiguous_entries_and_projected_items_through_their_fact
 #[test]
 fn an_edit_lists_the_entries_anchored_in_its_files() {
     let anchors = [
-        anchor("edited", Scope::Production, Platform::Chip),
-        anchor("untouched", Scope::Production, Platform::Chip),
+        anchor("edited", Scope::Production),
+        anchor("untouched", Scope::Production),
     ];
     let changed = BTreeSet::from([PathBuf::from("crates/edited.rs")]);
     let touched = touched(&anchors, &changed);

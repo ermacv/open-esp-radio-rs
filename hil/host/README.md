@@ -413,8 +413,8 @@ cargo hil runs prune --apply
 images and scenario outcomes, filtered by scenario, outcome, commit prefix,
 image class or digest prefix, checkout and age. `why` names, per failed
 repetition, the recorded failure, the measurements that missed their
-criteria (a criterion miss, unlike a fault), cleanup failures, the artifact
-directory and the end of `uart.log`. `compare` and `history` use per-scenario
+criteria (a criterion miss, unlike a fault), cleanup failures, host USB
+events of its boards, the artifact directory and the end of `uart.log`. `compare` and `history` use per-scenario
 means of numeric measurements over repetitions. These views never decide
 qualification. `wait` follows a run's `events.jsonl`, printing each step,
 until the run ends or its runner is gone, and exits with its outcome: 0
@@ -444,6 +444,19 @@ failure are kept in the repetition's `post-mortem/`. When the image keeps an
 out into `post-mortem/trace.json`, raw, and `post-mortem/trace.txt`, decoded
 oldest first, then lets the target record again; `runs why` shows the
 trace's last events.
+
+A traffic session that ends without passing names its first failed check in
+its `Finished` event (a typed `SessionFailure`: no datagrams, no terminal
+marker, receive, socket or transmit errors, an incomplete TCP connection or
+transfer, a pattern mismatch, receive loss, a failed ownership audit, or
+control-link corruption), and the runner puts it in the repetition's failure
+message. At the start of every repetition the runner resolves the kernel USB
+device (`3-8`) behind the device's and the reference peer's serial ports; at
+its end it reads their disconnects and enumerations since the start from the
+kernel log (`journalctl --dmesg`) into `usb-events.json`, written only when
+there are any. A board whose USB bridge dropped off the bus mid-session thus
+shows as such rather than as a silent target. When the kernel log cannot be
+read, the runner says so and the repetition's result stands.
 
 A target that does not answer within those 20 s climbs the recovery ladder:
 an EN pulse through the board's registered reset path, or an RTS pulse on its

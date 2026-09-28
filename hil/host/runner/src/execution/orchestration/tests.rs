@@ -286,6 +286,7 @@ fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() 
     let result = finalize_repetition(
         1,
         Path::new("scenarios/test/repetition-001"),
+        &hil_core::usb_events::UsbWatch::start([], 1),
         output.path(),
         1,
         started,

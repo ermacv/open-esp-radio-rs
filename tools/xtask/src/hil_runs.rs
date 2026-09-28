@@ -614,6 +614,22 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
                     text.push_str(&format!("      cleanup failed: {failure}\n"));
                 }
             }
+            // Whether the host saw a board's USB bridge drop off the bus.
+            match oer_hil_runner_core::usb_events::recorded(&directory) {
+                Ok(events) => {
+                    for event in events {
+                        text.push_str(&format!(
+                            "      host {event} at +{:.3} s of the run\n",
+                            (event.realtime_micros / 1000).saturating_sub(run.started_millis)
+                                as f64
+                                / 1000.0
+                        ));
+                    }
+                }
+                Err(error) => {
+                    text.push_str(&format!("      host USB events unreadable: {error}\n"));
+                }
+            }
             text.push_str(&format!("      artifacts: {}\n", directory.display()));
             let log = directory.join("uart.log");
             if tail_lines > 0
@@ -1079,6 +1095,15 @@ mod tests {
         )
         .unwrap();
         if failed {
+            fs::write(
+                repetition.join("usb-events.json"),
+                serde_json::json!([{
+                    "realtime_micros": (started + 12_345) * 1000, "device": "3-8",
+                    "event": "disconnected", "device_number": 19
+                }])
+                .to_string(),
+            )
+            .unwrap();
             fs::create_dir_all(repetition.join("post-mortem")).unwrap();
             let events = (0..70)
                 .map(|index| format!("{index:>12} us  event-{index}\n"))
@@ -1126,6 +1151,10 @@ mod tests {
             "{why}"
         );
         assert!(why.contains("| panic: x··"), "{why}");
+        assert!(
+            why.contains("host usb 3-8 disconnected (device number 19) at +12.345 s of the run"),
+            "{why}"
+        );
         assert!(
             why.contains("trace (70 entries; of the current boot), last 64 events"),
             "{why}"

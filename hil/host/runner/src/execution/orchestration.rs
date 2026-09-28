@@ -860,11 +860,17 @@ fn run_scenario_repetition(
     let lab = &resolved;
     let started_unix_millis = hil_core::durable::unix_millis()?;
     let started = std::time::Instant::now();
+    let peer_serial = lab.peer.as_ref().and_then(|peer| peer.serial().ok());
+    let usb = hil_core::usb_events::UsbWatch::start(
+        std::iter::once(lab.device.serial.as_path()).chain(peer_serial.as_deref()),
+        started_unix_millis,
+    );
     let cleanup = hil_core::fixture::cleanup::Scope::new(output);
     if hil_core::recovery::device_quarantined() {
         return finalize_repetition(
             repetition,
             artifacts,
+            &usb,
             output,
             started_unix_millis,
             started,
@@ -881,6 +887,7 @@ fn run_scenario_repetition(
         return finalize_repetition(
             repetition,
             artifacts,
+            &usb,
             output,
             started_unix_millis,
             started,
@@ -924,6 +931,7 @@ fn run_scenario_repetition(
     finalize_repetition(
         repetition,
         artifacts,
+        &usb,
         output,
         started_unix_millis,
         started,
@@ -938,6 +946,7 @@ fn run_scenario_repetition(
 fn finalize_repetition(
     repetition: u8,
     artifacts: &Path,
+    usb: &hil_core::usb_events::UsbWatch,
     output: &Path,
     started_unix_millis: u64,
     started: std::time::Instant,
@@ -952,6 +961,7 @@ fn finalize_repetition(
         .filter_map(|record| record.failure.as_deref())
         .collect::<Vec<_>>();
     apply_cleanup_failures(&mut outcome, &mut failure, &cleanup_failures);
+    usb.record(output);
     let attachments = hil_core::evidence::run::collect_attachments(output, artifacts)?;
     let result = RepetitionResult {
         schema: RUN_SCHEMA,

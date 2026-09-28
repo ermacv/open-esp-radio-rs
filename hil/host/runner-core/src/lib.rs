@@ -25,6 +25,7 @@ mod repository;
 pub mod scenario;
 pub mod session;
 pub mod transport;
+pub mod usb_events;
 pub mod workload;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

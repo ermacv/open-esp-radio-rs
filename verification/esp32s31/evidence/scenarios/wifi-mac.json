@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "a9c7148b2deed9a4d6dbaed0b8c3132507b191c30d74084510800a37e42fb8f4",
+    "input-2": "4754a9d2d068fd51d4ecf2dbc637f6fbd5e4c8d9d9202601bbfd90a0f3920774",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d"
   },
@@ -585,7 +585,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "sha256": "56af0913dfb889735dcc0859b896f0b6736ee4b31deba782923748467a50cc1b"
+      "sha256": "1f47187b88e8980e61e6322dc89c96e44d0720f131f4ab1fc98fbd91eb9c141e"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/request.rs",
@@ -621,7 +621,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "sha256": "942f0b54cd818a1a768bafe19a2b279c9093608804423c5d050978ef7ba5333a"
+      "sha256": "f36e2cd895b2876ed3f3a51924c496375bf5608259e52a1dd6b65205b5a363dd"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
@@ -2413,7 +2413,7 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap/src/ampdu.rs",
-      "sha256": "a4f908f7b42fb811eccf8c5a713b22d6612ea49b1e8f8688e0b9b51a7cb85817"
+      "sha256": "bf7d24fb5c776fca26656319afb109706d9e117c0b00c53a14a79688449e88bb"
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/ap/src/beacon.rs",
@@ -2781,7 +2781,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/access_point/ampdu.rs",
-      "sha256": "5814349c0e7ced4ae18f917cd10d29cc7f4a0bfad783dbba5b812878b37e9826"
+      "sha256": "05e74f63feb2f3759c7709ebe2bfa904a0a6b39677a0bcbc64f0e00817c9dcae"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/access_point/concurrent.rs",
@@ -3037,7 +3037,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/port/plan.rs",
-      "sha256": "105b3ef22065e21536b30649b5b48f0df8a362aa6a4cbd79b9338a623ce053f9"
+      "sha256": "c02ddd7f60beb031ede52b83effcc8a5b3673a1c1d8bf4024853ef1068fb98b1"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/port/resources.rs",
@@ -3173,15 +3173,15 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx/completion.rs",
-      "sha256": "c21a4e40fb975e8ca2eed895693692b63f892791766b1fd029a3da0c48f4dd2b"
+      "sha256": "0eea33d391d1c49597031df375c640d85ae40e130cd68874558e62a97c16e1b3"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx/owner.rs",
-      "sha256": "4a302cfdbaf7bdc372b284824457a7cfdfe4bd8b6719a96dcdbfb06bec798ddd"
+      "sha256": "95a3f1c2505748a1eca7b48e4afdd977b87f9e473b0e9da5b845192ce9f18e4b"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx/publication.rs",
-      "sha256": "4abc241778dfa3a315a865405d3e0b953d38c2a2ad8c6a1e56c29ba5e2c07854"
+      "sha256": "1f45d18860473e64be028d4236da227f7e57ad978226ed76b381e894e602e2a0"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx/resources.rs",
@@ -3189,7 +3189,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx.rs",
-      "sha256": "4de50d0bae51a7509f4c0ce7baffd77b1a0dc66bfaa5517a1103034a14a40480"
+      "sha256": "705b1427e663a6f7623ed79c6e5468071f8156b148007025095508ce8382ec3e"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/src/roles/station/tx_epoch.rs",
@@ -3301,7 +3301,7 @@
     },
     {
       "path": "target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/build/oer-esp32s31-probe-radio-elf-1500303fb773a5e7/out/probe_catalog.rs",
-      "sha256": "867ce3026f11aaaeabf38417467ad4908a0ea287b70652c5659ceac55a02a0be"
+      "sha256": "83db067159f74b94b3bd0262a2db61a437bdc07c95513ab5ed6617af4f1ec069"
     },
     {
       "path": "tools/blobray/Cargo.lock",
@@ -4145,7 +4145,7 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library/src/ampdu_resort.rs",
-      "sha256": "0aeb2d731d9f738bd969b7087a3fd987042f08666d337a6b0d0d04d9a9294419"
+      "sha256": "7636fa5656a1a5d4fbd273120cbfaefc2f6e17494188a8c59f32b83414e13bd8"
     },
     {
       "path": "verification/esp32s31/probes/radio/library/src/calibration_leaves.rs",
@@ -4297,7 +4297,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
-      "sha256": "a7769eaab729a6dad50c1e902027ddf3eb9ff7816d7da9ecbe7eab3446ee1adb"
+      "sha256": "cd4041b957b39b897d95a9c22aa4721da564ae183da44750ff744d90167e972b"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
@@ -4441,7 +4441,7 @@
     }
   ],
   "dependence": {
-    "read-data": "4aebf3e29fcb57247c0345ac65da0d1f25ab14939e11d1534528208c6eed2fd0",
+    "read-data": "3b8a0755bc54ddd0e2db1937388f03ae0541f357daa1d25f1e0504fc22f2a577",
     "fallback": "read data object _RNvNtCshjD8l6AX9dw_24oer_esp32s31_probe_radio12ampdu_resort8METADATA has no declaration file"
   },
   "entries": [
@@ -5855,26 +5855,26 @@
       "symbol": "ppResortTxAMPDU",
       "production": "open_libpp_ampdu_trace_resort",
       "verdict": "match",
-      "cases": 10,
+      "cases": 11,
       "reviews": [],
       "coverage": {
         "blocks": {
-          "reached": 67,
+          "reached": 69,
           "total": 128
         },
         "directions": {
-          "reached": 49,
+          "reached": 52,
           "total": 134
         },
         "open": 0,
         "excluded": 26,
-        "untriaged": 120
+        "untriaged": 115
       },
       "observation": {
-        "executed": 395,
-        "observed": 355,
+        "executed": 398,
+        "observed": 357,
         "reviewed": 0,
-        "untriaged": 40
+        "untriaged": 41
       },
       "state": {
         "written": 0,
@@ -5905,16 +5905,50 @@
         "untriaged": 88
       },
       "observation": {
-        "executed": 357,
-        "observed": 329,
+        "executed": 359,
+        "observed": 330,
         "reviewed": 0,
-        "untriaged": 28
+        "untriaged": 29
       },
       "state": {
         "written": 9,
         "compared": 0,
         "reviewed": 0,
         "untriaged": 9
+      }
+    },
+    {
+      "suite": "wifi-mac",
+      "source": "archive",
+      "symbol": "lmacProcessAckTimeout",
+      "production": "open_libpp_ampdu_trace_timeout_step",
+      "verdict": "match",
+      "cases": 64,
+      "reviews": [],
+      "coverage": {
+        "blocks": {
+          "reached": 92,
+          "total": 141
+        },
+        "directions": {
+          "reached": 71,
+          "total": 152
+        },
+        "open": 0,
+        "excluded": 2,
+        "untriaged": 128
+      },
+      "observation": {
+        "executed": 371,
+        "observed": 340,
+        "reviewed": 0,
+        "untriaged": 31
+      },
+      "state": {
+        "written": 11,
+        "compared": 4,
+        "reviewed": 0,
+        "untriaged": 7
       }
     }
   ],
@@ -8361,32 +8395,12 @@
     },
     {
       "function": "lmacProcessAckTimeout",
-      "offset": 200,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessAckTimeout",
-      "offset": 202,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessAckTimeout",
-      "offset": 202,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessAckTimeout",
       "offset": 202,
       "kind": "fallthrough"
     },
     {
       "function": "lmacProcessAckTimeout",
       "offset": 204,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessAckTimeout",
-      "offset": 214,
       "kind": "block"
     },
     {
@@ -8461,16 +8475,6 @@
     },
     {
       "function": "lmacProcessLongRetryFail",
-      "offset": 130,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 134,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
       "offset": 192,
       "kind": "fallthrough"
     },
@@ -8482,21 +8486,6 @@
     {
       "function": "lmacProcessLongRetryFail",
       "offset": 200,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 208,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 212,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 212,
       "kind": "taken"
     },
     {
@@ -8546,21 +8535,6 @@
     },
     {
       "function": "lmacProcessLongRetryFail",
-      "offset": 324,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 328,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 342,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
       "offset": 342,
       "kind": "fallthrough"
     },
@@ -8591,37 +8565,7 @@
     },
     {
       "function": "lmacProcessLongRetryFail",
-      "offset": 374,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
       "offset": 388,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 388,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 392,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 394,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 424,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 426,
       "kind": "taken"
     },
     {
@@ -8636,28 +8580,8 @@
     },
     {
       "function": "lmacProcessLongRetryFail",
-      "offset": 450,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
       "offset": 454,
       "kind": "taken"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 454,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 456,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 458,
-      "kind": "block"
     },
     {
       "function": "lmacProcessLongRetryFail",
@@ -8666,36 +8590,6 @@
     },
     {
       "function": "lmacProcessLongRetryFail",
-      "offset": 468,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 470,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 472,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 488,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 488,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 490,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
       "offset": 558,
       "kind": "block"
     },
@@ -8708,16 +8602,6 @@
       "function": "lmacProcessLongRetryFail",
       "offset": 558,
       "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 572,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessLongRetryFail",
-      "offset": 582,
-      "kind": "taken"
     },
     {
       "function": "lmacProcessShortRetryFail",
@@ -8876,11 +8760,6 @@
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 494,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 508,
       "kind": "fallthrough"
     },
@@ -8901,63 +8780,13 @@
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 568,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 576,
       "kind": "taken"
     },
     {
       "function": "lmacProcessShortRetryFail",
-      "offset": 576,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 578,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 580,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
       "offset": 590,
       "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 590,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 592,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 594,
-      "kind": "block"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 610,
-      "kind": "taken"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 610,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "lmacProcessShortRetryFail",
-      "offset": 612,
-      "kind": "block"
     },
     {
       "function": "lmacProcessShortRetryFail",
@@ -17566,11 +17395,6 @@
     },
     {
       "function": "ppResortTxAMPDU",
-      "offset": 1024,
-      "kind": "taken"
-    },
-    {
-      "function": "ppResortTxAMPDU",
       "offset": 1048,
       "kind": "taken"
     },
@@ -17583,11 +17407,6 @@
       "function": "ppResortTxAMPDU",
       "offset": 1106,
       "kind": "block"
-    },
-    {
-      "function": "ppResortTxAMPDU",
-      "offset": 1124,
-      "kind": "taken"
     },
     {
       "function": "ppResortTxAMPDU",
@@ -17651,16 +17470,6 @@
     },
     {
       "function": "ppResortTxAMPDU",
-      "offset": 1224,
-      "kind": "block"
-    },
-    {
-      "function": "ppResortTxAMPDU",
-      "offset": 1232,
-      "kind": "taken"
-    },
-    {
-      "function": "ppResortTxAMPDU",
       "offset": 1232,
       "kind": "fallthrough"
     },
@@ -17682,11 +17491,6 @@
     {
       "function": "ppResortTxAMPDU",
       "offset": 1252,
-      "kind": "block"
-    },
-    {
-      "function": "ppResortTxAMPDU",
-      "offset": 1254,
       "kind": "block"
     },
     {
@@ -23185,11 +22989,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 540
+      "line": 541
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 541
+      "line": 542
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/retry.rs",
@@ -23229,39 +23033,51 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 703
+      "line": 726
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 814
+      "line": 852
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 828
+      "line": 866
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 830
+      "line": 868
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 839
+      "line": 881
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 846
+      "line": 893
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 855
+      "line": 904
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 861
+      "line": 911
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 865
+      "line": 920
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 921
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 926
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 936
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
@@ -25155,11 +24971,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 287
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 290
+      "line": 288
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25179,31 +24991,31 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 300
+      "line": 295
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 333
+      "line": 301
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 339
+      "line": 334
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 341
+      "line": 340
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 344
+      "line": 342
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 351
+      "line": 345
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 353
+      "line": 352
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25227,19 +25039,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 360
+      "line": 359
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 369
+      "line": 361
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 374
+      "line": 370
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 376
+      "line": 375
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25255,15 +25067,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 381
+      "line": 380
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 384
+      "line": 382
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 389
+      "line": 385
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25271,35 +25083,35 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 395
+      "line": 391
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 403
+      "line": 396
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 410
+      "line": 404
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 417
+      "line": 411
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 420
+      "line": 418
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 428
+      "line": 421
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 431
+      "line": 429
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 435
+      "line": 432
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25307,23 +25119,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 438
+      "line": 437
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 442
+      "line": 439
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 449
+      "line": 443
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 451
+      "line": 450
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 460
+      "line": 452
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25331,39 +25143,39 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 508
+      "line": 462
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 517
+      "line": 509
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 520
+      "line": 518
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 523
+      "line": 521
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 526
+      "line": 524
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 528
+      "line": 527
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 530
+      "line": 529
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 538
+      "line": 531
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 542
+      "line": 539
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25375,7 +25187,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 547
+      "line": 545
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25387,7 +25199,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 554
+      "line": 550
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25395,7 +25207,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 628
+      "line": 556
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
@@ -25403,27 +25215,31 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 725
+      "line": 630
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 730
+      "line": 726
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 733
+      "line": 731
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 737
+      "line": 734
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 742
+      "line": 738
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
-      "line": 785
+      "line": 743
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/owner.rs",
+      "line": 786
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/ampdu/request.rs",
@@ -25779,67 +25595,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 746
+      "line": 776
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 764
+      "line": 794
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 792
+      "line": 804
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 806
+      "line": 805
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 811
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 812
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 815
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 822
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 835
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 836
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 837
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 838
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 841
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 842
+      "line": 830
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
       "line": 844
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 848
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
@@ -25851,19 +25627,51 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 854
+      "line": 853
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 856
+      "line": 860
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 866
+      "line": 879
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 904
+      "line": 880
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 882
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 887
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 894
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 900
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 901
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 902
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 903
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 906
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
@@ -25871,15 +25679,47 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
-      "line": 908
+      "line": 909
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 913
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 914
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 915
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 919
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 932
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 937
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 975
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 978
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/runtime.rs",
+      "line": 979
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
       "line": 381
-    },
-    {
-      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
-      "line": 421
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx.rs",
@@ -27854,7 +27694,7 @@
     {
       "symbol": "0x2f850000",
       "offset": 276474117,
-      "length": 2
+      "length": 3
     },
     {
       "symbol": "wDevCtrl",

@@ -249,6 +249,12 @@ that claims the board, or the whole stand, is refused with the reason unless
 its owner is NAME. A lease already held runs on. `cargo hil queue` and the
 dashboard list boards under maintenance.
 
+`cargo hil devices`, `cargo hil queue` and the dashboard show each board's
+health from the stand's own records, without touching the board: `ok`,
+`recovered recently` (the stand recovered it within the last hour, with how
+many of those recoveries were hardware-level), `maintenance`, `QUARANTINED`
+or `not attached`.
+
 A board is named by its full chip name (`esp32s31`, `esp32c5`). The registry
 names boards itself: the only board of a chip is the chip, and once a chip has
 several boards each becomes the chip with the last four hexadecimal digits of

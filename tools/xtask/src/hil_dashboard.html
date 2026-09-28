@@ -169,11 +169,17 @@ function devices(list, maintenance) {
         ? `<span class="work">${esc(f.image)}</span> <span class="muted">app ${esc(f.application_sha256.slice(0, 12))}</span>`
         : `<span class="muted">${esc(f.kind)}</span>`;
     const by = f ? `${esc(f.owner)} <span class="muted">${when(f.unix)}</span>` : "";
+    const h = d.health;
+    const healthClass = !h ? "muted"
+      : { "ok": "ok", "recovered-recently": "warn", "maintenance": "warn", "quarantined": "bad", "not-attached": "muted" }[h.state] ?? "muted";
+    const health = !h ? '<span class="muted">unknown</span>'
+      : `<span class="${healthClass}">${esc(h.state.replaceAll("-", " "))}</span>`
+        + (h.recoveries ? ` <span class="muted">${h.recoveries} recoveries (${h.hardware_recoveries} hardware) in 1h</span>` : "");
     return `<tr><td><b>${esc(d.label)}</b><div class="claims">${esc(d.mac ?? "")}</div>${service}</td>
       <td>${d.port ? esc(d.port) : '<span class="muted">not attached</span>'}</td>
-      <td>${firmware}</td><td>${by}</td></tr>`;
+      <td>${health}</td><td>${firmware}</td><td>${by}</td></tr>`;
   }).join("");
-  return `<div class="table-wrap"><table><tr><th>Board</th><th>Port</th><th>Firmware</th><th>Flashed by</th></tr>${rows}</table></div>`;
+  return `<div class="table-wrap"><table><tr><th>Board</th><th>Port</th><th>Health</th><th>Firmware</th><th>Flashed by</th></tr>${rows}</table></div>`;
 }
 
 function runs(list) {

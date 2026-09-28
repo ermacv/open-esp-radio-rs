@@ -40,6 +40,8 @@ pub struct DeviceStatus {
     /// The port it is attached at now.
     pub port: Option<String>,
     pub firmware: Option<BoardEvent>,
+    /// `None` for journal records without a device identity.
+    pub health: Option<crate::health::Health>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -152,23 +154,29 @@ impl Arbiter {
             seen.push(mac.clone());
             new
         });
+        let maintenance = self.maintenance()?;
         let devices = macs
             .into_iter()
-            .map(|mac| DeviceStatus {
-                label: device_label(mac.as_deref(), &registered),
-                port: attached
+            .map(|mac| {
+                let port = attached
                     .iter()
                     .find(|port| port.mac.is_some() && port.mac == mac)
-                    .map(|port| port.port.clone()),
-                firmware: flashes
-                    .iter()
-                    .find(|flash| flash.device == mac)
-                    .map(|flash| (*flash).clone()),
-                mac,
+                    .map(|port| port.port.clone());
+                DeviceStatus {
+                    label: device_label(mac.as_deref(), &registered),
+                    health: mac.as_deref().map(|mac| {
+                        crate::health::of(mac, port.is_some(), &maintenance, &events, now)
+                    }),
+                    port,
+                    firmware: flashes
+                        .iter()
+                        .find(|flash| flash.device == mac)
+                        .map(|flash| (*flash).clone()),
+                    mac,
+                }
             })
             .collect();
         let history = self.history()?;
-        let maintenance = self.maintenance()?;
         let mut balances = state
             .balances
             .iter()
@@ -291,9 +299,14 @@ impl std::fmt::Display for Status {
         for device in &self.devices {
             writeln!(
                 text,
-                "board {} [{}]: {}",
+                "board {} [{}]{}: {}",
                 device.label,
                 device.port.as_deref().unwrap_or("not attached"),
+                device
+                    .health
+                    .as_ref()
+                    .map(|health| format!(" (health: {health})"))
+                    .unwrap_or_default(),
                 describe(&device.firmware)
             )?;
         }

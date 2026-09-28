@@ -20,6 +20,7 @@ pub mod control;
 mod devices;
 mod estimate;
 mod grant;
+pub mod health;
 mod history;
 pub mod maintenance;
 mod notify;

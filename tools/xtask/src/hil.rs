@@ -196,7 +196,7 @@ Stand commands (shared by every checkout of this user):
       --flashed IMAGE (--application FILE | --sha256 HASH) (--port PORT | --device MAC)
       [--chip CHIP] [--commit REV]    journal CMD's flash when it succeeds
   cargo hil board flashed --image IMAGE ...   journal a flash made inside a lease
-  cargo hil devices [--json]          boards: name, chip, port, last firmware
+  cargo hil devices [--json]          boards: name, chip, port, health, last firmware
   cargo hil devices set MAC [--chip CHIP] [--name NAME]
   cargo hil [--owner NAME] devices maintenance BOARD --reason TEXT   only NAME may claim BOARD until release
   cargo hil devices release BOARD
@@ -1254,9 +1254,14 @@ fn devices(
     } else {
         for device in &status.devices {
             println!(
-                "{} [{}]: {}",
+                "{} [{}]{}: {}",
                 device.label,
                 device.port.as_deref().unwrap_or("not attached"),
+                device
+                    .health
+                    .as_ref()
+                    .map(|health| format!(" (health: {health})"))
+                    .unwrap_or_default(),
                 device
                     .firmware
                     .as_ref()

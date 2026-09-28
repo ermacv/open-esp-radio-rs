@@ -235,7 +235,12 @@ fn functions(
             ])
             .arg(elf),
     )?;
-    let text = String::from_utf8(output.stdout)?;
+    Ok(normalize(&String::from_utf8(output.stdout)?, image))
+}
+
+/// Function bodies of an `objdump -d` listing, with every address replaced
+/// by the symbol that contains it.
+fn normalize(text: &str, image: &Image) -> BTreeMap<String, Vec<Vec<String>>> {
     let mut functions: BTreeMap<String, Vec<Vec<String>>> = BTreeMap::new();
     let mut current: Option<(String, Vec<String>)> = None;
     let mut pending: HashMap<String, u64> = HashMap::new();
@@ -326,9 +331,18 @@ fn functions(
             };
             if let Some(destination) = args.first()
                 && !STORES.contains(&op)
-                && base.as_deref() != Some(destination.as_str())
             {
-                pending.remove(destination);
+                // An address computed from a tracked base is itself a base
+                // (`addi s2,s2,lo`, `mv a0,s2`); anything else a register
+                // receives, including a load through it, is not.
+                match resolved {
+                    Some(target) if memory.is_none() => {
+                        pending.insert(destination.clone(), target);
+                    }
+                    _ => {
+                        pending.remove(destination);
+                    }
+                }
             }
             text
         };
@@ -348,7 +362,7 @@ fn functions(
     for bodies in functions.values_mut() {
         bodies.sort();
     }
-    Ok(functions)
+    functions
 }
 
 /// The outcome of one comparison.
@@ -586,6 +600,37 @@ mod tests {
         );
         assert_eq!(clean("inner.llvm.98765.12", &none), "inner");
         assert_eq!(clean("v1.2::name", &none), "v1.2::name");
+    }
+
+    #[test]
+    fn a_base_advanced_in_place_resolves_to_the_advanced_address() {
+        let symbol = |address, size, name: &str| Symbol {
+            address,
+            size,
+            name: name.into(),
+        };
+        let symbols = vec![
+            symbol(0x4000_0000, 0x20, "f"),
+            symbol(0x4080_1000, 0x100, "POOL"),
+            symbol(0x4080_1100, 0x10, "WAKER"),
+        ];
+        let image = Image {
+            starts: symbols.iter().map(|s| s.address).collect(),
+            symbols,
+            sections: Sections(Vec::new()),
+        };
+        let listing = "\
+40000000 <f>:
+40000000: lui s2, 0x40801
+40000004: addi s2, s2, 0x100
+40000008: addi a1, s2, 0x4
+4000000c: lw s2, 0x0(s2)
+40000010: addi a2, s2, 0x8
+";
+        let body = &normalize(listing, &image)["f"][0];
+        assert_eq!(body[1], "addi s2,s2 WAKER+0x0");
+        assert_eq!(body[2], "addi a1,s2 WAKER+0x4");
+        assert_eq!(body[4], "addi a2,s2,0x8", "a loaded value is no address");
     }
 
     #[test]

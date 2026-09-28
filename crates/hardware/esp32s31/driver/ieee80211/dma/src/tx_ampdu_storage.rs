@@ -1234,19 +1234,18 @@ fn external_dma_address(address: usize, capacity: u32) -> Result<u32, AmpduDmaSt
 
 #[cfg(target_pointer_width = "32")]
 const fn external_tx_buffer_range_valid(address: u32, size: u32) -> bool {
-    if dma_range_valid(address, size) {
-        return true;
-    }
-    #[cfg(feature = "tx-psram-dma-probe")]
-    {
-        const PSRAM_LOW: u32 = 0x5000_0000;
-        const PSRAM_HIGH: u32 = 0x5400_0000;
-        return size != 0
-            && address >= PSRAM_LOW
-            && address < PSRAM_HIGH
-            && size <= PSRAM_HIGH - address;
-    }
-    #[cfg(not(feature = "tx-psram-dma-probe"))]
+    dma_range_valid(address, size) || psram_tx_buffer_range_valid(address, size)
+}
+
+#[cfg(all(target_pointer_width = "32", feature = "tx-psram-dma-probe"))]
+const fn psram_tx_buffer_range_valid(address: u32, size: u32) -> bool {
+    const PSRAM_LOW: u32 = 0x5000_0000;
+    const PSRAM_HIGH: u32 = 0x5400_0000;
+    size != 0 && address >= PSRAM_LOW && address < PSRAM_HIGH && size <= PSRAM_HIGH - address
+}
+
+#[cfg(all(target_pointer_width = "32", not(feature = "tx-psram-dma-probe")))]
+const fn psram_tx_buffer_range_valid(_address: u32, _size: u32) -> bool {
     false
 }
 

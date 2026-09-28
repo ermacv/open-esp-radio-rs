@@ -8,7 +8,6 @@
 use core::cell::Cell;
 
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-use oer_esp32s31_hal::ieee80211::mac::MacRxStatisticsSnapshot;
 
 /// Cumulative MAC receive counters at a connected station's exit.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -25,7 +24,9 @@ pub struct ConnectedExitRxCounters {
 static LAST: Mutex<CriticalSectionRawMutex, Cell<Option<ConnectedExitRxCounters>>> =
     Mutex::new(Cell::new(None));
 
-pub(crate) fn record(statistics: MacRxStatisticsSnapshot) {
+/// Only the chip supervisor has an exit edge to sample.
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn record(statistics: oer_esp32s31_hal::ieee80211::mac::MacRxStatisticsSnapshot) {
     let primary = statistics.primary;
     let counters = ConnectedExitRxCounters {
         mpdu: u32::from(primary.mpdu_count),

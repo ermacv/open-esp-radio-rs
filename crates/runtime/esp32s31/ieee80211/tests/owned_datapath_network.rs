@@ -7,6 +7,17 @@ use oer_esp32s31_ieee80211_runtime::datapath::{
 };
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
+static RX_STAGE_POOL: oer_esp32s31_ieee80211_mac::rx::pool::RxStagePool<
+    { oer_esp32s31_ieee80211_mac::rx::pool::VENDOR_LARGE_RX_SLOT_COUNT },
+    { oer_esp32s31_ieee80211_mac::rx::pool::VENDOR_LARGE_RX_PAYLOAD_CAPACITY },
+> = oer_esp32s31_ieee80211_mac::rx::pool::RxStagePool::new();
+static RX_ZERO_COPY_ORIGIN: oer_esp32s31_ieee80211_runtime::datapath::owned::RxZeroCopyOrigin =
+    oer_esp32s31_ieee80211_runtime::datapath::owned::RxZeroCopyOrigin::new(
+        &RX_ZERO_COPY_ORIGIN,
+        RX_STAGE_POOL.external_handoff_pool(),
+        16,
+    );
+
 #[path = "owned_datapath_network/airtime.rs"]
 mod airtime;
 
@@ -252,7 +263,12 @@ fn dual_owned_endpoints_keep_logical_backlogs_separate_from_one_dma_horizon() {
     let physical_resources = Box::leak(Box::new(PhysicalResources::new()));
     let physical_pool = PhysicalPool::pin_static(Box::leak(Box::new(PhysicalPool::new())));
     let physical = physical_resources.split(physical_pool);
-    let network = DualOwnedDatapathNetwork::new(station_radio, access_point_radio, physical);
+    let network = DualOwnedDatapathNetwork::new(
+        station_radio,
+        access_point_radio,
+        physical,
+        &RX_ZERO_COPY_ORIGIN,
+    );
 
     network.set_link_state(station_interface, LinkState::Up);
     assert!(station_device.link_is_up());

@@ -74,6 +74,14 @@ impl<'resources, N, O> EmbassyNetConnectedRxSink<'resources, N, O> {
     pub fn observer_mut(&mut self) -> &mut O {
         &mut self.observer
     }
+
+    pub const fn network(&self) -> &N {
+        &self.network
+    }
+
+    pub fn network_mut(&mut self) -> &mut N {
+        &mut self.network
+    }
 }
 
 impl<N: DatapathNetworkRx, O: ConnectedRxSink> ConnectedRxSink
@@ -153,6 +161,72 @@ impl<N: DatapathNetworkRx, O: ConnectedRxSink> ConnectedRxSink
     }
 }
 
+impl<N: DatapathNetworkRx, O: ConnectedRxSink> EmbassyNetConnectedRxSink<'_, N, O> {
+    /// Hand an admitted staged frame to the network without copying it.
+    ///
+    /// The protocol observer and delivery diagnostics see the decoded frame
+    /// first; the 802.11 prefix is then rewritten into an Ethernet header in
+    /// the same DMA buffer, whose slot the network owns from then on.
+    fn publish_staged_in_place<const STAGE_CAPACITY: usize, const STAGE_SLOTS: usize>(
+        &mut self,
+        frame: StagedRxFrame<'_, STAGE_CAPACITY, STAGE_SLOTS>,
+        ethernet: StagedEthernetPublication,
+    ) -> StagedRxDisposition {
+        {
+            let raw = frame.segment().buffer;
+            let parts = oer_ieee80211_mac::data::EthernetFrameParts {
+                destination: ethernet.destination,
+                source: ethernet.source,
+                ether_type: ethernet.ether_type,
+                payload: &raw
+                    [ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length],
+            };
+            #[cfg(feature = "diagnostics")]
+            if let Some(observer) = self.delivery_observer {
+                observer.admitted(RxNetworkDeliveryEvent::decoded(parts, Some(raw)));
+            }
+            self.observer.publish(ConnectedRxEvent::Ethernet {
+                frame: parts,
+                raw,
+                amsdu: false,
+                metadata: ethernet.metadata,
+            });
+        }
+        #[cfg(any(feature = "diagnostics", test))]
+        let publish_started = self.pipeline_observer.map(|observer| observer.now_micros());
+        let index = match frame.publish_ethernet_in_place(
+            ethernet.destination,
+            ethernet.source,
+            ethernet.ether_type,
+            ethernet.payload_offset,
+            ethernet.payload_length,
+        ) {
+            Ok(index) => index,
+            Err(_) => unreachable!(
+                "a captured payload lies inside its frame behind at least 14 dead bytes"
+            ),
+        };
+        let result = self.network.publish_in_place(index);
+        #[cfg(any(feature = "diagnostics", test))]
+        if let (Some(observer), Some(started)) = (self.pipeline_observer, publish_started) {
+            observer.observe(RxPipelineObservation::NetworkPublication {
+                bytes: ethernet.payload_length.saturating_add(14),
+                micros: observer.elapsed_micros_since(started),
+                outcome: match result {
+                    Ok(()) => RxNetworkPublicationOutcome::Enqueued,
+                    Err(oer_network_interface::RxEnqueueError::PoolExhausted) => {
+                        RxNetworkPublicationOutcome::PoolExhausted
+                    }
+                    Err(_) => RxNetworkPublicationOutcome::Dropped,
+                },
+            });
+        }
+        #[cfg(not(any(feature = "diagnostics", test)))]
+        let _ = result;
+        StagedRxDisposition::RetainedByNetwork
+    }
+}
+
 impl<
     N: DatapathNetworkRx,
     O: ConnectedRxSink,
@@ -179,6 +253,14 @@ impl<
         frame: StagedRxFrame<'_, STAGE_CAPACITY, STAGE_SLOTS>,
         ethernet: StagedEthernetPublication,
     ) -> StagedRxDisposition {
+        // Zero-copy: EAPOL stays with the control owner, and the Ethernet
+        // header needs the 14 dead 802.11/CCMP/LLC bytes before the payload.
+        if ethernet.ether_type != 0x888e
+            && ethernet.payload_offset >= 14
+            && self.network.admit_in_place()
+        {
+            return self.publish_staged_in_place(frame, ethernet);
+        }
         {
             let raw = frame.segment().buffer;
             let payload =

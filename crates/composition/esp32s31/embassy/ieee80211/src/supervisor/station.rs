@@ -568,6 +568,37 @@ pub type ConnectedDisconnectedEpoch = DisconnectedStaEpoch<
 #[unsafe(link_section = ".critical.bss.open_radio_rx_stage")]
 pub(super) static RX_STAGE_POOL: RxStagePool<RX_STAGE_SLOT_COUNT, RX_STAGE_CAPACITY> =
     RxStagePool::new();
+
+/// Handoff slots kept from zero-copy network ownership: one BlockAck-16
+/// window of staging credits, so a complete in-flight A-MPDU burst still
+/// stages while the network holds the rest. The critical control/management
+/// credit is separate, inside the staging admission's `CreditPolicy`.
+#[cfg(feature = "owned-network")]
+const RX_ZERO_COPY_RESERVE: usize = RX_REORDER_WINDOW;
+
+#[cfg(feature = "owned-network")]
+const _: () = assert!(
+    RX_STAGE_CAPACITY == oer_esp32s31_ieee80211_mac::rx::pool::VENDOR_LARGE_RX_PAYLOAD_CAPACITY
+        && RX_STAGE_SLOT_COUNT == oer_esp32s31_ieee80211_mac::rx::pool::VENDOR_LARGE_RX_SLOT_COUNT,
+    "the zero-copy origin adopts the vendor large RX staging profile"
+);
+
+/// Zero-copy origin of [`RX_STAGE_POOL`], shared by the station and AP
+/// endpoints. Its atomics are touched per received frame, so it stays in
+/// internal SRAM.
+#[cfg(feature = "owned-network")]
+#[allow(
+    unsafe_code,
+    reason = "the linker must retain per-frame zero-copy accounting in internal SRAM"
+)]
+#[unsafe(link_section = ".critical.data.open_radio_rx_zero_copy")]
+pub(super) static RX_ZERO_COPY_ORIGIN:
+    oer_esp32s31_ieee80211_runtime::datapath::owned::RxZeroCopyOrigin =
+    oer_esp32s31_ieee80211_runtime::datapath::owned::RxZeroCopyOrigin::new(
+        &RX_ZERO_COPY_ORIGIN,
+        RX_STAGE_POOL.external_handoff_pool(),
+        RX_ZERO_COPY_RESERVE,
+    );
 pub(super) static STAGED_RX_QUEUE: StagedRxQueue<
     'static,
     CriticalSectionRawMutex,

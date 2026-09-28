@@ -123,6 +123,14 @@ mod radio_resources;
 mod status;
 #[cfg(target_arch = "riscv32")]
 mod supervisor;
+
+/// Zero-copy RX origin shared by the station and AP endpoints, for its
+/// adoption and fallback counters.
+#[cfg(all(target_arch = "riscv32", feature = "owned-network"))]
+pub fn rx_zero_copy_origin()
+-> &'static oer_esp32s31_ieee80211_runtime::datapath::owned::RxZeroCopyOrigin {
+    supervisor::rx_zero_copy_origin()
+}
 #[cfg(target_arch = "riscv32")]
 mod wifi_network;
 

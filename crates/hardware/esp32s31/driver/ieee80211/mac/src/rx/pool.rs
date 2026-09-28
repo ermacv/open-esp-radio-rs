@@ -194,7 +194,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         self.external.network_slots() as u32
     }
 
-    pub fn external_handoff_pool(&self) -> &ExternalRxHandoffPool<CAPACITY, SLOTS> {
+    pub const fn external_handoff_pool(&self) -> &ExternalRxHandoffPool<CAPACITY, SLOTS> {
         &self.external
     }
 }

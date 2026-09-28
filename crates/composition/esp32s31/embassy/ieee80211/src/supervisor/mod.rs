@@ -207,6 +207,13 @@ mod role_transition;
 mod shutdown;
 pub(crate) mod station;
 
+/// Zero-copy origin of the physical RX staging pool.
+#[cfg(feature = "owned-network")]
+pub(crate) fn rx_zero_copy_origin()
+-> &'static oer_esp32s31_ieee80211_runtime::datapath::owned::RxZeroCopyOrigin {
+    &station::RX_ZERO_COPY_ORIGIN
+}
+
 use access_point::{
     ProductionAccessPointPreparationFault, ProductionAccessPointResources,
     ProductionAccessPointTask, ProductionAccessPointTeardownFault,

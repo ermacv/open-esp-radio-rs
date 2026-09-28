@@ -12,8 +12,11 @@ use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use oer_embassy_net_owned::{
-    OwnedLinkController, OwnedNetworkRunner, OwnedNetworkTxFrame, OwnedRxPublisher,
-    OwnedTxFrameSource,
+    ExternalRxAdmission, ExternalRxOrigin, OwnedLinkController, OwnedNetworkRunner,
+    OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxFrameSource,
+};
+use oer_esp32s31_ieee80211_mac::rx::pool::{
+    VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
 };
 use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
 use oer_ieee80211_datapath::{MaterializedPairResult, SelectedBurstMaterializer};
@@ -94,6 +97,94 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRx
             frame.ether_type,
             frame.payload,
         )
+    }
+}
+
+/// Zero-copy origin of the physical RX staging pool: one per handoff pool,
+/// shared by every endpoint because each held slot is a physical DMA credit.
+pub type RxZeroCopyOrigin =
+    ExternalRxOrigin<VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT>;
+
+/// Owned RX publisher that adopts staged DMA buffers in place when the
+/// zero-copy origin admits them, and copies otherwise.
+pub struct ZeroCopyRxPublisher<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize> {
+    inner: OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>,
+    origin: &'static RxZeroCopyOrigin,
+    admission:
+        Option<ExternalRxAdmission<VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT>>,
+}
+
+impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRxSet
+    for ZeroCopyRxPublisher<'_, M, RX_QUEUE_DEPTH>
+{
+    fn primary_mut(&mut self) -> &mut dyn DatapathNetworkRx {
+        self
+    }
+
+    fn get_mut(&mut self, _interface: NetworkInterfaceId) -> Option<&mut dyn DatapathNetworkRx> {
+        None
+    }
+
+    fn pair_mut(
+        &mut self,
+        _first: NetworkInterfaceId,
+        _second: NetworkInterfaceId,
+    ) -> Option<(&mut dyn DatapathNetworkRx, &mut dyn DatapathNetworkRx)> {
+        None
+    }
+}
+
+impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> DatapathNetworkRx
+    for ZeroCopyRxPublisher<'_, M, RX_QUEUE_DEPTH>
+{
+    fn queue_len(&self) -> usize {
+        self.inner.queue_len()
+    }
+
+    fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
+        DatapathNetworkRx::try_send(&mut self.inner, frame)
+    }
+
+    fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError> {
+        DatapathNetworkRx::try_send_parts(&mut self.inner, frame)
+    }
+
+    fn admit_in_place(&mut self) -> bool {
+        debug_assert!(self.admission.is_none());
+        self.admission = self.inner.try_admit_external(self.origin).ok();
+        self.admission.is_some()
+    }
+
+    fn publish_in_place(&mut self, index: u8) -> Result<(), RxEnqueueError> {
+        let admission = self
+            .admission
+            .take()
+            .expect("an in-place publication requires a successful admission");
+        self.inner.publish_external(admission, index)
+    }
+
+    fn cancel_in_place(&mut self) {
+        self.admission = None;
+    }
+
+    fn poll_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()> {
+        self.inner.poll_ready(context)
+    }
+
+    fn try_send_observed(
+        &mut self,
+        frame: &[u8],
+        before_publish: &mut dyn FnMut(),
+    ) -> Result<(), RxEnqueueError> {
+        DatapathNetworkRx::try_send_observed(&mut self.inner, frame, before_publish)
+    }
+
+    fn try_send_parts_observed(
+        &mut self,
+        frame: EthernetFrameParts<'_>,
+        before_publish: &mut dyn FnMut(),
+    ) -> Result<(), RxEnqueueError> {
+        DatapathNetworkRx::try_send_parts_observed(&mut self.inner, frame, before_publish)
     }
 }
 
@@ -197,6 +288,7 @@ pub struct DualOwnedDatapathNetwork<
     first: OwnedNetworkRunner<'resources, M, RX_QUEUE_DEPTH, NETWORK_TX_DEPTH>,
     second: OwnedNetworkRunner<'resources, M, RX_QUEUE_DEPTH, NETWORK_TX_DEPTH>,
     physical: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    rx_zero_copy: &'static RxZeroCopyOrigin,
 }
 
 impl<
@@ -231,6 +323,7 @@ impl<
             TRAILER,
             TX_QUEUE_DEPTH,
         >,
+        rx_zero_copy: &'static RxZeroCopyOrigin,
     ) -> Self {
         assert_ne!(
             first.interface(),
@@ -241,6 +334,7 @@ impl<
             first,
             second,
             physical,
+            rx_zero_copy,
         }
     }
 
@@ -467,7 +561,7 @@ impl<
     >
 {
     type LinkController = OwnedNetworkLinkControllers<'resources, M>;
-    type RxPublisher = OwnedRxPublisher<'resources, M, RX_QUEUE_DEPTH>;
+    type RxPublisher = ZeroCopyRxPublisher<'resources, M, RX_QUEUE_DEPTH>;
     type TxFrame = OwnedNetworkTxFrame<'resources, M>;
     type PhysicalTxFrame =
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
@@ -492,7 +586,11 @@ impl<
     }
 
     fn rx_publisher(&self, interface: NetworkInterfaceId) -> Self::RxPublisher {
-        self.endpoint(interface).rx_publisher()
+        ZeroCopyRxPublisher {
+            inner: self.endpoint(interface).rx_publisher(),
+            origin: self.rx_zero_copy,
+            admission: None,
+        }
     }
 
     fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {

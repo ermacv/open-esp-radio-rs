@@ -35,6 +35,23 @@ pub trait DatapathNetworkRx {
 
     fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError>;
 
+    /// Reserve one zero-copy publication before the radio rewrites a staged
+    /// frame in place. `false` leaves the frame to [`Self::try_send_parts`].
+    fn admit_in_place(&mut self) -> bool {
+        false
+    }
+
+    /// Publish the ready handoff slot `index` under the admission taken by
+    /// [`Self::admit_in_place`]. Whatever the result, the slot now belongs to
+    /// the network or was released.
+    fn publish_in_place(&mut self, index: u8) -> Result<(), RxEnqueueError> {
+        let _ = index;
+        unreachable!("an in-place publication requires a successful admission")
+    }
+
+    /// Return an admission whose frame could not be rewritten in place.
+    fn cancel_in_place(&mut self) {}
+
     /// Poll the next publication credit without allocating a boxed future.
     fn poll_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()>;
 

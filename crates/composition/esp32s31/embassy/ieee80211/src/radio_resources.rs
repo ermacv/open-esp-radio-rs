@@ -404,7 +404,12 @@ pub(crate) fn initialize_network(
         access_point_address,
         access_point_rx_allocator,
     );
-    let runner = DualOwnedDatapathNetwork::new(station_runner, access_point_runner, tx_consumer);
+    let runner = DualOwnedDatapathNetwork::new(
+        station_runner,
+        access_point_runner,
+        tx_consumer,
+        crate::supervisor::rx_zero_copy_origin(),
+    );
     let runner = NETWORK_RUNNER.init(runner);
     (
         WifiDevices {

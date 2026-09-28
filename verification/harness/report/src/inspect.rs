@@ -1361,6 +1361,14 @@ pub fn show(corpus: &Corpus, name: &str) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+/// The Blobray executable `cargo xtask vendor-scenario` passes to every
+/// command; inspection reads the pinned artifacts itself and ignores it.
+#[derive(clap::Args)]
+pub struct Runner {
+    #[arg(long, hide = true)]
+    binary: Option<std::path::PathBuf>,
+}
+
 /// The reviewer commands a scenario binary offers beside its scenarios.
 #[derive(clap::Subcommand)]
 pub enum Command {
@@ -1372,9 +1380,15 @@ pub enum Command {
         start: u32,
         #[arg(value_parser = parse_address)]
         end: Option<u32>,
+        #[command(flatten)]
+        runner: Runner,
     },
     /// One pinned vendor function, annotated, from every artifact defining it.
-    Show { function: String },
+    Show {
+        function: String,
+        #[command(flatten)]
+        runner: Runner,
+    },
     /// Every read and write of the pinned vendor code to a structure field
     /// reached through pointers whose last offsets are `offsets`, from any
     /// argument or symbol: `0x34 0` is the word at offset 0 of the pointer
@@ -1382,6 +1396,8 @@ pub enum Command {
     Fields {
         #[arg(required = true, allow_hyphen_values = true, value_parser = parse_offset)]
         offsets: Vec<i32>,
+        #[command(flatten)]
+        runner: Runner,
     },
     /// Every print of the pinned vendor code that passes bits of the
     /// addresses from `start` up to `end` (one word when omitted) to a
@@ -1391,6 +1407,8 @@ pub enum Command {
         start: u32,
         #[arg(value_parser = parse_address)]
         end: Option<u32>,
+        #[command(flatten)]
+        runner: Runner,
     },
 }
 
@@ -1398,14 +1416,14 @@ pub enum Command {
 pub fn run(command: Command) -> Result<()> {
     let corpus = load()?;
     let text = match command {
-        Command::Xref { start, end } => {
+        Command::Xref { start, end, .. } => {
             xref(&corpus, start, end.unwrap_or(start.saturating_add(WORD)))
         }
-        Command::Prints { start, end } => {
+        Command::Prints { start, end, .. } => {
             prints(&corpus, start, end.unwrap_or(start.saturating_add(WORD)))
         }
-        Command::Fields { offsets } => fields(&corpus, &offsets),
-        Command::Show { function } => show(&corpus, &function)
+        Command::Fields { offsets, .. } => fields(&corpus, &offsets),
+        Command::Show { function, .. } => show(&corpus, &function)
             .ok_or_else(|| invalid(format!("no pinned artifact defines {function}")))?,
     };
     print!("{text}");

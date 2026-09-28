@@ -308,3 +308,194 @@ oer_probe_macros::probe! {
         0
     }
 }
+
+/// Completion status of an acknowledgement timeout: no BlockAck arrived.
+const STATUS_ACK_TIMEOUT: u8 = 5;
+/// Decision of a step with no aggregate in flight.
+const NO_AGGREGATE: u32 = 9;
+
+type TimeoutOwner = RetainedDmaAmpduTx<'static, Backing, SLOTS, 0>;
+
+/// The aggregate a timeout sequence republishes across warm phases, its
+/// cookie and retry state, and the publication it was built with.
+struct TimeoutSequence {
+    owner: TimeoutOwner,
+    cookie: oer_esp32s31_ieee80211_mac::tx::TxCookie,
+    retry: AmpduRetryState<SLOTS>,
+    rate: HtRate,
+}
+
+static SEQUENCE: ProbeCell<Option<TimeoutSequence>> = ProbeCell(core::cell::UnsafeCell::new(None));
+
+/// A double whose publication succeeds and whose next completion carries
+/// `status` without a BlockAck.
+fn timeout_double(status: u8) -> CompletionDouble {
+    CompletionDouble {
+        completion: Some(MacHtAmpduCompletionObservation::new_validation(
+            MacTxCompletionObservation::new_validation(status, 0),
+            0,
+            0,
+            0,
+            false,
+        )),
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Commit `count` MPDUs of `MPDU_BYTES` each from `frames`, the first
+    /// carrying `first_sequence`, and publish them as one HT A-MPDU whose
+    /// retry state allows `attempt_limit` publications; the sequence stays
+    /// in flight for the step entry. Returns zero, or the step that failed.
+    ///
+    /// # Safety
+    /// `frames` must point to `count * MPDU_BYTES` readable bytes.
+    pub unsafe fn open_libpp_ampdu_trace_timeout_begin(
+        frames: *const u8,
+        count: u32,
+        first_sequence: u32,
+        attempt_limit: u32,
+    ) -> u32 {
+        let count = count as usize;
+        let (Some(first), Ok(limit)) = (
+            u16::try_from(first_sequence).ok().and_then(SequenceNumber::new),
+            u8::try_from(attempt_limit),
+        ) else {
+            return INVALID_INPUT;
+        };
+        if count == 0 || count > SLOTS {
+            return INVALID_INPUT;
+        }
+        let pool = pool();
+        // SAFETY: each static is taken once for this sequence's owner.
+        let resources = unsafe {
+            HtAmpduTxResources::pin_static(&mut *METADATA.0.get(), &mut *DMA.0.get())
+        };
+        let Ok(resources) = resources else {
+            return RESOURCES_FAILED;
+        };
+        // SAFETY: as above, the retention storage has no other reference.
+        let mut owner = RetainedDmaAmpduTx::new(resources, unsafe { &mut *RETENTION.0.get() });
+        let Ok(cookie) = owner.begin() else {
+            return BEGIN_FAILED;
+        };
+        let rate = HtRate::new(HtMcs::Mcs0, HtGuardInterval::Long800Ns, HtChannelWidth::Mhz20);
+        let Some(layout) =
+            AmpduFrameLayout::new(0, AmpduFrameSize::new(MPDU_BYTES, HARDWARE_MIC_BYTES))
+        else {
+            return INVALID_INPUT;
+        };
+        for index in 0..count {
+            let (slot, ()) = pool.claim_network(index as u8).publish(PUBLISHED_BYTES, |bytes| {
+                // SAFETY: the caller provides `count * MPDU_BYTES` bytes.
+                let source = unsafe {
+                    core::slice::from_raw_parts(frames.add(index * MPDU_BYTES), MPDU_BYTES)
+                };
+                bytes[TX_AMPDU_METADATA_SIZE..].copy_from_slice(source);
+            });
+            let request = HtAmpduFrameRequest::new(layout, 0, rate);
+            if owner.commit_ht(cookie, pool.claim_radio(slot), request).is_err() {
+                return COMMIT_FAILED;
+            }
+        }
+        let Ok(aggregate) = owner.prepared_aggregate(cookie) else {
+            return COMMIT_FAILED;
+        };
+        let Some(config) = HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes) else {
+            return SUBMIT_FAILED;
+        };
+        if owner
+            .submit(
+                &mut timeout_double(STATUS_ACK_TIMEOUT),
+                cookie,
+                LegacyTxQueue::BestEffort,
+                config,
+            )
+            .is_err()
+        {
+            return SUBMIT_FAILED;
+        }
+        let policy = AmpduRetryPolicy {
+            attempt_limit: limit,
+            retain_single_mpdu: false,
+        };
+        let Ok(retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy) else {
+            return INVALID_INPUT;
+        };
+        // SAFETY: the single-threaded image owns the sequence cell here.
+        unsafe {
+            *SEQUENCE.0.get() = Some(TimeoutSequence {
+                owner,
+                cookie,
+                retry,
+                rate,
+            })
+        };
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Observe one completion with `status` and no BlockAck of the aggregate
+    /// in flight: a retained aggregate is compacted with the Retry bit set,
+    /// an unchanged one keeps its bytes, and both are published again; a
+    /// finished one leaves the sequence. Returns the decision.
+    pub fn open_libpp_ampdu_trace_timeout_step(status: u32) -> u32 {
+        let Ok(status) = u8::try_from(status) else {
+            return INVALID_INPUT;
+        };
+        // SAFETY: the single-threaded image owns the sequence cell here.
+        let slot = unsafe { &mut *SEQUENCE.0.get() };
+        let Some(sequence) = slot.as_mut() else {
+            return NO_AGGREGATE;
+        };
+        let mut hardware = timeout_double(status);
+        let observed = match sequence.owner.observe_retry_completion(
+            &mut hardware,
+            sequence.cookie,
+            &mut sequence.retry,
+        ) {
+            Ok(Some(observed)) => observed,
+            Ok(None) => return NO_COMPLETION,
+            Err(_) => return COMPLETION_FAILED,
+        };
+        let (retry_mask, republication, decision) = match observed.decision {
+            AmpduRetryDecision::RetainAggregate { retry_mask } => (
+                retry_mask,
+                AmpduRepublication::Retransmission,
+                DECISION_RETAIN,
+            ),
+            AmpduRetryDecision::RepublishUnchanged { retry_mask } => (
+                retry_mask,
+                AmpduRepublication::AfterProtectionFailure,
+                DECISION_REPUBLISH,
+            ),
+            AmpduRetryDecision::Finish { .. } => {
+                // The finished aggregate's backings stay retained: releasing
+                // them is not part of the compared sequence.
+                core::mem::forget(slot.take());
+                return DECISION_FINISH;
+            }
+            AmpduRetryDecision::FinishTriggerFlow => return DECISION_TRIGGER,
+        };
+        let Ok(retained) =
+            sequence
+                .owner
+                .retain_for_ampdu_retry(sequence.cookie, retry_mask, republication)
+        else {
+            return RETAIN_FAILED;
+        };
+        let Some(config) =
+            HtAmpduTxConfig::new(sequence.rate, retained.bytes, retained.subframes)
+        else {
+            return SUBMIT_FAILED;
+        };
+        if sequence
+            .owner
+            .submit(&mut hardware, sequence.cookie, LegacyTxQueue::BestEffort, config)
+            .is_err()
+        {
+            return SUBMIT_FAILED;
+        }
+        decision
+    }
+}

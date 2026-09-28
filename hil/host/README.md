@@ -268,7 +268,11 @@ saves the console under `target/hil/console/<mac>/`. `cargo hil peer send
 BOARD LINE` sends one peer command and prints the output up to that command's
 `@OK` or `@ERR`; it also claims the air shared, since a peer command may
 transmit. Every OpenOCD session the stand starts is stopped when it outlives
-its timeout (ten minutes to program, one otherwise).
+its timeout (ten minutes to program, one otherwise). A tool that holds a long
+interactive session under a board lease, such as the calibration cross-check,
+opens the port through the same library functions,
+`oer_hil_runner_core::session::reset::{open_without_reset,
+reset_into_application}`, never through `serialport` itself.
 
 ```console
 cargo hil devices                     # boards: label, port, last firmware

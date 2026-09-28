@@ -3387,6 +3387,7 @@ dependencies = [
  "oer-chip-profile",
  "oer-esp32s31-firmware",
  "oer-hil-arbiter",
+ "oer-hil-runner-core",
  "oer-hil-schema",
  "oer-memory-report",
  "oer-probe-codegen",

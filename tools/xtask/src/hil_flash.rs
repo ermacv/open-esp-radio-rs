@@ -212,30 +212,8 @@ fn espflash() -> OsString {
     std::env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into())
 }
 
-/// Reset the board at `port` into its flashed application: RTS pulses the
-/// chip's reset while DTR keeps the boot strap released. `espflash`'s own
-/// reset after connecting leaves an esp32c5 in its ROM download mode.
-pub(crate) fn reset_into_application(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
-    let mut serial = serialport::new(port.to_string_lossy(), 115_200)
-        .timeout(Duration::from_millis(200))
-        .open()?;
-    serial.write_data_terminal_ready(false)?;
-    serial.write_request_to_send(true)?;
-    std::thread::sleep(Duration::from_millis(200));
-    serial.write_request_to_send(false)?;
-    Ok(serial)
-}
-
-/// The console at `port`, opened without a reset: RTS is released before
-/// DTR, so the lines never pass through the reset-with-boot-strap state.
-pub(crate) fn open_without_reset(port: &Path) -> Result<Box<dyn serialport::SerialPort>> {
-    let mut serial = serialport::new(port.to_string_lossy(), 115_200)
-        .timeout(Duration::from_millis(200))
-        .open()?;
-    serial.write_request_to_send(false)?;
-    serial.write_data_terminal_ready(false)?;
-    Ok(serial)
-}
+/// The stand's board-port openers, re-exported for the stand commands.
+pub(crate) use oer_hil_runner_core::session::reset::{open_without_reset, reset_into_application};
 
 /// The lines `serial` receives, until the receiver is dropped.
 pub(crate) fn serial_lines(mut serial: Box<dyn serialport::SerialPort>) -> mpsc::Receiver<Vec<u8>> {

@@ -597,6 +597,48 @@ impl<const N: usize> Write for TextBuffer<N> {
     }
 }
 
+/// Reports the IEEE 802.15.4 MAC power-sequencing words once, before a
+/// session's first transmission, for comparison with an ESP-IDF image. Each
+/// word from `PAON_DELAY` (+0x100) to `DCDC_CTRL` (+0x11c) prints as its named
+/// field and its vendor-reserved remainder.
+#[cfg(feature = "ieee802154-radio")]
+pub fn ieee802154_power_sequence_report(
+    sequence: oer_esp32s31_hal::ieee802154::Ieee802154PowerSequence,
+) {
+    let reserved = sequence.vendor_reserved_bits();
+    unsafe {
+        ets_printf(
+            c"ieee802154 power_sequence paon=%x/%x txon=%x/%x txen_stop=%x/%x txoff=%x/%x rxon=%x/%x txrx_switch=%x/%x cont_rx=%x/%x\r\n"
+                .as_ptr()
+                .cast(),
+            u32::from(sequence.pa_on_delay()),
+            reserved[0],
+            u32::from(sequence.tx_on_delay()),
+            reserved[1],
+            u32::from(sequence.tx_enable_stop_delay()),
+            reserved[2],
+            u32::from(sequence.tx_off_delay()),
+            reserved[3],
+            u32::from(sequence.rx_on_delay()),
+            reserved[4],
+            u32::from(sequence.txrx_switch_delay()),
+            reserved[5],
+            u32::from(sequence.continuous_rx_delay()),
+            reserved[6],
+        );
+        ets_printf(
+            c"ieee802154 power_sequence dcdc pre_up=%x down=%x ctrl_en=%u tx_dcdc_up=%u reserved=%x\r\n"
+                .as_ptr()
+                .cast(),
+            u32::from(sequence.dcdc_pre_raise_delay()),
+            u32::from(sequence.dcdc_drop_delay()),
+            u32::from(sequence.dcdc_control_enabled()),
+            u32::from(sequence.dcdc_raise_for_tx()),
+            reserved[7],
+        );
+    }
+}
+
 /// Reports the minimum architectural state needed to diagnose a panic.
 ///
 /// This deliberately bypasses the global logger: a panic can happen while the

@@ -126,6 +126,23 @@ impl Session {
         }
     }
 
+    /// Print the MAC power-sequencing words once per boot, before the first
+    /// transmission, pausing the resting radio for the read.
+    fn report_power_sequence_once(&self) {
+        static REPORTED: core::sync::atomic::AtomicBool =
+            core::sync::atomic::AtomicBool::new(false);
+        if REPORTED.swap(true, core::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        let Ok(mut paused) = self.runtime.pause() else {
+            return;
+        };
+        let sequence = paused.hardware_mut().power_sequence();
+        // A paused radio always resumes into the runtime it came from.
+        let _ = self.runtime.resume(paused);
+        crate::console::ieee802154_power_sequence_report(sequence);
+    }
+
     pub(super) async fn transmit(
         &mut self,
         request: &Ieee802154SessionTransmitRequest,
@@ -135,6 +152,7 @@ impl Session {
             evidence.result = Ieee802154SessionResult::CommandRejected;
             return evidence;
         };
+        self.report_power_sequence_once();
         let id = self.id();
         let mode = match request.mode {
             Ieee802154SessionTxMode::Direct => TxMode::Direct,

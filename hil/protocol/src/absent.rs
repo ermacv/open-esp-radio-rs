@@ -40,6 +40,7 @@ mod wifi {
     pub type NetworkSchedulerEvidence = Absent;
     pub type RadioEvidence = Absent;
     pub type RxDeliveryEvidence = Absent;
+    pub type RxZeroCopyEvidence = Absent;
     pub type ServiceInfo = Absent;
     pub type SessionConfig = Absent;
     pub type SessionReady = Absent;

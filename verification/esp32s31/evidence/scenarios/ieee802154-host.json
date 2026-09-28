@@ -41,23 +41,23 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "944bef3047f95f125bb7dbcea4e5ed4c7370561ae8e8e63f983e80abb6068355"
+      "sha256": "11464d4da66f746861d441d6b4d005ca7a77b85cc514347261f9e0b337c8ca06"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "2ada48152c89b515f426ce7639ea9f3021f956e8d536e09e034c5839bbef1496"
+      "sha256": "9f19a796395871f9655c2ce0f0351f0800c343cc4b96df2e3f81114a0f9e37c8"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "b52b90170240ff3b90b58ca54e4c5d0f7f0f3894b8f0b3a8ec01ed62d060810c"
+      "sha256": "18a0df5bcb5ffe2b4215e47e31d397b1d4ec74d6105d16946aa8df7f5e6019a7"
     },
     {
       "path": "crates/hardware/ieee80211/pac",
-      "sha256": "655b3cb84c1a43e33664d2e4024eba47691e11d1a1a10481e7e53c5d7c9d3626"
+      "sha256": "ebfd18f627b9ac6b7c2fae2a4563187b6fe623740e80d85f738f37a81ff83b6e"
     },
     {
       "path": "crates/hardware/ieee80211/pac/raw",
-      "sha256": "64ee1554c22574c293bbf59079758a832daf35e03906f55df4b085fc8c7654e6"
+      "sha256": "8e37100ea26b32cf72d5a55ea3c44d4960dcc628603df02f70e9a1bbf224d004"
     },
     {
       "path": "crates/hardware/ieee802154/engine",
@@ -85,7 +85,7 @@
     },
     {
       "path": "verification/esp32s31/host/ieee802154",
-      "sha256": "9c06c105a984fa3aa0250703634264de13f0b9c3c57f5ea36a5c9a04d483b893"
+      "sha256": "cfcd85ab566a436ab102351397fa45a338ea7f7d9aa243cf84b8648f38724d09"
     },
     {
       "path": "verification/schema",

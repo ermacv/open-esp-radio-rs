@@ -228,7 +228,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil board console BOARD [--for 10s] [--until TEXT]       the console without a reset, under a lease
   cargo hil board soak BOARD --cycles N|--for 8h [--via rts,jtag,en]   reset again and again; journal the result
   cargo hil peer send BOARD LINE... [--for 5s]                   one peer text-protocol command and its answer
-  cargo hil owner [set NAME]          this checkout's owner: stand, wifi, phy, bluetooth, blobray, infra, 802154, esp32c5
+  cargo hil owner [set NAME]          this checkout's owner: stand, wifi, phy, bluetooth, bluetooth-hil, blobray, infra, 802154, esp32c5, network
   cargo hil preempt ID --reason TEXT   stop another owner's lease: charged no longer, SIGTERM with
                                       cleanup, SIGKILL after 5m; the history and the owner see why
   cargo hil dashboard [--port 8765]   live page of the queue, boards, runs and leases on 127.0.0.1

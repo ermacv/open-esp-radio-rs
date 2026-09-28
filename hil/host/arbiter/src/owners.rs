@@ -23,6 +23,7 @@ pub enum Owner {
     Wifi,
     Phy,
     Bluetooth,
+    BluetoothHil,
     Blobray,
     Infra,
     #[serde(rename = "802154")]
@@ -32,11 +33,12 @@ pub enum Owner {
 }
 
 impl Owner {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Stand,
         Self::Wifi,
         Self::Phy,
         Self::Bluetooth,
+        Self::BluetoothHil,
         Self::Blobray,
         Self::Infra,
         Self::Ieee802154,
@@ -51,6 +53,7 @@ impl Owner {
             Self::Wifi => "wifi",
             Self::Phy => "phy",
             Self::Bluetooth => "bluetooth",
+            Self::BluetoothHil => "bluetooth-hil",
             Self::Blobray => "blobray",
             Self::Infra => "infra",
             Self::Ieee802154 => "802154",

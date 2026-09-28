@@ -19,11 +19,14 @@ use oer_esp32s31_soc_esp_hal::{
 };
 
 const FRAME_SIZE: usize = 1536;
-const FRAMES_PER_BATCH: usize = 32;
+// Three full cycles of the eight scatter-gather frame lengths below: every
+// length keeps its share of the batch, and the SRAM destination stays small
+// enough to leave the bootstrap handoff margin intact in the diagnostic image.
+const FRAMES_PER_BATCH: usize = 24;
 const BATCH_SIZE: usize = FRAME_SIZE * FRAMES_PER_BATCH;
 // Each source begins on an isolated cache-line boundary. The full 1,514-byte
-// Ethernet geometry is proved separately below; the 32-way SG case retains a
-// guard inside this existing 48-KiB benchmark allocation so the diagnostic
+// Ethernet geometry is proved separately below; the 24-way SG case retains a
+// guard inside this existing 36-KiB benchmark allocation so the diagnostic
 // does not consume more production SRAM.
 const SG_FRAME_STRIDE: usize = FRAME_SIZE;
 const SG_STORAGE_SIZE: usize = BATCH_SIZE;
@@ -84,8 +87,8 @@ pub static OPEN_RADIO_GDMA_PROBE_DETAIL: AtomicU32 = AtomicU32::new(0);
 
 // Total cycles/instructions for 64 iterations of, respectively: CPU copy,
 // blocking GDMA, CPU copy + next-batch preparation, serial GDMA + preparation,
-// overlapped GDMA + preparation, interrupt-driven GDMA, realistic 32-frame
-// scatter copy, realistic 32-frame interrupt-driven scatter GDMA wall time,
+// overlapped GDMA + preparation, interrupt-driven GDMA, realistic 24-frame
+// scatter copy, realistic 24-frame interrupt-driven scatter GDMA wall time,
 // and the exact task-active subset of that asynchronous transfer.
 #[unsafe(link_section = ".dma.bss.gdma_mem2mem_probe.cycles")]
 #[unsafe(no_mangle)]

@@ -157,7 +157,9 @@ pub fn discover(
     mut run: impl FnMut(&[ExecutionCase]) -> Result<Vec<ExecutionEvidence>>,
 ) -> Vec<Missing> {
     let mut cases = cases.to_vec();
-    let mut records = records.to_vec();
+    let mut records: Vec<ExecutionEvidence> =
+        records.iter().filter(|r| is_outcome(r)).cloned().collect();
+    let chains = chains(&cases);
     let mut found: Vec<Missing> = vec![];
     let mut seen = BTreeSet::new();
     for _ in 0..ATTEMPTS {
@@ -215,10 +217,16 @@ pub fn discover(
                 }
             }
         };
-        for invocation in cases.iter_mut().filter_map(|c| side(c, replacement)) {
+        let mut changed = BTreeSet::new();
+        for (index, invocation) in cases
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, c)| side(c, replacement).map(|s| (i, s)))
+        {
             if invocation.entry != entry || declared(invocation, address) {
                 continue;
             }
+            changed.insert(index);
             match &region {
                 Some(region) => invocation.memory.push(region.clone()),
                 None if !invocation
@@ -232,17 +240,70 @@ pub fn discover(
             }
         }
         found.push(missing.clone());
-        match run(&cases) {
-            Ok(next) => records = next,
-            Err(error) => {
-                if let Some(last) = found.last_mut() {
-                    last.unresolved = Some(format!("the rerun with it mapped failed: {error}"));
+        // Only the chains of cold-started cases that gained a mapping rerun;
+        // the others keep their outcomes.
+        let mut failed = None;
+        for range in chains
+            .iter()
+            .filter(|range| changed.range((*range).clone()).next().is_some())
+        {
+            match run(&cases[range.clone()]) {
+                Ok(next) => {
+                    records.retain(|r| {
+                        !outcome_case(r).is_some_and(|c| range.contains(&(c as usize)))
+                    });
+                    records.extend(next.into_iter().filter(is_outcome).map(|mut r| {
+                        if let ExecutionEvidence::Outcome { case, .. } = &mut r {
+                            *case += range.start as u32;
+                        }
+                        r
+                    }));
                 }
-                break;
+                Err(error) => {
+                    failed = Some(error);
+                    break;
+                }
             }
         }
+        if let Some(error) = failed {
+            if let Some(last) = found.last_mut() {
+                last.unresolved = Some(format!("the rerun with it mapped failed: {error}"));
+            }
+            break;
+        }
+        records.sort_by_key(|r| outcome_case(r).unwrap_or(u32::MAX));
     }
     found
+}
+
+fn is_outcome(record: &ExecutionEvidence) -> bool {
+    matches!(record, ExecutionEvidence::Outcome { .. })
+}
+
+fn outcome_case(record: &ExecutionEvidence) -> Option<u32> {
+    match record {
+        ExecutionEvidence::Outcome { case, .. } => Some(*case),
+        _ => None,
+    }
+}
+
+/// The case ranges that each start with a cold reset: a warm case depends
+/// on the cases before it back to its chain's start.
+fn chains(cases: &[ExecutionCase]) -> Vec<std::ops::Range<usize>> {
+    let mut starts: Vec<usize> = cases
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.reset == blobray_domain::SessionReset::Cold)
+        .map(|(i, _)| i)
+        .collect();
+    if starts.first() != Some(&0) {
+        starts.insert(0, 0);
+    }
+    starts
+        .iter()
+        .zip(starts.iter().skip(1).chain([&cases.len()]))
+        .map(|(start, end)| *start..*end)
+        .collect()
 }
 
 /// The readable form of `missing`.
@@ -323,9 +384,15 @@ mod tests {
             replacement: None,
             relation: None,
         };
+        // A warm case of the same chain, then a chain of its own entering
+        // another function.
         let mut other = case.clone();
         other.name = "append-other".into();
-        vec![case, other]
+        other.reset = SessionReset::Warm;
+        let mut unrelated = case.clone();
+        unrelated.name = "unrelated".into();
+        unrelated.vendor.entry = 0x4000_1000;
+        vec![case, other, unrelated]
     }
 
     fn symbols() -> Symbols {
@@ -367,9 +434,10 @@ mod tests {
             ]
         );
         assert!(found.iter().all(|m| m.unresolved.is_none()));
-        // The last rerun maps both symbols and answers the fetch, in every
-        // case entering the same function.
+        // Only the chain entering the mapped function reruns; its last rerun
+        // maps both symbols and answers the fetch in each of its cases.
         assert_eq!(runs.len(), 3);
+        assert!(runs.iter().all(|run| run.len() == 2));
         for case in runs.last().unwrap() {
             let last = &case.vendor;
             assert_eq!(last.memory.len(), 2);

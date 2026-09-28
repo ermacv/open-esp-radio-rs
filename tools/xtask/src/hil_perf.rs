@@ -122,12 +122,16 @@ pub struct RunSummary {
     pub commit: Option<String>,
     pub dirty: bool,
     pub networks: Vec<String>,
+    /// Layout seeds of the run's images; empty when every image kept the
+    /// linker's natural order.
+    #[serde(default)]
+    pub layout_seeds: Vec<u32>,
     pub samples: Vec<Sample>,
 }
 
 /// Bumped whenever [`RunSummary`] or [`samples`] changes meaning, so cached
 /// summaries are recomputed.
-const SUMMARY_VERSION: u32 = 2;
+const SUMMARY_VERSION: u32 = 3;
 
 pub fn summary(run: &Run) -> RunSummary {
     RunSummary {
@@ -138,18 +142,51 @@ pub fn summary(run: &Run) -> RunSummary {
         commit: run.commit.clone(),
         dirty: run.dirty,
         networks: networks(run),
+        layout_seeds: layout_seeds(run),
         samples: samples(run),
+    }
+}
+
+fn manifest_firmware(run: &Run) -> Vec<Value> {
+    fs::read(run.directory.join("manifest.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|manifest| manifest["firmware"].as_array().cloned())
+        .unwrap_or_default()
+}
+
+/// The layout seeds the run's images were linked with, in ascending order.
+pub fn layout_seeds(run: &Run) -> Vec<u32> {
+    let mut seeds = manifest_firmware(run)
+        .iter()
+        .filter_map(|firmware| firmware["layout_seed"].as_u64())
+        .filter_map(|seed| u32::try_from(seed).ok())
+        .collect::<Vec<_>>();
+    seeds.sort_unstable();
+    seeds.dedup();
+    seeds
+}
+
+/// Which code placement a run measured: the linker's natural order or the
+/// seeds its images were shuffled with.
+fn layout(seeds: &[u32]) -> String {
+    match seeds {
+        [] => "natural".to_owned(),
+        seeds => format!(
+            "seed {}",
+            seeds
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
     }
 }
 
 /// The network implementations recorded in the run's build provenance.
 pub fn networks(run: &Run) -> Vec<String> {
-    let manifest: Option<Value> = fs::read(run.directory.join("manifest.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
-    let mut networks = manifest
+    let mut networks = manifest_firmware(run)
         .iter()
-        .flat_map(|manifest| manifest["firmware"].as_array().into_iter().flatten())
         .filter_map(|firmware| firmware["build_provenance_path"].as_str())
         .filter_map(|path| fs::read(run.directory.join(path)).ok())
         .filter_map(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
@@ -316,9 +353,11 @@ fn format_spread(spread: &Spread, unit: MeasurementUnit) -> String {
     )
 }
 
-/// The values of one gated measurement from every clean run of one commit.
+/// The values of one gated measurement from every clean run of one commit
+/// linked with one layout.
 struct CommitRow {
     commit: String,
+    layout: String,
     runs: String,
     values: Vec<f64>,
     sample: Sample,
@@ -344,10 +383,14 @@ pub fn report(
                 continue;
             }
             let commit = short(&run.commit);
+            let layout = layout(&run.layout_seeds);
             let entries = rows
                 .entry((sample.scenario.clone(), sample.measurement.clone()))
                 .or_default();
-            match entries.iter_mut().find(|entry| entry.commit == commit) {
+            match entries
+                .iter_mut()
+                .find(|entry| entry.commit == commit && entry.layout == layout)
+            {
                 Some(entry) => {
                     entry.values.extend(&sample.values);
                     entry.runs.push(',');
@@ -355,6 +398,7 @@ pub fn report(
                 }
                 None => entries.push(CommitRow {
                     commit,
+                    layout,
                     runs: run.id.clone(),
                     values: sample.values.clone(),
                     sample,
@@ -391,8 +435,10 @@ pub fn report(
         } else {
             text.push_str("  no baseline\n");
         }
+        text.push_str(&layout_sensitivity(&entries));
         for CommitRow {
             commit,
+            layout,
             runs: run_ids,
             values,
             sample,
@@ -413,10 +459,56 @@ pub fn report(
                 _ => "",
             };
             text.push_str(&format!(
-                "  {commit:<10} {}{verdict}{gate}  [{run_ids}]\n",
+                "  {commit:<10} {layout:<10} {}{verdict}{gate}  [{run_ids}]\n",
                 format_spread(&spread, sample.unit)
             ));
         }
+    }
+    text
+}
+
+/// For each commit measured with more than one layout, how far the layout
+/// means spread compared with the repetitions within one layout: a spread
+/// well above the repetition noise means placement, not code, moves the
+/// figure, and a single-layout comparison of two commits can mislead.
+fn layout_sensitivity(entries: &[CommitRow]) -> String {
+    let mut commits: Vec<&str> = Vec::new();
+    for entry in entries {
+        if !commits.contains(&entry.commit.as_str()) {
+            commits.push(&entry.commit);
+        }
+    }
+    let mut text = String::new();
+    for commit in commits {
+        let layouts = entries
+            .iter()
+            .filter(|entry| entry.commit == commit)
+            .filter_map(|entry| Spread::of(&entry.values).map(|spread| (entry, spread)))
+            .collect::<Vec<_>>();
+        if layouts.len() < 2 {
+            continue;
+        }
+        let means = layouts
+            .iter()
+            .map(|(_, spread)| spread.mean)
+            .collect::<Vec<_>>();
+        let Some(between) = Spread::of(&means) else {
+            continue;
+        };
+        let within = layouts
+            .iter()
+            .map(|(_, spread)| spread.deviation)
+            .sum::<f64>()
+            / layouts.len() as f64;
+        let unit = layouts[0].0.sample.unit;
+        let (factor, unit_name) = scale(between.mean, unit);
+        text.push_str(&format!(
+            "  {commit:<10} across {} layouts: means {:.2}±{:.2} {unit_name}, repetitions ±{:.2}\n",
+            layouts.len(),
+            between.mean / factor,
+            between.deviation / factor,
+            within / factor
+        ));
     }
     text
 }
@@ -646,5 +738,43 @@ mod tests {
         )
         .unwrap();
         assert!(summaries_since(&runs, &cache, 2000).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_layout_seed_comes_from_each_flashed_image() {
+        let store = tempfile::tempdir().unwrap();
+        let mut seeded = run("s", "c", false, &[1.0]);
+        seeded.directory = store.path().to_owned();
+        fs::write(
+            store.path().join("manifest.json"),
+            r#"{"firmware":[{"image":"performance","layout_seed":7},{"image":"peer"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(layout_seeds(&seeded), [7]);
+        assert!(layout_seeds(&run("n", "c", false, &[1.0])).is_empty());
+        assert_eq!(layout(&[]), "natural");
+        assert_eq!(layout(&[7, 11]), "seed 7,11");
+    }
+
+    #[test]
+    fn layouts_of_one_commit_are_reported_apart_with_their_spread() {
+        let seeded = |id, seed, values: &[f64]| {
+            let mut summary = summary(&run(id, "c", false, values));
+            summary.layout_seeds = vec![seed];
+            summary
+        };
+        let runs = [
+            summary(&run("n", "c", false, &[100e6, 101e6])),
+            seeded("a", 7, &[120e6, 121e6]),
+            seeded("b", 11, &[90e6, 91e6]),
+        ];
+        let text = report(&runs, &[], None, &BTreeMap::new());
+        assert!(text.contains("natural"), "{text}");
+        assert!(text.contains("seed 7"), "{text}");
+        assert!(text.contains("seed 11"), "{text}");
+        assert!(text.contains("across 3 layouts"), "{text}");
+        // One layout alone reports no layout sensitivity.
+        let single = report(&runs[..1], &[], None, &BTreeMap::new());
+        assert!(!single.contains("across"), "{single}");
     }
 }

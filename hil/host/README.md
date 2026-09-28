@@ -539,9 +539,12 @@ cargo hil perf baseline <run-id> --reason "owned-xarxa baseline"
 cargo hil perf check <run-id>                        # exit 1 on a regression
 ```
 
-`report` summarizes clean-commit runs per commit as mean ± sample deviation
-over repetitions, marks figures past their gate, and compares each commit with
-the scenario's baseline. A move in the worse direction by more than twice the
+`report` summarizes clean-commit runs per commit and code layout (`natural`
+or `seed N`) as mean ± sample deviation over repetitions, marks figures past
+their gate, and compares each row with the scenario's baseline. For a commit
+measured with more than one layout it adds the spread of the layout means next
+to the repetition noise: a spread well above that noise means placement, not
+the source, moves the figure. A move in the worse direction by more than twice the
 baseline's deviation and 2 % of its mean is `REGRESSED`; the same margin the
 other way is `improved`. `baseline` accepts only a completed run of a clean
 commit and records its network implementation; baselines live in

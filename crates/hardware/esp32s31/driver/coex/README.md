@@ -5,9 +5,11 @@ event-to-timer mapping and software schedule state. The radio arbiter owns the
 event priority table: `CoexTimerHardware::pti` reads it when a request is
 programmed, and a priority change goes through the arbiter's lease. The
 arbiter lends only timers 0 through 4: timer 5 carries its PHY grant-protect
-request, so event 48 has no policy timer. It does not implement RF grant
-notification or a joint Wi-Fi/Bluetooth/IEEE 802.15.4 runtime. See
-[source capabilities](FEATURES.md) for those boundaries.
+request, so event 48 has no policy timer. The
+[radio runtime](../../../../runtime/esp32s31/radio/README.md) composes the
+core and the schedule under the arbiter lease. This crate does not implement
+RF grant notification. See [source capabilities](FEATURES.md) for those
+boundaries.
 
 ## Time-slice schedule
 
@@ -29,8 +31,10 @@ and restarts them itself (`restart`) at its beacons. Each `CoexPhaseStep`
 tells the runtime owner how long to arm the phase timer and whom to notify.
 `CoexScheduleExecutor` turns each step into a phase-timer command with a
 generation; an expiry of an older generation lost a race with a later phase
-change and steps nothing. The [radio runtime](../../../../runtime/esp32s31/radio/README.md)
-runs the timer; no radio publishes status to it yet.
+change and steps nothing. The radio runtime runs the timer and signals each
+notified radio. Wi-Fi and Bluetooth LE publish their status through the
+radio guard (`RadioGuard::set_coex_status_bits`); Wi-Fi reacts to its phases,
+while Bluetooth LE does not yet wait for its own.
 
 `CoexArbiterPorts` lends one arbiter lease's timer bank, event priorities and
 clock to `CoexCore` as its timer and clock ports.
@@ -63,9 +67,9 @@ its owner remains available to report status and accept a recovery command.
 No automatic retry loop or synthetic RF grant is introduced.
 
 This is accounting for hardware transactions, not proof that a frame,
-descriptor walker or another protocol has stopped. The concrete HAL currently
-exists only for validation and performs the reviewed register sequence; its
-successful return must not be promoted to whole-radio quiescence. Direct
+descriptor walker or another protocol has stopped. The arbiter ports perform
+the reviewed register sequence; their successful return must not be promoted
+to whole-radio quiescence. Direct
 timer access outside the core requires its own ownership and cleanup contract.
 
 ## Ownership boundary
@@ -85,4 +89,6 @@ cycle is not connected modem sleep.
 IEEE 802.15.4 is not an inferred third numeric `CoexClient`. Its MAC PTI fields
 and reviewed vendor wrappers have a distinct interface. The radio arbiter
 resolves its four coexistence levels (high, middle, low, idle) from table
-events 41 through 44; publishing them per operation scene is not composed.
+events 41 through 44, and the
+[IEEE 802.15.4 system](../../../../composition/esp32s31/embassy/ieee802154/README.md)
+publishes them per operation scene.

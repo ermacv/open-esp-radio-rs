@@ -56,8 +56,9 @@ IRQ timestamp minus requested absolute deadline; early IRQs are counted
 separately because the driver may use a shorter intermediate alarm.
 `irq_to_dispatch` ends immediately before dequeuing expired timers and includes
 interrupt acknowledgment, observation work, completion of the executor's
-current poll and lock acquisition. `dispatch` measures IRQ-driven queue processing and
-waker calls; immediate expiry during registration is outside this timing. It excludes programming the next alarm. None of these intervals
+current poll and lock acquisition. `dispatch` measures IRQ-driven queue
+processing and waker calls; immediate expiry during registration is outside
+this timing. It excludes programming the next alarm. None of these intervals
 measures wake-to-PHY-poll latency specifically.
 
 `overlapping_interrupts` counts IRQ entry before the latest alarm program
@@ -75,8 +76,9 @@ not counted as completed or treated as hardware errors. Counts permit
 reconciliation of programs, retirements, interrupts and dispatches. Inputs
 come from the same monotonic platform clock. Reversal within a measured
 interval, arithmetic overflow or a finish without an active window invalidates
-a report. This observer does not independently qualify the platform clock. An IRQ timestamp is sampled whenever this feature is compiled, even
-outside a recording window. Other observation clocks run only while enabled.
+a report. This observer does not independently qualify the platform clock.
+An IRQ timestamp is sampled whenever this feature is compiled, even outside a
+recording window. Other observation clocks run only while enabled.
 
 Instrumentation has overhead and changes placement. It is intended for
 diagnostics; the ordinary runtime has neither the recorder nor these clock

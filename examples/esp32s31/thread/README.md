@@ -73,4 +73,6 @@ frames and enhanced ACKs as ESP-IDF's OpenThread port does. The
 capabilities and limits are described in the
 [adapter README](../../../crates/adapters/openthread/esp32s31/ieee802154/README.md). The device is a minimal end
 device of an existing network: it neither forms a network nor commissions
-joiners. On-air Thread operation is not yet qualified by HIL evidence.
+joiners. The HIL cell `ieee802154-thread-exchange` runs OpenThread over the
+same adapter against an ESP-IDF Thread leader on air; this example has no HIL
+cell of its own, and Thread stays outside the radio/MAC qualification program.

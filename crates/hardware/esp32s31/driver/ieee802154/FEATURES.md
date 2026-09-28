@@ -70,5 +70,6 @@ HOST-ONLY scopes and are not capabilities admitted by the radio/MAC gate.
 ## Ownership and readiness
 
 Canonical section: `ieee802154-ownership-and-readiness`. The HAL, PAC, MAC
-engine and runtime do not by themselves compose the missing RF-ready public
-service.
+engine and runtime become a service only through the
+[IEEE 802.15.4 system](../../../../composition/esp32s31/embassy/ieee802154/README.md),
+which joins them to the shared radio.

@@ -9,7 +9,7 @@ sources and their production owners.
 
 ## What is compiled and what is recorded
 
-The repository's [`artifacts.toml`](../../artifacts.toml) pins every translation unit and
+The chip's [`artifacts.toml`](../../artifacts.toml) pins every translation unit and
 every ESP-IDF header the build uses, with its SHA-256 at the pinned revision.
 [`build.rs`](build.rs) refuses to build unless each file matches. The driver
 sources are compiled unmodified with the Kconfig defaults in
@@ -91,7 +91,6 @@ scenario (source `esp-idf`, production `oer_ieee802154_engine::engine`), the
 digests of the pinned ESP-IDF files and of the stand's path-dependency
 closure. The stand measures no vendor coverage, production observation or
 vendor state, so its entries leave those out.
-
 
 ## Multi-PAN
 

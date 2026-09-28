@@ -17,8 +17,11 @@ and its schema-2 peripheral fragments. It follows the layout of the
 | `published/radio.svd`, `published/radio.bindings.toml` | Generated SVD and binding index |
 | `publication/registers.toml` | Source-only publication composition |
 
-The model currently publishes the IEEE 802.15.4 MAC aperture at `0x600A3000`
-for chip revision v1.0. Its geometry comes from the ESP32-C5
+The model publishes, for chip revision v1.0, the IEEE 802.15.4 MAC aperture
+at `0x600A3000` with its interrupt route, the analog I2C master, the shared
+modem clock, system and ETM registers, the PCR, PMU, LP AON and SAR ADC
+radio fields, the PHY baseband configuration and the Wi-Fi MAC fragments
+below. The IEEE 802.15.4 geometry comes from the ESP32-C5
 `ieee802154_struct.h` and the common LL pinned in
 [`verification/esp32c5/artifacts.toml`](../../verification/esp32c5/artifacts.toml),
 not from the ESP32-S31 model: the register offsets agree, but the channel and

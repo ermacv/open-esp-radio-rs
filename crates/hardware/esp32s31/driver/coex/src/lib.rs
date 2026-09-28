@@ -10,8 +10,8 @@
 //! [`CoexSchedule`] is the recovered time-slice schedule that selects a
 //! scheme from the radios' status and steps its phases;
 //! [`CoexScheduleExecutor`] adds its phase timer. [`CoexArbiterPorts`] lends
-//! an arbiter lease to the core. The radio runtime composes both; protocols
-//! do not publish their status or react to phases yet.
+//! an arbiter lease to the core. The radio runtime composes both; Wi-Fi and
+//! Bluetooth LE publish their status to it, and Wi-Fi reacts to its phases.
 
 #[cfg(test)]
 extern crate std;

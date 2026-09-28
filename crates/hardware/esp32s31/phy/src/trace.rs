@@ -112,11 +112,11 @@ pub(crate) fn temperatures(state: &PhyState) -> TemperatureReferences {
     let references = state.temperature_references();
     let narrow = |celsius: i16| celsius.clamp(i16::from(i8::MIN), i16::from(i8::MAX)) as i8;
     TemperatureReferences {
-        rfpll: narrow(references.rfpll),
-        calibration: narrow(references.calibration),
-        transmit: narrow(references.transmit),
-        power: narrow(references.power),
-        observed: references.observed,
+        rfpll: narrow(references.rfpll()),
+        calibration: narrow(references.common()),
+        transmit: narrow(references.transmit()),
+        power: narrow(references.power()),
+        observed: state.temperature_observation().value,
     }
 }
 

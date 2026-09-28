@@ -136,27 +136,118 @@ impl Default for PhyConfig {
 }
 
 /// The tracking reference temperatures of one registration, in °C.
+///
+/// Each reference changes only at its update point below, which is where
+/// the vendor stores the matching `phy_param` byte; the offsets appear only
+/// in the calibration cross-check, not here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct PhyTemperatureReferences {
-    pub(crate) rfpll: i16,
-    pub(crate) calibration: i16,
-    pub(crate) transmit: i16,
-    pub(crate) power: i16,
-    pub(crate) observed: i16,
+pub(crate) struct TemperatureReferences {
+    /// RFPLL capacitor tracking (`phy_param[130]`).
+    rfpll: i16,
+    /// Common RX calibration tracking: DCODE, RX gain tables and the channel
+    /// refresh (`phy_param[400]`).
+    common: i16,
+    /// TX DC and power-detector tracking (`phy_param[72]`).
+    transmit: i16,
+    /// TX-power reference, the registration temperature before the TX-power
+    /// calibration (`phy_param[302]`).
+    power: i16,
+    /// Temperature of the last TX-power tracking (`phy_param[4]`).
+    power_tracking: i16,
+}
+
+impl TemperatureReferences {
+    const ZERO: Self = Self {
+        rfpll: 0,
+        common: 0,
+        transmit: 0,
+        power: 0,
+        power_tracking: 0,
+    };
+
+    pub(crate) const fn rfpll(&self) -> i16 {
+        self.rfpll
+    }
+
+    pub(crate) const fn common(&self) -> i16 {
+        self.common
+    }
+
+    pub(crate) const fn transmit(&self) -> i16 {
+        self.transmit
+    }
+
+    pub(crate) const fn power(&self) -> i16 {
+        self.power
+    }
+
+    pub(crate) const fn power_tracking(&self) -> i16 {
+        self.power_tracking
+    }
+
+    /// The registration temperature step (`phy_get_temp_init`): before the
+    /// frequency table exists it becomes the RFPLL reference, before the
+    /// TX-power calibration the TX-power and transmit references, and every
+    /// registration restarts TX-power tracking from the TX-power reference.
+    fn commit_registration(&mut self, temperature: i16, control: PhyRegisterTemperatureControl) {
+        if control.updates_offset_130() {
+            self.rfpll = temperature;
+        }
+        if control.updates_reference_copies() {
+            self.power = temperature;
+            self.transmit = temperature;
+        }
+        self.restart_power_tracking();
+    }
+
+    /// Restart TX-power tracking from the TX-power reference.
+    const fn restart_power_tracking(&mut self) {
+        self.power_tracking = self.power;
+    }
+
+    /// Freshly generated RX gain tables (`phy_set_rx_gain_table`).
+    const fn commit_rx_gain_tables(&mut self, temperature: i16) {
+        self.common = temperature;
+    }
+
+    /// An RFPLL tracking run that applied a correction.
+    const fn commit_rfpll(&mut self, temperature: i16) {
+        self.rfpll = temperature;
+    }
+
+    /// A calibration tracking run whose common branch completed.
+    const fn commit_common(&mut self, temperature: i16) {
+        self.common = temperature;
+    }
+
+    /// A calibration tracking run whose transmit branch completed.
+    const fn commit_transmit(&mut self, temperature: i16) {
+        self.transmit = temperature;
+    }
+
+    /// A TX-power tracking run that updated the gain.
+    const fn commit_power_tracking(&mut self, temperature: i16) {
+        self.power_tracking = temperature;
+    }
+
+    /// The references a retained calibration restores; TX-power tracking
+    /// restarts at the next registration.
+    const fn restored(rfpll: i16, common: i16, transmit: i16, power: i16) -> Self {
+        Self {
+            rfpll,
+            common,
+            transmit,
+            power,
+            power_tracking: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CommonPhyState {
     temperature: i16,
     temperature_acquisition: crate::tracking::temperature::StoredAcquisition,
-    rfpll_tracking_temperature: i16,
-    calibration_tracking_temperature: i16,
-    txdc_tracking_temperature: i16,
-    /// `phy_param[302]`: the TX-power tracking reference, the temperature of
-    /// the registration that preceded the TX-power calibration.
-    power_reference_temperature: i16,
-    /// `phy_param[4]`: the temperature of the last TX-power tracking.
-    tracking_temperature: i16,
+    references: TemperatureReferences,
     tracking_gain_base: i8,
     calibrated_attenuation: u8,
     sensor_index: u8,
@@ -498,11 +589,7 @@ impl PhyState {
                 temperature: 0,
                 temperature_acquisition:
                     crate::tracking::temperature::StoredAcquisition::UNOBSERVED,
-                rfpll_tracking_temperature: 0,
-                calibration_tracking_temperature: 0,
-                txdc_tracking_temperature: 0,
-                power_reference_temperature: 0,
-                tracking_temperature: 0,
+                references: TemperatureReferences::ZERO,
                 tracking_gain_base: 0,
                 calibrated_attenuation,
                 sensor_index: 2,
@@ -570,8 +657,8 @@ impl PhyState {
     ) -> Self {
         let mut state = Self::default();
         state.common.temperature = parameters.current_temperature;
-        state.common.calibration_tracking_temperature = parameters.common_reference_temperature;
-        state.common.txdc_tracking_temperature = parameters.transmit_reference_temperature;
+        state.common.references.common = parameters.common_reference_temperature;
+        state.common.references.transmit = parameters.transmit_reference_temperature;
         state.common.crystal_selector = parameters.crystal_selector;
         state.wifi.current_channel = parameters.current_channel;
         state.wifi.channel_bandwidth = parameters.channel_bandwidth;
@@ -947,7 +1034,9 @@ impl PhyState {
             self.wifi
                 .calibration
                 .set(WifiCalibrationStatus::RX_GAIN_TABLES, true);
-            self.common.calibration_tracking_temperature = self.common.temperature;
+            self.common
+                .references
+                .commit_rx_gain_tables(self.common.temperature);
         }
     }
 
@@ -991,16 +1080,9 @@ impl PhyState {
         }
     }
 
-    /// The committed tracking reference temperatures and the last observed
-    /// one, in °C.
-    pub(crate) const fn temperature_references(&self) -> PhyTemperatureReferences {
-        PhyTemperatureReferences {
-            rfpll: self.common.rfpll_tracking_temperature,
-            calibration: self.common.calibration_tracking_temperature,
-            transmit: self.common.txdc_tracking_temperature,
-            power: self.common.power_reference_temperature,
-            observed: self.common.temperature,
-        }
+    /// The committed tracking reference temperatures, in °C.
+    pub(crate) const fn temperature_references(&self) -> TemperatureReferences {
+        self.common.references
     }
 
     pub(crate) fn apply_observed_temperature_outcome(
@@ -1024,7 +1106,7 @@ impl PhyState {
     ) -> crate::tracking::rfpll::thermal::Request {
         crate::tracking::rfpll::thermal::Request {
             current_temperature: self.common.temperature,
-            reference_temperature: self.common.rfpll_tracking_temperature,
+            reference_temperature: self.common.references.rfpll(),
             current_channel: self.wifi.current_channel,
             threshold_override,
         }
@@ -1035,7 +1117,9 @@ impl PhyState {
         outcome: crate::tracking::rfpll::thermal::Outcome,
     ) {
         if outcome.correction.is_some() {
-            self.common.rfpll_tracking_temperature = outcome.reference_temperature;
+            self.common
+                .references
+                .commit_rfpll(outcome.reference_temperature);
         }
     }
 
@@ -1047,8 +1131,8 @@ impl PhyState {
     ) -> PhyCalibrationTrackingParameters {
         PhyCalibrationTrackingParameters {
             current_temperature: self.common.temperature,
-            common_reference_temperature: self.common.calibration_tracking_temperature,
-            transmit_reference_temperature: self.common.txdc_tracking_temperature,
+            common_reference_temperature: self.common.references.common(),
+            transmit_reference_temperature: self.common.references.transmit(),
             threshold_override,
             current_channel: self.wifi.current_channel,
             channel_bandwidth: self.wifi.channel_bandwidth,
@@ -1100,7 +1184,9 @@ impl PhyState {
             self.apply_dcode_outcome(dcode);
             self.apply_rx_gain_init_outcome(rx_gain);
             self.apply_channel_outcome(channel);
-            self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
+            self.common
+                .references
+                .commit_common(outcome.common_reference_temperature);
         }
         if let Some(result) = outcome.wifi_tx_dc_pwdet {
             self.apply_tx_dc_pwdet_outcome(result);
@@ -1109,7 +1195,9 @@ impl PhyState {
             self.apply_bluetooth_tx_dc_pwdet_outcome(result);
         }
         if outcome.transmit_updated {
-            self.common.txdc_tracking_temperature = outcome.transmit_reference_temperature;
+            self.common
+                .references
+                .commit_transmit(outcome.transmit_reference_temperature);
         }
     }
 
@@ -1123,8 +1211,8 @@ impl PhyState {
     ) -> PhyTxPowerTrackingParameters {
         PhyTxPowerTrackingParameters {
             current_temperature: self.common.temperature,
-            reference_temperature: self.common.power_reference_temperature,
-            previous_tracking_temperature: self.common.tracking_temperature,
+            reference_temperature: self.common.references.power(),
+            previous_tracking_temperature: self.common.references.power_tracking(),
             previous_tracking_gain_base: self.common.tracking_gain_base,
             wifi_gain_base: self.wifi.tracking_gain_base as i8,
             bluetooth_ieee802154_gain_base: self.bluetooth.tracking_gain_base as i8,
@@ -1138,7 +1226,9 @@ impl PhyState {
         if !outcome.gain_updated {
             return;
         }
-        self.common.tracking_temperature = outcome.tracking_temperature;
+        self.common
+            .references
+            .commit_power_tracking(outcome.tracking_temperature);
         self.common.tracking_gain_base = outcome.tracking_gain_base;
         match outcome.class {
             crate::tracking::parameters::PhyCalibrationTrackClass::Wifi => {
@@ -1460,11 +1550,12 @@ impl PhyState {
         let mut restored = Self::new(config);
 
         restored.common.temperature = snapshot.common.temperature;
-        restored.common.rfpll_tracking_temperature = snapshot.common.rfpll_reference_temperature;
-        restored.common.calibration_tracking_temperature =
-            snapshot.common.rxcal_reference_temperature;
-        restored.common.txdc_tracking_temperature = snapshot.common.txcal_reference_temperature;
-        restored.common.power_reference_temperature = snapshot.common.power_reference_temperature;
+        restored.common.references = TemperatureReferences::restored(
+            snapshot.common.rfpll_reference_temperature,
+            snapshot.common.rxcal_reference_temperature,
+            snapshot.common.txcal_reference_temperature,
+            snapshot.common.power_reference_temperature,
+        );
         restored.common.calibrated_attenuation = snapshot.wifi.calibrated_attenuation;
         restored.common.sensor_index = snapshot.common.sensor_index;
         restored.common.crystal_selector = snapshot.common.crystal_selector;
@@ -1557,7 +1648,7 @@ impl PhyState {
         // The snapshot is captured after registration, whose temperature
         // step restarts TX-power tracking from the TX-power reference
         // (`apply_register_temperature_outcome`, as `phy_get_temp_init`).
-        state.common.tracking_temperature = state.common.power_reference_temperature;
+        state.common.references.restart_power_tracking();
         Ok(state)
     }
 
@@ -1570,10 +1661,10 @@ impl PhyState {
             identity,
             common: PhyCommonCalibration {
                 temperature: self.common.temperature,
-                rfpll_reference_temperature: self.common.rfpll_tracking_temperature,
-                rxcal_reference_temperature: self.common.calibration_tracking_temperature,
-                txcal_reference_temperature: self.common.txdc_tracking_temperature,
-                power_reference_temperature: self.common.power_reference_temperature,
+                rfpll_reference_temperature: self.common.references.rfpll(),
+                rxcal_reference_temperature: self.common.references.common(),
+                txcal_reference_temperature: self.common.references.transmit(),
+                power_reference_temperature: self.common.references.power(),
                 sensor_index: self.common.sensor_index,
                 crystal_selector: self.common.crystal_selector,
                 rc_result: self.common.rc_result,
@@ -1666,14 +1757,9 @@ impl PhyState {
         outcome: PhyTemperatureOutcome,
     ) {
         self.apply_temperature_outcome(outcome);
-        if control.updates_offset_130() {
-            self.common.rfpll_tracking_temperature = outcome.temperature;
-        }
-        if control.updates_reference_copies() {
-            self.common.power_reference_temperature = outcome.temperature;
-            self.common.txdc_tracking_temperature = outcome.temperature;
-        }
-        self.common.tracking_temperature = self.common.power_reference_temperature;
+        self.common
+            .references
+            .commit_registration(outcome.temperature, control);
     }
 
     pub fn apply_full_calibration_temperature(&mut self, outcome: PhyTemperatureOutcome) {

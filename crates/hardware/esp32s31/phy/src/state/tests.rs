@@ -10,9 +10,9 @@ const IDENTITY: crate::calibration::registration::PhyCalibrationIdentity =
 fn complete_calibration_cache() -> PhyCalibrationCache {
     let mut state = PhyState::new(PhyConfig::production());
     state.common.temperature = 23;
-    state.common.rfpll_tracking_temperature = 19;
-    state.common.calibration_tracking_temperature = 17;
-    state.common.txdc_tracking_temperature = 13;
+    state.common.references.rfpll = 19;
+    state.common.references.common = 17;
+    state.common.references.transmit = 13;
     state.common.sensor_index = 3;
     state.common.crystal_selector = 2;
     state.common.rc_result = 41;
@@ -496,15 +496,15 @@ fn cached_calibration_restores_products_but_resets_runtime_and_hardware_epoch_st
     assert_eq!(state.config, config);
     assert_eq!(state.common.temperature, snapshot.common.temperature);
     assert_eq!(
-        state.common.calibration_tracking_temperature,
+        state.common.references.common,
         snapshot.common.rxcal_reference_temperature
     );
     assert_eq!(
-        state.common.txdc_tracking_temperature,
+        state.common.references.transmit,
         snapshot.common.txcal_reference_temperature
     );
     assert_eq!(
-        state.common.rfpll_tracking_temperature,
+        state.common.references.rfpll,
         snapshot.common.rfpll_reference_temperature
     );
     assert_eq!(state.common.calibrated_attenuation, 13);
@@ -603,7 +603,7 @@ fn runtime_views_are_independent_named_state() {
 fn generated_rx_gain_tables_commit_the_latest_temperature_as_common_reference() {
     let mut state = PhyState::default();
     state.common.temperature = 27;
-    state.common.calibration_tracking_temperature = 20;
+    state.common.references.common = 20;
     let outcome = crate::rx::gain::PhyRxGainInitOutcome {
         dc: None,
         generated_tables: false,
@@ -611,12 +611,12 @@ fn generated_rx_gain_tables_commit_the_latest_temperature_as_common_reference() 
         shared_last_index: 75,
     };
     state.apply_rx_gain_init_outcome(outcome);
-    assert_eq!(state.common.calibration_tracking_temperature, 20);
+    assert_eq!(state.common.references.common, 20);
     state.apply_rx_gain_init_outcome(crate::rx::gain::PhyRxGainInitOutcome {
         generated_tables: true,
         ..outcome
     });
-    assert_eq!(state.common.calibration_tracking_temperature, 27);
+    assert_eq!(state.common.references.common, 27);
 }
 
 #[test]
@@ -634,7 +634,7 @@ fn registration_restarts_power_tracking_from_the_power_reference() {
 
     // A registration after the TX-power calibration keeps the reference and
     // restarts tracking from it, whatever the sample.
-    state.common.tracking_temperature = 40;
+    state.common.references.power_tracking = 40;
     state
         .wifi
         .calibration

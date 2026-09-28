@@ -47,6 +47,44 @@ fn every_station_event_decodes_to_what_it_encoded() {
     ] {
         round_trip(ControlExit { reason });
     }
+    for op in [
+        RxSlotOp::Claimed { slot: 0 },
+        RxSlotOp::Claimed { slot: 31 },
+        RxSlotOp::Published { slot: 255 },
+        RxSlotOp::Discarded(RxSlotDiscard::Empty),
+        RxSlotOp::Discarded(RxSlotDiscard::TooLong),
+        RxSlotOp::Discarded(RxSlotDiscard::Chained),
+        RxSlotOp::Discarded(RxSlotDiscard::Exhausted),
+    ] {
+        round_trip(RxSlotTrace { op, length: 1_700 });
+    }
+    for direction in [BlockAckDirection::Tx, BlockAckDirection::Rx] {
+        round_trip(LinkControlTrace {
+            event: LinkEvent::BlockAckOperational {
+                direction,
+                tid: 7,
+                window: 64,
+            },
+        });
+        round_trip(LinkControlTrace {
+            event: LinkEvent::BlockAckEnded { direction, tid: 0 },
+        });
+    }
+    for event in [
+        LinkEvent::Associated {
+            association_id: 2007,
+        },
+        LinkEvent::KeysInstalled { group_key_id: 1 },
+        LinkEvent::GroupKeyRotated { key_id: 2 },
+        LinkEvent::BlockAckRejected { tid: 6, status: 37 },
+    ] {
+        round_trip(LinkControlTrace { event });
+    }
+    for from in [PowerState::Awake, PowerState::PowerSave, PowerState::Dozing] {
+        for to in [PowerState::Awake, PowerState::PowerSave, PowerState::Dozing] {
+            round_trip(PowerStateTrace { from, to });
+        }
+    }
 }
 
 #[test]
@@ -61,6 +99,19 @@ fn words_no_station_event_encodes_fail_to_decode() {
     assert_eq!(ControlExit::decode([0, 1]), None);
     assert_eq!(ControlExit::decode([1, 0x1_0000]), None);
     assert_eq!(ControlExit::decode([7, 0]), None);
+    assert_eq!(RxSlotTrace::decode([3, 0]), None);
+    assert_eq!(RxSlotTrace::decode([2 | (4 << 8), 0]), None);
+    assert_eq!(RxSlotTrace::decode([1 << 16, 0]), None);
+    assert_eq!(RxSlotTrace::decode([0, 0x1_0000]), None);
+    assert_eq!(LinkControlTrace::decode([6, 0]), None);
+    assert_eq!(LinkControlTrace::decode([1 << 8, 0]), None);
+    assert_eq!(LinkControlTrace::decode([1, 0x100]), None);
+    assert_eq!(LinkControlTrace::decode([3 | (2 << 8), 0]), None);
+    assert_eq!(LinkControlTrace::decode([4 | (1 << 8), 0]), None);
+    assert_eq!(LinkControlTrace::decode([5, 1]), None);
+    assert_eq!(LinkControlTrace::decode([1 << 24, 0]), None);
+    assert_eq!(PowerStateTrace::decode([3, 0]), None);
+    assert_eq!(PowerStateTrace::decode([0, 3]), None);
 }
 
 #[test]
@@ -72,6 +123,9 @@ fn station_events_have_distinct_kinds_and_channels() {
         NetworkTxPowerTrace::KIND,
         BeaconMonitorTrace::KIND,
         ControlExit::KIND,
+        RxSlotTrace::KIND,
+        LinkControlTrace::KIND,
+        PowerStateTrace::KIND,
     ];
     let channels = [
         BeaconDispatch::CHANNEL,
@@ -80,6 +134,9 @@ fn station_events_have_distinct_kinds_and_channels() {
         NetworkTxPowerTrace::CHANNEL,
         BeaconMonitorTrace::CHANNEL,
         ControlExit::CHANNEL,
+        RxSlotTrace::CHANNEL,
+        LinkControlTrace::CHANNEL,
+        PowerStateTrace::CHANNEL,
     ];
     for (index, kind) in kinds.iter().enumerate() {
         assert_eq!(kind.domain, Domain::Ieee80211);

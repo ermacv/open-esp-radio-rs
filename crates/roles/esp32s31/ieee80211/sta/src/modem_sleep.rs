@@ -21,6 +21,8 @@
 //! espressif/esp32-wifi-lib `af55a0ca`; each method names the function it
 //! follows.
 
+use oer_ieee80211_trace::{PowerState, PowerStateTrace};
+
 /// Beacon receive window requested at each TBTT (`g_pm_cfg[20]`).
 pub const BEACON_WINDOW_MICROS: u32 = 25_000;
 /// Beacon receive window while a Bluetooth isochronous preemption runs.
@@ -111,6 +113,16 @@ pub enum PmState {
     PowerSave,
     /// Power save advertised and the station's RF asleep.
     Dozing,
+}
+
+impl PmState {
+    const fn traced(self) -> PowerState {
+        match self {
+            Self::Awake => PowerState::Awake,
+            Self::PowerSave => PowerState::PowerSave,
+            Self::Dozing => PowerState::Dozing,
+        }
+    }
 }
 
 /// Timers the power manager arms.
@@ -483,6 +495,17 @@ impl ModemSleep {
         self.state
     }
 
+    /// Move to `state`, recording an actual change.
+    fn enter(&mut self, state: PmState) {
+        if self.state != state {
+            oer_trace::emit(&PowerStateTrace {
+                from: self.state.traced(),
+                to: state.traced(),
+            });
+        }
+        self.state = state;
+    }
+
     pub const fn is_started(&self) -> bool {
         self.started
     }
@@ -503,13 +526,13 @@ impl ModemSleep {
         if self.sleep_type == SleepType::None && !coex.active {
             if self.state != PmState::Awake {
                 self.dream(coex, None, actions);
-                self.state = PmState::Awake;
+                self.enter(PmState::Awake);
             }
             return false;
         }
         if !self.started && self.state != PmState::Awake {
             self.dream(coex, None, actions);
-            self.state = PmState::Awake;
+            self.enter(PmState::Awake);
         }
         self.started
     }
@@ -581,7 +604,7 @@ impl ModemSleep {
         actions.push(PmAction::Disarm(PmTimer::Dream));
         if self.state != PmState::Awake {
             self.dream(coex, None, actions);
-            self.state = PmState::Awake;
+            self.enter(PmState::Awake);
             actions.push(PmAction::ReleaseHeldFrames);
         }
         self.dtim_period = 1;
@@ -645,7 +668,7 @@ impl ModemSleep {
         if self.state == PmState::Dozing {
             actions.push(PmAction::RfWake);
         }
-        self.state = PmState::PowerSave;
+        self.enter(PmState::PowerSave);
     }
 
     /// `pm_coex_recalculate_wifi_time_slice`: place the station in the cycle
@@ -746,7 +769,7 @@ impl ModemSleep {
         if !self.may_sleep(coex, actions) || self.state == PmState::Dozing {
             return;
         }
-        self.state = PmState::PowerSave;
+        self.enter(PmState::PowerSave);
         if !self.power_save_null_in_flight {
             self.send_null(true, actions);
         }
@@ -830,7 +853,7 @@ impl ModemSleep {
         }
         actions.push(PmAction::ClearRxBeaconPriority);
         actions.push(PmAction::RfSleep);
-        self.state = PmState::Dozing;
+        self.enter(PmState::Dozing);
     }
 
     /// `pm_tx_null_data_done_process`: a Null completed.
@@ -865,7 +888,7 @@ impl ModemSleep {
                     // `pm_tx_null_data_done_quick_wake_process` without TBTT
                     // quick wake admits the wake.
                     self.receiving = false;
-                    self.state = PmState::Awake;
+                    self.enter(PmState::Awake);
                     self.enable_active_timer(actions);
                     actions.push(PmAction::ReleaseHeldFrames);
                 } else {

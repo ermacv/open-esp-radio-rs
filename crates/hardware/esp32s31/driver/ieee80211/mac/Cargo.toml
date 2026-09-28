@@ -14,6 +14,8 @@ rx-ba-window-8 = []
 task-poll-telemetry = ["dep:riscv"]
 validation-raw-dma = ["oer-esp32s31-ieee80211-dma/validation-raw-dma"]
 validation-probes = ["oer-esp32s31-hal/validation-probes"]
+# Record the RX slot trace points into the image's installed trace.
+trace = ["oer-trace/record"]
 
 [dependencies]
 oer-memory = { path = "../../../../../memory" }
@@ -21,6 +23,8 @@ oer-esp32s31-hal = { path = "../../../hal" }
 oer-esp32s31-ieee80211-dma = { path = "../dma" }
 oer-ieee80211-mac = { path = "../../../../../protocols/ieee80211/mac" }
 oer-ieee80211-softmac = { path = "../../../../../protocols/ieee80211/softmac" }
+oer-ieee80211-trace = { path = "../../../../../protocols/ieee80211/trace" }
+oer-trace = { path = "../../../../../trace" }
 pin-project = "1.1.13"
 subtle = { version = "2.6.1", default-features = false }
 zeroize = { version = "1.9.0", default-features = false }

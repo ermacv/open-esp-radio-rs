@@ -428,6 +428,11 @@ where
         let management = request.igtk().map(|igtk| {
             StationManagementProtection::new(*request.pairwise().key().as_bytes(), igtk)
         });
+        oer_trace::emit(&oer_ieee80211_trace::LinkControlTrace {
+            event: oer_ieee80211_trace::LinkEvent::KeysInstalled {
+                group_key_id: key_id,
+            },
+        });
         Ok(InstalledWpa2Keys {
             pairwise,
             group,

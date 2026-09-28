@@ -243,6 +243,11 @@ impl StaPeerPort {
         plan.rate_control
             .program_hardware(radio.hardware)
             .map_err(StaPeerPortError::RateControl)?;
+        oer_trace::emit(&oer_ieee80211_trace::LinkControlTrace {
+            event: oer_ieee80211_trace::LinkEvent::Associated {
+                association_id: response.association_id,
+            },
+        });
 
         let ht_capabilities = plan.ht_capabilities;
         let he_capabilities = plan.he_capabilities;

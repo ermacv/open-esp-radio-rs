@@ -1,7 +1,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-//! Trace points of the connected station.
+//! Trace points of the connected station and its RX slot pool.
 //!
 //! Every event the station records into [`oer_trace`] is defined here with
 //! its channel, so the host decodes a drained record with the same type. The
@@ -17,6 +17,9 @@
 //! | 3     | [`NetworkTxPowerTrace`] | one per network transaction  |
 //! | 4     | [`BeaconMonitorTrace`]  | one per beacon or probe      |
 //! | 5     | [`ControlExit`]         | one per connected epoch      |
+//! | 6     | [`RxSlotTrace`]         | two per received data frame  |
+//! | 7     | [`LinkControlTrace`]    | association, keys, Block Ack |
+//! | 8     | [`PowerStateTrace`]     | one per power-state change   |
 
 use core::fmt;
 
@@ -418,6 +421,271 @@ impl fmt::Display for ControlExit {
     }
 }
 
+/// Why a completed RX DMA unit never reached an upper slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum RxSlotDiscard {
+    /// The unit carried no bytes.
+    Empty = 0,
+    /// The unit exceeded the slot capacity.
+    TooLong = 1,
+    /// The unit spanned more than one descriptor.
+    Chained = 2,
+    /// Every upper slot was already claimed.
+    Exhausted = 3,
+}
+
+impl RxSlotDiscard {
+    const fn from_raw(raw: u32) -> Option<Self> {
+        Some(match raw {
+            0 => Self::Empty,
+            1 => Self::TooLong,
+            2 => Self::Chained,
+            3 => Self::Exhausted,
+            _ => return None,
+        })
+    }
+}
+
+/// One step of an RX DMA buffer through the upper slot pool.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxSlotOp {
+    /// The buffer moved into the slot without a copy.
+    Claimed { slot: u8 },
+    /// The slot was republished as an Ethernet frame to the network.
+    Published { slot: u8 },
+    /// The unit stayed in the ring and returns to DMA.
+    Discarded(RxSlotDiscard),
+}
+
+/// An RX slot transition; `length` is the MPDU length when claimed or
+/// discarded and the Ethernet length when published.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxSlotTrace {
+    pub op: RxSlotOp,
+    pub length: u16,
+}
+
+impl Event for RxSlotTrace {
+    const KIND: Kind = kind(7);
+    const CHANNEL: Channel = channel(6);
+
+    fn encode(&self) -> [u32; 2] {
+        let op = match self.op {
+            RxSlotOp::Claimed { slot } => u32::from(slot) << 8,
+            RxSlotOp::Published { slot } => 1 | (u32::from(slot) << 8),
+            RxSlotOp::Discarded(reason) => 2 | ((reason as u32) << 8),
+        };
+        [op, u32::from(self.length)]
+    }
+
+    fn decode(words: [u32; 2]) -> Option<Self> {
+        if words[0] >> 16 != 0 {
+            return None;
+        }
+        let argument = (words[0] >> 8) as u8;
+        let op = match words[0] & 0xff {
+            0 => RxSlotOp::Claimed { slot: argument },
+            1 => RxSlotOp::Published { slot: argument },
+            2 => RxSlotOp::Discarded(RxSlotDiscard::from_raw(u32::from(argument))?),
+            _ => return None,
+        };
+        Some(Self {
+            op,
+            length: u16::try_from(words[1]).ok()?,
+        })
+    }
+}
+
+impl fmt::Display for RxSlotTrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.op {
+            RxSlotOp::Claimed { slot } => write!(f, "rx slot {slot} claimed")?,
+            RxSlotOp::Published { slot } => write!(f, "rx slot {slot} published")?,
+            RxSlotOp::Discarded(reason) => write!(f, "rx unit discarded {reason:?}")?,
+        }
+        write!(f, " len={}", self.length)
+    }
+}
+
+/// Direction of a Block Ack agreement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum BlockAckDirection {
+    /// The station originates the aggregates.
+    Tx = 0,
+    /// The access point originates them; the station reorders.
+    Rx = 1,
+}
+
+/// A link-state change of the station's association.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LinkEvent {
+    /// The access point accepted the association.
+    Associated { association_id: u16 },
+    /// The pairwise and group keys of a handshake were installed.
+    KeysInstalled { group_key_id: u8 },
+    /// A group key handshake installed a new group key.
+    GroupKeyRotated { key_id: u8 },
+    /// A Block Ack agreement became operational.
+    BlockAckOperational {
+        direction: BlockAckDirection,
+        tid: u8,
+        window: u16,
+    },
+    /// The peer refused the station's ADDBA request.
+    BlockAckRejected { tid: u8, status: u16 },
+    /// A DELBA ended an agreement.
+    BlockAckEnded {
+        direction: BlockAckDirection,
+        tid: u8,
+    },
+}
+
+/// One link-state change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LinkControlTrace {
+    pub event: LinkEvent,
+}
+
+impl Event for LinkControlTrace {
+    const KIND: Kind = kind(8);
+    const CHANNEL: Channel = channel(7);
+
+    fn encode(&self) -> [u32; 2] {
+        let field =
+            |code: u32, direction: u32, tid: u8| code | (direction << 8) | (u32::from(tid) << 16);
+        match self.event {
+            LinkEvent::Associated { association_id } => [0, u32::from(association_id)],
+            LinkEvent::KeysInstalled { group_key_id } => [1, u32::from(group_key_id)],
+            LinkEvent::GroupKeyRotated { key_id } => [2, u32::from(key_id)],
+            LinkEvent::BlockAckOperational {
+                direction,
+                tid,
+                window,
+            } => [field(3, direction as u32, tid), u32::from(window)],
+            LinkEvent::BlockAckRejected { tid, status } => [field(4, 0, tid), u32::from(status)],
+            LinkEvent::BlockAckEnded { direction, tid } => [field(5, direction as u32, tid), 0],
+        }
+    }
+
+    fn decode(words: [u32; 2]) -> Option<Self> {
+        if words[0] >> 24 != 0 {
+            return None;
+        }
+        let code = words[0] & 0xff;
+        let direction = match (words[0] >> 8) & 0xff {
+            0 => BlockAckDirection::Tx,
+            1 => BlockAckDirection::Rx,
+            _ => return None,
+        };
+        let tid = (words[0] >> 16) as u8;
+        let plain = words[0] >> 8 == 0;
+        let word = u16::try_from(words[1]).ok()?;
+        let key = u8::try_from(words[1]).ok();
+        let event = match code {
+            0 if plain => LinkEvent::Associated {
+                association_id: word,
+            },
+            1 if plain => LinkEvent::KeysInstalled { group_key_id: key? },
+            2 if plain => LinkEvent::GroupKeyRotated { key_id: key? },
+            3 => LinkEvent::BlockAckOperational {
+                direction,
+                tid,
+                window: word,
+            },
+            4 if direction == BlockAckDirection::Tx => {
+                LinkEvent::BlockAckRejected { tid, status: word }
+            }
+            5 if words[1] == 0 => LinkEvent::BlockAckEnded { direction, tid },
+            _ => return None,
+        };
+        Some(Self { event })
+    }
+}
+
+impl fmt::Display for LinkControlTrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.event {
+            LinkEvent::Associated { association_id } => {
+                write!(f, "link associated aid={association_id}")
+            }
+            LinkEvent::KeysInstalled { group_key_id } => {
+                write!(f, "link keys installed group_key_id={group_key_id}")
+            }
+            LinkEvent::GroupKeyRotated { key_id } => {
+                write!(f, "link group key rotated key_id={key_id}")
+            }
+            LinkEvent::BlockAckOperational {
+                direction,
+                tid,
+                window,
+            } => write!(
+                f,
+                "link {direction:?} block ack tid={tid} operational window={window}"
+            ),
+            LinkEvent::BlockAckRejected { tid, status } => {
+                write!(f, "link Tx block ack tid={tid} rejected status={status}")
+            }
+            LinkEvent::BlockAckEnded { direction, tid } => {
+                write!(f, "link {direction:?} block ack tid={tid} ended")
+            }
+        }
+    }
+}
+
+/// Power-management state of the station.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum PowerState {
+    /// Awake with power save not advertised.
+    Awake = 0,
+    /// Power save advertised; the modem is still awake.
+    PowerSave = 1,
+    /// Power save advertised and the RF asleep.
+    Dozing = 2,
+}
+
+impl PowerState {
+    const fn from_raw(raw: u32) -> Option<Self> {
+        Some(match raw {
+            0 => Self::Awake,
+            1 => Self::PowerSave,
+            2 => Self::Dozing,
+            _ => return None,
+        })
+    }
+}
+
+/// The power manager changed state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PowerStateTrace {
+    pub from: PowerState,
+    pub to: PowerState,
+}
+
+impl Event for PowerStateTrace {
+    const KIND: Kind = kind(9);
+    const CHANNEL: Channel = channel(8);
+
+    fn encode(&self) -> [u32; 2] {
+        [self.from as u32, self.to as u32]
+    }
+
+    fn decode(words: [u32; 2]) -> Option<Self> {
+        Some(Self {
+            from: PowerState::from_raw(words[0])?,
+            to: PowerState::from_raw(words[1])?,
+        })
+    }
+}
+
+impl fmt::Display for PowerStateTrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "power state {:?} -> {:?}", self.from, self.to)
+    }
+}
+
 oer_trace::event_set!(
     pub StationTrace: BeaconDispatch,
     ControlMailbox,
@@ -425,6 +693,9 @@ oer_trace::event_set!(
     NetworkTxPowerTrace,
     BeaconMonitorTrace,
     ControlExit,
+    RxSlotTrace,
+    LinkControlTrace,
+    PowerStateTrace,
 );
 
 #[cfg(test)]

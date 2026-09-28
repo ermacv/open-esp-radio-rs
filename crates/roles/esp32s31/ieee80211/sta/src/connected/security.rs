@@ -333,6 +333,9 @@ impl ConnectedWpa2Security {
                             }
                             self.group_material = replacement;
                             self.used_group_key_ids |= key_id_mask;
+                            oer_trace::emit(&oer_ieee80211_trace::LinkControlTrace {
+                                event: oer_ieee80211_trace::LinkEvent::GroupKeyRotated { key_id },
+                            });
                         }
                         Err(error @ StaGroupCcmpReplaceError::ReplacementRolledBack(_)) => {
                             let abort = self.replay.abort_group_rotation(installing);

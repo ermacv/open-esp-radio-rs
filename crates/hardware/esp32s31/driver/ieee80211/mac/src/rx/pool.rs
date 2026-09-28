@@ -18,6 +18,7 @@ use oer_esp32s31_ieee80211_dma::{
     rx_storage::{RxDmaCompletedUnit, RxDmaDetachedUnit},
 };
 use oer_ieee80211_softmac::MacRxMetadata;
+use oer_ieee80211_trace::{RxSlotDiscard, RxSlotOp, RxSlotTrace};
 use oer_memory::{ExternalRxHandoffPool, ExternalRxRadioLease};
 
 pub const VENDOR_LARGE_RX_SLOT_COUNT: usize = 32;
@@ -111,24 +112,20 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     where
         'storage: 'static,
     {
-        if completed.descriptor_count() != 1 {
-            completed.retain_for_deferred_recycle();
-            return Ok(RxDmaDeferredStageUnitOutcome::Discarded(
-                RxStageError::Chained,
-            ));
-        }
         let length = completed.total_length();
-        if length == 0 {
+        let discard = if completed.descriptor_count() != 1 {
+            Some(RxStageError::Chained)
+        } else if length == 0 {
+            Some(RxStageError::Empty)
+        } else if length > CAPACITY.min(maximum_length) {
+            Some(RxStageError::TooLong)
+        } else {
+            None
+        };
+        if let Some(error) = discard {
             completed.retain_for_deferred_recycle();
-            return Ok(RxDmaDeferredStageUnitOutcome::Discarded(
-                RxStageError::Empty,
-            ));
-        }
-        if length > CAPACITY.min(maximum_length) {
-            completed.retain_for_deferred_recycle();
-            return Ok(RxDmaDeferredStageUnitOutcome::Discarded(
-                RxStageError::TooLong,
-            ));
+            trace_discard(error, length);
+            return Ok(RxDmaDeferredStageUnitOutcome::Discarded(error));
         }
 
         let detached = completed
@@ -152,9 +149,11 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     ) -> Result<NetworkRxFrame<'_, SLOTS, CAPACITY>, RxStageTransactionError> {
         let length = detached.length();
         if length == 0 {
+            trace_discard(RxStageError::Empty, length);
             return Err(RxStageTransactionError::Stage(RxStageError::Empty));
         }
         if length > CAPACITY.min(maximum_length) {
+            trace_discard(RxStageError::TooLong, length);
             return Err(RxStageTransactionError::Stage(RxStageError::TooLong));
         }
         let metadata = detached_metadata(&detached);
@@ -163,9 +162,11 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             Ok(lease) => lease,
             Err(buffer) => {
                 drop(buffer);
+                trace_discard(RxStageError::Exhausted, length);
                 return Err(RxStageTransactionError::Stage(RxStageError::Exhausted));
             }
         };
+        trace_slot(RxSlotOp::Claimed { slot: lease.index() as u8 }, length);
         let next = if lease.index() + 1 == SLOTS {
             0
         } else {
@@ -204,6 +205,25 @@ impl<const SLOTS: usize, const CAPACITY: usize> Default for RxStagePool<SLOTS, C
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[inline(always)]
+fn trace_slot(op: RxSlotOp, length: usize) {
+    oer_trace::emit(&RxSlotTrace {
+        op,
+        length: length.min(usize::from(u16::MAX)) as u16,
+    });
+}
+
+#[inline(always)]
+fn trace_discard(error: RxStageError, length: usize) {
+    let reason = match error {
+        RxStageError::Exhausted => RxSlotDiscard::Exhausted,
+        RxStageError::Empty => RxSlotDiscard::Empty,
+        RxStageError::TooLong => RxSlotDiscard::TooLong,
+        RxStageError::Chained => RxSlotDiscard::Chained,
+    };
+    trace_slot(RxSlotOp::Discarded(reason), length);
 }
 
 fn detached_metadata(detached: &RxDmaDetachedUnit) -> StagedMetadata {
@@ -288,6 +308,12 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
             raw[frame_offset + 6..frame_offset + 12].copy_from_slice(&source);
             raw[frame_offset + 12..frame_offset + 14].copy_from_slice(&ether_type.to_be_bytes());
         });
+        trace_slot(
+            RxSlotOp::Published {
+                slot: lease.index() as u8,
+            },
+            ethernet_length,
+        );
         Ok(lease.republish(frame_offset, ethernet_length))
     }
 }

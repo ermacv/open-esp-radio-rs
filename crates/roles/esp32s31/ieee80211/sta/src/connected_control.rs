@@ -7,7 +7,9 @@
 //! reorder-command sink and the shared TX owner.  No mailbox, executor timer
 //! or task wakeup is part of this state machine.
 
-use oer_ieee80211_trace::{BeaconMonitorOp, BeaconMonitorTrace, ExitReason};
+use oer_ieee80211_trace::{
+    BeaconMonitorOp, BeaconMonitorTrace, BlockAckDirection, ExitReason, LinkControlTrace, LinkEvent,
+};
 
 use crate::{
     connected_rx::{AssociatedHeControlIdentity, ConnectedRxControlEvent},
@@ -1017,7 +1019,13 @@ impl ConnectedControlCore {
             }
             match in_flight {
                 ControlInFlight::RxAddba(activation) if success => {
+                    let negotiated = activation.negotiated();
                     rx_block_ack.commit(activation)?;
+                    trace_link(LinkEvent::BlockAckOperational {
+                        direction: BlockAckDirection::Rx,
+                        tid: negotiated.tid,
+                        window: negotiated.window,
+                    });
                 }
                 ControlInFlight::RxAddba(activation) => {
                     hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
@@ -1399,9 +1407,17 @@ impl ConnectedControlCore {
                 }
                 let negotiated_agreement = match response {
                     TxBlockAckResponse::Operational(agreement) => {
+                        trace_link(LinkEvent::BlockAckOperational {
+                            direction: BlockAckDirection::Tx,
+                            tid,
+                            window: agreement.window,
+                        });
                         Some((agreement.window, agreement.amsdu))
                     }
-                    TxBlockAckResponse::Rejected(_) => None,
+                    TxBlockAckResponse::Rejected(status) => {
+                        trace_link(LinkEvent::BlockAckRejected { tid, status });
+                        None
+                    }
                 };
                 tx.set_tx_block_ack_agreement(tid, negotiated_agreement);
                 if let TxBlockAckResponse::Operational(agreement) = response {
@@ -1420,8 +1436,18 @@ impl ConnectedControlCore {
                     {
                         hardware.clear_rx_block_ack(agreement.hardware_index)?;
                         reorder.publish(RxReorderCommand::Stop(agreement.identity()))?;
+                        trace_link(LinkEvent::BlockAckEnded {
+                            direction: BlockAckDirection::Rx,
+                            tid,
+                        });
                     }
                 } else {
+                    if self.tx_block_ack.operational(tid).is_some() {
+                        trace_link(LinkEvent::BlockAckEnded {
+                            direction: BlockAckDirection::Tx,
+                            tid,
+                        });
+                    }
                     self.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_agreement(tid, None);
                     if self.he_enabled {
@@ -1967,6 +1993,10 @@ mod sa_query;
 use sa_query::{SaQueryStep, StationSaQuery};
 
 use power::{ConnectedPower, power_clock};
+
+fn trace_link(event: LinkEvent) {
+    oer_trace::emit(&LinkControlTrace { event });
+}
 pub use power::{
     ConnectedPowerCommand, JoinBeacon, NetworkTxPowerReport, POWER_COMMAND_CAPACITY,
     PowerCoexSnapshot, access_point_tsf_at,

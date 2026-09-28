@@ -109,7 +109,10 @@ driver-observation = [
 ]
 # The Wi-Fi system's diagnostics alone: the station's exit evidence and
 # observers, without the executor timer and PHY registration observers.
-station-exit-evidence = ["oer-esp32s31-ieee80211-system/diagnostics", "oer-esp32s31-ieee80211-runtime?/trace"]
+station-exit-evidence = ["oer-esp32s31-ieee80211-system/diagnostics", "wifi-trace"]
+# Record the Wi-Fi trace points: station control, power state, link events
+# and RX slot ownership.
+wifi-trace = ["oer-esp32s31-ieee80211-runtime?/trace"]
 # Intrusive hard-IRQ classification. This is never part of correctness or
 # performance images because it extends the SRAM-closed MAC ISR call graph.
 mac-irq-telemetry = [

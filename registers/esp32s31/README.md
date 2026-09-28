@@ -13,8 +13,8 @@ analysis read this model; neither owns a second copy.
 | `model/memory.toml` | MMIO regions, including platform-owned regions outside radio publication |
 | `model/reviewed.toml` | Typed reviewed assertions with their applicability and evidence |
 | `policy/api.toml` | Schema-5 production PAC ownership partitions and typed transactions |
-| `policy/ownership.toml` | Schema-1 shared publication scope of 26 named MMIO ranges |
-| `policy/lints.toml` | Reviewed register-model lint policy selected by the investigation |
+| `policy/ownership.toml` | Schema-1 shared publication scope of named MMIO ranges |
+| `policy/lints.toml` | Reviewed register-model lint policy shared by publication and the investigation |
 | `evidence/` | Source identities, provenance, reviewed confidence and supporting records |
 | `upstream/platform-radio-deps.svd` | Reviewed upstream platform PAC input for analysis |
 | `published/radio.svd` | Generated portable CMSIS-SVD representation |
@@ -43,8 +43,8 @@ facts in its caller-provided run context. Sharing a publication scope does not
 inherit that context or promote a model-only check into comparison evidence.
 The common scope is selected through `[registers].ownership-policy`. Its schema-1
 pack contains only `owned-ranges`; combining it with an inline `owned-ranges`
-list is rejected. Existing standalone projects may continue selecting an inline
-scope. Neither spelling has merge or override precedence.
+list is rejected. A standalone project may instead select an inline scope.
+Neither spelling has merge or override precedence.
 
 From the repository root:
 

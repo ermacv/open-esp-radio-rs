@@ -17,8 +17,8 @@ and its schema-2 peripheral fragments. It follows the layout of the
 | `published/radio.svd`, `published/radio.bindings.toml` | Generated SVD and binding index |
 | `publication/registers.toml` | Source-only publication composition |
 
-The model currently publishes the IEEE 802.15.4 MAC aperture at `0x600A3000`
-for chip revision v1.0. Its geometry comes from the ESP32-C5
+The IEEE 802.15.4 MAC aperture at `0x600A3000` applies to chip revision
+v1.0. Its geometry comes from the ESP32-C5
 `ieee802154_struct.h` and the common LL pinned in
 [`verification/esp32c5/artifacts.toml`](../../verification/esp32c5/artifacts.toml),
 not from the ESP32-S31 model: the register offsets agree, but the channel and
@@ -37,7 +37,7 @@ instead of `0x7C`. Such reviews use `provenance = "derived"` and
 `completeness = "partial"`. Functions whose C5 bodies differ structurally are
 never evidence for these facts, and ESP32-S31 HIL observations are not
 carried over. The fragments publish register views only; no ESP32-C5 driver
-owns them yet.
+owns them.
 
 ```console
 cargo registers validate --manifest registers/esp32c5/publication/registers.toml

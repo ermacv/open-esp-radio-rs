@@ -37,12 +37,12 @@ logging and delay semantics remain outside this crate.
 The format and editing workflow are documented by the
 [register tool](../README.md).
 An absent physical register is created only by one reviewed
-`register-identity = "REGION.NAME"` assertion. The removed
-`register-declaration` and `register-name` kinds are explicit errors. The
+`register-identity = "REGION.NAME"` assertion; the
+`register-declaration` and `register-name` kinds are rejected with an error. The
 top-level manifest is schema 3 and declares the stable chip ID and address
 space. Assertion subjects use only canonical `register:<chip>/<space>/...` or
-`register-field:<chip>/<space>/...` semantic IDs; legacy MMIO strings have no
-compatibility parser. The subject must match this model's chip and address
+`register-field:<chip>/<space>/...` semantic IDs; other subject spellings are
+rejected. The subject must match this model's chip and address
 space, have a supported aligned width, fit the named concrete region (and its
 register address blocks when present), and not alias or overlap existing
 geometry. Identity application is atomic and rejects arrays, clusters,

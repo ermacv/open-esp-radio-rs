@@ -501,7 +501,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
         }
     }
 
-    // CAPABILITY: whole-radio-active-operation-power-saving-and-shutdown-cold-reconstruction-after-shutdown, radio-cold-restart
+    // CAPABILITY: radio-cold-restart
     fn restart_radio<'a>(
         &'a mut self,
         slot: &'a mut Option<Self::Stopped>,

@@ -238,9 +238,9 @@ scope-and-limitations = "The Wi-Fi production supervisor composes idle quiescenc
 id = "whole-radio-active-operation-power-saving-and-shutdown-cold-reconstruction-after-shutdown"
 section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "Cold reconstruction after shutdown"
-status = "implemented"
+status = "absent"
 level = "composed-product"
-scope-and-limitations = "The idle control path quiesces the Wi-Fi owner, disables coexistence, releases Wi-Fi from the shared radio and closes RF when Wi-Fi is the last PHY client, then rejoins the shared radio, which wakes RF without PHY re-registration and returns a cold Wi-Fi owner for the next role epoch. Repeated hardware lifecycle evidence covers this Wi-Fi boundary."
+scope-and-limitations = "The radio system registers the PHY once per boot; no path powers the radio fully down and reconstructs it from cold by replaying a final-state calibration cache into a new registration. The Wi-Fi idle restart keeps the registration: it closes RF when Wi-Fi is the last PHY client and wakes it on rejoin (see the RF sleep and RF wake entries)."
 
 [[items]]
 id = "whole-radio-concurrent-ownership-and-arbitration-wifi-bluetooth-concurrent-composition"

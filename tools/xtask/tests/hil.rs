@@ -55,6 +55,9 @@ fn wrapper(root: &Path) -> Command {
         .arg("hil")
         .env("CARGO", root.join("cargo"))
         .env("OER_HIL_STORE", root.join("store"))
+        // The wrapper is a real binary, not a test harness: keep its arbiter
+        // inside the fixture too.
+        .env("OER_HIL_ARBITER_DIR", root.join("arbiter"))
         .env("FIXTURE_ROOT", root);
     command
 }

@@ -40,10 +40,28 @@ pub struct Arbiter {
     directory: PathBuf,
 }
 
+/// Whether `exe` is a Cargo test harness: Cargo places test executables in
+/// a `deps` directory of its target directory, and binaries beside it.
+fn is_test_executable(exe: &Path) -> bool {
+    exe.parent()
+        .and_then(Path::file_name)
+        .is_some_and(|directory| directory == "deps")
+}
+
 impl Arbiter {
+    /// The stand's arbiter: `$OER_HIL_ARBITER_DIR`, or the user's one. A
+    /// test process is refused the user's one: its leases, balances and
+    /// board records would be the stand's.
     pub fn open() -> crate::Result<Self> {
         if let Some(directory) = std::env::var_os(DIRECTORY_ENV) {
             return Self::at(PathBuf::from(directory));
+        }
+        if std::env::current_exe().is_ok_and(|exe| is_test_executable(&exe)) {
+            return Err(format!(
+                "a test must not open the stand's arbiter: use Arbiter::at with a temporary \
+                 directory, or set {DIRECTORY_ENV}"
+            )
+            .into());
         }
         let home =
             std::env::var_os("HOME").ok_or("HOME is required to locate the HIL stand arbiter")?;
@@ -255,5 +273,23 @@ impl Arbiter {
             }
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    #[test]
+    fn a_test_process_is_refused_the_stands_arbiter() {
+        assert!(is_test_executable(Path::new(
+            "/r/target/debug/deps/oer_hil_arbiter-1a2b"
+        )));
+        assert!(!is_test_executable(Path::new("/r/target/debug/oer-xtask")));
+        // This very test runs from deps/.
+        if std::env::var_os(DIRECTORY_ENV).is_none() {
+            let error = Arbiter::open().err().unwrap().to_string();
+            assert!(error.contains("a test must not open"), "{error}");
+        }
     }
 }

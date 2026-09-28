@@ -131,28 +131,6 @@ pub fn shuffle_arguments(seed: Option<u32>) -> std::vec::Vec<std::string::String
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_a_nonzero_seed_shuffles_and_it_is_reproducible() {
-        assert_eq!(layout_seed(None), Ok(None));
-        assert!(shuffle_arguments(None).is_empty());
-        assert!(layout_seed(Some("0")).is_err());
-        assert!(layout_seed(Some("-1")).is_err());
-        assert!(layout_seed(Some("seven")).is_err());
-        let seed = layout_seed(Some("7")).unwrap();
-        assert_eq!(
-            shuffle_arguments(seed),
-            [
-                "--shuffle-sections=.text.*=7",
-                "--shuffle-sections=.rodata.*=7"
-            ]
-        );
-    }
-}
-
 /// Links binary `bin` as the Flash-resident bootstrap.
 pub fn configure_bootstrap(bin: &str, linker_dir: &Path) {
     link(
@@ -178,4 +156,26 @@ pub fn configure_bootstrap(bin: &str, linker_dir: &Path) {
         "BOOTSTRAP_FLASH_TEXT_LENGTH",
         memory::BOOTSTRAP_FLASH_TEXT.length,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_nonzero_seed_shuffles_and_it_is_reproducible() {
+        assert_eq!(layout_seed(None), Ok(None));
+        assert!(shuffle_arguments(None).is_empty());
+        assert!(layout_seed(Some("0")).is_err());
+        assert!(layout_seed(Some("-1")).is_err());
+        assert!(layout_seed(Some("seven")).is_err());
+        let seed = layout_seed(Some("7")).unwrap();
+        assert_eq!(
+            shuffle_arguments(seed),
+            [
+                "--shuffle-sections=.text.*=7",
+                "--shuffle-sections=.rodata.*=7"
+            ]
+        );
+    }
 }

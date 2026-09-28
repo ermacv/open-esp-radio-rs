@@ -949,6 +949,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         self.observe_append(result)
     }
 
+    crate::place_rx_hot_path! {
     /// Return the longest contiguous prefix whose detached upper owners have
     /// all released their original DMA buffers.
     ///
@@ -998,7 +999,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             }
         });
         self.observe_append(result)
-    }
+    }}
 
     /// Number of detached buffers already returned by upper owners but not
     /// yet appended back to the hardware list.
@@ -1073,6 +1074,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         )
     }
 
+    crate::place_rx_hot_path! {
     /// LAST-bounded frontier with the matching ordered NEXT observation.
     /// NEXT=0 and LAST at the accepted tail release untouched intermediate
     /// descriptors which the vendor worker also walks before the terminal.
@@ -1091,7 +1093,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                     .is_some_and(RxDmaBuffer::leading_guard_overwritten)
             },
         ))
-    }
+    }}
 
     /// Return the first complete unit at the software frontier, bounded by
     /// the hardware LAST snapshot. This is the unit-sized counterpart used
@@ -1110,6 +1112,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         )
     }
 
+    crate::place_rx_hot_path! {
     pub fn first_completed_unit_frontier_through_cursor(
         &self,
         ring: &RxRingLive<'_, COUNT>,
@@ -1125,7 +1128,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                     .is_some_and(RxDmaBuffer::leading_guard_overwritten)
             },
         ))
-    }
+    }}
 
     /// Copy bytes from the first descriptor of the first complete unit without
     /// transferring descriptor ownership.
@@ -1179,6 +1182,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         Ok(true)
     }
 
+    crate::place_rx_hot_path! {
     /// Physical descriptor index immediately after the contiguous observed
     /// prefix retained by upper owners.
     ///
@@ -1191,7 +1195,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         self.validate_live_ring(ring)?;
         let observed = ring.observed_prefix_len();
         Ok((observed != COUNT).then(|| wrap_index::<COUNT>(ring.recycle_start(), observed)))
-    }
+    }}
 
     pub fn take_completed_unit<'storage, 'owner, 'ring>(
         &'storage self,

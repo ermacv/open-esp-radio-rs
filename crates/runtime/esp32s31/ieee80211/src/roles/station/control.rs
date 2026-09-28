@@ -516,6 +516,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         self.core.tx_in_flight() || self.core.leave_pending()
     }
 
+    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
     pub fn has_immediate_work(&self) -> bool {
         self.deferred_control_event.is_some()
             || self.receiver.overflowed()
@@ -525,7 +526,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
                 .is_some_and(ConnectedWpa2Security::tx_in_flight)
             || self.power.is_some_and(StationPowerLink::has_input)
             || self.core.has_immediate_work(self.control_event_ready())
-    }
+    }}
 
     /// Whether a received event can be consumed now. Events leading to a
     /// frame wait while power management holds the TX queues, and must not

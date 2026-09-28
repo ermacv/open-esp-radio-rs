@@ -180,9 +180,10 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         })
     }}
 
+    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
     pub fn claimed_slots(&self) -> u32 {
         self.external.claimed_slots() as u32
-    }
+    }}
 
     /// Number of original DMA buffers which can still transfer to upper
     /// ownership without consuming the radio-reserved half-ring.

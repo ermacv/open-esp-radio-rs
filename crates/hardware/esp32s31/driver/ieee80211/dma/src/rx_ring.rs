@@ -294,12 +294,13 @@ impl RxObservedMask {
         }
     }
 
+    crate::place_rx_hot_path! {
     fn remove_group<const COUNT: usize>(&mut self, start: usize, count: usize) {
         for step in 0..count {
             let index = wrap_add::<COUNT>(start, step);
             self.words[index / 32] &= !(1_u32 << (index % 32));
         }
-    }
+    }}
 
     fn contains_group<const COUNT: usize>(self, start: usize, count: usize) -> bool {
         (0..count).all(|step| self.contains(wrap_add::<COUNT>(start, step)))
@@ -1315,6 +1316,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         RxCompletedUnitFrontier::default()
     }
 
+    crate::place_rx_hot_path! {
     /// Transfer one complete RX unit at the recycle frontier exactly once.
     ///
     /// `descriptor_limit` should come from a prior
@@ -1423,7 +1425,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             }));
         }
         Ok(None)
-    }
+    }}
 
     /// Raw/model completion transfer without a storage-bound buffer owner.
     #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
@@ -2098,6 +2100,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         tail_distance <= last_distance && last_distance <= accepted_distance
     }
 
+    crate::place_rx_hot_path! {
     fn completed_unit_link_released_from_ordered_snapshot(
         &mut self,
         last_descriptor_low: u32,
@@ -2138,7 +2141,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         }
         self.completion_release_probe_pending = true;
         false
-    }
+    }}
 
     /// Whether direct BASE publication of a previously empty software list
     /// requires one durable follow-up ownership probe.
@@ -2227,6 +2230,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         Err(RxRingError::Busy)
     }
 
+    crate::place_rx_hot_path! {
     fn settle_reload<M: RxDma>(&mut self, mmio: &mut M) -> Result<(), RxRingError> {
         let Some(pending_tail) = self.pending_tail() else {
             return Ok(());
@@ -2283,7 +2287,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.accepted_tail = pending_tail;
         self.pending_tail_plus_one = 0;
         Ok(())
-    }
+    }}
 }
 
 impl<const COUNT: usize> Drop for RxRingLive<'_, COUNT> {

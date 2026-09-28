@@ -54,6 +54,7 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | Package suffix | Source path |
 | --- | --- |
 | `memory` | `memory/` |
+| `trace` | `trace/` |
 | `esp32s31-bluetooth` | `hardware/esp32s31/driver/bluetooth/` |
 | `esp32s31-hal` | `hardware/esp32s31/hal/` |
 | `esp32s31-pac` | `hardware/esp32s31/pac/` |

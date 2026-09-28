@@ -22,6 +22,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `oer/` | Thin public facade; reexports protocols, chip backends and selected compositions |
 | `radio/` | `wifi/` owns public requests, affine role lifecycle and the executor-free service port |
 | `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
+| `trace/` | Typed, reset-retained event trace and snapshot slots; drivers define the events, images place the storage |
 | `network/interface/` | Stack-neutral interface, link and error values |
 | `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Frame/protocol code, MAC contracts, role policy and security |
 | `protocols/ieee80211/datapath/` | Software TX frame ownership, destination queues, airtime scheduling and physical materialization contracts |

@@ -3376,6 +3376,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-trace"
+version = "0.1.0"
+dependencies = [
+ "embassy-time",
+]
+
+[[package]]
 name = "oer-xtask"
 version = "0.1.0"
 dependencies = [

@@ -80,6 +80,10 @@ pub fn recover(
     elf: Option<&Path>,
     origin: &str,
 ) -> Option<Recovery> {
+    // A cancelled run stops rather than judges the board it leaves.
+    if !judges_board(oer_process::cancellation_requested()) {
+        return None;
+    }
     let arbiter = Arbiter::open().ok()?;
     let mac = mac.map(str::to_owned).or_else(|| board_mac(port))?;
     let evidence = output.join("post-mortem");
@@ -117,6 +121,13 @@ pub fn recover(
     );
     let finding = post_mortem::inspect(port, Some(&mac), output, elf);
     let Some(finding) = finding else {
+        if !judges_board(oer_process::cancellation_requested()) {
+            eprintln!(
+                "hil: the run was cancelled while the board was recovering; it is not \
+                 quarantined"
+            );
+            return None;
+        }
         return quarantine(
             &arbiter,
             &mac,
@@ -166,6 +177,12 @@ pub fn recover(
         core0,
         finding: Box::new(finding),
     })
+}
+
+/// Whether an unanswered query after a reset judges the board. A cancelled
+/// runner stops waiting for the answer early, which says nothing about it.
+fn judges_board(cancelled: bool) -> bool {
+    !cancelled
 }
 
 /// Set once this process quarantined its device under test: the run's
@@ -256,6 +273,12 @@ fn console_waits_for_download(output: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cancelled_run_never_quarantines_its_board() {
+        assert!(!judges_board(true));
+        assert!(judges_board(false));
+    }
 
     #[test]
     fn a_vanished_by_id_port_still_names_its_board() {

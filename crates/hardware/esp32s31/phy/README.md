@@ -71,6 +71,7 @@ reset or retained-sleep wakeup replay.
 | [Concurrent domain](src/concurrent.rs) and its [target port](src/target_port/concurrent.rs) | The shared domain beside the HAL radio arbiter; Wi-Fi, Bluetooth and IEEE 802.15.4 join it as clients | Every operation holds the arbiter lease |
 | [Tracking graphs](src/tracking.rs) and [executor](src/executor.rs) | Execute selected children and validate their completions | No independent RF arbitration |
 | [Target port](src/target_port.rs) and [HAL PHY](../hal/src/phy.rs) | Typed MMIO, analog buses, hardware completion and bounded waits | Hardware access is borrowed from the admitted owner |
+| [Analog register bus](../../radio/analog/README.md) | Field, configuration and parallel transitions of the vendor analog-I2C leaves | The transitions touch no bus; the target port and HAL drive them |
 | [Radio system](../../../runtime/esp32s31/radio/README.md) | The arbiter, the platform resources and the vendor periodic tracking timer | Tracking runs under the lease and the grant-protect brackets; it pauses no protocol |
 | [HAL stopped-MAC check](../hal/src/owner/maintenance.rs) | The stopped Wi-Fi MAC check at the final-client boundary | A CPU mutex does not stop MAC or DMA |
 | [Hardware coex control](../driver/coex/README.md) | Recovered timer requests, PTI, clock conversion and withdrawal accounting | Programmed timer identity is not an RF grant |
@@ -118,8 +119,8 @@ stateDiagram-v2
 ```
 
 RF close runs the current-vendor pre-close temperature observation and the
-complete finite `phy_close_rf` graph: it disables hardware frequency control,
-forces TX/RX off, disables AGC, closes the RF and frontend/baseband domains
+complete finite `phy_close_rf` graph: it disables hardware frequency control
+and AGC, closes the RF and frontend/baseband domains
 and publishes both retained analog close images. A preparation failure keeps
 RF open; failure after close begins poisons the domain.
 
@@ -343,7 +344,7 @@ and documented transport/wait projections; they do not establish RF quality,
 hardware timing or live radio admission. See the
 [tracking contract](src/tracking/README.md).
 
-ESP-IDF's [open orchestration](https://github.com/espressif/esp-idf/blob/c712a0dde385d659a1470a136251980d31a70bc1/components/esp_phy/src/phy_common.c)
+ESP-IDF's [open orchestration](https://github.com/espressif/esp-idf/blob/4d59230ddff16327812782151ef0afef202dc6d7/components/esp_phy/src/phy_common.c)
 calls a binary parameter-tracking function from a periodic task timer and on
 eligible PHY enable. Its result flags describe selected branches, not a
 hardware quiet-window contract. The library's grant-hook names alone are not
@@ -364,7 +365,8 @@ Readiness time includes its timer and suspension, not just a register read.
 Sampling is deterministic and may correlate with the search sequence; counts and
 scoped maxima accompany totals, which are not whole-calibration costs.
 
-The DC/IQ executor probes readiness immediately after measurement enable, as in
-rev0 ROM phy_iq_est_enable. The required 1-us start/stop settles are unchanged.
-Only a previously unready result incurs the existing 1-us asynchronous completion
-backoff. The observation limit and timeout disable tail remain unchanged.
+The DC/IQ executor probes readiness immediately after measurement enable, as
+rev0 ROM `phy_iq_est_enable` does, around the required 1-us start and stop
+settles. Only a result that was not ready incurs the 1-us asynchronous
+completion backoff; the observation limit and the timeout disable tail bound
+the wait.

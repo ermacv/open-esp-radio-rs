@@ -271,8 +271,8 @@ The Wi-Fi Embassy adapter interprets `PhyAsyncDelay` as a minimum elapsed
 duration. It captures an absolute deadline when creating the delay and checks
 it before polling the Embassy timer. An already elapsed deadline completes
 without registering an extra wake; a future deadline uses ordinary timer wake
-registration. There is no busy wait, and the target's hardware edge limits and
-settling durations remain unchanged. This is not a cooperative execution budget:
+registration. There is no busy wait; the target's hardware edge limits and
+settling durations still apply. This is not a cooperative execution budget:
 several completed waits may permit more hardware steps in one poll. The maximum
 poll observation must therefore be considered independently of total pause time.
 Bluetooth owns its separate time binding.
@@ -353,7 +353,7 @@ Every `phy_force_txrx_off_new` pair follows the vendor nesting count, which
 production carries as a static `PhyForceTxRxDepth`: the common branch and the
 TX envelope each enter at depth zero (force, then release), their nested
 channel and gain children release by forcing again at depth one, and deeper
-pairs touch no hardware. `phy_close_rf` no longer forces TX/RX. Parent semantic state is committed only after the
+pairs touch no hardware. `phy_close_rf` does not force TX/RX. Parent semantic state is committed only after the
 complete calibration child, including channel and baseband restoration.
 
 The channel and runtime gain regeneration use the current S31 Wi-Fi coefficient

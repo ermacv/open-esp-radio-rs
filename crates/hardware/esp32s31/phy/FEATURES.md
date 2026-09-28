@@ -13,8 +13,7 @@ cargo qualification catalog render --catalog qualification/catalog/esp32s31/wifi
 ```
 
 The ignored `domain-inventory.md` contains the detailed PHY sections and all
-protocol-consumer matrix cells. `migration-map.md` maps each former table row
-or matrix cell to one canonical ID.
+protocol-consumer matrix cells.
 
 Architecture navigation: [whole-radio map](../driver/FEATURES.md),
 [Wi-Fi](../driver/ieee80211/FEATURES.md),

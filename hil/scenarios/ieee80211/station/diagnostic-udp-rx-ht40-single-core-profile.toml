@@ -1,6 +1,6 @@
 schema = 5
 id = "diagnostic-udp-rx-ht40-single-core-profile"
-description = "Program-counter profile of both harts over the HT40 saturated RX window with the radio, RX protocol and IP stack on CPU0 alone"
+description = "Program-counter profile of both harts over an HT40 RX window below the single-core ceiling with the radio, RX protocol and IP stack on CPU0 alone"
 transfer = "identical-image"
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "single-core", "profile", "air-strict"]
 
@@ -19,7 +19,7 @@ kind = "station-udp"
 link = { phy = "ht40" }
 duration_seconds = 12
 payload_bytes = 1472
-offer = { rx_bps = 140000000 }
+offer = { rx_bps = 65000000 }
 
 [wifi.workload.criteria]
 minimum_rx_bps = 10000000

@@ -63,30 +63,17 @@ scopes; an absent review is not silently replaced by model-only publication.
 
 Several owned ranges are single fields of 32-bit words that ESP-HAL also
 writes through the upstream `esp-pacs` chain. The two chains do not share a
-lock, so a word both write at runtime would lose updates. A shared bit
-therefore has one runtime owner.
-
-| Word | ESP-HAL writes | Radio writes | Why it is safe |
-| --- | --- | --- | --- |
-| `HP_SYS_CLKRST.REF_160M_CTRL0` | Clock-tree divider and gate | Nothing; it requests `PlatformClock::Pll160m` | Not published here |
-| `MODEM_LPCON.CLK_CONF` | Every gate, reference-counted under one lock: analog-I2C master, coexistence, low-power timer; the Wi-Fi power gate in `esp_hal::init` | Nothing; it requests `AnalogI2cMaster`, `ModemCoexistence` and `ModemLowPowerTimer` | Not published here |
-| `PMU.HP_ACTIVE_HP_CK_POWER` | MPLL power when the MPLL reference count crosses zero | Front-end baseband power | The adopted PSRAM mapping holds a permanent MPLL reference through ESP-HAL's clock tree (`Psram::from_existing_mapping`), so the count never crosses zero; the radio also holds a `PlatformClock::Mpll` reference while powered |
-| `PMU.IMM_MODEM_ICG`, `PMU.IMM_SLEEP_SYSCLK` | Trigger-bit writes in `esp_hal::init` | Trigger-bit writes | Both sides write whole words; no read-modify-write |
-
-ESP-HAL writes the following owned words only inside `esp_hal::init`, which
-completes before any radio route or the radio arbiter exists. Their later
-radio read-modify-writes therefore have no concurrent ESP-HAL writer:
-
-- `MODEM_SYSCON.CLK_CONF_POWER_ST` and `MODEM_LPCON.CLK_CONF_POWER_ST`, whose
-  modem clock state maps ESP-HAL ORs in;
-- `MODEM_LPCON.WIFI_LP_CLK_CONF` and `MODEM_32K_CLK_CONF`, set by its Wi-Fi
-  low-power clock selection;
-- `PMU.HP_ACTIVE_ICG_MODEM` and `PMU.ANA_PERI_PWR_CTRL`;
-- `LP_AON_CLKRST.ROOT_CLK_CONF`, whose slow and fast clock selectors the
-  radio only reads.
-
-An image must not start a radio before `esp_hal::init` returns, and a change
-to ESP-HAL that writes one of these words at runtime reopens the race.
+lock, so a word both write at runtime would lose updates. Every word that a
+write transaction of this PAC and pinned ESP-HAL both store to has a reviewed
+entry in [`shared-words.toml`](shared-words.toml) that says how the writers
+are kept apart: a shared lock, a disjoint lifecycle (ESP-HAL writes only
+before any radio owner exists), an ESP-HAL writer that nothing calls, or
+whole-word stores. `cargo xtask check architecture` derives the shared words
+from [`policy/api.toml`](policy/api.toml), the published SVD and the pinned
+ESP-HAL and platform PAC sources, and fails on an unreviewed or stale entry.
+Words the radio only requests through ESP-HAL, such as `MODEM_LPCON.CLK_CONF`
+(reference-counted gates) and `HP_SYS_CLKRST.REF_160M_CTRL0`, are not
+published here and have one writer.
 
 ## Upstream and evidence boundaries
 

@@ -193,8 +193,10 @@ fn decode_trace(
 
 /// The event sets a drained trace is described with; an event of another
 /// domain is shown as its domain, id and words.
-const TRACE_EVENT_SETS: &[oer_trace::Describer] =
-    &[<oer_hil_target_core::trace::PlatformTrace as oer_trace::EventSet>::describe];
+const TRACE_EVENT_SETS: &[oer_trace::Describer] = &[
+    <oer_hil_target_core::trace::PlatformTrace as oer_trace::EventSet>::describe,
+    <oer_ieee80211_trace::StationTrace as oer_trace::EventSet>::describe,
+];
 
 /// A trace kind's name: the platform's own, else its domain and event id.
 fn event_name(kind: u16) -> String {
@@ -465,7 +467,7 @@ mod tests {
     #[test]
     fn a_trace_is_decoded_oldest_first_with_platform_names() {
         let hang = <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND.raw();
-        let station = oer_trace::Kind::new(oer_trace::Domain::Ieee80211, 5).raw();
+        let station = oer_trace::Kind::new(oer_trace::Domain::Bluetooth, 9).raw();
         let entry = |tag, kind, t_us| oer_hil_protocol::TraceEntry {
             tag,
             kind,
@@ -492,10 +494,23 @@ mod tests {
         assert!(lines[0].contains("frozen by platform.hang"), "{text}");
         assert!(lines[0].contains("previous boot"), "{text}");
         assert!(
-            lines[1].contains("ieee80211.5 [0x00000001, 0x00000002]"),
+            lines[1].contains("bluetooth.9 [0x00000001, 0x00000002]"),
             "{text}"
         );
         assert!(lines[2].contains("platform.hang"), "{text}");
+        // A station event is described by the station's event set.
+        let exit = oer_trace::Record {
+            tag: 1,
+            kind: <oer_ieee80211_trace::ControlExit as oer_trace::Event>::KIND.raw(),
+            t_us: 0,
+            words: [0, 0],
+        };
+        let described = oer_trace::Described {
+            record: &exit,
+            sets: TRACE_EVENT_SETS,
+        }
+        .to_string();
+        assert!(!described.starts_with("ieee80211."), "{described}");
     }
 
     #[test]

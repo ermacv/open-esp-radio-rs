@@ -296,7 +296,7 @@ const GAIN_CLAIMS: [(&str, &str, &str); 4] = [
         "open_phy_bluetooth_trace_tx_gain",
     ),
 ];
-const I2C_CLAIMS: [(&str, &str, &str); 7] = [
+const I2C_CLAIMS: [(&str, &str, &str); 12] = [
     (
         "archive",
         "phy_i2c_master_cmd_mem_init",
@@ -316,6 +316,31 @@ const I2C_CLAIMS: [(&str, &str, &str); 7] = [
         "open_phy_trace_i2c_transfer",
     ),
     ("rom", "phy_i2c_master_reset", "open_phy_trace_i2c_reset"),
+    (
+        "archive",
+        "phy_i2c_master_mem_cfg",
+        "open_phy_trace_phy_i2c_master_mem_cfg",
+    ),
+    (
+        "archive",
+        "phy_i2c_master_command_mem_cfg",
+        "open_phy_trace_phy_i2c_master_command_mem_cfg",
+    ),
+    (
+        "archive",
+        "phy_get_i2c_data",
+        "open_phy_trace_phy_get_i2c_data",
+    ),
+    (
+        "archive",
+        "phy_i2c_enter_critical",
+        "open_phy_trace_phy_i2c_enter_critical",
+    ),
+    (
+        "archive",
+        "phy_i2c_exit_critical",
+        "open_phy_trace_phy_i2c_exit_critical",
+    ),
 ];
 const I2C_SDK_CLAIMS: [(&str, &str, &str); 5] = [
     (

@@ -1319,6 +1319,9 @@ impl Session {
             // Comparisons whose production side is no probe entry prepare
             // state, such as ROM copies on both sides.
             .filter(|pair| probes.contains_key(&pair.production))
+            // A probe compared with another probe checks the harness, not
+            // a vendor root.
+            .filter(|pair| !probes.contains_key(&pair.vendor))
             .filter(|pair| !claimed.contains(&(pair.vendor, pair.production)))
             .map(|pair| (name(&names, pair.vendor), name(&probes, pair.production)))
             .collect();

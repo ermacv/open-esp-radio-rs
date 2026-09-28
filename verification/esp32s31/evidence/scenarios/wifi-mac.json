@@ -213,7 +213,7 @@
     },
     {
       "path": "verification/harness/scenarios",
-      "sha256": "45cebed551d0d0af6ff388fa9ac37b725a90d09e9f463b6f93d6e4cbd78ebb1b"
+      "sha256": "f83c63e188a33847ec3f7ba8a2d9aae1684ac95b286c05ef682d84258e6d3d8b"
     },
     {
       "path": "verification/schema",

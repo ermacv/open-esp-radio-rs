@@ -135,12 +135,21 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
         r#"schema = 4
 target = "wifi-test"
 required-capabilities = ["wifi", "base"]
+catalogs = ["catalog/fixture.toml"]
+catalog-capabilities = ["wifi", "base"]
 [verification]
 evidence-index = "target/vendor.json"
 [hil]
 target = "esp32s31"
 catalog = "scenarios"
 runs = "target/hil/esp32s31/runs"
+"#,
+    );
+    write(
+        root,
+        "catalog/fixture.toml",
+        r#"schema = 3
+id = "workflow-fixture"
 [[capabilities]]
 id = "wifi"
 title = "Wi-Fi fixture"
@@ -151,6 +160,15 @@ host = "covered"
 async = "bounded"
 vendor-not-applicable = "host-contract-test"
 hil-requirements = [{ scenario = "station-ap-loss", minimum-repetitions = 3 }]
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "station"
+phy = "wifi-2g4"
+security = ["not-applicable"]
+composition = "host-contract-fixture"
+level = "composed-product"
+activation-boundary = "Host contract regression only"
+limitations = "Synthetic firmware, no hardware claim"
 [[capabilities.source-contracts]]
 id = "wifi-owner"
 composition = "production"
@@ -166,6 +184,15 @@ host = "covered"
 async = "bounded"
 vendor-not-applicable = "host-contract-test"
 hil-requirements = [{ scenario = "boot-smoke", minimum-repetitions = 1 }]
+[capabilities.catalog-scope]
+chip = "esp32s31"
+role = "boot"
+phy = "wifi-2g4"
+security = ["not-applicable"]
+composition = "host-contract-fixture"
+level = "lower-primitive"
+activation-boundary = "Host contract regression only"
+limitations = "Synthetic firmware, no hardware claim"
 [[capabilities.source-contracts]]
 id = "phy-owner"
 composition = "production"
@@ -366,14 +393,14 @@ source-paths = ["phy.rs"]
         "target/review.toml",
         &toml::to_string_pretty(&review).unwrap(),
     );
-    let program = fs::read_to_string(root.join("program.toml"))
+    let declarations = fs::read_to_string(root.join("catalog/fixture.toml"))
         .unwrap()
         .replacen(
-            "[[capabilities.source-contracts]]",
-            "hil-reviews = [\"target/review.toml\"]\n[[capabilities.source-contracts]]",
+            "[capabilities.catalog-scope]",
+            "hil-reviews = [\"target/review.toml\"]\n[capabilities.catalog-scope]",
             1,
         );
-    write(root, "program.toml", &program);
+    write(root, "catalog/fixture.toml", &declarations);
     let continued = pending.refresh(root, &catalog).unwrap();
     let continued_json = serde_json::to_value(&continued).unwrap();
     assert_eq!(

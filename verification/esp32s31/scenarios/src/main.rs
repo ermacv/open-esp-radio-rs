@@ -26,7 +26,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Scenario {
     /// Wi-Fi/BT gain arithmetic and publication, calibration storage and the
-    /// RF-test power producer. Missing `--rftest` is an unmet obligation.
+    /// RF-test power producer (`--rftest`).
     Gain {
         #[command(flatten)]
         common: Common,

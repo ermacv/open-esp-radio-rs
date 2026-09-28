@@ -128,7 +128,6 @@ RX on its home channel, since production's role-neutral Wi-Fi bring-up
 enables RX on its initial channel and has no modem sleep. Production's missing modem sleep is a behavior difference
 outside this calibration comparison.
 
-
 The relation covers these parts of the committed calibration, in the order
 the tracking roots commit them:
 

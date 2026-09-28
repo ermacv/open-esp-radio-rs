@@ -1,9 +1,21 @@
-# Verification probe compiler
+# Verification harness
 
-`codegen` owns the Rust declaration grammar, image catalog, linker roots and
-post-link validation. `macros` is its procedural-macro frontend. Both are host
-build tools; neither owns production behavior or depends on Blobray's executor.
-The ESP32-S31 [probe workspace](../esp32s31/probes/README.md) consumes them.
+The harness holds the chip-neutral parts of vendor verification:
+
+| Package | Path | Owns |
+| --- | --- | --- |
+| `oer-probe-codegen` | `codegen/` | Rust declaration grammar, image catalog, linker roots and post-link validation |
+| `oer-probe-macros` | `macros/` | Procedural-macro frontend of the declarations |
+| `oer-vendor-scenario-engine` | `scenarios/` | Scenario engine: authenticated artifacts, Blobray sessions, the comparison harness, coverage, triage, point mutants and evidence shards |
+
+The probe compiler is a host build tool; it owns no production behavior and
+does not depend on Blobray's executor. The
+[ESP32-S31](../esp32s31/probes/README.md) and
+[ESP32-C5](../esp32c5/probes/README.md) probe workspaces consume it. A chip's
+scenario crate installs its `Chip` description into the engine and keeps its
+addresses, pins and reviewed decisions; the
+[ESP32-S31 project](../esp32s31/README.md) describes the scenario command
+line the engine provides.
 
 ## Declare an entry
 
@@ -65,9 +77,11 @@ or sidecar file.
 ```console
 cargo test -p oer-probe-codegen -p oer-probe-macros
 cargo test -p oer-probe-codegen --test linking -- --ignored
+cargo test --manifest-path tools/blobray/Cargo.toml -p oer-vendor-scenario-engine
 ```
 
-The second command requires the repository's RV32 target. It tests archive
+The scenario engine depends on Blobray, so it belongs to the Blobray
+workspace. The second command requires the repository's RV32 target. It tests archive
 extraction with fat LTO and section GC, then adds an entry and relocates the
 source directory. Ordinary host tests cover adapters, collection errors and
 malformed/missing/non-executable ELF entries.

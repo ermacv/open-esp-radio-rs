@@ -5,24 +5,20 @@ effect-level comparison with caller-owned vendor artifacts. The probes depend
 on production driver crates, but no production crate or HIL firmware depends
 on the probes.
 
-Build the comparison ELF from the repository root:
+Build and validate the three comparison images from the repository root:
 
 ```console
-CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-probes" \
-cargo build --manifest-path verification/esp32s31/probes/Cargo.toml \
-  -p oer-esp32s31-probe-radio-elf \
-  --target riscv32imafc-unknown-none-elf --release
-
-CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-register-probes" \
-cargo build --manifest-path verification/esp32s31/probes/Cargo.toml \
-  -p oer-esp32s31-probe-register-elf \
-  --target riscv32imafc-unknown-none-elf --release
-
-CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-bluetooth-probes" \
-cargo build --manifest-path verification/esp32s31/probes/Cargo.toml \
-  -p oer-esp32s31-probe-bluetooth-elf \
-  --target riscv32imafc-unknown-none-elf --release
+cargo xtask build vendor-probes --chip esp32s31
 ```
+
+The images `oer-esp32s31-probe-radio-elf`, `oer-esp32s31-probe-register-elf`
+and `oer-esp32s31-probe-bluetooth-elf` are built for
+`riscv32imafc-unknown-none-elf` into
+`target/verification/esp32s31-probes/`,
+`target/verification/esp32s31-register-probes/` and
+`target/verification/esp32s31-bluetooth-probes/`, and each image's
+`.blobray.probes` catalog is validated against its executable symbols. A plain
+`cargo build` of one package produces the same image without that validation.
 
 Each probe set is a `library/` and `elf/` pair: `radio/` covers Wi-Fi, PHY
 and coexistence, `register/` the PAC/HAL register accessors and `bluetooth/`
@@ -40,13 +36,6 @@ and embedded ABI catalog. Simple adapters use `=> expression;`; complex and nake
 adapters retain explicit bodies. Symbol names and C projections are the
 boundary the scenarios select.
 
-The primary build command validates the resulting executable entries as well as
-compiling the three images:
-
-```console
-cargo xtask build vendor-probes --chip esp32s31
-```
-
 Every ELF contains `.blobray.probes`. Build scripts derive roots from the same
 Rust declarations used by the macro frontend; there is no retention list to edit
 when adding an entry. The catalog is part of the captured production artifact.
@@ -59,7 +48,8 @@ ownership rules. No private Rust owner layout is inferred from an ABI parameter.
 `ets_delay_us` and the post-delay barrier in the software-frequency adapter retain
 their optimization semantics. The current ESP-HAL link resolves the delay name
 to its ROM address; registration does not override that binding. The owned
-software-frequency probe lets the Next acceptance scenario check an ordinary
+software-frequency probe lets the harness-edge scenario
+(`verification/esp32s31/scenarios/src/engine/harness_edges.rs`) check an ordinary
 call to the captured ROM veneer, its tail transfer to `ets_delay_us`, and the
 two-microsecond modeled delay. These checks concern software boundaries, not
 physical timing.

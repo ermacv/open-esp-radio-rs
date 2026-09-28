@@ -29,7 +29,7 @@ and host. A block whose read does not complete is `INCOMPLETE`.
 | `EVENT_ENABLE` | thirteen events 12:0 |
 | `COEX_PTI` | TX/RX PTI 3:0, ACK PTI 7:4, bit 8 |
 
-Build it here and flash it through the stand:
+From this directory, build the image and flash it through the stand:
 
 ```console
 cargo build --release
@@ -41,9 +41,6 @@ cargo hil flash --board esp32c5 --via jtag --image esp32c5-register-probe \
 The image boots through the ESP-IDF second-stage bootloader that `espflash`
 writes and uses esp-hal's standard linker script.
 
-The first run on the stand's ESP32-C5 v1.0 (2026-09-27) matched every width
-the struct declares except `CHANNEL`, whose bit 7 is also implemented; the
-register model records that bit as unclassified with this observation as its
-evidence. A second run the same day matched every modem clock device
-transition, the reset pulse and the preservation of the unpublished bits, and
-a third run, flashed through JTAG, matched every analog register read.
+On the stand's ESP32-C5 v1.0 every width matches the model except `CHANNEL`
+bit 7, which is also implemented; the register model records that bit as
+unclassified with this observation as its evidence.

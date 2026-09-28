@@ -13,8 +13,8 @@ cargo xtask vendor-fetch esp32s31
 
 which verifies every file and reports missing local builds. Every scenario
 authenticates its inputs against the manifest, and its `--library`, `--rom`,
-`--libpp`, `--sdk`, `--phy-sdk` and `--rftest` arguments default to those
-pinned locations; an explicit path must still match the pin. Changing a pin
+`--libpp`, `--libnet80211`, `--libcoexist`, `--sdk`, `--phy-sdk` and
+`--rftest` arguments default to those pinned locations; an explicit path must still match the pin. Changing a pin
 means changing the manifest; production follows the pinned behaviour.
 Hashes in reviewed register evidence and reference notes record the artifact
 a fact was observed in; they are not pins.
@@ -35,6 +35,18 @@ unresolved pointers. It independently checks the four ROM address alternatives i
 callback has no reviewed binding; its unknown target cannot acquire callee effects.
 Outputs must stay in ignored storage.
 
+The scenario also checks the eleven absolute relocation entries in
+`phy_i2c.o` `.rodata` against independently established physical symbol indices
+and a captured-byte digest. It reviews that pointer layout, exports it and checks
+identical output after restore. These local code-label references do not establish
+callback ABI or new function boundaries.
+
+For the ROM `phy_get_i2c_mst0_mask` callback, the scenario checks the independently
+read global-pointer address `0x2f07fc3c` and slot `+8`. It reviews only that physical
+load path, leaving signature and semantic binding unknown, then compares the
+selected interface query and JSON export after source removal and backup/restore.
+No callback model, resolved callee or hardware assertion follows from this review.
+
 ```console
 cargo xtask vendor-scenario --chip esp32s31 research --linker /usr/bin/ld.lld --limit-mode watchdog \
   --output target/blobray-phy-research
@@ -48,9 +60,9 @@ are the measurement authority, not this documentation.
 ## All PHY comparison scenarios
 
 `all` runs every native comparison scenario (`gain`, `i2c`, `channel`,
-`rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`, `coex`, `coex-hw`) under one budget, each in its own
-directory below `--output`. It requires every optional input, so no obligation
-is left unmet, stops at the first failure and prints each scenario's duration.
+`rx-gain`, `tx-dc`, `tracking`, `wifi-mac`, `bluetooth`, `coex`, `coex-hw`) concurrently under one budget, each in its own
+directory below `--output`. Any scenario's failure fails the run; it prints
+each scenario's duration.
 With `--index <directory>` it then writes every scenario's shard of the
 native evidence index qualification reads: every claimed vendor root with its
 production entry, compared cases and retained executions, the input
@@ -85,15 +97,14 @@ cargo xtask build vendor-probes --chip esp32s31
 cargo xtask vendor-scenario --chip esp32s31 i2c \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld --limit-mode watchdog \
-  --sdk target/architecture-research/phy-vendor-tracking/vendor-wifi/build/bootloader/bootloader.elf \
-  --phy-sdk target/architecture-research/phy-vendor-tracking/vendor-wifi/build/phy_tracking_reference.elf \
   --output target/blobray-phy-i2c
 ```
 
-`--sdk` enables the calibration leaves and the PBus/DCODE prefix. `--phy-sdk`
-requires `--sdk` and adds RFPLL. Without them the command-memory, transport and
-call-boundary scenarios still run. Each missing obligation is recorded in
-`unmet-obligations.request.json`, and the scenario exits with status 2.
+Besides the command-memory, transport and call-boundary comparisons, the SDK
+bootloader firmware (`--sdk`) enables the calibration leaves and the
+PBus/DCODE prefix, and the PHY SDK firmware (`--phy-sdk`) adds RFPLL. Both
+default to their pins in [`artifacts.toml`](artifacts.toml), which are local
+builds: `cargo xtask vendor-fetch esp32s31` reports them when missing.
 
 The scenario owns construction and independent expected-value assertions;
 Blobray operations own capture and linking, and Blobray's in-process
@@ -166,8 +177,7 @@ returns. AGC executes its captured ROM saturation-gain child. The guest probe
 constructs a validation owner and calls existing shipping HAL/PHY leaves; no
 production capability is fabricated by seeding a pointer.
 
-The extra SDK bootloader ELF is a pinned static symbol companion (SHA-256
-`e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195`).
+The extra SDK bootloader ELF, the `sdk` pin, is a static symbol companion.
 AGC shares one archive `.iram1` section with unrelated functions. Their retained
 relocations require the physical SDK clock symbol in addition to ROM
 symbols. The runner records all these explicit symbol bindings and captures the
@@ -223,10 +233,9 @@ declared environment, not complete RX calibration or hardware qualification.
 
 ### RFPLL search and frequency maintenance
 
-`--phy-sdk PATH` runs
-[the native RFPLL matrix](scenarios/src/phy/rfpll.rs). The additional linked SDK firmware
-must have SHA-256 `ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9`.
-It contributes the exact static `phy_printf` definition needed by the linked
+`--phy-sdk` runs
+[the native RFPLL matrix](scenarios/src/phy/rfpll.rs). The additional linked SDK
+firmware, the `phy-sdk` pin, contributes the exact static `phy_printf` definition needed by the linked
 archive section. It is captured and retained but is not an execution companion:
 its TLS and overlapping code/data load segments exceed the current loader
 profile. Diagnostics are disabled in positive cases; enabling them must stop at
@@ -285,7 +294,6 @@ repository root; `xtask` builds `blobray` and the scenarios and supplies
 cargo xtask vendor-scenario --chip esp32s31 gain \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld \
-  --rftest target/vendor/esp-phy-lib/20f1db053a0e6cb9f1c09d255c43bf42483041d0/esp32s31/librftest.a \
   --output target/blobray-research/gain --limit-mode watchdog
 ```
 
@@ -299,9 +307,7 @@ Each scenario passes its Blobray budget explicitly. `--limit-mode` is required;
 (2,000,000,000) set each operation's deadline and capacities. Every finite matrix
 is one execution request, because Blobray retains requests by identity rather
 than inside 64 KiB control records. Shared guest addresses and analog command
-encodings are named in [`layout.rs`](scenarios/src/engine/layout.rs). The full gain
-scenario with `--rftest` completes in about half a minute on an otherwise idle
-host.
+encodings are named in [`layout.rs`](scenarios/src/engine/layout.rs).
 
 Scenarios hold vendor knowledge, peripheral inputs and independent
 expectations; Blobray mechanisms supply the rest:
@@ -395,13 +401,12 @@ value to the base. Independent expectations check the 532-byte backup image,
 the exact registration writes and every 160-byte gain output against the
 coefficient oracle. No hardware event occurs.
 
-`--rftest` supplies `librftest.a`, the `librftest` pin of `artifacts.toml`. Its `set_rate_power_index` and `mac_power_set` are linked
+`--rftest` supplies `librftest.a`, by default the `librftest` pin of
+`artifacts.toml`. Its `set_rate_power_index` and `mac_power_set` are linked
 as additional roots; no power or gain callee is substituted. The real callback
 installer runs, then fifteen policy rows per fill check rounding, saturation,
 signed-byte wrap, the adjustment byte, conditional `phy_wifi_set_tx_gain_new`
-publication with all MMIO events, and both MAC index writes. Without `--rftest`
-every other case still runs, the unmet producer obligation is written to
-`unmet-obligations.request.json`, and the runner exits with status 2 instead of passing.
+publication with all MMIO events, and both MAC index writes.
 
 Negative cases are:
 
@@ -549,9 +554,11 @@ native vendor comparison.
 [`scenarios/src`](scenarios/src) separates the shared engine from the domain
 scenarios and the reviewed data:
 
-- `engine/`: the Blobray session, the comparison harness and call edges,
-  artifact authentication, coverage, observation and state analysis, and the
-  evidence shards;
+- `engine/`: the chip-neutral [scenario engine](../harness/README.md)
+  (Blobray session, comparison harness, artifact authentication, coverage,
+  observation and state analysis, evidence shards) under its crate paths, plus
+  the ESP32-S31 guest layout, reviewed PHY effect contracts and harness call
+  edges;
 - `phy/`, `wifi/`, `bluetooth/`, `coexistence/`: the scenarios of each domain,
   with `wifi/mac.rs` also owning the leaf-suite machinery the Bluetooth and
   coexistence leaves reuse;
@@ -571,8 +578,8 @@ or branch direction is either excluded by a reviewed decision in
 untriaged in the evidence index. Decisions currently exclude vendor runtime
 helpers (diagnostic formatting, compiler arithmetic and copy helpers, prologue
 millicode) as whole functions. A decision on a closure function that is fully
-covered fails its scenario. Untriaged locations are pending work: each becomes a
-follow-up case or a reviewed decision. A whole-function decision whose function
+covered fails its scenario. An untriaged location has neither a case that
+covers it nor a reviewed decision. A whole-function decision whose function
 only produces diagnostic output uses `Place::Diagnostic`.
 
 A run with untriaged locations writes `untriaged-<scenario>.txt` beside its
@@ -599,9 +606,8 @@ observed, reviewed and left untriaged. A line executed but observed by no
 scenario is either reviewed by a decision in
 [`decisions/observation.rs`](scenarios/src/decisions/observation.rs) (file and trimmed source line,
 with its reason) or listed as unobserved in the evidence index. A decision that
-matches no unobserved line fails `all`. Unobserved lines are pending work: each
-becomes a follow-up case, a relation that compares its effect, or a reviewed
-decision. Dependence is a necessary condition for a comparison to notice a
+matches no unobserved line fails `all`. An untriaged unobserved line has no
+case, compared relation or reviewed decision that accounts for it. Dependence is a necessary condition for a comparison to notice a
 defect on a line, not a sufficient one.
 
 ## Point mutants
@@ -643,12 +649,14 @@ there. The placeholders only locate the declarations a scenario still owes.
 
 | Input | Responsibility |
 | --- | --- |
+| `artifacts.toml` | Pins of every vendor archive, ROM ELF and SDK firmware |
 | `scenarios/` | Typed comparison scenarios, their expected verdicts and claim tables |
-| `evidence/` | Committed native evidence index consumed by qualification |
-| `probes/` | Compiled calls into production code for comparison |
-| `ieee802154-host/` | [Host stand](host/ieee802154/README.md) that compiles the public ESP-IDF IEEE 802.15.4 driver against recorded boundaries |
-| `reference/` | Human-readable pinned source/artifact contracts |
-| `names/` | Source names of generated vendor function names, with their evidence |
+| `evidence/` | Committed native evidence index consumed by qualification, and hardware cross-check summaries |
+| `probes/` | [Compiled calls](probes/README.md) into production code for comparison |
+| `host/ieee802154/` | [Host stand](host/ieee802154/README.md) that compiles the public ESP-IDF IEEE 802.15.4 driver against recorded boundaries |
+| `facts/` | Reviewed code fingerprints of cited vendor functions (`provenance.toml`) and [name maps](facts/names/README.md) |
+| `hil-vendor/` | [Vendor firmware](hil-vendor/README.md) for hardware cross-checks |
+| `hardware/` | [Calibration cross-check](hardware/calibration/README.md) of vendor and production on the board |
 
 The [technical references](../../docs/vendor/esp32s31/README.md) describe Bluetooth Controller,
 DTM, advertising, scanning, connection and IEEE 802.15.4 boundaries. They do not
@@ -678,18 +686,6 @@ with `MATCH` in every retained execution selecting it becomes an index entry.
 The [qualification evaluator](../../qualification/README.md) is the readiness
 authority; the index supplies vendor evidence only while its source digests are
 current. For CLI concepts, see [Blobray](../../tools/blobray/README.md).
-
-The PHY research scenario also checks the eleven absolute relocation entries in
-`phy_i2c.o` `.rodata` against independently established physical symbol indices
-and a captured-byte digest. It reviews that pointer layout, exports it and checks
-identical output after restore. These local code-label references do not establish
-callback ABI or new function boundaries.
-
-For the ROM `phy_get_i2c_mst0_mask` callback, the scenario checks the independently
-read global-pointer address `0x2f07fc3c` and slot `+8`. It reviews only that physical
-load path, leaving signature and semantic binding unknown, then compares the
-selected interface query and JSON export after source removal and backup/restore.
-No callback model, resolved callee or hardware assertion follows from this review.
 
 ## Shared Next scenario preparation
 

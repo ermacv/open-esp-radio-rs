@@ -18,9 +18,11 @@ The boot sequence is ROM → ESP-IDF bootloader → Flash bootstrap → applicat
 The ROM image uses DIO at 80 MHz; ESP-IDF enables QIO for the application.
 `xtask` extracts and checks the ROM image from the installed `espflash` image
 resources, then writes it, the partition table, the audited QIO application
-and the ota_0 selector as separate transactions. It preserves NVS and other
-application partitions. Passing QIO to a single `espflash flash` invocation
-would also change the ROM image header and prevents this board from booting.
+and the ota_0 selector as raw flash segments through one connection, skipping
+segments whose flash contents already match; the selector goes last. It
+preserves NVS and other application partitions. Passing QIO to a single
+`espflash flash` invocation would also change the ROM image header and
+prevents this board from booting.
 The runtime is linked separately. Its header supplies the entry, payload and
 initialization ranges; the host packs the checksum before embedding it in the
 bootstrap. Bootstrap copies and verifies PSRAM code before transferring control.

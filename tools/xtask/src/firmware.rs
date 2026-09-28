@@ -160,14 +160,14 @@ fn audit_stack(elf: &Path, output: &Path, budget: &oer_memory_report::StackBudge
 /// The HIL stand is leased for the flash and the optional monitor; the lease
 /// has no watchdog, because an interactive monitor has no budget.
 pub fn flash(
-    ctx: &Context,
     build: &FirmwareBuild,
     example: &str,
     port: Option<&Path>,
     monitor: bool,
 ) -> Result<()> {
     use oer_esp32s31_firmware::flash::{
-        BOOTLOADER_OFFSET, OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET,
+        AfterFlash, BOOTLOADER_OFFSET, FlashSegment, OTA_0_OFFSET, OTA_SELECTOR_OFFSET,
+        PARTITION_TABLE_OFFSET, write_segments,
     };
     use sha2::Digest as _;
     let output = build.directory();
@@ -192,24 +192,26 @@ pub fn flash(
     };
     let _grant = arbiter.acquire(&request)?;
     let lease = oer_esp32s31_firmware::device::DeviceLease::select(port)?;
-    let port = Some(lease.port());
-    for (address, filename, reset) in [
-        (BOOTLOADER_OFFSET, "bootloader.bin", "no-reset"),
-        (PARTITION_TABLE_OFFSET, "partitions.bin", "no-reset"),
-        (OTA_0_OFFSET, "application.bin", "no-reset"),
-        (OTA_SELECTOR_OFFSET, "otadata.bin", "hard-reset"),
-    ] {
-        let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-        oer_esp32s31_firmware::flash::write_bin_command(
-            &mut command,
-            port,
+    // The selector goes last: an interrupted write leaves the previous
+    // selection pointing at an image whose checksum no longer validates.
+    let segments = [
+        (BOOTLOADER_OFFSET, "bootloader.bin", "bootloader"),
+        (PARTITION_TABLE_OFFSET, "partitions.bin", "partition table"),
+        (OTA_0_OFFSET, "application.bin", "application"),
+        (OTA_SELECTOR_OFFSET, "otadata.bin", "ota_0 selector"),
+    ]
+    .into_iter()
+    .map(|(address, filename, description)| {
+        Ok(FlashSegment {
             address,
-            &output.join(filename),
-            reset,
-        );
-        process::run(&mut command)?;
-    }
-    let application = fs::read(output.join("application.bin"))?;
+            data: fs::read(output.join(filename))?,
+            description,
+        })
+    })
+    .collect::<Result<Vec<_>>>()?;
+    write_segments(lease.port(), &segments, AfterFlash::HardReset)?;
+    let port = Some(lease.port());
+    let application = &segments[2].data;
     arbiter.record_board(
         lease
             .port()
@@ -219,7 +221,7 @@ pub fn flash(
             .and_then(oer_hil_arbiter::port_mac),
         oer_hil_arbiter::BoardEventKind::Flashed {
             image: example.to_owned(),
-            application_sha256: format!("{:x}", sha2::Sha256::digest(&application)),
+            application_sha256: format!("{:x}", sha2::Sha256::digest(application)),
             commit: None,
             dirty: None,
             origin: format!("xtask build firmware {example} --flash"),

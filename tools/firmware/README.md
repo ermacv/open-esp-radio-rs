@@ -7,11 +7,15 @@ OTA selector, and configures bootstrap/image/flash commands.
 ELF inspection tools run under the shared process supervisor, with cancellation,
 owned descendants and a two-minute deadline per invocation.
 
-The optional `device` feature provides serial-device selection and a lease shared
-by xtask and HIL. The lease spans all writes and optional monitoring, uses USB
+The default `device` feature provides serial-device selection, a lease shared
+by xtask and HIL, and `write_segments`, which writes every flash segment
+through one connection to the ROM stub and skips a segment whose flash contents
+already match. The lease spans all writes and optional monitoring, uses USB
 identity or the canonical serial path, and lives in the user's host cache so
-separate checkouts cannot independently claim the same device. Automatic
-selection requires exactly one USB serial device; otherwise supply `--port`.
+separate checkouts cannot independently claim the same device. Without a port,
+selection requires exactly one USB serial device; `cargo xtask build firmware
+--flash` first picks the only attached board the HIL arbiter registers as the
+chip.
 
 The stage-two header, checksum and address map come from the
 [platform layout](../../platform/esp32s31/layout/README.md), which application

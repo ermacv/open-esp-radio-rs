@@ -1,7 +1,7 @@
 //! Board flash transactions. ROM reads DIO; ESP-IDF enables QIO for applications.
 use crate::Result;
 use sha2::{Digest, Sha256};
-use std::{path::Path, process::Command};
+use std::path::Path;
 pub const BOOTLOADER_OFFSET: u32 = 0x2000;
 pub const PARTITION_TABLE_OFFSET: u32 = 0x8000;
 pub const OTA_SELECTOR_OFFSET: u32 = 0xd000;
@@ -65,23 +65,6 @@ pub fn rom_bootloader(container: &[u8]) -> Result<&[u8]> {
         return Err("ROM image checksum or SHA-256 mismatch".into());
     }
     Ok(image)
-}
-
-pub fn write_bin_command(
-    command: &mut Command,
-    port: Option<&Path>,
-    address: u32,
-    image: &Path,
-    after: &str,
-) {
-    command.args(["write-bin", "--chip", "esp32s31", "--non-interactive"]);
-    if let Some(port) = port {
-        command.arg("--port").arg(port);
-    }
-    command
-        .args(["--after", after])
-        .arg(format!("{address:#x}"))
-        .arg(image);
 }
 
 pub fn ota0_selector_image() -> [u8; OTA_DATA_SIZE] {

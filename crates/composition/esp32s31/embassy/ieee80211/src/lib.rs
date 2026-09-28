@@ -107,6 +107,8 @@ mod composition;
 #[cfg(target_arch = "riscv32")]
 mod diagnostics;
 #[cfg(target_arch = "riscv32")]
+mod efuse;
+#[cfg(target_arch = "riscv32")]
 mod esp_now;
 pub mod exit_evidence;
 #[cfg(target_arch = "riscv32")]
@@ -130,6 +132,8 @@ pub use diagnostics::{
     ConnectedRxObservation, ConnectedRxObserver, DecodedRxPhyObservation, HeSuRxObservation,
     HtRxObservation, ReceiveEvidence,
 };
+#[cfg(target_arch = "riscv32")]
+pub use efuse::EfuseMacError;
 #[cfg(target_arch = "riscv32")]
 pub use esp_now::{
     ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_DEFAULT_ENCRYPTED_PEER_CAPACITY,

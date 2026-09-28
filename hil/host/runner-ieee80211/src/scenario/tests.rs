@@ -517,3 +517,17 @@ fn catalog_scenarios_fit_the_hardware_run_budget() {
         over.join("\n")
     );
 }
+
+#[test]
+fn air_observers_are_refused_on_the_performance_image_and_admitted_on_station_exit() {
+    let observers =
+        "[workload.observation]\nopenwrt_tx_monitor = true\nindependent_air_monitor = true\n";
+    invalid(&format!(
+        "{}{observers}",
+        UDP_RX.replace("image = 'correctness'", "image = 'performance'")
+    ));
+    valid(&format!(
+        "{}{observers}",
+        UDP_RX.replace("image = 'correctness'", "image = 'diagnostic-station-exit'")
+    ));
+}

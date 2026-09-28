@@ -1880,6 +1880,9 @@ pub async fn run(
         access_point_status,
         #[cfg(feature = "driver-observation")]
         diagnostics,
+        // Only the qualification snapshot consumes the driver observation.
+        #[cfg(all(feature = "station-exit-evidence", not(feature = "driver-observation")))]
+            diagnostics: _,
     } = wifi.into_parts();
     spawner.spawn(
         station_lifecycle_task(station_status).expect("station lifecycle task must allocate once"),

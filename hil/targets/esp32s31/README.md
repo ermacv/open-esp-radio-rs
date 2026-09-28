@@ -182,6 +182,12 @@ These diagnostic counters wrap at u32 and do not qualify an on-air protection
 exchange; pair them with the exact source snapshot and independent capture.
 
 `performance` contains no driver observer or scheduler instrumentation.
+`diagnostic-station-exit` adds only the Wi-Fi system's diagnostics to it:
+the connected station's exit evidence (beacon observation, RX DMA state and
+control state at disconnect) without the executor timer and PHY registration
+observers of `correctness`, so saturated traffic keeps close to production
+timing. Only diagnostic-tagged scenarios may select it, and it admits the air
+observers of the correctness image.
 RF calibration details are retained only by the PHY `registration-diagnostics`
 feature, selected by HIL `driver-observation`. Ordinary role owners keep the
 compact registration result instead of carrying RF measurements through every

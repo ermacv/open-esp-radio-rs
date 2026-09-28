@@ -149,6 +149,7 @@ impl StationUdp {
                         | ImageClass::DiagnosticRxDelivery
                         | ImageClass::DiagnosticCore0RxCoarse
                         | ImageClass::DiagnosticCore0RxCycles
+                        | ImageClass::DiagnosticStationExit
                 ))
         {
             return Err("OpenWrt TX-monitor evidence requires a receiving offer with a correctness or supported diagnostic image".into());

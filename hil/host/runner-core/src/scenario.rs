@@ -232,7 +232,22 @@ impl<F: ScenarioFamily> Scenario<F> {
 
     pub fn validate(&self) -> Result<()> {
         self.header.validate()?;
-        self.family.validate()
+        self.family.validate()?;
+        // The station-exit image admits air observers beside saturated
+        // traffic. An observer must never shape a qualification or gated
+        // figure, so only diagnostic scenarios may select it.
+        if self.image() == ImageClass::DiagnosticStationExit {
+            let tagged = |tag: &str| self.header.tags.iter().any(|known| known == tag);
+            if !tagged("diagnostic") || tagged("qualification") || tagged("performance") {
+                return Err(format!(
+                    "scenario {} selects {} without being a diagnostic-only scenario",
+                    self.header.id,
+                    ImageClass::DiagnosticStationExit.id()
+                )
+                .into());
+            }
+        }
+        Ok(())
     }
 
     pub fn id(&self) -> &str {

@@ -201,7 +201,7 @@ pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
                 station_lifecycle_events: true,
                 driver_observation_evidence: true,
                 rx_delivery_evidence: true,
-                rx_ownership_evidence: false,
+                diagnostic_features: oer_hil_protocol::DiagnosticFeatures::empty(),
                 phy_rx_hot_sram: false,
                 task_poll_evidence: false,
                 tx_architecture_probe: false,

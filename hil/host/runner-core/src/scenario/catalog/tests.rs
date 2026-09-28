@@ -132,3 +132,24 @@ fn a_scenario_names_its_target_chips_or_runs_on_the_esp32s31() {
     );
     assert!(Catalog::load(&tree.0.join("catalog")).is_err());
 }
+
+#[test]
+fn only_a_diagnostic_scenario_selects_the_station_exit_image() {
+    let scenario = |tags: &str| {
+        crate::scenario::Scenario::<TestFamily>::from_toml(
+            &format!(
+                "schema = 5\nid = \"exit\"\ndescription = \"exit\"\ntags = [{tags}]\n\n\
+                 [wifi]\nimage = \"diagnostic-station-exit\"\n"
+            ),
+            std::path::Path::new("exit.toml"),
+        )
+    };
+    assert!(scenario("\"diagnostic\"").is_ok());
+    for refused in [
+        "",
+        "\"diagnostic\", \"qualification\"",
+        "\"diagnostic\", \"performance\"",
+    ] {
+        assert!(scenario(refused).is_err(), "tags [{refused}]");
+    }
+}

@@ -27,6 +27,9 @@ pub enum ImageClass {
     DiagnosticCore0RxCycles,
     DiagnosticRxDelivery,
     DiagnosticRxOwnership,
+    /// The performance image with only the Wi-Fi system's diagnostics: the
+    /// station's exit evidence without the executor and PHY observers.
+    DiagnosticStationExit,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
     DiagnosticIeee802154Radio,
@@ -55,7 +58,7 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
@@ -75,6 +78,7 @@ impl ImageClass {
         Self::DiagnosticCore0RxCycles,
         Self::DiagnosticRxDelivery,
         Self::DiagnosticRxOwnership,
+        Self::DiagnosticStationExit,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
         Self::DiagnosticIeee802154Radio,
@@ -104,6 +108,7 @@ impl ImageClass {
             Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticRxOwnership => "diagnostic-rx-ownership",
+            Self::DiagnosticStationExit => "diagnostic-station-exit",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
             Self::DiagnosticIeee802154Radio => "diagnostic-ieee802154-radio",
@@ -181,6 +186,9 @@ impl ImageClass {
             Self::DiagnosticRxOwnership => {
                 "open-radio-hil,rx-ownership-telemetry,psram-task-stack,code-psram,profile-psram-data"
             }
+            Self::DiagnosticStationExit => {
+                "open-radio-hil,station-exit-evidence,psram-task-stack,code-psram,profile-psram-data"
+            }
             Self::Correctness => {
                 "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
             }
@@ -250,6 +258,7 @@ impl ImageClass {
             | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
             | Self::DiagnosticRxOwnership
+            | Self::DiagnosticStationExit
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticMemoryBenchmark
             | Self::DiagnosticIeee802154EdEvent
@@ -281,6 +290,7 @@ impl ImageClass {
                 | Self::Performance
                 | Self::WifiBleCoex
                 | Self::DiagnosticRxOwnership
+                | Self::DiagnosticStationExit
                 | Self::DiagnosticTaskResidence
                 | Self::DiagnosticTxArchitecture
                 | Self::DiagnosticCore0RxCoarse
@@ -304,6 +314,7 @@ impl ImageClass {
                 | Self::DiagnosticCore0RxCycles
                 | Self::DiagnosticRxDelivery
                 | Self::DiagnosticRxOwnership
+                | Self::DiagnosticStationExit
         )
     }
 

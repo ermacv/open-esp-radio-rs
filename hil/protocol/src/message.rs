@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 188;
+pub const PROTOCOL_VERSION: u16 = 189;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -85,6 +85,8 @@ impl<T> Envelope<T> {
     }
 }
 
+mod diagnostic;
+pub use diagnostic::{DiagnosticFeature, DiagnosticFeatures};
 mod session;
 pub use session::*;
 
@@ -152,8 +154,8 @@ pub struct FeatureCapabilities {
     /// UDP RX sessions can return typed evidence for every delivery frontier
     /// from post-reorder publication through the application socket.
     pub rx_delivery_evidence: bool,
-    /// Diagnostic physical RX allocation lifetime observations.
-    pub rx_ownership_evidence: bool,
+    /// Diagnostic build features compiled into this image.
+    pub diagnostic_features: DiagnosticFeatures,
     /// The direct source-owned RX-gain transaction executes from internal SRAM.
     pub phy_rx_hot_sram: bool,
     /// This image instruments bounded Embassy task poll residence. Ordinary

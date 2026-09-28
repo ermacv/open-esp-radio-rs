@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::Result;
-use oer_hil_protocol::FeatureCapabilities;
+use oer_hil_protocol::{DiagnosticFeature, DiagnosticFeatures, FeatureCapabilities};
 use oer_process::CommandExt as _;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -118,11 +118,24 @@ pub fn classify_flashed_capabilities(
     if features.phy_fault_injection {
         return None;
     }
-    if features.rx_ownership_evidence {
+    // A diagnostic-feature class is the performance image plus exactly its
+    // one feature.
+    if !features.diagnostic_features.is_empty() {
         let mut control = *features;
-        control.rx_ownership_evidence = false;
-        return (classify_flashed_capabilities(&control) == Some(ImageClass::Performance))
-            .then_some(ImageClass::DiagnosticRxOwnership);
+        control.diagnostic_features = DiagnosticFeatures::empty();
+        if classify_flashed_capabilities(&control) != Some(ImageClass::Performance) {
+            return None;
+        }
+        let only = |feature| {
+            features.diagnostic_features == DiagnosticFeatures::empty().with(feature, true)
+        };
+        return if only(DiagnosticFeature::RxOwnership) {
+            Some(ImageClass::DiagnosticRxOwnership)
+        } else if only(DiagnosticFeature::StationExit) {
+            Some(ImageClass::DiagnosticStationExit)
+        } else {
+            None
+        };
     }
     if features.ieee802154_route_probe {
         let mut control = *features;

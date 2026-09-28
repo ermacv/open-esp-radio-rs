@@ -67,9 +67,9 @@ pub use memory_benchmark::{
     MemoryBenchmarkStop,
 };
 pub use message::{
-    Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    FeatureCapabilities, Finished, FlowConfig, FlowTransportEvidence,
-    IEEE802154_AIR_CHECK_MAX_CYCLES, IEEE802154_ROUTE_PROBE_MAX_ENTRIES,
+    Capabilities, Command, Completion, DiagnosticFeature, DiagnosticFeatures, Direction, Envelope,
+    Event, EvidenceRecord, FailureCode, FeatureCapabilities, Finished, FlowConfig,
+    FlowTransportEvidence, IEEE802154_AIR_CHECK_MAX_CYCLES, IEEE802154_ROUTE_PROBE_MAX_ENTRIES,
     IEEE802154_SESSION_FRAME_CAPACITY, IEEE802154_SESSION_RECORDED_FRAMES,
     IEEE802154_THREAD_DATASET_CAPACITY, IEEE802154_THREAD_PAYLOAD_CAPACITY,
     IEEE802154_THREAD_RECORDED_DATAGRAMS, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,

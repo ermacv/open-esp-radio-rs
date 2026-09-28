@@ -233,7 +233,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 25);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 26);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -509,31 +509,49 @@ fn removed_rx_phy_images_are_rejected_by_both_decoders() {
 }
 
 #[test]
-fn rx_ownership_is_an_explicit_overlay_not_a_performance_image() {
-    let mut features = FeatureCapabilities {
+fn a_diagnostic_feature_is_an_explicit_overlay_on_the_performance_image() {
+    use oer_hil_protocol::{DiagnosticFeature, DiagnosticFeatures};
+    for (feature, class, cargo_feature) in [
+        (
+            DiagnosticFeature::RxOwnership,
+            ImageClass::DiagnosticRxOwnership,
+            "rx-ownership-telemetry",
+        ),
+        (
+            DiagnosticFeature::StationExit,
+            ImageClass::DiagnosticStationExit,
+            "station-exit-evidence",
+        ),
+    ] {
+        let mut features = FeatureCapabilities {
+            psram_task_stack: true,
+            diagnostic_features: DiagnosticFeatures::empty().with(feature, true),
+            ..FeatureCapabilities::default()
+        };
+        assert_eq!(classify_flashed_capabilities(&features), Some(class));
+        assert!(!class.requires_driver_observation());
+        assert!(
+            class
+                .runtime_features()
+                .split(',')
+                .any(|f| f == cargo_feature)
+        );
+        features.driver_observation_evidence = true;
+        assert_eq!(classify_flashed_capabilities(&features), None);
+        features.driver_observation_evidence = false;
+        features.diagnostic_features = DiagnosticFeatures::empty();
+        assert_eq!(
+            classify_flashed_capabilities(&features),
+            Some(ImageClass::Performance)
+        );
+    }
+    // Two overlays at once are no known image.
+    let both = FeatureCapabilities {
         psram_task_stack: true,
-        rx_ownership_evidence: true,
+        diagnostic_features: DiagnosticFeature::ALL.into_iter().collect(),
         ..FeatureCapabilities::default()
     };
-    assert_eq!(
-        classify_flashed_capabilities(&features),
-        Some(ImageClass::DiagnosticRxOwnership)
-    );
-    assert!(!ImageClass::DiagnosticRxOwnership.requires_driver_observation());
-    assert!(
-        ImageClass::DiagnosticRxOwnership
-            .runtime_features()
-            .split(',')
-            .any(|f| f == "rx-ownership-telemetry")
-    );
-    features.driver_observation_evidence = true;
-    assert_eq!(classify_flashed_capabilities(&features), None);
-    features.driver_observation_evidence = false;
-    features.rx_ownership_evidence = false;
-    assert_eq!(
-        classify_flashed_capabilities(&features),
-        Some(ImageClass::Performance)
-    );
+    assert_eq!(classify_flashed_capabilities(&both), None);
 }
 
 #[test]

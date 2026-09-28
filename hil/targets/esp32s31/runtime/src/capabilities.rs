@@ -1,6 +1,8 @@
 //! HIL image capabilities, independent of whether the product task is linked.
 
-use oer_hil_protocol::{Capabilities, FeatureCapabilities, MAX_WIRE_FRAME_BYTES};
+use oer_hil_protocol::{
+    Capabilities, DiagnosticFeature, DiagnosticFeatures, FeatureCapabilities, MAX_WIRE_FRAME_BYTES,
+};
 
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
     cfg!(feature = "connected-datapath-poll-telemetry");
@@ -45,7 +47,18 @@ pub const fn hil_capabilities() -> Capabilities {
             station_lifecycle_events: !cfg!(feature = "memory-benchmark"),
             driver_observation_evidence: OPEN_RADIO_DRIVER_OBSERVATION,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
-            rx_ownership_evidence: cfg!(feature = "rx-ownership-telemetry"),
+            diagnostic_features: DiagnosticFeatures::empty()
+                .with(
+                    DiagnosticFeature::RxOwnership,
+                    cfg!(feature = "rx-ownership-telemetry"),
+                )
+                .with(
+                    DiagnosticFeature::StationExit,
+                    cfg!(all(
+                        feature = "station-exit-evidence",
+                        not(feature = "driver-observation")
+                    )),
+                ),
             phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
             tx_architecture_probe: cfg!(feature = "tx-architecture-probes"),

@@ -19,5 +19,6 @@ pub mod session;
 pub mod setup_cache;
 pub mod shard;
 pub mod state;
+pub mod triage;
 
 pub use chip::{Chip, Isa, chip, install};

@@ -1116,6 +1116,20 @@ impl Session {
             steps as f64 / seconds.max(f64::EPSILON) / 1e6
         );
         let (_, untriaged) = crate::coverage::Observed::classify(decisions, &observed.uncovered);
+        if !untriaged.is_empty() {
+            // A reviewer's aid beside the run: each untriaged location's code.
+            let image = std::fs::read(self.run.join("image/image.elf")).unwrap_or_default();
+            let rom = self
+                .inputs
+                .get(crate::chip().rom_input as usize)
+                .map_or(&[][..], Vec::as_slice);
+            let code = crate::triage::Code::of(&[&image, rom]);
+            // The locations the evidence index lists: those no closure reached.
+            let listed =
+                crate::coverage::uncovered_everywhere(&observed.closures, untriaged.clone());
+            let path = crate::triage::write(self.runner.run_directory(), suite, &code, &listed)?;
+            println!("{suite} untriaged locations: {}", path.display());
+        }
         Ok(Claims {
             entries,
             untriaged,

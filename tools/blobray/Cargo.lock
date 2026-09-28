@@ -539,6 +539,7 @@ dependencies = [
  "gimli",
  "object",
  "oer-probe-codegen",
+ "rv-asm",
  "serde",
  "serde_json",
  "sha2",

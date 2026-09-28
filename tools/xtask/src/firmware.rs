@@ -44,8 +44,9 @@ pub fn build(
         oer_memory_report::StackBudget::load(&ctx.root.join("platform/esp32s31/stack.toml"))?;
     let runtime_target = workspace.cache().join("runtime");
     // A patched network resolves into this private copy, never the example's catalog.
+    // The examples share one workspace and its lockfile.
     let runtime_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
-        &directory,
+        &ctx.root.join("examples/esp32s31"),
         &workspace.cache().join("lock"),
     )?;
     let mut command = ctx.cargo();

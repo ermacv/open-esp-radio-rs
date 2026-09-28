@@ -298,12 +298,17 @@ pub fn run(context: &Context) -> Result<()> {
         let graph = if profile.manifest.starts_with("hil/") {
             cargo::metadata(context, &manifest, &flags, target, true)?
         } else if profile.manifest.starts_with("examples/") {
-            // Binary examples cannot become a scratch consumer's dependency.
-            // Their independent workspace already isolates feature resolution.
-            if cargo::workspace_manifest(context, &manifest)? != manifest.canonicalize()? {
-                return Err(
-                    format!("example must own its workspace: {}", manifest.display()).into(),
-                );
+            // Binary examples cannot become a scratch consumer's dependency;
+            // they resolve in the examples workspace. Its feature unification
+            // can only add to the example's graph, never hide a forbidden
+            // dependency, and the audit walks from the example's own package.
+            let examples = context.root.join("examples/esp32s31/Cargo.toml");
+            if cargo::workspace_manifest(context, &manifest)? != examples.canonicalize()? {
+                return Err(format!(
+                    "example must belong to the examples workspace: {}",
+                    manifest.display()
+                )
+                .into());
             }
             cargo::metadata(context, &manifest, &flags, target, true)?
         } else {

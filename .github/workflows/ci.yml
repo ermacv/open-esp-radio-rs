@@ -168,8 +168,8 @@ jobs:
         run: |
           cargo check --locked --manifest-path crates/composition/esp32s31/embassy/ieee80211/Cargo.toml --target "$TARGET"
 
-  # Each example is its own workspace; run Cargo from its directory so its
-  # `.cargo/config.toml` selects the chip target. Every feature profile an
+  # The ESP32-S31 examples share one workspace; run Cargo from an example's
+  # directory so the workspace `.cargo/config.toml` selects the chip target. Every feature profile an
   # example supports is checked, and host tests cover application libraries.
   examples:
     runs-on: ubuntu-24.04
@@ -199,8 +199,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            examples/${{ matrix.example }}/target
-          key: ${{ matrix.example }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', format('examples/{0}/Cargo.lock', matrix.example)) }}
+            examples/esp32s31/target
+          key: ${{ matrix.example }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'examples/esp32s31/Cargo.lock') }}
           restore-keys: ${{ matrix.example }}-${{ runner.os }}-
       - name: Check feature profiles
         env:

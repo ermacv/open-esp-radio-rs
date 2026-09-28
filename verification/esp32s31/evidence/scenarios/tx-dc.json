@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "c78523060b2f166d49ccf23a15b1f9db805b333fee43d1ded6690924ef52b67e",
+    "input-2": "f679b5df793022a0c8b89ebbf10b5a94807f1155a209dcfb5d0a611e849f4810",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
@@ -240,7 +240,7 @@
     },
     {
       "path": "target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/build/oer-esp32s31-probe-radio-elf-1500303fb773a5e7/out/probe_catalog.rs",
-      "sha256": "9088092a7c99b024c8767951b839ab5938b283daf67020a21140839b6591dbee"
+      "sha256": "e4bae63bc30be3f7ba9992d851c5e3bfff8895b4baa423472ac58d33000ab2e4"
     },
     {
       "path": "tools/blobray/Cargo.lock",
@@ -352,7 +352,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/code_coverage.rs",
-      "sha256": "efb87571cc8e3e8dd2a8e517921856b282ac2b11200f506d1041c87c450281b6"
+      "sha256": "d0a499bb7b842699d376c7862e69dd675dbcfed9ac8a2dcf70e41e5b8956cee5"
     },
     {
       "path": "tools/blobray/crates/application/src/command_bank.rs",
@@ -664,7 +664,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/code_coverage.rs",
-      "sha256": "a638b7349434492e0f304007e466008d9354b3048d364e2b5e3ceb43ee3beec9"
+      "sha256": "b571b5a5dcc467b7fe664d940949f9dc0aafb324794733ed969c10a19462d656"
     },
     {
       "path": "tools/blobray/crates/domain/src/command_bank.rs",
@@ -1216,7 +1216,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
-      "sha256": "1cb50382276791913ea2c31084e49a09d0a42da0b2fe947def4245ec85181095"
+      "sha256": "f15bbcb7a367f671f34e123059b6c40130365b72a4d970793c3048c32aad6f7c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mod.rs",
@@ -1268,7 +1268,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/coverage.rs",
-      "sha256": "82b5ca9bc605c4c4f2310a5fc62f033b39721e4df2b51d2a089358d1b16c6e35"
+      "sha256": "239996a44220d330d3855f62f9c92ef29d15b3eacbdcd8485df072d36a2defa9"
     },
     {
       "path": "verification/harness/scenarios/src/dependencies.rs",
@@ -1292,7 +1292,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",
-      "sha256": "528fd7882988e80a33c6f10df99ac94539f94cfc400afb0d188d098a5435237e"
+      "sha256": "9dfaf1fc1dbe4bf755c04f12d6dc9772d98fb515ef97f274a9513b3ed2acd8f1"
     },
     {
       "path": "verification/harness/scenarios/src/lib.rs",
@@ -1328,7 +1328,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "d3135f0a0ada1f5ee73eaa32c5ce585768dd7f536ad5189e04fd14064f991803"
+      "sha256": "5551d55c37e8ecf0acc3c3ae331693651cde8ed72146c84bf034343b4c951ef4"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1356,7 +1356,7 @@
     }
   ],
   "dependence": {
-    "read-data": "fe89f47e7fbd698e236ccb87083c67915f1e311025abeb8e609ea877793cf148",
+    "read-data": "6892e9f208c75b370a8dd62a5db8887f15b3dccfd7d35007f833bca1e9735ca4",
     "fallback": null
   },
   "entries": [

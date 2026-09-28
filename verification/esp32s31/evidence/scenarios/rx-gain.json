@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "c78523060b2f166d49ccf23a15b1f9db805b333fee43d1ded6690924ef52b67e",
+    "input-2": "f679b5df793022a0c8b89ebbf10b5a94807f1155a209dcfb5d0a611e849f4810",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
@@ -316,7 +316,7 @@
     },
     {
       "path": "target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/build/oer-esp32s31-probe-radio-elf-1500303fb773a5e7/out/probe_catalog.rs",
-      "sha256": "9088092a7c99b024c8767951b839ab5938b283daf67020a21140839b6591dbee"
+      "sha256": "e4bae63bc30be3f7ba9992d851c5e3bfff8895b4baa423472ac58d33000ab2e4"
     },
     {
       "path": "tools/blobray/Cargo.lock",
@@ -428,7 +428,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/code_coverage.rs",
-      "sha256": "efb87571cc8e3e8dd2a8e517921856b282ac2b11200f506d1041c87c450281b6"
+      "sha256": "d0a499bb7b842699d376c7862e69dd675dbcfed9ac8a2dcf70e41e5b8956cee5"
     },
     {
       "path": "tools/blobray/crates/application/src/command_bank.rs",
@@ -740,7 +740,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/code_coverage.rs",
-      "sha256": "a638b7349434492e0f304007e466008d9354b3048d364e2b5e3ceb43ee3beec9"
+      "sha256": "b571b5a5dcc467b7fe664d940949f9dc0aafb324794733ed969c10a19462d656"
     },
     {
       "path": "tools/blobray/crates/domain/src/command_bank.rs",
@@ -1160,7 +1160,7 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library/src/lib.rs",
-      "sha256": "1bb07b9fb1d6b01b9d549f9d6a764228076e3b23efca35c89502e810cf7cc85e"
+      "sha256": "381970f8b18fc25f32dddae83bdfe085bcb81df6d0d978b7814ea70d5855200c"
     },
     {
       "path": "verification/esp32s31/probes/radio/library/src/production_trace.rs",
@@ -1296,7 +1296,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
-      "sha256": "1cb50382276791913ea2c31084e49a09d0a42da0b2fe947def4245ec85181095"
+      "sha256": "f15bbcb7a367f671f34e123059b6c40130365b72a4d970793c3048c32aad6f7c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mod.rs",
@@ -1348,7 +1348,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/coverage.rs",
-      "sha256": "82b5ca9bc605c4c4f2310a5fc62f033b39721e4df2b51d2a089358d1b16c6e35"
+      "sha256": "239996a44220d330d3855f62f9c92ef29d15b3eacbdcd8485df072d36a2defa9"
     },
     {
       "path": "verification/harness/scenarios/src/dependencies.rs",
@@ -1372,7 +1372,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",
-      "sha256": "528fd7882988e80a33c6f10df99ac94539f94cfc400afb0d188d098a5435237e"
+      "sha256": "9dfaf1fc1dbe4bf755c04f12d6dc9772d98fb515ef97f274a9513b3ed2acd8f1"
     },
     {
       "path": "verification/harness/scenarios/src/lib.rs",
@@ -1408,7 +1408,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "d3135f0a0ada1f5ee73eaa32c5ce585768dd7f536ad5189e04fd14064f991803"
+      "sha256": "5551d55c37e8ecf0acc3c3ae331693651cde8ed72146c84bf034343b4c951ef4"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1436,7 +1436,7 @@
     }
   ],
   "dependence": {
-    "read-data": "1b0049101335539571468292453c2bc44dd2a7dfc371da8d4f28db2a3d48471f",
+    "read-data": "79d5683dbee2a9ffaf3298beb5d386b02c482157a99cc531cd65a824c7e374f6",
     "fallback": null
   },
   "entries": [
@@ -1462,8 +1462,8 @@
           "total": 692
         },
         "open": 26,
-        "excluded": 933,
-        "untriaged": 69
+        "excluded": 982,
+        "untriaged": 20
       },
       "observation": {
         "executed": 640,
@@ -1561,21 +1561,6 @@
       "kind": "block"
     },
     {
-      "function": "phy_i2c_readReg",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_i2c_readReg_Mask",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_i2c_writeReg",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
       "function": "phy_pbus_force_test",
       "offset": 50,
       "kind": "taken"
@@ -1594,236 +1579,6 @@
       "function": "phy_pbus_rx_dco_cal_1step_new",
       "offset": 280,
       "kind": "taken"
-    },
-    {
-      "function": "phy_read_pll_cap",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 70,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 74,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 78,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 78,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 82,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 86,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 134,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 134,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 136,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 150,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 152,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 152,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 156,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 156,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 156,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 160,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 164,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 166,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 166,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 170,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 170,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 170,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 174,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 176,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 176,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 180,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 184,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 186,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 186,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 190,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 194,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 250,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 250,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 250,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 254,
-      "kind": "block"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 254,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 254,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_rfpll_cap_init_cal_new",
-      "offset": 258,
-      "kind": "block"
-    },
-    {
-      "function": "phy_set_rfpll_freq_new",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_write_pll_cap",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_write_pll_cap",
-      "offset": 8,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_write_pll_cap",
-      "offset": 8,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_write_pll_cap",
-      "offset": 12,
-      "kind": "block"
-    },
-    {
-      "function": "phy_write_pll_cap",
-      "offset": 14,
-      "kind": "block"
     }
   ],
   "functions": [

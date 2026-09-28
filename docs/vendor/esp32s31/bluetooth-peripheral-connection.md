@@ -186,6 +186,14 @@ non-empty wrapping window are the only dynamic inputs visible above the memory
 crate. Masks, shifts, rounded-power values and SRAM offsets do not leave that
 codec.
 
+The pinned per-PHY minimum connection-event durations differ from the
+earlier archives. `r_ble_ll_conn_get_min_dura_required`
+(`r_sym_ble_IXD9YD54AdqppMHisVZw`) and the move body both index the table
+`sym_ble_Qw8LKJo0HxALvv5KCN4X`, which holds 1,074, 310, 238 and 1,590
+microseconds; the named archive's `g_ble_ll_conn_evt_dura_ro` held 5,154,
+2,350, 1,258 and 5,670, LE 1M first. The open radio still reserves the earlier
+5,154 microseconds below.
+
 The `ble_ll_conn_created` bodies of the earlier `7f20740` archive and the
 named S31 archive, not yet re-established on the pinned body, additionally show
 that the first scheduler reservation does not end at the upper edge of the

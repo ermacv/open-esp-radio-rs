@@ -405,6 +405,43 @@ repository, and preserves the entries in each JSON capability's
 Entries are optional reference metadata and do not change the five readiness
 axes, evidence requirements or capability dependency graph.
 
+## Code anchors
+
+The catalog states what is supported; a code anchor states where. A
+`// CAPABILITY: <id>[, <id>...]` line comment directly above a Rust item,
+after its doc comments and attributes, names the inventory items, source
+facts or catalog capabilities that item owns:
+
+```rust
+/// Finite station attempts and reconnect generations.
+// CAPABILITY: station-lifecycle-owners
+pub struct StationSupervisor { /* ... */ }
+```
+
+`cargo qualification catalog anchors --catalog PATH ...` scans every Rust file
+of the repository and checks the anchors against the selected catalogs; `cargo
+xtask check capabilities` passes all of them, because an anchor may name an
+entry of any catalog. The rules follow the declared source status:
+
+| Declared state | Anchors required |
+| --- | --- |
+| `implemented`, `partial`, `fail-closed` | At least one in a package whose `open-radio` scope is `production` |
+| `host-only` | At least one, and only in `portable` or `host` packages |
+| `diagnostic` | At least one, in any package |
+| `absent` | None |
+| Capability with `implementation = "complete"` | A production anchor on the capability, or `source-fact-refs` whose facts are all implemented and anchored |
+| Capability with `implementation = "incomplete"` | Optional |
+
+Every anchor must name an existing entry. An inventory item that projects a
+source fact is anchored through that fact. With `--changed FILE`, the command
+also lists each entry anchored in an edited file (`CAPABILITY-CHANGED`), so
+the author can confirm that its declared status and limits still hold; that
+list never fails the check.
+
+Anchors are reference metadata like `source-paths`: they locate the owner and
+keep the declared state from outliving the code, but they are not evidence and
+do not change a readiness axis.
+
 ## Evidence ownership
 
 ```text

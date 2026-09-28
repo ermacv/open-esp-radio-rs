@@ -84,6 +84,14 @@ claim from that target. The evaluator validates structured declarations and
 references, not semantic agreement with Markdown; that agreement remains a
 source-review obligation.
 
+[Code anchors](../qualification/README.md#code-anchors) bind each catalog
+entry to the code that owns it: an implemented, partial, fail-closed,
+host-only or diagnostic entry must be anchored, an absent one must not be, and
+a capability declared complete must be anchored itself or through implemented
+source facts. Removing the owning code therefore fails the check until the
+catalog states the new status, and a claim cannot be added without naming its
+owner.
+
 ## Vendor verification path
 
 Vendor comparison proves selected hardware contracts: register effects,

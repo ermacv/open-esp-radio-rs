@@ -1,3 +1,4 @@
+mod anchors;
 mod engineering;
 mod hash_cache;
 mod hil;
@@ -12,7 +13,7 @@ use model::{CatalogView, QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ...] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, as tracked shards bound to their firmware and observer sources.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
+const USAGE: &str = "usage: cargo qualification <status|next> (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification plan --manifest PATH [--capability ID] [--root PATH] [--json-report PATH]\n       cargo qualification <validate|evaluate|gate> --manifest PATH [--root PATH] [--json-report PATH]\n       cargo qualification hil-evidence (--manifest PATH | --hil-target TARGET) [--run RUN_ID ...] [--root PATH]\n       cargo qualification catalog check (--manifest PATH | --catalog PATH [--catalog PATH ...]) [--root PATH]\n       cargo qualification catalog render (--manifest PATH | --catalog PATH [--catalog PATH ...]) --out DIRECTORY [--root PATH]\n       cargo qualification catalog anchors --catalog PATH [--catalog PATH ...] [--changed FILE ...] [--root PATH]\n\nstatus --details expands scopes, limits, links and observations.\nstatus and next read declarations (--catalog) or saved evidence (--manifest); they never run hardware, tests or vendor analysis. --capability selects a capability and its dependency context, not a rerun plan.\n--catalog validates/renders selected catalogs and their transitive imports without vendor evidence or HIL runs.\nhil-evidence records the qualifying HIL observations of the program's runs, or only of the --run runs, as tracked shards bound to their firmware and observer sources.\ncatalog anchors checks the `// CAPABILITY: <id>` comments in code against every selected catalog entry (pass all catalogs: an anchor naming an unselected entry is unknown) and lists the entries anchored in --changed files.\n--manifest check also validates program selection, dependency closure, and the declared required-set policy without loading evidence; render additionally emits the evaluator-derived program view.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Command {
@@ -24,6 +25,7 @@ enum Command {
     Gate,
     CatalogCheck,
     CatalogRender,
+    CatalogAnchors,
     HilEvidence,
 }
 
@@ -57,6 +59,8 @@ struct Arguments {
     hil_target: Option<String>,
     /// `hil-evidence --run`: record only these runs' observations.
     runs: Vec<String>,
+    /// `catalog anchors --changed`: repository-relative files an edit touched.
+    changed: Vec<PathBuf>,
 }
 
 fn take_value(arguments: &[String], index: &mut usize, option: &str) -> Result<PathBuf> {
@@ -75,6 +79,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         let command = match operation.as_str() {
             "check" => Command::CatalogCheck,
             "render" => Command::CatalogRender,
+            "anchors" => Command::CatalogAnchors,
             _ => return Err(format!("unknown catalog operation {operation:?}").into()),
         };
         (command, 2)
@@ -90,6 +95,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut details = false;
     let mut hil_target = None;
     let mut runs = Vec::new();
+    let mut changed = Vec::new();
     while index < arguments.len() {
         match arguments[index].as_str() {
             "--details" => {
@@ -130,6 +136,13 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     return Err("--hil-target is accepted once, by hil-evidence".into());
                 }
             }
+            "--changed" => {
+                let value = take_value(&arguments, &mut index, "--changed")?;
+                if command != Command::CatalogAnchors {
+                    return Err("--changed is accepted by catalog anchors".into());
+                }
+                changed.push(value);
+            }
             "--manifest" => {
                 let value = take_value(&arguments, &mut index, "--manifest")?;
                 if manifest.replace(value).is_some() {
@@ -161,7 +174,14 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             option => return Err(format!("unknown option {option:?}").into()),
         }
     }
-    if matches!(command, Command::CatalogCheck | Command::CatalogRender) && json_report.is_some() {
+    if command == Command::CatalogAnchors && (manifest.is_some() || catalogs.is_empty()) {
+        return Err("catalog anchors requires --catalog and accepts no --manifest".into());
+    }
+    if matches!(
+        command,
+        Command::CatalogCheck | Command::CatalogRender | Command::CatalogAnchors
+    ) && json_report.is_some()
+    {
         return Err("catalog commands do not accept --json-report".into());
     }
     if capability.is_some() && !matches!(command, Command::Status | Command::Next | Command::Plan) {
@@ -183,6 +203,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         if manifest.is_some() == !catalogs.is_empty() {
             return Err("command requires exactly one of --manifest or --catalog".into());
         }
+    } else if command == Command::CatalogAnchors {
     } else if command == Command::HilEvidence {
         if manifest.is_some() == hil_target.is_some() {
             return Err("hil-evidence requires exactly one of --manifest or --hil-target".into());
@@ -203,6 +224,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         details,
         hil_target,
         runs,
+        changed,
     })
 }
 
@@ -232,6 +254,10 @@ fn execute(arguments: Arguments) -> Result<()> {
             report::write_serialized(&map, &arguments.root.join(path))?;
         }
         return Ok(());
+    }
+    if arguments.command == Command::CatalogAnchors {
+        let catalog = CatalogView::load(&arguments.root, &arguments.catalogs)?;
+        return anchors::run(&catalog, &arguments.root, &arguments.changed);
     }
     if matches!(
         arguments.command,

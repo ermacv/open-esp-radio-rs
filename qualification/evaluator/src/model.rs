@@ -25,6 +25,7 @@ mod source_contract;
 pub(crate) use catalog::InventoryItem;
 pub(crate) use catalog::{
     CAPABILITY_CATALOG_SCHEMA, CapabilityOrigin, CapabilityScope, CatalogView, SourceIdentity,
+    SourceStatus,
 };
 pub(crate) use development::{Development, WorkKind};
 pub(crate) use source_contract::SourceContract;

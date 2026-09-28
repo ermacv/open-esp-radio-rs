@@ -125,6 +125,9 @@ enum Task {
     /// only a revision that passed; reinstall `oer-stand` when its tooling
     /// changed.
     Push,
+    /// Update every workspace's Cargo.lock to its manifests after a
+    /// dependency or pin change.
+    Lock,
     /// Build the xtask of origin/main once and install `oer-stand`, which
     /// runs the operational HIL stand commands without building this tree.
     StandInstall,
@@ -372,6 +375,7 @@ fn run() -> Result<std::process::ExitCode> {
             }
         }
         Task::Push => oer_xtask::push::run(&ctx),
+        Task::Lock => checks::metadata::update_locks(&ctx),
         Task::StandInstall => oer_xtask::stand_install::run(&ctx),
         Task::Sweep {
             all_checkouts,

@@ -4,7 +4,8 @@ use std::{collections::BTreeSet, fs};
 mod lints;
 mod pins;
 
-pub fn run(context: &Context) -> Result<usize> {
+/// Every Cargo workspace of the repository, by its root manifest.
+fn workspaces(context: &Context) -> Result<BTreeSet<std::path::PathBuf>> {
     let manifests = paths::source_manifests(context)?;
     if manifests.is_empty() {
         return Err("no source Cargo manifests found".into());
@@ -21,11 +22,47 @@ pub fn run(context: &Context) -> Result<usize> {
         }
         workspaces.insert(workspace);
     }
+    Ok(workspaces)
+}
+
+/// Brings every workspace lock in line with its manifests (`cargo xtask
+/// lock`), so a dependency or pin change updates all locks in one step.
+pub fn update_locks(context: &Context) -> Result<()> {
+    for manifest in workspaces(context)? {
+        let lock = manifest.with_file_name("Cargo.lock");
+        let before = fs::read_to_string(&lock).ok();
+        crate::process::capture(
+            context
+                .cargo()
+                .args(["metadata", "--format-version", "1", "--manifest-path"])
+                .arg(&manifest),
+        )?;
+        let changed = before != fs::read_to_string(&lock).ok();
+        println!(
+            "{} {}",
+            if changed { "updated  " } else { "unchanged" },
+            lock.strip_prefix(&context.root)?.display()
+        );
+    }
+    Ok(())
+}
+
+pub fn run(context: &Context) -> Result<usize> {
+    let workspaces = workspaces(context)?;
     let mut islands = Vec::with_capacity(workspaces.len());
+    let mut stale = Vec::new();
     for manifest in &workspaces {
         let relative = manifest.strip_prefix(&context.root)?.to_path_buf();
         println!("checking locked Cargo metadata: {}", relative.display());
-        let graph = cargo::metadata(context, manifest, &[], None, true)?;
+        // Report every stale lock at once: one push round per lock is the
+        // cost this avoids.
+        let graph = match cargo::metadata(context, manifest, &[], None, true) {
+            Ok(graph) => graph,
+            Err(error) => {
+                stale.push(format!("{}: {error}", relative.display()));
+                continue;
+            }
+        };
         let mut members = Vec::new();
         for package in graph.metadata.workspace_packages() {
             let path = package.manifest_path.as_std_path();
@@ -40,6 +77,14 @@ pub fn run(context: &Context) -> Result<usize> {
             contents: fs::read_to_string(manifest)?,
             members,
         });
+    }
+    if !stale.is_empty() {
+        return Err(format!(
+            "locked Cargo metadata failed in {} workspace(s); `cargo xtask lock` updates every workspace lock:\n{}",
+            stale.len(),
+            stale.join("\n")
+        )
+        .into());
     }
     println!(
         "locked Cargo metadata passed for {} workspace(s)",

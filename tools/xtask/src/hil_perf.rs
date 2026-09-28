@@ -296,6 +296,102 @@ pub fn set_baseline(
     Ok(by_scenario.into_keys().collect())
 }
 
+/// One side of an A/B comparison.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Arm {
+    A,
+    B,
+}
+
+/// What an A/B comparison of one measurement concludes.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "kind")]
+pub enum AbVerdict {
+    /// The 95 % confidence interval of the difference excludes zero and the
+    /// difference is at least 2 % of A's mean.
+    Significant { better: Arm },
+    /// The interval includes zero, or the difference is too small to matter.
+    WithinNoise,
+    /// Fewer than [`AB_MINIMUM_REPETITIONS`] values on a side.
+    InsufficientRepetitions,
+}
+
+/// The fewest values per side from which an A/B comparison is judged.
+pub const AB_MINIMUM_REPETITIONS: usize = 3;
+
+/// An A/B comparison of one measurement: both sides, the difference B − A
+/// with its Welch 95 % confidence interval, and the verdict.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct AbComparison {
+    pub a: Spread,
+    pub b: Spread,
+    pub difference: f64,
+    /// Half-width of the 95 % confidence interval of `difference`.
+    pub interval: f64,
+    pub verdict: AbVerdict,
+}
+
+/// Two-sided 95 % critical value of Student's t for `freedom` degrees of
+/// freedom, from the standard table; beyond 30 it approaches the normal 1.96.
+fn t_critical_95(freedom: f64) -> f64 {
+    const TABLE: [f64; 30] = [
+        12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160,
+        2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056,
+        2.052, 2.048, 2.045, 2.042,
+    ];
+    // Rounding the Welch degrees of freedom down keeps the interval
+    // conservative.
+    let index = (freedom.floor() as usize).max(1);
+    TABLE
+        .get(index - 1)
+        .copied()
+        .unwrap_or(if index <= 60 { 2.000 } else { 1.960 })
+}
+
+/// Compare the values of arms A and B of one measurement whose better
+/// direction is `better`, with Welch's unequal-variance t interval.
+pub fn compare(better: Better, a: &[f64], b: &[f64]) -> Option<AbComparison> {
+    let (spread_a, spread_b) = (Spread::of(a)?, Spread::of(b)?);
+    let difference = spread_b.mean - spread_a.mean;
+    let (variance_a, variance_b) = (
+        spread_a.deviation.powi(2) / spread_a.count as f64,
+        spread_b.deviation.powi(2) / spread_b.count as f64,
+    );
+    let standard_error = (variance_a + variance_b).sqrt();
+    let interval = if standard_error == 0.0 {
+        0.0
+    } else {
+        let freedom = (variance_a + variance_b).powi(2)
+            / (variance_a.powi(2) / (spread_a.count as f64 - 1.0).max(1.0)
+                + variance_b.powi(2) / (spread_b.count as f64 - 1.0).max(1.0));
+        t_critical_95(freedom) * standard_error
+    };
+    let verdict =
+        if spread_a.count < AB_MINIMUM_REPETITIONS || spread_b.count < AB_MINIMUM_REPETITIONS {
+            AbVerdict::InsufficientRepetitions
+        } else if difference.abs() <= interval
+            || difference.abs() < MINIMUM_TOLERANCE * spread_a.mean.abs()
+        {
+            AbVerdict::WithinNoise
+        } else {
+            let b_is_better = match better {
+                Better::Higher => difference > 0.0,
+                Better::Lower => difference < 0.0,
+            };
+            AbVerdict::Significant {
+                better: if b_is_better { Arm::B } else { Arm::A },
+            }
+        };
+    Some(AbComparison {
+        a: spread_a,
+        b: spread_b,
+        difference,
+        interval,
+        verdict,
+    })
+}
+
 /// How a measurement compares with its baseline.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Change {
@@ -776,5 +872,49 @@ mod tests {
         // One layout alone reports no layout sensitivity.
         let single = report(&runs[..1], &[], None, &BTreeMap::new());
         assert!(!single.contains("across"), "{single}");
+    }
+
+    #[test]
+    fn ab_comparison_needs_repetitions_and_a_difference_beyond_its_interval() {
+        let verdict = |better, a: &[f64], b: &[f64]| compare(better, a, b).unwrap().verdict;
+        // Two values a side are too few to judge.
+        assert_eq!(
+            verdict(Better::Higher, &[100.0, 101.0], &[120.0, 121.0]),
+            AbVerdict::InsufficientRepetitions
+        );
+        // A clear gain in the better direction, and the same data read with
+        // the opposite direction.
+        let a = [100.0, 101.0, 99.0, 100.5];
+        let b = [110.0, 111.0, 109.5, 110.5];
+        assert_eq!(
+            verdict(Better::Higher, &a, &b),
+            AbVerdict::Significant { better: Arm::B }
+        );
+        assert_eq!(
+            verdict(Better::Lower, &a, &b),
+            AbVerdict::Significant { better: Arm::A }
+        );
+        // Overlapping noisy arms stay within noise.
+        assert_eq!(
+            verdict(Better::Higher, &[100.0, 110.0, 90.0], &[103.0, 95.0, 112.0]),
+            AbVerdict::WithinNoise
+        );
+        // Perfectly repeatable but below the practical tolerance.
+        assert_eq!(
+            verdict(Better::Higher, &[100.0; 3], &[101.0; 3]),
+            AbVerdict::WithinNoise
+        );
+        let comparison = compare(Better::Higher, &a, &b).unwrap();
+        assert!((comparison.difference - 10.125).abs() < 1e-9);
+        assert!(comparison.interval > 0.0 && comparison.interval < comparison.difference);
+        assert!(compare(Better::Higher, &[], &b).is_none());
+    }
+
+    #[test]
+    fn the_t_table_is_conservative_and_approaches_the_normal_value() {
+        assert_eq!(t_critical_95(0.4), 12.706);
+        assert_eq!(t_critical_95(4.9), 2.776);
+        assert_eq!(t_critical_95(45.0), 2.000);
+        assert_eq!(t_critical_95(500.0), 1.960);
     }
 }

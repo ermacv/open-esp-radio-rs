@@ -27,6 +27,10 @@ pub struct Pending {
     pub run: String,
     /// The scenarios that passed in it.
     pub scenarios: Vec<String>,
+    /// The lease owner the run was made for; several sessions may share a
+    /// checkout. `None` for entries noted before owners were.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 const HELP: &str = "\
@@ -52,7 +56,12 @@ pub fn command(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCod
                 println!("no pending HIL evidence in this checkout");
             }
             for entry in pending {
-                println!("{}  {}", entry.run, entry.scenarios.join(", "));
+                println!(
+                    "{}  {}  ({})",
+                    entry.run,
+                    entry.scenarios.join(", "),
+                    entry.owner.as_deref().unwrap_or("unknown owner")
+                );
             }
         }
         _ => {
@@ -287,15 +296,27 @@ fn qualification_scenarios(root: &Path) -> Result<BTreeSet<String>> {
 
 /// The reminder `check changed` prints, when this checkout has pending runs
 /// of qualification scenarios.
+/// With `OER_HIL_OWNER` set, only that owner's runs are named.
 pub fn reminder(root: &Path) -> Result<Option<String>> {
     let pending = load(root)?;
     if pending.is_empty() {
         return Ok(None);
     }
+    let owner = std::env::var(oer_hil_arbiter::OWNER_ENV)
+        .ok()
+        .filter(|owner| !owner.is_empty());
     Ok(reminder_for(
-        &live(&pending)?,
+        &of_owner(live(&pending)?, owner.as_deref()),
         &qualification_scenarios(root)?,
     ))
+}
+
+/// The pending runs of `owner`, or all of them without one.
+fn of_owner(pending: Vec<Pending>, owner: Option<&str>) -> Vec<Pending> {
+    pending
+        .into_iter()
+        .filter(|entry| owner.is_none_or(|owner| entry.owner.as_deref() == Some(owner)))
+        .collect()
 }
 
 fn reminder_for(pending: &[Pending], qualifying: &BTreeSet<String>) -> Option<String> {
@@ -308,22 +329,27 @@ fn reminder_for(pending: &[Pending], qualifying: &BTreeSet<String>) -> Option<St
             .filter(|scenario| qualifying.contains(*scenario))
             .collect::<Vec<_>>();
         if !qualified.is_empty() {
-            runs.push(entry.run.as_str());
+            runs.push(entry);
             scenarios.extend(qualified);
         }
     }
     (!runs.is_empty()).then(|| {
+        let owners = runs
+            .iter()
+            .map(|entry| entry.owner.as_deref().unwrap_or("unknown owner"))
+            .collect::<BTreeSet<_>>();
         format!(
-            "{} clean run(s) of qualification scenarios have no recorded evidence ({}); \
+            "{} clean run(s) of qualification scenarios by {} have no recorded evidence ({}); \
              record it with the change it qualifies: cargo hil evidence record{}",
             runs.len(),
+            owners.into_iter().collect::<Vec<_>>().join(", "),
             scenarios
                 .into_iter()
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(", "),
             runs.iter()
-                .map(|run| format!(" --run {run}"))
+                .map(|entry| format!(" --run {}", entry.run))
                 .collect::<String>()
         )
     })
@@ -337,7 +363,20 @@ mod tests {
         Pending {
             run: run.into(),
             scenarios: scenarios.iter().map(|s| s.to_string()).collect(),
+            owner: Some(String::from("wifi")),
         }
+    }
+
+    #[test]
+    fn an_owner_sees_only_its_own_pending_runs() {
+        let mine = pending("r1", &["a"]);
+        let theirs = Pending {
+            owner: Some(String::from("802154")),
+            ..pending("r2", &["a"])
+        };
+        let both = vec![mine.clone(), theirs];
+        assert_eq!(of_owner(both.clone(), Some("wifi")), [mine]);
+        assert_eq!(of_owner(both, None).len(), 2);
     }
 
     #[test]

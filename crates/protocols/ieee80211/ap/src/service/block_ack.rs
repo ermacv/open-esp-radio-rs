@@ -39,7 +39,16 @@ impl<'peers> AccessPointService<'peers> {
         }
         let peer = self.checked_peer_mut(peer)?;
         match action {
-            BlockAckAction::AddbaResponse { .. } => {
+            BlockAckAction::AddbaResponse { dialog_token, .. } => {
+                // A response may cross the finite negotiation timeout, a
+                // DELBA or the stop teardown in either direction, and a peer
+                // may repeat it after a lost ACK. Like mac80211 and the
+                // station dispatcher, a token which owns no live negotiation
+                // is stale: it is dropped rather than applied or turned into
+                // a service fault.
+                if peer.tx_block_ack.awaiting_dialog_token() != Some(dialog_token) {
+                    return Ok(None);
+                }
                 let response = peer.tx_block_ack.on_response_action(action)?;
                 self.revise_status();
                 Ok(Some(response))

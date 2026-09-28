@@ -1093,6 +1093,12 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
         )))
     ));
     assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_some());
+    assert_eq!(
+        service.on_tx_block_ack_action(PEER, response),
+        Ok(None),
+        "a repeated response after the agreement is operational is stale"
+    );
+    assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_some());
     assert!(
         !service
             .peer_status(PEER)
@@ -1163,6 +1169,44 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
             .unwrap()
             .amsdu
     );
+}
+
+#[test]
+fn addba_response_after_the_negotiation_timeout_is_dropped_as_stale() {
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = service(&mut storage);
+    service.authenticate_open(PEER, 1);
+    service
+        .associate_rsn(
+            PEER,
+            association_security(&WPA2_RSN),
+            ht_capabilities(),
+            [7; 32],
+            9,
+            1,
+        )
+        .unwrap();
+    service.checked_peer_mut(PEER).unwrap().phase = ApPeerPhase::Authorized;
+
+    let request = service.begin_tx_block_ack(PEER, 100).unwrap().unwrap();
+    assert_eq!(service.on_tx_block_ack_alarm(PEER, request.alarm), Ok(true));
+    let late = BlockAckAction::AddbaResponse {
+        dialog_token: request.dialog_token,
+        status: 0,
+        tid: AP_TX_BLOCK_ACK_TID,
+        immediate: true,
+        amsdu: false,
+        window: AP_TX_BLOCK_ACK_WINDOW,
+        timeout_tu: 0,
+    };
+    assert_eq!(service.on_tx_block_ack_action(PEER, late), Ok(None));
+    assert_eq!(service.operational_tx_block_ack_window(PEER), None);
+
+    // The late response must not complete a newer negotiation either.
+    let retry = service.begin_tx_block_ack(PEER, 200).unwrap().unwrap();
+    assert_ne!(retry.dialog_token, request.dialog_token);
+    assert_eq!(service.on_tx_block_ack_action(PEER, late), Ok(None));
+    assert_eq!(service.operational_tx_block_ack_window(PEER), None);
 }
 
 #[test]

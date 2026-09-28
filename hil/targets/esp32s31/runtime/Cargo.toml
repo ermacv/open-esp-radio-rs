@@ -11,6 +11,8 @@ build = "build.rs"
 # Two RTC-retained trace snapshot slots of 1024 words, for images that
 # capture register windows.
 trace-snapshots = []
+# Record the PHY trace points and capture its poison snapshot.
+phy-trace = ["oer-esp32s31-phy?/trace", "trace-snapshots"]
 # Experimental direct RX-gain transaction SRAM placement for an otherwise
 # identical diagnostic image.
 phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-ieee80211-system?/phy-rx-hot-sram"]

@@ -76,9 +76,13 @@ pub(crate) fn build_image(
                 Some(class),
                 Some(Outcome::Broken),
             )?;
+            let mut message = error.to_string();
+            if let Some(log) = archive_build_log(&*error, class, session.directory()) {
+                message.push_str(&format!(" (build log: {})", log.display()));
+            }
             return Ok(Built::Failed(Failure::new(
                 FailureKind::ImageBuild,
-                error.to_string(),
+                message,
             )));
         }
     };
@@ -308,3 +312,34 @@ fn import_and_flash_replay(
 
 #[cfg(test)]
 mod tests;
+
+/// Lines of a failed build's log a run keeps.
+const BUILD_LOG_TAIL: usize = 400;
+
+/// Keep the end of the build log a failed build step names as
+/// `firmware/<class>/build.log` in the run bundle; its path relative to the
+/// bundle.
+fn archive_build_log(
+    error: &(dyn std::error::Error + 'static),
+    class: ImageClass,
+    run: &Path,
+) -> Option<std::path::PathBuf> {
+    let mut cause = Some(error);
+    let failed = loop {
+        let current = cause?;
+        if let Some(failed) = current.downcast_ref::<hil_core::image::BuildStepFailed>() {
+            break failed;
+        }
+        cause = current.source();
+    };
+    let text = std::fs::read_to_string(&failed.log).ok()?;
+    let lines = text.lines().collect::<Vec<_>>();
+    let tail = lines[lines.len().saturating_sub(BUILD_LOG_TAIL)..].join("\n");
+    let relative = std::path::Path::new("firmware")
+        .join(class.id())
+        .join("build.log");
+    let path = run.join(&relative);
+    std::fs::create_dir_all(path.parent()?).ok()?;
+    std::fs::write(&path, format!("{tail}\n")).ok()?;
+    Some(relative)
+}

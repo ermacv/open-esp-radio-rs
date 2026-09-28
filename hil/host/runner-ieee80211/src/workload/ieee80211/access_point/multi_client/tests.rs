@@ -49,7 +49,11 @@ fn observation(target: Result<MultiClientTarget>) -> MultiClientObservation {
 fn missing_terminal_evidence_preserves_each_hosts_delivery() {
     let output = tempfile::tempdir().unwrap();
     let error = observation(Err("terminal evidence timed out".into()))
-        .evaluate(output.path(), &criteria())
+        .evaluate(
+            output.path(),
+            &criteria(),
+            &hil_core::evidence::measurements::Recorder::default(),
+        )
         .err()
         .expect("qualification must fail");
     assert!(error.to_string().contains("terminal evidence timed out"));
@@ -88,7 +92,11 @@ fn failed_per_peer_rate_gate_preserves_complete_raw_evidence() {
         ..criteria()
     };
     let error = observed
-        .evaluate(output.path(), &criteria)
+        .evaluate(
+            output.path(),
+            &criteria,
+            &hil_core::evidence::measurements::Recorder::default(),
+        )
         .err()
         .expect("qualification must fail");
     assert!(error.to_string().contains("below required 10000"));
@@ -131,7 +139,15 @@ fn failed_sender_keeps_successful_receiver_observations() {
         flows: [None, None],
     }));
     observed.host_errors.push("flow 1 sender failed".to_owned());
-    assert!(observed.evaluate(output.path(), &criteria()).is_err());
+    assert!(
+        observed
+            .evaluate(
+                output.path(),
+                &criteria(),
+                &hil_core::evidence::measurements::Recorder::default(),
+            )
+            .is_err()
+    );
     let saved: serde_json::Value =
         serde_json::from_slice(&fs::read(output.path().join("delivery-progress.json")).unwrap())
             .unwrap();
@@ -161,6 +177,7 @@ fn unmet_offer_preserves_delivery_and_reports_the_invalid_load_condition() {
                 minimum_host_offer_percent: Some(95),
                 ..criteria()
             },
+            &hil_core::evidence::measurements::Recorder::default(),
         )
         .err()
         .unwrap();

@@ -33,6 +33,7 @@ pub(super) struct TcpWorkload {
 pub(super) fn qualify_tcp(
     capture: &SerialCapture,
     config: &Config,
+    measurements: &hil_core::evidence::measurements::Recorder,
     target: Ipv4Addr,
     workload: TcpWorkload,
     floors: RateFloors,
@@ -98,7 +99,7 @@ pub(super) fn qualify_tcp(
     acknowledgement?;
     let report = session_report(direction, &structured);
     validate_tcp(host_tx, host_rx, structured)?;
-    validate_rate_criteria(&report, floors)?;
+    validate_rate_criteria(&report, floors, measurements)?;
     Ok(TrafficReport::Tcp(report))
 }
 

@@ -729,6 +729,7 @@ fn qualify_data_plane(
         AccessPointTraffic::Tcp(tcp) => qualify_tcp(
             capture,
             config,
+            &context.measurements,
             context.lab.access_point.target_address(),
             TcpWorkload {
                 direction: tcp.offer.direction(),
@@ -753,7 +754,15 @@ fn session_report(direction: Direction, evidence: &SessionEvidence) -> SessionRe
     }
 }
 
-fn validate_rate_criteria(report: &SessionReport, criteria: RateFloors) -> Result<()> {
+/// Record the AP's aggregate rates with their floors, then check them.
+///
+/// The measurements carry the verdict into `runs why` and let `perf` baseline
+/// the AP workload like the station ones.
+fn validate_rate_criteria(
+    report: &SessionReport,
+    criteria: RateFloors,
+    measurements: &hil_core::evidence::measurements::Recorder,
+) -> Result<()> {
     if report.elapsed_micros == 0 {
         return Err("AP transport reported zero elapsed time".into());
     }
@@ -763,6 +772,28 @@ fn validate_rate_criteria(report: &SessionReport, criteria: RateFloors) -> Resul
             .checked_div(u128::from(report.elapsed_micros))
             .unwrap_or(0)
     };
+    let rate = |bytes: u64| u64::try_from(bitrate(bytes)).unwrap_or(u64::MAX);
+    if report.rx_bytes != 0 || criteria.minimum_rx_bps.is_some() {
+        measurements.rate(
+            "ap.rx.aggregate-rate",
+            rate(report.rx_bytes),
+            criteria.minimum_rx_bps,
+        );
+    }
+    if report.tx_bytes != 0 || criteria.minimum_tx_bps.is_some() {
+        measurements.rate(
+            "ap.tx.aggregate-rate",
+            rate(report.tx_bytes),
+            criteria.minimum_tx_bps,
+        );
+    }
+    if let Some(minimum) = criteria.minimum_combined_bps {
+        measurements.rate(
+            "ap.combined-rate",
+            rate(report.rx_bytes).saturating_add(rate(report.tx_bytes)),
+            Some(minimum),
+        );
+    }
     if let Some(minimum) = criteria.minimum_rx_bps
         && bitrate(report.rx_bytes) < u128::from(minimum)
     {

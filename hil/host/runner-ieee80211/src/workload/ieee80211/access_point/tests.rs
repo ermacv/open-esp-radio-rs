@@ -427,9 +427,31 @@ fn ap_rate_gate_checks_combined_bidirectional_throughput() {
         minimum_combined_bps: Some(32_000_000),
         ..RateFloors::default()
     };
-    assert!(validate_rate_criteria(&report, criteria).is_ok());
+    let measurements = hil_core::evidence::measurements::Recorder::default();
+    assert!(validate_rate_criteria(&report, criteria, &measurements).is_ok());
     criteria.minimum_combined_bps = Some(32_000_001);
-    assert!(validate_rate_criteria(&report, criteria).is_err());
+    assert!(validate_rate_criteria(&report, criteria, &measurements).is_err());
+    // The verdict is recorded beside the aggregate rates it checked.
+    let recorded = measurements.snapshot();
+    let combined = recorded
+        .iter()
+        .find(|measurement| measurement.name == "ap.combined-rate")
+        .unwrap();
+    assert_eq!(combined.value, 32_000_000);
+    assert_eq!(
+        combined.threshold.map(|threshold| threshold.value),
+        Some(32_000_001)
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|m| m.name == "ap.rx.aggregate-rate" && m.value == 16_000_000)
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|m| m.name == "ap.tx.aggregate-rate" && m.value == 16_000_000)
+    );
 }
 
 #[test]
@@ -471,6 +493,7 @@ fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
             &[flow(0, 100, 100), flow(1, 10, 5_003_241)],
             Direction::Tx,
             &criteria,
+            &hil_core::evidence::measurements::Recorder::default(),
         )
         .is_ok()
     );
@@ -479,6 +502,7 @@ fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
             &[flow(0, 100, 100), flow(1, 7, 5_003_241)],
             Direction::Tx,
             &criteria,
+            &hil_core::evidence::measurements::Recorder::default(),
         )
         .unwrap_err()
         .to_string()
@@ -489,6 +513,7 @@ fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
             &[flow(0, 100, 100), flow(1, 10, 5_500_001)],
             Direction::Tx,
             &criteria,
+            &hil_core::evidence::measurements::Recorder::default(),
         )
         .unwrap_err()
         .to_string()
@@ -647,4 +672,80 @@ fn discovery_ack_misses_cannot_hide_other_or_saturated_tx_failures() {
     assert!(!tx_failures_reconciled(4, 2, 1));
     assert!(!tx_failures_reconciled(1, 2, 0));
     assert!(!tx_failures_reconciled(255, 255, 0));
+}
+
+#[test]
+fn multi_client_fairness_records_the_slowest_flow_and_the_skew_it_checks() {
+    let flow = |flow_id: u8, tx_bps| MultiClientFlowReport {
+        flow_id,
+        peer: Ipv4Endpoint {
+            address: [10, 43, 0, flow_id.saturating_add(2)],
+            port: 9_002 + u16::from(flow_id),
+        },
+        rx_bytes: 0,
+        tx_bytes: 0,
+        rx_units: 0,
+        tx_units: 0,
+        elapsed_micros: 16_000_000,
+        rx_bps: 0,
+        tx_bps,
+        host_tx_started_at_zero: None,
+        host_tx_missing: None,
+        host_tx_reordered: None,
+        host_tx_duplicates: None,
+        host_tx_maximum_interarrival_us: None,
+        host_tx_sequence_after_maximum_interarrival: None,
+    };
+    let criteria = crate::scenario::access_point::MultiClientCriteria {
+        exact_delivery: false,
+        minimum_rx_bps: None,
+        minimum_tx_bps: None,
+        minimum_combined_bps: None,
+        minimum_bps_per_flow: 48_000_000,
+        maximum_flow_skew_percent: Some(15),
+        minimum_host_offer_percent: None,
+        minimum_secondary_tx_datagrams: None,
+        maximum_secondary_tx_interarrival_ms: None,
+    };
+    let measurements = hil_core::evidence::measurements::Recorder::default();
+    // 51 against 60 Mbit/s: exactly 15 % skew passes.
+    assert!(
+        validate_multi_client_fairness(
+            &[flow(0, 60_000_000), flow(1, 51_000_000)],
+            Direction::Tx,
+            &criteria,
+            &measurements,
+        )
+        .is_ok()
+    );
+    let recorded = measurements.snapshot();
+    let find = |name: &str| recorded.iter().find(|m| m.name == name).unwrap().clone();
+    let minimum = find("ap.tx.flow-minimum-rate");
+    assert_eq!(minimum.value, 51_000_000);
+    assert_eq!(
+        minimum.threshold.map(|threshold| threshold.value),
+        Some(48_000_000)
+    );
+    let skew = find("ap.tx.flow-skew");
+    assert_eq!(skew.value, 1_500);
+    assert_eq!(skew.threshold.map(|threshold| threshold.value), Some(1_500));
+    // Just above 15 % fails both the check and its recorded verdict.
+    assert!(
+        validate_multi_client_fairness(
+            &[flow(0, 60_000_000), flow(1, 50_999_999)],
+            Direction::Tx,
+            &criteria,
+            &measurements,
+        )
+        .is_err()
+    );
+    assert_eq!(
+        measurements
+            .snapshot()
+            .iter()
+            .find(|m| m.name == "ap.tx.flow-skew")
+            .unwrap()
+            .value,
+        1_501
+    );
 }

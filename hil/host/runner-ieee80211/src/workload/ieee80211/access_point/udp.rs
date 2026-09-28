@@ -185,7 +185,7 @@ pub(super) fn qualify_udp(
         report.tx_bytes = host_received.bytes;
         report.tx_units = host_received.datagrams;
     }
-    validate_rate_criteria(&report, criteria.floors()).map_err(|error| {
+    validate_rate_criteria(&report, criteria.floors(), &context.measurements).map_err(|error| {
         let source = host_tx.map(|host| {
             format!(
                 "host UDP source={}bps datagrams={} maximum_lateness_us={} maximum_catch_up_datagrams={} deadline_resets={}",

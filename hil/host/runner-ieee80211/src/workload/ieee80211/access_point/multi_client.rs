@@ -325,7 +325,7 @@ pub(super) fn qualify_multi_client_udp(
             flows: evidence.flow_transport,
         }),
     };
-    let report = observed.evaluate(output, &criteria);
+    let report = observed.evaluate(output, &criteria, &context.measurements);
     acknowledgement?;
     report
 }
@@ -347,7 +347,12 @@ struct MultiClientObservation {
 }
 
 impl MultiClientObservation {
-    fn evaluate(self, output: &Path, criteria: &MultiClientCriteria) -> Result<TrafficReport> {
+    fn evaluate(
+        self,
+        output: &Path,
+        criteria: &MultiClientCriteria,
+        measurements: &hil_core::evidence::measurements::Recorder,
+    ) -> Result<TrafficReport> {
         // Preserve delivery even when terminal evidence or a later gate fails.
         // Raw per-flow host observations must not depend on qualification.
         let host_offer: [_; SESSION_FLOW_CAPACITY] = std::array::from_fn(|index| {
@@ -436,8 +441,8 @@ impl MultiClientObservation {
             tx_units: flow_reports.iter().map(|flow| flow.tx_units).sum(),
             elapsed_micros: structured.elapsed_micros,
         };
-        validate_rate_criteria(&aggregate, criteria.floors())?;
-        validate_multi_client_fairness(&flow_reports, direction, criteria)?;
+        validate_rate_criteria(&aggregate, criteria.floors(), measurements)?;
+        validate_multi_client_fairness(&flow_reports, direction, criteria, measurements)?;
         Ok(TrafficReport::UdpMultiClient(Box::new(
             MultiClientSessionReport {
                 direction,
@@ -566,9 +571,38 @@ pub(super) fn validate_multi_client_fairness(
     flows: &[MultiClientFlowReport; SESSION_FLOW_CAPACITY],
     direction: Direction,
     criteria: &MultiClientCriteria,
+    measurements: &hil_core::evidence::measurements::Recorder,
 ) -> Result<()> {
+    use hil_core::evidence::run::{Comparison, Measurement, MeasurementUnit};
     let validate = |label: &str, rates: [u64; SESSION_FLOW_CAPACITY]| -> Result<()> {
         let minimum = criteria.minimum_bps_per_flow;
+        let name = |metric: &str| format!("ap.{}.{metric}", label.to_ascii_lowercase());
+        let slowest = rates.into_iter().min().unwrap_or(0);
+        let fastest = rates.into_iter().max().unwrap_or(0);
+        measurements.rate(
+            &name("flow-minimum-rate"),
+            slowest,
+            (minimum != 0).then_some(minimum),
+        );
+        // Rounded up, so the verdict agrees with the exact check below.
+        let skew_basis_points = u64::try_from(
+            u128::from(fastest - slowest)
+                .saturating_mul(10_000)
+                .checked_next_multiple_of(u128::from(fastest.max(1)))
+                .map_or(u128::MAX, |scaled| scaled / u128::from(fastest.max(1))),
+        )
+        .unwrap_or(u64::MAX);
+        let skew = Measurement::observed(
+            &name("flow-skew"),
+            skew_basis_points,
+            MeasurementUnit::BasisPoints,
+        );
+        measurements.record([match criteria.maximum_flow_skew_percent {
+            Some(percent) => {
+                skew.evaluated(Comparison::AtMost, u64::from(percent).saturating_mul(100))
+            }
+            None => skew,
+        }]);
         for (index, rate) in rates.into_iter().enumerate() {
             if rate < minimum {
                 return Err(format!(

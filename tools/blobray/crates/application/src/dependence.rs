@@ -53,6 +53,93 @@ const MAX_FUNCTION_INSTRUCTIONS: usize = 1 << 16;
 const LINEAR_DEDUP: usize = 32;
 /// Working memory admitted per logged entry for the dependence graph.
 const ENTRY_COST: u64 = 48;
+/// Bytes of one entry of the byte producer table.
+const WORD_BYTES: u32 = 4;
+
+/// The producing step of every guest byte a step of the phase defined, kept
+/// by aligned word so an access hashes once per word, not once per byte.
+#[derive(Default)]
+struct Producers {
+    words: HashMap<u32, [u32; WORD_BYTES as usize]>,
+}
+
+impl Producers {
+    fn get(&self, byte: u32) -> Option<u32> {
+        let step = self.words.get(&(byte / WORD_BYTES))?[(byte % WORD_BYTES) as usize];
+        (step != INPUT).then_some(step)
+    }
+    /// Producers of the `width` bytes at `address`.
+    fn read(&self, address: u32, width: u32, mut found: impl FnMut(u32)) {
+        let mut byte = address;
+        let mut left = width;
+        while left > 0 {
+            let (word, lane) = (byte / WORD_BYTES, byte % WORD_BYTES);
+            let span = (WORD_BYTES - lane).min(left);
+            if let Some(steps) = self.words.get(&word) {
+                for step in &steps[lane as usize..(lane + span) as usize] {
+                    if *step != INPUT {
+                        found(*step);
+                    }
+                }
+            }
+            byte = byte.wrapping_add(span);
+            left -= span;
+        }
+    }
+    /// `step` produced the `width` bytes at `address`.
+    fn write(&mut self, address: u32, width: u32, step: u32) {
+        let mut byte = address;
+        let mut left = width;
+        while left > 0 {
+            let (word, lane) = (byte / WORD_BYTES, byte % WORD_BYTES);
+            let span = (WORD_BYTES - lane).min(left);
+            self.words
+                .entry(word)
+                .or_insert([INPUT; WORD_BYTES as usize])[lane as usize..(lane + span) as usize]
+                .fill(step);
+            byte = byte.wrapping_add(span);
+            left -= span;
+        }
+    }
+    /// Forget the producers of the `length` bytes at `address`, up to the
+    /// end of the address space.
+    fn forget(&mut self, address: u32, length: u32) {
+        let end = (u64::from(address) + u64::from(length)).min(1 << u32::BITS);
+        let clear = |word: u32, steps: &mut [u32; WORD_BYTES as usize]| {
+            for (lane, step) in steps.iter_mut().enumerate() {
+                let byte = u64::from(word) * u64::from(WORD_BYTES) + lane as u64;
+                if u64::from(address) <= byte && byte < end {
+                    *step = INPUT;
+                }
+            }
+            steps.iter().any(|s| *s != INPUT)
+        };
+        // Whichever is smaller: the range's words or the defined words.
+        let first = address / WORD_BYTES;
+        let last = end.div_ceil(u64::from(WORD_BYTES)) as u32;
+        if (last - first) as usize > self.words.len() {
+            self.words.retain(|word, steps| clear(*word, steps));
+        } else {
+            for word in first..last {
+                if let Some(steps) = self.words.get_mut(&word)
+                    && !clear(word, steps)
+                {
+                    self.words.remove(&word);
+                }
+            }
+        }
+    }
+    /// Every defined byte with its producer.
+    fn defined(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.words.iter().flat_map(|(word, steps)| {
+            steps
+                .iter()
+                .enumerate()
+                .filter(|(_, step)| **step != INPUT)
+                .map(move |(lane, step)| (word * WORD_BYTES + lane as u32, *step))
+        })
+    }
+}
 
 /// Executed and observed replacement instruction addresses.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -410,13 +497,11 @@ struct Forward<'x> {
     shapes: &'x mut HashMap<u32, Option<Shape>>,
     dominators: &'x mut HashMap<u32, HashMap<u32, Option<u32>>>,
     registers: [u32; 32],
-    memory: HashMap<u32, u32>,
+    memory: Producers,
     /// Accesses of the current step, reused across steps.
     reads: Vec<(u32, u8, bool)>,
     writes: Vec<(u32, u8, bool)>,
     outputs: Vec<(u32, u8)>,
-    /// Dependencies of the step being finished, reused across steps.
-    scratch: Vec<u32>,
     frames: Vec<u32>,
     control: Vec<Controller>,
     current: Option<Current>,
@@ -436,8 +521,9 @@ impl Forward<'_> {
         let Some(step) = self.current.take() else {
             return;
         };
-        let mut deps = std::mem::take(&mut self.scratch);
-        deps.clear();
+        // The step's dependencies go straight to the end of the graph's list.
+        let start = self.graph.deps.len();
+        let deps = &mut self.graph.deps;
         if step.control != INPUT {
             deps.push(step.control);
         }
@@ -446,26 +532,21 @@ impl Forward<'_> {
                 deps.push(self.registers[r as usize]);
             }
         }
-        let bytes =
-            |address: u32, width: u8| (0..u32::from(width)).map(move |i| address.wrapping_add(i));
         if matches!(step.shape.kind, Kind::Load | Kind::Atomic) {
             for &(address, width, device) in &self.reads {
                 if !device {
-                    deps.extend(bytes(address, width).filter_map(|b| self.memory.get(&b).copied()));
+                    self.memory
+                        .read(address, u32::from(width), |producer| deps.push(producer));
                 }
             }
         }
         for &(address, width, device) in &self.writes {
             if !device {
-                for b in bytes(address, width) {
-                    self.memory.insert(b, step.step);
-                }
+                self.memory.write(address, u32::from(width), step.step);
             }
         }
         for &(address, width) in &self.outputs {
-            for b in bytes(address, width) {
-                self.memory.insert(b, step.step);
-            }
+            self.memory.write(address, u32::from(width), step.step);
         }
         if step.shape.def != 0 {
             self.registers[step.shape.def as usize] = step.step;
@@ -497,23 +578,26 @@ impl Forward<'_> {
         self.outputs.clear();
         // The walk only marks reachable steps, so the order of a step's
         // dependencies is free; a step has a handful of them.
-        if deps.len() > LINEAR_DEDUP {
-            deps.sort_unstable();
-            deps.dedup();
-        } else {
-            let mut kept = 0;
-            for i in 0..deps.len() {
-                let dependency = deps[i];
-                if !deps[..kept].contains(&dependency) {
-                    deps[kept] = dependency;
-                    kept += 1;
-                }
-            }
-            deps.truncate(kept);
+        let deps = &mut self.graph.deps;
+        let own = &mut deps[start..];
+        if own.len() > LINEAR_DEDUP {
+            own.sort_unstable();
         }
-        self.graph.deps.extend_from_slice(&deps);
-        self.scratch = deps;
-        self.graph.offsets.push(self.graph.deps.len() as u32);
+        let mut kept = 0;
+        for i in 0..own.len() {
+            let dependency = own[i];
+            let seen = if own.len() > LINEAR_DEDUP {
+                kept > 0 && own[kept - 1] == dependency
+            } else {
+                own[..kept].contains(&dependency)
+            };
+            if !seen {
+                own[kept] = dependency;
+                kept += 1;
+            }
+        }
+        deps.truncate(start + kept);
+        self.graph.offsets.push(deps.len() as u32);
         self.last = Some((step.pc, step.shape, step.call_returned));
     }
 
@@ -596,9 +680,7 @@ impl Forward<'_> {
             seeds.push(last);
         }
         for &[address, length] in &sinks.memory {
-            seeds.extend(
-                (0..length).filter_map(|i| self.memory.get(&address.wrapping_add(i)).copied()),
-            );
+            seeds.extend((0..length).filter_map(|i| self.memory.get(address.wrapping_add(i))));
         }
         seeds.retain(|s| *s != INPUT);
         for &(e, register) in &sinks.arguments {
@@ -613,14 +695,13 @@ impl Forward<'_> {
         let transient = &self.transient;
         self.graph.state_seeds.extend(
             self.memory
-                .iter()
-                .filter(|(b, s)| {
-                    **s != INPUT
-                        && !transient.iter().any(|[a, l]| {
-                            **b >= *a && u64::from(**b) < u64::from(*a) + u64::from(*l)
-                        })
+                .defined()
+                .filter(|(b, _)| {
+                    !transient
+                        .iter()
+                        .any(|[a, l]| *b >= *a && u64::from(*b) < u64::from(*a) + u64::from(*l))
                 })
-                .map(|(_, s)| *s),
+                .map(|(_, s)| s),
         );
     }
 }
@@ -668,11 +749,10 @@ impl<'x> Analyzer<'x> {
             shapes: &mut self.shapes,
             dominators: &mut self.dominators,
             registers: [INPUT; 32],
-            memory: HashMap::default(),
+            memory: Producers::default(),
             reads: vec![],
             writes: vec![],
             outputs: vec![],
-            scratch: vec![],
             frames: vec![],
             control: vec![],
             current: None,
@@ -693,6 +773,8 @@ impl<'x> Analyzer<'x> {
             },
         };
         let mut cases = log.sinks.iter();
+        // Steps repeat the same reads: reduce them before the ordered set.
+        let mut reads = Vec::new();
         for (i, entry) in log.entries.iter().enumerate() {
             if i % WORK_BLOCK == 0 {
                 c.checkpoint(WORK_BLOCK as u64)?;
@@ -718,17 +800,7 @@ impl<'x> Analyzer<'x> {
                     if transient {
                         forward.transient.push([address, length]);
                     }
-                    // Whichever is smaller: the range or the defined bytes.
-                    if length as usize > forward.memory.len() {
-                        let end = u64::from(address) + u64::from(length);
-                        forward
-                            .memory
-                            .retain(|b, _| *b < address || u64::from(*b) >= end);
-                    } else {
-                        for i in 0..length {
-                            forward.memory.remove(&address.wrapping_add(i));
-                        }
-                    }
+                    forward.memory.forget(address, length);
                 }
                 StepEntry::Instruction { pc } => forward.instruction(pc),
                 StepEntry::Read {
@@ -739,7 +811,7 @@ impl<'x> Analyzer<'x> {
                     if forward.current.is_some() {
                         forward.reads.push((address, width, device));
                         if !device {
-                            result.reads.insert((address, width));
+                            reads.push((address, width));
                         }
                     }
                 }
@@ -828,10 +900,44 @@ impl<'x> Analyzer<'x> {
         let effect = walk(effect_seeds);
         let state = walk(state_seeds);
         c.checkpoint(3 * graph.pcs.len() as u64)?;
+        reads.sort_unstable();
+        reads.dedup();
+        result.reads.extend(reads);
         result.executed.extend(executed);
         result.observed.extend(observed);
         result.effect.extend(effect);
         result.state.extend(state);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn producers_track_bytes_across_word_boundaries() {
+        let mut producers = Producers::default();
+        producers.write(0x1002, 4, 7);
+        producers.write(0x1005, 1, 8);
+        let read = |producers: &Producers, address, width| {
+            let mut found = vec![];
+            producers.read(address, width, |step| found.push(step));
+            found
+        };
+        assert_eq!(read(&producers, 0x1000, 8), [7, 7, 7, 8]);
+        assert_eq!(producers.get(0x1001), None);
+        assert_eq!(producers.get(0x1004), Some(7));
+        producers.forget(0x1003, 2);
+        assert_eq!(read(&producers, 0x1000, 8), [7, 8]);
+        let mut defined: Vec<_> = producers.defined().collect();
+        defined.sort_unstable();
+        assert_eq!(defined, [(0x1002, 7), (0x1005, 8)]);
+        // A range beyond the defined words forgets through the table.
+        producers.forget(0, u32::MAX);
+        assert_eq!(producers.defined().count(), 0);
+        producers.write(u32::MAX - 1, 2, 9);
+        producers.forget(u32::MAX - 1, 4);
+        assert_eq!(producers.get(u32::MAX), None);
     }
 }

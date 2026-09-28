@@ -147,11 +147,13 @@ pub struct ScratchBytes<'a> {
 }
 impl Deref for ScratchBytes<'_> {
     type Target = [u8];
+    #[inline]
     fn deref(&self) -> &[u8] {
         &self.bytes
     }
 }
 impl DerefMut for ScratchBytes<'_> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.bytes
     }

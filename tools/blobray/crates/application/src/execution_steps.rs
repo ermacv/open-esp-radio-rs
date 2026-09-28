@@ -123,21 +123,26 @@ impl<'a> StepLog<'a> {
     }
 
     /// Append `entry`, admitting doubled capacity before allocating it.
+    #[inline]
     pub fn push(&mut self, entry: StepEntry, c: &mut dyn RunControl) -> Result<()> {
         if self.entries.len() == self.entries.capacity() {
-            let count = (self.entries.capacity() * 2).max(INITIAL_ENTRIES);
-            let reservation = self.memory.reserve(
-                (count * std::mem::size_of::<StepEntry>()) as u64,
-                c.position(),
-            )?;
-            self.entries
-                .try_reserve_exact(count - self.entries.len())
-                .map_err(|_| {
-                    Error::new(ErrorCode::ResourceLimited, "step log allocation refused")
-                })?;
-            self._capacity = Some(reservation);
+            self.grow(c)?;
         }
         self.entries.push(entry);
+        Ok(())
+    }
+
+    #[cold]
+    fn grow(&mut self, c: &mut dyn RunControl) -> Result<()> {
+        let count = (self.entries.capacity() * 2).max(INITIAL_ENTRIES);
+        let reservation = self.memory.reserve(
+            (count * std::mem::size_of::<StepEntry>()) as u64,
+            c.position(),
+        )?;
+        self.entries
+            .try_reserve_exact(count - self.entries.len())
+            .map_err(|_| Error::new(ErrorCode::ResourceLimited, "step log allocation refused"))?;
+        self._capacity = Some(reservation);
         Ok(())
     }
 

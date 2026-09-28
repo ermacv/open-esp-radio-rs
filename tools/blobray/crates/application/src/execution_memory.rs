@@ -337,6 +337,7 @@ impl<'a> Session<'a> {
     pub fn take_steps(&mut self) -> Option<crate::execution_steps::StepLog<'a>> {
         self.steps.take()
     }
+    #[inline]
     pub(super) fn log(
         &mut self,
         entry: crate::execution_steps::StepEntry,

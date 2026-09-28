@@ -46,6 +46,12 @@ per-core SRAM interrupt stack. Global interrupts remain disabled until the
 application binds its timers and executor handlers; it then calls the unsafe
 `oer_esp32s31_platform_runtime::enable_interrupts_after_handoff` once per hart. PSRAM
 must not be reset or remapped after handoff.
+Every CPU interrupt enters through the runtime's stack-switching vector entry
+and esp-hal's shared dispatcher, so a handler that esp-hal binds directly to a
+vector slot does not run: images do not use `esp_hal::interrupt::ipc`
+(CLINT software interrupt 3). esp-hal's PMP region setup
+(`ESP_HAL_CONFIG_ENABLE_PMP`) is off in the root Cargo configuration, because
+its single no-execute data region would span stage two's PSRAM code.
 
 Every image uses one placement: PSRAM for code, ordinary data and a 192-KiB
 CPU0 task stack; SRAM for interrupt entries, hot code, critical state, DMA

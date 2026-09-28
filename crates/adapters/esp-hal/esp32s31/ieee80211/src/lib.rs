@@ -55,8 +55,8 @@ impl EspHalWifiPlatform {
     /// Bind both ESP32-S31 Wi-Fi interrupt lines while this value proves
     /// ownership of the virtual `WIFI` singleton.
     pub fn bind_interrupts(&self, mac: InterruptHandler, power: InterruptHandler) {
-        interrupt::bind_handler(Interrupt::WIFI_MAC, mac);
-        interrupt::bind_handler(Interrupt::WIFI_PWR, power);
+        interrupt::bind_handler(Interrupt::MODEM_WIFI_MAC, mac);
+        interrupt::bind_handler(Interrupt::MODEM_WIFI_PWR, power);
     }
 
     /// Disable both Wi-Fi CPU interrupt routes on their binding core.
@@ -67,8 +67,8 @@ impl EspHalWifiPlatform {
     /// quiescence. Binding and detachment must occur on the same core.
     pub fn disable_interrupts(&self) {
         let cpu = Cpu::current();
-        interrupt::disable(cpu, Interrupt::WIFI_MAC);
-        interrupt::disable(cpu, Interrupt::WIFI_PWR);
+        interrupt::disable(cpu, Interrupt::MODEM_WIFI_MAC);
+        interrupt::disable(cpu, Interrupt::MODEM_WIFI_PWR);
     }
 }
 

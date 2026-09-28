@@ -71,10 +71,11 @@ fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
     print(c"OER_BOOT bootstrap=INIT\r\n");
     let mut flash_mmu = FlashMmu::new(peripherals.SPI0);
-    let mut flash = match esp_hal::flash::Flash::from_bootloader(peripherals.FLASH) {
-        Ok(flash) => flash,
-        Err(_) => fail(c"OER_BOOT bootstrap=FAIL reason=flash-init\r\n"),
-    };
+    let mut flash =
+        match esp_hal::flash::Flash::new(peripherals.FLASH, esp_hal::flash::Config::default()) {
+            Ok(flash) => flash,
+            Err(_) => fail(c"OER_BOOT bootstrap=FAIL reason=flash-init\r\n"),
+        };
 
     let psram = board::initialize_psram(peripherals.PSRAM);
     let (psram_base, psram_size) = psram.raw_parts();

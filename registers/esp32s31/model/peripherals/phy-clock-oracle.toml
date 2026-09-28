@@ -171,6 +171,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.FE_CLOCK_GATE_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
     "BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK",
@@ -228,6 +229,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
     "BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK",
@@ -255,6 +257,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_CLOCK_ORACLE.BB_CLOCK_GATE_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_OPEN_FE_BB_CLK",
     "BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK",

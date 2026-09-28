@@ -69,7 +69,9 @@ platform-owned `MODEM_LPCON` registers remain in the upstream analysis catalog.
 See the [PAC provenance map](../../crates/hardware/esp32s31/pac/README.md).
 
 Source provenance catalogs retain their exact source IDs, revisions and hashes.
-Unknown and reserved fields remain absent or explicitly opaque; neighboring-chip
+Reserved fields remain absent. A register or field whose meaning is not
+established ends in `_OPAQUE` and is reviewed with `naming = "opaque"`; see
+[name origin](../../tools/registers/model/README.md). Neighboring-chip
 similarity is not sufficient evidence for an ESP32-S31 address or bit. Reviewed
 source assertions, vendor comparison and dated hardware observations retain
 their distinct strength. Publication verifies consistency and reproducibility;

@@ -53,16 +53,20 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_0_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_1_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_2_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_3_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

@@ -44,12 +44,15 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FEDATA_WIFI_RECOVERED.CFO_CONFIG_WORD_0_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_FEDATA_WIFI_RECOVERED.FREQUENCY_CORRECTION_WORD_0_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_FEDATA_WIFI_RECOVERED.FREQUENCY_CORRECTION_WORD_1_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

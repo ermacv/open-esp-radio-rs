@@ -193,6 +193,10 @@ pub struct ReviewAnnotation {
     pub accuracy: Option<oer_register_contracts::FactAccuracy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completeness: Option<oer_register_contracts::FactCompleteness>,
+    /// Origin of a register or field name. An opaque name, and only an opaque
+    /// name, ends in [`OPAQUE_SUFFIX`]; a vendor name cites its source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub naming: Option<oer_register_contracts::NameOrigin>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -416,7 +420,9 @@ impl RegisterModel {
     }
 
     pub fn render_svd(&self) -> Result<(String, SvdExportSummary)> {
-        let mut output = svd_encoder::encode(&self.device).map_err(|error| {
+        let mut device = self.device.clone();
+        mark_name_origins(&mut device, &self.review);
+        let mut output = svd_encoder::encode(&device).map_err(|error| {
             Error::message(format!("failed to encode register model as SVD: {error}"))
         })?;
         if !output.ends_with('\n') {
@@ -906,6 +912,7 @@ impl RegisterModel {
             provenance: Some(plan.assertion.metadata.classification.provenance),
             accuracy: Some(plan.assertion.metadata.classification.accuracy),
             completeness: Some(plan.assertion.metadata.classification.completeness),
+            naming: None,
         });
         Ok(())
     }
@@ -1604,24 +1611,28 @@ fn rewrite_review_entity_prefix(review: &mut [ReviewAnnotation], old: &str, new:
 }
 
 fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()> {
-    let mut known_entities = BTreeSet::new();
+    let mut known_entities = BTreeMap::new();
     for peripheral in fragments.iter().flat_map(|fragment| &fragment.peripherals) {
         collect_review_entities(peripheral, &mut known_entities);
     }
-    let mut entities = BTreeSet::new();
+    let mut entities = BTreeMap::new();
     for annotation in fragments.iter().flat_map(|fragment| &fragment.review) {
-        if annotation.entity.is_empty() || !entities.insert(annotation.entity.as_str()) {
+        if annotation.entity.is_empty()
+            || entities
+                .insert(annotation.entity.as_str(), annotation)
+                .is_some()
+        {
             return Err(Error::message(format!(
                 "empty or duplicate register review entity {:?}",
                 annotation.entity
             )));
         }
-        if !known_entities.contains(annotation.entity.as_str()) {
+        let Some(kind) = known_entities.get(annotation.entity.as_str()) else {
             return Err(Error::message(format!(
                 "register review entity {:?} does not exist in the model",
                 annotation.entity
             )));
-        }
+        };
         let classification_fields = usize::from(annotation.provenance.is_some())
             + usize::from(annotation.accuracy.is_some())
             + usize::from(annotation.completeness.is_some());
@@ -1642,8 +1653,108 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
                 annotation.entity
             )));
         }
+        if annotation.naming.is_some() && !kind.is_named_bits() {
+            return Err(Error::message(format!(
+                "register review entity {:?} is a {}; naming applies only to registers and fields",
+                annotation.entity,
+                kind.label()
+            )));
+        }
+    }
+    for (entity, kind) in &known_entities {
+        if kind.is_named_bits() {
+            validate_naming(entity, entities.get(entity.as_str()).copied())?;
+        }
     }
     Ok(())
+}
+
+/// Suffix that marks a register or field whose meaning is not established.
+pub const OPAQUE_SUFFIX: &str = "_OPAQUE";
+
+/// A register or field name claims no more meaning than its origin supports:
+/// an opaque entity, and only an opaque one, ends in [`OPAQUE_SUFFIX`], and a
+/// vendor name cites the source it was taken from.
+fn validate_naming(entity: &str, annotation: Option<&ReviewAnnotation>) -> Result<()> {
+    use oer_register_contracts::NameOrigin;
+
+    let leaf = entity.rsplit('.').next().unwrap_or(entity);
+    let opaque_name = leaf.ends_with(OPAQUE_SUFFIX);
+    let naming = annotation.and_then(|annotation| annotation.naming);
+    match naming {
+        Some(NameOrigin::Opaque) if !opaque_name => Err(Error::message(format!(
+            "register entity {entity:?} is reviewed as opaque but its name does not end in {OPAQUE_SUFFIX:?}"
+        ))),
+        Some(NameOrigin::Vendor | NameOrigin::Descriptive) | None if opaque_name => {
+            Err(Error::message(format!(
+                "register entity {entity:?} ends in {OPAQUE_SUFFIX:?} but is not reviewed with naming = \"opaque\""
+            )))
+        }
+        Some(NameOrigin::Vendor)
+            if annotation.is_none_or(|annotation| annotation.sources.is_empty()) =>
+        {
+            Err(Error::message(format!(
+                "register entity {entity:?} claims a vendor name without citing its source"
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Carry the name origin into published descriptions, which SVD consumers
+/// and the generated PAC documentation show: a reader of a raw accessor must
+/// see that its name is ours or that its meaning is unknown.
+fn mark_name_origins(device: &mut Device, review: &[ReviewAnnotation]) {
+    let naming = review
+        .iter()
+        .filter_map(|annotation| Some((annotation.entity.as_str(), annotation.naming?)))
+        .collect::<BTreeMap<_, _>>();
+    for peripheral in &mut device.peripherals {
+        let name = peripheral.name.clone();
+        if let Some(children) = &mut peripheral.registers {
+            mark_child_name_origins(&name, children, &naming);
+        }
+    }
+}
+
+fn mark_child_name_origins(
+    parent: &str,
+    children: &mut [RegisterCluster],
+    naming: &BTreeMap<&str, oer_register_contracts::NameOrigin>,
+) {
+    for child in children {
+        match child {
+            RegisterCluster::Register(register) => {
+                let path = format!("{parent}.{}", register.name);
+                mark_description(&mut register.description, naming.get(path.as_str()));
+                for field in register.fields.iter_mut().flatten() {
+                    let field_path = format!("{path}.{}", field.name);
+                    mark_description(&mut field.description, naming.get(field_path.as_str()));
+                }
+            }
+            RegisterCluster::Cluster(cluster) => {
+                let path = format!("{parent}.{}", cluster.name);
+                mark_child_name_origins(&path, &mut cluster.children, naming);
+            }
+        }
+    }
+}
+
+fn mark_description(
+    description: &mut Option<String>,
+    naming: Option<&oer_register_contracts::NameOrigin>,
+) {
+    use oer_register_contracts::NameOrigin;
+
+    let marker = match naming {
+        Some(NameOrigin::Opaque) => "Opaque: meaning not established.",
+        Some(NameOrigin::Descriptive) => "Project-assigned name.",
+        Some(NameOrigin::Vendor) | None => return,
+    };
+    *description = Some(match description.take() {
+        Some(text) if !text.trim().is_empty() => format!("{marker} {text}"),
+        _ => marker.to_owned(),
+    });
 }
 
 fn review_annotation_is_assertion(annotation: &ReviewAnnotation) -> bool {
@@ -1655,10 +1766,44 @@ fn review_annotation_is_assertion(annotation: &ReviewAnnotation) -> bool {
         && annotation.completeness.is_some()
 }
 
-fn collect_review_entities(peripheral: &Peripheral, entities: &mut BTreeSet<String>) {
-    entities.insert(peripheral.name.clone());
+/// Kind of a reviewable model entity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReviewEntityKind {
+    Peripheral,
+    Interrupt,
+    Cluster,
+    Register,
+    Field,
+    EnumeratedValue,
+}
+
+impl ReviewEntityKind {
+    fn is_named_bits(self) -> bool {
+        matches!(self, Self::Register | Self::Field)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Peripheral => "peripheral",
+            Self::Interrupt => "interrupt",
+            Self::Cluster => "cluster",
+            Self::Register => "register",
+            Self::Field => "field",
+            Self::EnumeratedValue => "enumerated value",
+        }
+    }
+}
+
+fn collect_review_entities(
+    peripheral: &Peripheral,
+    entities: &mut BTreeMap<String, ReviewEntityKind>,
+) {
+    entities.insert(peripheral.name.clone(), ReviewEntityKind::Peripheral);
     for interrupt in &peripheral.interrupt {
-        entities.insert(format!("{}.interrupt.{}", peripheral.name, interrupt.name));
+        entities.insert(
+            format!("{}.interrupt.{}", peripheral.name, interrupt.name),
+            ReviewEntityKind::Interrupt,
+        );
     }
     if let Some(children) = &peripheral.registers {
         collect_child_review_entities(&peripheral.name, children, entities);
@@ -1668,20 +1813,23 @@ fn collect_review_entities(peripheral: &Peripheral, entities: &mut BTreeSet<Stri
 fn collect_child_review_entities(
     parent: &str,
     children: &[RegisterCluster],
-    entities: &mut BTreeSet<String>,
+    entities: &mut BTreeMap<String, ReviewEntityKind>,
 ) {
     for child in children {
         match child {
             RegisterCluster::Register(register) => {
                 let path = format!("{parent}.{}", register.name);
-                entities.insert(path.clone());
+                entities.insert(path.clone(), ReviewEntityKind::Register);
                 if let Some(fields) = &register.fields {
                     for field in fields {
                         let field_path = format!("{path}.{}", field.name);
-                        entities.insert(field_path.clone());
+                        entities.insert(field_path.clone(), ReviewEntityKind::Field);
                         for values in &field.enumerated_values {
                             for value in &values.values {
-                                entities.insert(format!("{field_path}.{}", value.name));
+                                entities.insert(
+                                    format!("{field_path}.{}", value.name),
+                                    ReviewEntityKind::EnumeratedValue,
+                                );
                             }
                         }
                     }
@@ -1689,7 +1837,7 @@ fn collect_child_review_entities(
             }
             RegisterCluster::Cluster(cluster) => {
                 let path = format!("{parent}.{}", cluster.name);
-                entities.insert(path.clone());
+                entities.insert(path.clone(), ReviewEntityKind::Cluster);
                 collect_child_review_entities(&path, &cluster.children, entities);
             }
         }
@@ -2278,6 +2426,7 @@ locator = "function"
             provenance: Some(oer_register_contracts::FactProvenance::Reviewed),
             accuracy: Some(oer_register_contracts::FactAccuracy::Exact),
             completeness: Some(oer_register_contracts::FactCompleteness::Complete),
+            naming: None,
         }];
 
         let identities = model.register_identities().unwrap();
@@ -2994,5 +3143,78 @@ locator = "identity"
                 directory.join("peripherals/agc.toml"),
             ]
         );
+    }
+
+    fn naming_fragment(register: &str, review: &str) -> RegisterModelFragment {
+        toml_edit::de::from_str(&format!(
+            "schema = 2\n\n[[peripherals]]\nname = \"RADIO\"\nbaseAddress = 0x1000\n\n[[peripherals.registers]]\n[peripherals.registers.register]\nname = \"{register}\"\naddressOffset = 0x0\nsize = 32\n\n[[peripherals.registers.register.fields]]\nname = \"LEVEL\"\nbitOffset = 0\nbitWidth = 4\n\n{review}"
+        ))
+        .unwrap()
+    }
+
+    fn naming_error(register: &str, review: &str) -> Option<String> {
+        validate_review_annotations(&[naming_fragment(register, review)])
+            .err()
+            .map(|error| error.to_string())
+    }
+
+    #[test]
+    fn opaque_naming_and_the_opaque_suffix_require_each_other() {
+        let opaque = "[[review]]\nentity = \"RADIO.CONTROL_OPAQUE\"\nnaming = \"opaque\"\n";
+        assert_eq!(naming_error("CONTROL_OPAQUE", opaque), None);
+        assert!(
+            naming_error("CONTROL_OPAQUE", "")
+                .unwrap()
+                .contains("not reviewed with naming = \"opaque\"")
+        );
+        let descriptive =
+            "[[review]]\nentity = \"RADIO.CONTROL_OPAQUE\"\nnaming = \"descriptive\"\n";
+        assert!(naming_error("CONTROL_OPAQUE", descriptive).is_some());
+        let unsuffixed = "[[review]]\nentity = \"RADIO.CONTROL\"\nnaming = \"opaque\"\n";
+        assert!(
+            naming_error("CONTROL", unsuffixed)
+                .unwrap()
+                .contains("does not end in")
+        );
+    }
+
+    #[test]
+    fn vendor_naming_cites_its_source() {
+        let uncited = "[[review]]\nentity = \"RADIO.CONTROL.LEVEL\"\nnaming = \"vendor\"\n";
+        assert!(
+            naming_error("CONTROL", uncited)
+                .unwrap()
+                .contains("without citing its source")
+        );
+        let cited = "[[review]]\nentity = \"RADIO.CONTROL.LEVEL\"\nsources = [\"VENDOR_HEADER\"]\nnaming = \"vendor\"\n";
+        assert_eq!(naming_error("CONTROL", cited), None);
+    }
+
+    #[test]
+    fn naming_applies_only_to_registers_and_fields() {
+        let peripheral = "[[review]]\nentity = \"RADIO\"\nnaming = \"descriptive\"\n";
+        assert!(
+            naming_error("CONTROL", peripheral)
+                .unwrap()
+                .contains("applies only to registers and fields")
+        );
+    }
+
+    #[test]
+    fn published_descriptions_carry_a_non_vendor_name_origin() {
+        use oer_register_contracts::NameOrigin;
+
+        let mut description = Some("Written by the calibration path.".to_owned());
+        mark_description(&mut description, Some(&NameOrigin::Opaque));
+        assert_eq!(
+            description.as_deref(),
+            Some("Opaque: meaning not established. Written by the calibration path.")
+        );
+        let mut description = None;
+        mark_description(&mut description, Some(&NameOrigin::Descriptive));
+        assert_eq!(description.as_deref(), Some("Project-assigned name."));
+        let mut description = Some("Vendor text.".to_owned());
+        mark_description(&mut description, Some(&NameOrigin::Vendor));
+        assert_eq!(description.as_deref(), Some("Vendor text."));
     }
 }

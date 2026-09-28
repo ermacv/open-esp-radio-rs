@@ -76,24 +76,30 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.FFT_SCALE_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.BACKUP_WORD_0C_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.ONE_TONE_SPUR_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.FREQUENCY_CORRECTION_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.CHANNEL_FILTER_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

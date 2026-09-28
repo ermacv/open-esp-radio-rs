@@ -1354,6 +1354,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_BLOBRAY_GAPS",
     "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",
@@ -1364,6 +1365,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_BLOBRAY_GAPS",
     "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",
@@ -1374,6 +1376,7 @@ completeness = "partial"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE"
+naming = "opaque"
 sources = [
     "ROM_REV0_PHY_BLOBRAY_GAPS",
     "BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE",

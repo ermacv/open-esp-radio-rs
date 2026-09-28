@@ -1797,6 +1797,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_0_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
 provenance = "observed"
 accuracy = "exact"
@@ -2210,6 +2211,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_PA_TABLE_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
 provenance = "observed"
 accuracy = "exact"

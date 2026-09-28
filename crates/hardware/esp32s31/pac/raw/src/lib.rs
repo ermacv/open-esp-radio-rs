@@ -3716,7 +3716,7 @@ pub mod phy_frequency_channel_oracle {
         pub const fn frequency_memory_read_control(&self) -> &FrequencyMemoryReadControl {
             &self.frequency_memory_read_control
         }
-        #[doc = "0x24 - Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public."]
+        #[doc = "0x24 - Opaque: meaning not established. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public."]
         #[inline(always)]
         pub const fn frequency_parameter_0_opaque(&self) -> &FrequencyParameter0Opaque {
             &self.frequency_parameter_0_opaque
@@ -3970,11 +3970,11 @@ pub mod phy_frequency_channel_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FREQUENCY_PARAMETER_0_OPAQUE (w) register accessor: Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_0_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_parameter_0_opaque`] module"]
+    #[doc = "FREQUENCY_PARAMETER_0_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_0_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_parameter_0_opaque`] module"]
     #[doc(alias = "FREQUENCY_PARAMETER_0_OPAQUE")]
     pub type FrequencyParameter0Opaque =
         crate::Reg<frequency_parameter_0_opaque::FrequencyParameter0OpaqueSpec>;
-    #[doc = "Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public."]
+    #[doc = "Opaque: meaning not established. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public."]
     pub mod frequency_parameter_0_opaque {
         #[doc = "Register `FREQUENCY_PARAMETER_0_OPAQUE` writer"]
         pub type W = crate::W<FrequencyParameter0OpaqueSpec>;
@@ -3987,7 +3987,7 @@ pub mod phy_frequency_channel_oracle {
                 OpaqueValueW::new(self, 0)
             }
         }
-        #[doc = "Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_0_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_0_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrequencyParameter0OpaqueSpec;
         impl crate::RegisterSpec for FrequencyParameter0OpaqueSpec {
             type Ux = u32;
@@ -6384,7 +6384,7 @@ pub mod phy_agc_oracle {
         pub const fn rx_11b_path_control_0(&self) -> &Rx11bPathControl0 {
             &self.rx_11b_path_control_0
         }
-        #[doc = "0x7048 - Complete phy_bb_agc_reg_update writes 0xff7da4f3."]
+        #[doc = "0x7048 - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xff7da4f3."]
         #[inline(always)]
         pub const fn agc_update_7048_opaque(&self) -> &AgcUpdate7048Opaque {
             &self.agc_update_7048_opaque
@@ -6454,7 +6454,7 @@ pub mod phy_agc_oracle {
         pub const fn rx_gain_limit_control(&self) -> &RxGainLimitControl {
             &self.rx_gain_limit_control
         }
-        #[doc = "0x78a4 - Complete phy_bb_agc_reg_update writes 0x0001721f."]
+        #[doc = "0x78a4 - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x0001721f."]
         #[inline(always)]
         pub const fn agc_update_78a4_opaque(&self) -> &AgcUpdate78a4Opaque {
             &self.agc_update_78a4_opaque
@@ -6474,37 +6474,37 @@ pub mod phy_agc_oracle {
         pub const fn rx_11b_mode_control(&self) -> &Rx11bModeControl {
             &self.rx_11b_mode_control
         }
-        #[doc = "0x8010 - Complete phy_bb_agc_reg_update writes 0x000852a1."]
+        #[doc = "0x8010 - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000852a1."]
         #[inline(always)]
         pub const fn agc_update_8010_opaque(&self) -> &AgcUpdate8010Opaque {
             &self.agc_update_8010_opaque
         }
-        #[doc = "0x8018 - Complete phy_bb_agc_reg_update writes 0x00600030."]
+        #[doc = "0x8018 - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00600030."]
         #[inline(always)]
         pub const fn agc_update_8018_opaque(&self) -> &AgcUpdate8018Opaque {
             &self.agc_update_8018_opaque
         }
-        #[doc = "0x801c - Complete phy_bb_agc_reg_update writes 0x010000a0."]
+        #[doc = "0x801c - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x010000a0."]
         #[inline(always)]
         pub const fn agc_update_801c_opaque(&self) -> &AgcUpdate801cOpaque {
             &self.agc_update_801c_opaque
         }
-        #[doc = "0x8020 - Complete phy_bb_agc_reg_update writes 0x00000180."]
+        #[doc = "0x8020 - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00000180."]
         #[inline(always)]
         pub const fn agc_update_8020_opaque(&self) -> &AgcUpdate8020Opaque {
             &self.agc_update_8020_opaque
         }
-        #[doc = "0x8028 - Complete phy_bb_agc_reg_update writes 0xc0403020."]
+        #[doc = "0x8028 - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xc0403020."]
         #[inline(always)]
         pub const fn agc_update_8028_opaque(&self) -> &AgcUpdate8028Opaque {
             &self.agc_update_8028_opaque
         }
-        #[doc = "0x802c - Complete phy_bb_agc_reg_update writes 0x01000080."]
+        #[doc = "0x802c - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x01000080."]
         #[inline(always)]
         pub const fn agc_update_802c_opaque(&self) -> &AgcUpdate802cOpaque {
             &self.agc_update_802c_opaque
         }
-        #[doc = "0x8070 - Complete phy_bb_agc_reg_update writes 0x000008c7."]
+        #[doc = "0x8070 - Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000008c7."]
         #[inline(always)]
         pub const fn agc_update_8070_opaque(&self) -> &AgcUpdate8070Opaque {
             &self.agc_update_8070_opaque
@@ -6863,10 +6863,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_7048_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0xff7da4f3.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_7048_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_7048_opaque`] module"]
+    #[doc = "AGC_UPDATE_7048_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xff7da4f3.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_7048_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_7048_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_7048_OPAQUE")]
     pub type AgcUpdate7048Opaque = crate::Reg<agc_update_7048_opaque::AgcUpdate7048OpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0xff7da4f3."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xff7da4f3."]
     pub mod agc_update_7048_opaque {
         #[doc = "Register `AGC_UPDATE_7048_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate7048OpaqueSpec>;
@@ -6876,7 +6876,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0xff7da4f3.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_7048_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xff7da4f3.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_7048_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate7048OpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate7048OpaqueSpec {
             type Ux = u32;
@@ -7510,10 +7510,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_78A4_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0x0001721f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_78a4_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_78a4_opaque`] module"]
+    #[doc = "AGC_UPDATE_78A4_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x0001721f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_78a4_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_78a4_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_78A4_OPAQUE")]
     pub type AgcUpdate78a4Opaque = crate::Reg<agc_update_78a4_opaque::AgcUpdate78a4OpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0x0001721f."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x0001721f."]
     pub mod agc_update_78a4_opaque {
         #[doc = "Register `AGC_UPDATE_78A4_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate78a4OpaqueSpec>;
@@ -7523,7 +7523,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0x0001721f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_78a4_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x0001721f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_78a4_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate78a4OpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate78a4OpaqueSpec {
             type Ux = u32;
@@ -7680,10 +7680,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_8010_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0x000852a1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8010_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8010_opaque`] module"]
+    #[doc = "AGC_UPDATE_8010_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000852a1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8010_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8010_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_8010_OPAQUE")]
     pub type AgcUpdate8010Opaque = crate::Reg<agc_update_8010_opaque::AgcUpdate8010OpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0x000852a1."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000852a1."]
     pub mod agc_update_8010_opaque {
         #[doc = "Register `AGC_UPDATE_8010_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate8010OpaqueSpec>;
@@ -7693,7 +7693,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0x000852a1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8010_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000852a1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8010_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate8010OpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate8010OpaqueSpec {
             type Ux = u32;
@@ -7703,10 +7703,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_8018_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0x00600030.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8018_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8018_opaque`] module"]
+    #[doc = "AGC_UPDATE_8018_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00600030.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8018_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8018_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_8018_OPAQUE")]
     pub type AgcUpdate8018Opaque = crate::Reg<agc_update_8018_opaque::AgcUpdate8018OpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0x00600030."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00600030."]
     pub mod agc_update_8018_opaque {
         #[doc = "Register `AGC_UPDATE_8018_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate8018OpaqueSpec>;
@@ -7716,7 +7716,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0x00600030.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8018_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00600030.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8018_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate8018OpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate8018OpaqueSpec {
             type Ux = u32;
@@ -7726,10 +7726,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_801C_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0x010000a0.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_801c_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_801c_opaque`] module"]
+    #[doc = "AGC_UPDATE_801C_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x010000a0.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_801c_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_801c_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_801C_OPAQUE")]
     pub type AgcUpdate801cOpaque = crate::Reg<agc_update_801c_opaque::AgcUpdate801cOpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0x010000a0."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x010000a0."]
     pub mod agc_update_801c_opaque {
         #[doc = "Register `AGC_UPDATE_801C_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate801cOpaqueSpec>;
@@ -7739,7 +7739,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0x010000a0.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_801c_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x010000a0.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_801c_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate801cOpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate801cOpaqueSpec {
             type Ux = u32;
@@ -7749,10 +7749,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_8020_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0x00000180.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8020_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8020_opaque`] module"]
+    #[doc = "AGC_UPDATE_8020_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00000180.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8020_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8020_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_8020_OPAQUE")]
     pub type AgcUpdate8020Opaque = crate::Reg<agc_update_8020_opaque::AgcUpdate8020OpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0x00000180."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00000180."]
     pub mod agc_update_8020_opaque {
         #[doc = "Register `AGC_UPDATE_8020_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate8020OpaqueSpec>;
@@ -7762,7 +7762,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0x00000180.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8020_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00000180.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8020_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate8020OpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate8020OpaqueSpec {
             type Ux = u32;
@@ -7772,10 +7772,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_8028_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0xc0403020.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8028_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8028_opaque`] module"]
+    #[doc = "AGC_UPDATE_8028_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xc0403020.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8028_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8028_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_8028_OPAQUE")]
     pub type AgcUpdate8028Opaque = crate::Reg<agc_update_8028_opaque::AgcUpdate8028OpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0xc0403020."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xc0403020."]
     pub mod agc_update_8028_opaque {
         #[doc = "Register `AGC_UPDATE_8028_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate8028OpaqueSpec>;
@@ -7785,7 +7785,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0xc0403020.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8028_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xc0403020.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8028_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate8028OpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate8028OpaqueSpec {
             type Ux = u32;
@@ -7795,10 +7795,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_802C_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0x01000080.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_802c_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_802c_opaque`] module"]
+    #[doc = "AGC_UPDATE_802C_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x01000080.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_802c_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_802c_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_802C_OPAQUE")]
     pub type AgcUpdate802cOpaque = crate::Reg<agc_update_802c_opaque::AgcUpdate802cOpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0x01000080."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x01000080."]
     pub mod agc_update_802c_opaque {
         #[doc = "Register `AGC_UPDATE_802C_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate802cOpaqueSpec>;
@@ -7808,7 +7808,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0x01000080.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_802c_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x01000080.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_802c_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate802cOpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate802cOpaqueSpec {
             type Ux = u32;
@@ -7818,10 +7818,10 @@ pub mod phy_agc_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "AGC_UPDATE_8070_OPAQUE (w) register accessor: Complete phy_bb_agc_reg_update writes 0x000008c7.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8070_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8070_opaque`] module"]
+    #[doc = "AGC_UPDATE_8070_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000008c7.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8070_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@agc_update_8070_opaque`] module"]
     #[doc(alias = "AGC_UPDATE_8070_OPAQUE")]
     pub type AgcUpdate8070Opaque = crate::Reg<agc_update_8070_opaque::AgcUpdate8070OpaqueSpec>;
-    #[doc = "Complete phy_bb_agc_reg_update writes 0x000008c7."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000008c7."]
     pub mod agc_update_8070_opaque {
         #[doc = "Register `AGC_UPDATE_8070_OPAQUE` writer"]
         pub type W = crate::W<AgcUpdate8070OpaqueSpec>;
@@ -7831,7 +7831,7 @@ pub mod phy_agc_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_agc_reg_update writes 0x000008c7.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8070_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000008c7.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`agc_update_8070_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AgcUpdate8070OpaqueSpec;
         impl crate::RegisterSpec for AgcUpdate8070OpaqueSpec {
             type Ux = u32;
@@ -8209,7 +8209,7 @@ pub mod phy_baseband_config_oracle {
         pub const fn power_detector_sar_control_status(&self) -> &PowerDetectorSarControlStatus {
             &self.power_detector_sar_control_status
         }
-        #[doc = "0x810 - Complete phy_pwdet_reg_init writes 0x0f0f0fff."]
+        #[doc = "0x810 - Opaque: meaning not established. Complete phy_pwdet_reg_init writes 0x0f0f0fff."]
         #[inline(always)]
         pub const fn power_detector_table_0_opaque(&self) -> &PowerDetectorTable0Opaque {
             &self.power_detector_table_0_opaque
@@ -8414,7 +8414,7 @@ pub mod phy_baseband_config_oracle {
         pub const fn noise_floor_enable_1(&self) -> &NoiseFloorEnable1 {
             &self.noise_floor_enable_1
         }
-        #[doc = "0x7c6c - Complete phy_tx_paon_set writes 0x0661a45f."]
+        #[doc = "0x7c6c - Opaque: meaning not established. Complete phy_tx_paon_set writes 0x0661a45f."]
         #[inline(always)]
         pub const fn tx_pa_table_opaque(&self) -> &TxPaTableOpaque {
             &self.tx_pa_table_opaque
@@ -9711,11 +9711,11 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "POWER_DETECTOR_TABLE_0_OPAQUE (w) register accessor: Complete phy_pwdet_reg_init writes 0x0f0f0fff.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_table_0_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_table_0_opaque`] module"]
+    #[doc = "POWER_DETECTOR_TABLE_0_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_pwdet_reg_init writes 0x0f0f0fff.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_table_0_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@power_detector_table_0_opaque`] module"]
     #[doc(alias = "POWER_DETECTOR_TABLE_0_OPAQUE")]
     pub type PowerDetectorTable0Opaque =
         crate::Reg<power_detector_table_0_opaque::PowerDetectorTable0OpaqueSpec>;
-    #[doc = "Complete phy_pwdet_reg_init writes 0x0f0f0fff."]
+    #[doc = "Opaque: meaning not established. Complete phy_pwdet_reg_init writes 0x0f0f0fff."]
     pub mod power_detector_table_0_opaque {
         #[doc = "Register `POWER_DETECTOR_TABLE_0_OPAQUE` writer"]
         pub type W = crate::W<PowerDetectorTable0OpaqueSpec>;
@@ -9725,7 +9725,7 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_pwdet_reg_init writes 0x0f0f0fff.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_table_0_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_pwdet_reg_init writes 0x0f0f0fff.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power_detector_table_0_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct PowerDetectorTable0OpaqueSpec;
         impl crate::RegisterSpec for PowerDetectorTable0OpaqueSpec {
             type Ux = u32;
@@ -12036,10 +12036,10 @@ pub mod phy_baseband_config_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TX_PA_TABLE_OPAQUE (w) register accessor: Complete phy_tx_paon_set writes 0x0661a45f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_table_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_table_opaque`] module"]
+    #[doc = "TX_PA_TABLE_OPAQUE (w) register accessor: Opaque: meaning not established. Complete phy_tx_paon_set writes 0x0661a45f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_table_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_pa_table_opaque`] module"]
     #[doc(alias = "TX_PA_TABLE_OPAQUE")]
     pub type TxPaTableOpaque = crate::Reg<tx_pa_table_opaque::TxPaTableOpaqueSpec>;
-    #[doc = "Complete phy_tx_paon_set writes 0x0661a45f."]
+    #[doc = "Opaque: meaning not established. Complete phy_tx_paon_set writes 0x0661a45f."]
     pub mod tx_pa_table_opaque {
         #[doc = "Register `TX_PA_TABLE_OPAQUE` writer"]
         pub type W = crate::W<TxPaTableOpaqueSpec>;
@@ -12049,7 +12049,7 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {}
-        #[doc = "Complete phy_tx_paon_set writes 0x0661a45f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_table_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_tx_paon_set writes 0x0661a45f.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_pa_table_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxPaTableOpaqueSpec;
         impl crate::RegisterSpec for TxPaTableOpaqueSpec {
             type Ux = u32;
@@ -12757,7 +12757,7 @@ pub mod phy_clock_oracle {
         bb_clock_gate_opaque: BbClockGateOpaque,
     }
     impl RegisterBlock {
-        #[doc = "0x400 - ROM writes 0x1e7 to open and the blob writes zero to close."]
+        #[doc = "0x400 - Opaque: meaning not established. ROM writes 0x1e7 to open and the blob writes zero to close."]
         #[inline(always)]
         pub const fn fe_clock_gate_opaque(&self) -> &FeClockGateOpaque {
             &self.fe_clock_gate_opaque
@@ -12767,21 +12767,21 @@ pub mod phy_clock_oracle {
         pub const fn table_memory_index_source(&self) -> &TableMemoryIndexSource {
             &self.table_memory_index_source
         }
-        #[doc = "0x800 - ROM sets bits 1:0 and the blob clears them."]
+        #[doc = "0x800 - Opaque: meaning not established. ROM sets bits 1:0 and the blob clears them."]
         #[inline(always)]
         pub const fn fe_bb_clock_control_opaque(&self) -> &FeBbClockControlOpaque {
             &self.fe_bb_clock_control_opaque
         }
-        #[doc = "0x7c80 - ROM writes all ones to open and the blob writes zero to close."]
+        #[doc = "0x7c80 - Opaque: meaning not established. ROM writes all ones to open and the blob writes zero to close."]
         #[inline(always)]
         pub const fn bb_clock_gate_opaque(&self) -> &BbClockGateOpaque {
             &self.bb_clock_gate_opaque
         }
     }
-    #[doc = "FE_CLOCK_GATE_OPAQUE (w) register accessor: ROM writes 0x1e7 to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_clock_gate_opaque`] module"]
+    #[doc = "FE_CLOCK_GATE_OPAQUE (w) register accessor: Opaque: meaning not established. ROM writes 0x1e7 to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_clock_gate_opaque`] module"]
     #[doc(alias = "FE_CLOCK_GATE_OPAQUE")]
     pub type FeClockGateOpaque = crate::Reg<fe_clock_gate_opaque::FeClockGateOpaqueSpec>;
-    #[doc = "ROM writes 0x1e7 to open and the blob writes zero to close."]
+    #[doc = "Opaque: meaning not established. ROM writes 0x1e7 to open and the blob writes zero to close."]
     pub mod fe_clock_gate_opaque {
         #[doc = "Register `FE_CLOCK_GATE_OPAQUE` writer"]
         pub type W = crate::W<FeClockGateOpaqueSpec>;
@@ -12829,7 +12829,7 @@ pub mod phy_clock_oracle {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "ROM writes 0x1e7 to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. ROM writes 0x1e7 to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FeClockGateOpaqueSpec;
         impl crate::RegisterSpec for FeClockGateOpaqueSpec {
             type Ux = u32;
@@ -12959,11 +12959,11 @@ pub mod phy_clock_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FE_BB_CLOCK_CONTROL_OPAQUE (rw) register accessor: ROM sets bits 1:0 and the blob clears them.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_bb_clock_control_opaque`] module"]
+    #[doc = "FE_BB_CLOCK_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. ROM sets bits 1:0 and the blob clears them.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fe_bb_clock_control_opaque`] module"]
     #[doc(alias = "FE_BB_CLOCK_CONTROL_OPAQUE")]
     pub type FeBbClockControlOpaque =
         crate::Reg<fe_bb_clock_control_opaque::FeBbClockControlOpaqueSpec>;
-    #[doc = "ROM sets bits 1:0 and the blob clears them."]
+    #[doc = "Opaque: meaning not established. ROM sets bits 1:0 and the blob clears them."]
     pub mod fe_bb_clock_control_opaque {
         #[doc = "Register `FE_BB_CLOCK_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<FeBbClockControlOpaqueSpec>;
@@ -13062,7 +13062,7 @@ pub mod phy_clock_oracle {
                 PhyCalibrationClockUnknownW::new(self, 2)
             }
         }
-        #[doc = "ROM sets bits 1:0 and the blob clears them.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. ROM sets bits 1:0 and the blob clears them.\n\nYou can [`read`](crate::Reg::read) this register and get [`fe_bb_clock_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_bb_clock_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FeBbClockControlOpaqueSpec;
         impl crate::RegisterSpec for FeBbClockControlOpaqueSpec {
             type Ux = u32;
@@ -13074,10 +13074,10 @@ pub mod phy_clock_oracle {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BB_CLOCK_GATE_OPAQUE (w) register accessor: ROM writes all ones to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bb_clock_gate_opaque`] module"]
+    #[doc = "BB_CLOCK_GATE_OPAQUE (w) register accessor: Opaque: meaning not established. ROM writes all ones to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate_opaque::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bb_clock_gate_opaque`] module"]
     #[doc(alias = "BB_CLOCK_GATE_OPAQUE")]
     pub type BbClockGateOpaque = crate::Reg<bb_clock_gate_opaque::BbClockGateOpaqueSpec>;
-    #[doc = "ROM writes all ones to open and the blob writes zero to close."]
+    #[doc = "Opaque: meaning not established. ROM writes all ones to open and the blob writes zero to close."]
     pub mod bb_clock_gate_opaque {
         #[doc = "Register `BB_CLOCK_GATE_OPAQUE` writer"]
         pub type W = crate::W<BbClockGateOpaqueSpec>;
@@ -13125,7 +13125,7 @@ pub mod phy_clock_oracle {
                 StateW::new(self, 0)
             }
         }
-        #[doc = "ROM writes all ones to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. ROM writes all ones to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BbClockGateOpaqueSpec;
         impl crate::RegisterSpec for BbClockGateOpaqueSpec {
             type Ux = u32;
@@ -37290,21 +37290,21 @@ pub mod phy_fedata_recovered {
         tx_rx_reset_opaque: TxRxResetOpaque,
     }
     impl RegisterBlock {
-        #[doc = "0x30 - Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
+        #[doc = "0x30 - Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn rx_filter_mode_opaque(&self) -> &RxFilterModeOpaque {
             &self.rx_filter_mode_opaque
         }
-        #[doc = "0x40 - Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed."]
+        #[doc = "0x40 - Opaque: meaning not established. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn tx_rx_reset_opaque(&self) -> &TxRxResetOpaque {
             &self.tx_rx_reset_opaque
         }
     }
-    #[doc = "RX_FILTER_MODE_OPAQUE (rw) register accessor: Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_filter_mode_opaque`] module"]
+    #[doc = "RX_FILTER_MODE_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_filter_mode_opaque`] module"]
     #[doc(alias = "RX_FILTER_MODE_OPAQUE")]
     pub type RxFilterModeOpaque = crate::Reg<rx_filter_mode_opaque::RxFilterModeOpaqueSpec>;
-    #[doc = "Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."]
     pub mod rx_filter_mode_opaque {
         #[doc = "Register `RX_FILTER_MODE_OPAQUE` reader"]
         pub type R = crate::R<RxFilterModeOpaqueSpec>;
@@ -37316,7 +37316,7 @@ pub mod phy_fedata_recovered {
             }
         }
         impl W {}
-        #[doc = "Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_filter_mode_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_filter_mode_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxFilterModeOpaqueSpec;
         impl crate::RegisterSpec for RxFilterModeOpaqueSpec {
             type Ux = u32;
@@ -37328,18 +37328,18 @@ pub mod phy_fedata_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "TX_RX_RESET_OPAQUE (rw) register accessor: Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rx_reset_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_rx_reset_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_rx_reset_opaque`] module"]
+    #[doc = "TX_RX_RESET_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rx_reset_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_rx_reset_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@tx_rx_reset_opaque`] module"]
     #[doc(alias = "TX_RX_RESET_OPAQUE")]
     pub type TxRxResetOpaque = crate::Reg<tx_rx_reset_opaque::TxRxResetOpaqueSpec>;
-    #[doc = "Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed."]
     pub mod tx_rx_reset_opaque {
         #[doc = "Register `TX_RX_RESET_OPAQUE` reader"]
         pub type R = crate::R<TxRxResetOpaqueSpec>;
         #[doc = "Register `TX_RX_RESET_OPAQUE` writer"]
         pub type W = crate::W<TxRxResetOpaqueSpec>;
-        #[doc = "Field `TX_RX_RESET_LOW_OPAQUE` reader - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+        #[doc = "Field `TX_RX_RESET_LOW_OPAQUE` reader - Opaque: meaning not established. Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
         pub type TxRxResetLowOpaqueR = crate::FieldReader<u16>;
-        #[doc = "Field `TX_RX_RESET_LOW_OPAQUE` writer - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+        #[doc = "Field `TX_RX_RESET_LOW_OPAQUE` writer - Opaque: meaning not established. Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
         pub type TxRxResetLowOpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 13, u16>;
         #[doc = "Field `TX_RX_RESET_BIT_25` reader - First upper reset bit asserted by complete phy_fe_txrx_reset."]
         pub type TxRxResetBit25R = crate::BitReader;
@@ -37350,7 +37350,7 @@ pub mod phy_fedata_recovered {
         #[doc = "Field `TX_RX_RESET_BIT_26` writer - Second upper reset bit cleared and then asserted by complete phy_fe_txrx_reset."]
         pub type TxRxResetBit26W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 12:24 - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+            #[doc = "Bits 12:24 - Opaque: meaning not established. Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
             #[inline(always)]
             pub fn tx_rx_reset_low_opaque(&self) -> TxRxResetLowOpaqueR {
                 TxRxResetLowOpaqueR::new(((self.bits >> 12) & 0x1fff) as u16)
@@ -37367,7 +37367,7 @@ pub mod phy_fedata_recovered {
             }
         }
         impl W {
-            #[doc = "Bits 12:24 - Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
+            #[doc = "Bits 12:24 - Opaque: meaning not established. Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset."]
             #[inline(always)]
             pub fn tx_rx_reset_low_opaque(
                 &mut self,
@@ -37385,7 +37385,7 @@ pub mod phy_fedata_recovered {
                 TxRxResetBit26W::new(self, 26)
             }
         }
-        #[doc = "Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rx_reset_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_rx_reset_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_rx_reset_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tx_rx_reset_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TxRxResetOpaqueSpec;
         impl crate::RegisterSpec for TxRxResetOpaqueSpec {
             type Ux = u32;
@@ -37417,32 +37417,32 @@ pub mod phy_fectrl_recovered {
         antenna_config_word_3_opaque: AntennaConfigWord3Opaque,
     }
     impl RegisterBlock {
-        #[doc = "0x34 - Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[doc = "0x34 - Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
         #[inline(always)]
         pub const fn antenna_config_word_0_opaque(&self) -> &AntennaConfigWord0Opaque {
             &self.antenna_config_word_0_opaque
         }
-        #[doc = "0x38 - Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[doc = "0x38 - Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
         #[inline(always)]
         pub const fn antenna_config_word_1_opaque(&self) -> &AntennaConfigWord1Opaque {
             &self.antenna_config_word_1_opaque
         }
-        #[doc = "0x3c - Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[doc = "0x3c - Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
         #[inline(always)]
         pub const fn antenna_config_word_2_opaque(&self) -> &AntennaConfigWord2Opaque {
             &self.antenna_config_word_2_opaque
         }
-        #[doc = "0x40 - Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+        #[doc = "0x40 - Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
         #[inline(always)]
         pub const fn antenna_config_word_3_opaque(&self) -> &AntennaConfigWord3Opaque {
             &self.antenna_config_word_3_opaque
         }
     }
-    #[doc = "ANTENNA_CONFIG_WORD_0_OPAQUE (rw) register accessor: Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_0_opaque`] module"]
+    #[doc = "ANTENNA_CONFIG_WORD_0_OPAQUE (rw) register accessor: Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_0_opaque`] module"]
     #[doc(alias = "ANTENNA_CONFIG_WORD_0_OPAQUE")]
     pub type AntennaConfigWord0Opaque =
         crate::Reg<antenna_config_word_0_opaque::AntennaConfigWord0OpaqueSpec>;
-    #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
     pub mod antenna_config_word_0_opaque {
         #[doc = "Register `ANTENNA_CONFIG_WORD_0_OPAQUE` reader"]
         pub type R = crate::R<AntennaConfigWord0OpaqueSpec>;
@@ -37454,7 +37454,7 @@ pub mod phy_fectrl_recovered {
             }
         }
         impl W {}
-        #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AntennaConfigWord0OpaqueSpec;
         impl crate::RegisterSpec for AntennaConfigWord0OpaqueSpec {
             type Ux = u32;
@@ -37466,11 +37466,11 @@ pub mod phy_fectrl_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ANTENNA_CONFIG_WORD_1_OPAQUE (rw) register accessor: Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_1_opaque`] module"]
+    #[doc = "ANTENNA_CONFIG_WORD_1_OPAQUE (rw) register accessor: Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_1_opaque`] module"]
     #[doc(alias = "ANTENNA_CONFIG_WORD_1_OPAQUE")]
     pub type AntennaConfigWord1Opaque =
         crate::Reg<antenna_config_word_1_opaque::AntennaConfigWord1OpaqueSpec>;
-    #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
     pub mod antenna_config_word_1_opaque {
         #[doc = "Register `ANTENNA_CONFIG_WORD_1_OPAQUE` reader"]
         pub type R = crate::R<AntennaConfigWord1OpaqueSpec>;
@@ -37482,7 +37482,7 @@ pub mod phy_fectrl_recovered {
             }
         }
         impl W {}
-        #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AntennaConfigWord1OpaqueSpec;
         impl crate::RegisterSpec for AntennaConfigWord1OpaqueSpec {
             type Ux = u32;
@@ -37494,11 +37494,11 @@ pub mod phy_fectrl_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ANTENNA_CONFIG_WORD_2_OPAQUE (rw) register accessor: Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_2_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_2_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_2_opaque`] module"]
+    #[doc = "ANTENNA_CONFIG_WORD_2_OPAQUE (rw) register accessor: Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_2_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_2_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_2_opaque`] module"]
     #[doc(alias = "ANTENNA_CONFIG_WORD_2_OPAQUE")]
     pub type AntennaConfigWord2Opaque =
         crate::Reg<antenna_config_word_2_opaque::AntennaConfigWord2OpaqueSpec>;
-    #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
     pub mod antenna_config_word_2_opaque {
         #[doc = "Register `ANTENNA_CONFIG_WORD_2_OPAQUE` reader"]
         pub type R = crate::R<AntennaConfigWord2OpaqueSpec>;
@@ -37510,7 +37510,7 @@ pub mod phy_fectrl_recovered {
             }
         }
         impl W {}
-        #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_2_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_2_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_2_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_2_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AntennaConfigWord2OpaqueSpec;
         impl crate::RegisterSpec for AntennaConfigWord2OpaqueSpec {
             type Ux = u32;
@@ -37522,11 +37522,11 @@ pub mod phy_fectrl_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ANTENNA_CONFIG_WORD_3_OPAQUE (rw) register accessor: Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_3_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_3_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_3_opaque`] module"]
+    #[doc = "ANTENNA_CONFIG_WORD_3_OPAQUE (rw) register accessor: Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_3_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_3_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_config_word_3_opaque`] module"]
     #[doc(alias = "ANTENNA_CONFIG_WORD_3_OPAQUE")]
     pub type AntennaConfigWord3Opaque =
         crate::Reg<antenna_config_word_3_opaque::AntennaConfigWord3OpaqueSpec>;
-    #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
+    #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."]
     pub mod antenna_config_word_3_opaque {
         #[doc = "Register `ANTENNA_CONFIG_WORD_3_OPAQUE` reader"]
         pub type R = crate::R<AntennaConfigWord3OpaqueSpec>;
@@ -37538,7 +37538,7 @@ pub mod phy_fectrl_recovered {
             }
         }
         impl W {}
-        #[doc = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_3_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_3_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_config_word_3_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_config_word_3_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct AntennaConfigWord3OpaqueSpec;
         impl crate::RegisterSpec for AntennaConfigWord3OpaqueSpec {
             type Ux = u32;
@@ -37570,26 +37570,26 @@ pub mod phy_fedata_wifi_recovered {
         frequency_correction_word_1_opaque: FrequencyCorrectionWord1Opaque,
     }
     impl RegisterBlock {
-        #[doc = "0x14 - Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+        #[doc = "0x14 - Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
         #[inline(always)]
         pub const fn cfo_config_word_0_opaque(&self) -> &CfoConfigWord0Opaque {
             &self.cfo_config_word_0_opaque
         }
-        #[doc = "0x18 - Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[doc = "0x18 - Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn frequency_correction_word_0_opaque(&self) -> &FrequencyCorrectionWord0Opaque {
             &self.frequency_correction_word_0_opaque
         }
-        #[doc = "0x1c - Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[doc = "0x1c - Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn frequency_correction_word_1_opaque(&self) -> &FrequencyCorrectionWord1Opaque {
             &self.frequency_correction_word_1_opaque
         }
     }
-    #[doc = "CFO_CONFIG_WORD_0_OPAQUE (rw) register accessor: Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_0_opaque`] module"]
+    #[doc = "CFO_CONFIG_WORD_0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_0_opaque`] module"]
     #[doc(alias = "CFO_CONFIG_WORD_0_OPAQUE")]
     pub type CfoConfigWord0Opaque = crate::Reg<cfo_config_word_0_opaque::CfoConfigWord0OpaqueSpec>;
-    #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
     pub mod cfo_config_word_0_opaque {
         #[doc = "Register `CFO_CONFIG_WORD_0_OPAQUE` reader"]
         pub type R = crate::R<CfoConfigWord0OpaqueSpec>;
@@ -37601,7 +37601,7 @@ pub mod phy_fedata_wifi_recovered {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CfoConfigWord0OpaqueSpec;
         impl crate::RegisterSpec for CfoConfigWord0OpaqueSpec {
             type Ux = u32;
@@ -37613,11 +37613,11 @@ pub mod phy_fedata_wifi_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FREQUENCY_CORRECTION_WORD_0_OPAQUE (rw) register accessor: Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_word_0_opaque`] module"]
+    #[doc = "FREQUENCY_CORRECTION_WORD_0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_word_0_opaque`] module"]
     #[doc(alias = "FREQUENCY_CORRECTION_WORD_0_OPAQUE")]
     pub type FrequencyCorrectionWord0Opaque =
         crate::Reg<frequency_correction_word_0_opaque::FrequencyCorrectionWord0OpaqueSpec>;
-    #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
     pub mod frequency_correction_word_0_opaque {
         #[doc = "Register `FREQUENCY_CORRECTION_WORD_0_OPAQUE` reader"]
         pub type R = crate::R<FrequencyCorrectionWord0OpaqueSpec>;
@@ -37629,7 +37629,7 @@ pub mod phy_fedata_wifi_recovered {
             }
         }
         impl W {}
-        #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrequencyCorrectionWord0OpaqueSpec;
         impl crate::RegisterSpec for FrequencyCorrectionWord0OpaqueSpec {
             type Ux = u32;
@@ -37641,11 +37641,11 @@ pub mod phy_fedata_wifi_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FREQUENCY_CORRECTION_WORD_1_OPAQUE (rw) register accessor: Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_word_1_opaque`] module"]
+    #[doc = "FREQUENCY_CORRECTION_WORD_1_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_word_1_opaque`] module"]
     #[doc(alias = "FREQUENCY_CORRECTION_WORD_1_OPAQUE")]
     pub type FrequencyCorrectionWord1Opaque =
         crate::Reg<frequency_correction_word_1_opaque::FrequencyCorrectionWord1OpaqueSpec>;
-    #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
     pub mod frequency_correction_word_1_opaque {
         #[doc = "Register `FREQUENCY_CORRECTION_WORD_1_OPAQUE` reader"]
         pub type R = crate::R<FrequencyCorrectionWord1OpaqueSpec>;
@@ -37657,7 +37657,7 @@ pub mod phy_fedata_wifi_recovered {
             }
         }
         impl W {}
-        #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrequencyCorrectionWord1OpaqueSpec;
         impl crate::RegisterSpec for FrequencyCorrectionWord1OpaqueSpec {
             type Ux = u32;
@@ -37742,7 +37742,7 @@ pub mod phy_btagc_recovered {
         pub const fn cte_re_gain(&self) -> &CteReGain {
             &self.cte_re_gain
         }
-        #[doc = "0x40 - Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word."]
+        #[doc = "0x40 - Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word."]
         #[inline(always)]
         pub const fn rx_gain_force_opaque(&self) -> &RxGainForceOpaque {
             &self.rx_gain_force_opaque
@@ -37752,7 +37752,7 @@ pub mod phy_btagc_recovered {
         pub const fn rx_comp_control(&self) -> &RxCompControl {
             &self.rx_comp_control
         }
-        #[doc = "0x48 - Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed."]
+        #[doc = "0x48 - Opaque: meaning not established. Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed."]
         #[inline(always)]
         pub const fn gain_offset_word_0_opaque(&self) -> &GainOffsetWord0Opaque {
             &self.gain_offset_word_0_opaque
@@ -37787,7 +37787,7 @@ pub mod phy_btagc_recovered {
         pub const fn agc_sat_gain_config(&self) -> &AgcSatGainConfig {
             &self.agc_sat_gain_config
         }
-        #[doc = "0x68 - Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed."]
+        #[doc = "0x68 - Opaque: meaning not established. Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed."]
         #[inline(always)]
         pub const fn gain_offset_word_1_opaque(&self) -> &GainOffsetWord1Opaque {
             &self.gain_offset_word_1_opaque
@@ -38019,10 +38019,10 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_GAIN_FORCE_OPAQUE (rw) register accessor: Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_force_opaque`] module"]
+    #[doc = "RX_GAIN_FORCE_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_gain_force_opaque`] module"]
     #[doc(alias = "RX_GAIN_FORCE_OPAQUE")]
     pub type RxGainForceOpaque = crate::Reg<rx_gain_force_opaque::RxGainForceOpaqueSpec>;
-    #[doc = "Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word."]
+    #[doc = "Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word."]
     pub mod rx_gain_force_opaque {
         #[doc = "Register `RX_GAIN_FORCE_OPAQUE` reader"]
         pub type R = crate::R<RxGainForceOpaqueSpec>;
@@ -38060,7 +38060,7 @@ pub mod phy_btagc_recovered {
                 TargetBits13_21W::new(self, 13)
             }
         }
-        #[doc = "Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_gain_force_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_gain_force_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxGainForceOpaqueSpec;
         impl crate::RegisterSpec for RxGainForceOpaqueSpec {
             type Ux = u32;
@@ -38072,11 +38072,11 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "GAIN_OFFSET_WORD_0_OPAQUE (rw) register accessor: Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gain_offset_word_0_opaque`] module"]
+    #[doc = "GAIN_OFFSET_WORD_0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gain_offset_word_0_opaque`] module"]
     #[doc(alias = "GAIN_OFFSET_WORD_0_OPAQUE")]
     pub type GainOffsetWord0Opaque =
         crate::Reg<gain_offset_word_0_opaque::GainOffsetWord0OpaqueSpec>;
-    #[doc = "Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed."]
     pub mod gain_offset_word_0_opaque {
         #[doc = "Register `GAIN_OFFSET_WORD_0_OPAQUE` reader"]
         pub type R = crate::R<GainOffsetWord0OpaqueSpec>;
@@ -38150,7 +38150,7 @@ pub mod phy_btagc_recovered {
                 PositionalBits24_31W::new(self, 24)
             }
         }
-        #[doc = "Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct GainOffsetWord0OpaqueSpec;
         impl crate::RegisterSpec for GainOffsetWord0OpaqueSpec {
             type Ux = u32;
@@ -38285,11 +38285,11 @@ pub mod phy_btagc_recovered {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "GAIN_OFFSET_WORD_1_OPAQUE (rw) register accessor: Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gain_offset_word_1_opaque`] module"]
+    #[doc = "GAIN_OFFSET_WORD_1_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@gain_offset_word_1_opaque`] module"]
     #[doc(alias = "GAIN_OFFSET_WORD_1_OPAQUE")]
     pub type GainOffsetWord1Opaque =
         crate::Reg<gain_offset_word_1_opaque::GainOffsetWord1OpaqueSpec>;
-    #[doc = "Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed."]
     pub mod gain_offset_word_1_opaque {
         #[doc = "Register `GAIN_OFFSET_WORD_1_OPAQUE` reader"]
         pub type R = crate::R<GainOffsetWord1OpaqueSpec>;
@@ -38409,7 +38409,7 @@ pub mod phy_btagc_recovered {
                 PositionalBits24_31W::new(self, 24)
             }
         }
-        #[doc = "Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`gain_offset_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`gain_offset_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct GainOffsetWord1OpaqueSpec;
         impl crate::RegisterSpec for GainOffsetWord1OpaqueSpec {
             type Ux = u32;
@@ -53148,71 +53148,71 @@ pub mod phy_agc_recovered_gaps {
         cfo_config_word_3_opaque: CfoConfigWord3Opaque,
     }
     impl RegisterBlock {
-        #[doc = "0x10 - Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+        #[doc = "0x10 - Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
         #[inline(always)]
         pub const fn rx_sense_word_0_opaque(&self) -> &RxSenseWord0Opaque {
             &self.rx_sense_word_0_opaque
         }
-        #[doc = "0x14 - Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+        #[doc = "0x14 - Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
         #[inline(always)]
         pub const fn rx_sense_word_1_opaque(&self) -> &RxSenseWord1Opaque {
             &self.rx_sense_word_1_opaque
         }
-        #[doc = "0x1c - Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed."]
+        #[doc = "0x1c - Opaque: meaning not established. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed."]
         #[inline(always)]
         pub const fn cca_control_opaque(&self) -> &CcaControlOpaque {
             &self.cca_control_opaque
         }
-        #[doc = "0x50 - Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown."]
+        #[doc = "0x50 - Opaque: meaning not established. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown."]
         #[inline(always)]
         pub const fn noise_floor_status_opaque(&self) -> &NoiseFloorStatusOpaque {
             &self.noise_floor_status_opaque
         }
-        #[doc = "0x6c - Complete phy_get_rssi reads this word; hardware access semantics remain unknown."]
+        #[doc = "0x6c - Opaque: meaning not established. Complete phy_get_rssi reads this word; hardware access semantics remain unknown."]
         #[inline(always)]
         pub const fn rssi_status_opaque(&self) -> &RssiStatusOpaque {
             &self.rssi_status_opaque
         }
-        #[doc = "0x74 - Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+        #[doc = "0x74 - Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
         #[inline(always)]
         pub const fn channel_filter_control_opaque(&self) -> &ChannelFilterControlOpaque {
             &self.channel_filter_control_opaque
         }
-        #[doc = "0xcc - Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+        #[doc = "0xcc - Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
         #[inline(always)]
         pub const fn backup_word_cc_opaque(&self) -> &BackupWordCcOpaque {
             &self.backup_word_cc_opaque
         }
-        #[doc = "0xf4 - Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown."]
+        #[doc = "0xf4 - Opaque: meaning not established. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown."]
         #[inline(always)]
         pub const fn rifs_mode_control_opaque(&self) -> &RifsModeControlOpaque {
             &self.rifs_mode_control_opaque
         }
-        #[doc = "0x108 - Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown."]
+        #[doc = "0x108 - Opaque: meaning not established. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown."]
         #[inline(always)]
         pub const fn rx_sense_backup_word_opaque(&self) -> &RxSenseBackupWordOpaque {
             &self.rx_sense_backup_word_opaque
         }
-        #[doc = "0x430 - Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown."]
+        #[doc = "0x430 - Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown."]
         #[inline(always)]
         pub const fn cfo_config_word_1_opaque(&self) -> &CfoConfigWord1Opaque {
             &self.cfo_config_word_1_opaque
         }
-        #[doc = "0x434 - Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+        #[doc = "0x434 - Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
         #[inline(always)]
         pub const fn cfo_config_word_2_opaque(&self) -> &CfoConfigWord2Opaque {
             &self.cfo_config_word_2_opaque
         }
-        #[doc = "0x438 - Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+        #[doc = "0x438 - Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
         #[inline(always)]
         pub const fn cfo_config_word_3_opaque(&self) -> &CfoConfigWord3Opaque {
             &self.cfo_config_word_3_opaque
         }
     }
-    #[doc = "RX_SENSE_WORD_0_OPAQUE (rw) register accessor: Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_word_0_opaque`] module"]
+    #[doc = "RX_SENSE_WORD_0_OPAQUE (rw) register accessor: Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_word_0_opaque`] module"]
     #[doc(alias = "RX_SENSE_WORD_0_OPAQUE")]
     pub type RxSenseWord0Opaque = crate::Reg<rx_sense_word_0_opaque::RxSenseWord0OpaqueSpec>;
-    #[doc = "Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+    #[doc = "Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
     pub mod rx_sense_word_0_opaque {
         #[doc = "Register `RX_SENSE_WORD_0_OPAQUE` reader"]
         pub type R = crate::R<RxSenseWord0OpaqueSpec>;
@@ -53224,7 +53224,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSenseWord0OpaqueSpec;
         impl crate::RegisterSpec for RxSenseWord0OpaqueSpec {
             type Ux = u32;
@@ -53236,10 +53236,10 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_SENSE_WORD_1_OPAQUE (rw) register accessor: Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_word_1_opaque`] module"]
+    #[doc = "RX_SENSE_WORD_1_OPAQUE (rw) register accessor: Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_word_1_opaque`] module"]
     #[doc(alias = "RX_SENSE_WORD_1_OPAQUE")]
     pub type RxSenseWord1Opaque = crate::Reg<rx_sense_word_1_opaque::RxSenseWord1OpaqueSpec>;
-    #[doc = "Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
+    #[doc = "Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."]
     pub mod rx_sense_word_1_opaque {
         #[doc = "Register `RX_SENSE_WORD_1_OPAQUE` reader"]
         pub type R = crate::R<RxSenseWord1OpaqueSpec>;
@@ -53251,7 +53251,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSenseWord1OpaqueSpec;
         impl crate::RegisterSpec for RxSenseWord1OpaqueSpec {
             type Ux = u32;
@@ -53263,10 +53263,10 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CCA_CONTROL_OPAQUE (rw) register accessor: Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_control_opaque`] module"]
+    #[doc = "CCA_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_control_opaque`] module"]
     #[doc(alias = "CCA_CONTROL_OPAQUE")]
     pub type CcaControlOpaque = crate::Reg<cca_control_opaque::CcaControlOpaqueSpec>;
-    #[doc = "Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed."]
     pub mod cca_control_opaque {
         #[doc = "Register `CCA_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<CcaControlOpaqueSpec>;
@@ -53278,7 +53278,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CcaControlOpaqueSpec;
         impl crate::RegisterSpec for CcaControlOpaqueSpec {
             type Ux = u32;
@@ -53290,11 +53290,11 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "NOISE_FLOOR_STATUS_OPAQUE (rw) register accessor: Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_status_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`noise_floor_status_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_status_opaque`] module"]
+    #[doc = "NOISE_FLOOR_STATUS_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_status_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`noise_floor_status_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@noise_floor_status_opaque`] module"]
     #[doc(alias = "NOISE_FLOOR_STATUS_OPAQUE")]
     pub type NoiseFloorStatusOpaque =
         crate::Reg<noise_floor_status_opaque::NoiseFloorStatusOpaqueSpec>;
-    #[doc = "Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown."]
     pub mod noise_floor_status_opaque {
         #[doc = "Register `NOISE_FLOOR_STATUS_OPAQUE` reader"]
         pub type R = crate::R<NoiseFloorStatusOpaqueSpec>;
@@ -53306,7 +53306,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_status_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`noise_floor_status_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`noise_floor_status_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`noise_floor_status_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct NoiseFloorStatusOpaqueSpec;
         impl crate::RegisterSpec for NoiseFloorStatusOpaqueSpec {
             type Ux = u32;
@@ -53318,10 +53318,10 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RSSI_STATUS_OPAQUE (rw) register accessor: Complete phy_get_rssi reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rssi_status_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rssi_status_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rssi_status_opaque`] module"]
+    #[doc = "RSSI_STATUS_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_get_rssi reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rssi_status_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rssi_status_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rssi_status_opaque`] module"]
     #[doc(alias = "RSSI_STATUS_OPAQUE")]
     pub type RssiStatusOpaque = crate::Reg<rssi_status_opaque::RssiStatusOpaqueSpec>;
-    #[doc = "Complete phy_get_rssi reads this word; hardware access semantics remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_get_rssi reads this word; hardware access semantics remain unknown."]
     pub mod rssi_status_opaque {
         #[doc = "Register `RSSI_STATUS_OPAQUE` reader"]
         pub type R = crate::R<RssiStatusOpaqueSpec>;
@@ -53333,7 +53333,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_get_rssi reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rssi_status_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rssi_status_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_get_rssi reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rssi_status_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rssi_status_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RssiStatusOpaqueSpec;
         impl crate::RegisterSpec for RssiStatusOpaqueSpec {
             type Ux = u32;
@@ -53345,11 +53345,11 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CHANNEL_FILTER_CONTROL_OPAQUE (rw) register accessor: Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_filter_control_opaque`] module"]
+    #[doc = "CHANNEL_FILTER_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_filter_control_opaque`] module"]
     #[doc(alias = "CHANNEL_FILTER_CONTROL_OPAQUE")]
     pub type ChannelFilterControlOpaque =
         crate::Reg<channel_filter_control_opaque::ChannelFilterControlOpaqueSpec>;
-    #[doc = "Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+    #[doc = "Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
     pub mod channel_filter_control_opaque {
         #[doc = "Register `CHANNEL_FILTER_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<ChannelFilterControlOpaqueSpec>;
@@ -53361,7 +53361,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ChannelFilterControlOpaqueSpec;
         impl crate::RegisterSpec for ChannelFilterControlOpaqueSpec {
             type Ux = u32;
@@ -53373,10 +53373,10 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BACKUP_WORD_CC_OPAQUE (rw) register accessor: Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_cc_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_cc_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backup_word_cc_opaque`] module"]
+    #[doc = "BACKUP_WORD_CC_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_cc_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_cc_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backup_word_cc_opaque`] module"]
     #[doc(alias = "BACKUP_WORD_CC_OPAQUE")]
     pub type BackupWordCcOpaque = crate::Reg<backup_word_cc_opaque::BackupWordCcOpaqueSpec>;
-    #[doc = "Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
     pub mod backup_word_cc_opaque {
         #[doc = "Register `BACKUP_WORD_CC_OPAQUE` reader"]
         pub type R = crate::R<BackupWordCcOpaqueSpec>;
@@ -53388,7 +53388,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_cc_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_cc_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_cc_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_cc_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BackupWordCcOpaqueSpec;
         impl crate::RegisterSpec for BackupWordCcOpaqueSpec {
             type Ux = u32;
@@ -53400,11 +53400,11 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RIFS_MODE_CONTROL_OPAQUE (rw) register accessor: Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rifs_mode_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rifs_mode_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rifs_mode_control_opaque`] module"]
+    #[doc = "RIFS_MODE_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rifs_mode_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rifs_mode_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rifs_mode_control_opaque`] module"]
     #[doc(alias = "RIFS_MODE_CONTROL_OPAQUE")]
     pub type RifsModeControlOpaque =
         crate::Reg<rifs_mode_control_opaque::RifsModeControlOpaqueSpec>;
-    #[doc = "Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown."]
     pub mod rifs_mode_control_opaque {
         #[doc = "Register `RIFS_MODE_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<RifsModeControlOpaqueSpec>;
@@ -53416,7 +53416,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rifs_mode_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rifs_mode_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rifs_mode_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rifs_mode_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RifsModeControlOpaqueSpec;
         impl crate::RegisterSpec for RifsModeControlOpaqueSpec {
             type Ux = u32;
@@ -53428,11 +53428,11 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_SENSE_BACKUP_WORD_OPAQUE (rw) register accessor: Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_backup_word_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_backup_word_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_backup_word_opaque`] module"]
+    #[doc = "RX_SENSE_BACKUP_WORD_OPAQUE (rw) register accessor: Opaque: meaning not established. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_backup_word_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_backup_word_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_sense_backup_word_opaque`] module"]
     #[doc(alias = "RX_SENSE_BACKUP_WORD_OPAQUE")]
     pub type RxSenseBackupWordOpaque =
         crate::Reg<rx_sense_backup_word_opaque::RxSenseBackupWordOpaqueSpec>;
-    #[doc = "Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown."]
+    #[doc = "Opaque: meaning not established. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown."]
     pub mod rx_sense_backup_word_opaque {
         #[doc = "Register `RX_SENSE_BACKUP_WORD_OPAQUE` reader"]
         pub type R = crate::R<RxSenseBackupWordOpaqueSpec>;
@@ -53444,7 +53444,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_backup_word_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_backup_word_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_sense_backup_word_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_sense_backup_word_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSenseBackupWordOpaqueSpec;
         impl crate::RegisterSpec for RxSenseBackupWordOpaqueSpec {
             type Ux = u32;
@@ -53456,10 +53456,10 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CFO_CONFIG_WORD_1_OPAQUE (rw) register accessor: Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_1_opaque`] module"]
+    #[doc = "CFO_CONFIG_WORD_1_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_1_opaque`] module"]
     #[doc(alias = "CFO_CONFIG_WORD_1_OPAQUE")]
     pub type CfoConfigWord1Opaque = crate::Reg<cfo_config_word_1_opaque::CfoConfigWord1OpaqueSpec>;
-    #[doc = "Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown."]
     pub mod cfo_config_word_1_opaque {
         #[doc = "Register `CFO_CONFIG_WORD_1_OPAQUE` reader"]
         pub type R = crate::R<CfoConfigWord1OpaqueSpec>;
@@ -53485,7 +53485,7 @@ pub mod phy_agc_recovered_gaps {
                 Bit27ControlUnknownW::new(self, 27)
             }
         }
-        #[doc = "Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CfoConfigWord1OpaqueSpec;
         impl crate::RegisterSpec for CfoConfigWord1OpaqueSpec {
             type Ux = u32;
@@ -53497,10 +53497,10 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CFO_CONFIG_WORD_2_OPAQUE (rw) register accessor: Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_2_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_2_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_2_opaque`] module"]
+    #[doc = "CFO_CONFIG_WORD_2_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_2_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_2_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_2_opaque`] module"]
     #[doc(alias = "CFO_CONFIG_WORD_2_OPAQUE")]
     pub type CfoConfigWord2Opaque = crate::Reg<cfo_config_word_2_opaque::CfoConfigWord2OpaqueSpec>;
-    #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
     pub mod cfo_config_word_2_opaque {
         #[doc = "Register `CFO_CONFIG_WORD_2_OPAQUE` reader"]
         pub type R = crate::R<CfoConfigWord2OpaqueSpec>;
@@ -53512,7 +53512,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_2_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_2_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_2_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_2_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CfoConfigWord2OpaqueSpec;
         impl crate::RegisterSpec for CfoConfigWord2OpaqueSpec {
             type Ux = u32;
@@ -53524,10 +53524,10 @@ pub mod phy_agc_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CFO_CONFIG_WORD_3_OPAQUE (rw) register accessor: Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_3_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_3_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_3_opaque`] module"]
+    #[doc = "CFO_CONFIG_WORD_3_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_3_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_3_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_3_opaque`] module"]
     #[doc(alias = "CFO_CONFIG_WORD_3_OPAQUE")]
     pub type CfoConfigWord3Opaque = crate::Reg<cfo_config_word_3_opaque::CfoConfigWord3OpaqueSpec>;
-    #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
     pub mod cfo_config_word_3_opaque {
         #[doc = "Register `CFO_CONFIG_WORD_3_OPAQUE` reader"]
         pub type R = crate::R<CfoConfigWord3OpaqueSpec>;
@@ -53539,7 +53539,7 @@ pub mod phy_agc_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_3_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_3_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_3_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_3_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CfoConfigWord3OpaqueSpec;
         impl crate::RegisterSpec for CfoConfigWord3OpaqueSpec {
             type Ux = u32;
@@ -53577,44 +53577,44 @@ pub mod phy_nrx_recovered_gaps {
         channel_filter_control_opaque: ChannelFilterControlOpaque,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed."]
+        #[doc = "0x00 - Opaque: meaning not established. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn fft_scale_control_opaque(&self) -> &FftScaleControlOpaque {
             &self.fft_scale_control_opaque
         }
-        #[doc = "0x0c - Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+        #[doc = "0x0c - Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
         #[inline(always)]
         pub const fn backup_word_0c_opaque(&self) -> &BackupWord0cOpaque {
             &self.backup_word_0c_opaque
         }
-        #[doc = "0x30 - Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed."]
+        #[doc = "0x30 - Opaque: meaning not established. Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed."]
         #[inline(always)]
         pub const fn one_tone_spur_control_opaque(&self) -> &OneToneSpurControlOpaque {
             &self.one_tone_spur_control_opaque
         }
-        #[doc = "0x98 - Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[doc = "0x98 - Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn frequency_correction_control_opaque(
             &self,
         ) -> &FrequencyCorrectionControlOpaque {
             &self.frequency_correction_control_opaque
         }
-        #[doc = "0xb8 - Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown."]
+        #[doc = "0xb8 - Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown."]
         #[inline(always)]
         pub const fn cfo_high_control_opaque(&self) -> &CfoHighControlOpaque {
             &self.cfo_high_control_opaque
         }
-        #[doc = "0x104 - Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+        #[doc = "0x104 - Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
         #[inline(always)]
         pub const fn channel_filter_control_opaque(&self) -> &ChannelFilterControlOpaque {
             &self.channel_filter_control_opaque
         }
     }
-    #[doc = "FFT_SCALE_CONTROL_OPAQUE (rw) register accessor: Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`fft_scale_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fft_scale_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fft_scale_control_opaque`] module"]
+    #[doc = "FFT_SCALE_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`fft_scale_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fft_scale_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@fft_scale_control_opaque`] module"]
     #[doc(alias = "FFT_SCALE_CONTROL_OPAQUE")]
     pub type FftScaleControlOpaque =
         crate::Reg<fft_scale_control_opaque::FftScaleControlOpaqueSpec>;
-    #[doc = "Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed."]
     pub mod fft_scale_control_opaque {
         #[doc = "Register `FFT_SCALE_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<FftScaleControlOpaqueSpec>;
@@ -53626,7 +53626,7 @@ pub mod phy_nrx_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`fft_scale_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fft_scale_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`fft_scale_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fft_scale_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FftScaleControlOpaqueSpec;
         impl crate::RegisterSpec for FftScaleControlOpaqueSpec {
             type Ux = u32;
@@ -53638,10 +53638,10 @@ pub mod phy_nrx_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "BACKUP_WORD_0C_OPAQUE (rw) register accessor: Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_0c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_0c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backup_word_0c_opaque`] module"]
+    #[doc = "BACKUP_WORD_0C_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_0c_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_0c_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@backup_word_0c_opaque`] module"]
     #[doc(alias = "BACKUP_WORD_0C_OPAQUE")]
     pub type BackupWord0cOpaque = crate::Reg<backup_word_0c_opaque::BackupWord0cOpaqueSpec>;
-    #[doc = "Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."]
     pub mod backup_word_0c_opaque {
         #[doc = "Register `BACKUP_WORD_0C_OPAQUE` reader"]
         pub type R = crate::R<BackupWord0cOpaqueSpec>;
@@ -53653,7 +53653,7 @@ pub mod phy_nrx_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_0c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_0c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`backup_word_0c_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`backup_word_0c_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BackupWord0cOpaqueSpec;
         impl crate::RegisterSpec for BackupWord0cOpaqueSpec {
             type Ux = u32;
@@ -53665,11 +53665,11 @@ pub mod phy_nrx_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "ONE_TONE_SPUR_CONTROL_OPAQUE (rw) register accessor: Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`one_tone_spur_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`one_tone_spur_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@one_tone_spur_control_opaque`] module"]
+    #[doc = "ONE_TONE_SPUR_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`one_tone_spur_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`one_tone_spur_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@one_tone_spur_control_opaque`] module"]
     #[doc(alias = "ONE_TONE_SPUR_CONTROL_OPAQUE")]
     pub type OneToneSpurControlOpaque =
         crate::Reg<one_tone_spur_control_opaque::OneToneSpurControlOpaqueSpec>;
-    #[doc = "Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed."]
     pub mod one_tone_spur_control_opaque {
         #[doc = "Register `ONE_TONE_SPUR_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<OneToneSpurControlOpaqueSpec>;
@@ -53681,7 +53681,7 @@ pub mod phy_nrx_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`one_tone_spur_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`one_tone_spur_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`one_tone_spur_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`one_tone_spur_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OneToneSpurControlOpaqueSpec;
         impl crate::RegisterSpec for OneToneSpurControlOpaqueSpec {
             type Ux = u32;
@@ -53693,11 +53693,11 @@ pub mod phy_nrx_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "FREQUENCY_CORRECTION_CONTROL_OPAQUE (rw) register accessor: Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_control_opaque`] module"]
+    #[doc = "FREQUENCY_CORRECTION_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_control_opaque`] module"]
     #[doc(alias = "FREQUENCY_CORRECTION_CONTROL_OPAQUE")]
     pub type FrequencyCorrectionControlOpaque =
         crate::Reg<frequency_correction_control_opaque::FrequencyCorrectionControlOpaqueSpec>;
-    #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
     pub mod frequency_correction_control_opaque {
         #[doc = "Register `FREQUENCY_CORRECTION_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<FrequencyCorrectionControlOpaqueSpec>;
@@ -53709,7 +53709,7 @@ pub mod phy_nrx_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrequencyCorrectionControlOpaqueSpec;
         impl crate::RegisterSpec for FrequencyCorrectionControlOpaqueSpec {
             type Ux = u32;
@@ -53721,10 +53721,10 @@ pub mod phy_nrx_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CFO_HIGH_CONTROL_OPAQUE (rw) register accessor: Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_high_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_high_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_high_control_opaque`] module"]
+    #[doc = "CFO_HIGH_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_high_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_high_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_high_control_opaque`] module"]
     #[doc(alias = "CFO_HIGH_CONTROL_OPAQUE")]
     pub type CfoHighControlOpaque = crate::Reg<cfo_high_control_opaque::CfoHighControlOpaqueSpec>;
-    #[doc = "Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown."]
     pub mod cfo_high_control_opaque {
         #[doc = "Register `CFO_HIGH_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<CfoHighControlOpaqueSpec>;
@@ -53748,7 +53748,7 @@ pub mod phy_nrx_recovered_gaps {
                 HighModeUnknownW::new(self, 29)
             }
         }
-        #[doc = "Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_high_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_high_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_high_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_high_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CfoHighControlOpaqueSpec;
         impl crate::RegisterSpec for CfoHighControlOpaqueSpec {
             type Ux = u32;
@@ -53760,11 +53760,11 @@ pub mod phy_nrx_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CHANNEL_FILTER_CONTROL_OPAQUE (rw) register accessor: Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_filter_control_opaque`] module"]
+    #[doc = "CHANNEL_FILTER_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@channel_filter_control_opaque`] module"]
     #[doc(alias = "CHANNEL_FILTER_CONTROL_OPAQUE")]
     pub type ChannelFilterControlOpaque =
         crate::Reg<channel_filter_control_opaque::ChannelFilterControlOpaqueSpec>;
-    #[doc = "Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
+    #[doc = "Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."]
     pub mod channel_filter_control_opaque {
         #[doc = "Register `CHANNEL_FILTER_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<ChannelFilterControlOpaqueSpec>;
@@ -53776,7 +53776,7 @@ pub mod phy_nrx_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.\n\nYou can [`read`](crate::Reg::read) this register and get [`channel_filter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`channel_filter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ChannelFilterControlOpaqueSpec;
         impl crate::RegisterSpec for ChannelFilterControlOpaqueSpec {
             type Ux = u32;
@@ -53812,42 +53812,42 @@ pub mod phy_bb_recovered_gaps {
         cfo_config_word_5_opaque: CfoConfigWord5Opaque,
     }
     impl RegisterBlock {
-        #[doc = "0x14 - Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown."]
+        #[doc = "0x14 - Opaque: meaning not established. Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown."]
         #[inline(always)]
         pub const fn spur_coefficient_control_0_opaque(&self) -> &SpurCoefficientControl0Opaque {
             &self.spur_coefficient_control_0_opaque
         }
-        #[doc = "0x58 - Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."]
+        #[doc = "0x58 - Opaque: meaning not established. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn cca_counter_control_opaque(&self) -> &CcaCounterControlOpaque {
             &self.cca_counter_control_opaque
         }
-        #[doc = "0x5c - Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+        #[doc = "0x5c - Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
         #[inline(always)]
         pub const fn cca_counter_status_0_opaque(&self) -> &CcaCounterStatus0Opaque {
             &self.cca_counter_status_0_opaque
         }
-        #[doc = "0x60 - Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+        #[doc = "0x60 - Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
         #[inline(always)]
         pub const fn cca_counter_status_1_opaque(&self) -> &CcaCounterStatus1Opaque {
             &self.cca_counter_status_1_opaque
         }
-        #[doc = "0xe8 - Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+        #[doc = "0xe8 - Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
         #[inline(always)]
         pub const fn cfo_config_word_4_opaque(&self) -> &CfoConfigWord4Opaque {
             &self.cfo_config_word_4_opaque
         }
-        #[doc = "0xec - Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown."]
+        #[doc = "0xec - Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown."]
         #[inline(always)]
         pub const fn cfo_config_word_5_opaque(&self) -> &CfoConfigWord5Opaque {
             &self.cfo_config_word_5_opaque
         }
     }
-    #[doc = "SPUR_COEFFICIENT_CONTROL_0_OPAQUE (rw) register accessor: Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`spur_coefficient_control_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`spur_coefficient_control_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@spur_coefficient_control_0_opaque`] module"]
+    #[doc = "SPUR_COEFFICIENT_CONTROL_0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`spur_coefficient_control_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`spur_coefficient_control_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@spur_coefficient_control_0_opaque`] module"]
     #[doc(alias = "SPUR_COEFFICIENT_CONTROL_0_OPAQUE")]
     pub type SpurCoefficientControl0Opaque =
         crate::Reg<spur_coefficient_control_0_opaque::SpurCoefficientControl0OpaqueSpec>;
-    #[doc = "Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown."]
     pub mod spur_coefficient_control_0_opaque {
         #[doc = "Register `SPUR_COEFFICIENT_CONTROL_0_OPAQUE` reader"]
         pub type R = crate::R<SpurCoefficientControl0OpaqueSpec>;
@@ -53873,7 +53873,7 @@ pub mod phy_bb_recovered_gaps {
                 Bit13ControlUnknownW::new(self, 13)
             }
         }
-        #[doc = "Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`spur_coefficient_control_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`spur_coefficient_control_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`spur_coefficient_control_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`spur_coefficient_control_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SpurCoefficientControl0OpaqueSpec;
         impl crate::RegisterSpec for SpurCoefficientControl0OpaqueSpec {
             type Ux = u32;
@@ -53885,11 +53885,11 @@ pub mod phy_bb_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CCA_COUNTER_CONTROL_OPAQUE (rw) register accessor: Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_control_opaque`] module"]
+    #[doc = "CCA_COUNTER_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_control_opaque`] module"]
     #[doc(alias = "CCA_COUNTER_CONTROL_OPAQUE")]
     pub type CcaCounterControlOpaque =
         crate::Reg<cca_counter_control_opaque::CcaCounterControlOpaqueSpec>;
-    #[doc = "Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."]
     pub mod cca_counter_control_opaque {
         #[doc = "Register `CCA_COUNTER_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<CcaCounterControlOpaqueSpec>;
@@ -53901,7 +53901,7 @@ pub mod phy_bb_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CcaCounterControlOpaqueSpec;
         impl crate::RegisterSpec for CcaCounterControlOpaqueSpec {
             type Ux = u32;
@@ -53913,11 +53913,11 @@ pub mod phy_bb_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CCA_COUNTER_STATUS_0_OPAQUE (rw) register accessor: Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_status_0_opaque`] module"]
+    #[doc = "CCA_COUNTER_STATUS_0_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_0_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_0_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_status_0_opaque`] module"]
     #[doc(alias = "CCA_COUNTER_STATUS_0_OPAQUE")]
     pub type CcaCounterStatus0Opaque =
         crate::Reg<cca_counter_status_0_opaque::CcaCounterStatus0OpaqueSpec>;
-    #[doc = "Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
     pub mod cca_counter_status_0_opaque {
         #[doc = "Register `CCA_COUNTER_STATUS_0_OPAQUE` reader"]
         pub type R = crate::R<CcaCounterStatus0OpaqueSpec>;
@@ -53929,7 +53929,7 @@ pub mod phy_bb_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_0_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_0_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CcaCounterStatus0OpaqueSpec;
         impl crate::RegisterSpec for CcaCounterStatus0OpaqueSpec {
             type Ux = u32;
@@ -53941,11 +53941,11 @@ pub mod phy_bb_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CCA_COUNTER_STATUS_1_OPAQUE (rw) register accessor: Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_status_1_opaque`] module"]
+    #[doc = "CCA_COUNTER_STATUS_1_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_1_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_1_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cca_counter_status_1_opaque`] module"]
     #[doc(alias = "CCA_COUNTER_STATUS_1_OPAQUE")]
     pub type CcaCounterStatus1Opaque =
         crate::Reg<cca_counter_status_1_opaque::CcaCounterStatus1OpaqueSpec>;
-    #[doc = "Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."]
     pub mod cca_counter_status_1_opaque {
         #[doc = "Register `CCA_COUNTER_STATUS_1_OPAQUE` reader"]
         pub type R = crate::R<CcaCounterStatus1OpaqueSpec>;
@@ -53957,7 +53957,7 @@ pub mod phy_bb_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cca_counter_status_1_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cca_counter_status_1_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CcaCounterStatus1OpaqueSpec;
         impl crate::RegisterSpec for CcaCounterStatus1OpaqueSpec {
             type Ux = u32;
@@ -53969,10 +53969,10 @@ pub mod phy_bb_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CFO_CONFIG_WORD_4_OPAQUE (rw) register accessor: Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_4_opaque`] module"]
+    #[doc = "CFO_CONFIG_WORD_4_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_4_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_4_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_4_opaque`] module"]
     #[doc(alias = "CFO_CONFIG_WORD_4_OPAQUE")]
     pub type CfoConfigWord4Opaque = crate::Reg<cfo_config_word_4_opaque::CfoConfigWord4OpaqueSpec>;
-    #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."]
     pub mod cfo_config_word_4_opaque {
         #[doc = "Register `CFO_CONFIG_WORD_4_OPAQUE` reader"]
         pub type R = crate::R<CfoConfigWord4OpaqueSpec>;
@@ -53984,7 +53984,7 @@ pub mod phy_bb_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_4_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_4_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CfoConfigWord4OpaqueSpec;
         impl crate::RegisterSpec for CfoConfigWord4OpaqueSpec {
             type Ux = u32;
@@ -53996,10 +53996,10 @@ pub mod phy_bb_recovered_gaps {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "CFO_CONFIG_WORD_5_OPAQUE (rw) register accessor: Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_5_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_5_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_5_opaque`] module"]
+    #[doc = "CFO_CONFIG_WORD_5_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_5_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_5_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@cfo_config_word_5_opaque`] module"]
     #[doc(alias = "CFO_CONFIG_WORD_5_OPAQUE")]
     pub type CfoConfigWord5Opaque = crate::Reg<cfo_config_word_5_opaque::CfoConfigWord5OpaqueSpec>;
-    #[doc = "Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown."]
+    #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown."]
     pub mod cfo_config_word_5_opaque {
         #[doc = "Register `CFO_CONFIG_WORD_5_OPAQUE` reader"]
         pub type R = crate::R<CfoConfigWord5OpaqueSpec>;
@@ -54025,7 +54025,7 @@ pub mod phy_bb_recovered_gaps {
                 Bit12ControlUnknownW::new(self, 12)
             }
         }
-        #[doc = "Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_5_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_5_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`cfo_config_word_5_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`cfo_config_word_5_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct CfoConfigWord5OpaqueSpec;
         impl crate::RegisterSpec for CfoConfigWord5OpaqueSpec {
             type Ux = u32;
@@ -54054,7 +54054,7 @@ pub mod phy_brx_recovered_gaps {
         frequency_correction_control_opaque: FrequencyCorrectionControlOpaque,
     }
     impl RegisterBlock {
-        #[doc = "0x50 - Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+        #[doc = "0x50 - Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
         #[inline(always)]
         pub const fn frequency_correction_control_opaque(
             &self,
@@ -54062,11 +54062,11 @@ pub mod phy_brx_recovered_gaps {
             &self.frequency_correction_control_opaque
         }
     }
-    #[doc = "FREQUENCY_CORRECTION_CONTROL_OPAQUE (rw) register accessor: Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_control_opaque`] module"]
+    #[doc = "FREQUENCY_CORRECTION_CONTROL_OPAQUE (rw) register accessor: Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_correction_control_opaque`] module"]
     #[doc(alias = "FREQUENCY_CORRECTION_CONTROL_OPAQUE")]
     pub type FrequencyCorrectionControlOpaque =
         crate::Reg<frequency_correction_control_opaque::FrequencyCorrectionControlOpaqueSpec>;
-    #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
+    #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."]
     pub mod frequency_correction_control_opaque {
         #[doc = "Register `FREQUENCY_CORRECTION_CONTROL_OPAQUE` reader"]
         pub type R = crate::R<FrequencyCorrectionControlOpaqueSpec>;
@@ -54078,7 +54078,7 @@ pub mod phy_brx_recovered_gaps {
             }
         }
         impl W {}
-        #[doc = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_correction_control_opaque::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_correction_control_opaque::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FrequencyCorrectionControlOpaqueSpec;
         impl crate::RegisterSpec for FrequencyCorrectionControlOpaqueSpec {
             type Ux = u32;

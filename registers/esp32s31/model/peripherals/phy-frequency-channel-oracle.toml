@@ -584,6 +584,7 @@ completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_0_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 provenance = "observed"
 accuracy = "exact"

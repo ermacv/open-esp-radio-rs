@@ -55,3 +55,17 @@ non-empty source list, all three classification fields, and non-`hint`
 provenance. Incomplete metadata remains a navigation hint and cannot close a
 publication gate. Array coverage is resolved from the structural SVD template,
 not by wildcard-matching expanded names.
+
+A register or field review also records where its name comes from with
+`naming`:
+
+| `naming` | Meaning | Requirement |
+| --- | --- | --- |
+| `vendor` | The vendor's own name | Cites the header, SVD or manual in `sources` |
+| `descriptive` | A name this project assigned from established behavior | Published description starts with "Project-assigned name." |
+| `opaque` | The meaning is not established | The name ends in `_OPAQUE`; published description starts with "Opaque: meaning not established." |
+
+An `_OPAQUE` name and `naming = "opaque"` require each other, so an
+unreviewed name cannot claim or hide unknown meaning. `naming` applies only
+to registers and fields. The SVD description carries the marker, so raw PAC
+documentation shows it too.

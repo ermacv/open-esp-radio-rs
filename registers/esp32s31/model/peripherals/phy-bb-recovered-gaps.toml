@@ -79,24 +79,30 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.SPUR_COEFFICIENT_CONTROL_0_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_CONTROL_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_0_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_1_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CFO_CONFIG_WORD_4_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CFO_CONFIG_WORD_5_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]

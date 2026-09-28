@@ -53,14 +53,17 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.RX_FILTER_MODE_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE.TX_RX_RESET_LOW_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 provenance = "observed"
 accuracy = "exact"

@@ -1353,7 +1353,7 @@
         </register>
         <register>
           <name>FREQUENCY_PARAMETER_0_OPAQUE</name>
-          <description>Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.</description>
+          <description>Opaque: meaning not established. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.</description>
           <addressOffset>0x24</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -2700,7 +2700,7 @@
         </register>
         <register>
           <name>AGC_UPDATE_7048_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0xff7da4f3.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xff7da4f3.</description>
           <addressOffset>0x7048</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -3032,7 +3032,7 @@
         </register>
         <register>
           <name>AGC_UPDATE_78A4_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0x0001721f.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x0001721f.</description>
           <addressOffset>0x78A4</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -3114,49 +3114,49 @@
         </register>
         <register>
           <name>AGC_UPDATE_8010_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0x000852a1.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000852a1.</description>
           <addressOffset>0x8010</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
         </register>
         <register>
           <name>AGC_UPDATE_8018_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0x00600030.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00600030.</description>
           <addressOffset>0x8018</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
         </register>
         <register>
           <name>AGC_UPDATE_801C_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0x010000a0.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x010000a0.</description>
           <addressOffset>0x801C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
         </register>
         <register>
           <name>AGC_UPDATE_8020_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0x00000180.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x00000180.</description>
           <addressOffset>0x8020</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
         </register>
         <register>
           <name>AGC_UPDATE_8028_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0xc0403020.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0xc0403020.</description>
           <addressOffset>0x8028</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
         </register>
         <register>
           <name>AGC_UPDATE_802C_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0x01000080.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x01000080.</description>
           <addressOffset>0x802C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
         </register>
         <register>
           <name>AGC_UPDATE_8070_OPAQUE</name>
-          <description>Complete phy_bb_agc_reg_update writes 0x000008c7.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_agc_reg_update writes 0x000008c7.</description>
           <addressOffset>0x8070</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -3812,7 +3812,7 @@
         </register>
         <register>
           <name>POWER_DETECTOR_TABLE_0_OPAQUE</name>
-          <description>Complete phy_pwdet_reg_init writes 0x0f0f0fff.</description>
+          <description>Opaque: meaning not established. Complete phy_pwdet_reg_init writes 0x0f0f0fff.</description>
           <addressOffset>0x810</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -4879,7 +4879,7 @@
         </register>
         <register>
           <name>TX_PA_TABLE_OPAQUE</name>
-          <description>Complete phy_tx_paon_set writes 0x0661a45f.</description>
+          <description>Opaque: meaning not established. Complete phy_tx_paon_set writes 0x0661a45f.</description>
           <addressOffset>0x7C6C</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -5209,7 +5209,7 @@
       <registers>
         <register>
           <name>FE_CLOCK_GATE_OPAQUE</name>
-          <description>ROM writes 0x1e7 to open and the blob writes zero to close.</description>
+          <description>Opaque: meaning not established. ROM writes 0x1e7 to open and the blob writes zero to close.</description>
           <addressOffset>0x400</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -5304,7 +5304,7 @@
         </register>
         <register>
           <name>FE_BB_CLOCK_CONTROL_OPAQUE</name>
-          <description>ROM sets bits 1:0 and the blob clears them.</description>
+          <description>Opaque: meaning not established. ROM sets bits 1:0 and the blob clears them.</description>
           <addressOffset>0x800</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -5339,7 +5339,7 @@
         </register>
         <register>
           <name>BB_CLOCK_GATE_OPAQUE</name>
-          <description>ROM writes all ones to open and the blob writes zero to close.</description>
+          <description>Opaque: meaning not established. ROM writes all ones to open and the blob writes zero to close.</description>
           <addressOffset>0x7C80</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
@@ -15785,21 +15785,21 @@
       <registers>
         <register>
           <name>RX_FILTER_MODE_OPAQUE</name>
-          <description>Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed.</description>
           <addressOffset>0x30</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>TX_RX_RESET_OPAQUE</name>
-          <description>Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed.</description>
           <addressOffset>0x40</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
               <name>TX_RX_RESET_LOW_OPAQUE</name>
-              <description>Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset.</description>
+              <description>Opaque: meaning not established. Thirteen-bit low reset group cleared by complete phy_fe_txrx_reset.</description>
               <bitOffset>12</bitOffset>
               <bitWidth>13</bitWidth>
             </field>
@@ -15826,28 +15826,28 @@
       <registers>
         <register>
           <name>ANTENNA_CONFIG_WORD_0_OPAQUE</name>
-          <description>Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
+          <description>Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
           <addressOffset>0x34</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>ANTENNA_CONFIG_WORD_1_OPAQUE</name>
-          <description>Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
+          <description>Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
           <addressOffset>0x38</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>ANTENNA_CONFIG_WORD_2_OPAQUE</name>
-          <description>Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
+          <description>Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
           <addressOffset>0x3C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>ANTENNA_CONFIG_WORD_3_OPAQUE</name>
-          <description>Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
+          <description>Opaque: meaning not established. Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup.</description>
           <addressOffset>0x40</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -15861,21 +15861,21 @@
       <registers>
         <register>
           <name>CFO_CONFIG_WORD_0_OPAQUE</name>
-          <description>Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
           <addressOffset>0x14</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>FREQUENCY_CORRECTION_WORD_0_OPAQUE</name>
-          <description>Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
           <addressOffset>0x18</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>FREQUENCY_CORRECTION_WORD_1_OPAQUE</name>
-          <description>Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
           <addressOffset>0x1C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -15941,7 +15941,7 @@
         </register>
         <register>
           <name>RX_GAIN_FORCE_OPAQUE</name>
-          <description>Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.</description>
+          <description>Opaque: meaning not established. Complete phy_rx_gain_force and bt_agc_target_set read-modify-write two disjoint positional fields in this word.</description>
           <addressOffset>0x40</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -15974,7 +15974,7 @@
         </register>
         <register>
           <name>GAIN_OFFSET_WORD_0_OPAQUE</name>
-          <description>Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete bt_set_rx_comp and bt_agc_gain_offset read-modify-write four positional fields; individual hardware meanings remain unnamed.</description>
           <addressOffset>0x48</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -16078,7 +16078,7 @@
         </register>
         <register>
           <name>GAIN_OFFSET_WORD_1_OPAQUE</name>
-          <description>Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete bt_agc_gain_offset and bt_agc_recorrect_set read-modify-write seven positional fields; individual hardware meanings remain unnamed.</description>
           <addressOffset>0x68</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -22680,68 +22680,68 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
       <registers>
         <register>
           <name>RX_SENSE_WORD_0_OPAQUE</name>
-          <description>Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.</description>
+          <description>Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.</description>
           <addressOffset>0x10</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>RX_SENSE_WORD_1_OPAQUE</name>
-          <description>Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.</description>
+          <description>Opaque: meaning not established. Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup.</description>
           <addressOffset>0x14</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>CCA_CONTROL_OPAQUE</name>
-          <description>Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed.</description>
           <addressOffset>0x1C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>NOISE_FLOOR_STATUS_OPAQUE</name>
-          <description>Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown.</description>
           <addressOffset>0x50</addressOffset>
           <size>0x20</size>
         </register>
         <register>
           <name>RSSI_STATUS_OPAQUE</name>
-          <description>Complete phy_get_rssi reads this word; hardware access semantics remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_get_rssi reads this word; hardware access semantics remain unknown.</description>
           <addressOffset>0x6C</addressOffset>
           <size>0x20</size>
         </register>
         <register>
           <name>CHANNEL_FILTER_CONTROL_OPAQUE</name>
-          <description>Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.</description>
+          <description>Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.</description>
           <addressOffset>0x74</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>BACKUP_WORD_CC_OPAQUE</name>
-          <description>Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.</description>
           <addressOffset>0xCC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>RIFS_MODE_CONTROL_OPAQUE</name>
-          <description>Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown.</description>
           <addressOffset>0xF4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>RX_SENSE_BACKUP_WORD_OPAQUE</name>
-          <description>Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.</description>
+          <description>Opaque: meaning not established. Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown.</description>
           <addressOffset>0x108</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>CFO_CONFIG_WORD_1_OPAQUE</name>
-          <description>Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 27; the hardware field meaning remains unknown.</description>
           <addressOffset>0x430</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -22755,14 +22755,14 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>CFO_CONFIG_WORD_2_OPAQUE</name>
-          <description>Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
           <addressOffset>0x434</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>CFO_CONFIG_WORD_3_OPAQUE</name>
-          <description>Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
           <addressOffset>0x438</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -22776,35 +22776,35 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
       <registers>
         <register>
           <name>FFT_SCALE_CONTROL_OPAQUE</name>
-          <description>Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>BACKUP_WORD_0C_OPAQUE</name>
-          <description>Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown.</description>
           <addressOffset>0xC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>ONE_TONE_SPUR_CONTROL_OPAQUE</name>
-          <description>Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed.</description>
           <addressOffset>0x30</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>FREQUENCY_CORRECTION_CONTROL_OPAQUE</name>
-          <description>Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
           <addressOffset>0x98</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>CFO_HIGH_CONTROL_OPAQUE</name>
-          <description>Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown.</description>
           <addressOffset>0xB8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -22818,7 +22818,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>CHANNEL_FILTER_CONTROL_OPAQUE</name>
-          <description>Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.</description>
+          <description>Opaque: meaning not established. Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it.</description>
           <addressOffset>0x104</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -22832,7 +22832,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
       <registers>
         <register>
           <name>SPUR_COEFFICIENT_CONTROL_0_OPAQUE</name>
-          <description>Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown.</description>
           <addressOffset>0x14</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -22846,33 +22846,33 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>CCA_COUNTER_CONTROL_OPAQUE</name>
-          <description>Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed.</description>
           <addressOffset>0x58</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>CCA_COUNTER_STATUS_0_OPAQUE</name>
-          <description>Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.</description>
           <addressOffset>0x5C</addressOffset>
           <size>0x20</size>
         </register>
         <register>
           <name>CCA_COUNTER_STATUS_1_OPAQUE</name>
-          <description>Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown.</description>
           <addressOffset>0x60</addressOffset>
           <size>0x20</size>
         </register>
         <register>
           <name>CFO_CONFIG_WORD_4_OPAQUE</name>
-          <description>Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed.</description>
           <addressOffset>0xE8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
         </register>
         <register>
           <name>CFO_CONFIG_WORD_5_OPAQUE</name>
-          <description>Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown.</description>
+          <description>Opaque: meaning not established. Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown.</description>
           <addressOffset>0xEC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -22893,7 +22893,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
       <registers>
         <register>
           <name>FREQUENCY_CORRECTION_CONTROL_OPAQUE</name>
-          <description>Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
+          <description>Opaque: meaning not established. Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed.</description>
           <addressOffset>0x50</addressOffset>
           <size>0x20</size>
           <access>read-write</access>

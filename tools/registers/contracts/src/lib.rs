@@ -45,3 +45,19 @@ pub enum FactCompleteness {
     Partial,
     Unknown,
 }
+
+/// Where the name of a register or field comes from, and so how much of its
+/// meaning the name may claim.
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum NameOrigin {
+    /// The vendor's own name, from a cited header, SVD or manual.
+    Vendor,
+    /// A name this project assigned from established behavior.
+    Descriptive,
+    /// The meaning is not established; the name only identifies the bits and
+    /// ends in `_OPAQUE`.
+    Opaque,
+}

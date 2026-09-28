@@ -806,6 +806,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_7048_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1044,6 +1045,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_78A4_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1107,6 +1109,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8010_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1114,6 +1117,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8018_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1121,6 +1125,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_801C_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1128,6 +1133,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8020_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1135,6 +1141,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8028_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1142,6 +1149,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_802C_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"
@@ -1149,6 +1157,7 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8070_OPAQUE"
+naming = "opaque"
 sources = ["ROM_REV0_PHY_AGC"]
 provenance = "observed"
 accuracy = "exact"

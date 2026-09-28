@@ -291,3 +291,27 @@ fn a_refused_or_unused_admission_holds_no_credit() {
         (0, 1, 0)
     );
 }
+
+#[test]
+fn an_interval_reports_its_own_counts_and_peak() {
+    let mut radio = radio!();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 8, 1>::new()));
+    let (mut device, runner) = endpoint.split(NetworkInterfaceId::new(0), [2; 6], allocator::<1>());
+    runner.link_controller().set_link_up(true);
+    let publisher = runner.rx_publisher();
+    for marker in 0..3 {
+        radio.receive(&publisher, ETHERNET_OFFSET, marker);
+    }
+    let mut retained: Vec<PacketBuf> = core::iter::from_fn(|| device.receive()).collect();
+    // The consumer keeps one packet and returns two.
+    retained.truncate(1);
+    let earlier = radio.origin.counters();
+    radio.origin.restart_peak();
+    radio.receive(&publisher, ETHERNET_OFFSET, 9);
+    let interval = radio.origin.counters().wrapping_delta_since(earlier);
+    assert_eq!(
+        (interval.adopted, interval.held, interval.peak_held),
+        (1, 2, 2)
+    );
+    assert_eq!(earlier.peak_held, 3);
+}

@@ -68,6 +68,24 @@ pub struct ExternalRxCounters {
     pub peak_held: usize,
 }
 
+impl ExternalRxCounters {
+    /// Counts since `earlier`, with the current `held` and `peak_held`.
+    ///
+    /// The event counts wrap; `held` and `peak_held` are levels, so a
+    /// per-interval peak needs [`ExternalRxOrigin::restart_peak`] at the
+    /// start of the interval.
+    pub const fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            adopted: self.adopted.wrapping_sub(earlier.adopted),
+            copied_over_cap: self.copied_over_cap.wrapping_sub(earlier.copied_over_cap),
+            copied_unfit: self.copied_unfit.wrapping_sub(earlier.copied_unfit),
+            dropped: self.dropped.wrapping_sub(earlier.dropped),
+            held: self.held,
+            peak_held: self.peak_held,
+        }
+    }
+}
+
 /// Why [`OwnedRxPublisher::try_admit_external`] refused a zero-copy credit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExternalRxRefusal {
@@ -160,6 +178,12 @@ impl<const FRAME_CAPACITY: usize, const SLOTS: usize> ExternalRxOrigin<FRAME_CAP
             held: self.held.load(Ordering::Acquire),
             peak_held: self.peak_held.load(Ordering::Relaxed),
         }
+    }
+
+    /// Start a new peak interval at the current held count.
+    pub fn restart_peak(&self) {
+        self.peak_held
+            .store(self.held.load(Ordering::Acquire), Ordering::Relaxed);
     }
 
     fn try_take_credit(&self) -> bool {

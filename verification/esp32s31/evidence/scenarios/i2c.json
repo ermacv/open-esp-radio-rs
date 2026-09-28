@@ -405,7 +405,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/companions.rs",
-      "sha256": "ba04484c7247fcf24b281b0907e5280d01b4ca696ea229d67fd77434d233d81c"
+      "sha256": "8e89751537d6b74548925a4745f8a62939839c44463d1daa57d5023302c49c97"
     },
     {
       "path": "tools/blobray/crates/application/src/coverage.rs",
@@ -529,11 +529,11 @@
     },
     {
       "path": "tools/blobray/crates/application/src/linking/proposal.rs",
-      "sha256": "24b23780abdd0a6f68206a3dab59cca7b159b38ae8a650052e85039ec04e8b11"
+      "sha256": "5a20965f75b316bb82bb6375dfd719dfff21e1d8ae375aa7f2509ece9a05ad08"
     },
     {
       "path": "tools/blobray/crates/application/src/linking.rs",
-      "sha256": "428a9fc3e7391a3ade119dd1a557f8be7b72427d21ffcbd10bf43adb83db1f2f"
+      "sha256": "a9c63164653e82a96cab0c70dcb2e228214d46342c4ca8ae38c8c82c2ecc5f35"
     },
     {
       "path": "tools/blobray/crates/application/src/navigation/accesses.rs",

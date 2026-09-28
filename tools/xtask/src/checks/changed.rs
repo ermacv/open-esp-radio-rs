@@ -29,6 +29,9 @@ pub struct Plan {
     pub docs: bool,
     /// A Cargo manifest or lockfile changed.
     pub metadata: bool,
+    /// Code, register models, vendor docs or provenance facts changed: vendor
+    /// citations may have changed.
+    pub provenance: bool,
     /// Changed workspaces other than the root, which need their own target
     /// and feature profile to build.
     pub other_workspaces: BTreeSet<PathBuf>,
@@ -63,6 +66,13 @@ pub fn plan(
         }
         if name == "Cargo.toml" || name == "Cargo.lock" {
             plan.metadata = true;
+        }
+        if (extension == "rs" && (path.starts_with("crates") || path.starts_with("verification")))
+            || path.starts_with("registers")
+            || path.starts_with("docs/vendor")
+            || path.components().any(|part| part.as_os_str() == "facts")
+        {
+            plan.provenance = true;
         }
         if extension != "rs" && name != "Cargo.toml" && name != "Cargo.lock" {
             continue;
@@ -222,6 +232,26 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     if plan.docs {
         super::docs::run(ctx)?;
     }
+    if plan.provenance {
+        for chip in crate::chips::supported(&ctx.root)? {
+            if !ctx
+                .root
+                .join("verification")
+                .join(&chip)
+                .join("artifacts.toml")
+                .is_file()
+            {
+                continue;
+            }
+            if ctx.root.join("target/vendor").join(&chip).is_dir() {
+                crate::vendor_provenance::check(ctx, &chip)?;
+            } else {
+                println!(
+                    "check changed: vendor provenance of {chip} skipped: run `cargo xtask vendor-fetch {chip}` to check citations"
+                );
+            }
+        }
+    }
     for workspace in &plan.other_workspaces {
         println!(
             "check changed: formatted {}; build it with its own target and feature profile",
@@ -294,5 +324,13 @@ mod tests {
         assert_eq!(plan.packages, BTreeSet::from(["hal".to_owned()]));
         let plan = run(&[".github/workflows/ci.yml"]);
         assert_eq!(plan, Plan::default());
+    }
+
+    #[test]
+    fn citations_in_code_models_or_vendor_docs_select_provenance() {
+        assert!(run(&["crates/hal/src/lib.rs"]).provenance);
+        assert!(run(&["docs/vendor/esp32s31/wifi.md"]).provenance);
+        assert!(run(&["registers/esp32s31/model/wifi.toml"]).provenance);
+        assert!(!run(&["docs/architecture.md"]).provenance);
     }
 }

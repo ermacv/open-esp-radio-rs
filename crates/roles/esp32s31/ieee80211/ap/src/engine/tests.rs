@@ -514,6 +514,15 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
             },
         )
         .unwrap();
+    let agreement_of = |engine: &ApEngine<'_>| {
+        let status = engine.service.peer_status(peer).unwrap();
+        crate::ampdu::ApAggregateAgreement {
+            association: status.association_identity(),
+            block_ack_generation: status.tx_block_ack_generation,
+        }
+    };
+    let first_agreement = agreement_of(&engine);
+    assert!(engine.tx_block_ack_holds(first_agreement));
     let mut second = ethernet;
     second[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 7]);
     second[12..14].copy_from_slice(&0x0806_u16.to_be_bytes());
@@ -569,6 +578,43 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         engine.service.current_data_sequence(),
         SequenceNumber::new(2).unwrap()
     );
+
+    // A client DELBA ends the aggregate's agreement; a renegotiated
+    // agreement is a different one even for the same peer and TID.
+    engine
+        .service
+        .on_tx_block_ack_action(
+            peer,
+            oer_ieee80211_mac::block_ack::BlockAckAction::Delba {
+                tid: oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID,
+                initiator: false,
+                reason: 37,
+            },
+        )
+        .unwrap();
+    assert!(!engine.tx_block_ack_holds(first_agreement));
+    let request = engine
+        .service
+        .begin_tx_block_ack(peer, 200)
+        .unwrap()
+        .unwrap();
+    engine
+        .service
+        .on_tx_block_ack_action(
+            peer,
+            oer_ieee80211_mac::block_ack::BlockAckAction::AddbaResponse {
+                dialog_token: request.dialog_token,
+                status: 0,
+                tid: oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID,
+                immediate: true,
+                amsdu: true,
+                window: oer_ieee80211_ap::AP_TX_BLOCK_ACK_WINDOW,
+                timeout_tu: 0,
+            },
+        )
+        .unwrap();
+    assert!(!engine.tx_block_ack_holds(first_agreement));
+    assert!(engine.tx_block_ack_holds(agreement_of(&engine)));
 
     // Supplicants may restart authentication without a preceding
     // deauthentication. The old PTK must leave hardware before the same

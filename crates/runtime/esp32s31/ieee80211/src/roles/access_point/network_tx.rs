@@ -591,6 +591,7 @@ where
                         policy.rate(),
                         first_encoded.sequence_number,
                         policy.role().hardware_key_selector,
+                        admission.agreement(),
                     )
                     .map_err(AccessPointDatapathError::Aggregate)?;
                 active

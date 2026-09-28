@@ -97,6 +97,8 @@ impl ApTxClass {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApTxError {
     FrameTooLarge,
+    /// An aggregate MPDU without hardware CCMP cannot be retried alone.
+    UnprotectedAggregateMpdu,
     Ordinary(OrdinaryTxError),
 }
 
@@ -329,6 +331,45 @@ where
         )
     }
 
+    /// Publish one protected client MPDU taken out of a completed aggregate
+    /// whose Block Ack agreement ended. Sequence Control and the CCMP header
+    /// are already encoded and are kept; only the IEEE Retry bit is added.
+    /// The MPDU follows the AP's ordinary pairwise data exchange.
+    pub fn start_aggregate_mpdu_retry<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        encoded: &[u8],
+        hardware_mic_length: usize,
+        hardware_key_selector: u8,
+    ) -> Result<WifiTxProgress, ApTxError> {
+        if hardware_mic_length == 0 || encoded.len() < 2 {
+            return Err(ApTxError::UnprotectedAggregateMpdu);
+        }
+        self.copy_frame(encoded)?;
+        // Frame Control byte 1, bit 3: the IEEE Retry bit.
+        self.ordinary.buffer_mut()?[TX_METADATA_SIZE + 1] |= 0x08;
+        self.start_copied(
+            hardware,
+            ApTxClass::Data,
+            encoded.len(),
+            hardware_mic_length,
+            hardware_key_selector,
+            None,
+        )
+    }
+
+    fn copy_frame(&mut self, frame: &[u8]) -> Result<(), ApTxError> {
+        let end = TX_METADATA_SIZE
+            .checked_add(frame.len())
+            .ok_or(ApTxError::FrameTooLarge)?;
+        let buffer = self.ordinary.buffer_mut()?;
+        let destination = buffer
+            .get_mut(TX_METADATA_SIZE..end)
+            .ok_or(ApTxError::FrameTooLarge)?;
+        destination.copy_from_slice(frame);
+        Ok(())
+    }
+
     fn start_encoded_with_key<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -338,21 +379,32 @@ where
         hardware_key_selector: u8,
         rate: Option<LegacyRate>,
     ) -> Result<WifiTxProgress, ApTxError> {
-        let end = TX_METADATA_SIZE
-            .checked_add(frame.len())
-            .ok_or(ApTxError::FrameTooLarge)?;
-        let buffer = self.ordinary.buffer_mut()?;
-        let destination = buffer
-            .get_mut(TX_METADATA_SIZE..end)
-            .ok_or(ApTxError::FrameTooLarge)?;
-        destination.copy_from_slice(frame);
+        self.copy_frame(frame)?;
+        self.start_copied(
+            hardware,
+            class,
+            frame.len(),
+            hardware_mic_length,
+            hardware_key_selector,
+            rate,
+        )
+    }
 
+    fn start_copied<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        class: ApTxClass,
+        frame_length: usize,
+        hardware_mic_length: usize,
+        hardware_key_selector: u8,
+        rate: Option<LegacyRate>,
+    ) -> Result<WifiTxProgress, ApTxError> {
         let queue = class.queue();
         let initial_rate = rate.unwrap_or_else(|| class.initial_rate());
         Ok(self.ordinary.start(
             hardware,
             OrdinaryTxPlan {
-                frame_length: frame.len(),
+                frame_length,
                 descriptor_capacity: None,
                 exchange: MacTxPlan {
                     access_category: queue.access_category(),

@@ -3,6 +3,8 @@
 
 use super::*;
 
+use oer_ieee80211_softmac::MacTxWork;
+
 impl<'observer, B, N> AccessPointNetworkTx<'observer, B, N>
 where
     B: MaterializedTxFrame,
@@ -31,7 +33,16 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        if let Some(phase) = self.aggregate_phase {
+        if matches!(
+            self.aggregate_phase,
+            Some(AggregateServicePhase::Unaggregating { .. })
+        ) {
+            let (_, ordinary) = control
+                .mac
+                .try_aggregate_adapter()
+                .expect("an unaggregating retry owns ordinary AP TX");
+            ordinary.wait_deadline().await;
+        } else if let Some(phase) = self.aggregate_phase {
             let deadline = phase.deadline();
             let (_, ordinary) = control
                 .mac
@@ -127,6 +138,9 @@ where
         let phase = self
             .aggregate_phase
             .expect("ordinary service returned above");
+        if let AggregateServicePhase::Unaggregating { retries } = phase {
+            return self.service_unaggregating(aggregate, control, hardware, wake, retries);
+        }
         let action = phase.action(wake, || {
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
@@ -219,12 +233,16 @@ where
         let aggregate_progress = {
             #[cfg(any(feature = "diagnostics", test))]
             let completion_started = self.observer.map(AggregateTxObserver::now_micros);
-            let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+            let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
             })?;
+            let block_ack_operational = aggregate
+                .active_mut()
+                .published_agreement()
+                .is_some_and(|agreement| engine.tx_block_ack_holds(agreement));
             let progress = aggregate
                 .active_mut()
-                .service_completion(ordinary, hardware)
+                .service_completion(ordinary, hardware, block_ack_operational)
                 .map_err(AccessPointDatapathError::Aggregate)?;
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
@@ -237,7 +255,7 @@ where
                             program_micros: finished.saturating_sub(started),
                         });
                     }
-                    ApAmpduProgress::CompletionReady(_) => {
+                    ApAmpduProgress::CompletionReady(_) | ApAmpduProgress::Unaggregate(_) => {
                         observer.observe(AggregateTxObservation::CompletionCoreCompleted {
                             micros: finished.saturating_sub(started),
                         });
@@ -288,6 +306,23 @@ where
                 }
                 Ok(WifiTxProgress::Complete)
             }
+            ApAmpduProgress::Unaggregate(completion) => {
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe_completion_details(completion, false);
+                #[cfg(not(any(feature = "diagnostics", test)))]
+                let _ = completion;
+                let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+                    AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
+                })?;
+                aggregate
+                    .active_mut()
+                    .start_next_unaggregated(ordinary, hardware)
+                    .map_err(AccessPointDatapathError::Aggregate)?;
+                self.aggregate_phase = Some(AggregateServicePhase::Unaggregating {
+                    retries: MacTxWork::default(),
+                });
+                Ok(WifiTxProgress::Pending)
+            }
             ApAmpduProgress::Republished(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]
                 self.observe_completion_details(completion, true);
@@ -312,6 +347,77 @@ where
                 Ok(WifiTxProgress::Pending)
             }
         }
+    }
+
+    /// Advance the ordinary retry of one MPDU taken out of an aggregate whose
+    /// agreement ended; start the next one, or finish the aggregate's
+    /// exchange after the last.
+    fn service_unaggregating<
+        P,
+        E,
+        T,
+        H,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        aggregate: &mut AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
+        control: &mut AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        hardware: &mut H,
+        wake: WifiTxWake,
+        mut retries: MacTxWork,
+    ) -> Result<WifiTxProgress, AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+        H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
+    {
+        let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+            AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
+        })?;
+        let progress = ordinary
+            .service(hardware, wake)
+            .map_err(|error| AccessPointDatapathError::Aggregate(ApAmpduError::Ordinary(error)))?;
+        if progress == WifiTxProgress::Pending {
+            return Ok(progress);
+        }
+        let _ = ordinary.take_last_outcome();
+        retries.absorb(ordinary.work());
+        if aggregate.active_mut().is_unaggregating() {
+            aggregate
+                .active_mut()
+                .start_next_unaggregated(ordinary, hardware)
+                .map_err(AccessPointDatapathError::Aggregate)?;
+            self.aggregate_phase = Some(AggregateServicePhase::Unaggregating { retries });
+            return Ok(WifiTxProgress::Pending);
+        }
+        self.aggregate_phase = None;
+        let mut work = aggregate.active_mut().work();
+        work.absorb(retries);
+        #[cfg(any(feature = "diagnostics", test))]
+        {
+            self.exchange_started_micros = None;
+        }
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::WorkCompleted { work });
+        }
+        if let Some(accounting) = self.airtime.as_mut() {
+            accounting.complete_active(work)?;
+        }
+        Ok(WifiTxProgress::Complete)
     }
 
     #[cfg(any(feature = "diagnostics", test))]

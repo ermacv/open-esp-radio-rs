@@ -54,6 +54,18 @@ impl<'storage> ApEngine<'storage> {
         ))
     }
 
+    /// Whether `agreement` is still the peer's operational TX Block Ack
+    /// agreement: the same association and an unchanged session generation.
+    pub fn tx_block_ack_holds(&self, agreement: crate::ampdu::ApAggregateAgreement) -> bool {
+        self.service
+            .peer_status(agreement.association.address())
+            .is_some_and(|status| {
+                status.association_identity() == agreement.association
+                    && status.tx_block_ack.is_some()
+                    && status.tx_block_ack_generation == agreement.block_ack_generation
+            })
+    }
+
     pub fn has_operational_tx_block_ack(&self) -> bool {
         self.service.has_operational_tx_block_ack()
     }

@@ -131,3 +131,27 @@ fn incomplete_or_overflowed_receipt_cannot_be_settled_as_free_service() {
         assert_eq!(work.estimated_exchange_micros(48), None);
     }
 }
+
+#[test]
+fn absorbed_work_adds_every_counter_and_keeps_saturation() {
+    let mut aggregate = MacTxWork::new();
+    aggregate.record(1_600, 2, NonZeroU32::new(65_000));
+    let mut retry = MacTxWork::new();
+    retry.record(800, 1, None);
+    aggregate.absorb(retry);
+    assert_eq!(aggregate.publications, 2);
+    assert_eq!(aggregate.psdu_bytes, 2_400);
+    assert_eq!(aggregate.mpdus, 3);
+    assert_eq!(aggregate.unestimated_publications, 1);
+    assert_eq!(aggregate.unestimated_ppdus, 2);
+    assert_eq!(aggregate.unreported_contention, 2);
+    assert!(!aggregate.saturated);
+
+    let mut full = MacTxWork {
+        publications: u32::MAX,
+        ..MacTxWork::new()
+    };
+    full.absorb(retry);
+    assert_eq!(full.publications, u32::MAX);
+    assert!(full.saturated);
+}

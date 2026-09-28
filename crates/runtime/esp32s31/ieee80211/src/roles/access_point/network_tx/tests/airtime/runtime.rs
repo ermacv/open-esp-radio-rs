@@ -56,8 +56,11 @@ fn dtim_group_release_settles_on_completion() {
     run(Case::Dtim);
 }
 
+/// The open AP has no Block Ack agreement, so the aggregate's retry leaves
+/// it: the unacknowledged MPDU goes out as one ordinary frame and the
+/// exchange keeps its single reservation until that frame completes.
 #[test]
-fn aggregate_retry_keeps_one_reservation_until_terminal_release() {
+fn aggregate_without_its_agreement_sends_missing_mpdus_individually() {
     run(Case::AggregateRetry);
 }
 
@@ -274,7 +277,16 @@ fn run(case: Case) {
             );
             aggregate
                 .active_mut()
-                .begin([4; 6], rate, SequenceNumber::new(0).unwrap(), 0)
+                .begin(
+                    [4; 6],
+                    rate,
+                    SequenceNumber::new(0).unwrap(),
+                    0,
+                    oer_esp32s31_ieee80211_ap::ampdu::ApAggregateAgreement {
+                        association: identity,
+                        block_ack_generation: 0,
+                    },
+                )
                 .unwrap();
             for sequence in 0..2 {
                 device.transmit(packet(packets, 4, sequence)).unwrap();
@@ -312,6 +324,7 @@ fn run(case: Case) {
                 .unwrap()
                 .reserve_standby(control.mac.engine(), ApTxFlowKey::associated(identity))
                 .unwrap();
+            // The BlockAck acknowledges sequence 0 only.
             hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
                 MacTxCompletionObservation::new_model(0, 0),
                 0,
@@ -326,25 +339,35 @@ fn run(case: Case) {
                 owner.service(&mut aggregate, &mut control, &mut hardware, complete),
                 Ok(WifiTxProgress::Pending)
             );
-            assert_eq!(hardware.ht_publications, 2);
+            assert_eq!(
+                hardware.ht_publications, 1,
+                "the aggregate is not republished"
+            );
+            assert_eq!(hardware.legacy_publications, 1, "sequence 1 leaves alone");
+            assert!(matches!(
+                owner.aggregate_phase,
+                Some(AggregateServicePhase::Unaggregating { .. })
+            ));
+            assert!(
+                aggregate.active_mut().is_idle(),
+                "copying the last missing MPDU released the aggregate"
+            );
             assert_eq!(
                 owner.airtime_balance_micros(peer),
                 Some(0),
-                "selective retry retains the same outstanding grant"
+                "the individual retry keeps the exchange's outstanding grant"
             );
-            hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
-                MacTxCompletionObservation::new_model(0, 0),
-                0,
-                1,
-                1,
-                true,
-            ));
+            hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(0, 0));
             assert_eq!(
                 owner.service(&mut aggregate, &mut control, &mut hardware, complete),
                 Ok(WifiTxProgress::Complete)
             );
-            assert_eq!(owner.airtime_balance_micros(peer), Some(-200));
-            assert!(aggregate.active_mut().is_idle());
+            assert_eq!(owner.aggregate_phase, None);
+            assert_eq!(
+                owner.airtime_balance_micros(peer),
+                Some(-200),
+                "the aggregate and its individual retry settle as one two-publication exchange"
+            );
             owner.airtime.as_mut().unwrap().cancel_standby().unwrap();
             assert_eq!(owner.airtime_balance_micros(peer), Some(800));
             return;

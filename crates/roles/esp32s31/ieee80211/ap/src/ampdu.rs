@@ -6,7 +6,7 @@
 
 use crate::{
     engine::{ApAggregateBinding, ApAggregateFrame},
-    tx::ApTx,
+    tx::{ApTx, ApTxError},
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
@@ -35,9 +35,21 @@ use oer_ieee80211_ap::ApAssociationIdentity;
 
 use oer_ieee80211_softmac::MacTxWork;
 
+use oer_esp32s31_ieee80211::tx::WifiTxProgress;
+
 mod budget;
 
 pub use budget::ApAmpduBudget;
+
+/// The TX Block Ack agreement one client aggregate was built under.
+///
+/// Its retries stay aggregated only while this exact agreement is
+/// operational; a DELBA, a renegotiation or a new association ends it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApAggregateAgreement {
+    pub association: ApAssociationIdentity,
+    pub block_ack_generation: u32,
+}
 
 /// AP peer decision captured before consuming a network lease into an
 /// aggregate transaction.
@@ -47,6 +59,7 @@ pub struct ApAggregateAdmission {
     association: ApAssociationIdentity,
     rate: HtRate,
     block_ack_window: u16,
+    block_ack_generation: u32,
     amsdu: bool,
 }
 
@@ -56,6 +69,7 @@ impl ApAggregateAdmission {
         association: ApAssociationIdentity,
         rate: HtRate,
         block_ack_window: u16,
+        block_ack_generation: u32,
         amsdu: bool,
     ) -> Self {
         Self {
@@ -63,7 +77,15 @@ impl ApAggregateAdmission {
             association,
             rate,
             block_ack_window,
+            block_ack_generation,
             amsdu,
+        }
+    }
+
+    pub const fn agreement(self) -> ApAggregateAgreement {
+        ApAggregateAgreement {
+            association: self.association,
+            block_ack_generation: self.block_ack_generation,
         }
     }
 
@@ -126,6 +148,8 @@ pub enum ApAmpduError {
     DeadlineOverflow,
     ConflictingInterruptEvents(u32),
     CompletionInterruptWithoutState,
+    NothingToUnaggregate,
+    Ordinary(ApTxError),
     Hardware(HtAmpduTxError),
     Retry(AmpduRetryError),
     RolePolicy(HtAmpduTxRolePolicyError),
@@ -149,6 +173,12 @@ impl From<RetainedAmpduRetryCompletionError> for ApAmpduError {
             RetainedAmpduRetryCompletionError::Hardware(error) => Self::Hardware(error),
             RetainedAmpduRetryCompletionError::Retry(error) => Self::Retry(error),
         }
+    }
+}
+
+impl From<ApTxError> for ApAmpduError {
+    fn from(error: ApTxError) -> Self {
+        Self::Ordinary(error)
     }
 }
 
@@ -193,6 +223,10 @@ pub enum ApAmpduProgress {
     /// backing remains retained until the caller performs the explicit
     /// release edge.
     CompletionReady(ApAmpduCompletion),
+    /// The aggregate's agreement ended. Its missing MPDUs leave the retained
+    /// storage one ordinary transmission at a time through
+    /// [`ApAmpduTx::start_next_unaggregated`].
+    Unaggregate(ApAmpduCompletion),
 }
 
 enum ApAmpduState<const SLOTS: usize> {
@@ -204,15 +238,24 @@ enum ApAmpduState<const SLOTS: usize> {
         first_sequence: SequenceNumber,
         next_sequence: SequenceNumber,
         hardware_key_selector: u8,
+        agreement: ApAggregateAgreement,
     },
     Hardware {
         cookie: TxCookie,
         rate: HtRate,
         hardware_key_selector: u8,
+        agreement: ApAggregateAgreement,
         retry: AmpduRetryState<SLOTS>,
     },
     Completed {
         cookie: TxCookie,
+    },
+    /// Retained aggregate subframe indices not yet copied out as ordinary
+    /// MPDUs; the storage is released with the copy of the last one.
+    Unaggregating {
+        cookie: TxCookie,
+        hardware_key_selector: u8,
+        remaining: u32,
     },
 }
 
@@ -252,6 +295,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         rate: HtRate,
         first_sequence: SequenceNumber,
         hardware_key_selector: u8,
+        agreement: ApAggregateAgreement,
     ) -> Result<(), ApAmpduError> {
         if !matches!(self.state, ApAmpduState::Idle) {
             return Err(ApAmpduError::Busy);
@@ -264,8 +308,22 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             first_sequence,
             next_sequence: first_sequence,
             hardware_key_selector,
+            agreement,
         };
         Ok(())
+    }
+
+    /// Agreement of the aggregate hardware currently owns.
+    pub fn published_agreement(&self) -> Option<ApAggregateAgreement> {
+        match self.state {
+            ApAmpduState::Hardware { agreement, .. } => Some(agreement),
+            _ => None,
+        }
+    }
+
+    /// Whether missing MPDUs of an ended aggregate still wait to be sent.
+    pub fn is_unaggregating(&self) -> bool {
+        matches!(self.state, ApAmpduState::Unaggregating { .. })
     }
 
     pub fn is_idle(&self) -> bool {
@@ -362,7 +420,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 prepared.hardware_key_selector,
             )
             .ok_or(ApAmpduError::Geometry)?;
-        let ApAmpduState::Building { cookie, .. } = self.state else {
+        let ApAmpduState::Building {
+            cookie, agreement, ..
+        } = self.state
+        else {
             return Err(ApAmpduError::Idle);
         };
         self.inner
@@ -371,6 +432,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             cookie,
             rate: prepared.rate,
             hardware_key_selector: prepared.hardware_key_selector,
+            agreement,
             retry: AmpduRetryState::new(
                 prepared.first_sequence,
                 prepared.subframes,
@@ -386,10 +448,17 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
 
     /// Process one hardware observation without conflating an absent
     /// completion with a retained retry publication.
+    ///
+    /// `block_ack_operational` states whether the agreement of
+    /// [`Self::published_agreement`] is still operational. Once it ended, the
+    /// missing MPDUs leave the aggregate as ordinary frames, as the vendor's
+    /// `ppResortTxAMPDU` moves them to the ordinary queue when
+    /// `trc_isTxAmpduOperational` is false.
     pub fn service_completion<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H: HtAmpduHardware>(
         &mut self,
         ordinary: &mut ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
         hardware: &mut H,
+        block_ack_operational: bool,
     ) -> Result<ApAmpduProgress, ApAmpduError>
     where
         P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
@@ -400,6 +469,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             cookie,
             rate,
             hardware_key_selector,
+            agreement,
             mut retry,
         } = core::mem::replace(&mut self.state, ApAmpduState::Idle)
         else {
@@ -410,15 +480,14 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             cookie,
             &mut retry,
             ordinary.now_micros(),
-            // The AP does not yet end a client's aggregate when its
-            // agreement ends; it keeps retrying it as an aggregate.
-            true,
+            block_ack_operational,
         )?
         else {
             self.state = ApAmpduState::Hardware {
                 cookie,
                 rate,
                 hardware_key_selector,
+                agreement,
                 retry,
             };
             return Ok(ApAmpduProgress::Pending);
@@ -446,10 +515,16 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             AmpduRetryDecision::RepublishUnchanged { retry_mask } => {
                 Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
             }
+            AmpduRetryDecision::Unaggregate { retry_mask } => {
+                ordinary.reset_aggregate_contention();
+                self.state = ApAmpduState::Unaggregating {
+                    cookie,
+                    hardware_key_selector,
+                    remaining: retry_mask,
+                };
+                return Ok(ApAmpduProgress::Unaggregate(observation));
+            }
             AmpduRetryDecision::Finish { .. } | AmpduRetryDecision::FinishTriggerFlow => None,
-            AmpduRetryDecision::Unaggregate { .. } => unreachable!(
-                "an operational agreement that retains single MPDUs never unaggregates"
-            ),
         };
         if let Some((retry_mask, republication)) = republication {
             let aggregate = self
@@ -470,6 +545,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 cookie,
                 rate,
                 hardware_key_selector,
+                agreement,
                 retry,
             };
             return Ok(ApAmpduProgress::Republished(observation));
@@ -481,6 +557,57 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         }
         self.state = ApAmpduState::Completed { cookie };
         Ok(ApAmpduProgress::CompletionReady(observation))
+    }
+
+    /// Send the next missing MPDU of an ended aggregate as an ordinary frame.
+    ///
+    /// The MPDU keeps its sequence number and CCMP PN and gains the Retry
+    /// bit. The copy of the last one releases the retained aggregate, after
+    /// which this owner is idle while the ordinary transmission completes.
+    pub fn start_next_unaggregated<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H>(
+        &mut self,
+        ordinary: &mut ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
+        hardware: &mut H,
+    ) -> Result<WifiTxProgress, ApAmpduError>
+    where
+        P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+        E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        H: oer_esp32s31_ieee80211_mac::tx::TxHardware,
+    {
+        let ApAmpduState::Unaggregating {
+            cookie,
+            hardware_key_selector,
+            remaining,
+        } = self.state
+        else {
+            return Err(ApAmpduError::NothingToUnaggregate);
+        };
+        if remaining == 0 {
+            return Err(ApAmpduError::NothingToUnaggregate);
+        }
+        let index = remaining.trailing_zeros() as u8;
+        let remaining = remaining & (remaining - 1);
+        let progress = {
+            let (encoded, hardware_mic_length) = self.inner.completed_frame(cookie, index)?;
+            ordinary.start_aggregate_mpdu_retry(
+                hardware,
+                encoded,
+                usize::from(hardware_mic_length),
+                hardware_key_selector,
+            )?
+        };
+        if remaining == 0 {
+            self.inner.release_completed(cookie)?;
+            self.state = ApAmpduState::Idle;
+        } else {
+            self.state = ApAmpduState::Unaggregating {
+                cookie,
+                hardware_key_selector,
+                remaining,
+            };
+        }
+        Ok(progress)
     }
 
     /// Release the exact detached terminal batch after the caller has

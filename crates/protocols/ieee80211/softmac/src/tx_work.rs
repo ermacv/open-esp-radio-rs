@@ -68,6 +68,30 @@ impl MacTxWork {
         NonZeroU32::new(self.ppdu_micros.checked_add(overhead)?)
     }
 
+    /// Add the work of another exchange that belongs to this one, such as
+    /// the ordinary retries of MPDUs taken out of an aggregate.
+    pub fn absorb(&mut self, other: MacTxWork) {
+        let mut add = |counter: &mut u32, value: u32| {
+            let (sum, overflow) = counter.overflowing_add(value);
+            *counter = if overflow { u32::MAX } else { sum };
+            self.saturated |= overflow;
+        };
+        add(&mut self.publications, other.publications);
+        add(&mut self.psdu_bytes, other.psdu_bytes);
+        add(&mut self.mpdus, other.mpdus);
+        add(&mut self.nominal_data_micros, other.nominal_data_micros);
+        add(
+            &mut self.unestimated_publications,
+            other.unestimated_publications,
+        );
+        add(&mut self.ppdu_micros, other.ppdu_micros);
+        add(&mut self.unestimated_ppdus, other.unestimated_ppdus);
+        add(&mut self.aifs_slots, other.aifs_slots);
+        add(&mut self.backoff_slots, other.backoff_slots);
+        add(&mut self.unreported_contention, other.unreported_contention);
+        self.saturated |= other.saturated;
+    }
+
     /// Record only after hardware publication commits. Preparation failure
     /// must not call this method. Use the geometry of this attempt, not the
     /// original aggregate, after selective retry compaction.

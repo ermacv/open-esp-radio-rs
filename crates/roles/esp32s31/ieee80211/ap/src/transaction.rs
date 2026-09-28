@@ -610,6 +610,7 @@ where
             status.association_identity(),
             rate,
             agreement.window,
+            status.tx_block_ack_generation,
             agreement.amsdu,
         ))
     }

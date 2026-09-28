@@ -278,6 +278,13 @@ impl TxBlockAckSession {
         self.generation = next_generation(self.generation);
     }
 
+    /// Identity of the current phase. Every negotiation, response, alarm and
+    /// stop advances it, so an unchanged generation of an operational session
+    /// names exactly the agreement that was operational when it was read.
+    pub const fn generation(&self) -> u32 {
+        self.generation
+    }
+
     pub const fn operational(&self) -> Option<OperationalTxBlockAck> {
         match self.phase {
             TxBlockAckPhase::Operational(agreement) => Some(agreement),

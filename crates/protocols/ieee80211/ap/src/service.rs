@@ -480,6 +480,7 @@ impl ApPeer {
             ht: self.ht,
             qos_supported: self.qos_supported,
             tx_block_ack: self.tx_block_ack.operational(),
+            tx_block_ack_generation: self.tx_block_ack.generation(),
             power_state: self.power_state,
             buffered_unicast_frames: self.buffered_unicast_frames,
             buffered_release_in_flight: self.buffered_release_in_flight,
@@ -590,6 +591,9 @@ pub struct ApPeerStatus {
     pub ht: Option<HtPeerCapabilities>,
     pub qos_supported: bool,
     pub tx_block_ack: Option<OperationalTxBlockAck>,
+    /// Generation of the peer's TX Block Ack session; with an operational
+    /// `tx_block_ack` it identifies that exact agreement.
+    pub tx_block_ack_generation: u32,
     pub power_state: ApPeerPowerState,
     pub buffered_unicast_frames: u16,
     pub buffered_release_in_flight: bool,

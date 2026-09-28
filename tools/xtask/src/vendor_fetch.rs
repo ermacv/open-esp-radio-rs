@@ -258,7 +258,10 @@ struct Resolved {
 
 fn resolve(ctx: &Context, chip: &str) -> Result<Resolved> {
     let manifest = manifest_path(&ctx.root, chip)?;
-    resolve_manifest(&ctx.root, &std::fs::read_to_string(ctx.root.join(manifest))?)
+    resolve_manifest(
+        &ctx.root,
+        &std::fs::read_to_string(ctx.root.join(manifest))?,
+    )
 }
 
 fn resolve_manifest(root: &Path, manifest: &str) -> Result<Resolved> {

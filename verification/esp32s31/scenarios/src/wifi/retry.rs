@@ -205,11 +205,14 @@ const RETRY_QUIET: &[&str] = &[
     "lmacProcessTBSuccess",
     "wifi_assert",
 ];
-/// The continuations a retry leaf ends in.
+/// The continuations a retry leaf ends in. `lmacEndRetryAMPDUFail` ends an
+/// RTS-protected A-MPDU at its limit; the A-MPDU timeout sequences compare
+/// that path.
 const CONTINUATIONS: &[&str] = &[
     "lmacEndFrameExchangeSequence",
     "lmacDiscardFrameExchangeSequence",
     "lmacRetryTxFrame",
+    "lmacEndRetryAMPDUFail",
 ];
 
 fn model(name: &str, address: u32, boundary: CallBoundary, words: u16) -> CallDeclaration {

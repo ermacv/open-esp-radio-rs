@@ -875,7 +875,10 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         // the Retry bit on every MPDU and republish the aggregate until the
         // `lmacConfMib` retry limit or `lmacMSDUAged`; executed, both
         // descriptor lengths end on the 32nd timeout through
-        // `lmacEndFrameExchangeSequence` (blobray 156c54e0e).
+        // `lmacEndFrameExchangeSequence` (blobray 156c54e0e). The
+        // `rcReachRetryLimit` cap of 11 attempts applies only while
+        // ESP-WIFI-MESH runs (`g_mesh_is_started`), which this driver
+        // does not compose.
         if !completion.block_ack_received {
             self.ack_timeouts = self.ack_timeouts.saturating_add(1);
             self.missing_original_indices = self.pending_original_indices;

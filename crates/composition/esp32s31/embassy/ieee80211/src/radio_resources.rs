@@ -206,7 +206,7 @@ static ACCESS_POINT_NETWORK_PACKET_STORAGE: ConstStaticCell<
     unsafe_code,
     reason = "RX packet payloads are explicitly separated from the physical DMA staging tier"
 )]
-#[unsafe(link_section = ".psram.bss.open_radio_station_rx_packets")]
+#[unsafe(link_section = ".critical.bss.open_radio_station_rx_packets")]
 static STATION_RX_PACKET_STORAGE: ConstStaticCell<
     PacketPoolStorage<NETWORK_RX_PACKET_POOL_CAPACITY>,
 > = ConstStaticCell::new(PacketPoolStorage::new());

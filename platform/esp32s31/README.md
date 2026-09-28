@@ -36,6 +36,12 @@ per-core SRAM interrupt stack. Global interrupts remain disabled until the
 application binds its timers and executor handlers; it then calls the unsafe
 `oer_esp32s31_platform_runtime::enable_interrupts_after_handoff` once per hart. PSRAM
 must not be reset or remapped after handoff.
+The bootstrap configures the brownout detector as the ESP-IDF application
+does (`esp_hal::rtc_cntl::brownout::configure` with its defaults): the
+analog mode-1 reset the bootloader enables is turned off, and mode 0 at level
+7 suspends flash, powers down RF and resets the system after its wait. The
+non-interrupt variant is used, so no brownout handler runs on the stack-switched
+vectors.
 Every CPU interrupt enters through the runtime's stack-switching vector entry
 and esp-hal's shared dispatcher, so a handler that esp-hal binds directly to a
 vector slot does not run: images do not use `esp_hal::interrupt::ipc`

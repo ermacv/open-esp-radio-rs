@@ -59,7 +59,7 @@ static_cell = "2.1.1"
 # Hardware composition is target-only; the product resource profile and its
 # ownership tests also compile on the host without running esp-hal's build script.
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "9fe1c752836a42c22b05ff8dacb517e64dc71bd1", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "27c89c26acac671232e3ad984e5edfef8747171c", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 oer-esp32s31-soc-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 oer-esp32s31-ieee80211-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
 oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }

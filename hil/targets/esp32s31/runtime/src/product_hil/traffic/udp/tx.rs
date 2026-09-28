@@ -516,8 +516,12 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             oer_esp32s31_ieee80211_runtime::roles::station::beacon_path::beacon_path_counts()
                 .since(beacons_start);
         runtime_log(format_args!(
-            "OBCN published={} overflowed={} consumed={}",
-            beacons.published, beacons.overflowed, beacons.consumed,
+            "OBCN dispatched={} rejected={} published={} overflowed={} consumed={}",
+            beacons.dispatched,
+            beacons.dispatch_rejected,
+            beacons.published,
+            beacons.overflowed,
+            beacons.consumed,
         ));
         #[cfg(feature = "mac-irq-telemetry")]
         crate::product_hil::traffic::reporting::log_tx_ingress(

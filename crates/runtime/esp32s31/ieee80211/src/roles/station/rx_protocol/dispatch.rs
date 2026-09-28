@@ -459,6 +459,10 @@ async fn dispatch_non_amsdu_segment<
     }
     #[cfg(any(feature = "diagnostics", test))]
     let dispatch_started = pipeline_observer.map(|observer| observer.now_micros());
+    let beacon = segment
+        .buffer
+        .get(..2)
+        .is_some_and(|control| control[0] & 0xfc == 0x80);
     let result = dispatcher.dispatch_with_runtime_received_at(
         segment,
         mpdu,
@@ -466,6 +470,12 @@ async fn dispatch_non_amsdu_segment<
         runtime_received_at_micros,
         sink,
     );
+    if beacon {
+        crate::roles::station::beacon_path::record_dispatched(matches!(
+            result,
+            ConnectedRxDispatch::Beacon
+        ));
+    }
     #[cfg(any(feature = "diagnostics", test))]
     if let (Some(observer), Some(started)) = (pipeline_observer, dispatch_started) {
         let (data, amsdu, amsdu_subframes) = match result {

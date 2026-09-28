@@ -55,7 +55,7 @@
     },
     {
       "path": "tools/blobray/next",
-      "sha256": "cfe75dfa24d1f86acaf003056d7844016905b3c93c9bfac83d1746881af50379"
+      "sha256": "2849ac1bf0eeb57ea50f872005c23a24fb4aa480daae41fa51ee9e20a803c849"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",

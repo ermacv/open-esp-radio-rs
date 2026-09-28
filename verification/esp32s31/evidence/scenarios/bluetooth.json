@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "f71f2e839ec57c93e285894ba5850b19e9bd55491d2464d45ad29a1555c6fb3d",
+    "input-2": "c896760bc2bcbf0fd1c9ced6fa6e8f7ffbfa0b5a2a463c0cb1c4511f02f4527f",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -36,7 +36,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth.rs",
-      "sha256": "9c85f93ae4e977c6ffa3393e287e78e3e25caf72ace9556b23d10564791e7b55"
+      "sha256": "7a7a5261c12e15145d14a39ad11832c2e08d4cb69b1d029ff1315738cc774ca0"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
@@ -64,7 +64,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "sha256": "972dbcaa22a8d100114e29b94cb1a210cfcf0c69af9d699e1918dee4b9cad8a9"
+      "sha256": "0fc108c59df72198db27ceec8744204067dd0ae3fa63b4557a33ae7b4712c632"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/insertion.rs",
@@ -140,7 +140,7 @@
     },
     {
       "path": "tools/blobray/next",
-      "sha256": "cfe75dfa24d1f86acaf003056d7844016905b3c93c9bfac83d1746881af50379"
+      "sha256": "2849ac1bf0eeb57ea50f872005c23a24fb4aa480daae41fa51ee9e20a803c849"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
@@ -5006,27 +5006,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 256
+      "line": 268
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 258
+      "line": 270
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 259
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 260
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 266
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 269
+      "line": 271
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5034,27 +5022,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 273
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 277
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
       "line": 278
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 280
+      "line": 281
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 283
+      "line": 284
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 291
+      "line": 285
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 289
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 290
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5062,19 +5050,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 293
+      "line": 295
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 294
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 298
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 299
+      "line": 303
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5090,19 +5070,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 307
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 309
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
       "line": 310
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 313
+      "line": 311
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5110,7 +5082,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 317
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 318
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
       "line": 319
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 321
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5118,7 +5102,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 327
+      "line": 325
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5126,19 +5110,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 329
+      "line": 331
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 335
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 336
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 337
+      "line": 334
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5154,31 +5130,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 342
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 344
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 345
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 346
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
       "line": 347
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 349
+      "line": 348
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 350
+      "line": 349
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5190,11 +5150,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 353
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
       "line": 354
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 355
+      "line": 356
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5206,7 +5170,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 360
+      "line": 359
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 361
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 362
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 363
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5214,15 +5190,23 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 366
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 367
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
       "line": 369
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 374
+      "line": 370
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 375
+      "line": 372
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
@@ -5230,11 +5214,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 379
+      "line": 381
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
-      "line": 380
+      "line": 386
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 387
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 388
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 391
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 392
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/insertion.rs",

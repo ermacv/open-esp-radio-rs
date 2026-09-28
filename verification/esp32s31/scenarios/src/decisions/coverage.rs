@@ -1086,4 +1086,89 @@ pub const DECISIONS: &[Decision] = &[
             },
         ],
     },
+    Decision {
+        reason: "low-power clock selection for the Wi-Fi (module 5) and coexistence (module 8) \
+            modules: production owns only the Bluetooth module's selection \
+            (`SharedRadioLease::select_bluetooth_low_power_clock`); the other modules' low-power \
+            clocks are not selected by any production path",
+        places: &[
+            // The module comparisons past Bluetooth's and the Wi-Fi arm.
+            Place::Range {
+                function: "modem_clock_select_lp_clock_source",
+                start: 0x6e,
+                end: 0xd6,
+            },
+            // The coexistence arm.
+            Place::Range {
+                function: "modem_clock_select_lp_clock_source",
+                start: 0x1a2,
+                end: 0x1e8,
+            },
+            Place::Range {
+                function: "modem_clock_deselect_lp_clock_source",
+                start: 0x7e,
+                end: 0xb4,
+            },
+            Place::Range {
+                function: "modem_clock_deselect_lp_clock_source",
+                start: 0x132,
+                end: 0x146,
+            },
+            Place::Function("modem_clock_hal_select_wifi_lpclk_source"),
+            Place::Function("modem_clock_hal_deselect_all_wifi_lpclk_source"),
+            Place::Function("modem_clock_hal_enable_wifipwr_clock"),
+            Place::Function("modem_clock_hal_select_coex_lpclk_source"),
+            Place::Function("modem_clock_hal_deselect_all_coex_lpclk_source"),
+        ],
+    },
+    Decision {
+        reason: "low-power clock sources other than the main crystal: production selects the \
+            Bluetooth low-power clock only from the main crystal (ESP-IDF \
+            `MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL`) and implements no other source; a source the \
+            vendor maps to no module returns before any write, and a module outside the \
+            vendor's range asserts",
+        places: &[
+            Place::Range {
+                function: "modem_clock_select_lp_clock_source",
+                start: 0xe,
+                end: 0x4a,
+            },
+            Place::Range {
+                function: "modem_clock_deselect_lp_clock_source",
+                start: 0xa,
+                end: 0x46,
+            },
+            Place::Function("modem_clock_hal_select_ble_rtc_timer_lpclk_source"),
+            Place::Function("modem_clock_lpclk_src_module"),
+            Place::Function("modem_clock_lpclk_src_power_domain"),
+            Place::Function("__assert_func"),
+        ],
+    },
+    Decision {
+        reason: "the vendor's interrupt-context critical section (`xPortInIsrContext`): the \
+            ESP-IDF modem clock driver takes its spinlock through the ISR variant inside an \
+            interrupt; production's lease runs the selection in task context only",
+        places: &[
+            Place::Range {
+                function: "modem_clock_select_lp_clock_source",
+                start: 0x5e,
+                end: 0x62,
+            },
+            Place::Range {
+                function: "modem_clock_select_lp_clock_source",
+                start: 0x10e,
+                end: 0x112,
+            },
+            Place::Range {
+                function: "modem_clock_deselect_lp_clock_source",
+                start: 0x5a,
+                end: 0x5e,
+            },
+            Place::Range {
+                function: "modem_clock_deselect_lp_clock_source",
+                start: 0xda,
+                end: 0xde,
+            },
+        ],
+    },
 ];

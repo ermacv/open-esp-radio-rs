@@ -4581,6 +4581,13 @@ code = "c2b7dbbe69ddfd51a0117114508f4ea6e6ba41fd0386ea92217c0607eea38ff6"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "__assert_func"
+code = "6e29e42a979d589b39e48b573d76b17d57068754f5055b3dcca9beb828335cae"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "__clzsi2"
 code = "171a0a963ecea0e22231795b0b880a265e5a717796144ce01621af5ffcae727e"
 decisions = ["coverage.rs"]

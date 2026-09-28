@@ -133,13 +133,18 @@ fn holds_file(directory: &Path) -> bool {
     })
 }
 
-/// Whether Git ignores `path`, as for a documented local configuration file.
-fn ignored(root: &Path, path: &str) -> bool {
-    std::process::Command::new("git")
-        .current_dir(root)
-        .args(["check-ignore", "--quiet", "--no-index", path])
-        .status()
-        .is_ok_and(|status| status.success())
+/// Whether Git ignores `path`, as for a documented local configuration file
+/// or build output. A missing path is also tried as a directory, since
+/// directory patterns such as `target/` match only a path ending in `/`.
+pub(super) fn ignored(root: &Path, path: &str) -> bool {
+    let directory = format!("{}/", path.trim_end_matches('/'));
+    [path, directory.as_str()].into_iter().any(|candidate| {
+        std::process::Command::new("git")
+            .current_dir(root)
+            .args(["check-ignore", "--quiet", "--no-index", candidate])
+            .status()
+            .is_ok_and(|status| status.success())
+    })
 }
 
 fn heading_slug(text: &str) -> String {

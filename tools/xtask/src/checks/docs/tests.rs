@@ -36,6 +36,11 @@ fn markdown_parser_checks_references_paths_anchors_and_source_lines() {
     .unwrap();
     let summary = check_markdown(&context, std::slice::from_ref(&index)).unwrap();
     assert_eq!(summary.code_paths, 3);
+    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    assert!(markdown::ignored(
+        &repository_root,
+        "tools/never-built/target"
+    ));
     fs::write(&index, "`docs/{index,moved}.md` and `src/lib.rs`\n").unwrap();
     let error = check_markdown(&context, std::slice::from_ref(&index))
         .unwrap_err()

@@ -60,6 +60,8 @@
     "bluetooth/security-failure": false,
     "bluetooth/dtm": true,
     "bluetooth/peripheral": false,
+    "bluetooth/scannable-advertising": false,
+    "bluetooth/directed-advertising": true,
     "system/boot-smoke": false,
     "system/watchdog": true,
     "system/hang-watchdog": true,

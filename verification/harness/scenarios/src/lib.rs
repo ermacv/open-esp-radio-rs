@@ -9,6 +9,7 @@ pub mod artifacts;
 pub mod chip;
 pub mod coverage;
 pub mod dependencies;
+pub mod discovery;
 pub mod evidence;
 pub mod failure;
 pub mod harness;

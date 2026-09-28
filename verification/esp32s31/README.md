@@ -558,7 +558,11 @@ named addresses, not a campaign. They apply to every scenario, not only the
 PHY ones: a patch that drops the RX append doorbell bit fails `wifi-mac` at
 the doorbell model, and one that changes the HE-SIG-A2 control image fails its
 HE PPDU leaf as DIFF. A failing run writes its departing cases to the run's
-`failures/` directory.
+`failures/` directory. When a side stopped at memory its case does not
+declare, the report also lists every undeclared symbol, register or callee
+the request reaches: the engine reruns it with each one found mapped as a
+zero-filled placeholder, or a callee returning zero, until no side stops
+there. The placeholders only locate the declarations a scenario still owes.
 
 ## Contract ownership
 

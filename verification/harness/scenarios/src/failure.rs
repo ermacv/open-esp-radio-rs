@@ -4,7 +4,8 @@
 //! with the contract classification of every concrete effect and the first
 //! difference, as a readable report and as JSON beside it. The error names
 //! the report, so a scenario never needs a temporary print to see its
-//! events.
+//! events. When a side stopped at undeclared memory, the report also lists
+//! every undeclared access the request reaches.
 use crate::harness::Result;
 use blobray_domain::{
     ComparisonVerdict, EffectContract, EffectSelection, EffectTracker, ExecutionEvent,
@@ -211,12 +212,21 @@ pub fn render(label: &str, expected: Option<ComparisonVerdict>, cases: &[Case]) 
     text
 }
 
-/// Write the report of `cases` below `run`, as text and JSON; the text path.
+/// The JSON form of a report.
+#[derive(Serialize)]
+struct Report<'a> {
+    cases: &'a [Case],
+    missing: &'a [crate::discovery::Missing],
+}
+
+/// Write the report of `cases` and the undeclared accesses `missing` below
+/// `run`, as text and JSON; the text path.
 pub fn write(
     run: &Path,
     label: &str,
     expected: Option<ComparisonVerdict>,
     cases: &[Case],
+    missing: &[crate::discovery::Missing],
 ) -> Result<PathBuf> {
     let directory = run.join(DIRECTORY);
     std::fs::create_dir_all(&directory)?;
@@ -231,10 +241,13 @@ pub fn write(
         })
         .collect();
     let text = directory.join(format!("{stem}.txt"));
-    std::fs::write(&text, render(label, expected, cases))?;
+    std::fs::write(
+        &text,
+        render(label, expected, cases) + &crate::discovery::render(missing),
+    )?;
     std::fs::write(
         directory.join(format!("{stem}.json")),
-        serde_json::to_vec_pretty(cases)?,
+        serde_json::to_vec_pretty(&Report { cases, missing })?,
     )?;
     Ok(text)
 }
@@ -350,6 +363,7 @@ mod tests {
             "rx append/1",
             Some(ComparisonVerdict::Match),
             &cases,
+            &[],
         )
         .unwrap();
         assert!(text.ends_with("failures/rx_append_1.txt"));

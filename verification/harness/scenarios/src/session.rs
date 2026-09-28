@@ -720,7 +720,15 @@ impl Session {
                     .cloned()
             })
             .and_then(|cases| {
-                crate::failure::write(self.runner.run_directory(), label, verdict, &cases)
+                // Every undeclared access, not only the first one per side.
+                let missing = self.discover(request, &result.records)?;
+                crate::failure::write(
+                    self.runner.run_directory(),
+                    label,
+                    verdict,
+                    &cases,
+                    &missing,
+                )
             })
             .map_or_else(
                 |e| format!("no failure report: {e}"),
@@ -1151,6 +1159,36 @@ impl Session {
                 .collect(),
             dependencies,
         })
+    }
+
+    /// Every undeclared access of `request`, whose run gave `records`.
+    fn discover(
+        &self,
+        request: &ExecutionRequest,
+        records: &[ExecutionEvidence],
+    ) -> Result<Vec<crate::discovery::Missing>> {
+        let images = self.images.borrow();
+        let elfs: Vec<&[u8]> = images
+            .values()
+            .map(Vec::as_slice)
+            .chain(self.inputs.iter().map(Vec::as_slice))
+            .collect();
+        let registers = crate::registers::Registers::load(
+            &crate::observation::root()?.join(crate::chip().registers),
+        )?;
+        let symbols = crate::discovery::Symbols::of(&elfs, registers);
+        Ok(crate::discovery::discover(
+            &request.cases,
+            records,
+            &symbols,
+            |cases| {
+                let mut rerun = request.clone();
+                rerun.cases = cases.to_vec();
+                self.verify(&rerun)
+                    .map(|result| result.records)
+                    .map_err(|e| invalid(format!("{e:?}")))
+            },
+        ))
     }
 
     /// Run a request that must fail for capacity.

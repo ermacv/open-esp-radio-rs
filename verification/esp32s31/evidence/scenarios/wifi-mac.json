@@ -12,6 +12,34 @@
   },
   "sources": [
     {
+      "path": "crates/adapters/embassy-net/owned/Cargo.toml",
+      "sha256": "bb2f30e805c3065fba37545a8c7cc034eb4646afdedbcf1a39e696208f170f50"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/radio/Cargo.toml",
+      "sha256": "82020d276c4ffed56b96dabfd66a8e2ee388abb2c3bd82bc4822acd4004d4512"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/bluetooth/Cargo.toml",
+      "sha256": "ee8faec0a27916db062e5a0ff3e65929cce1cfce991e4d739788cc676303bc9f"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/bluetooth/memory/Cargo.toml",
+      "sha256": "7e34c17f14d334544e47b1dccbed05d86630edf6d7774a6154b6427e4a0319f1"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex/Cargo.toml",
+      "sha256": "b919c0ab80d2db7453c0562573df3de99a87e1a858b40cacad48c0df47e6549d"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/Cargo.toml",
+      "sha256": "f5dbfcc9f50064e1907e797d53372e8888c6400d4f688cef0eccb1acc72a1496"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma/Cargo.toml",
+      "sha256": "5f742d210058e651f531d9a0bfce4ba6f7544f6aae5bdc2b44fb92d3335865f8"
+    },
+    {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/descriptor.rs",
       "sha256": "ea7d9333ebdc2f48b030438fa16af0da24213e56428613193ae96f53c2fd80d3"
     },
@@ -26,6 +54,10 @@
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
       "sha256": "d2af1a38de0b4d0e91d715859317d8dd81541dfd78f6150328fbde80d9e5248c"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac/Cargo.toml",
+      "sha256": "7610d38aea26273764d32b3628c23bc95e6f44cc5bed94569012d247103c0d69"
     },
     {
       "path": "crates/hardware/esp32s31/driver/ieee80211/mac/src/ap_tsf.rs",
@@ -56,6 +88,10 @@
       "sha256": "f14d4dd6527239eb92b19e71997df118cf78fa4108aceeef4f4fd41a881d1eec"
     },
     {
+      "path": "crates/hardware/esp32s31/hal/Cargo.toml",
+      "sha256": "da40f067272311227b16329d945916b84e25b6ccec8314a988af4699e3e4d376"
+    },
+    {
       "path": "crates/hardware/esp32s31/hal/src/ieee80211/mac.rs",
       "sha256": "6e7b229b12ce1ad35dfa2ad34746ee6712a31618f7e9b7eacb4df76b57a8f4ff"
     },
@@ -70,6 +106,14 @@
     {
       "path": "crates/hardware/esp32s31/hal/src/validation.rs",
       "sha256": "6e572235de4bda062f7ec3bcb45e3bebf94dfc2f14a166d7defc90b2ee91150a"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/Cargo.toml",
+      "sha256": "29e7a7c50b169bc9cef95269af31cada6806eb9f2dfa6570ca6876b6d82d783d"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/Cargo.toml",
+      "sha256": "e22b6ebe6e726d410097d213c7310ee753143f25009e5cd290708d12b83dca00"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -128,6 +172,18 @@
       "sha256": "9f774c1c1752526c3d4d5d7f202e5c15804964fafc963bcd073f75a60b308e77"
     },
     {
+      "path": "crates/hardware/esp32s31/phy/Cargo.toml",
+      "sha256": "946877abc73f8d4e5e368ca8186878ebf06f5fa51fde936fd9d61326e35415ee"
+    },
+    {
+      "path": "crates/hardware/ieee80211/pac/Cargo.toml",
+      "sha256": "0af596253e41ec38089f97f829a5bdb12c1a9c8061f67dd60047b2acae522184"
+    },
+    {
+      "path": "crates/hardware/ieee80211/pac/raw/Cargo.toml",
+      "sha256": "f2f9af6267e76a12eb2cbe65c8e0ed96116291e3b719a848755ba3ac58346f10"
+    },
+    {
       "path": "crates/hardware/ieee80211/pac/raw/src/lib.rs",
       "sha256": "acca2deacc2d2b981de625e4e9786656abf34fe1f22be3aac737df9a24319642"
     },
@@ -140,48 +196,900 @@
       "sha256": "e1e4806209ba78aad4b3237caefe0afe46762bddf05fdbbef5c6285666c09616"
     },
     {
+      "path": "crates/hardware/ieee802154/engine/Cargo.toml",
+      "sha256": "f2578c90fcdeaf56049c9de461ea84488315066951942e68944cafa61ce6edfa"
+    },
+    {
+      "path": "crates/hardware/radio/clock/Cargo.toml",
+      "sha256": "969067e99838021292557f0a22783742aaf408d783a2d4d73e7ce8896ad51df0"
+    },
+    {
+      "path": "crates/memory/Cargo.toml",
+      "sha256": "2b194da71af3b0cbdbc41790c0306c0e1a44310b4cab0cdded8c5dfb736f2011"
+    },
+    {
       "path": "crates/memory/src/lib.rs",
       "sha256": "500082eea1284b27e7ab50193cae2a1399f50412ccb9f753ee2f0d149b095b8c"
+    },
+    {
+      "path": "crates/network/interface/Cargo.toml",
+      "sha256": "3a557189f5641dce6b68b2ba0a1e9dd18d53848dd4d2cd0f7aeb34310d99dfc4"
+    },
+    {
+      "path": "crates/protocols/bluetooth/hci/Cargo.toml",
+      "sha256": "0916a5c6437c138f19580fa6ac72b91308df4bc86784fb9a694ee56fe20a39e7"
+    },
+    {
+      "path": "crates/protocols/ieee80211/ap/Cargo.toml",
+      "sha256": "988d0d424ab096a5c4601693a2aa1b72e0430e3e6d034c06e0c9008195539f7e"
+    },
+    {
+      "path": "crates/protocols/ieee80211/datapath/Cargo.toml",
+      "sha256": "7b05c243c66eb995acd97d54ec82d1b628446a56164c5ff68fe0b4cfcc8e56c1"
+    },
+    {
+      "path": "crates/protocols/ieee80211/mac/Cargo.toml",
+      "sha256": "a4ff134213c7c1b3f5e7a5a2e4622b81ab11f0549e8e73b1da451ddb26bdae93"
+    },
+    {
+      "path": "crates/protocols/ieee80211/security/rsn/Cargo.toml",
+      "sha256": "ee8af99976330cfe318c1a09f76c71bbf10eb0f84210461ae21484c94cd52bc7"
+    },
+    {
+      "path": "crates/protocols/ieee80211/softmac/Cargo.toml",
+      "sha256": "4d97912141fc96fc0478b9269c15895c42941ce6ea0053d9d42909946d7d9400"
+    },
+    {
+      "path": "crates/protocols/ieee80211/sta/Cargo.toml",
+      "sha256": "570b175afb18b3be40205df4a9b7b4cef2316c8b2ba4a8e7e4fba92dadddcee1"
+    },
+    {
+      "path": "crates/protocols/ieee802154/Cargo.toml",
+      "sha256": "af459704e90d6a19ef191e27556e8b3d5b90f4959a501bd79458eb7d74f043e7"
+    },
+    {
+      "path": "crates/roles/esp32s31/ieee80211/ap/Cargo.toml",
+      "sha256": "c9b5f20f99f8547df9d33c58fd0d0d6f4836b9e146b39a639549c57255a71465"
+    },
+    {
+      "path": "crates/roles/esp32s31/ieee80211/sta/Cargo.toml",
+      "sha256": "5d2b47a554191a0dd49e7baf9550cfb2b745e30d9885808fa05dad4135c067c0"
+    },
+    {
+      "path": "crates/runtime/esp32s31/ieee80211/Cargo.toml",
+      "sha256": "684ea1dfbc2348c11730d23980b910fd06fab79041d292a9d4b6980482b9da74"
+    },
+    {
+      "path": "crates/runtime/esp32s31/phy/Cargo.toml",
+      "sha256": "f81bbcd1e0df45115c7ba1b58985e33885586e1d2b354d413726fa0d03a7013a"
+    },
+    {
+      "path": "crates/runtime/esp32s31/radio/Cargo.toml",
+      "sha256": "5c0e9345ab27a2c919f6b21785fa6168b90afb9059632c69d943bfd478920365"
+    },
+    {
+      "path": "crates/runtime/ieee80211/Cargo.toml",
+      "sha256": "83b47e014c95b85b83288f0300fffd7107b2189188afb1eb9d42398cd2ae9427"
     },
     {
       "path": "rust-toolchain.toml",
       "sha256": "4e062fad6c8b59464e2cab74c89664598ac9d61e43404c8e2cb3a6d8ad015b26"
     },
     {
-      "path": "tools/blobray/crates/analysis",
-      "sha256": "123d305f1a1cad6ccc8160e45ac2def6203d1273f77e6685ccd6f76f960e0d06"
+      "path": "target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/build/oer-esp32s31-probe-radio-elf-1500303fb773a5e7/out/probe_catalog.rs",
+      "sha256": "c702bfbb7666735a9491bf9b2e272ee48a2d061cf61d21a4068fa989ce1c29a8"
     },
     {
-      "path": "tools/blobray/crates/application",
-      "sha256": "c2b56665860c18b31d920f896fd03a68f980cc2ec517a46e1271ec931df93a90"
+      "path": "tools/blobray/Cargo.lock",
+      "sha256": "9aa38367271bdc26bf136542983212ca91169899938fc06ea38d1bb45c234b92"
     },
     {
-      "path": "tools/blobray/crates/artifacts",
-      "sha256": "f251564c4a029847189f105a2dabdfea7cb8b114474f6af3f3510877e9c22c90"
+      "path": "tools/blobray/crates/analysis/Cargo.toml",
+      "sha256": "651a9438081e9fe8f8d3b82ae82d713b2c4ce58232427d2c4e777dae47e9708e"
     },
     {
-      "path": "tools/blobray/crates/domain",
-      "sha256": "02a9ed12f0e7a5290071318efaac887e97cbf9627f7d32d5d37f552a444f6fe7"
+      "path": "tools/blobray/crates/analysis/src/audit.rs",
+      "sha256": "d8d9afe57d849949de2acdeed5adca718663ec414208155eb5fc085a57f72818"
     },
     {
-      "path": "tools/blobray/crates/knowledge",
-      "sha256": "0822bb8a6898310084cb94523ebabe4edf1e887a78b3c11a31460cbbdd873161"
+      "path": "tools/blobray/crates/analysis/src/closure.rs",
+      "sha256": "bb29b9779a867e16d0a6932b754621098a19f6e6ff88acd82dbea065a34cd6a9"
     },
     {
-      "path": "tools/blobray/crates/riscv",
-      "sha256": "9c8a751d92a8c1f973da4dac30d4b1838744af2b54fefd3e3974976818085631"
+      "path": "tools/blobray/crates/analysis/src/event_routes.rs",
+      "sha256": "2293e4bc214e45c304edb5d84a2dc78eca82c182d3400d88eb1349f9f2993b31"
     },
     {
-      "path": "tools/blobray/crates/store",
-      "sha256": "10592b33feaa8a040d7fe829171b1dd1cdd6bb74176e741c10277272d6735abd"
+      "path": "tools/blobray/crates/analysis/src/flow.rs",
+      "sha256": "7d98c85d2c7a3c6e42e1533c9f0ecb56f00991bf652b2773962f54f3c7fb0680"
     },
     {
-      "path": "tools/blobray/crates/verification",
-      "sha256": "eaa6f27e4a1a958f13274e690d3b68e111fd081941e1dbdb26b95274b9214711"
+      "path": "tools/blobray/crates/analysis/src/interfaces.rs",
+      "sha256": "b485f19ba43cc2b98ee848e8b700ca39f6211f368632a6e98439dc4012d01c8d"
     },
     {
-      "path": "tools/blobray/next",
-      "sha256": "fa8717a303c44a0a37d8114e2fbb6bf988037427fb2d2b354b4c8e4da6bc288c"
+      "path": "tools/blobray/crates/analysis/src/lib.rs",
+      "sha256": "48c7176da7570c87670c1300b3ce9a0775d82c3c909d41f68fcdc8dac53d058f"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/memory_slice/cycles.rs",
+      "sha256": "4f270b603a834eebf5d5caf3618af6bbb85ec1f05a54d346ff67d262832e1720"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/memory_slice/index.rs",
+      "sha256": "873cba82cd857bc6a1b6b975d33ed5ffcabc40014054e6bcaadce28dc1d4d293"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/memory_slice/locations.rs",
+      "sha256": "a56dc7e4c3dee0add9f82edf25bc8d4f0aa34759e61be183838f1aafb4e8d529"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/memory_slice/mod.rs",
+      "sha256": "3f818193be7f0d1a0f68a0e4f53243a3f193422bdaa21421b43eed53501d6d53"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/memory_slice/reaching.rs",
+      "sha256": "07b9440ba46c2e3310e6af1a92053e80d38bdd2ac163f9cf16eba608eaac1726"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/navigation.rs",
+      "sha256": "4e1c9f6d2c4fee1af42b845dd7307b9b929ae558c13206fed7b8399b3969490b"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/paths.rs",
+      "sha256": "2f2aea1518db2332d58ffceabec9764928107ddfab17ddd58d3c3a2128742fc1"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/pointers.rs",
+      "sha256": "567363bce810a4468138ff693c0e0f932f1f0384c72c7999476dcca283192098"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/references.rs",
+      "sha256": "e1732a1f57f6f4a1cac192ca7aa0cd4a87abf2257120ac1b7157d07f04e561a2"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/registers.rs",
+      "sha256": "99d3c1563a235b316808bf4b8eafec0cd282420c5d70e9e27f3de8543bef7694"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/summaries.rs",
+      "sha256": "3e516a08b631571f323cb33d1f475767b0f8a728e42395d49b05776a487b2ee9"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/trace/expressions.rs",
+      "sha256": "4ac10e47d633200e76821adc3e0fc67767da99307de9eefe9308a1da72dc0915"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/trace/index.rs",
+      "sha256": "698acceac16d1b40ee0b9f13411b39b3b670e9aa572ac945ebbf8eb4d066aad0"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/trace/mod.rs",
+      "sha256": "c7a0aaac3907bd1abad8d9b13967ad92c4e785ac7cf382020b515b75db670a45"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/value_sets.rs",
+      "sha256": "a28d02448aaa6086e3d739c160cad0f863df904b14a77a25f79f98e48e4e5e8c"
+    },
+    {
+      "path": "tools/blobray/crates/analysis/src/values.rs",
+      "sha256": "98c2be29f3a5782c7f47293b5cbc330244bc72b56b26524808f0bfc1cda562a8"
+    },
+    {
+      "path": "tools/blobray/crates/application/Cargo.toml",
+      "sha256": "88537f5c4f52a7b4a5ae89db000fb91509a5b05d2889d157c936a45a7cc2465a"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/audit.rs",
+      "sha256": "7bdf5d6cb601c5d3fb9584b68797d123a63906c2b1a6d421e53a95e0cfaeac78"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/call_pairs.rs",
+      "sha256": "4dc680428e298384cf986d72c53ffb71890b5c0af529d1d497b894de04fefc01"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/code_coverage.rs",
+      "sha256": "7eccefe7c44b563124b8e065634558c7e3f58318da2bb39cf2a191e8c432cc1a"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/command_bank.rs",
+      "sha256": "e8f56f49cf043c2dd2eb6d9e4be4e64470cf52d13e6e0c6db7fb91b06717b2dc"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/companions.rs",
+      "sha256": "ba04484c7247fcf24b281b0907e5280d01b4ca696ea229d67fd77434d233d81c"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/coverage.rs",
+      "sha256": "c2946d919017f594523324d7438a1e2e0a2f494f8db1b4278c387288bb40c198"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/data.rs",
+      "sha256": "a764cdc6cc4a1301390a9f61daef9c6bdf1d7f86a23d47a7a89d64092a1a533e"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/dependence.rs",
+      "sha256": "35e4a8dbe940d2277dadc9447cb7f13ada444f46f58622fd7370d8fca7f3c497"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/devices.rs",
+      "sha256": "e6e6f8b302988452b29e07670e10f48e3c7787f1d79cda704de42544c9ee257a"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/effect_contracts.rs",
+      "sha256": "7bbb1fe39f7eb1b25910e47fb8e47603cc81fe2882f0e155e2a4e0b88eb7466e"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/event_routes/local.rs",
+      "sha256": "e3568a1dde2fc907abcc06d940e70eb8c29faa260a322b46f8acb719ba907ee8"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/event_routes.rs",
+      "sha256": "5d0771e3d94e9bda7a89808dc602d116aa1e1cec6c99cffe67d2a897685fcc56"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution.rs",
+      "sha256": "db5213e4f7c8744d46ccd3a4877472899e458fd3e423c57112d6f750d1c8a953"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_calls.rs",
+      "sha256": "ab829b4b60cc00e3068be74a4b74a4bd694efd009345d0aec9bcd0d2f4a34155"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_capture.rs",
+      "sha256": "f0782ba9749dbfec3c11817eb31a600142e1c8d311a4c31d09c3f63379d66704"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_coverage.rs",
+      "sha256": "6b42434d068d3c1e737d83a4992457494cba87d40f87e314d331b32a81b29100"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_goals.rs",
+      "sha256": "b608227452dcc06f930d2f9d1e97dbbb1dbb9c2859fc009f8f17b9f32e651b78"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_interfaces.rs",
+      "sha256": "b627ae7259295e30b12f9aed3bc06b1d0e5fa2b0790735981fb1229d65d85101"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_memory.rs",
+      "sha256": "b44521deb1810792e8989616acd6b0c6d6580038418e583a990d01fa4ce0983d"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_observation.rs",
+      "sha256": "0dd5c9b7759830a6b84c6573af345107d7632df5b7a5d1061aa5ac2f0370ee01"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_services.rs",
+      "sha256": "6eff5262156677de126ebb3ee45e1a432b08d5691cd3d8c011a06123654fc1fe"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_steps.rs",
+      "sha256": "ab440fedfde75563793b59a8a763af11b4510029bab596080f3fe0ae848d4ef0"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_tables.rs",
+      "sha256": "f6c3e03797f2260b58bae3d4a47dc3d666490ca38b95a4d50dd1c15362e61c86"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/execution_timeline.rs",
+      "sha256": "0aad07db32ea6b655318f7bbd1abf82cee9b3937fe53177cdf54a67b9c2c7d7e"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/external_calls.rs",
+      "sha256": "d2cc61900b8fda5a992d97b8fbf23990c4e5f65fcf280a55d1e82f5c4f5c27eb"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/fifo_services.rs",
+      "sha256": "a787369fba4e204df26317ddc4173d2f5e9bf68372fa06b9993157829a70985d"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/flow.rs",
+      "sha256": "d07b0257da6fe6d0f4c79f5ec00de8ee06a880edfb8227612a1cd1cdc4525b59"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/functions.rs",
+      "sha256": "0d6f76287cd5a2d2386061a3cf32241355f971e369b889d8e8d78a0093947cd2"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/in_process.rs",
+      "sha256": "7e993cbb2f27f9a8fee00c292b79a4e4544ba2f9454e5294f954f8c49daab2eb"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/interfaces.rs",
+      "sha256": "db047a9bfd0376ef8599727f946dc820b7b305ce418b07e56a2c58d2d764a43a"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/investigations.rs",
+      "sha256": "931ed7a56d6debe2f1ab371373b58bf55beae80f10e1eb1fc6c21dbaac8a6649"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/jobs.rs",
+      "sha256": "28527ae7574572c75d78dea4b0a7d81f15cadb7fa2783234e6535bae401332b1"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/knowledge.rs",
+      "sha256": "8b3c16504efd8bd877ac2b3b2b4b9999b111787c2e07d0ad729e53f35005b354"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/layout_projections.rs",
+      "sha256": "763eba10eb0b3cb3a4add83ddc2e52091f0b531fca01d35503fa41181c65ba23"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/lib.rs",
+      "sha256": "35ca67718de9e37effefd94a2c823959a7e6fc9c00042d73fecfff18f20f7248"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/link_selection.rs",
+      "sha256": "0b23fc992cba98e8ddf5378a38b5caf5d76766f94cb6b240802f6594eb769734"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/linking/evidence.rs",
+      "sha256": "7da47253b3b33bc299e9297f0572c678f4c9d30ba99b8e737e894d8b15841de2"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/linking/probe.rs",
+      "sha256": "59832ec014b3defbd962ceb69dced9d10813abaa524f0712d43a7f472a80421c"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/linking/probe_bytes.rs",
+      "sha256": "eb341cf017dcaf3b9a83ab1d95afc53dfe8279095df7d689ae4232b8a7bc051b"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/linking/proposal.rs",
+      "sha256": "24b23780abdd0a6f68206a3dab59cca7b159b38ae8a650052e85039ec04e8b11"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/linking.rs",
+      "sha256": "428a9fc3e7391a3ade119dd1a557f8be7b72427d21ffcbd10bf43adb83db1f2f"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/navigation/accesses.rs",
+      "sha256": "f1d639d107e76a27210ebdb5112d562ddec2b449dd065cf7c8dcc5a5252e1007"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/navigation/calls.rs",
+      "sha256": "32c40944498b9665894d5d28e379889f6dccd0efb02b6b4d5180c338c0e5d813"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/navigation.rs",
+      "sha256": "96facfef98f40abd533f8e254bb81181dd90f65c619fda69990b36ae9a9567a0"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/occurrence.rs",
+      "sha256": "7eaacf2a553b46943e2872a266120c13fc2c061bd0a7141b39fcb6770e6651f3"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/planning.rs",
+      "sha256": "953746006e04897059636ab91057ed0f7ae56e59fe98e1d3e4f56d32f69cd54d"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/protocol.rs",
+      "sha256": "c9c8098ed9719b52d522fcbc96755f48ac5d85cdcd0f1dda1ee20b5913fbcc1f"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/query.rs",
+      "sha256": "8a3a79d2876e4fb65db9961de0bc2a0214722c624e49b351be58bfe2cfd01774"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/query_stream.rs",
+      "sha256": "8f7814dd873cd0fbc2893a5c86cdcbe6b67d798aba23976dbc523d7e6de296bf"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/read.rs",
+      "sha256": "18eb374b6bdcae6d390719b733df5c2eebc29e142ce8091af06344dcaa573700"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/registers/index.rs",
+      "sha256": "ee38cba98e84a4923727cfa48b74fdb625f43bb8d0b913507451118c219c2a33"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/registers.rs",
+      "sha256": "5fb2a67655b5664b9e1f3b96688e56d1cdbae99f7f4ba76678f014981e9e3530"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/research.rs",
+      "sha256": "e6ef610132e8493dff0b55353afe90a142d81589919373e1d6040d9b8d92636b"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/resources.rs",
+      "sha256": "5f4c1e71f69fb44401162fccc86e720e05448725c4b5eb965aafed227132dc0b"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/runtime_tables.rs",
+      "sha256": "c0a5ae6346999555328ae8df69f7c0a7e3b57d70dd07d38221dcd8e60b66e21b"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/scenarios.rs",
+      "sha256": "9eabaefb74f671f7d6d3c699163cfd566c872f973c9f7e50316a00a9ac413a22"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/selection.rs",
+      "sha256": "6e2da253ec42599082fdc52f6e41f65bce3a9c0d9328ac659472f1c6418bf471"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/semantic_ir/profiles.rs",
+      "sha256": "9769fc60f6eca7a3dbb44d45e9148195d9623a1409db499e699b9db38f66d703"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/semantic_ir/provenance.rs",
+      "sha256": "ebae213ceff503d9ad33d3f15a8e0adf7011042f148918e17255bb047d9820de"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/semantic_ir.rs",
+      "sha256": "a477e0b3d64b075e984bf34f57b38b6a48c047e671f47079ed46b4f8c98d017a"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/temporary.rs",
+      "sha256": "62771ba12279abec42772e3b20c0fe08f7b88a8e66ab9ecfabff49c6e9df8b0f"
+    },
+    {
+      "path": "tools/blobray/crates/application/src/trace.rs",
+      "sha256": "7f82fb2cac35a2e2ed3ad26b03692557d60b6b2e001f2fd7c2466f09565643db"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/Cargo.toml",
+      "sha256": "83785d73edecbe5beb34f4d03a7197bb409dcc4858d1a54f28f7b7fa76f41c64"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/cursor.rs",
+      "sha256": "aab1bb803d60a68ebe83a3f3434ea223d35eedf6d0d52492c1be94aeccad3165"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/data.rs",
+      "sha256": "44e43b5ded7cdac3480d18f30e91173b04b6fd694c9aca427237c6927d580e64"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/definition.rs",
+      "sha256": "117a64b3c51b564ac1054a891ee0bcb124d4e6d1389bd3ce5d2e050c4fb6ace8"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/function.rs",
+      "sha256": "42030ae77658f26600ad1ce50dbf4fad63f4a501ee5678984ffb7b13f84c5406"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/image.rs",
+      "sha256": "4dd0d83e722028c74351e91632a355b9323ab7254943b3932e36cf5d5a4ad0f9"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/lib.rs",
+      "sha256": "74c57034203d48ae20a0b0729a4dead89b88ab82e0b3b6cbc71fc8595a714937"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/mapping.rs",
+      "sha256": "1475e2b7a97bbc8f43efc02d16ff514e297cf63c21e2495af7451692da5a4136"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/meter.rs",
+      "sha256": "5c7c643a175d233f788f6f69340e04319b0db4d97b95847bf035061e920a2ec9"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/program.rs",
+      "sha256": "0acfcac622aba43db043e415176f8c2396b0bc7da8483137f8f80f48f81bb343"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts/src/stream.rs",
+      "sha256": "16da7a654e3f35ed3667a961aaf2c88124aab13447fd57f235050d0773a53660"
+    },
+    {
+      "path": "tools/blobray/crates/domain/Cargo.toml",
+      "sha256": "7aab6fc8a58039c3765291247ed1c26d8961ba4dc8df821892f821c1bc643115"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/access.rs",
+      "sha256": "2b6cfd9247d68b285d72defe81561c720d8687b8f0b4bf5eb0a96d222cec582c"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/assessment.rs",
+      "sha256": "ff0dc0a8d121a81cb73f3d898b8665e16c4579b653d2f620c8ab30333ed32664"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/audit.rs",
+      "sha256": "f02ac30065ebbaade6ad014c971c49c94df11ffec404566b18a10838995e2fab"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/call_contract.rs",
+      "sha256": "7cf178f57d6e096585318bedee2941c518621c7c0348c8ff8fe3704047f0795b"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/call_correspondence.rs",
+      "sha256": "3b7cd01afd1a37502e08d5d3dccd0f2a3f44ff81b17eba1460441b5333666882"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/call_observation.rs",
+      "sha256": "529c2dbb7bc4e349f48fae87872b64cc01f006e48642403207ba41763ed040b5"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/code_coverage.rs",
+      "sha256": "a638b7349434492e0f304007e466008d9354b3048d364e2b5e3ceb43ee3beec9"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/command_bank.rs",
+      "sha256": "b3b18c631f69f5c915de6c8a108ecc1d810434b8fd58e1e07b6cb532a2ae7ded"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/comparison.rs",
+      "sha256": "0b4ab19fd697df64e9d2b565e2cee3828672ff855a46b2647c3775b3477d106e"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/data.rs",
+      "sha256": "1b9aed7848ec48794de41c4ee1407a093fefef947fbff0d0bceda6467336ce0f"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/device.rs",
+      "sha256": "05bc77ada586958205e9e2bdff535aeb2df15048d00cb055cf31a17e42353542"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/effect_contract.rs",
+      "sha256": "f6d738541d7e4b9195986cee822ba90b77ca32f4d61728b6ee685806fd05eac2"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/event_route.rs",
+      "sha256": "9affbcf10045d0425b5708db7e0485de228c285d892f26fa4d513b0f0b6d3a4c"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/execution.rs",
+      "sha256": "1557a1e4e2d86a0b341514ac53cfd43fcee156cc1c4ed01569fd1b7f156d12f4"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/external_call.rs",
+      "sha256": "ed09401d972baf1c774865c0de471b220caf5a9f9d8fc3f7c20c113e4ed787f8"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/fifo_service.rs",
+      "sha256": "226d7afa950ac784390e1a5754887a9231bc105e5668377b8213c4f8be15fb1a"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/flow.rs",
+      "sha256": "28bf6c7d053a730bf03f9298aeb77f5554c91920cd43071de6bebf1f7dfe964a"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/function.rs",
+      "sha256": "92f5c4df26789544c07154367b8a6a39cd50fc408dd2afff12e81dcd3a00a2c6"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/function_contract.rs",
+      "sha256": "bbbb1149dcc408832baa90991a3c543d3de98038adceab8c85fa422ad90fc1df"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/image.rs",
+      "sha256": "5f541060da955fc9f25f29e332f67134a0ced2fdab7771a38f501815f64c25f3"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/interfaces.rs",
+      "sha256": "5351602e8b4156bbdfbfe131bbc5ff40cc4abe5cab3b38977856c67f15d5cffe"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/investigation.rs",
+      "sha256": "bfd225e1b4d064f6f67cf55aeaec7b1801bac494db079acbc5841588d5318c72"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/jobs.rs",
+      "sha256": "6f088b51846d353d86b80e02edf79bd44e53d92457ad368323c0f980be1912a8"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/knowledge.rs",
+      "sha256": "b338ee080321f4f950501bcf718e1749df6e834cf66a02f8ac35106050aca33e"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/layout_projection.rs",
+      "sha256": "70c3897ad52ab4f338c2e159e25a99c81d94900b880605c246ea9c09238eb2bb"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/lib.rs",
+      "sha256": "f06a7f5f481b43d37f48d8678a2ed035875e5af61c462064462cd80ff7be298c"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/measurements.rs",
+      "sha256": "1ee169ac5cb0afc1f25de2c1c01fbd4887d6cb1e09888cc6b3a5f35f906f9485"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/memory.rs",
+      "sha256": "5463be90ad874992a6adf40e1aa42a6032ac1a2b1c1af446d4a2fa335cfb203d"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/memory_slice.rs",
+      "sha256": "ebe474cdaf65ab9747020829e0fb7838b513d86032c436ac677c1cdf43acf0aa"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/navigation.rs",
+      "sha256": "9564d8cd1d98be1727925878c80af210cfb490471eb88be13f021beafe843e8f"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/record_memory.rs",
+      "sha256": "202281abf105e7b106876c8fd2c1093246d654739fb8db52147ef06be1098597"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/registers.rs",
+      "sha256": "c8abf4c70da45ede66cec24b2a7a7da0dd89ee2cc53c786479a236468d373ac4"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/reports.rs",
+      "sha256": "7b370b78ddd001cd145af4d56bcb7fb49877dbdee033952ebf8a433fde9215a9"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/resources.rs",
+      "sha256": "3af82600401a27aa9de9fd92644f8d9566b60c102e94a02bec63285f5f0df1ff"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/runtime_interface.rs",
+      "sha256": "3ea8de110afdbad48c10799fe55bb2db654329e6a83cf8d09632df14a3a17551"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/scenarios.rs",
+      "sha256": "3e456256c6ceb134613cfe2d56d6d38f1f34e5176f683eca192421ea11c88d18"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/selection.rs",
+      "sha256": "b6646ed0c4514962ff09a27474e7bb5aa5f5ecb096ca6e5902e898bf9320b4a4"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/semantic_ir.rs",
+      "sha256": "72f4da09d1974cfd734ee12837296ae591ff4e63293625809011c0264dfcd5f9"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/semantics.rs",
+      "sha256": "78af8a1bdeb9447dc6cbeeb1d408de94d7cf0100180950189e32a515530c7925"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/stream.rs",
+      "sha256": "2c8106f39fb1af5179da5d8d11b32633a12b0fc1e89f7bfee86cc44022dd8302"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/temporary.rs",
+      "sha256": "a6a1f5772635586fdca5de00b41c230c53e98243afd9362febf5b7e15db7a565"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/timeline.rs",
+      "sha256": "50ebf309c2b97105938842bf4a25558c2e61ad522812b1b36834642ec11766d0"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/trace.rs",
+      "sha256": "fa019bb24de1d92dac93100705489a89e5d22330fa1e7e14f7651baaeb719778"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/validation.rs",
+      "sha256": "f2224717ff8a3ffba0d6c3334c651b028d20e4439aba3597de7d7e37efb2068c"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge/Cargo.toml",
+      "sha256": "9cd1f42d384d624a33afd3bee3ececbbf440270fa7fe768544f0ddcb631af4a1"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge/src/calls.rs",
+      "sha256": "6388d76d2b6984e6f822d703539afd713ef7f6dd02ded0095cd795ec4208fb2c"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge/src/event_routes.rs",
+      "sha256": "830c503681e5780c24a4c8f8a3f88e85a8d1da9049e3efa392e853900d5155ff"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge/src/functions.rs",
+      "sha256": "29e516deed815e7873f3654be1ae97f259101c64c7544c0347a0a312a8485fd2"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge/src/interfaces.rs",
+      "sha256": "db5cda09dadfa56019308a53f142899528cb9b4c1243562f8884ead1cebb929e"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge/src/lib.rs",
+      "sha256": "6ad795068eb796048736dc301b4767036c2e0551a106de76631b0c42d743d52d"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge/src/paths.rs",
+      "sha256": "c2d9cce376951f1bb74cfbef9ea88b31ee0376881280f2bd5cea3caa767175a5"
+    },
+    {
+      "path": "tools/blobray/crates/riscv/Cargo.toml",
+      "sha256": "989f09075ed7550b579118562ccff9107e8c31e8c9a6a7543dda3588c6ca007e"
+    },
+    {
+      "path": "tools/blobray/crates/riscv/src/execution.rs",
+      "sha256": "28aeac30d6859e2fdca154c8be41defa4ae3ffc76ce4b7905637d4427cb14bb9"
+    },
+    {
+      "path": "tools/blobray/crates/riscv/src/extensions.rs",
+      "sha256": "bd88a1be76699c78184455cff8a7e8ffa88cb8b17414638a9d2942d8d71dd9e0"
+    },
+    {
+      "path": "tools/blobray/crates/riscv/src/lib.rs",
+      "sha256": "eaed63af1f05fa4c622fbf638207719698f0505093014131f9692e525409cedc"
+    },
+    {
+      "path": "tools/blobray/crates/riscv/src/semantics.rs",
+      "sha256": "1fe186512f79346695ea2ba059c83ef89287bce118f70bfe1a732bfaa02a64f3"
+    },
+    {
+      "path": "tools/blobray/crates/store/Cargo.toml",
+      "sha256": "c704c03c0ddf8dd49ef6aecf6f3827261c76354036b33b7423bf3aab66813be0"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/capture.rs",
+      "sha256": "7e0a01d34d95f9f05b26007d1da50e37a4058bc298430f125c9ad9068585387b"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_call_pairs.rs",
+      "sha256": "d8e0de92c839cf9d89743fe3e12da35a5de71982c2b9f53ab3d613955974d928"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_calls.rs",
+      "sha256": "bb78a9921e1fe0319aa994dff7a807a6131d74ad1335861cd0672ef50e01044e"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_capture.rs",
+      "sha256": "2b200cbae037a6e62856d9c941a75df93b97f88ff6918e1cd508437d30d94512"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_effects.rs",
+      "sha256": "167a50dcbee211820a7af16e2925abca85b0cca6a0c36bd4d1d4b33b446cfd44"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_models.rs",
+      "sha256": "af08ead5096768f8c3352cda4d87ac907d63cf01408fe8e0d6cca9c25645575f"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_observation.rs",
+      "sha256": "ef0adcb53284c18ebdb8a22084a6d2de3d43f50622e2d4c1271148200dcf952c"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_projections.rs",
+      "sha256": "7d88c6ef38abc5042c4efb11550449b6ddf9d8a760cae1f394333b8fdccd615e"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_records.rs",
+      "sha256": "1d820b6b3ae91f70cd8468a719badf8078ccdd33bccce1aac11400e5a18d2df5"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_requests.rs",
+      "sha256": "77c4801f60116e6f2d59d75f444e73bd2146397c5116fd7dd4c0b9738a497267"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_services.rs",
+      "sha256": "7b00a95638acf9cd10c7b4d10a86ed5093ba130491536e3ca833c750b371c9e3"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_tables.rs",
+      "sha256": "81931dc1432f3189bee5d44b8dd1c2baad3356f17af941b07dabd07daa9e23ae"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/execution_timeline.rs",
+      "sha256": "08ee93ff389617355dc9b8ccc1f0f50c429fccdab0eb3166fe67431a4a106be5"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/executions.rs",
+      "sha256": "ee1eab2394d12e53a5e31fa3f81ee66595a19e09b453341e361efaa8bc6e1d0e"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/functions.rs",
+      "sha256": "be1c721134d432b3aa8d2aed1259d7e1ff99b29aefa63113f140ff22ec08fd9b"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/images.rs",
+      "sha256": "5f08d128f071fa6a6db9e7adddfdadeddd2b3e7d0b74524b4449230b46450848"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/investigations.rs",
+      "sha256": "ab43c8b91d787cb4de8fbeba7e965973e197c17f8cc450f9ff2896b9ea6a79fd"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/jobs.rs",
+      "sha256": "c578dd72b68952bb050c7c029b364a8ca0151cc901c5459a9e1a52b1452ae76a"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/json_ranges.rs",
+      "sha256": "2fcb22aa713e05220b8603094f2c1301a72f497db66ba6b1a82a759a9aa38f54"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/knowledge.rs",
+      "sha256": "a5867602a8a8aaabf9b0b8e62926654cd7d6e1ff0692646738fae865b7b7854c"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/lib.rs",
+      "sha256": "e46f3a477db5017950ed146719cf5567fcf21d41ee5a7f54065dea5ffe81879e"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/metered.rs",
+      "sha256": "426455d71dd9c20bbfdaed5184581601da5e6a91f5b685ed7ea1d94025b26319"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/preservation.rs",
+      "sha256": "020e38ca15b45c6a2d8c8365183618646140102423883b1e1e953cf4fdb674da"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/query.rs",
+      "sha256": "af05bdb46c90fe4777bfeeead1c8f732539e4418a3053be0d73b97151fe1bff6"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/records.rs",
+      "sha256": "0776f6cd03fcf199d49b3735674f15717f221bae0ee556d8285b524e2e42372b"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/semantic_ir.rs",
+      "sha256": "56b6a016ccdc3ef2f1de7fd7cde5ee4e8b2b5331732f683dbf0d483f464c6adf"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/source.rs",
+      "sha256": "4bdac0eb14488c940ee2ca293e6a398f6f5d8b6e50d7a921af352335ee02de54"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/stream.rs",
+      "sha256": "8eb50ffa220e95864956c50535b17f8c1820356822d7cb8a6f67f02f5deba539"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/temporary.rs",
+      "sha256": "5228d52a6a1b9c12699f3b6d5f657a0b38cf88f928b828789688d8f3e139292e"
+    },
+    {
+      "path": "tools/blobray/crates/store/src/usage.rs",
+      "sha256": "0426224e15cc470a3f73c4118d3d9d386d175ace5c3d923f6b21c138811b06f1"
+    },
+    {
+      "path": "tools/blobray/crates/verification/Cargo.toml",
+      "sha256": "a4312a3151404a0c444fc1edc831e37e14d8598332d4f36ccd4e1960c2d70ea7"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/effects.rs",
+      "sha256": "4f01991508f18718c7620d6af73de4910e918b755c6a6eec92e4dda53b0b0377"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/lib.rs",
+      "sha256": "f8141138634b374bb353cc897ae8a675e6bc03d3880060577cea96fecbf43e05"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/projection.rs",
+      "sha256": "68fb6d84d813fc8d3fbbcaed4b8dcba3b05806c3c5bba35a33fb525f3d5eb8fa"
+    },
+    {
+      "path": "tools/blobray/next/Cargo.toml",
+      "sha256": "d82dae73150bf210ac212af9e9131d90fe10e73b3ac9fa1dfc0589aeeccb4c87"
+    },
+    {
+      "path": "tools/blobray/next/src/lib.rs",
+      "sha256": "bae31cddf93f870853e9b9b4db14202317bbee581c9b31aa6d30d43718798a18"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/guard.rs",
+      "sha256": "772968272f73dcc4fb01abca89ea313c6127e6a4f47e8a75df6d2ea93acb70c2"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/linker/gnu_ld.rs",
+      "sha256": "93a43f1cceeb5559ec5c681d1c974705bf00c5c82cf4f520029bc4bc5126964a"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/linker/lld.rs",
+      "sha256": "46f4bc533edc69719691d8a66d796861e3c2b797f0a33f71fa790e614ed82c91"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/linker/mod.rs",
+      "sha256": "3909623305ae2947143b3e85029f77e260785e68b37e38ea5a5dc6c6874b52f1"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/linker/process.rs",
+      "sha256": "0a27195550e786e54b0d5adfdd306eb39627219a3cd5ba9f843287953af45377"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/linker/records.rs",
+      "sha256": "f129313885d47a1a63152dc7d081951a21fc9f5cecbda1879bfb97bc313f2571"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/mod.rs",
+      "sha256": "dff5c93e5be166241175d82e9719d04e302365ade0e4ff8ca280524ea2aae938"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/procfs.rs",
+      "sha256": "a947cf1869051e1e0b75e21ded6998dd8df1874868fb3b029c227609d8ef57b8"
+    },
+    {
+      "path": "tools/blobray/next/src/linux/progress.rs",
+      "sha256": "667a22c9389d6c0806e2db7918749ef9e80c7cdc0c3670f26873ddf25518f002"
+    },
+    {
+      "path": "tools/blobray/next/src/wire.rs",
+      "sha256": "8de858208e900116c0f80749f96acd6a896b313e2b69a4f1945ee4e6493f037b"
+    },
+    {
+      "path": "verification/esp32s31/artifacts.toml",
+      "sha256": "0dc3d164a25b023e478625e5d97f21e62c4be47869982bae094849a2beb934d4"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
@@ -192,32 +1100,280 @@
       "sha256": "3596a24f1be70340c7b434d1948d2577673261dba663360f1fc390c3affba8a2"
     },
     {
-      "path": "verification/esp32s31/probes/radio/elf",
-      "sha256": "468e38743515732a633318aa3cb3d3518dbc8f13ffc4661dca48b2d2a64c8774"
+      "path": "verification/esp32s31/probes/radio/elf/Cargo.toml",
+      "sha256": "b070aa2a91be876d04fdf22becd06482cf716da77c571ffbf75874ab7a496103"
     },
     {
-      "path": "verification/esp32s31/probes/radio/library",
-      "sha256": "ffdfa274358a6c92a326a1c8904e3ad958528cc0e30036c676fe3cf797375e40"
+      "path": "verification/esp32s31/probes/radio/elf/build.rs",
+      "sha256": "ba528a269a43fec4f2dedc10d5683fbc3880ed4a41fd2982274e78dff4845479"
     },
     {
-      "path": "verification/esp32s31/scenarios",
-      "sha256": "d293797d8b572921f631a658872cfa47439e3ffc6f4c89937acb216bf71580fb"
+      "path": "verification/esp32s31/probes/radio/elf/link.x",
+      "sha256": "e0d833a42acab799af235353e553d8ff60447a3d250c647a94957f85095ba595"
+    },
+    {
+      "path": "verification/esp32s31/probes/radio/elf/src/main.rs",
+      "sha256": "b1d783c2cf38edcd25a6cb5f78db0d49709f39b93de51cb39524ba008e2e82bb"
+    },
+    {
+      "path": "verification/esp32s31/probes/radio/library/Cargo.toml",
+      "sha256": "fb01939600e8855a8961d21da10005b6ab0d3ded45d2f8fd2afa51ac3823bedf"
+    },
+    {
+      "path": "verification/esp32s31/probes/radio/library/src/lib.rs",
+      "sha256": "5b4d989103acf6c54e0640e601acc99349f71020812aee7b65b2c3c824e96cc5"
+    },
+    {
+      "path": "verification/esp32s31/probes/radio/library/src/rx_append.rs",
+      "sha256": "9f95422969328a61cd84c7123c33b864091bc7c7d87e03a5e80ad2220ac6fae5"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/Cargo.toml",
+      "sha256": "65c84a5324d0cb598b426f091d7c0652f71b00533bfc4e82fcf37438cf0dfe1a"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/bluetooth/ble.rs",
+      "sha256": "e8238b66a058f11d23b30a8a9aafde32849e316adb9e73611cf49042392951d3"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/bluetooth/mod.rs",
+      "sha256": "d1d8895335fa5f61626d65873d99bd0def865601e97dc211a81801b7ab71c0c4"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/coexistence/coex.rs",
+      "sha256": "c9a8dea450a76359446691e6e738f6dec4d3fdf8b892d8b916b7a770908b6439"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/coexistence/coex_hw.rs",
+      "sha256": "7b837b7080a9b37dc69444c205a4eedc2c768fc715c025200f0c36731d735603"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/coexistence/mod.rs",
+      "sha256": "1bf508421e96373e5f1f092adf2dfa79e756e539e10b515fe92ffd731f7a8bee"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/decisions/coverage.rs",
+      "sha256": "e7fd080e3b4b90366c0b291e43de1ff34bfe57b9a14ac11390c66fd009307222"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/decisions/mod.rs",
+      "sha256": "c07b32d5ac0d83cc50ddd3e10997d9a99948b48799fc3c716381128685719aba"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/decisions/observation.rs",
+      "sha256": "ecede41af70f936cb438592c0204ec075b3f2b37b74e29e141aa58e01ff07693"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/decisions/state.rs",
+      "sha256": "61ff5b1fbc2013b2ec336bea2fe2a77d10766c3af28051804e23c496ac3648e8"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/engine/contracts.rs",
+      "sha256": "3a8072e918b339696a0805007c0c02061687e550abaa951fb56e46bf5433c0fa"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/engine/harness_edges.rs",
+      "sha256": "505e6cbe82a2111c64379e2e308f8078b6cd4d4b039596cbe8a5b83bdcde85ae"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/engine/layout.rs",
+      "sha256": "432d8858f0ebc2b23c3fbd830df25271fbef3cadb069f15c1052c4ad92b1c7f6"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/engine/mod.rs",
+      "sha256": "fd46f8a4e0eed95ee888f930cea64cd371b0a64a19f2538394721d578390a0a7"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/lib.rs",
+      "sha256": "56f4c47b547421bb68feb75615bd26351dc75692adbe0f441817dfaf83e10630"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/main.rs",
+      "sha256": "8095be89e682cc7596bfd967b9022f16b59d2b396c33b60952f5e2a669836467"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
+      "sha256": "5aafaa6ea130b159fc2e752827c94d8404da249ec29bf2648a904052c686ad74"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/calibration_prefix.rs",
+      "sha256": "88ddb87c543ea121192d24a11377de2b666326432806de83210e16068f289eef"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/channel.rs",
+      "sha256": "489d069b3edd15553d1f80e917b83e7da3c0a85c91d2b3affa7b22d54ceefa42"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/committed.rs",
+      "sha256": "55af104692dd5c08ab0ef82a54653cbc619dde1f165457640fa45516e1ea6afd"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/gain.rs",
+      "sha256": "2fee2efdc1b044f75270e4d6b7113672f0d0f0fde69914e82dc1ee7a4875e4cf"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/gain_state.rs",
+      "sha256": "21d1b16edb77abce485cb327831dd4672cb042c92dbbe91fb60e6efe2320b3c6"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/i2c.rs",
+      "sha256": "7d5c2a9a08b7d8987d5787596dd2648a6b2c91d2ee812e7f5c8bfc04f4144e33"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/i2c_transport.rs",
+      "sha256": "55fbcd459083b2342febb5bff2891f543bf9848e8b3a29589a25167f8fef8d84"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/mod.rs",
+      "sha256": "4ee8d8b21807d40388888841571117b2bfcf59edfbf08cb9a343e79fd5d6f3ef"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/research.rs",
+      "sha256": "b216fcff5d814e55af6738519ca56d7f245b1d21da03167d0547cdbac5b02931"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/rfpll.rs",
+      "sha256": "e853ccb962acea7fc6bed54e788a820acb89f1e394053c7a371ff712d606d627"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/rx_gain.rs",
+      "sha256": "d338fb48638f89ec13cc9750e790ada087e3e67cad38fc9be3add4cd1ae3d05a"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/tracking.rs",
+      "sha256": "98d2541723e440e92a3e56de57eb87b3678ad3a51defb8950b909b319507eaf0"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/tracking_graph.rs",
+      "sha256": "a6f855a1d09dff18fb7e3659480b7070210b60c950faba861d93c42e80b84194"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/phy/tx_dc.rs",
+      "sha256": "681ee3a609581742cbbf79dc12169800e61337a05c3277772bc6b42133155ab8"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
+      "sha256": "a0b245995058f177db08c6c89204e94444f9ac641d94108726ccc93c0c0b369f"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/wifi/mod.rs",
+      "sha256": "4a275f262c2c37d885346872e3616f3f6d54f60387a2f5c41ea98aa036e46b6e"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/wifi/retry.rs",
+      "sha256": "20d9b555c87702022fd7d83f3b6c4d5327c70a2e485c157da9f9be2af37028f3"
+    },
+    {
+      "path": "verification/esp32s31/scenarios/src/wifi/rx_append.rs",
+      "sha256": "ffd89b7ea26b9d0f203edf9e5d099e0c8821932889cbc3fc044d5eb9280d38fe"
     },
     {
       "path": "verification/harness/codegen",
       "sha256": "2b021d6d2bafe8a6b8127308348a1caa4b160f86ef3c398c5f21abc627266e5f"
     },
     {
+      "path": "verification/harness/codegen/Cargo.toml",
+      "sha256": "72e13a53bb08490f59c79a93595244da60cc6b11fc5795f59820032c0ff9ada1"
+    },
+    {
+      "path": "verification/harness/codegen/src/lib.rs",
+      "sha256": "b899232fb2435c18053d1be575197f7d660bc390452e03da895b4fce25452102"
+    },
+    {
       "path": "verification/harness/macros",
       "sha256": "11df2a1efcccb231eabcf72f4a2d3905388a75964e9b5121aad42f2fc62bb734"
     },
     {
-      "path": "verification/harness/scenarios",
-      "sha256": "f83c63e188a33847ec3f7ba8a2d9aae1684ac95b286c05ef682d84258e6d3d8b"
+      "path": "verification/harness/macros/Cargo.toml",
+      "sha256": "17dbbd0792edae886a96cc1d9f58ef9f25ae29529e8452601eba2a6d9b8c8106"
+    },
+    {
+      "path": "verification/harness/macros/src/lib.rs",
+      "sha256": "1e6e4f5dc09c908cdf73ac8371c3839ba15e505e8ba0b904ffe60643e28ab36b"
+    },
+    {
+      "path": "verification/harness/scenarios/Cargo.toml",
+      "sha256": "099b25863297def7ac6095acbf11d9ea57ecbc88f3b9d322f77f46d8313569e6"
+    },
+    {
+      "path": "verification/harness/scenarios/src/artifacts.rs",
+      "sha256": "6905f4aa56705b22bf1088b3926d71177606cb8112a1a5cfa38211688e980227"
+    },
+    {
+      "path": "verification/harness/scenarios/src/chip.rs",
+      "sha256": "4cb0345984b5b98c0fbe860f4c1b38b6c26de7d584e2094234c0423e2fa7ddd4"
+    },
+    {
+      "path": "verification/harness/scenarios/src/coverage.rs",
+      "sha256": "bce3ea1a246322e0bb923d3f29ba5f96f51a4734c50c743a701cbb4963fc1614"
+    },
+    {
+      "path": "verification/harness/scenarios/src/dependencies.rs",
+      "sha256": "271c7a44f01c8a32c6d0ae370ddd113cc3a1e2a8d7f7ec269f930992d8ae69b5"
+    },
+    {
+      "path": "verification/harness/scenarios/src/evidence.rs",
+      "sha256": "8521b490cc5d1c896ff59aec76614757016d75a6aa1e5c78ce84f00bebdbcde1"
+    },
+    {
+      "path": "verification/harness/scenarios/src/failure.rs",
+      "sha256": "9e3aa6d172a677f3157ea5115ef0d370e492f379d05ddf6f6c30fa9e037c75f6"
+    },
+    {
+      "path": "verification/harness/scenarios/src/harness.rs",
+      "sha256": "e1e26055aee8a57795c151605ca5ad8987cf9f8b8682220860f38c458f2dc134"
+    },
+    {
+      "path": "verification/harness/scenarios/src/leaf.rs",
+      "sha256": "e93a9aa5f419696caa2b977e6346397c111280fd41b75313eb5f1cebc7ea3c5b"
+    },
+    {
+      "path": "verification/harness/scenarios/src/lib.rs",
+      "sha256": "f1360f5bdb36c70c612d57d112b365f94056958817fe0f14860525f866a1f97f"
+    },
+    {
+      "path": "verification/harness/scenarios/src/observation.rs",
+      "sha256": "016b84a5ed422f71367cd81b412763b6172c9a74e87188a779dbfe3332ca228d"
+    },
+    {
+      "path": "verification/harness/scenarios/src/phy/contracts.rs",
+      "sha256": "bf8d6b1a5bd364ebca53f346c84cbbbcb2674dc41e69325cc4bb805e1e1ca057"
+    },
+    {
+      "path": "verification/harness/scenarios/src/phy/layout.rs",
+      "sha256": "f634a42c4531fbe83ff4dcb60c322d8689bf4916f5a530f468bd1858fd945b16"
+    },
+    {
+      "path": "verification/harness/scenarios/src/phy/mod.rs",
+      "sha256": "9682dbefc4b116f795e4163861637b94c7f18fe6571318616f621cf6e01e7c0f"
+    },
+    {
+      "path": "verification/harness/scenarios/src/session.rs",
+      "sha256": "d0c1bf3643984a479c8a62601eee1e917db35d2408d5bb95ba57e93b849fb238"
+    },
+    {
+      "path": "verification/harness/scenarios/src/setup_cache.rs",
+      "sha256": "da73587ecc76e9266fe323aaf690e614ad7959d87940cc040bb7b64ca0e59ff0"
+    },
+    {
+      "path": "verification/harness/scenarios/src/shard.rs",
+      "sha256": "1ea23075c19c59e02e8047459252e4334f4cd5277c46fd9a359ec909c0e5ddce"
+    },
+    {
+      "path": "verification/harness/scenarios/src/state.rs",
+      "sha256": "2a772487ce2e8a8ccf9ad0077ef37e604d2b515511c54ff018a52fad7674f6eb"
+    },
+    {
+      "path": "verification/harness/scenarios/src/triage.rs",
+      "sha256": "8030ad87069e60aed389e520c1b26d42994a76062eb5be827db5f85d7f8eb989"
     },
     {
       "path": "verification/schema",
       "sha256": "0d0f7eea6b4efe7d2198b416d773a3c6e8fa66007bf9a7e21b99e0c18cb7ffd1"
+    },
+    {
+      "path": "verification/schema/scenario-evidence.rs",
+      "sha256": "15f14f341e33a38a44760e7e5b60f513782bd8ecfbb4101b5aa14b102a4d3e96"
     }
   ],
   "dependence": {

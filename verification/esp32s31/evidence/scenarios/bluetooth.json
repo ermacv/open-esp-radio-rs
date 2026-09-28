@@ -144,11 +144,11 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "f1e2dbc6af5ea46c7f00782da90fe24d56f830665ce0400cee08b5c4dd5046ee"
+      "sha256": "fe76dc82259665734c5f76afe82d9e28dbc4daa5e8b3da6b2ec3018dd6805ccb"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
-      "sha256": "35cc75f2a1bffb8e36a891cebaf60ba1151e99e115d48f79c00fb16589bff76f"
+      "sha256": "3596a24f1be70340c7b434d1948d2577673261dba663360f1fc390c3affba8a2"
     },
     {
       "path": "verification/esp32s31/probes/bluetooth/elf",

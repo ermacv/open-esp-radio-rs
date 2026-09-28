@@ -26,16 +26,17 @@ use oer_esp32s31_bluetooth_memory::{
     LeTxPower, LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan,
     LegacyConnectableAdvIndPacketInput, LegacyConnectableAdvertisingMemoryInput,
     LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
-    LegacyConnectableScanResponsePacketInput, LegacyScanPool, LegacyScanPrimaryChannel,
-    LegacyScanResetConfig, LegacyScanSchedulerWindow, LegacyScanStartSelection,
-    LegacyScanWindowTicks, PeripheralConnectionCapturedAnchorAvailability,
-    PeripheralConnectionDataChannel, PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent,
-    PeripheralConnectionIdentity, PeripheralConnectionPool, PeripheralConnectionReceiveTime,
-    PeripheralConnectionReceiveWait, PeripheralConnectionRecurringEvent,
-    PeripheralConnectionRecurringReceiveWait, PeripheralConnectionSchedulerItemCompletionStatus,
-    PeripheralConnectionSchedulerPriority, PeripheralConnectionSchedulerWindow,
-    PeripheralConnectionTransmitPduKind, SchedulerItemCompletionStatus, SchedulerItemId,
-    SchedulerItemSpace, SchedulerRoleInstance, SchedulerRoleKind,
+    LegacyConnectableScanResponsePacketInput, LegacyScanEventTiming, LegacyScanPool,
+    LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
+    LegacyScanStartSelection, LegacyScanWindowTicks,
+    PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
+    PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
+    PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
+    PeripheralConnectionRecurringEvent, PeripheralConnectionRecurringReceiveWait,
+    PeripheralConnectionSchedulerItemCompletionStatus, PeripheralConnectionSchedulerPriority,
+    PeripheralConnectionSchedulerWindow, PeripheralConnectionTransmitPduKind,
+    SchedulerItemCompletionStatus, SchedulerItemId, SchedulerItemSpace, SchedulerRoleInstance,
+    SchedulerRoleKind,
 };
 use oer_esp32s31_hal::bluetooth::{
     BluetoothControllerReset, BluetoothControllerTimeScale, BluetoothSchedulerStopped,
@@ -1265,10 +1266,16 @@ impl<
             .prepare_event(
                 &slot.instance,
                 scan_channel(scan.channel),
-                LegacyScanSchedulerWindow::from_controller_ticks(window.start(), item_end)
+                LegacyScanEventTiming {
+                    window: LegacyScanSchedulerWindow::from_controller_ticks(
+                        window.start(),
+                        item_end,
+                    )
                     .expect("admission checked the window"),
+                    window_ticks,
+                    raw_sequence_lead: self.policy.sequence_lead_raw_delta(),
+                },
                 LegacyScanStartSelection::Requested,
-                window_ticks,
                 coexistence::passive_scan_priorities(self.coexistence),
             )
             .map_err(|_| RequestError::Unsupported)?;

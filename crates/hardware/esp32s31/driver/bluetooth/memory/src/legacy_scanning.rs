@@ -279,6 +279,17 @@ pub enum LegacyScanError {
     ForeignFreeHead,
 }
 
+/// Raw timing of one scan window.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyScanEventTiming {
+    /// Raw scheduler window of the item.
+    pub window: LegacyScanSchedulerWindow,
+    /// Receive window length the link state records.
+    pub window_ticks: LegacyScanWindowTicks,
+    /// Raw sequence lead of the common scheduler projection.
+    pub raw_sequence_lead: u32,
+}
+
 /// Item and raw window of one prepared scan window.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LegacyScanEvent {
@@ -314,12 +325,13 @@ impl<const N: usize> LegacyScanPool<N> {
             return Err(LegacyScanError::State);
         }
         let free_head = cpu.graph.link_state.free_head();
-        cpu.graph
-            .link_state
-            .install(LegacyScanLinkStateImage::restricted_passive_le_1m(
+        cpu.graph.link_state.install(
+            LegacyScanLinkStateImage::restricted_passive_le_1m(
                 LegacyScanRxHeadProjection::from_bound(chain.head_link()),
                 config,
-            ));
+            )
+            .started(),
+        );
         cpu.graph.link_state.words[LINK_STATE_SCHEDULER_HEAD_WORD].set(free_head);
         cpu.graph.link_state.join_receive_chain(chain.snapshot());
         *cpu.state = LegacyScanState::Reset { event: None };
@@ -332,11 +344,15 @@ impl<const N: usize> LegacyScanPool<N> {
         &mut self,
         instance: &SchedulerRoleInstance,
         channel: LegacyScanPrimaryChannel,
-        window: LegacyScanSchedulerWindow,
+        timing: LegacyScanEventTiming,
         start_selection: LegacyScanStartSelection,
-        window_ticks: LegacyScanWindowTicks,
         coexistence: LegacyScanCoexistencePriorities,
     ) -> Result<LegacyScanEvent, LegacyScanError> {
+        let LegacyScanEventTiming {
+            window,
+            window_ticks,
+            raw_sequence_lead,
+        } = timing;
         let cpu = self.cpu(instance).map_err(LegacyScanError::Pool)?;
         if !matches!(cpu.state, LegacyScanState::Reset { event: None }) {
             return Err(LegacyScanError::State);
@@ -366,6 +382,10 @@ impl<const N: usize> LegacyScanPool<N> {
             window,
             start_selection,
         ));
+        // Common r_btdm_sched_calc_seq_time projection, as for every other
+        // role's item: hardware ends an item without a sequence at once.
+        item.header()
+            .set_sequence(window.start(), window.end(), raw_sequence_lead);
         let lanes = &item.words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD];
         lanes.set((lanes.get() & !LANES_MASK) | lanes_image(&coexistence.lanes));
         // Detach the item from the free chain before the executor links it.

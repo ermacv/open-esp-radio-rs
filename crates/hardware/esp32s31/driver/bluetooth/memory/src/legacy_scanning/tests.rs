@@ -71,9 +71,12 @@ fn prepare(
     pool.prepare_event(
         instance,
         LegacyScanPrimaryChannel::Channel38,
-        window(),
+        super::LegacyScanEventTiming {
+            window: window(),
+            window_ticks: super::LegacyScanWindowTicks::from_raw_ticks(0x5555),
+            raw_sequence_lead: 0x5c,
+        },
         LegacyScanStartSelection::Requested,
-        super::LegacyScanWindowTicks::from_raw_ticks(0x5555),
         priorities([4, 11, 0, 0]),
     )
     .unwrap()
@@ -89,6 +92,8 @@ fn the_reset_joins_the_scanning_chain() {
     let image = graph.link_state.image();
     assert!(image.retains_rx_head(LegacyScanRxHeadProjection::from_bound(chain.head_link())));
     assert_eq!(image.crc_init(), LeCrcInit::LE_PRESET);
+    // The start marks the reset link state before the first window.
+    assert!(image.started_flag());
     assert_eq!(image.access_address(), LeAccessAddress::PRIMARY_ADVERTISING);
     assert_eq!(image.window_ticks(), 0);
     assert_eq!(
@@ -131,6 +136,10 @@ fn a_window_takes_the_free_head_and_finishing_returns_it() {
             binding.items[1].controller_address().address()
         );
         assert_eq!(graph.link_state.image().window_ticks(), 0x5555);
+        // The sequence starts one lead after the item and lasts its window;
+        // hardware ends an item without one at once.
+        assert_eq!(graph.items[2].header().sequence_start(), 1_000 + 0x5c);
+        assert_eq!(graph.items[2].header().sequence_duration(), 1_000);
         // The window's item carries its coexistence lanes.
         assert_eq!(
             graph.items[2].words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD].get() & 0x000f_ffff,
@@ -189,9 +198,12 @@ fn a_non_scanning_chain_is_refused() {
         pool.prepare_event(
             &instance,
             LegacyScanPrimaryChannel::Channel37,
-            window(),
+            super::LegacyScanEventTiming {
+                window: window(),
+                window_ticks: super::LegacyScanWindowTicks::from_raw_ticks(0),
+                raw_sequence_lead: 0x5c,
+            },
             LegacyScanStartSelection::Requested,
-            super::LegacyScanWindowTicks::from_raw_ticks(0),
             priorities([15; 4]),
         ),
         Err(LegacyScanError::State)

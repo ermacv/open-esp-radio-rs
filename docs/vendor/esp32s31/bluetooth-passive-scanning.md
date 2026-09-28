@@ -334,7 +334,11 @@ start/end ticks and records the window in the link state. The pinned
 bit 20 of `+0x18` and ends the item at most 32768 microseconds after the
 start; for a continuous scan it stores the difference `0x3fffffff` instead.
 The open scanner always schedules finite windows and follows the first
-branch. The same body sets bit 23 of item `+0x00` and writes the default
+branch. Like every other role's item, the scanner item carries the common
+`r_btdm_sched_calc_seq_time` projection: its sequence starts one sequence lead
+after the item start and lasts the item window. Hardware ends an item without
+a sequence at once with no receive, which on the stand showed as scanner items
+completing within 200 microseconds of insertion. The same body sets bit 23 of item `+0x00` and writes the default
 arbitration priority in `+0x18` bits 3:0: 4 when bit 16 of the window's start
 time is set, 1 otherwise, clearing bits 7:4. The open codec always writes 1.
 That nibble is not consulted on any reachable path of the pinned scheduler (see

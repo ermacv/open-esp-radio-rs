@@ -11,7 +11,7 @@ use oer_bluetooth_radio::{
     AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel, EventId, EventResult,
     RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu,
-    RequestError, TestChannel, TestPhy, TestReceive, TxPower,
+    RequestError, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -56,6 +56,7 @@ struct State {
     routes_disabled: usize,
     routes_restored: usize,
     refuse_start: bool,
+    scan_starts: usize,
 }
 
 /// The model's owner of a disabled BLE PHY ETM route.
@@ -111,6 +112,10 @@ impl BluetoothRadioHardware for Model {
         }
         state.chains_published = true;
         Ok(())
+    }
+
+    fn publish_scan_start(&mut self) {
+        self.0.borrow_mut().scan_starts += 1;
     }
 
     fn take_wake(&mut self) -> Option<SchedulerWakeBatch> {
@@ -301,6 +306,25 @@ fn an_admitted_event_runs_and_ends() {
         );
     });
     assert_eq!(model.0.borrow().started.len(), 1);
+}
+
+#[test]
+fn an_accepted_scanner_publishes_the_scan_start_once() {
+    let model = Model::default();
+    let runtime = installed(&model);
+    block_on(runtime.request(configure())).unwrap();
+    assert_eq!(model.0.borrow().scan_starts, 0);
+    let scanner = || {
+        RadioRequest::ConfigureScanner(ScannerConfiguration {
+            scanner: ScannerId::new(0),
+            tx_power: TxPower::from_dbm(0),
+        })
+    };
+    block_on(runtime.request(scanner())).unwrap();
+    assert_eq!(model.0.borrow().scan_starts, 1);
+    // A refused configuration publishes nothing.
+    assert!(block_on(runtime.request(scanner())).is_err());
+    assert_eq!(model.0.borrow().scan_starts, 1);
 }
 
 #[test]

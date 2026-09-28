@@ -135,8 +135,8 @@ pub use legacy_scanning_event_image::{
 };
 
 pub use legacy_scanning::{
-    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, LegacyScanError, LegacyScanEvent, LegacyScanPool,
-    LegacyScanStorage,
+    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, LegacyScanError, LegacyScanEvent,
+    LegacyScanEventTiming, LegacyScanPool, LegacyScanStorage,
 };
 
 pub use peripheral_connection::{

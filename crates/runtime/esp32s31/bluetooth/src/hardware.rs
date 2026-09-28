@@ -65,6 +65,9 @@ pub trait BluetoothRadioHardware {
         non_scanning: &LeRxChain<NON_SCANNING>,
     ) -> Result<(), RxChainPublicationError>;
 
+    /// Publish the scan-backoff state of a starting scanner.
+    fn publish_scan_start(&mut self);
+
     /// Take the coalesced scheduler wake the interrupt published.
     fn take_wake(&mut self) -> Option<SchedulerWakeBatch>;
 
@@ -209,6 +212,10 @@ mod live {
                     }
                     ControllerRxChainError::WrongClass => RxChainPublicationError::WrongClass,
                 })
+        }
+
+        fn publish_scan_start(&mut self) {
+            self.task.publish_scan_start();
         }
 
         fn take_wake(&mut self) -> Option<SchedulerWakeBatch> {

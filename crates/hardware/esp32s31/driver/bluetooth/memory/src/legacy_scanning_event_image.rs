@@ -12,6 +12,7 @@ use crate::{
 pub(super) const BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS: usize = 0x84 / 4;
 const RX_HEAD_MASK: u32 = 0x000f_ffff;
 const LINK_STATE_18_BIT_20: u32 = 1 << 20;
+const LINK_STATE_18_BIT_31: u32 = 1 << 31;
 const WORD_00: usize = 0;
 const WORD_08: usize = 2;
 const WORD_0C: usize = 3;
@@ -187,6 +188,14 @@ impl LegacyScanLinkStateImage {
         Self { words }
     }
 
+    /// Apply the start's write after the reset: pinned `r_ble_lll_scan_start`
+    /// (`r_sym_ble_aQLjUHo25zeoHGKf9dby`) sets bit 31 of `+0x18` before it
+    /// publishes the scan backoff and restarts the first window.
+    pub(super) const fn started(mut self) -> Self {
+        self.words[WORD_18] |= LINK_STATE_18_BIT_31;
+        self
+    }
+
     /// Apply the restart's link-state writes for one finite window: the
     /// window length at `+0x34` and a clear bit 20 of `+0x18`.
     pub(super) const fn with_window(mut self, window: LegacyScanWindowTicks) -> Self {
@@ -213,6 +222,11 @@ impl LegacyScanLinkStateImage {
     #[cfg(test)]
     pub(super) const fn access_address(self) -> LeAccessAddress {
         LeAccessAddress::from_controller_image(self.words[WORD_38])
+    }
+
+    #[cfg(test)]
+    pub(super) const fn started_flag(self) -> bool {
+        self.words[WORD_18] & LINK_STATE_18_BIT_31 != 0
     }
 
     #[cfg(test)]

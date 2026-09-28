@@ -25,6 +25,7 @@ pub mod hil_store;
 pub mod paths;
 pub mod process;
 pub mod source_citation;
+pub mod stand_install;
 pub mod sweep;
 pub mod vendor_diff;
 pub mod vendor_fetch;

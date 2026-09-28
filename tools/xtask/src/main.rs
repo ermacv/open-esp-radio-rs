@@ -100,6 +100,9 @@ enum Task {
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
+    /// Build the xtask of origin/main once and install `oer-stand`, which
+    /// runs the operational HIL stand commands without building this tree.
+    StandInstall,
     /// List, or with --apply remove, rebuildable build caches unused for a
     /// while (incremental data, HIL image caches); running builds are skipped.
     Sweep {
@@ -228,6 +231,7 @@ fn run() -> Result<std::process::ExitCode> {
             baseline,
         } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline),
         Task::Doc => oer_xtask::doc::run(&ctx),
+        Task::StandInstall => oer_xtask::stand_install::run(&ctx),
         Task::Sweep {
             all_checkouts,
             apply,

@@ -337,6 +337,24 @@ directory and the end of `uart.log`. `compare` and `history` use per-scenario
 means of numeric measurements over repetitions. These views never decide
 qualification.
 
+### Operational commands without a rebuild
+
+`cargo hil` builds this xtask from the caller's working tree before every
+command. For the operational commands (`queue`, `lease`, `devices`, `board`,
+`runs`, `perf`, `dashboard`) use the installed tool instead:
+
+```console
+cargo xtask stand-install      # build origin/main's xtask once, install oer-stand
+oer-stand queue
+oer-stand runs why <run-id>
+```
+
+`oer-stand` runs the `main` build against the caller's checkout (its Git top
+level), so owners and local paths are the caller's and every checkout writes the
+shared arbiter state with one binary. Reinstall after arbiter or stand changes
+land on `main`. Runs, image builds and flashing keep using `cargo hil`, which
+builds the runner from the caller's sources.
+
 ### Performance across commits
 
 A scenario's gated measurements, those with an `at-least` or `at-most`

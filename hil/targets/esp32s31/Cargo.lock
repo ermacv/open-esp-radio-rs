@@ -2106,6 +2106,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-radio-system"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-radio-esp-hal",
+ "oer-esp32s31-radio-runtime",
+ "static_cell",
+]
+
+[[package]]
 name = "oer-esp32s31-soc-esp-hal"
 version = "0.1.0"
 dependencies = [
@@ -2163,6 +2175,7 @@ dependencies = [
  "oer-esp32s31-platform-runtime",
  "oer-esp32s31-radio-esp-hal",
  "oer-esp32s31-radio-runtime",
+ "oer-esp32s31-radio-system",
  "oer-esp32s31-soc-esp-hal",
  "oer-example-bluetooth-gatt",
  "oer-hil-esp32s31-telemetry",

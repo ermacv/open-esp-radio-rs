@@ -1047,12 +1047,6 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
 }
 
 /// ESP-IDF's periodic `phy_track_pll` timer for the shared radio.
-/// The coexistence schedule's phase timer for the shared radio.
-#[embassy_executor::task]
-async fn coex_schedule_task(radio: &'static SharedRadio) {
-    radio.run_coex_schedule().await
-}
-
 /// The timer stops between ticks while a HIL experiment suspends it.
 #[embassy_executor::task]
 async fn phy_tracking_task(radio: &'static SharedRadio) {
@@ -1790,24 +1784,20 @@ pub async fn run(
         #[cfg(feature = "wifi-ble-coex")]
         bluetooth_entropy,
     } = platforms;
-    let identity = radio_platform.phy_calibration_identity();
+    // The radio start consumes the platform.
     #[cfg(feature = "wifi-ble-coex")]
     let bluetooth_address = radio_platform.bluetooth_public_address();
-    let hardware = oer_esp32s31_ieee80211_system::RadioHardware::take()
-        .expect("ESP32-S31 radio hardware must have a unique owner");
-    let (radio, partitions) = SharedRadio::new(
-        hardware,
-        radio_platform,
-        oer_esp32s31_ieee80211_system::EspHalRadioClocks::new(),
-        identity,
-    );
-    let radio = match calibration_cache {
-        Some(cache) => radio.with_calibration_cache(cache),
-        None => radio,
+    // The image runs its own tracking task, which HIL experiments suspend.
+    let start = oer_esp32s31_radio_system::RadioStart::new()
+        .with_tracking(oer_esp32s31_radio_system::Tracking::Caller);
+    let start = match calibration_cache {
+        Some(cache) => start.with_calibration_cache(cache),
+        None => start,
     };
-    let radio = phy_register_image::adopt(radio);
+    let (radio, partitions) = oer_esp32s31_radio_system::start(spawner, radio_platform, start)
+        .expect("the shared radio must start once");
+    phy_register_image::adopt(radio);
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
-    spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task must allocate once"));
     spawner.spawn(
         crate::hang_watchdog::protocol_heartbeat_task()
             .expect("protocol heartbeat must allocate once"),

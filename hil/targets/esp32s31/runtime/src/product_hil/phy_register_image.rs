@@ -11,23 +11,17 @@ use oer_hil_protocol::{
     Event, PHY_REGISTER_IMAGE_WORDS, PhyAnalogImageBytes, PhyRegisterImageRequest,
     PhyRegisterImageWords, RejectReason,
 };
-use static_cell::StaticCell;
 
 /// Busy-host polls one analog read may take; a read completes within a
 /// few polls, so exhausting them reports a stuck analog host.
 const ANALOG_READ_POLLS: u32 = 10_000;
 
-/// Storage of the image's one shared radio.
-static STORAGE: StaticCell<super::SharedRadio> = StaticCell::new();
 static RADIO: OnceLock<&'static super::SharedRadio> = OnceLock::new();
 
-/// Place the image's shared radio for the rest of the process and make it
-/// observable. Radio hardware has one owner, so a second call cannot occur;
-/// it panics in `StaticCell::init`.
-pub(crate) fn adopt(radio: super::SharedRadio) -> &'static super::SharedRadio {
-    let radio: &'static super::SharedRadio = STORAGE.init(radio);
+/// Make the image's shared radio observable. The radio start places it in
+/// static storage once; a second call leaves the first radio observed.
+pub(crate) fn adopt(radio: &'static super::SharedRadio) {
     let _ = RADIO.init(radio);
-    radio
 }
 
 /// Read the requested window, or reject a window outside the image or

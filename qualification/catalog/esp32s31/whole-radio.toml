@@ -240,7 +240,7 @@ section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "Cold reconstruction after shutdown"
 status = "implemented"
 level = "composed-product"
-scope-and-limitations = "The idle control path invokes the source-owned shutdown and `restart_esp32s31_radio`, which captures the final post-tracking cache and feeds it directly into validated cold registration. Repeated hardware lifecycle evidence covers this Wi-Fi boundary."
+scope-and-limitations = "The idle control path quiesces the Wi-Fi owner, disables coexistence, releases Wi-Fi from the shared radio and closes RF when Wi-Fi is the last PHY client, then rejoins the shared radio, which wakes RF without PHY re-registration and returns a cold Wi-Fi owner for the next role epoch. Repeated hardware lifecycle evidence covers this Wi-Fi boundary."
 
 [[items]]
 id = "whole-radio-concurrent-ownership-and-arbitration-wifi-bluetooth-concurrent-composition"

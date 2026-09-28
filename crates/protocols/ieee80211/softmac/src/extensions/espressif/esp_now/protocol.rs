@@ -1155,6 +1155,7 @@ impl<'frame> EspNowReceivedV1<'frame> {
 /// borrowed; use the codec iterator or caller-owned reassembly storage before
 /// releasing the underlying RX lease.
 #[derive(Clone, Copy, Debug)]
+// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-esp-now-v1-v2-plaintext
 pub struct EspNowReceivedV2<'frame> {
     peer: EspNowPeerId,
     frame: EspNowV2Frame<'frame>,

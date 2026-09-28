@@ -514,6 +514,7 @@ impl RsnConnectedSupplicant {
 }
 
 /// One WPA2-Personal station handshake with owned cryptographic state.
+// CAPABILITY: wifi-security-wpa2-personal-ccmp
 pub struct RsnStaSupplicant {
     state: RsnStaState,
     ptk: Option<Ptk>,

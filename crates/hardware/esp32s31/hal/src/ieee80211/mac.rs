@@ -735,6 +735,7 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().order_device_accesses();
     }
 
+    // CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-hardware-tsf
     pub fn station_tsf(&mut self) -> u64 {
         self.pac_mut().station_tsf()
     }

@@ -4,6 +4,7 @@
 /// The bound counts observations; it does not promise a minimum elapsed time.
 /// Returns false on exhaustion, preserving the caller's typed timeout handling.
 #[inline]
+// CAPABILITY: wifi-bounded-wait-owners
 pub(crate) fn bounded<E>(mut observe: impl FnMut() -> Result<bool, E>) -> Result<bool, E> {
     for _ in 0..crate::HARDWARE_EDGE_LIMIT {
         if observe()? {

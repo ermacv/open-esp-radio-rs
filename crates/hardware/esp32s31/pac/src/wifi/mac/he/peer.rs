@@ -37,6 +37,7 @@ impl WifiRadioRegisters {
     /// `libnet80211.a[wl_cnx.o]::cnx_connect_to_bss`, size `0x2b6`,
     /// calls this exact interface-zero leaf before clearing the color bitmap
     /// and programming the parsed HE Operation BSS color.
+    // CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-intra-ppdu-power-save
     fn initialize_interface_zero_he_bssid(&mut self) {
         let control = self
             .peripherals

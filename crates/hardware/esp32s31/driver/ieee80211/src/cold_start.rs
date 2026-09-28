@@ -32,6 +32,7 @@ use oer_ieee80211_mac::channel::WifiChannel;
 
 /// Application-selected inputs for one Wi-Fi bring-up.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-adjustable-tx-power-ceiling
 pub struct WifiColdStartConfig {
     pub initial_channel: WifiChannel,
     pub maximum_tx_power_quarter_dbm: i8,

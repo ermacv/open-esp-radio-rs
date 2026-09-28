@@ -126,6 +126,7 @@ impl WifiRadioRegisters {
     /// SOURCE: complete `libpp.a::hal_crypto_clr_key_entry`,
     /// `hal_crypto_set_key_entry`, `hal_crypto_is_key_valid`, and the reachable
     /// `hal_crypto_enable(STA, CCMP, true, false)` branch.
+    // CAPABILITY: station-hardware-crypto
     pub fn install_sta_ccmp_key_entry(
         &mut self,
         index: MacKeyEntryIndex,
@@ -224,6 +225,7 @@ impl WifiRadioRegisters {
     }
 
     /// Invalidate and zero all ten words of one hardware key entry.
+    // CAPABILITY: station-hardware-crypto
     pub fn clear_mac_key_entry(&mut self, index: MacKeyEntryIndex) {
         let index = index.get();
         let control = &self.peripherals.wifi_mac.wifi_mac_crypto_control;

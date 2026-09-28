@@ -15,6 +15,7 @@ use super::*;
 /// iterator in `data::AmsduSubframes`. The 3,839-byte ceiling is the baseline
 /// The smaller standard A-MSDU length used by the current bounded encoder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-tx-rx-a-msdu
 pub struct StaProtectedAmsduFrame<'a> {
     pub source: [u8; 6],
     pub bssid: [u8; 6],

@@ -355,6 +355,7 @@ impl FlowPhase {
 }
 
 /// Exactly eight flow slots, matching the three-bit wire identifier.
+// CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-twt-requester
 pub struct IndividualTwtRequester {
     config: IndividualTwtRequesterConfig,
     flows: [FlowPhase; INDIVIDUAL_TWT_FLOW_CAPACITY],

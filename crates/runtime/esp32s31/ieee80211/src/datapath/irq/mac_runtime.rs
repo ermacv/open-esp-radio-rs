@@ -19,6 +19,7 @@ use oer_esp32s31_ieee80211_mac::irq::{IrqSink, IrqState, IrqWork, next_irq_work}
 /// `RX_SUCCESS` before `TX_COMPLETE`, `TX_TIMEOUT` and `COLLISION`. Complete
 /// `libpp.a[pp.o]::{pp_post,ppTask}` coalesces the corresponding
 /// worker wake while the descriptor/completion state remains hardware-owned.
+// CAPABILITY: wifi-interrupt-epoch-owners
 pub struct EmbassyMacIrqRuntime<M: RawMutex> {
     state: IrqState,
     rx: Signal<M, ()>,

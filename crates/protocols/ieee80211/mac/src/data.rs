@@ -152,6 +152,7 @@ pub struct AmsduSubframe<'a> {
 /// `indicate_multi_received_frame` joins a received MPDU split across Wi-Fi
 /// DMA descriptors before handing it to the upper data path.
 #[derive(Clone, Debug)]
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-tx-rx-a-msdu
 pub struct AmsduSubframes<'a> {
     remaining: &'a [u8],
     failed: bool,

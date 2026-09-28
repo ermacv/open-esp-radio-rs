@@ -206,6 +206,7 @@ impl StaJoinRxObserver for AssociationObserver<'_> {
 }
 
 /// Unique transaction runner for one pre-connected station exchange.
+// CAPABILITY: authentication-association
 pub struct StaJoinRunner<B, T> {
     backend: B,
     timer: T,

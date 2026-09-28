@@ -32,6 +32,7 @@ pub const POWER_COMMAND_CAPACITY: usize = 16;
 
 /// A power-management effect performed outside the control core.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: coex-protocol-integration-and-lifetime-live-wifi-requests
 pub enum ConnectedPowerCommand {
     /// Request the air for a coexistence event.
     CoexRequest {

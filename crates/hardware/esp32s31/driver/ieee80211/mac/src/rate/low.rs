@@ -89,6 +89,7 @@ pub enum MacLowRateGateProbe {
 /// returned, so stop/error paths cannot accidentally strand the shared PHY in
 /// LR mode.
 #[must_use = "the low-rate session must be restored to return its hardware owner"]
+// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-espressif-long-range-wi-fi-phy
 pub struct MacLowRateSession<'hardware, H: MacRuntimeLowRateHardware> {
     hardware: Option<&'hardware mut H>,
     previous: MacLowRateState,

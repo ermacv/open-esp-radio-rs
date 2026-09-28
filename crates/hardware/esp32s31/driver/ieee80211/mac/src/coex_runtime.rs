@@ -6,6 +6,7 @@ use oer_esp32s31_hal::ieee80211::mac::{
 };
 
 /// Minimal hardware authority required by receive-beacon coexistence policy.
+// CAPABILITY: coex-protocol-integration-and-lifetime-wifi-beacon-shared-rx-individual-twt-pti-hooks
 pub trait MacRuntimeCoexHardware {
     fn publish_rx_beacon_pti(&mut self, beacon: MacPti, shared: MacPti);
     fn clear_rx_beacon_pti_request(&mut self);

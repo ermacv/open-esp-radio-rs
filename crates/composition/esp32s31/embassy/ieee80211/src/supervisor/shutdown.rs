@@ -75,6 +75,7 @@ impl ShutdownFrontier {
 
 /// Stop the MAC, halt the live RX ring and withdraw the IRQ route, returning
 /// the cold Wi-Fi owner that may leave the shared radio.
+// CAPABILITY: whole-radio-active-operation-power-saving-and-shutdown-full-powered-shutdown
 pub(super) async fn quiesce_for_shutdown(
     stopped: ProductionSupervisorStopped,
 ) -> Result<ShutdownFrontier, Failure> {

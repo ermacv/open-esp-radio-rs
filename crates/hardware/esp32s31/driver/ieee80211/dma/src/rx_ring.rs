@@ -442,6 +442,7 @@ pub struct RxRingStopped<'a, const COUNT: usize> {
 /// therefore never releases memory still visible to DMA, but it also does not
 /// stop the walker. Normal role owners must consume it through [`Self::try_stop`];
 /// an abandoned token poisons the arena until radio reset.
+// CAPABILITY: rx-tx-dma
 pub struct RxRingLive<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,

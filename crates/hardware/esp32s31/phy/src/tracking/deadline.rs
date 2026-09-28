@@ -14,6 +14,7 @@ use core::num::NonZeroU64;
 /// polled. Reusing it never renews the window. Successful execution must finish
 /// strictly before its end; reaching the deadline requires a poisoned owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-bounded-wait-owners
 pub struct TrackingDeadline {
     started_at_micros: u64,
     expires_at_micros: u64,

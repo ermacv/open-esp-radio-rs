@@ -280,6 +280,7 @@ pub enum ConnectedStaSecurityStopReport {
 /// Owner-preserving failure at the exact teardown stage that could not
 /// complete. A board-level fault policy can retain these values without
 /// guessing which hardware frontier remains live.
+// CAPABILITY: timeout-error-recovery
 pub enum ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
     Control {
         error: CE,
@@ -303,6 +304,7 @@ pub enum ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
     },
 }
 
+// CAPABILITY: timeout-error-recovery
 pub struct ConnectedStaTeardownPort;
 
 impl ConnectedStaTeardownPort {

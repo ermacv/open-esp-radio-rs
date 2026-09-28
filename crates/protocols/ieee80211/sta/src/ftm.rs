@@ -435,6 +435,7 @@ impl OwnedInformationElements {
 }
 
 /// One fixed-capacity FTM requester.
+// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-802-11mc-ftm
 pub struct FtmRequester<const MAX_SAMPLES: usize> {
     config: FtmRequesterConfig,
     phase: FtmRequesterPhase,

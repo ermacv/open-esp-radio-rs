@@ -14,7 +14,7 @@ pub struct CoexStatus {
     pub uncertain_timers: u8,
 }
 
-// CAPABILITY: coex-internal-arbitration-hardware-and-models-core-request-semantics, whole-radio-concurrent-ownership-and-arbitration-coexistence-hardware-core-infrastructure
+// CAPABILITY: coex-internal-arbitration-hardware-and-models-core-request-semantics, whole-radio-concurrent-ownership-and-arbitration-coexistence-hardware-core-infrastructure, wifi-interfaces-and-operating-modes-wi-fi-bluetooth-classic-le-ieee-802-15-4-coexistence
 pub struct CoexCore {
     enabled: bool,
     active: [Option<CoexRequest>; COEX_TIMER_COUNT],

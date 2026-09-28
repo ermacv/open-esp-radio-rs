@@ -12,6 +12,7 @@ pub enum StopError {
 /// Wait on timer events between explicit activity readbacks. Cancelling this
 /// borrow leaves the hardware owner with the caller and never proves it idle.
 /// RX must remain published until this function succeeds.
+// CAPABILITY: wifi-bounded-wait-owners
 pub async fn stop_mac<H: MacRuntimeStopHardware, T: PhyTrackingTimer>(
     hardware: &mut H,
     timer: &mut T,

@@ -6,6 +6,7 @@
 /// selects one variant and candidate/association/data paths must match it
 /// exactly; there is no downgrade or mixed WPA/Open fallback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-security-open-bss
 pub enum WifiSecurityMode {
     /// IEEE 802.11 Open System with plaintext data and no RSN element.
     Open,

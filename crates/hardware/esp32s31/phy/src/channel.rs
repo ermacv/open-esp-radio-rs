@@ -205,6 +205,7 @@ pub struct PhyChipChannelOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-2412-2484-mhz
 pub enum PhyChipChannelFailure {
     UnsupportedChannel(u16),
     UnsupportedFrequency(u16),

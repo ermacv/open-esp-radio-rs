@@ -12,6 +12,7 @@ use super::*;
 /// subtracts every rate 17..=25 primary byte from rate 16, then writes the
 /// nine differences after Extension ID 60 and two reserved zero bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-802-11ax-he-uplink-power-headroom
 pub struct HeUlMuPowerCapability {
     relative_to_rate_16: [u8; 9],
 }

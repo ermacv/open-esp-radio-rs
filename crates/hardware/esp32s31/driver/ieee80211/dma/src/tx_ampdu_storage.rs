@@ -110,6 +110,7 @@ struct AmpduDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
 /// Final static allocation for an internal-buffer A-MPDU arena.
 #[pin_project]
+// CAPABILITY: rx-tx-dma
 pub struct AmpduDmaStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     #[pin]
     descriptors: [Descriptor; SLOTS],

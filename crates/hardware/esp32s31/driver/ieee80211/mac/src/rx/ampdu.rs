@@ -293,6 +293,7 @@ impl RxBlockAckActivation {
 /// deliberately distinct here. One instance owns every active STA and AP
 /// agreement; peer identity includes the MAC interface so equal peer/TID
 /// values on different VIFs cannot alias one bank or reorder sequence space.
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-immediate-block-ack
 pub struct RxBlockAckSessions<const PEER_CAPACITY: usize = 1> {
     peers: [Option<RxBlockAckPeer>; PEER_CAPACITY],
     pending: [PendingRxBlockAck; RX_BLOCK_ACK_BANK_COUNT],
@@ -706,6 +707,7 @@ impl<const PEER_CAPACITY: usize> Default for RxBlockAckSessions<PEER_CAPACITY> {
 /// Hardware-bank identity and its reorder state cannot be updated separately.
 /// Frame backing and gap timers deliberately remain outside this type because
 /// they belong to the executor/integration memory policy.
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-tx-rx-a-mpdu
 pub struct RxBlockAckReorderBanks<const SLOT_CAPACITY: usize> {
     identities: [Option<RxBlockAckIdentity>; RX_BLOCK_ACK_BANK_COUNT],
     states: [Option<RxBlockAckReorderState<SLOT_CAPACITY>>; RX_BLOCK_ACK_BANK_COUNT],

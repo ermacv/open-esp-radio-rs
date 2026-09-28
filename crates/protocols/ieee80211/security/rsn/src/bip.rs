@@ -43,6 +43,7 @@ pub enum BipError {
 
 /// The receive state of one IGTK: its key and the last accepted IPN.
 #[derive(Zeroize, ZeroizeOnDrop)]
+// CAPABILITY: wifi-security-bip-protected-management-frames
 pub struct BipReceiver {
     key_id: u8,
     key: [u8; RSN_IGTK_LEN],

@@ -57,6 +57,7 @@ pub enum StationHardwareBeaconMonitorStage {
 /// First fact preventing an automatic hardware beacon monitor from owning the
 /// link-loss decision.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-automatic-hardware-beacon-monitoring
 pub enum StationHardwareBeaconMonitorBlocker {
     /// A hardware implementation supplied no reviewed station-policy
     /// readback. It therefore cannot prove which association it would arm.

@@ -66,6 +66,7 @@ impl StaBeaconLossConfig {
 }
 
 /// Finite beacon/TIM state owned by the connected executor task.
+// CAPABILITY: wifi-bounded-wait-owners
 pub struct StaBeaconMonitor {
     config: StaBeaconLossConfig,
     deadline_micros: Option<u64>,

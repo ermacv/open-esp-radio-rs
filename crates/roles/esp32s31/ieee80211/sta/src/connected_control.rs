@@ -222,6 +222,7 @@ pub struct HeNdpaRuntimeRequest {
 /// Fail-closed reason why one HE control event did not become an owned TX
 /// publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-802-11ax-he-uplink-ofdma, wifi-802-11ax-he-su-mu-beamformee
 pub enum ConnectedHeControlRuntimeRejection {
     HeAssociationUnavailable,
     RuntimeDisabled,
@@ -789,6 +790,7 @@ impl ConnectedControlCore {
         }
     }
 
+    // CAPABILITY: wifi-802-11ax-he-triggered-response-scheduling
     pub const fn he_trigger_runtime_enabled(&self) -> bool {
         if !self.he_enabled {
             return false;

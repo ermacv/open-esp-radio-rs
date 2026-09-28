@@ -58,6 +58,7 @@ pub enum StationRfPowerError {
 }
 
 /// The channel between one association's control service and its agent.
+// CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-full-modem-sleep
 pub struct StationPowerLink<M: RawMutex> {
     commands: Channel<M, ConnectedPowerCommand, POWER_COMMAND_CAPACITY>,
     sent: AtomicU32,
@@ -349,6 +350,7 @@ mod agent {
     /// Run it beside the connected datapath for the association's lifetime;
     /// dropping it between commands is safe, as the datapath's shutdown stops
     /// power management through the control core first.
+    // CAPABILITY: coex-protocol-integration-and-lifetime-coexistence-power-management
     pub async fn run_station_power_agent<M, IM, P, C, R>(
         link: &StationPowerLink<M>,
         radio: &RadioSystem<P, C>,

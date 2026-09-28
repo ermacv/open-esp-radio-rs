@@ -864,6 +864,7 @@ pub fn parse_trigger_response_scheduling_control(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-802-11ax-he-uplink-power-headroom
 pub struct UplinkPowerHeadroomControl {
     pub control_id: u8,
     pub uplink_power_headroom: u8,

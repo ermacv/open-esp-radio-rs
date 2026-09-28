@@ -63,6 +63,7 @@ pub enum OpenDataFragmentPreflight<'owner, 'frame, const CONTEXTS: usize, const 
     Admitted(OpenDataFragmentAdmission<'owner, 'frame, CONTEXTS, CAPACITY>),
 }
 
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-fragmentation-and-defragmentation
 pub struct OpenDataFragmentAdmission<'owner, 'frame, const CONTEXTS: usize, const CAPACITY: usize> {
     owner: &'owner mut OpenDataDefragmenter<CONTEXTS, CAPACITY>,
     fragment: OpenDataFragment<'frame>,

@@ -240,6 +240,7 @@ impl EdcaBackoffState {
 
 /// Owned contention state for all four ordinary hardware queues.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-wmm
 pub struct EdcaQueues {
     queues: [EdcaBackoffState; 4],
 }

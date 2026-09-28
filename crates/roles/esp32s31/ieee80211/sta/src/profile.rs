@@ -87,6 +87,7 @@ const HE20_VENDOR_MCS9_CAPABILITY_IE: [u8; 24] = [
     0x00, 0x02, 0x82, 0x01, 0xfd, 0xff, 0xfd, 0xff,
 ];
 
+// CAPABILITY: wifi-802-11ax-he-su-mu-beamformee
 const fn owned_he20_mcs9_capability_ie() -> [u8; 24] {
     let mut capability = HE20_VENDOR_MCS9_CAPABILITY_IE;
     // HE MAC Capabilities bit 1 is TWT Requester Support. The open driver has

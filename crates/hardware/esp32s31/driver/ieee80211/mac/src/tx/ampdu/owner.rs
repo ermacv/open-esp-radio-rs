@@ -33,6 +33,7 @@ use super::{
 /// [`AmpduDmaStorage`] is the only layer allowed to publish raw descriptors.
 /// Keeping them in one handoff value prevents reconnect/teardown code from
 /// accidentally restoring one half without the other.
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-tx-rx-a-mpdu
 pub struct HtAmpduTxResources<'storage, const SLOTS: usize, const BUFFER_SIZE: usize> {
     metadata: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>,
     dma: PinnedAmpduDmaStorage<SLOTS, 0>,

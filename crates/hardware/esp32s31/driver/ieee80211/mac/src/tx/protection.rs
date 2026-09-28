@@ -88,6 +88,7 @@ impl HePacketPadding {
 
 /// HE TXOP duration rule applied by one associated non-AP HE station.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-802-11ax-he-txop-duration-rts-threshold
 pub struct HeTxopRtsRule {
     threshold: HeTxopDurationRtsThreshold,
     padding: HePacketPadding,
@@ -325,6 +326,7 @@ impl TxProtectionReasons {
 
 /// Control exchange that precedes one PPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-cts-to-self-protection
 pub enum TxProtection {
     None,
     CtsToSelf { rate: LegacyRate },
@@ -356,6 +358,7 @@ impl TxProtectionDecision {
 
 /// BSS requirements plus the local length threshold for one transmitter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-rts-protection
 pub struct WifiTxProtectionPolicy {
     bss: BssProtection,
     rts_length_threshold: Option<RtsLengthThreshold>,

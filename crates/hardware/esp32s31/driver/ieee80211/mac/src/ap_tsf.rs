@@ -29,6 +29,7 @@ impl ApTsfHardware for RadioRuntimeOwner {
 }
 
 /// Reset AP timing and begin a fresh protocol-role epoch.
+// CAPABILITY: wifi-tsf-beacon-monitoring-and-power-saving-hardware-tsf
 pub fn reset_and_start_access_point_tsf(hardware: &mut impl ApTsfHardware) {
     hardware.reset_and_start_access_point_tsf();
 }

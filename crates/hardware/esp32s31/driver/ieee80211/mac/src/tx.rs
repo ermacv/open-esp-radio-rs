@@ -968,6 +968,7 @@ impl Default for HtPeerAmpduParameters {
 /// queue vector. The same numeric rate code is used for HT20 and HT40, while
 /// HT-SIG1 bit 7 and PLCP1 bit 29 publish CBW for the selected PPDU.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-20-40-mhz-802-11n-mcs0-mcs7
 pub struct HtRate {
     pub mcs: HtMcs,
     pub guard_interval: HtGuardInterval,
@@ -1445,6 +1446,7 @@ impl HtDuplicateTxSelection {
 /// touching the hardware boundary. Today every protocol-valid candidate then
 /// fails closed because no tracked oracle proves the special queue selector,
 /// HT-SIG/DATA_LENGTH image, protection rate or calibrated power lookup.
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-ht-duplicate-mcs32
 pub fn select_esp32s31_ht_duplicate_tx(
     request: Option<HtDuplicateCertificationRequest>,
     link: HtDuplicateTxLinkCapabilities,
@@ -1641,6 +1643,7 @@ impl HeLdpcDcmMcs {
 /// the raw unit in this type avoids accidentally passing microseconds to the
 /// recovered table producer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-txop
 pub struct HeEdcaTxopLimit {
     units_32_us: u8,
 }
@@ -1679,6 +1682,7 @@ impl HeEdcaTxopLimit {
 
 /// Typed HE20 SU transmit rate for the single S31 spatial stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// CAPABILITY: wifi-802-11ax-he-he20-non-ap-1t1r-mcs0-mcs9
 pub struct HeRate {
     mcs: HeMcs,
     guard_interval_and_ltf: crate::rx::HeGuardIntervalAndLtf,
@@ -2170,6 +2174,7 @@ impl HeRate {
 /// subset in this newtype prevents a rate-policy caller from publishing a
 /// nominally "DCM" override whose HE-SIG-A DCM bit is actually clear.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// CAPABILITY: wifi-802-11ax-he-he-dual-carrier-modulation-dcm
 pub struct HeDcmRate(HeRate);
 
 impl HeDcmRate {

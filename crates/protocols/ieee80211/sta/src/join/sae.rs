@@ -97,6 +97,7 @@ enum StaSaePhase {
 }
 
 /// The SAE Authentication exchange of one attempt.
+// CAPABILITY: wifi-security-wpa3-personal-wpa3-enterprise
 pub struct StaSaeAuthentication {
     local: [u8; 6],
     bssid: [u8; 6],

@@ -85,6 +85,7 @@ pub enum StaTxBlockAckResponseDisposition {
 /// retaining independent negotiation generations and alarms. This is the
 /// ownership boundary recovered from the vendor connection-complete path;
 /// an executor supplies timestamps and transmits the returned action body.
+// CAPABILITY: wifi-legacy-and-ht-mac-behavior-immediate-block-ack
 pub struct StaTxBlockAckSessions {
     sessions: [TxBlockAckSession; 3],
     alarms: [Option<TxBlockAckAlarm>; 3],

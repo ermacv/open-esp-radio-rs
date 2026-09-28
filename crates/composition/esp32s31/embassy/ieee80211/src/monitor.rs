@@ -240,6 +240,7 @@ static MONITOR_CONTROL: ConstStaticCell<MonitorControlResources<CriticalSectionR
 
 /// Application-owned monitor capture stream. Frames carry their supervisor
 /// generation, so a lease retained across a role transition is unambiguous.
+// CAPABILITY: wifi-interfaces-and-operating-modes-promiscuous-mode
 pub struct MonitorFrames {
     receiver: CaptureReceiver,
 }

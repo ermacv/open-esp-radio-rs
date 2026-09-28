@@ -108,6 +108,7 @@ pub struct StaAttemptContext {
 /// different owner type: it retains an exact non-reusable hardware frontier
 /// without pretending that it can re-enter the normal station lifecycle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: station-lifecycle-owners
 pub enum StaAttemptOutcome<O, E, F = core::convert::Infallible> {
     /// One finite protocol phase completed and returned the exact owner at the
     /// next phase frontier. The lifecycle immediately dispatches that phase

@@ -72,6 +72,7 @@ pub struct EspHalPowerInterruptServiceReport {
 ///
 /// Handler addresses are fixture/application composition. Register storage,
 /// publication, CPU routing and recovery are platform-adapter mechanics.
+// CAPABILITY: wifi-interrupt-epoch-owners
 pub struct EspHalMacInterruptRoute {
     mac_handler: InterruptHandler,
     power_handler: InterruptHandler,

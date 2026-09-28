@@ -198,6 +198,7 @@ where
 /// and permanently prevents another task from splitting the same control
 /// resources. Live lower-level owners independently retain or poison their
 /// DMA/IRQ resources, so cancellation cannot be mistaken for quiescence.
+// CAPABILITY: station-lifecycle-owners, wifi-interfaces-and-operating-modes-infrastructure-station
 pub struct StationTask<'control, M: RawMutex, R: StationAttemptRunner<M>> {
     lifecycle: Option<StaLifecycleService<StationLifecycleBackend<'control, M, R>>>,
     resources: Option<StationStartResources<R::Owner>>,

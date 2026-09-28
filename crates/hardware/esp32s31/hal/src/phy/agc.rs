@@ -94,6 +94,7 @@ pub fn configure_antenna(registers: &mut impl SharedPhyAccess) {
 
 /// Apply complete rev0 ROM `phy_ant_dft_cfg`.
 #[cfg(target_arch = "riscv32")]
+// CAPABILITY: wifi-frequency-tx-power-antenna-ftm-and-esp-now-antenna-diversity
 pub fn configure_antenna_diversity(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
     registers.configure_antenna_diversity(enabled);

@@ -57,6 +57,7 @@ where
     }
 
     /// Stop the MAC, retune and restore the qualified REGDMA link.
+    // CAPABILITY: channel-selection-switch
     pub async fn switch_channel(
         &mut self,
         channel_or_frequency: u16,

@@ -175,6 +175,7 @@ pub struct MacHeTriggerTxQueueSnapshot {
 
 /// One non-latched view of all hardware-visible HE Buffer Status Reports.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-802-11ax-he-buffer-status-report
 pub struct MacHeBufferStatusSnapshot {
     pub hardware: [u32; MacHeTid::COUNT],
     pub software: [u32; MacHeTid::COUNT],

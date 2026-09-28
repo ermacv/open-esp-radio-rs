@@ -71,6 +71,7 @@ impl MacPowerInterruptStatusSnapshot for MacPowerInterruptObservation {
     }
 }
 
+// CAPABILITY: wifi-interrupt-epoch-owners
 pub trait MacInterrupt {
     type Snapshot: MacInterruptStatusSnapshot;
 

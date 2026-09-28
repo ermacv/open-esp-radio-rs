@@ -46,6 +46,7 @@ pub(super) struct ConnectedDatapathTaskReturn {
 /// `StaticCell` provides stable storage, while this type deliberately does
 /// not implement `Sync`: both participants are spawned by the one Core0
 /// executor recorded before the physical supervisor starts.
+// CAPABILITY: station-lifecycle-owners
 pub(crate) struct ConnectedDatapathMailbox {
     bound: Cell<bool>,
     exchange: Exchange<ConnectedDatapathRunner, ConnectedDatapathTaskReturn>,

@@ -476,6 +476,7 @@ pub enum MacHeTxFormat {
 
 /// Semantic inputs for one bounded HE SU queue publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wifi-802-11ax-he-operating-mode-control
 pub struct MacHeTxParameters {
     pub control: MacTxControlFrame,
     pub rate: MacHeRate,

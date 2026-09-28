@@ -71,6 +71,7 @@ pub trait HandshakeTransmit<H> {
 
 /// Stable local/peer identity shared by both WPA2 ports.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: wpa2
 pub struct Wpa2Station {
     station_address: [u8; 6],
     bssid: [u8; 6],

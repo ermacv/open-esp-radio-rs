@@ -314,6 +314,7 @@ impl HeBandwidth {
 
 /// HE SU guard-interval and LTF encoding from HE-SIG-A1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// CAPABILITY: wifi-802-11ax-he-he-guard-intervals-0-8-1-6-3-2-microseconds
 pub enum HeGuardIntervalAndLtf {
     OneLtf800Ns,
     TwoLtf800Ns,
@@ -370,6 +371,7 @@ impl HeGuardIntervalAndLtf {
 /// bits 25:23 `nsts_and_midamble_periodicity`; they must not be reported
 /// unconditionally as the number of spatial streams.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// CAPABILITY: wifi-802-11ax-he-rx-stbc-one-spatial-stream
 pub struct HeSuSignal {
     pub format: bool,
     pub beam_change: bool,
@@ -603,6 +605,7 @@ impl HeTriggerBasedSignal {
 /// ownership equivalent of the blob's raw pointer walk. The decoder checks
 /// the advertised length before constructing the slice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// CAPABILITY: wifi-802-11ax-he-downlink-ofdma-mu-mimo
 pub struct RxHeMuSigBInfo<'a> {
     pub signal: HeMuSignal,
     pub bit_length: u16,

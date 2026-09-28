@@ -170,8 +170,10 @@ fn a_connection_answers_version_exchange_and_follows_the_received_anchor() {
             receive_wait: oer_bluetooth_radio::RadioDuration::from_micros(
                 10 + 2 * widening as u32 + 2
             ),
+            widening: oer_bluetooth_radio::RadioDuration::from_micros(widening as u32),
         }
     );
+    assert_eq!(second.interval.as_micros(), INTERVAL as u32);
     assert_eq!(second.priority, 8);
 }
 
@@ -267,7 +269,7 @@ fn six_silent_events_fail_the_establishment() {
             panic!("another event");
         };
         // Before a packet arrives, the transmit window stays uncertain.
-        let ConnectionEventTiming::Recurring { receive_wait } = event.timing else {
+        let ConnectionEventTiming::Recurring { receive_wait, .. } = event.timing else {
             panic!("a recurring event");
         };
         assert!(receive_wait.as_micros() > 2_500);
@@ -373,6 +375,7 @@ fn a_connection_update_moves_the_anchor_at_its_instant() {
             receive_wait: oer_bluetooth_radio::RadioDuration::from_micros(
                 10 + 2 * widening as u32 + 1_250 + 2
             ),
+            widening: oer_bluetooth_radio::RadioDuration::from_micros(widening as u32),
         }
     );
     harness.end_at(instant.id, Some(anchor + 300));

@@ -492,6 +492,7 @@ impl Peripheral {
             connection.local_procedure_pending(),
         );
         let channel = DataChannel::new(prepared.channel().get()).expect("a data channel index");
+        let interval = RadioDuration::from_micros(prepared.timing().interval_micros());
         let plan = if first {
             timing::first(event.anchor, transmit_window, timing.connection)?
         } else {
@@ -524,6 +525,7 @@ impl Peripheral {
             connection: CONNECTION,
             channel,
             window: plan.window,
+            interval,
             timing: plan.timing,
             priority: if first { FIRST_PRIORITY } else { PRIORITY },
             coexistence,

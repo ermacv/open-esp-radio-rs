@@ -96,6 +96,7 @@ pub(crate) fn recurring(
         .ok()?,
         timing: ConnectionEventTiming::Recurring {
             receive_wait: RadioDuration::from_micros(receive_wait),
+            widening: RadioDuration::from_micros(widening),
         },
         transmit_window,
     })
@@ -163,6 +164,7 @@ mod tests {
             plan.timing,
             ConnectionEventTiming::Recurring {
                 receive_wait: RadioDuration::from_micros(10 + 2 * widening + 2),
+                widening: RadioDuration::from_micros(widening),
             }
         );
         // An uncertain transmit window stays part of every listening.
@@ -171,6 +173,7 @@ mod tests {
             uncertain.timing,
             ConnectionEventTiming::Recurring {
                 receive_wait: RadioDuration::from_micros(10 + 2 * widening + 1_250 + 2),
+                widening: RadioDuration::from_micros(widening),
             }
         );
         assert_eq!(

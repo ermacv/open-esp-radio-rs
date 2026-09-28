@@ -198,6 +198,9 @@ pub enum ConnectionEventTiming {
     Recurring {
         /// Total time to wait for the central.
         receive_wait: RadioDuration,
+        /// Window widening on each side of the anchor: the clock drift since
+        /// the last received anchor plus the backend's jitter.
+        widening: RadioDuration,
     },
 }
 
@@ -210,9 +213,12 @@ pub struct ConnectionEvent {
     pub connection: ConnectionId,
     /// Data channel of the event.
     pub channel: DataChannel,
-    /// Air window: its start is the earliest anchor, its duration the event
-    /// length.
+    /// Air window: its start is the earliest anchor, its duration the air
+    /// time the event reserves.
     pub window: RadioWindow,
+    /// Connection interval. A backend may let the event continue past its
+    /// air window while it stays within the interval.
+    pub interval: RadioDuration,
     /// Receive wait of the event.
     pub timing: ConnectionEventTiming,
     /// Scheduling priority, 0 to 15.

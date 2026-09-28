@@ -161,16 +161,40 @@ struct ConnectionFacts {
 // the 16-us widening jitter is the Controller configuration's default
 // `ble_ll_jitter_usecs`, the 10-us receive guard is the private-options
 // default, the 2-us receive tail and the 1-us boundary are CPU-time ticks, and
-// 5,154 us is the complete LE 1M event duration. A
-// recurring event ends 5,154 us after its widened anchor less the preparation
-// lead; the first event ends 5,154 us plus the boundary after its transmit
-// window, with the 16-us first-event uncertainty on each side.
+// 1,074 us is the minimum LE 1M event duration. A recurring event ends
+// 1,074 us after its widened anchor less the preparation lead; the first
+// event ends 1,074 us plus the boundary after its transmit window, with the
+// 16-us first-event uncertainty on each side.
 const WIDENING_JITTER_MICROS: u32 = 16;
 const RECEIVE_GUARD_MICROS: u32 = 10;
 const RECEIVE_TAIL_MICROS: u32 = 2;
 const BOUNDARY_GUARD_MICROS: u32 = 1;
 const FIRST_EVENT_GUARD_MICROS: u32 = 16;
-const LE_1M_EVENT_MICROS: u32 = 5_154;
+/// SOURCE: pinned `libble_app.a[ble_28.o]` table
+/// `sym_ble_Qw8LKJo0HxALvv5KCN4X`, which `r_ble_ll_conn_get_min_dura_required`
+/// (`r_sym_ble_IXD9YD54AdqppMHisVZw`), `ble_ll_conn_created`
+/// (`r_sym_ble_62UX9ux9YcuUoIf4gPAp`) and the move body
+/// (`r_sym_ble_JqbtnypGd2wyQym9wmK4`) index by PHY; LE 1M is its first entry.
+const LE_1M_EVENT_MICROS: u32 = 1_074;
+
+/// SOURCE: pinned `libble_app.a[ble_3.o]` connection-event setup
+/// `r_sym_ble_rsCCyH2B22gdYkN4LOOJ`, which installs the link-state event span
+/// from the connection interval: the whole interval up to 7,499 us, otherwise
+/// the interval less 2,000 us plus the peripheral's window widening. Its
+/// third branch, for an exchange of maximum-length packets that does not fit
+/// the interval less 2,150 us, cannot occur on LE 1M above 7,499 us.
+const WHOLE_INTERVAL_SPAN_MICROS: u32 = 7_499;
+const LONG_INTERVAL_MARGIN_MICROS: u32 = 2_000;
+
+/// The Controller span of one connection event in microseconds.
+fn connection_event_span(interval: u32, widening: u32) -> Result<u32, RequestError> {
+    if interval <= WHOLE_INTERVAL_SPAN_MICROS {
+        return Ok(interval);
+    }
+    (interval - LONG_INTERVAL_MARGIN_MICROS)
+        .checked_add(widening)
+        .ok_or(RequestError::Unsupported)
+}
 
 const fn connection_allowances(
     preparation_lead_micros: u32,
@@ -1342,9 +1366,14 @@ impl<
             .expect("a data channel index is valid");
         let raw_window = PeripheralConnectionSchedulerWindow::new(window.start(), window.end())
             .expect("admission checked the window");
-        let span = PeripheralConnectionEventSpan::new(
-            self.clock.duration(event.window.duration().as_micros()),
-        )
+        let widening = match event.timing {
+            ConnectionEventTiming::First { timing_guard, .. } => timing_guard,
+            ConnectionEventTiming::Recurring { widening, .. } => widening,
+        };
+        let span = PeripheralConnectionEventSpan::new(self.clock.duration(connection_event_span(
+            event.interval.as_micros(),
+            widening.as_micros(),
+        )?))
         .ok_or(RequestError::Unsupported)?;
         let priority = PeripheralConnectionSchedulerPriority::new(event.priority)
             .ok_or(RequestError::Unsupported)?;
@@ -1385,7 +1414,7 @@ impl<
                     workspace,
                 )
             }
-            ConnectionEventTiming::Recurring { receive_wait } => {
+            ConnectionEventTiming::Recurring { receive_wait, .. } => {
                 let receive_wait =
                     PeripheralConnectionRecurringReceiveWait::new(receive_wait.as_micros())
                         .ok_or(RequestError::Unsupported)?;

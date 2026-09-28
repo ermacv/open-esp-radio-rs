@@ -191,13 +191,14 @@ earlier archives. `r_ble_ll_conn_get_min_dura_required`
 (`r_sym_ble_IXD9YD54AdqppMHisVZw`) and the move body both index the table
 `sym_ble_Qw8LKJo0HxALvv5KCN4X`, which holds 1,074, 310, 238 and 1,590
 microseconds; the named archive's `g_ble_ll_conn_evt_dura_ro` held 5,154,
-2,350, 1,258 and 5,670, LE 1M first. The open radio still reserves the earlier
-5,154 microseconds below.
+2,350, 1,258 and 5,670, LE 1M first. The open radio reserves the pinned
+LE 1M value.
 
-The `ble_ll_conn_created` bodies of the earlier `7f20740` archive and the
-named S31 archive, not yet re-established on the pinned body, additionally show
+The pinned `ble_ll_conn_created` (`r_sym_ble_62UX9ux9YcuUoIf4gPAp`) shows
 that the first scheduler reservation does not end at the upper edge of the
-transmit window. For LE 1M it retains another 5,154 microseconds of event time
+transmit window: its end is the anchor plus `WinSize * 1.25 ms` plus the
+table's duration for the connection PHY plus one. For LE 1M it retains another
+1,074 microseconds of event time
 and a one-unit boundary guard. The source-owned backend preserves that
 complete reservation and begins it before the receive anchor by the common
 preparation lead plus the open NimBLE 16-microsecond uncertainty guard and one
@@ -341,9 +342,9 @@ deliberately distinct from the 61-microsecond final allowance used by
 `ble_lll_conn_slave_new` for the initial event. The recurrence must not carry
 that initial-only 61-microsecond term forward. The move body obtains the
 minimum event duration before adding accumulated uncertainty and current
-widening to its proposed end; the complete LE 1M duration branch is the same
-5,154 microseconds used by the first-event reservation. Thus the recurring
-window ends at `proposed - preparation + 5,154 + accumulated + widening`,
+widening to its proposed end; for LE 1M it is the same 1,074 microseconds the
+first-event reservation uses. Thus the recurring window ends at
+`proposed - preparation + 1,074 + accumulated + widening`,
 without either the start-only 10-microsecond guard or the initial-only
 61-microsecond allowance.
 
@@ -354,6 +355,26 @@ and reservation end, as required by Core Vol 6, Part B, 4.5.5. Each unanswered
 window advances by one interval without replacing the widening reference. A
 normalized packet replaces the uncertain window with an actual anchor. Other
 nonzero vendor accumulation and automatic widening remain unavailable.
+
+### Event span beyond the reservation
+
+The reservation's 1,074 microseconds are the minimum the scheduler item holds;
+they do not bound the exchange. The pinned connection-event setup
+`r_sym_ble_rsCCyH2B22gdYkN4LOOJ` writes the item end from the reservation but
+installs the link-state event span from the connection interval: the whole
+interval when it is at most 7,499 microseconds, otherwise the interval less
+2,000 microseconds plus the peripheral's current window widening. The
+widening starts as the Controller configuration's `ble_ll_jitter_usecs` in
+`ble_ll_conn_created` and the move body replaces it every event. A third
+branch uses the maximum packet times plus 2,150 microseconds after an event
+whose maximum-length exchange did not fit the interval less 2,150
+microseconds; on LE 1M two maximum packets take 4,240 microseconds, so that
+branch cannot occur above 7,499 microseconds.
+
+The radio contract therefore carries the connection interval with every
+event and the widening with every recurring event. The S31 backend derives the
+span from them, with the first event's 16-microsecond guard as its widening,
+and reserves only the minimum duration.
 
 ### Distinct event-span and captured-anchor fields
 

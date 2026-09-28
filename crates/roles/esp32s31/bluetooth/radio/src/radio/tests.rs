@@ -132,11 +132,11 @@ fn the_timing_follows_the_scheduler_policy() {
     assert_eq!(radio.timing().preparation_lead.as_micros(), 137);
     assert_eq!(radio.timing().admission_guard.as_micros(), 40);
     assert_eq!(radio.now(), RadioInstant::from_micros(0));
-    // A recurring event ends 5,154 us after its widened anchor less the lead.
+    // A recurring event ends 1,074 us after its widened anchor less the lead.
     let connection = radio.timing().connection;
     assert_eq!(connection.local_sleep_clock_ppm, 500);
-    assert_eq!(connection.event_length.as_micros(), 5_154 - 137);
-    assert_eq!(connection.first_event_length.as_micros(), 5_155);
+    assert_eq!(connection.event_length.as_micros(), 1_074 - 137);
+    assert_eq!(connection.first_event_length.as_micros(), 1_075);
     // The widening adds the Controller's default `ble_ll_jitter_usecs`; the
     // receive guard is the private options' 10 us.
     assert_eq!(connection.widening_jitter.as_micros(), 16);
@@ -441,6 +441,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
             connection,
             channel: DataChannel::new(3).unwrap(),
             window: window(start, 2_000),
+            interval: RadioDuration::from_micros(30_000),
             timing,
             priority: 13,
             coexistence: CoexistenceLevel::Baseline,
@@ -501,6 +502,7 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
                 30_000,
                 ConnectionEventTiming::Recurring {
                     receive_wait: RadioDuration::from_micros(500),
+                    widening: RadioDuration::from_micros(40),
                 },
             ),
             &mut sink,
@@ -522,6 +524,22 @@ fn a_connection_reports_its_anchor_receptions_and_acknowledgement() {
         radio.request(RadioRequest::CloseConnection(connection), &mut sink),
         Ok(())
     );
+}
+
+#[test]
+fn a_connection_event_may_run_past_its_reservation_within_the_interval() {
+    // Up to 7,499 us the event may take the whole interval.
+    assert_eq!(super::connection_event_span(7_499, 40), Ok(7_499));
+    assert_eq!(
+        super::connection_event_span(7_500, 40),
+        Ok(7_500 - 2_000 + 40)
+    );
+    assert_eq!(
+        super::connection_event_span(30_000, 16),
+        Ok(30_000 - 2_000 + 16)
+    );
+    // The span never depends on the reserved air window.
+    assert!(super::connection_event_span(30_000, 16).unwrap() > 1_074);
 }
 
 #[test]

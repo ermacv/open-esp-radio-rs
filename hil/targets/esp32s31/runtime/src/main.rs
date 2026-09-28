@@ -270,7 +270,7 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
             pending_words[usize::from(interrupt) / 32] |= 1 << (interrupt % 32);
             console::panic_interrupt_source(interrupt);
             console::panic_interrupt_route(interrupt);
-            if interrupt == esp_hal::peripherals::Interrupt::WIFI_MAC_NMI as u8 {
+            if interrupt == esp_hal::peripherals::Interrupt::MODEM_WIFI_MAC_NMI as u8 {
                 console::panic_wifi_rx_frontier();
             }
         }

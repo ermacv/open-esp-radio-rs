@@ -19,3 +19,10 @@ git-fetch-with-cli = true
 # it. `cargo xtask fetch` downloads what changed lock files need; `cargo xtask
 # lock`, `check changed` and the image builds fetch when something is missing.
 offline = true
+
+[env]
+# Cargo reads this file for every workspace below the repository root.
+# ESP32-S31 images keep esp-hal's PMP region setup off: its single
+# "read/write, no execute" TOR region from `_data_start` to `_noinit_end`
+# would span stage two's PSRAM code between SRAM data and PSRAM noinit.
+ESP_HAL_CONFIG_ENABLE_PMP = "false"

@@ -21,7 +21,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     #[command(flatten)]
-    Scenario(Scenario),
+    Scenario(Box<Scenario>),
     #[command(flatten)]
     Inspect(inspect::Command),
 }
@@ -30,7 +30,7 @@ fn main() -> ExitCode {
     oer_esp32s31_vendor_scenarios::install();
     let cli = Cli::parse();
     match cli.command {
-        Command::Scenario(scenario) => run::run(scenario, &Reviewer, cli.verdict_dep_info),
+        Command::Scenario(scenario) => run::run(*scenario, &Reviewer, cli.verdict_dep_info),
         Command::Inspect(command) => match inspect::run(command) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {

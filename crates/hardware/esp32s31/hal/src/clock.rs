@@ -10,7 +10,7 @@
 
 use oer_esp32s31_pac::{RadioPhyRegisters, WifiPowerBaseline, WifiPowerRestoreReadback};
 
-use crate::power::{PlatformClockError, PlatformClockProvider};
+use crate::power::{PlatformClock, PlatformClockError, PlatformClockProvider};
 use crate::root::WifiPowerRestoreCheckpoint;
 
 /// Register transactions consumed by route clock policy.
@@ -59,58 +59,50 @@ impl ClockPort for RadioPhyRegisters {
 
 /// The platform clock references common radio power holds.
 ///
-/// The 160 MHz reference and the analog-I2C master clock gate are shared with
-/// other SoC users, so their platform owner (ESP-HAL) counts references and
-/// alone writes the gates. Common power takes one reference to each for as
-/// long as any client holds it; the flags make a retried power-up or
+/// The 160 MHz reference, the analog-I2C master clock and the MPLL are shared
+/// with other SoC users, so their platform owner (ESP-HAL) counts references
+/// and alone writes their gates. Common power takes one reference to each for
+/// as long as any client holds it; the flags make a retried power-up or
 /// power-down take or drop each reference exactly once.
 #[derive(Default)]
 pub(crate) struct PlatformClockRefs {
     pll_f160m: bool,
     analog_i2c: bool,
+    mpll: bool,
 }
 
 impl PlatformClockRefs {
-    pub(crate) fn acquire_pll_f160m(
+    fn held(&mut self, clock: PlatformClock) -> &mut bool {
+        match clock {
+            PlatformClock::Pll160m => &mut self.pll_f160m,
+            PlatformClock::AnalogI2cMaster => &mut self.analog_i2c,
+            PlatformClock::Mpll => &mut self.mpll,
+            PlatformClock::ModemCoexistence | PlatformClock::ModemLowPowerTimer => {
+                unreachable!("common power holds no modem module gate")
+            }
+        }
+    }
+
+    pub(crate) fn acquire(
         &mut self,
+        clock: PlatformClock,
         platform: &mut impl PlatformClockProvider,
     ) -> Result<(), PlatformClockError> {
-        if !self.pll_f160m {
-            platform.acquire_pll_f160m()?;
-            self.pll_f160m = true;
+        if !*self.held(clock) {
+            platform.acquire(clock)?;
+            *self.held(clock) = true;
         }
         Ok(())
     }
 
-    pub(crate) fn acquire_analog_i2c(
+    fn release(
         &mut self,
+        clock: PlatformClock,
         platform: &mut impl PlatformClockProvider,
     ) -> Result<(), PlatformClockError> {
-        if !self.analog_i2c {
-            platform.acquire_analog_i2c_clock()?;
-            self.analog_i2c = true;
-        }
-        Ok(())
-    }
-
-    fn release_analog_i2c(
-        &mut self,
-        platform: &mut impl PlatformClockProvider,
-    ) -> Result<(), PlatformClockError> {
-        if self.analog_i2c {
-            platform.release_analog_i2c_clock()?;
-            self.analog_i2c = false;
-        }
-        Ok(())
-    }
-
-    fn release_pll_f160m(
-        &mut self,
-        platform: &mut impl PlatformClockProvider,
-    ) -> Result<(), PlatformClockError> {
-        if self.pll_f160m {
-            platform.release_pll_f160m()?;
-            self.pll_f160m = false;
+        if *self.held(clock) {
+            platform.release(clock)?;
+            *self.held(clock) = false;
         }
         Ok(())
     }
@@ -216,8 +208,8 @@ impl CommonRadioPower {
     }
 
     /// Leave common power; the last client drops the analog-I2C reference,
-    /// restores the cold baseline and then drops the 160 MHz reference, as
-    /// the vendor closes a gate before releasing its source.
+    /// restores the cold baseline and then drops the 160 MHz and MPLL
+    /// references, as the vendor closes a gate before releasing its source.
     ///
     /// A failed step keeps `client` entered so the exit can be retried.
     pub(crate) fn exit(
@@ -231,14 +223,16 @@ impl CommonRadioPower {
         }
         if self.clients == client.bit() {
             self.refs
-                .release_analog_i2c(platform)
+                .release(PlatformClock::AnalogI2cMaster, platform)
                 .map_err(CommonRadioPowerError::PlatformClock)?;
             self.power
                 .restore(port)
                 .map_err(CommonRadioPowerError::Restore)?;
-            self.refs
-                .release_pll_f160m(platform)
-                .map_err(CommonRadioPowerError::PlatformClock)?;
+            for clock in [PlatformClock::Pll160m, PlatformClock::Mpll] {
+                self.refs
+                    .release(clock, platform)
+                    .map_err(CommonRadioPowerError::PlatformClock)?;
+            }
         }
         self.clients &= !client.bit();
         Ok(())

@@ -11,6 +11,8 @@ enum Operation {
     ReleasePll,
     AcquireAnalogI2c,
     ReleaseAnalogI2c,
+    Acquire(PlatformClock),
+    Release(PlatformClock),
 }
 
 /// One ordered log shared by the modem port and the platform provider.
@@ -45,17 +47,19 @@ impl Platform<'_> {
 }
 
 impl PlatformClockProvider for Platform<'_> {
-    fn acquire_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
-        self.request(Operation::AcquirePll)
+    fn acquire(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
+        self.request(match clock {
+            PlatformClock::Pll160m => Operation::AcquirePll,
+            PlatformClock::AnalogI2cMaster => Operation::AcquireAnalogI2c,
+            other => Operation::Acquire(other),
+        })
     }
-    fn release_pll_f160m(&mut self) -> Result<(), PlatformClockError> {
-        self.request(Operation::ReleasePll)
-    }
-    fn acquire_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
-        self.request(Operation::AcquireAnalogI2c)
-    }
-    fn release_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError> {
-        self.request(Operation::ReleaseAnalogI2c)
+    fn release(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
+        self.request(match clock {
+            PlatformClock::Pll160m => Operation::ReleasePll,
+            PlatformClock::AnalogI2cMaster => Operation::ReleaseAnalogI2c,
+            other => Operation::Release(other),
+        })
     }
 }
 

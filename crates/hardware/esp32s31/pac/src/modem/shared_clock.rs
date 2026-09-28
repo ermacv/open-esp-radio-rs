@@ -8,19 +8,10 @@
 
 use crate::{RadioPhyRegisters, generated::ModemLowPowerClockDivider};
 
-/// One MODEM_LPCON shared clock gate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SharedModemClockGate {
-    Coexistence,
-    LowPowerTimer,
-}
-
 /// Semantic route-owned observation used by protocol clock checkpoints.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SharedModemClockObservation {
     pub power_state_map_configured: bool,
-    pub coexistence_clock_enabled: bool,
-    pub low_power_timer_clock_enabled: bool,
 }
 
 /// Reviewed selector decoded inside the PAC from `COEX_LP_CLK_CONF`.
@@ -44,7 +35,6 @@ pub struct CoexistenceLowPowerClockObservation {
 pub struct BluetoothLowPowerClockObservation {
     pub exclusive_main_xtal_selected: bool,
     pub bluetooth_divider_configured: bool,
-    pub timer_enabled: bool,
 }
 
 /// RTC slow-clock source decoded from `LP_AON_CLKRST.ROOT_CLK_CONF`.
@@ -70,7 +60,6 @@ pub struct WifiLowPowerClockObservation {
     /// sources production selects is set.
     pub source: Option<WifiLowPowerClockSource>,
     pub divider: u16,
-    pub power_clock_enabled: bool,
 }
 
 impl RadioPhyRegisters {
@@ -84,15 +73,17 @@ impl RadioPhyRegisters {
         }
     }
 
-    /// Select the Wi-Fi power-domain low-power clock with divider zero and
-    /// enable the Wi-Fi power clock.
+    /// Select the Wi-Fi power-domain low-power clock with divider zero.
     ///
-    /// This is `modem_clock_select_lp_clock_source(PERIPH_WIFI_MODULE, src,
-    /// 0)` as run by `esp_perip_clk_init`: every source is deselected in the
+    /// This is the source and divider half of
+    /// `modem_clock_select_lp_clock_source(PERIPH_WIFI_MODULE, src, 0)` as run
+    /// by `esp_perip_clk_init`: every source is deselected in the
     /// slow-oscillator, fast-oscillator, 32-kHz crystal, main-crystal order,
     /// the one source is selected (the 32-kHz crystal also selects the
-    /// crystal as the modem 32-kHz source), the divider is written and the
-    /// Wi-Fi power clock gate is set. Each is its own field write.
+    /// crystal as the modem 32-kHz source) and the divider is written, each
+    /// as its own field write. The Wi-Fi power clock gate shares its word
+    /// with ESP-HAL's reference-counted gates; `esp_hal::init` sets it and
+    /// nothing clears it.
     #[doc(hidden)]
     pub fn select_wifi_low_power_clock(&mut self, source: WifiLowPowerClockSource) {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
@@ -113,7 +104,6 @@ impl RadioPhyRegisters {
             registers,
             ModemLowPowerClockDivider::new(0).expect("zero is a valid low-power divider"),
         );
-        crate::generated::enable_wifi_power_clock(registers);
     }
 
     #[doc(hidden)]
@@ -128,7 +118,6 @@ impl RadioPhyRegisters {
                 _ => None,
             },
             divider,
-            power_clock_enabled: crate::svd::field_read::read_wifi_power_clock_enable(registers),
         }
     }
 
@@ -145,8 +134,6 @@ impl RadioPhyRegisters {
     #[doc(hidden)]
     pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
-        let (coexistence_clock_enabled, low_power_timer_clock_enabled) =
-            crate::svd::field_snapshot_read::observe_shared_modem_clock_gates(registers);
         let (
             wifi_power_map_bit_one,
             wifi_power_map_bit_two,
@@ -166,8 +153,6 @@ impl RadioPhyRegisters {
                 && phy_i2c_map_bit_two
                 && low_power_apb_map_bit_one
                 && low_power_apb_map_bit_two,
-            coexistence_clock_enabled,
-            low_power_timer_clock_enabled,
         }
     }
 
@@ -206,39 +191,6 @@ impl RadioPhyRegisters {
                 registers,
             ),
         })
-    }
-
-    /// Read whether one shared clock gate is enabled.
-    #[doc(hidden)]
-    pub fn shared_modem_clock_gate_enabled(&self, gate: SharedModemClockGate) -> bool {
-        let (coexistence, low_power_timer) =
-            crate::svd::field_snapshot_read::observe_shared_modem_clock_gates(
-                &self.peripherals.modem_lpcon_shared_clock,
-            );
-        match gate {
-            SharedModemClockGate::Coexistence => coexistence,
-            SharedModemClockGate::LowPowerTimer => low_power_timer,
-        }
-    }
-
-    /// Enable or disable one shared clock gate.
-    #[doc(hidden)]
-    pub fn set_shared_modem_clock_gate(&mut self, gate: SharedModemClockGate, enabled: bool) {
-        let registers = &self.peripherals.modem_lpcon_shared_clock;
-        match (gate, enabled) {
-            (SharedModemClockGate::Coexistence, true) => {
-                crate::generated::enable_shared_modem_coexistence_clock(registers);
-            }
-            (SharedModemClockGate::Coexistence, false) => {
-                crate::generated::disable_shared_modem_coexistence_clock(registers);
-            }
-            (SharedModemClockGate::LowPowerTimer, true) => {
-                crate::generated::enable_shared_modem_low_power_timer_clock(registers);
-            }
-            (SharedModemClockGate::LowPowerTimer, false) => {
-                crate::generated::disable_shared_modem_low_power_timer_clock(registers);
-            }
-        }
     }
 
     /// Deselect every Bluetooth low-power timer source.
@@ -292,8 +244,6 @@ impl RadioPhyRegisters {
                 && !crystal_32khz_selected,
             bluetooth_divider_configured: u32::from(divider_minus_one)
                 == crate::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER.get(),
-            timer_enabled: self
-                .shared_modem_clock_gate_enabled(SharedModemClockGate::LowPowerTimer),
         }
     }
 }

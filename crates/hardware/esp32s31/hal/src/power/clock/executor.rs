@@ -6,6 +6,9 @@
 //! clock belong to the platform clock owner and are reached through
 //! [`PlatformClockProvider`], which counts its own references.
 //!
+//! The coexistence gate shares its register word with the analog-I2C master,
+//! so it is a platform-owned half too.
+//!
 //! For the modem PLL-source dependency the executor acquires the 160 MHz
 //! source before opening the modem gate and releases it after closing the
 //! gate, in the vendor order. A provider failure poisons the transaction: the
@@ -22,19 +25,34 @@ use super::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PlatformClockError;
 
-/// Platform-owned clock sources that radio modules depend on.
+/// A clock whose gate the platform clock owner writes and counts.
 ///
-/// The platform clock owner (ESP-HAL) keeps its own reference counts for
-/// these sources, because other SoC users share them.
+/// Each lives in a register word that the platform also writes for other
+/// SoC users, so the radio requests it instead of writing the gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlatformClock {
+    /// The 160 MHz PLL output that feeds the modem PLL source.
+    Pll160m,
+    /// The analog-I2C master clock gate in `MODEM_LPCON.CLK_CONF`.
+    AnalogI2cMaster,
+    /// The MPLL, whose PMU power bits share a word with the front-end
+    /// baseband power the PHY writes.
+    Mpll,
+    /// The modem coexistence clock gate in `MODEM_LPCON.CLK_CONF`.
+    ModemCoexistence,
+    /// The modem low-power timer clock gate in `MODEM_LPCON.CLK_CONF`.
+    ModemLowPowerTimer,
+}
+
+/// Platform-owned clocks that radio modules depend on.
+///
+/// The platform clock owner (ESP-HAL) keeps its own reference count of each,
+/// because other SoC users share them.
 pub trait PlatformClockProvider {
-    /// Acquire one reference to the 160 MHz PLL source.
-    fn acquire_pll_f160m(&mut self) -> Result<(), PlatformClockError>;
-    /// Release one reference to the 160 MHz PLL source.
-    fn release_pll_f160m(&mut self) -> Result<(), PlatformClockError>;
-    /// Acquire one reference to the analog-I2C master clock.
-    fn acquire_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError>;
-    /// Release one reference to the analog-I2C master clock.
-    fn release_analog_i2c_clock(&mut self) -> Result<(), PlatformClockError>;
+    /// Acquire one reference to `clock`.
+    fn acquire(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError>;
+    /// Release one reference to `clock`.
+    fn release(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError>;
 }
 
 /// Modem clock gates driven by the radio PAC.
@@ -52,7 +70,6 @@ const fn modem_device(dependency: Dependency) -> Option<ModemClockDevice> {
     Some(match dependency {
         Dependency::ModemAdcCommonFe => ModemClockDevice::ModemAdcCommonFe,
         Dependency::ModemPrivateFe => ModemClockDevice::ModemPrivateFe,
-        Dependency::Coexistence => ModemClockDevice::Coexistence,
         Dependency::WifiApb => ModemClockDevice::WifiApb,
         Dependency::WifiBb44m => ModemClockDevice::WifiBaseband44m,
         Dependency::WifiMac => ModemClockDevice::WifiMac,
@@ -67,7 +84,9 @@ const fn modem_device(dependency: Dependency) -> Option<ModemClockDevice> {
         }
         Dependency::Ieee802154ApbAndMac => ModemClockDevice::Ieee802154Mac,
         // Platform-owned halves are handled by the caller.
-        Dependency::Pll160AndModemSource | Dependency::AnalogI2cMaster => return None,
+        Dependency::Pll160AndModemSource
+        | Dependency::AnalogI2cMaster
+        | Dependency::Coexistence => return None,
     })
 }
 
@@ -78,10 +97,11 @@ fn perform_acquire(
 ) -> Result<(), PlatformClockError> {
     match dependency {
         Dependency::Pll160AndModemSource => {
-            platform.acquire_pll_f160m()?;
+            platform.acquire(PlatformClock::Pll160m)?;
             port.configure_device(ModemClockDevice::PllSourceGate, true);
         }
-        Dependency::AnalogI2cMaster => platform.acquire_analog_i2c_clock()?,
+        Dependency::AnalogI2cMaster => platform.acquire(PlatformClock::AnalogI2cMaster)?,
+        Dependency::Coexistence => platform.acquire(PlatformClock::ModemCoexistence)?,
         other => {
             if let Some(device) = modem_device(other) {
                 port.configure_device(device, true);
@@ -99,9 +119,10 @@ fn perform_release(
     match dependency {
         Dependency::Pll160AndModemSource => {
             port.configure_device(ModemClockDevice::PllSourceGate, false);
-            platform.release_pll_f160m()?;
+            platform.release(PlatformClock::Pll160m)?;
         }
-        Dependency::AnalogI2cMaster => platform.release_analog_i2c_clock()?,
+        Dependency::AnalogI2cMaster => platform.release(PlatformClock::AnalogI2cMaster)?,
+        Dependency::Coexistence => platform.release(PlatformClock::ModemCoexistence)?,
         other => {
             if let Some(device) = modem_device(other) {
                 port.configure_device(device, false);

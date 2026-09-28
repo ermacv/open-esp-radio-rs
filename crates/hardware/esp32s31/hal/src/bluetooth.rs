@@ -214,7 +214,7 @@ impl PoweredOwner {
             .task
             .reset_controller_domains(lease.registers_mut());
         let task = &partition.task;
-        if let Err(error) = lease.select_bluetooth_low_power_clock(task) {
+        if let Err(error) = lease.select_bluetooth_low_power_clock(task, platform) {
             let _ = lease.disable_modem_clocks(task, platform);
             return Err(ClockTransitionFailure {
                 owner: Self { partition },
@@ -225,7 +225,7 @@ impl PoweredOwner {
         let clocks = task.controller_clock_observation(shared);
         let (_, low_power) = task.bluetooth_shared_clock_observation(shared);
         if let Some(checkpoint) = clock_checkpoint(clocks, low_power) {
-            let _ = lease.deselect_bluetooth_low_power_clock(task);
+            let _ = lease.deselect_bluetooth_low_power_clock(task, platform);
             let _ = lease.disable_modem_clocks(task, platform);
             return Err(ClockTransitionFailure {
                 owner: Self { partition },
@@ -249,8 +249,6 @@ pub enum BluetoothClockCheckpoint {
     LowPowerClockSource,
     /// The low-power timer divider did not match the S31 Bluetooth profile.
     LowPowerClockDivider,
-    /// The low-power timer clock gate did not read back enabled.
-    LowPowerTimerClock,
 }
 
 /// Why the Bluetooth clock stage cannot change.
@@ -278,8 +276,6 @@ fn clock_checkpoint(
         Some(BluetoothClockCheckpoint::LowPowerClockSource)
     } else if !low_power.bluetooth_divider_configured {
         Some(BluetoothClockCheckpoint::LowPowerClockDivider)
-    } else if !low_power.timer_enabled {
-        Some(BluetoothClockCheckpoint::LowPowerTimerClock)
     } else {
         None
     }
@@ -314,7 +310,7 @@ impl ClockedOwner {
         let task = &self.partition.task;
         // A retry after a planner failure finds the clock already deselected.
         if lease.bluetooth_low_power_clock_selected()
-            && let Err(error) = lease.deselect_bluetooth_low_power_clock(task)
+            && let Err(error) = lease.deselect_bluetooth_low_power_clock(task, platform)
         {
             return Err(ClockTransitionFailure {
                 owner: self,

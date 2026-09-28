@@ -109,7 +109,9 @@ pub fn select_low_power_clock() -> bool {
     let (controller, timer, interrupts) = partitions.bluetooth.into_parts();
     let task = oer_esp32s31_pac::BluetoothTaskRegisters::new(controller);
     let accepted = match shared.try_acquire() {
-        Ok(mut lease) => lease.select_bluetooth_low_power_clock(&task).is_ok(),
+        Ok(mut lease) => lease
+            .select_bluetooth_low_power_clock(&task, &mut GrantedPlatformClocks)
+            .is_ok(),
         Err(_) => false,
     };
     // The comparison image retains every partition it mutated.
@@ -210,4 +212,25 @@ pub unsafe fn run_scheduler_execution_lock(address: u32, index: u8) -> Option<u3
     };
     let _retained = (task, interrupts, timer, bank, lock);
     Some(result)
+}
+
+/// A platform clock owner that grants every request without register access.
+///
+/// The platform writes its own gates, so a trace of the radio's register
+/// transactions contains none of them.
+struct GrantedPlatformClocks;
+
+impl crate::shared_radio::PlatformClockProvider for GrantedPlatformClocks {
+    fn acquire(
+        &mut self,
+        _clock: crate::shared_radio::PlatformClock,
+    ) -> Result<(), crate::shared_radio::PlatformClockError> {
+        Ok(())
+    }
+    fn release(
+        &mut self,
+        _clock: crate::shared_radio::PlatformClock,
+    ) -> Result<(), crate::shared_radio::PlatformClockError> {
+        Ok(())
+    }
 }

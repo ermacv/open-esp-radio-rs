@@ -189,7 +189,7 @@ impl ModemClockModule {
 }
 
 mod executor;
-pub use executor::{PlatformClockError, PlatformClockProvider};
+pub use executor::{PlatformClock, PlatformClockError, PlatformClockProvider};
 pub(crate) use executor::{execute_acquire, execute_release};
 
 #[cfg(test)]

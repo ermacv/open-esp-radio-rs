@@ -3,8 +3,8 @@ use std::{cell::RefCell, rc::Rc, vec::Vec};
 use oer_esp32s31_pac::{PlatformClockPowerObservation, SharedModemClockObservation};
 
 use super::{
-    PlatformClockError, PowerCheckpoint, PowerEntry, PowerError, PowerSequenceBackend,
-    execute_owned,
+    PlatformClock, PlatformClockError, PowerCheckpoint, PowerEntry, PowerError,
+    PowerSequenceBackend, execute_owned,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,12 +17,11 @@ enum Operation {
     EnableModemBus,
     ConfigureHpActiveMap,
     PrepareSharedMap,
-    AcquireReference160m,
+    Acquire(PlatformClock),
     ConfigureModemSource,
     ResetBaseband(bool),
     EnablePhyClocks,
     SelectI2c160Mhz,
-    AcquireAnalogI2cClock,
 }
 
 struct FakeShared {
@@ -54,8 +53,6 @@ impl FakeShared {
             },
             observation: SharedModemClockObservation {
                 power_state_map_configured: true,
-                coexistence_clock_enabled: false,
-                low_power_timer_clock_enabled: false,
             },
         }
     }
@@ -80,13 +77,17 @@ impl PowerSequenceBackend for FakeShared {
         self.operations.borrow_mut().push(Operation::EnableModemBus);
     }
 
-    fn acquire_reference_160m(&mut self) -> Result<(), PlatformClockError> {
-        self.operations
-            .borrow_mut()
-            .push(Operation::AcquireReference160m);
-        match self.refused {
-            Some(PowerCheckpoint::Reference160m) => Err(PlatformClockError),
-            _ => Ok(()),
+    fn acquire_platform_clock(&mut self, clock: PlatformClock) -> Result<(), PlatformClockError> {
+        self.operations.borrow_mut().push(Operation::Acquire(clock));
+        let refused = match clock {
+            PlatformClock::Mpll => PowerCheckpoint::Mpll,
+            PlatformClock::Pll160m => PowerCheckpoint::Reference160m,
+            _ => PowerCheckpoint::I2cClock,
+        };
+        if self.refused == Some(refused) {
+            Err(PlatformClockError)
+        } else {
+            Ok(())
         }
     }
 
@@ -147,16 +148,6 @@ impl PowerSequenceBackend for FakeShared {
             .push(Operation::SelectWifiLowPowerClock);
     }
 
-    fn acquire_analog_i2c_master_clock(&mut self) -> Result<(), PlatformClockError> {
-        self.operations
-            .borrow_mut()
-            .push(Operation::AcquireAnalogI2cClock);
-        match self.refused {
-            Some(PowerCheckpoint::I2cClock) => Err(PlatformClockError),
-            _ => Ok(()),
-        }
-    }
-
     fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         self.observation
     }
@@ -176,19 +167,20 @@ fn exact_semantic_sequence_is_finite_and_ordered() {
             Operation::SelectWifiLowPowerClock,
             Operation::ResetWifi(true),
             Operation::ResetWifi(false),
+            Operation::Acquire(PlatformClock::Mpll),
             Operation::SelectHpActiveIcg,
             Operation::ApplyModemIcg,
             Operation::ApplySleepIcg,
             Operation::EnableModemBus,
             Operation::ConfigureHpActiveMap,
             Operation::PrepareSharedMap,
-            Operation::AcquireReference160m,
+            Operation::Acquire(PlatformClock::Pll160m),
             Operation::ConfigureModemSource,
             Operation::ResetBaseband(true),
             Operation::ResetBaseband(false),
             Operation::EnablePhyClocks,
             Operation::SelectI2c160Mhz,
-            Operation::AcquireAnalogI2cClock,
+            Operation::Acquire(PlatformClock::AnalogI2cMaster),
         ]
     );
     assert_eq!(shared.prepare_calls, 1);
@@ -241,7 +233,9 @@ fn power_sequence_takes_the_i2c_reference_on_success_and_each_readback_failure()
                 }
                 PowerCheckpoint::PhyClocks => &mut shared.modem.phy_calibration_clocks_enabled,
                 PowerCheckpoint::I2cSource => &mut shared.modem.phy_i2c_160mhz_selected,
-                PowerCheckpoint::Reference160m | PowerCheckpoint::I2cClock => {
+                PowerCheckpoint::Mpll
+                | PowerCheckpoint::Reference160m
+                | PowerCheckpoint::I2cClock => {
                     unreachable!("platform references are not read back")
                 }
             } = false;
@@ -259,7 +253,7 @@ fn power_sequence_takes_the_i2c_reference_on_success_and_each_readback_failure()
         assert_eq!(
             operations
                 .iter()
-                .filter(|op| **op == Operation::AcquireAnalogI2cClock)
+                .filter(|op| **op == Operation::Acquire(PlatformClock::AnalogI2cMaster))
                 .count(),
             1,
             "the I2C reference belongs to the retained epoch"
@@ -289,8 +283,11 @@ fn repeated_power_up_leaves_out_only_the_wifi_mac_reset_pulse() {
     assert!(!operations.contains(&Operation::ResetWifi(true)));
     assert!(!operations.contains(&Operation::SelectWifiLowPowerClock));
     assert_eq!(
-        operations.as_slice().first(),
-        Some(&Operation::SelectHpActiveIcg)
+        operations.as_slice()[..2],
+        [
+            Operation::Acquire(PlatformClock::Mpll),
+            Operation::SelectHpActiveIcg
+        ]
     );
     assert!(operations.contains(&Operation::ResetBaseband(true)));
     assert!(operations.contains(&Operation::ResetBaseband(false)));
@@ -300,10 +297,17 @@ fn repeated_power_up_leaves_out_only_the_wifi_mac_reset_pulse() {
 fn a_refused_platform_reference_stops_the_sequence_at_its_edge() {
     for (refused, last) in [
         (
-            PowerCheckpoint::Reference160m,
-            Operation::AcquireReference160m,
+            PowerCheckpoint::Mpll,
+            Operation::Acquire(PlatformClock::Mpll),
         ),
-        (PowerCheckpoint::I2cClock, Operation::AcquireAnalogI2cClock),
+        (
+            PowerCheckpoint::Reference160m,
+            Operation::Acquire(PlatformClock::Pll160m),
+        ),
+        (
+            PowerCheckpoint::I2cClock,
+            Operation::Acquire(PlatformClock::AnalogI2cMaster),
+        ),
     ] {
         let operations = Rc::new(RefCell::new(Vec::new()));
         let mut shared = FakeShared::ready(operations.clone());

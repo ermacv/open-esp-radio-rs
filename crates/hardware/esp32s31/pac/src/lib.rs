@@ -160,8 +160,8 @@ pub use modem::{
     },
     shared_clock::{
         BluetoothLowPowerClockObservation, CoexistenceLowPowerClockObservation,
-        CoexistenceLowPowerClockSource, RtcSlowClockSource, SharedModemClockGate,
-        SharedModemClockObservation, WifiLowPowerClockObservation, WifiLowPowerClockSource,
+        CoexistenceLowPowerClockSource, RtcSlowClockSource, SharedModemClockObservation,
+        WifiLowPowerClockObservation, WifiLowPowerClockSource,
     },
 };
 

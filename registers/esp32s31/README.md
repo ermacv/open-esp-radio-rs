@@ -68,10 +68,9 @@ therefore has one runtime owner.
 
 | Word | ESP-HAL writes | Radio writes | Why it is safe |
 | --- | --- | --- | --- |
-| `HP_SYS_CLKRST.REF_160M_CTRL0` | Clock-tree divider and gate | Nothing; the radio takes a `PlatformClockProvider` reference | Not published here |
-| `MODEM_LPCON.CLK_CONF` `CLK_I2C_MST_EN` | Reference-counted around every regi2c access | Nothing; the radio takes a `PlatformClockProvider` reference | Not published here |
-| `MODEM_LPCON.CLK_CONF` coexistence, low-power-timer and Wi-Fi power gates | Only `CLK_I2C_MST_EN` and, in `esp_hal::init`, the Wi-Fi power gate | These gates at runtime | Current limitation: the word is still shared at runtime with ESP-HAL's `CLK_I2C_MST_EN` updates |
-| `PMU.HP_ACTIVE_HP_CK_POWER` | MPLL power when the MPLL reference count crosses zero | Front-end baseband power at runtime | PSRAM holds MPLL for the whole run, so ESP-HAL writes the word only during `esp_hal::init` |
+| `HP_SYS_CLKRST.REF_160M_CTRL0` | Clock-tree divider and gate | Nothing; it requests `PlatformClock::Pll160m` | Not published here |
+| `MODEM_LPCON.CLK_CONF` | Every gate, reference-counted under one lock: analog-I2C master, coexistence, low-power timer; the Wi-Fi power gate in `esp_hal::init` | Nothing; it requests `AnalogI2cMaster`, `ModemCoexistence` and `ModemLowPowerTimer` | Not published here |
+| `PMU.HP_ACTIVE_HP_CK_POWER` | MPLL power when the MPLL reference count crosses zero | Front-end baseband power | The adopted PSRAM mapping holds a permanent MPLL reference through ESP-HAL's clock tree (`Psram::from_existing_mapping`), so the count never crosses zero; the radio also holds a `PlatformClock::Mpll` reference while powered |
 | `PMU.IMM_MODEM_ICG`, `PMU.IMM_SLEEP_SYSCLK` | Trigger-bit writes in `esp_hal::init` | Trigger-bit writes | Both sides write whole words; no read-modify-write |
 
 ESP-HAL writes the following owned words only inside `esp_hal::init`, which
@@ -80,8 +79,8 @@ radio read-modify-writes therefore have no concurrent ESP-HAL writer:
 
 - `MODEM_SYSCON.CLK_CONF_POWER_ST` and `MODEM_LPCON.CLK_CONF_POWER_ST`, whose
   modem clock state maps ESP-HAL ORs in;
-- `MODEM_LPCON.WIFI_LP_CLK_CONF`, `MODEM_32K_CLK_CONF` and the Wi-Fi power
-  gate in `CLK_CONF`, set by its Wi-Fi low-power clock selection;
+- `MODEM_LPCON.WIFI_LP_CLK_CONF` and `MODEM_32K_CLK_CONF`, set by its Wi-Fi
+  low-power clock selection;
 - `PMU.HP_ACTIVE_ICG_MODEM` and `PMU.ANA_PERI_PWR_CTRL`;
 - `LP_AON_CLKRST.ROOT_CLK_CONF`, whose slow and fast clock selectors the
   radio only reads.

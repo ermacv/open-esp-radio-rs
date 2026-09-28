@@ -148,33 +148,6 @@ bitWidth = 2
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "CLK_CONF"
-description = "Shared MODEM_LPCON clock gates used by radio lifecycles."
-addressOffset = 0x18
-size = 32
-access = "read-write"
-resetValue = 0x00000000
-
-[[peripherals.registers.register.fields]]
-name = "CLK_WIFIPWR_EN"
-description = "Wi-Fi power clock gate."
-bitOffset = 0
-bitWidth = 1
-
-[[peripherals.registers.register.fields]]
-name = "CLK_COEX_EN"
-description = "Coexistence clock gate."
-bitOffset = 1
-bitWidth = 1
-
-[[peripherals.registers.register.fields]]
-name = "CLK_LP_TIMER_EN"
-description = "Bluetooth low-power timer clock gate."
-bitOffset = 3
-bitWidth = 1
-
-[[peripherals.registers]]
-[peripherals.registers.register]
 name = "CLK_CONF_POWER_ST"
 description = "Four shared clock power-state map fields programmed with the reviewed active-state image."
 addressOffset = 0x20
@@ -245,13 +218,6 @@ accuracy = "exact"
 completeness = "complete"
 [[review]]
 entity = "MODEM_LPCON_SHARED_CLOCK.COEX_LP_CLK_CONF"
-sources = ["S31_MODEM_LPCON_STRUCT"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "MODEM_LPCON_SHARED_CLOCK.CLK_CONF"
 sources = ["S31_MODEM_LPCON_STRUCT"]
 provenance = "observed"
 accuracy = "exact"

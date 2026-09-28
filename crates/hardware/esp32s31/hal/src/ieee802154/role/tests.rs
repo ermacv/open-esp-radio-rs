@@ -77,16 +77,16 @@ fn the_btbb_steps_require_the_ieee802154_reference() {
 struct NoPlatform;
 
 impl crate::power::PlatformClockProvider for NoPlatform {
-    fn acquire_pll_f160m(&mut self) -> Result<(), crate::power::PlatformClockError> {
+    fn acquire(
+        &mut self,
+        _clock: crate::power::PlatformClock,
+    ) -> Result<(), crate::power::PlatformClockError> {
         Err(crate::power::PlatformClockError)
     }
-    fn release_pll_f160m(&mut self) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-    fn acquire_analog_i2c_clock(&mut self) -> Result<(), crate::power::PlatformClockError> {
-        Err(crate::power::PlatformClockError)
-    }
-    fn release_analog_i2c_clock(&mut self) -> Result<(), crate::power::PlatformClockError> {
+    fn release(
+        &mut self,
+        _clock: crate::power::PlatformClock,
+    ) -> Result<(), crate::power::PlatformClockError> {
         Err(crate::power::PlatformClockError)
     }
 }

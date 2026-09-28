@@ -213,7 +213,6 @@ fn clock_readback_names_the_first_failed_checkpoint() {
     let low_power = BluetoothLowPowerClockObservation {
         exclusive_main_xtal_selected: true,
         bluetooth_divider_configured: true,
-        timer_enabled: true,
     };
     assert_eq!(clock_checkpoint(clocks, low_power), None);
     let cases = [
@@ -239,10 +238,7 @@ fn clock_readback_names_the_first_failed_checkpoint() {
                 controller_resets_released: false,
                 ..clocks
             },
-            BluetoothLowPowerClockObservation {
-                timer_enabled: false,
-                ..low_power
-            },
+            BluetoothLowPowerClockObservation { ..low_power },
             BluetoothClockCheckpoint::ControllerReset,
         ),
         (
@@ -261,14 +257,6 @@ fn clock_readback_names_the_first_failed_checkpoint() {
             },
             BluetoothClockCheckpoint::LowPowerClockDivider,
         ),
-        (
-            clocks,
-            BluetoothLowPowerClockObservation {
-                timer_enabled: false,
-                ..low_power
-            },
-            BluetoothClockCheckpoint::LowPowerTimerClock,
-        ),
     ];
     for (clocks, low_power, checkpoint) in cases {
         assert_eq!(clock_checkpoint(clocks, low_power), Some(checkpoint));
@@ -282,7 +270,10 @@ fn an_unselected_low_power_clock_cannot_be_deselected() {
     let mut lease = shared.try_acquire().expect("the arbiter is free");
     // Rejected before any register access, so the validation root is safe.
     assert_eq!(
-        lease.deselect_bluetooth_low_power_clock(&task.registers),
+        lease.deselect_bluetooth_low_power_clock(
+            &task.registers,
+            &mut crate::power::TestPlatformClocks
+        ),
         Err(LowPowerClockError::NotSelected)
     );
     assert!(!lease.bluetooth_low_power_clock_selected());

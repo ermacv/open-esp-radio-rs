@@ -6306,34 +6306,6 @@
           </fields>
         </register>
         <register>
-          <name>CLK_CONF</name>
-          <description>Shared MODEM_LPCON clock gates used by radio lifecycles.</description>
-          <addressOffset>0x18</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <resetValue>0x00000000</resetValue>
-          <fields>
-            <field>
-              <name>CLK_WIFIPWR_EN</name>
-              <description>Wi-Fi power clock gate.</description>
-              <bitOffset>0</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_COEX_EN</name>
-              <description>Coexistence clock gate.</description>
-              <bitOffset>1</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_LP_TIMER_EN</name>
-              <description>Bluetooth low-power timer clock gate.</description>
-              <bitOffset>3</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
           <name>CLK_CONF_POWER_ST</name>
           <description>Four shared clock power-state map fields programmed with the reviewed active-state image.</description>
           <addressOffset>0x20</addressOffset>

@@ -201,17 +201,17 @@ scope-and-limitations = "`CoexPhase` decodes the recovered four-byte phase: its 
 id = "coex-coexistence-policy-and-scheduler-executable-phase-transitions"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Executable phase transitions"
-status = "partial"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. The radio runtime's `RadioSystem::run_coex_schedule` delivers these steps on its phase timer and publishes the notified phases; no protocol publishes status to it or reacts to its phases yet."
+scope-and-limitations = "`CoexSchedule::timeout`, `restart` and `set_status_bits` reproduce `coex_schm_change_phase`: loop gating, the last-phase stop of a connected Wi-Fi, the timer duration of each phase and the Wi-Fi and Bluetooth notifications. The radio runtime's `RadioSystem::run_coex_schedule` delivers these steps on its phase timer and publishes the notified phases. The Wi-Fi station's power agent consumes its phases; the Bluetooth Controller, like the vendor BLE Controller, does not react to phases."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-scheme-selection"
 section = "coex-coexistence-policy-and-scheduler"
 title = "Scheme selection"
-status = "partial"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "`CoexStatusWords::select` reproduces `coex_schm_status_change`; the vendor `coex` scenario compares it, and the status-bit, timeout and restart entries, with the pinned `libcoexist.a` over every combination of the tested status values. No radio publishes its status to a running schedule yet."
+scope-and-limitations = "`CoexStatusWords::select` reproduces `coex_schm_status_change`; the vendor `coex` scenario compares it, and the status-bit, timeout and restart entries, with the pinned `libcoexist.a` over every combination of the tested status values. Wi-Fi and the Bluetooth Controller publish their status to the running schedule, which selects the scheme from it."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-idle-connected-scan-connecting-schemes"
@@ -219,15 +219,15 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Wi-Fi IDLE / CONNECTED / SCAN / CONNECTING schemes"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "All 107 schemes of `coexist_scheme.o` are recovered, including the Wi-Fi scan, connecting and connected schemes beside BLE, classic Bluetooth, IEEE 802.15.4 and external coexistence. No Wi-Fi state hook publishes the status that selects them."
+scope-and-limitations = "All 107 schemes of `coexist_scheme.o` are recovered, including the Wi-Fi scan, connecting and connected schemes beside BLE, classic Bluetooth, IEEE 802.15.4 and external coexistence. The Wi-Fi station publishes its idle, scan, connecting and connected status, and Wi-Fi publishes its idle status when another radio starts coexistence, as `pm_on_coex_start` does. The SoftAP publishes no coexistence status."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-tbtt-anchored-periods"
 section = "coex-coexistence-policy-and-scheduler"
 title = "TBTT-anchored periods"
-status = "absent"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "No owner binds Wi-Fi TBTT to a coexistence period."
+scope-and-limitations = "The station's [modem-sleep engine](../../../../roles/esp32s31/ieee80211/sta/src/modem_sleep.rs) follows `pm_coex_tbtt_process`: at each TBTT it sets the schedule interval from the beacon interval, restarts the phases and requests the beacon window, and `pm_set_next_tbtt` and `pm_handle_tbtt_interval` keep the TBTT interval at the schedule's overall period in step with the DTIM. The station TSF follows the access point's TSF from the join beacon and each beacon, as `ic_update_sta_tsf` does, so the TBTT fires on the access point's schedule."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-bt-ble-time-slices"
@@ -235,7 +235,7 @@ section = "coex-coexistence-policy-and-scheduler"
 title = "Wi-Fi / BT / BLE time slices"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The schedule model computes each phase's slice as period times interval times share, and the radio runtime times the slices. No radio publishes its status or reacts to its notifications yet."
+scope-and-limitations = "The schedule model computes each phase's slice as period times interval times share, and the radio runtime times the slices. The Wi-Fi station reacts to its slices: it wakes for a Wi-Fi phase and yields outside it through power save. The Bluetooth Controller publishes its status but, like the vendor BLE Controller, does not react to slices; the SoftAP does not react to them."
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority"
@@ -291,9 +291,9 @@ packages = ["oer-esp32s31-radio-runtime", "oer-esp32s31-coex"]
 id = "coex-protocol-integration-and-lifetime-live-wifi-requests"
 section = "coex-protocol-integration-and-lifetime"
 title = "Live Wi-Fi requests"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "Production Wi-Fi runtime does not submit requests through the radio runtime's coexistence owner."
+scope-and-limitations = "The Wi-Fi station submits its beacon-window, slice and group-traffic requests and the per-frame events 4, 7, 9, 45 and 46 through the radio runtime's coexistence owner. The SoftAP submits no requests."
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-live-bt-ble-requests"
@@ -324,9 +324,9 @@ scope-and-limitations = "MAC PTI and coexistence abort vocabulary exist; the ven
 id = "coex-protocol-integration-and-lifetime-wifi-ble-coexistence"
 section = "coex-protocol-integration-and-lifetime"
 title = "Wi-Fi + BLE coexistence"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No safe joint-radio runtime and request/grant/release lifecycle exists."
+scope-and-limitations = "The HIL `wifi-ble-coex` image composes the Wi-Fi station and the Bluetooth LE Controller on the shared radio, and the `wifi-udp-rx-ble-echo` scenario runs station UDP reception beside a GATT echo. SoftAP with BLE is not composed, and qualification does not yet cover the joint run."
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-wifi-classic-coexistence"
@@ -364,9 +364,9 @@ scope-and-limitations = "Shared register/core infrastructure does not compose co
 id = "coex-protocol-integration-and-lifetime-coexistence-power-management"
 section = "coex-protocol-integration-and-lifetime"
 title = "Coexistence power management"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No shared sleep/wake, retention, request-deadline or radio-release lifecycle exists."
+scope-and-limitations = "The Wi-Fi station's modem sleep runs under coexistence: its power agent sleeps and wakes Wi-Fi's RF with the schedule's phases and the TBTT. There is no shared retention or light-sleep lifecycle across radios."
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-gpio-coexistence-diagnostics"

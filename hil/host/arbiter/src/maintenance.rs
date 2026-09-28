@@ -20,6 +20,14 @@ const SCHEMA: u32 = 1;
 /// The owner of every quarantine: no request is ever made by it.
 pub const QUARANTINE_OWNER: &str = "quarantine";
 
+/// The `mac` of a maintenance entry that takes the whole stand out of
+/// service.
+pub const STAND_SERVICE: &str = "stand";
+
+/// How often a request or `cargo hil wait --service` reads whether what it
+/// waits for is back in service.
+pub const SERVICE_POLL: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Why a board is out of service.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -177,6 +185,34 @@ impl Arbiter {
         Ok(answer)
     }
 
+    /// What keeps the boards with `macs` (every board when empty) out of
+    /// service: their own entries and a whole-stand one.
+    pub fn out_of_service(&self, macs: &[String]) -> crate::Result<Vec<Maintenance>> {
+        Ok(affecting(self.maintenance()?, macs))
+    }
+
+    /// Block until nothing in [`Self::out_of_service`] remains for `macs`,
+    /// calling `waiting` with what is out of service each time it changes.
+    pub fn wait_for_service(
+        &self,
+        macs: &[String],
+        mut waiting: impl FnMut(&[Maintenance]),
+    ) -> crate::Result<()> {
+        let mut shown: Option<Vec<Maintenance>> = None;
+        loop {
+            let out = self.out_of_service(macs)?;
+            if out.is_empty() {
+                return Ok(());
+            }
+            if shown.as_ref() != Some(&out) {
+                waiting(&out);
+                shown = Some(out);
+            }
+            oer_process::check_cancelled()?;
+            std::thread::sleep(SERVICE_POLL);
+        }
+    }
+
     /// Return the board with `mac` to service; whether it was out of service.
     pub fn clear_maintenance(&self, mac: &str) -> crate::Result<bool> {
         let path = self.maintenance_path();
@@ -200,11 +236,17 @@ pub(crate) fn refusal(boards: &[Maintenance], owner: &str, claims: &[Claim]) -> 
         .filter(|board| board.kind == ServiceKind::Quarantine || board.owner != owner)
         .find(|board| {
             whole
+                || board.mac == STAND_SERVICE
                 || claims
                     .iter()
                     .any(|claim| claim.resource == Claim::board(&board.mac).resource)
         })
         .map(|board| match board.kind {
+            _ if board.mac == STAND_SERVICE => format!(
+                "the stand is under maintenance by {}: {}; it serves only its maintainer until \
+                 `cargo hil devices release --stand`; `cargo hil wait --service` blocks until then",
+                board.owner, board.reason
+            ),
             ServiceKind::Quarantine => format!(
                 "board {} is quarantined: {}; a person must reset or power-cycle it and run \
                  `cargo hil devices release {} --confirm reset|power-cycle`",
@@ -216,6 +258,15 @@ pub(crate) fn refusal(boards: &[Maintenance], owner: &str, claims: &[Claim]) -> 
                 board.mac, board.owner, board.reason
             ),
         })
+}
+
+/// The entries of `boards` that keep `macs` (every board when empty) out of
+/// service.
+fn affecting(boards: Vec<Maintenance>, macs: &[String]) -> Vec<Maintenance> {
+    boards
+        .into_iter()
+        .filter(|board| macs.is_empty() || board.mac == STAND_SERVICE || macs.contains(&board.mac))
+        .collect()
 }
 
 fn read(path: &std::path::Path) -> crate::Result<Boards> {
@@ -263,6 +314,51 @@ mod tests {
             evidence: None,
             unknown: Default::default(),
         }
+    }
+
+    #[test]
+    fn a_whole_stand_maintenance_refuses_every_other_owner() {
+        let boards = [board(STAND_SERVICE, "stand")];
+        let refused = refusal(&boards, "802154", &[Claim::board("AA")]).unwrap();
+        assert!(
+            refused.contains("the stand is under maintenance"),
+            "{refused}"
+        );
+        assert_eq!(refusal(&boards, "stand", &[Claim::board("AA")]), None);
+    }
+
+    #[test]
+    fn out_of_service_names_the_boards_asked_for_and_the_stand() {
+        let boards = vec![board("AA", "x"), board("BB", "y")];
+        let macs = |out: Vec<Maintenance>| out.into_iter().map(|b| b.mac).collect::<Vec<_>>();
+        assert_eq!(macs(affecting(boards.clone(), &[])), ["AA", "BB"]);
+        assert_eq!(macs(affecting(boards.clone(), &["BB".into()])), ["BB"]);
+        assert!(affecting(boards.clone(), &["CC".into()]).is_empty());
+        let mut stand = boards;
+        stand.push(board(STAND_SERVICE, "z"));
+        assert_eq!(macs(affecting(stand, &["CC".into()])), [STAND_SERVICE]);
+    }
+
+    #[test]
+    fn waiting_for_service_returns_once_the_board_is_released() {
+        let directory = tempfile::tempdir().unwrap();
+        let arbiter = Arbiter::at(directory.path()).unwrap();
+        arbiter.set_maintenance(board("AA", "x")).unwrap();
+        let mut seen = Vec::new();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                arbiter.clear_maintenance("AA").unwrap();
+            });
+            arbiter
+                .wait_for_service(&["AA".into()], |out| seen.push(out.len()))
+                .unwrap();
+        });
+        assert_eq!(seen, [1]);
+        // Nothing out of service: no wait at all.
+        arbiter
+            .wait_for_service(&[], |_| panic!("nothing to wait for"))
+            .unwrap();
     }
 
     #[test]

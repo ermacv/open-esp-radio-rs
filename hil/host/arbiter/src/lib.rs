@@ -43,7 +43,9 @@ pub use devices::{
 pub use estimate::{DEFAULT_ESTIMATE, EstimateSource, format_duration, parse_duration};
 pub use grant::{Grant, LEASE_ENV, NO_BUDGETS, OWNER_ENV, Request, default_owner};
 pub use history::{GrantReason, LeaseOutcome, LeaseRecord, OwnerBalance};
-pub use maintenance::{Confirmation, Maintenance, QuarantineTrigger, ServiceKind};
+pub use maintenance::{
+    Confirmation, Maintenance, QuarantineTrigger, SERVICE_POLL, STAND_SERVICE, ServiceKind,
+};
 pub use owners::{NoOwner, NotAnOwner, Owner};
 pub use process::process_started_unix_millis;
 pub use state::{AIR, Claim, Mode, Priority, STAND};

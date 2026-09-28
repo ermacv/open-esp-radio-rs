@@ -200,10 +200,21 @@ impl Arbiter {
         if let Some(nested) = self.join_enclosing(me, enclosing, &claims)? {
             return Ok(nested);
         }
-        if let Some(refusal) =
+        // A run waits for what it needs to return to service; a tool that
+        // acts on a board (a reset, a check) is told at once.
+        while let Some(refusal) =
             crate::maintenance::refusal(&self.maintenance()?, &request.owner, &claims)
         {
-            return Err(refusal.into());
+            if request.scenarios.is_empty() {
+                return Err(refusal.into());
+            }
+            eprintln!("hil-arbiter: waiting for service: {refusal}");
+            let wanted = claims
+                .iter()
+                .filter_map(|claim| claim.resource.strip_prefix("board:").map(str::to_owned))
+                .collect::<Vec<_>>();
+            self.wait_for_service(&wanted, |_| {})?;
+            eprintln!("hil-arbiter: back in service");
         }
         let (estimate, _) = estimate::estimate(&request.work, &request.scenarios, &self.history()?);
         let id = self.transaction_after_legacy(|state| {

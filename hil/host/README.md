@@ -269,12 +269,20 @@ identified by the MAC address its USB Serial/JTAG port reports as USB serial
 number, independent of `/dev/ttyACM*` numbering. Every board is part of the
 stand: flash and use any board only under a lease.
 
-A board can be taken out of service: `cargo hil --owner NAME devices
-maintenance BOARD --reason TEXT` records it in `maintenance.json` of the
-arbiter directory, and until `cargo hil devices release BOARD` every request
-that claims the board, or the whole stand, is refused with the reason unless
-its owner is NAME. A lease already held runs on. `cargo hil queue` and the
-dashboard list boards under maintenance.
+A board, or the whole stand, can be taken out of service: `cargo hil --owner
+NAME devices maintenance BOARD|--stand --reason TEXT` records it in
+`maintenance.json` of the arbiter directory. Until `cargo hil devices release
+BOARD|--stand`, a request by another owner that claims the board (any board,
+for `--stand`) or the whole stand does not get it: a run waits, printing the
+reason, and starts once it is back in service; a tool acting on the board
+itself (`board`, `lease`, `flash`) is refused with the reason at once. A
+quarantined board is out of service the same way. A lease already held runs
+on. `cargo hil queue` and the dashboard list what is out of service.
+
+An agent that needs the stand waits for it with a shell command, never for a
+chat message: `cargo hil wait --service [BOARD...]` blocks until the named
+boards (every board when none is named) and the stand are back in service,
+printing what it waits for, and exits 0.
 
 `cargo hil devices`, `cargo hil queue` and the dashboard show each board's
 health from the stand's own records, without touching the board: `ok`,

@@ -88,6 +88,9 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("evidence") => return crate::hil_evidence::command(ctx, &args[1..]),
         Some("perf") => return perf(ctx, &options, &args[1..]),
         Some("profile") => return profile(&args[1..]),
+        Some("wait") if args.get(1).is_some_and(|arg| arg == "--service") => {
+            return wait_for_service(&args[2..]);
+        }
         Some("wait") => return crate::hil_jobs::wait_command(&args[1..]),
         Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
@@ -265,6 +268,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
   cargo hil bisect --good A --bad B --scenario S [--layout-seed N]   first commit at which S stops passing
   cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
+  cargo hil wait --service [BOARD...] block until the boards (all when none) and the stand are in service
   cargo hil wait JOB                  block until the job ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
   cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases (alias: status)
   cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
@@ -286,7 +290,7 @@ Stand commands (shared by every checkout of this user):
   cargo hil devices [--json]          boards: name, chip, port, health, last firmware
   cargo hil devices set MAC [--chip CHIP] [--name NAME] [--reset-uart SERIAL --en LINE --boot LINE]
   cargo hil devices reset BOARD [--download]   reset through the registered reset path
-  cargo hil [--owner NAME] devices maintenance BOARD --reason TEXT   only NAME may claim BOARD until release
+  cargo hil [--owner NAME] devices maintenance BOARD|--stand --reason TEXT   only NAME may claim BOARD (or the stand) until release; other runs wait
   cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
   cargo hil runs list [--scenario S] [--outcome O] [--commit C] [--image I] [--since 3d]
   cargo hil runs why RUN              why a run did not pass: failure, missed criteria, log tail
@@ -532,7 +536,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         node(&["hil", "owner", "merge"], &[], &[]),
         node(&["hil", "owner", "forget"], &[], &[]),
         node(&["hil", "preempt"], &[], &["--reason"]),
-        node(&["hil", "wait"], &[], &[]),
+        node(&["hil", "wait"], &[], &["--service"]),
     ];
     for (name, command) in [
         ("lease", LeaseCli::command()),
@@ -649,6 +653,40 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
         println!("{status}");
         print!("{}", crate::hil_jobs::describe(&jobs));
     }
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// `cargo hil wait --service [BOARD...]`: block until the boards (every
+/// board when none is named) and the stand are back in service.
+fn wait_for_service(args: &[OsString]) -> Result<std::process::ExitCode> {
+    let arbiter = oer_hil_arbiter::Arbiter::open()?;
+    let devices = arbiter.devices()?;
+    let macs = args
+        .iter()
+        .map(|board| {
+            let board = board.to_str().ok_or("a board name is text")?;
+            oer_hil_arbiter::board_mac(&devices, board)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    arbiter.wait_for_service(&macs, |out| {
+        for entry in out {
+            eprintln!(
+                "hil: waiting: {} is {} by {}: {}",
+                if entry.mac == oer_hil_arbiter::STAND_SERVICE {
+                    "the stand"
+                } else {
+                    entry.mac.as_str()
+                },
+                match entry.kind {
+                    oer_hil_arbiter::ServiceKind::Maintenance => "under maintenance",
+                    oer_hil_arbiter::ServiceKind::Quarantine => "quarantined",
+                },
+                entry.owner,
+                entry.reason
+            );
+        }
+    })?;
+    println!("in service");
     Ok(std::process::ExitCode::SUCCESS)
 }
 
@@ -1283,8 +1321,22 @@ fn devices(
             }
             return Ok(std::process::ExitCode::SUCCESS);
         }
-        Some(DevicesCommand::Maintenance { board, reason }) => {
-            let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
+        Some(DevicesCommand::Maintenance {
+            board,
+            stand,
+            reason,
+        }) => {
+            let (board, mac) = match (board, stand) {
+                (_, true) => (
+                    String::from("the stand"),
+                    String::from(oer_hil_arbiter::STAND_SERVICE),
+                ),
+                (Some(board), false) => {
+                    let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
+                    (board, mac)
+                }
+                (None, false) => unreachable!("clap requires a board or --stand"),
+            };
             let owner = options.owner(ctx)?;
             arbiter.set_maintenance(oer_hil_arbiter::Maintenance {
                 mac: mac.clone(),
@@ -1299,7 +1351,12 @@ fn devices(
                 unknown: Default::default(),
             })?;
             println!("{board} ({mac}) is under maintenance by {owner}");
-            for holder in arbiter.conflicting_holders(&[oer_hil_arbiter::Claim::board(&mac)])? {
+            let claim = if mac == oer_hil_arbiter::STAND_SERVICE {
+                oer_hil_arbiter::Claim::stand()
+            } else {
+                oer_hil_arbiter::Claim::board(&mac)
+            };
+            for holder in arbiter.conflicting_holders(&[claim])? {
                 println!(
                     "still held by #{} {} `{}` until it ends",
                     holder.id, holder.owner, holder.work
@@ -1307,7 +1364,20 @@ fn devices(
             }
             return Ok(std::process::ExitCode::SUCCESS);
         }
-        Some(DevicesCommand::Release { board, confirm }) => {
+        Some(DevicesCommand::Release {
+            board: None,
+            stand: true,
+            ..
+        }) => {
+            if arbiter.clear_maintenance(oer_hil_arbiter::STAND_SERVICE)? {
+                println!("the stand is back in service");
+            } else {
+                println!("the stand was not under maintenance");
+            }
+            return Ok(std::process::ExitCode::SUCCESS);
+        }
+        Some(DevicesCommand::Release { board, confirm, .. }) => {
+            let board = board.ok_or("name a board or pass --stand")?;
             let mac = oer_hil_arbiter::board_mac(&arbiter.devices()?, &board)?;
             if arbiter.is_quarantined(&mac)? {
                 let confirmation = match confirm.ok_or(
@@ -1959,16 +2029,24 @@ enum DevicesCommand {
     /// Take a board out of service: until `release`, only this owner
     /// (`--owner`, else the checkout) may claim it. Leases already held
     /// run on.
+    #[command(group(clap::ArgGroup::new("what").required(true).args(["board", "stand"])))]
     Maintenance {
         #[arg(value_name = "NAME|MAC")]
-        board: String,
+        board: Option<String>,
+        /// The whole stand: only this owner's requests are served, other
+        /// runs wait until `release --stand`.
+        #[arg(long)]
+        stand: bool,
         #[arg(long)]
         reason: String,
     },
-    /// Return a board to service.
+    /// Return a board, or the whole stand, to service.
+    #[command(group(clap::ArgGroup::new("what").required(true).args(["board", "stand"])))]
     Release {
         #[arg(value_name = "NAME|MAC")]
-        board: String,
+        board: Option<String>,
+        #[arg(long)]
+        stand: bool,
         /// What returns a quarantined board: a person pressed its reset
         /// button or power-cycled it, or its ROM answers the stand's own
         /// reset. It returns only if it then boots.

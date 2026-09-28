@@ -42,24 +42,61 @@ pub(super) fn inspect(
     }
     report.claim = Some(selected.contract.claim_ceiling);
     for (replacement, observation) in [(false, left), (true, right)] {
-        let mut tracker = EffectTracker::new(&selected.contract, replacement, c)?;
-        let mut effects = observation
-            .events
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| is_contract_effect(e))
-            .peekable();
-        while let Some((ordinal, event)) = effects.next() {
-            c.checkpoint(1)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| Error::new(ErrorCode::Integrity, "effect ordinal overflow"))?;
-            let next = effects.peek().map(|(_, e)| *e);
-            tracker.observe(event, next, ordinal, c)?;
-        }
+        let tracker = track(
+            &selected.contract,
+            &observation.events,
+            replacement,
+            |_, _| {},
+            c,
+        )?;
         report.gap = report.gap.or(tracker.gap());
         report.violation = report.violation.or(tracker.first_violation());
     }
     Ok(report)
+}
+
+/// Run `contract`'s tracker for one side over `events`, reporting each
+/// concrete effect's event index and selection to `selected`.
+fn track<'a>(
+    contract: &'a EffectContract,
+    events: &[ExecutionEvent],
+    replacement: bool,
+    mut selected: impl FnMut(usize, EffectSelection),
+    c: &mut dyn RunControl,
+) -> Result<EffectTracker<'a>> {
+    let mut tracker = EffectTracker::new(contract, replacement, c)?;
+    let mut effects = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| is_contract_effect(e))
+        .peekable();
+    while let Some((index, event)) = effects.next() {
+        c.checkpoint(1)?;
+        let ordinal = u32::try_from(index)
+            .map_err(|_| Error::new(ErrorCode::Integrity, "effect ordinal overflow"))?;
+        let next = effects.peek().map(|(_, e)| *e);
+        selected(index, tracker.observe(event, next, ordinal, c)?);
+    }
+    Ok(tracker)
+}
+
+/// The selection `contract` gives each concrete effect of one side's
+/// `events`, by event index: the classification the comparison applies.
+pub fn classify(
+    contract: &EffectContract,
+    events: &[ExecutionEvent],
+    replacement: bool,
+    c: &mut dyn RunControl,
+) -> Result<Vec<(usize, EffectSelection)>> {
+    let mut selections = vec![];
+    track(
+        contract,
+        events,
+        replacement,
+        |index, selection| selections.push((index, selection)),
+        c,
+    )?;
+    Ok(selections)
 }
 
 #[cfg(test)]
@@ -227,6 +264,30 @@ mod tests {
         p.contract.unclassified = UnclassifiedEffects::Required;
         p
     }
+    #[test]
+    fn classification_names_each_effect_by_its_event_index() {
+        let p = plumbing();
+        let events = vec![
+            ExecutionEvent::CallReturn {
+                words: [Some(0), None],
+            },
+            delay(1),
+            read(0x5000, 9),
+            write(1),
+        ];
+        let selections = classify(&p.contract, &events, true, &mut || Ok(())).unwrap();
+        // Indices count every event, as the comparison's ordinals do; the
+        // wait before a transport read is plumbing only in that context.
+        assert_eq!(
+            selections,
+            [
+                (1, EffectSelection::Ignored(1)),
+                (2, EffectSelection::Ignored(0)),
+                (3, EffectSelection::Unlisted),
+            ]
+        );
+    }
+
     #[test]
     fn unlisted_effects_compare_exactly_around_ignored_plumbing() {
         let p = plumbing();

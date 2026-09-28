@@ -2,6 +2,7 @@
 use blobray_domain::*;
 mod effects;
 mod projection;
+pub use effects::classify as classify_effects;
 pub use projection::ProjectionComparison;
 pub const VERIFIER: &str = "reviewed-effects-projected-timeline-calls-returns-memory/model-10";
 pub fn compare(

@@ -9,6 +9,7 @@ use blobray_domain::{
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use std::{ffi::OsString, path::PathBuf, process::ExitCode};
+mod command_tree;
 mod function_display;
 mod queries;
 
@@ -800,6 +801,10 @@ impl ResourceOptions {
 
 fn main() -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
+    if args.len() == 2 && args[1] == command_tree::REQUEST {
+        print!("{}", command_tree::json());
+        return ExitCode::SUCCESS;
+    }
     if args
         .get(1)
         .is_some_and(|s| s == "__guard" || s == "__worker")

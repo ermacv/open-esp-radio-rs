@@ -28,6 +28,12 @@ Choose a question in the [task map](../README.md#choose-a-task), then use the
 relevant reference. CLI syntax is also available through `cargo blobray --help`
 and each command’s `--help`. Commands below are the current Next interface.
 
+`blobray __command-tree` prints every visible command with its long flags as
+JSON, tracked in [`command-tree.json`](command-tree.json) so documentation
+checks need not build Blobray. `cargo test -p blobray-next` fails when the
+tracked tree differs from the command line; run it with
+`BLOBRAY_COMMAND_TREE_UPDATE=1` to rewrite the file.
+
 | Reference | Use it to |
 | --- | --- |
 | [Capture, selection and linked images](reference/capture-images/README.md) | Capture caller-owned artifacts, choose exact code/data scope and prepare linked images. |

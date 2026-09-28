@@ -1,4 +1,5 @@
 use core::future::ready;
+use oer_ieee80211_mac::security::SaePwe;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use super::*;
@@ -353,7 +354,12 @@ fn an_sae_exchange_returns_the_access_point_pmk() {
     let mut runner = StaJoinRunner::new(backend, TestTimer::default());
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x10).unwrap());
     let pmk = block_on(runner.authenticate_sae(
-        StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), false),
+        StaSaeAuthentication::new(
+            LOCAL,
+            BSSID,
+            commit(LOCAL, BSSID, 0x20),
+            SaePwe::HuntingAndPecking,
+        ),
         &mut sequence,
     ))
     .unwrap();
@@ -382,7 +388,7 @@ fn an_unanswered_sae_commit_times_out_after_four_seconds() {
     let mut runner = StaJoinRunner::new(Backend::new(None, None), TestTimer::default());
     let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
     let result = block_on(runner.authenticate_sae(
-        StaSaeAuthentication::new(LOCAL, BSSID, commit, false),
+        StaSaeAuthentication::new(LOCAL, BSSID, commit, SaePwe::HuntingAndPecking),
         &mut sequence,
     ));
     assert_eq!(

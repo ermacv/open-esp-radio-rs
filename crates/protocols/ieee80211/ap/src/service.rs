@@ -7,6 +7,7 @@ mod block_ack;
 mod peer;
 mod power_save;
 mod security;
+pub use security::admit_association_security;
 
 // Preserve the existing service-level imports while limits own their definition.
 pub use crate::limits::{
@@ -26,7 +27,10 @@ use oer_ieee80211_mac::ht::HtPeerCapabilities;
 use oer_ieee80211_mac::protection::{
     ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode,
 };
-use oer_ieee80211_mac::security::{ApSecurityPolicy, LinkProtection, rsn::Akm};
+use oer_ieee80211_mac::security::{
+    ApSecurityPolicy, AssociationAkm, AssociationSecurity, GroupManagementCipher, LinkProtection,
+    RsnAssociation, SaePwe, rsn::Akm,
+};
 use oer_ieee80211_rsn::{
     AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},

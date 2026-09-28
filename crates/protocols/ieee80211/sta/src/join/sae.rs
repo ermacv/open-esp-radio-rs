@@ -14,6 +14,7 @@
 //! `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
 //! `components/wpa_supplicant/esp_supplicant/src/esp_wpa3.c`.
 
+use oer_ieee80211_mac::security::SaePwe;
 use oer_ieee80211_mac::station::{
     SAE_COMMIT_TRANSACTION, SAE_CONFIRM_TRANSACTION, StaDisconnect, parse_sae_authentication,
     parse_sta_disconnect,
@@ -102,7 +103,7 @@ pub struct StaSaeAuthentication {
     local: [u8; 6],
     bssid: [u8; 6],
     commit: SaeCommit,
-    h2e: bool,
+    pwe: SaePwe,
     token: [u8; STA_SAE_TOKEN_CAPACITY],
     token_length: usize,
     phase: StaSaePhase,
@@ -110,18 +111,24 @@ pub struct StaSaeAuthentication {
 }
 
 impl StaSaeAuthentication {
-    /// Start with this station's commit, derived with H2E when `h2e`.
-    pub fn new(local: [u8; 6], bssid: [u8; 6], commit: SaeCommit, h2e: bool) -> Self {
+    /// Start with this station's commit, derived with the password element
+    /// method `pwe`.
+    pub fn new(local: [u8; 6], bssid: [u8; 6], commit: SaeCommit, pwe: SaePwe) -> Self {
         Self {
             local,
             bssid,
             commit,
-            h2e,
+            pwe,
             token: [0; STA_SAE_TOKEN_CAPACITY],
             token_length: 0,
             phase: StaSaePhase::Committed,
             elapsed_ms: 0,
         }
+    }
+
+    /// Whether the exchange uses the hash-to-element frame format.
+    const fn hash_to_element(&self) -> bool {
+        matches!(self.pwe, SaePwe::HashToElement)
     }
 
     /// The commit to send, with the current anti-clogging token.
@@ -131,7 +138,7 @@ impl StaSaeAuthentication {
         let length = self
             .commit
             .values()
-            .encode(token, self.h2e, &mut body)
+            .encode(token, self.hash_to_element(), &mut body)
             .expect("the body capacity holds a commit with the largest token");
         StaSaeTransmission {
             transaction: SAE_COMMIT_TRANSACTION,
@@ -142,7 +149,7 @@ impl StaSaeAuthentication {
     }
 
     const fn commit_status(&self) -> u16 {
-        if self.h2e {
+        if self.hash_to_element() {
             STATUS_SAE_HASH_TO_ELEMENT
         } else {
             STATUS_SUCCESS
@@ -175,7 +182,7 @@ impl StaSaeAuthentication {
 
     fn receive_commit(&mut self, status_code: u16, body: &[u8]) -> StaSaeEvent {
         if status_code == STATUS_ANTI_CLOGGING_TOKEN_REQUIRED {
-            let token = match anti_clogging_token(body, self.h2e) {
+            let token = match anti_clogging_token(body, self.hash_to_element()) {
                 Ok(token) => token,
                 Err(error) => return self.fail(StaSaeFailure::Protocol(error)),
             };
@@ -195,7 +202,7 @@ impl StaSaeAuthentication {
                 },
             );
         }
-        let peer = match SaeCommitValues::parse(body, self.h2e) {
+        let peer = match SaeCommitValues::parse(body, self.hash_to_element()) {
             Ok(peer) => peer,
             Err(error) => return self.fail(StaSaeFailure::Protocol(error)),
         };

@@ -9,6 +9,7 @@
 
 use crate::connected::management_protection::StationManagementProtection;
 use core::{cell::RefCell, future::Future, marker::PhantomData};
+use oer_ieee80211_mac::security::SaePwe;
 
 use crate::{
     connected_rx::StaCcmpRxReplayEpoch,
@@ -207,14 +208,17 @@ impl StaPersonalCredentials {
         &self,
         local: [u8; 6],
         access_point: &ScanRecord,
-        h2e: bool,
+        method: SaePwe,
     ) -> Result<SaeCommit, SaeError> {
         let password = self.sae_password.as_bytes();
-        let pwe = if h2e {
-            SaePasswordToken::derive(access_point.ssid_bytes(), password, None)
-                .password_element(local, access_point.bssid)
-        } else {
-            SaePasswordElement::hunting_and_pecking(password, local, access_point.bssid)?
+        let pwe = match method {
+            SaePwe::HashToElement => {
+                SaePasswordToken::derive(access_point.ssid_bytes(), password, None)
+                    .password_element(local, access_point.bssid)
+            }
+            SaePwe::HuntingAndPecking => {
+                SaePasswordElement::hunting_and_pecking(password, local, access_point.bssid)?
+            }
         };
         let draw = || -> [u8; 32] {
             let mut bytes = [0; 32];

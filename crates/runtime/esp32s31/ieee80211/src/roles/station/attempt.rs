@@ -56,10 +56,8 @@ use oer_esp32s31_ieee80211_sta::{
 };
 
 use oer_ieee80211_mac::{
-    security::LinkProtection,
-    station::{
-        AssociationResponse, SelectedAkm, SelectedRsn, StaSecurityError, select_association_rsn,
-    },
+    security::{AssociationAkm, AssociationSecurity, LinkProtection, Pmkid, RsnAssociation},
+    station::{AssociationResponse, SelectedRsn, StaSecurityError, select_association_rsn},
 };
 
 use oer_ieee80211_sta::{

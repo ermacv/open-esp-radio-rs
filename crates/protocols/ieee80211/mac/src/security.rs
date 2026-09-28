@@ -36,6 +36,116 @@ impl StaSecurityPolicy {
             Self::Wpa2Personal | Self::Wpa3Personal => LinkProtection::Ccmp,
         }
     }
+
+    /// The station's management frame protection. A personal station is
+    /// always capable, as the vendor supplicant's configuration sets MFPC,
+    /// and WPA3-Personal requires it.
+    pub const fn management_protection(self) -> ManagementProtection {
+        match self {
+            Self::Open => ManagementProtection::Disabled,
+            Self::Wpa2Personal => ManagementProtection::Capable,
+            Self::Wpa3Personal => ManagementProtection::Required,
+        }
+    }
+}
+
+/// Local management frame protection policy: the MFPC and MFPR an RSN
+/// element advertises.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManagementProtection {
+    /// Neither MFPC nor MFPR.
+    Disabled,
+    /// MFPC: management frames are protected when the peer is capable.
+    Capable,
+    /// MFPC and MFPR: only associations that protect management frames.
+    Required,
+}
+
+impl ManagementProtection {
+    pub const fn capable(self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+
+    pub const fn required(self) -> bool {
+        matches!(self, Self::Required)
+    }
+}
+
+/// How an SAE exchange derives its password element.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SaePwe {
+    HuntingAndPecking,
+    HashToElement,
+}
+
+/// The authentication one RSN association negotiated. Unlike the wire
+/// [`rsn::Akm`], an SAE association carries its password element method.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AssociationAkm {
+    Psk,
+    PskSha256,
+    Sae(SaePwe),
+}
+
+impl AssociationAkm {
+    /// The suite the RSN elements name.
+    pub const fn akm(self) -> rsn::Akm {
+        match self {
+            Self::Psk => rsn::Akm::Psk,
+            Self::PskSha256 => rsn::Akm::PskSha256,
+            Self::Sae(_) => rsn::Akm::Sae,
+        }
+    }
+}
+
+/// One PMKSA identifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Pmkid(pub [u8; rsn::RSN_PMKID_LEN]);
+
+/// The group management cipher protecting group-addressed robust
+/// management frames; only the default is implemented.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GroupManagementCipher {
+    BipCmac128,
+}
+
+/// What an RSN association negotiated: its authentication, its management
+/// frame protection and the PMKSA it resumes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RsnAssociation {
+    pub akm: AssociationAkm,
+    /// The group management cipher, present exactly when the association
+    /// protects its management frames.
+    pub management: Option<GroupManagementCipher>,
+    pub pmkid: Option<Pmkid>,
+}
+
+/// The security one association negotiated, where station selection and
+/// access point admission meet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AssociationSecurity {
+    Open,
+    Rsn(RsnAssociation),
+}
+
+impl AssociationSecurity {
+    pub const fn link_protection(self) -> LinkProtection {
+        match self {
+            Self::Open => LinkProtection::Open,
+            Self::Rsn(_) => LinkProtection::Ccmp,
+        }
+    }
+
+    /// Whether the association protects its robust management frames.
+    pub const fn protects_management(self) -> bool {
+        matches!(
+            self,
+            Self::Rsn(RsnAssociation {
+                management: Some(_),
+                ..
+            })
+        )
+    }
 }
 
 /// The security an access point offers.
@@ -88,28 +198,40 @@ impl ApSecurityPolicy {
         }
     }
 
-    /// The RSN element this BSS advertises; empty for an Open BSS.
-    pub const fn rsn_element(self) -> &'static [u8] {
+    /// The access point's management frame protection: WPA3-Personal
+    /// requires it, WPA2-Personal keeps the reviewed profile without it.
+    pub const fn management_protection(self) -> ManagementProtection {
         match self {
-            Self::Open => &[],
-            Self::Wpa2Personal => &AP_WPA2_PERSONAL_RSN_ELEMENT,
-            Self::Wpa3Personal => &AP_WPA3_PERSONAL_RSN_ELEMENT,
+            Self::Open | Self::Wpa2Personal => ManagementProtection::Disabled,
+            Self::Wpa3Personal => ManagementProtection::Required,
         }
     }
 
-    /// The RSNXE this BSS advertises; empty when no extended RSN capability
-    /// applies.
-    pub const fn rsnx_element(self) -> &'static [u8] {
+    /// The security elements the beacon, the probe response and EAPOL
+    /// Message 3 carry; both are empty for an Open BSS.
+    pub const fn advertisement(self) -> BssSecurityElements {
         match self {
-            Self::Open | Self::Wpa2Personal => &[],
-            Self::Wpa3Personal => &AP_SAE_H2E_RSNX_ELEMENT,
+            Self::Open => BssSecurityElements {
+                rsne: &[],
+                rsnxe: &[],
+            },
+            Self::Wpa2Personal => BssSecurityElements {
+                rsne: &AP_WPA2_PERSONAL_RSN_ELEMENT,
+                rsnxe: &[],
+            },
+            Self::Wpa3Personal => BssSecurityElements {
+                rsne: &AP_WPA3_PERSONAL_RSN_ELEMENT,
+                rsnxe: &AP_SAE_H2E_RSNX_ELEMENT,
+            },
         }
     }
+}
 
-    /// Whether every association protects its management frames.
-    pub const fn requires_management_protection(self) -> bool {
-        matches!(self, Self::Wpa3Personal)
-    }
+/// The RSN element and RSNXE a BSS advertises.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BssSecurityElements {
+    pub rsne: &'static [u8],
+    pub rsnxe: &'static [u8],
 }
 
 pub mod rsn;

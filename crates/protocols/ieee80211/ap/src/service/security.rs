@@ -10,21 +10,7 @@ impl<'peers> AccessPointService<'peers> {
         &self,
         security: ApAssociationSecurityObservation<'_>,
     ) -> bool {
-        if security.malformed_elements || security.legacy_wpa_present {
-            return false;
-        }
-        match self.link_protection() {
-            LinkProtection::Open => {
-                !security.privacy
-                    && security.rsn_ie_count == 0
-                    && security.rsn_ie.is_none()
-                    && security.rsnxe_count == 0
-                    && security.rsnxe.is_none()
-            }
-            LinkProtection::Ccmp => {
-                Self::validated_association_security(self.security_policy(), security).is_some()
-            }
-        }
+        admit_association_security(self.security_policy(), security).is_some()
     }
 
     /// The station's validated Association security elements under this
@@ -35,7 +21,7 @@ impl<'peers> AccessPointService<'peers> {
     pub(super) fn validated_association_security(
         policy: ApSecurityPolicy,
         security: ApAssociationSecurityObservation<'_>,
-    ) -> Option<(ValidatedRsnElement, OwnedAssociationSecurityIes)> {
+    ) -> Option<AdmittedRsn> {
         if !security.privacy
             || security.rsn_ie_count != 1
             || security.rsnxe_count > 1
@@ -46,19 +32,42 @@ impl<'peers> AccessPointService<'peers> {
         }
         let rsn = validate_rsn_element(security.rsn_ie?).ok()?;
         let protection = rsn.management_frame_protection();
-        let admitted = match policy {
-            ApSecurityPolicy::Open => false,
-            ApSecurityPolicy::Wpa2Personal => {
-                rsn.lists_akm(Akm::Psk) && rsn.pmkid_count() == 0 && !protection.required
-            }
-            ApSecurityPolicy::Wpa3Personal => rsn.lists_akm(Akm::Sae) && protection.capable,
-        };
-        if !admitted {
+        let management = policy.management_protection();
+        if management.required() && !protection.capable
+            || !management.capable() && protection.required
+        {
             return None;
         }
+        let akm = match policy {
+            ApSecurityPolicy::Open => return None,
+            ApSecurityPolicy::Wpa2Personal if rsn.lists_akm(Akm::Psk) && rsn.pmkid_count() == 0 => {
+                AssociationAkm::Psk
+            }
+            ApSecurityPolicy::Wpa2Personal => return None,
+            // The BSS advertises hash to element, so an exchange uses it
+            // whenever the station's RSNXE announces it as well.
+            ApSecurityPolicy::Wpa3Personal if rsn.lists_akm(Akm::Sae) => {
+                AssociationAkm::Sae(if security.rsnxe.is_some_and(announces_sae_h2e) {
+                    SaePwe::HashToElement
+                } else {
+                    SaePwe::HuntingAndPecking
+                })
+            }
+            ApSecurityPolicy::Wpa3Personal => return None,
+        };
         let ies = OwnedAssociationSecurityIes::try_copy(rsn.owned(), security.rsnxe.unwrap_or(&[]))
             .ok()?;
-        Some((rsn, ies))
+        let association = RsnAssociation {
+            akm,
+            management: (management.capable() && protection.capable)
+                .then_some(GroupManagementCipher::BipCmac128),
+            pmkid: None,
+        };
+        Some(AdmittedRsn {
+            element: rsn,
+            ies,
+            association,
+        })
     }
 
     /// Signal that the successful Association Response reached TX complete.
@@ -445,8 +454,8 @@ impl<'peers> AccessPointService<'peers> {
         &self,
     ) -> Result<RsnPlainKeyData<RSN_PLAIN_KEY_DATA_CAPACITY>, ApWpa2Error> {
         let policy = self.security_policy();
-        let rsn = policy.rsn_element();
-        let rsnx = policy.rsnx_element();
+        let advertised = policy.advertisement();
+        let (rsn, rsnx) = (advertised.rsne, advertised.rsnxe);
         let mut elements = [0_u8; 64];
         elements[..rsn.len()].copy_from_slice(rsn);
         elements[rsn.len()..rsn.len() + rsnx.len()].copy_from_slice(rsnx);
@@ -490,4 +499,48 @@ impl<'peers> AccessPointService<'peers> {
                 .ok_or(ApServiceError::WrongPeerPhase),
         }
     }
+}
+
+/// A station's admitted RSN Association elements and what they negotiate.
+pub(super) struct AdmittedRsn {
+    pub(super) element: ValidatedRsnElement,
+    pub(super) ies: OwnedAssociationSecurityIes,
+    pub(super) association: RsnAssociation,
+}
+
+/// The security a station's Association Request negotiates with a BSS
+/// offering `policy`, or `None` when the BSS refuses it.
+///
+/// An Open BSS admits only a request without Privacy, RSN element or RSNXE.
+/// WPA2-Personal admits PSK without required management frame protection
+/// and without a PMKID, as it caches none; WPA3-Personal admits SAE with
+/// management frame protection, and a station may name the PMKIDs it
+/// resumes.
+pub fn admit_association_security(
+    policy: ApSecurityPolicy,
+    security: ApAssociationSecurityObservation<'_>,
+) -> Option<AssociationSecurity> {
+    if security.malformed_elements || security.legacy_wpa_present {
+        return None;
+    }
+    match policy.link_protection() {
+        LinkProtection::Open => (!security.privacy
+            && security.rsn_ie_count == 0
+            && security.rsn_ie.is_none()
+            && security.rsnxe_count == 0
+            && security.rsnxe.is_none())
+        .then_some(AssociationSecurity::Open),
+        LinkProtection::Ccmp => {
+            AccessPointService::validated_association_security(policy, security)
+                .map(|admitted| AssociationSecurity::Rsn(admitted.association))
+        }
+    }
+}
+
+/// Whether an RSNXE announces SAE hash to element (bit 5 of its first
+/// capability octet).
+fn announces_sae_h2e(rsnxe: &[u8]) -> bool {
+    rsnxe
+        .get(2)
+        .is_some_and(|capabilities| capabilities & (1 << 5) != 0)
 }

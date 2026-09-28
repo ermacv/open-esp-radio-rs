@@ -176,8 +176,8 @@ pub fn write_ht_beacon(
     let wmm_parameter_ie = profile.wmm.element();
     let ht_capability = ht_capability_ie(profile.ht, channel);
     let ht_operation = ht_operation_ie(channel, protection.ht);
-    let rsn = security.rsn_element();
-    let rsnx = security.rsnx_element();
+    let advertised = security.advertisement();
+    let (rsn, rsnx) = (advertised.rsne, advertised.rsnxe);
     let required = MANAGEMENT_HEADER_LEN
         + BEACON_FIXED_BODY_LEN
         + 2

@@ -133,8 +133,11 @@ where
         // vendor's `wpa3_build_sae_commit` declines a commit when
         // `wpa_sta_cur_pmksa_matches_akm`.
         let mut resumed = false;
-        let sae = match selected.akm() {
-            SelectedAkm::Sae { h2e } => {
+        let sae = match selected.security() {
+            AssociationSecurity::Rsn(RsnAssociation {
+                akm: AssociationAkm::Sae(pwe),
+                ..
+            }) => {
                 let credentials = owner.security.credentials().ok_or_else(|| {
                     StaAttemptStepError::terminal(StaAttemptTargetError::State(
                         StaAttemptStateError::MissingConnectedSecurity,
@@ -142,7 +145,7 @@ where
                 })?;
                 match credentials.pmksa().resume(&owner.station.access_point) {
                     Some((pmk, pmkid)) => {
-                        selected = selected.with_pmkid(pmkid);
+                        selected = selected.with_pmkid(Pmkid(pmkid));
                         owner.security.set_sae_pmk(Some(pmk));
                         resumed = true;
                         None
@@ -152,7 +155,7 @@ where
                             .sae_commit(
                                 owner.station.station_address,
                                 &owner.station.access_point,
-                                h2e,
+                                pwe,
                             )
                             .map_err(|error| {
                                 StaAttemptStepError::retry_current(
@@ -163,12 +166,12 @@ where
                             owner.station.station_address,
                             owner.station.access_point.bssid,
                             commit,
-                            h2e,
+                            pwe,
                         ))
                     }
                 }
             }
-            SelectedAkm::Open | SelectedAkm::Psk | SelectedAkm::PskSha256 => None,
+            AssociationSecurity::Open | AssociationSecurity::Rsn(_) => None,
         };
         owner.selected_rsn = Some(selected);
         owner.report.pmksa_resumed = resumed;
@@ -337,8 +340,8 @@ where
             StaPeerStation::new(
                 owner.station.station_address,
                 association_phy,
-                selected.management_protection(),
-                matches!(selected.akm(), SelectedAkm::Sae { .. }),
+                selected.security().protects_management(),
+                is_sae(selected.security()),
             ),
             &response,
             prepared,
@@ -568,9 +571,20 @@ fn forget_pmksa(
     selected: &SelectedRsn,
     station: &StaAttemptStation,
 ) {
-    if matches!(selected.akm(), SelectedAkm::Sae { .. })
+    if is_sae(selected.security())
         && let Some(credentials) = credentials
     {
         credentials.pmksa().remove(station.access_point.bssid);
     }
+}
+
+/// Whether the association authenticates by SAE.
+const fn is_sae(security: AssociationSecurity) -> bool {
+    matches!(
+        security,
+        AssociationSecurity::Rsn(RsnAssociation {
+            akm: AssociationAkm::Sae(_),
+            ..
+        })
+    )
 }

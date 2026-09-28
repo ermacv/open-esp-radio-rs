@@ -103,7 +103,7 @@ pub use management::{
     StaProtectedManagementFrame, parse_open_authentication_response, parse_sae_authentication,
     parse_sta_disconnect,
 };
-pub use security::{SelectedAkm, SelectedRsn, StaSecurityError, select_association_rsn};
+pub use security::{SelectedRsn, StaSecurityError, select_association_rsn};
 
 pub(crate) fn validate_peer(bssid: [u8; 6]) -> Result<(), StationFrameError> {
     if bssid == [0; 6] || bssid == [0xff; 6] || bssid[0] & 1 != 0 {

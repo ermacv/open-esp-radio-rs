@@ -137,13 +137,12 @@ impl<'peers> AccessPointService<'peers> {
         } else {
             Self::validated_association_security(policy, security)
         };
-        let akm = association_security.as_ref().map(|_| match policy {
-            ApSecurityPolicy::Wpa3Personal => Akm::Sae,
-            ApSecurityPolicy::Open | ApSecurityPolicy::Wpa2Personal => Akm::Psk,
-        });
+        let akm = association_security
+            .as_ref()
+            .map(|admitted| admitted.association.akm.akm());
         let resumed = match (&association_security, policy) {
-            (Some((rsn, _)), ApSecurityPolicy::Wpa3Personal) => {
-                match self.resume_sae_pmk(peer, rsn.pmkids())? {
+            (Some(admitted), ApSecurityPolicy::Wpa3Personal) => {
+                match self.resume_sae_pmk(peer, admitted.element.pmkids())? {
                     Some(resumed) => Some(resumed),
                     None => {
                         return Ok(ApMlmeAction::AssociationResponse {
@@ -157,11 +156,11 @@ impl<'peers> AccessPointService<'peers> {
             _ => None,
         };
         let association_security_binding = match association_security.as_ref() {
-            Some((_, ies)) => Some(match &resumed {
-                Some((pmk, _)) => pmk.bind_association_security_ies(ies.as_bytes()),
+            Some(admitted) => Some(match &resumed {
+                Some((pmk, _)) => pmk.bind_association_security_ies(admitted.ies.as_bytes()),
                 None => self
                     .peer_pmk(peer)?
-                    .bind_association_security_ies(ies.as_bytes()),
+                    .bind_association_security_ies(admitted.ies.as_bytes()),
             }),
             None => None,
         };

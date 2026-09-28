@@ -1,7 +1,7 @@
 use super::association::PhyMode;
 use super::*;
 use crate::security::{
-    StaSecurityPolicy,
+    AssociationAkm, Pmkid, SaePwe, StaSecurityPolicy,
     rsn::{RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR},
 };
 use crate::sequence::seq;
@@ -280,7 +280,10 @@ fn parses_only_disconnects_from_selected_access_point() {
 fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8], [0, 0x0f, 0xac, 2]], 0x80);
     let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal).unwrap();
-    assert_eq!(selected.akm(), SelectedAkm::Sae { h2e: false });
+    assert_eq!(
+        selected.negotiated_akm(),
+        AssociationAkm::Sae(SaePwe::HuntingAndPecking)
+    );
     assert_eq!(selected.as_bytes().len(), SELECTED_RSN_IE_LEN + 3);
     assert_eq!(&selected.as_bytes()[8..14], &[1, 0, 0, 0x0f, 0xac, 4]);
     assert_eq!(&selected.as_bytes()[14..20], &[1, 0, 0, 0x0f, 0xac, 8]);
@@ -288,12 +291,12 @@ fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
     assert_eq!(&selected.as_bytes()[20..22], &[0xc0, 4]);
     // The RSNXE announces hash to element.
     assert_eq!(&selected.as_bytes()[22..], &[244, 1, 0x20]);
-    assert!(selected.management_protection());
+    assert!(selected.security().protects_management());
     assert_eq!(
         select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal)
             .unwrap()
-            .akm(),
-        SelectedAkm::Sae { h2e: false }
+            .negotiated_akm(),
+        AssociationAkm::Sae(SaePwe::HuntingAndPecking)
     );
 }
 
@@ -301,7 +304,7 @@ fn a_wpa2_request_upgrades_to_sae_on_a_capable_transition_access_point() {
 fn a_resumed_sae_association_lists_its_pmkid_before_the_rsnxe() {
     let record = access_point_with_rsn(&[[0, 0x0f, 0xac, 8]], 0xc0);
     let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal).unwrap();
-    let resumed = selected.with_pmkid([0x5a; 16]);
+    let resumed = selected.with_pmkid(Pmkid([0x5a; 16]));
     let bytes = resumed.as_bytes();
     assert_eq!(bytes.len(), SELECTED_SECURITY_IES_CAPACITY);
     assert_eq!(&bytes[..2], &[48, 38]);
@@ -309,7 +312,7 @@ fn a_resumed_sae_association_lists_its_pmkid_before_the_rsnxe() {
     assert_eq!(&bytes[22..24], &[1, 0]);
     assert_eq!(&bytes[24..40], &[0x5a; 16]);
     assert_eq!(&bytes[40..], &[244, 1, 0x20]);
-    assert_eq!(resumed.akm(), selected.akm());
+    assert_eq!(resumed.negotiated_akm(), selected.negotiated_akm());
     assert!(
         crate::security::rsn::RsnElement::parse(&bytes[..40])
             .unwrap()
@@ -326,8 +329,8 @@ fn the_access_point_rsnxe_selects_hash_to_element() {
     assert_eq!(
         select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal)
             .unwrap()
-            .akm(),
-        SelectedAkm::Sae { h2e: true }
+            .negotiated_akm(),
+        AssociationAkm::Sae(SaePwe::HashToElement)
     );
 }
 
@@ -336,7 +339,7 @@ fn sae_needs_management_frame_protection_and_wpa3_needs_sae() {
     // SAE without MFPC falls back to PSK for a WPA2 request only.
     let incapable = access_point_with_rsn(&[[0, 0x0f, 0xac, 8], [0, 0x0f, 0xac, 2]], 0);
     let selected = select_association_rsn(&incapable, StaSecurityPolicy::Wpa2Personal).unwrap();
-    assert_eq!(selected.akm(), SelectedAkm::Psk);
+    assert_eq!(selected.negotiated_akm(), AssociationAkm::Psk);
     assert_eq!(selected.as_bytes().len(), SELECTED_RSN_IE_LEN);
     assert_eq!(
         select_association_rsn(&incapable, StaSecurityPolicy::Wpa3Personal),
@@ -357,7 +360,7 @@ fn an_access_point_without_mfpc_keeps_management_frames_unprotected() {
     )
     .unwrap();
     assert_eq!(&selected.as_bytes()[20..22], &[0, 4]);
-    assert!(!selected.management_protection());
+    assert!(!selected.security().protects_management());
 }
 
 #[test]
@@ -378,7 +381,7 @@ fn required_management_frame_protection_needs_capability() {
         RSN_CAPABILITY_MFPR | RSN_CAPABILITY_MFPC,
     );
     let selected = select_association_rsn(&required, StaSecurityPolicy::Wpa2Personal).unwrap();
-    assert!(selected.management_protection());
+    assert!(selected.security().protects_management());
     // The station stays capable only; it does not require protection.
     assert_eq!(&selected.as_bytes()[20..22], &[0x80, 4]);
     assert_eq!(
@@ -966,4 +969,18 @@ fn sta_rx_duplicate_filter_requires_retry_and_matching_sequence_space() {
     assert!(!filter.is_duplicate(false, 0x2000, Some(3)));
     assert!(!filter.is_duplicate(true, 0x2000, Some(4)));
     assert!(filter.is_duplicate(true, 0x2000, Some(3)));
+}
+
+/// The authentication a personal selection negotiated.
+trait NegotiatedAkm {
+    fn negotiated_akm(&self) -> crate::security::AssociationAkm;
+}
+
+impl NegotiatedAkm for crate::station::SelectedRsn {
+    fn negotiated_akm(&self) -> crate::security::AssociationAkm {
+        match self.security() {
+            crate::security::AssociationSecurity::Rsn(association) => association.akm,
+            crate::security::AssociationSecurity::Open => panic!("an Open selection has no AKM"),
+        }
+    }
 }

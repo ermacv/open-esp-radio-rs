@@ -288,9 +288,9 @@ impl AssociationRequest<'_> {
         // fail-closed if a record is ever assembled outside that path.
         let capability = ((self.access_point.capability_info & ASSOCIATION_CAPABILITY_MASK) | 1)
             & !0x0010
-            | match self.security.akm() {
-                SelectedAkm::Open => 0,
-                SelectedAkm::Psk | SelectedAkm::PskSha256 | SelectedAkm::Sae { .. } => 0x0010,
+            | match self.security.security().link_protection() {
+                LinkProtection::Open => 0,
+                LinkProtection::Ccmp => 0x0010,
             };
         frame[24..26].copy_from_slice(&capability.to_le_bytes());
         frame[26..28].copy_from_slice(&self.listen_interval.to_le_bytes());

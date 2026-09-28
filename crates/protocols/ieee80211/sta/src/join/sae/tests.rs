@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_mac::security::SaePwe;
 
 use oer_ieee80211_rsn::sae::SaePasswordElement;
 use std::vec::Vec;
@@ -42,7 +43,12 @@ fn access_point_commit(access_point: &SaeCommit) -> Vec<u8> {
 #[test]
 fn a_full_exchange_yields_the_access_point_pmk() {
     let access_point = commit(BSSID, LOCAL, 0x40);
-    let mut station = StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), false);
+    let mut station = StaSaeAuthentication::new(
+        LOCAL,
+        BSSID,
+        commit(LOCAL, BSSID, 0x20),
+        SaePwe::HuntingAndPecking,
+    );
     let sent = station.commit();
     assert_eq!((sent.transaction, sent.status_code), (1, 0));
     let station_values = SaeCommitValues::parse(sent.body(), false).unwrap();
@@ -68,7 +74,12 @@ fn a_full_exchange_yields_the_access_point_pmk() {
 
 #[test]
 fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
-    let mut station = StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), false);
+    let mut station = StaSaeAuthentication::new(
+        LOCAL,
+        BSSID,
+        commit(LOCAL, BSSID, 0x20),
+        SaePwe::HuntingAndPecking,
+    );
     let first = station.commit();
     let StaSaeEvent::Transmit(again) =
         station.observe_management_frame(&from_access_point(1, 76, &[19, 0, 7, 8, 9]))
@@ -81,7 +92,12 @@ fn an_anti_clogging_refusal_repeats_the_commit_with_the_token() {
 
 #[test]
 fn the_timer_is_four_seconds_then_two_after_the_confirm() {
-    let mut station = StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), false);
+    let mut station = StaSaeAuthentication::new(
+        LOCAL,
+        BSSID,
+        commit(LOCAL, BSSID, 0x20),
+        SaePwe::HuntingAndPecking,
+    );
     for _ in 1..STA_SAE_COMMIT_TIMEOUT_MS {
         assert_eq!(station.finish_millisecond(), StaSaeEvent::Irrelevant);
     }
@@ -102,7 +118,12 @@ fn the_timer_is_four_seconds_then_two_after_the_confirm() {
 
 #[test]
 fn a_wrong_password_or_a_refusal_fails() {
-    let mut station = StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), false);
+    let mut station = StaSaeAuthentication::new(
+        LOCAL,
+        BSSID,
+        commit(LOCAL, BSSID, 0x20),
+        SaePwe::HuntingAndPecking,
+    );
     let impostor = SaeCommit::new(
         SaePasswordElement::hunting_and_pecking(b"wrong", BSSID, LOCAL).unwrap(),
         [0x40; 32],
@@ -120,13 +141,23 @@ fn a_wrong_password_or_a_refusal_fails() {
         StaSaeEvent::Failed(StaSaeFailure::Protocol(SaeError::ConfirmMismatch))
     );
 
-    let mut refused = StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), false);
+    let mut refused = StaSaeAuthentication::new(
+        LOCAL,
+        BSSID,
+        commit(LOCAL, BSSID, 0x20),
+        SaePwe::HuntingAndPecking,
+    );
     assert_eq!(
         refused.observe_management_frame(&from_access_point(1, 77, &[20, 0])),
         StaSaeEvent::Failed(StaSaeFailure::Rejected { status_code: 77 })
     );
     // An H2E station refuses a hunting-and-pecking commit.
-    let mut h2e = StaSaeAuthentication::new(LOCAL, BSSID, commit(LOCAL, BSSID, 0x20), true);
+    let mut h2e = StaSaeAuthentication::new(
+        LOCAL,
+        BSSID,
+        commit(LOCAL, BSSID, 0x20),
+        SaePwe::HashToElement,
+    );
     assert_eq!(h2e.commit().status_code, 126);
     assert_eq!(
         h2e.observe_management_frame(&access_point_commit(&commit(BSSID, LOCAL, 0x40))),

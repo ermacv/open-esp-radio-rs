@@ -12,10 +12,10 @@ use crate::{
     scan::parse_management,
     security::{
         AP_SAE_H2E_RSNX_ELEMENT, AP_WPA2_PERSONAL_RSN_ELEMENT, AP_WPA3_PERSONAL_RSN_ELEMENT,
-        ApSecurityPolicy, StaSecurityPolicy,
+        ApSecurityPolicy, AssociationAkm, SaePwe, StaSecurityPolicy,
     },
     ssid::WifiSsid,
-    station::{SelectedAkm, select_association_rsn},
+    station::select_association_rsn,
 };
 
 fn beacon() -> [u8; 44] {
@@ -77,13 +77,16 @@ fn a_wpa3_beacon_offers_sae_with_protected_management_frames() {
 
     let record = parse_management(beacon, 6, -40).unwrap();
     let selected = select_association_rsn(&record, StaSecurityPolicy::Wpa3Personal).unwrap();
-    assert_eq!(selected.akm(), SelectedAkm::Sae { h2e: true });
-    assert!(selected.management_protection());
+    assert_eq!(
+        selected.negotiated_akm(),
+        AssociationAkm::Sae(SaePwe::HashToElement)
+    );
+    assert!(selected.security().protects_management());
     assert_eq!(
         select_association_rsn(&record, StaSecurityPolicy::Wpa2Personal)
             .unwrap()
-            .akm(),
-        SelectedAkm::Sae { h2e: true }
+            .negotiated_akm(),
+        AssociationAkm::Sae(SaePwe::HashToElement)
     );
 }
 
@@ -241,4 +244,18 @@ fn protection_update_rewrites_only_erp_and_ht_operation_after_tim_growth() {
         update_bss_protection(&mut bytes[..erp], protection),
         Err(ApBeaconProtectionError::MissingProtectionElement)
     );
+}
+
+/// The authentication a personal selection negotiated.
+trait NegotiatedAkm {
+    fn negotiated_akm(&self) -> crate::security::AssociationAkm;
+}
+
+impl NegotiatedAkm for crate::station::SelectedRsn {
+    fn negotiated_akm(&self) -> crate::security::AssociationAkm {
+        match self.security() {
+            crate::security::AssociationSecurity::Rsn(association) => association.akm,
+            crate::security::AssociationSecurity::Open => panic!("an Open selection has no AKM"),
+        }
+    }
 }

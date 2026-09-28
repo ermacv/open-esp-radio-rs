@@ -214,3 +214,125 @@ fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
         .unwrap();
     security.commit_bound_pairwise_rx(replacement).unwrap();
 }
+
+/// Station selection over this access point's advertisement and access
+/// point admission of the resulting request negotiate the same security,
+/// for every pair of policies.
+#[test]
+fn station_selection_and_access_point_admission_meet_at_one_association() {
+    use oer_ieee80211_ap::service::admit_association_security;
+    use oer_ieee80211_mac::{
+        ap::ApAssociationSecurityObservation,
+        beacon::{AP_BEACON_CAPACITY, write_ht_beacon},
+        channel::WifiChannel,
+        protection::ApBssProtection,
+        scan::parse_management,
+        security::{
+            ApSecurityPolicy, AssociationAkm, AssociationSecurity, GroupManagementCipher,
+            LinkProtection, RsnAssociation, SaePwe, StaSecurityPolicy,
+        },
+        sequence::SequenceNumber,
+        ssid::WifiSsid,
+        station::select_association_rsn,
+    };
+
+    const SAE: AssociationSecurity = AssociationSecurity::Rsn(RsnAssociation {
+        akm: AssociationAkm::Sae(SaePwe::HashToElement),
+        management: Some(GroupManagementCipher::BipCmac128),
+        pmkid: None,
+    });
+    const PSK: AssociationSecurity = AssociationSecurity::Rsn(RsnAssociation {
+        akm: AssociationAkm::Psk,
+        management: None,
+        pmkid: None,
+    });
+    let table = [
+        (
+            StaSecurityPolicy::Open,
+            ApSecurityPolicy::Open,
+            Some(AssociationSecurity::Open),
+        ),
+        (
+            StaSecurityPolicy::Open,
+            ApSecurityPolicy::Wpa2Personal,
+            None,
+        ),
+        (
+            StaSecurityPolicy::Open,
+            ApSecurityPolicy::Wpa3Personal,
+            None,
+        ),
+        (
+            StaSecurityPolicy::Wpa2Personal,
+            ApSecurityPolicy::Open,
+            None,
+        ),
+        (
+            StaSecurityPolicy::Wpa2Personal,
+            ApSecurityPolicy::Wpa2Personal,
+            Some(PSK),
+        ),
+        (
+            StaSecurityPolicy::Wpa2Personal,
+            ApSecurityPolicy::Wpa3Personal,
+            Some(SAE),
+        ),
+        (
+            StaSecurityPolicy::Wpa3Personal,
+            ApSecurityPolicy::Open,
+            None,
+        ),
+        (
+            StaSecurityPolicy::Wpa3Personal,
+            ApSecurityPolicy::Wpa2Personal,
+            None,
+        ),
+        (
+            StaSecurityPolicy::Wpa3Personal,
+            ApSecurityPolicy::Wpa3Personal,
+            Some(SAE),
+        ),
+    ];
+    let access_point = [0x02, 0, 0, 0, 0, 1];
+    let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
+    for (station, offer, expected) in table {
+        let mut beacon = [0; AP_BEACON_CAPACITY];
+        let length = write_ht_beacon(
+            &crate::profile::ADVERTISEMENT,
+            &mut beacon,
+            access_point,
+            &ssid,
+            WifiChannel::mhz20(6).unwrap(),
+            100,
+            1,
+            SequenceNumber::new(1).unwrap(),
+            offer,
+            ApBssProtection::default(),
+        )
+        .unwrap();
+        let record = parse_management(&beacon[..length], 6, -40).unwrap();
+        let Ok(selected) = select_association_rsn(&record, station) else {
+            assert_eq!(expected, None, "{station:?} rejected {offer:?}");
+            continue;
+        };
+        let elements = selected.as_bytes();
+        let rsne_length = elements.get(1).map_or(0, |length| usize::from(*length) + 2);
+        let (rsne, rsnxe) = elements.split_at(rsne_length);
+        let request = ApAssociationSecurityObservation {
+            privacy: selected.security().link_protection() == LinkProtection::Ccmp,
+            rsn_ie: (!rsne.is_empty()).then_some(rsne),
+            rsn_ie_count: u8::from(!rsne.is_empty()),
+            rsnxe: (!rsnxe.is_empty()).then_some(rsnxe),
+            rsnxe_count: u8::from(!rsnxe.is_empty()),
+            legacy_wpa_present: false,
+            malformed_elements: false,
+        };
+        let admitted = admit_association_security(offer, request);
+        assert_eq!(admitted, expected, "{station:?} against {offer:?}");
+        assert_eq!(
+            admitted,
+            Some(selected.security()),
+            "{station:?} against {offer:?}"
+        );
+    }
+}

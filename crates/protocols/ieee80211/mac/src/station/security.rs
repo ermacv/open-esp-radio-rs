@@ -2,6 +2,10 @@
 
 use super::*;
 
+use crate::security::{
+    AssociationAkm, AssociationSecurity, GroupManagementCipher, Pmkid, RsnAssociation, SaePwe,
+};
+
 use crate::security::rsn::{
     RSN_AKM_PSK, RSN_AKM_PSK_SHA256, RSN_AKM_SAE, RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR,
     RSN_CAPABILITY_SPP_AMSDU_CAPABLE, RSN_CIPHER_BIP_CMAC_128, RSN_CIPHER_CCMP, RsnElement,
@@ -22,35 +26,20 @@ pub enum StaSecurityError {
     UnsupportedGroupManagementCipher,
 }
 
-/// The authentication a station association selected.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SelectedAkm {
-    /// No RSN: an Open association.
-    Open,
-    /// PSK (`00-0F-AC:2`).
-    Psk,
-    /// PSK-SHA256 (`00-0F-AC:6`).
-    PskSha256,
-    /// SAE (`00-0F-AC:8`); `h2e` when the access point advertises hash to
-    /// element in its RSNXE.
-    Sae { h2e: bool },
-}
-
-/// The association request's RSN element and RSNXE.
+/// The association request's RSN element and RSNXE, and the security they
+/// negotiate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SelectedRsn {
     length: u8,
     bytes: [u8; SELECTED_SECURITY_IES_CAPACITY],
-    management_protection: bool,
-    akm: SelectedAkm,
+    security: AssociationSecurity,
 }
 
 impl SelectedRsn {
     const OPEN: Self = Self {
         length: 0,
         bytes: [0; SELECTED_SECURITY_IES_CAPACITY],
-        management_protection: false,
-        akm: SelectedAkm::Open,
+        security: AssociationSecurity::Open,
     };
 
     /// The security elements of the association request.
@@ -58,13 +47,9 @@ impl SelectedRsn {
         &self.bytes[..usize::from(self.length)]
     }
 
-    /// The association protects its robust management frames.
-    pub const fn management_protection(&self) -> bool {
-        self.management_protection
-    }
-
-    pub const fn akm(&self) -> SelectedAkm {
-        self.akm
+    /// The security the association negotiates.
+    pub const fn security(&self) -> AssociationSecurity {
+        self.security
     }
 
     /// The same selection naming `pmkid`: an SAE association that resumes a
@@ -74,18 +59,23 @@ impl SelectedRsn {
     /// # Panics
     ///
     /// The selection is not SAE: only SAE associations are cached.
-    pub fn with_pmkid(self, pmkid: [u8; 16]) -> Self {
+    pub fn with_pmkid(self, pmkid: Pmkid) -> Self {
+        let AssociationSecurity::Rsn(mut association) = self.security else {
+            panic!("only an SAE association resumes a cached PMKSA");
+        };
         assert!(
-            matches!(self.akm, SelectedAkm::Sae { .. }),
+            matches!(association.akm, AssociationAkm::Sae(_)),
             "only an SAE association resumes a cached PMKSA"
         );
+        association.pmkid = Some(pmkid);
         let mut resumed = self;
+        resumed.security = AssociationSecurity::Rsn(association);
         let rsnxe = &self.bytes[SELECTED_RSN_IE_LEN..usize::from(self.length)];
         resumed.bytes[1] += PMKID_LIST_LEN as u8;
         resumed.bytes[SELECTED_RSN_IE_LEN..SELECTED_RSN_IE_LEN + 2]
             .copy_from_slice(&1_u16.to_le_bytes());
         resumed.bytes[SELECTED_RSN_IE_LEN + 2..SELECTED_RSN_IE_LEN + PMKID_LIST_LEN]
-            .copy_from_slice(&pmkid);
+            .copy_from_slice(&pmkid.0);
         let rsnxe_start = SELECTED_RSN_IE_LEN + PMKID_LIST_LEN;
         resumed.bytes[rsnxe_start..rsnxe_start + rsnxe.len()].copy_from_slice(rsnxe);
         resumed.length = (rsnxe_start + rsnxe.len()) as u8;
@@ -139,7 +129,8 @@ fn select_personal_rsn(
     }
     // An advertised PMKID list is ignored.
     let capabilities = rsn.capabilities().unwrap_or(0);
-    let management_protection = capabilities & RSN_CAPABILITY_MFPC != 0;
+    let management_protection =
+        policy.management_protection().capable() && capabilities & RSN_CAPABILITY_MFPC != 0;
     if !management_protection
         && (rsn.group_management_cipher().is_some() || capabilities & RSN_CAPABILITY_MFPR != 0)
     {
@@ -154,31 +145,31 @@ fn select_personal_rsn(
     }
     let sae = management_protection && rsn.akm_suites().contains(ieee_suite(RSN_AKM_SAE));
     let akm = match policy {
-        _ if sae => SelectedAkm::Sae {
-            h2e: access_point
+        _ if sae => AssociationAkm::Sae(
+            if access_point
                 .rsnxe_bytes()
                 .get(2)
-                .is_some_and(|capabilities| capabilities & RSNXE_SAE_H2E != 0),
-        },
+                .is_some_and(|capabilities| capabilities & RSNXE_SAE_H2E != 0)
+            {
+                SaePwe::HashToElement
+            } else {
+                SaePwe::HuntingAndPecking
+            },
+        ),
         StaSecurityPolicy::Wpa3Personal | StaSecurityPolicy::Open => {
             return Err(StaSecurityError::UnsupportedAkm);
         }
         StaSecurityPolicy::Wpa2Personal
             if rsn.akm_suites().contains(ieee_suite(RSN_AKM_PSK_SHA256)) =>
         {
-            SelectedAkm::PskSha256
+            AssociationAkm::PskSha256
         }
         StaSecurityPolicy::Wpa2Personal if rsn.akm_suites().contains(ieee_suite(RSN_AKM_PSK)) => {
-            SelectedAkm::Psk
+            AssociationAkm::Psk
         }
         StaSecurityPolicy::Wpa2Personal => return Err(StaSecurityError::UnsupportedAkm),
     };
-    let akm_type = match akm {
-        SelectedAkm::Psk => RSN_AKM_PSK,
-        SelectedAkm::PskSha256 => RSN_AKM_PSK_SHA256,
-        SelectedAkm::Sae { .. } => RSN_AKM_SAE,
-        SelectedAkm::Open => unreachable!("a personal association selects an RSN AKM"),
-    };
+    let akm_type = akm.akm().suite_selector()[3];
 
     // The open STA owns protected A-MSDU construction and receive
     // decapsulation, so it retains the vendor SPP A-MSDU-capable contract.
@@ -188,12 +179,15 @@ fn select_personal_rsn(
     if management_protection {
         station_capabilities |= RSN_CAPABILITY_MFPC;
     }
-    if matches!(akm, SelectedAkm::Sae { .. }) {
+    if matches!(akm, AssociationAkm::Sae(_)) {
         station_capabilities |= RSN_CAPABILITY_MFPR;
     }
     let mut selected = SelectedRsn::OPEN;
-    selected.management_protection = management_protection;
-    selected.akm = akm;
+    selected.security = AssociationSecurity::Rsn(RsnAssociation {
+        akm,
+        management: management_protection.then_some(GroupManagementCipher::BipCmac128),
+        pmkid: None,
+    });
     selected.bytes[..SELECTED_RSN_IE_LEN].copy_from_slice(&[
         48,
         20,
@@ -219,7 +213,7 @@ fn select_personal_rsn(
         (station_capabilities >> 8) as u8,
     ]);
     selected.length = SELECTED_RSN_IE_LEN as u8;
-    if matches!(akm, SelectedAkm::Sae { .. }) {
+    if matches!(akm, AssociationAkm::Sae(_)) {
         selected.bytes[SELECTED_RSN_IE_LEN..SELECTED_RSN_IE_LEN + 3].copy_from_slice(&[
             RSNXE_ELEMENT_ID,
             1,

@@ -2012,7 +2012,7 @@ section = "phy-lifecycle-boundaries"
 title = "Client acquire/release bookkeeping"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "Client state rejects duplicate acquisition/invalid release and retains pending tracking. Releasing a non-final client returns the ordinary registered owner; final release returns a distinct `RegisteredPhyPoweredIdle` owner so its physical disposition cannot be silently erased. This state is still powered."
+scope-and-limitations = "Client state rejects duplicate acquisition/invalid release and retains pending tracking. Releasing a non-final client returns the ordinary registered owner; `release_client` reports whether the released client was the last; `close_concurrent_rf` rejects a domain that still has a client, so only the empty domain can close RF, and the radio stays powered until it does."
 
 [[items]]
 id = "phy-lifecycle-boundaries-target-bound-registration-client-proof"
@@ -2036,7 +2036,7 @@ section = "phy-lifecycle-boundaries"
 title = "RF wake from retained sleep"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "`RegisteredPhyRfClosed::wake_rf` executes the finite current-vendor wake parent against retained semantic calibration state and returns `RegisteredPhyPoweredIdle` only after terminal restoration. The Wi-Fi owner actor composes an immediate idle cycle through client reacquisition and RX restoration; the HIL scenario verifies repeated data-path recovery and registration-generation retention. Hardware evidence is still required for qualification."
+scope-and-limitations = "`wake_concurrent_rf` executes the finite current-vendor wake parent against retained semantic calibration state when a client joins a closed domain, and admits the client only after terminal restoration. The Wi-Fi owner actor composes an immediate idle cycle through client reacquisition and RX restoration; the HIL scenario verifies repeated data-path recovery and registration-generation retention. Hardware evidence is still required for qualification."
 
 [[items]]
 id = "phy-lifecycle-boundaries-rf-sleep-power-down"
@@ -2060,15 +2060,15 @@ section = "phy-lifecycle-boundaries"
 title = "RF and analog shutdown"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "`RegisteredPhyPoweredIdle -> RegisteredPhyRfClosed -> RegisteredPhyColdReleased` preserves the recoverable preparation boundary, poisons failures after physical close begins, powers down the temperature sensor, restores the captured Wi-Fi clock/reset baseline and returns the cold radio owner. This is source coverage rather than broad silicon qualification."
+scope-and-limitations = "`close_concurrent_rf` closes RF after the last client leaves: it poisons failures after physical close begins and powers down the temperature sensor; leaving common power then restores the captured clock baseline. This is source coverage rather than broad silicon qualification."
 
 [[items]]
 id = "phy-lifecycle-boundaries-re-registration-after-owned-shutdown"
 section = "phy-lifecycle-boundaries"
 title = "Re-registration after owned shutdown"
-status = "implemented"
+status = "absent"
 level = "lower-primitive"
-scope-and-limitations = "Consuming cold release with the platform-derived physical identity returns `Radio<P, Owned>` together with a cache captured from the final post-tracking state; the ordinary power-up and target-registration entry validate that cache and replay hardware-resident frequency/RX/TX state."
+scope-and-limitations = "The radio system registers the shared PHY domain once per boot, optionally from a calibration cache supplied before the first registration; no cold release re-registers it from a final-state cache. A restart that keeps the registration closes and wakes RF instead (RF sleep/power-down and RF wake from retained sleep)."
 
 [[items]]
 id = "phy-lifecycle-boundaries-tracking-failure-containment"

@@ -88,6 +88,7 @@ pub enum PhyWifiI2cTrackingTransitionError {
 /// Unique finite owner of both masked writes for one selected range.
 #[must_use = "the Wi-Fi tracking transition owns an in-flight PHY-I2C update"]
 #[derive(Debug, Eq, PartialEq)]
+// CAPABILITY: phy-calibration-state-and-tracking-wi-fi-i2c-parameter-tracking
 pub struct PhyWifiI2cTrackingTransition {
     target_band: PhyWifiI2cTrackingBand,
     changed: bool,

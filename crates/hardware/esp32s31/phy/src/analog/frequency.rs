@@ -161,6 +161,7 @@ pub const fn phy_frequency_memory_record(
 
 /// Caller-driven 85-entry frequency-memory publisher.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-frequency-table-synthesis-publication
 pub struct PhyFrequencyTableTransition {
     request: PhyFrequencyTableRequest,
     entry_index: u8,

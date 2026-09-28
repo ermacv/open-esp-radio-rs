@@ -69,6 +69,7 @@ enum Step {
 /// Owns the search and, when needed, the complete frequency-memory update.
 /// The caller retains exclusive PHY access until the channel index is restored.
 #[derive(Debug, Eq, PartialEq)]
+// CAPABILITY: phy-calibration-state-and-tracking-current-archive-measured-rfpll-correction, runtime-rfpll-tracking
 pub struct Correction {
     current_channel: u16,
     step: Step,

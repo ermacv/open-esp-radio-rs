@@ -49,6 +49,7 @@ pub enum Ieee802154TxPowerLevelsError {
 /// In particular, this borrow tracks storage lifetime, not a provider or
 /// calibration epoch; arbitrary external levels grant no hardware authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-protocol-consumer-operational-power-selection-ieee802154
 pub struct Ieee802154TxPowerLevels<'levels> {
     levels_dbm: &'levels [i8],
 }

@@ -848,6 +848,7 @@ enum PhyBluetoothTxGainInitStep {
 /// channel-six TX-cap publication, shared PWDET adjustment and gain-table
 /// publication still run in the recovered parent order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-bluetooth-calibration-state-table-primitives
 pub struct PhyBluetoothTxGainInitTransition {
     parameters: PhyBluetoothTxGainInitParameters,
     /// Force-TX/RX nesting count held by the caller of the gain child.

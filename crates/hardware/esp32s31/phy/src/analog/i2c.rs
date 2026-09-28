@@ -448,6 +448,7 @@ enum MaskedI2cWriteStep {
 /// until the separately completed write. No hidden I2C read, write, or wait
 /// remains inside a nominally synchronous action.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-analog-i2c-access
 pub struct MaskedI2cWriteTransition {
     field: PhyI2cField,
     field_value: u8,
@@ -1188,6 +1189,7 @@ enum PhyRfInitPrefixStep {
 /// intervals are separate executor timer edges. No transition is caused by
 /// polling this value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-rf-analog-initialization-prefix, rf-bb-initialization
 pub struct PhyRfInitPrefixTransition {
     step: PhyRfInitPrefixStep,
 }

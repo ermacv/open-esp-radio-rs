@@ -697,6 +697,7 @@ enum RootStep {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-tx-dc-power-detector-calibration
 pub struct PhyTxDcPwdetTransition {
     parameters: PhyTxDcPwdetParameters,
     mode: PhyTxDcPwdetMode,

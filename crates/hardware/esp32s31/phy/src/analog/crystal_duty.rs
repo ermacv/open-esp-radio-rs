@@ -1166,6 +1166,7 @@ enum XtalDutyCalibrationStep {
 
 /// Complete wrapper order for pinned `phy_xtal_duty_cal_init(0)`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-crystal-duty-calibration
 pub struct XtalDutyCalibrationTransition {
     parameter: XtalDutyCalibrationParameters,
     step: XtalDutyCalibrationStep,

@@ -360,6 +360,7 @@ enum RfpllFrequencyStep {
 /// Heap-free, caller-driven replacement for the complete RFPLL frequency
 /// programming graph used by crystal-duty calibration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-rfpll-frequency-programming-initialization
 pub struct RfpllFrequencyTransition {
     request: RfpllFrequencyRequest,
     step: RfpllFrequencyStep,

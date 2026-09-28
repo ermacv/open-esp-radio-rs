@@ -322,6 +322,7 @@ pub(crate) const CALIBRATION_TRACKING_ACTION_LIMIT: u8 = 33;
 /// Finite RX/TX parent for the current three-argument vendor child.
 /// The shared TX reference advances once after all requested classes restore.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-calibration-state-and-tracking-runtime-calibration-tracking-invocation, phy-calibration-state-and-tracking-temperature-triggered-compensation, connected-calibration-owners
 pub struct PhyCalibrationTrackingTransition {
     request: PhyCalibrationTrackingRequest,
     parameters: PhyCalibrationTrackingParameters,

@@ -55,6 +55,7 @@ impl PhyTxTargetPowerPair {
 /// the cold state and never reads the vendor `phy_param` pointer cell or
 /// `s_phy_get_max_pwr`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-wi-fi-target-power-profile-ceiling, phy-protocol-consumer-operational-power-selection-wifi
 pub struct PhyTxTargetPowerProfile {
     maximum: i8,
     target: [i8; PHY_TX_TARGET_POWER_COUNT],
@@ -588,6 +589,7 @@ impl PhyTxPowerMode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-tx-power-control-calibration
 pub struct PhyTxPowerTransition {
     parameters: PhyTxPowerParameters,
     mode: PhyTxPowerMode,

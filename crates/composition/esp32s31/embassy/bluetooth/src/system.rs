@@ -526,6 +526,7 @@ impl BluetoothSystem {
         clippy::result_large_err,
         reason = "the allocation-free failure retains every owner of the epoch"
     )]
+    // CAPABILITY: bluetooth-idle-powered-release
     pub async fn stop<P, C: PlatformClockProvider>(
         self,
         radio: &RadioSystem<P, C>,
@@ -795,7 +796,7 @@ fn unwind_powered(
     large_assignments,
     reason = "the powered owner graph crosses the PHY poll boundaries once; the linked-image stack-frame audit independently bounds this future"
 )]
-// CAPABILITY: controller-initialization
+// CAPABILITY: controller-initialization, bluetooth-same-storage-powered-restart
 pub async fn start<P, C: PlatformClockProvider>(
     radio: &RadioSystem<P, C>,
     parked: BluetoothParked,

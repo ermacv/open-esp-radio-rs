@@ -128,6 +128,7 @@ enum PhyPbusClearStep {
 /// advances from a poll; an outer single radio owner performs one start and
 /// one completion observation around an independently delivered edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rf-and-analog-primitives-pbus-access-and-initialization
 pub struct PhyPbusClearTransition {
     step: PhyPbusClearStep,
 }

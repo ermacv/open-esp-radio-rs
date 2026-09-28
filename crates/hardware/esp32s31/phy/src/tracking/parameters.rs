@@ -307,6 +307,7 @@ enum PhyParamTrackingStep {
 
 /// Finite exact-order outer transition for one scheduler request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-calibration-state-and-tracking-independent-wi-fi-maintenance-operations, phy-calibration-state-and-tracking-runtime-parameter-tracking-invocation
 pub struct PhyParamTrackingTransition {
     request: PhyParamTrackRequest,
     policy: PhyParamTrackingPolicy,

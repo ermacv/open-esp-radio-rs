@@ -208,7 +208,7 @@ section = "whole-radio-active-operation-power-saving-and-shutdown"
 title = "Shared RF powered-idle frontier"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "Final client release produces an affine owner proving an empty client set while retaining the physically powered radio and calibration state. Only this owner can enter the source-owned RF close transaction."
+scope-and-limitations = "Releasing the final client leaves the shared domain empty while the radio stays powered with its calibration state. The source-owned RF close transaction rejects a domain that still has a client, so only the empty domain can enter it."
 
 [[items]]
 id = "whole-radio-active-operation-power-saving-and-shutdown-rf-sleep-modem-power-down"

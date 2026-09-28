@@ -385,6 +385,7 @@ pub fn calculate_dc_iq_estimate(
 /// executes the same disable/one-microsecond/disable tail before returning a
 /// typed failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-dc-iq-estimator
 pub struct PhyDcIqEstimateTransition {
     request: PhyDcIqEstimateRequest,
     readiness_activity_edges: u16,

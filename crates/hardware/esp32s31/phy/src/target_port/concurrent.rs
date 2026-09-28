@@ -137,6 +137,7 @@ pub enum ConcurrentPhyTrackingError {
     clippy::result_large_err,
     reason = "fail-stop error retains the allocation-free PHY transition"
 )]
+// CAPABILITY: phy-protocol-consumer-cold-registration-calibration-entry-wifi, phy-protocol-consumer-cold-registration-calibration-entry-bluetooth, phy-protocol-consumer-cold-registration-calibration-entry-ieee802154, cold-registration
 pub async fn register_concurrent_phy<P, D, O>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
@@ -209,6 +210,7 @@ where
 /// Once polled, drive this future to a terminal result. Cancellation leaves
 /// the domain unregistered in software while RF may be partially closed; the
 /// radio then requires reset.
+// CAPABILITY: phy-lifecycle-boundaries-rf-and-analog-shutdown, phy-lifecycle-boundaries-rf-sleep-power-down, whole-radio-active-operation-power-saving-and-shutdown-rf-sleep-modem-power-down, whole-radio-active-operation-power-saving-and-shutdown-full-powered-shutdown, phy-protocol-consumer-complete-last-client-rf-analog-shutdown-wifi, whole-radio-active-operation-power-saving-and-shutdown-shared-rf-powered-idle-frontier
 pub async fn close_concurrent_rf<P, D>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
@@ -282,6 +284,7 @@ where
 ///
 /// Once polled, drive this future to a terminal result. After the first wake
 /// edge every failure is fail-stop and requires reset.
+// CAPABILITY: phy-lifecycle-boundaries-rf-wake-from-retained-sleep, whole-radio-active-operation-power-saving-and-shutdown-rf-wake-resume, phy-protocol-consumer-resume-after-rf-sleep-wifi
 pub async fn wake_concurrent_rf<D>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     clocks: &mut impl PlatformClockProvider,
@@ -466,6 +469,7 @@ pub enum ConcurrentTrackingTick {
 ///
 /// Once tracking starts, drive this future to a terminal result;
 /// cancellation then leaves hardware partially updated and requires reset.
+// CAPABILITY: phy-calibration-state-and-tracking-periodic-tracking-service, whole-radio-active-operation-power-saving-and-shutdown-shared-phy-tracking, phy-protocol-consumer-periodic-parameter-calibration-tracking-wifi, phy-protocol-consumer-periodic-parameter-calibration-tracking-ieee802154, bluetooth-idle-phy-maintenance, bluetooth-periodic-phy-maintenance
 pub async fn track_concurrent_phy<P, D, O>(
     lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
     platform: &mut P,
@@ -567,6 +571,7 @@ pub async fn select_concurrent_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
 /// # Cancellation
 ///
 /// Once polled, drive this future to a terminal result.
+// CAPABILITY: phy-protocol-consumer-protocol-channel-switching-wifi
 pub async fn switch_concurrent_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
     phy: &mut ConcurrentPhy,
     channel_or_frequency: u16,

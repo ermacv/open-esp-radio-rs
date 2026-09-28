@@ -287,6 +287,7 @@ enum Phase {
 ///     let _ordinary = registered.into_state();
 /// }
 /// ```
+// CAPABILITY: phy-lifecycle-boundaries-target-bound-registration-client-proof
 pub struct RegisteredPhyState {
     state: crate::state::PhyState,
 }
@@ -333,6 +334,7 @@ impl RegisteredPhyState {
 /// Complete full-calibration state machine replacing the stateful vendor
 /// parent. Only one phase owns `PhyState` at a time: the outer transition,
 /// `PhyRfColdInit`, or `PhyBbInitTransition`.
+// CAPABILITY: phy-calibration-state-and-tracking-full-initial-calibration, phy-calibration-state-and-tracking-cache-backed-cold-restore-partial-cold-calibration, phy-rf-and-analog-primitives-common-cold-registration, phy-lifecycle-boundaries-cold-rf-activation, whole-radio-cold-power-and-clocks-cold-phy-registration
 pub struct PhyRegisterTransition {
     state: Option<crate::state::PhyState>,
     config: Option<crate::state::PhyConfig>,

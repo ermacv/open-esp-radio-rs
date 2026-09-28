@@ -155,6 +155,7 @@ impl PhyClientSnapshot {
 /// cannot be supplied or changed by safe callers. It is not a hardware lease or
 /// an RF/PLL readiness proof.
 #[must_use = "the PHY client model owns its unique software state"]
+// CAPABILITY: phy-lifecycle-boundaries-client-acquire-release-bookkeeping, phy-lifecycle-boundaries-stop-tracking-release-last-client, whole-radio-exclusive-ownership-and-client-handoff-phy-client-acquire-release-state
 pub struct PhyClientState {
     bits: u8,
     tracker_model_armed: bool,
@@ -750,6 +751,7 @@ impl PhyPendingTracking {
 /// No ordinary-owner extractor is provided because the model has no reviewed
 /// rollback for partially executed hardware work.
 #[must_use = "failed tracking hardware work poisons the PHY client model"]
+// CAPABILITY: phy-lifecycle-boundaries-tracking-failure-containment
 pub struct PhyTrackPoisoned {
     owner: PhyClientState,
     request: PhyParamTrackRequest,

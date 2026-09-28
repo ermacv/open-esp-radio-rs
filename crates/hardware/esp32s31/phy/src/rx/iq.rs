@@ -1828,6 +1828,7 @@ const fn convert_rxiq_coefficient(value: u16) -> u16 {
 /// The live parent calls `(0, &flags, 0)`, so the optional PBus read/OR branch
 /// and the skip-cleanup branch are not part of this Wi-Fi profile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-rx-iq-calibration-correction-setup
 pub struct PhyRxIqInitTransition {
     parameters: PhyRxIqInitParameters,
     step: InitStep,

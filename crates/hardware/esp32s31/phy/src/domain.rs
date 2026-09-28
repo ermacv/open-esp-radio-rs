@@ -81,6 +81,7 @@ impl PhyDomain {
     /// Inspect registered-policy conditions without sampling temperature,
     /// advancing deadlines or acquiring RF. Values describe retained state,
     /// not a job plan.
+    // CAPABILITY: phy-calibration-state-and-tracking-registered-policy-inspection
     pub fn inspect_tracking(
         &self,
         now_micros: u64,

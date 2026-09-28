@@ -563,6 +563,7 @@ const fn output_configuration(configuration: [u32; 2], i: i16, q: i16) -> [u32; 
 /// typed child failure restore the saved RX-DCO control field before becoming
 /// terminal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-rx-and-tx-calibration-primitives-rx-dc-offset-calibration
 pub struct PhyRxDcoTransition {
     request: PhyRxDcoRequest,
     step: PhyRxDcoStep,

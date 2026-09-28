@@ -20,6 +20,7 @@ pub enum Acquisition {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// CAPABILITY: phy-calibration-state-and-tracking-dated-temperature-observation
 pub struct Observation {
     /// PHY sensor units, not a Celsius conversion.
     pub value: i16,

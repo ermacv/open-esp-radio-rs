@@ -974,226 +974,248 @@ impl ProductionWifiEpochRunner {
                 }
             }
         }
-        let (network_runner, services) = paired_runner.into_parts();
-        let (
-            mut hardware,
-            physical_tx,
-            common_rx,
-            station_role,
-            access_point_role,
-            _control_arbiter,
-        ) = services.into_parts();
-        let route_report = common_rx.route_report();
-        diagnostics_event!(
-            "open-radio: paired RX routes total={} sta={} ap={} foreign={} ambiguous={} malformed={} hardware_error={}",
-            route_report.total(),
-            route_report.station,
-            route_report.access_point,
-            route_report.foreign,
-            route_report.ambiguous,
-            route_report.malformed,
-            route_report.hardware_error,
-        );
-        #[cfg(feature = "diagnostics")]
-        {
-            let after = hardware.receive_statistics_snapshot();
-            super::access_point_observation::store_access_point_rx_hardware_observation(
-                crate::DiagnosticRxStatistics::from_deltas(
-                    after
-                        .primary
-                        .wrapping_delta_since(rx_statistics_before.primary),
-                    after
-                        .decode_errors
-                        .wrapping_delta_since(rx_statistics_before.decode_errors),
-                    after.hang.wrapping_delta_since(rx_statistics_before.hang),
-                ),
-            )
-        }
-        let (paired_rx, mut paired_consumer) = common_rx.into_parts();
-        diagnostics_event!(
-            "open-radio: paired RX producer serviced_descriptors={}",
-            paired_rx.serviced_descriptors(),
-        );
-        let discarded = paired_consumer.discard_queued();
-        diagnostics_debug!(
-            "open-radio: paired RX stopped discarded={} serviced={}",
-            discarded,
-            paired_rx.serviced_descriptors(),
-        );
-        let (standalone_sender, _standalone_receiver) = STAGED_RX_QUEUE.split();
-        let parked_rx = paired_rx
-            .try_into_standalone_live(standalone_sender)
-            .unwrap_or_else(|_| unreachable!("paired queue was drained before standalone restore"));
-
-        let access_point_finished =
-            finish_sta_ap_access_point_role(access_point_role, physical_tx, &mut hardware)
-                .unwrap_or_else(|_| unreachable!("paired DATAPATH stop parks every AP TX owner"));
-        let access_point_transition = lifecycle
-            .stop_access_point()
-            .unwrap_or_else(|_| unreachable!("active paired lifecycle retains its AP role"));
-        apply_sta_ap_register_action(
-            &mut hardware,
-            sta_ap_register_action(access_point_transition, receive_identities),
-        );
-        lifecycle
-            .stop_station()
-            .unwrap_or_else(|_| unreachable!("paired teardown retains its final station role"));
-        let oer_esp32s31_ieee80211_runtime::roles::access_point::StaApAccessPointFinished {
-            stopped: access_point_stopped,
-            network_tx: _access_point_network_tx,
-            security_material: _access_point_security_material,
-            physical_tx,
-        } = access_point_finished;
-        // All physical AP publications have detached. Return software leases
-        // before handing the reusable storage back to the stopped AP owner.
-        let ap_tx_storage = _access_point_network_tx.into_storage();
-        crate::status::publish_access_point_stopped();
-        #[cfg(feature = "diagnostics")]
-        if let Some(hooks) = diagnostics {
-            super::access_point_observation::publish_stored_access_point_observation(
-                hooks.access_point,
-                station_channel,
+        // The teardown moves every owner by value. Outside this poll frame,
+        // those moves do not add to the async state machine's stack budget.
+        let stopped = match outside_poll_frame(move || {
+            let (network_runner, services) = paired_runner.into_parts();
+            let (
+                mut hardware,
+                physical_tx,
+                common_rx,
+                station_role,
+                access_point_role,
+                _control_arbiter,
+            ) = services.into_parts();
+            let route_report = common_rx.route_report();
+            diagnostics_event!(
+                "open-radio: paired RX routes total={} sta={} ap={} foreign={} ambiguous={} malformed={} hardware_error={}",
+                route_report.total(),
+                route_report.station,
+                route_report.access_point,
+                route_report.foreign,
+                route_report.ambiguous,
+                route_report.malformed,
+                route_report.hardware_error,
             );
-        }
-        let prepared_station = StaApStationPrepared {
-            hardware,
-            physical_rx: (),
-            station: station_role,
-            physical_tx,
-            report: station_report,
-        };
-        let station_drivers = finish_sta_ap_station(prepared_station)
-            .unwrap_or_else(|_| unreachable!("paired DATAPATH stop parks every station TX owner"));
-
-        let oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedStaDrivers {
-            services: station_services,
-            report: _,
-        } = station_drivers;
-        let (hardware, station_rx, station_tx, mut station_control) = station_services.into_parts();
-        let ((), station_protocol) = station_rx.into_parts();
-        let group_security = match &mut station_security_material {
-            StaAttemptSecurityMaterial::Open => group_security
-                .take()
-                .expect("paired Open station retains its no-key group marker"),
-            StaAttemptSecurityMaterial::Personal { connected, .. } => {
-                let station_security = station_control
-                    .take_wpa2_security()
-                    .expect("paired WPA2 station control returns its security owner");
-                let (returned_connected, group) = station_security.into_parts();
-                *connected = Some(returned_connected);
-                ConnectedStaGroupSecurity::Wpa2Personal(group)
-            }
-        };
-        let (stopped_protocol, station_sink) = station_protocol.into_stopped_with_sink();
-        let (sta_ap_rx_batch, _control_publisher) = station_sink.into_parts();
-        let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
-        let teardown = ConnectedStaTeardownPort::try_teardown(
-            SingleRoleServices::with_control(
-                hardware,
-                AlreadyParkedRx::new(parked_rx),
-                station_tx,
-                station_control,
-            ),
-            group_security,
-        )
-        .unwrap_or_else(|_| unreachable!("paired DATAPATH stop returns idle station services"));
-        tx_storage
-            .restore_resources(teardown.tx_resources)
-            .unwrap_or_else(|_| {
-                unreachable!("paired station returns the detached ordinary TX owner")
-            });
-        let disconnected = ConnectedDisconnectedEpoch::new(
-            RunningStationNetwork::new((), network_runner),
-            teardown.hardware,
-            ConnectedParkedRx::from_live(teardown.parked_rx),
-            teardown.aggregate,
-            control_resources,
-        );
-        let station_security = match station_security_material {
-            StaAttemptSecurityMaterial::Open => StaAttemptSecurity::open(teardown.sequences),
-            StaAttemptSecurityMaterial::Personal {
-                credentials,
-                supplicant_nonce,
-                message4_protection,
-                ..
-            } => StaAttemptSecurity::new(
-                credentials,
-                supplicant_nonce,
-                teardown.sequences,
-                message4_protection,
-            ),
-        };
-        let station_owner = ProductionStationOwner::new(
-            production_station_runtime(
-                role,
-                interrupt_epoch,
-                dma,
-                tx_storage,
-                scan_table,
-                frame,
-                ethernet,
-                ProductionStationBoardResources {
-                    access_point_airtime,
-                    interface,
-                    connected_datapath,
-                    rx_protocol_runtime,
-                    sta_ap_rx_batch,
-                    initial_connected,
-                    #[cfg(feature = "diagnostics")]
-                    diagnostics,
-                },
-            ),
-            ProductionStationPhase::RunningScan {
-                disconnected,
-                station,
-            },
-            station_security,
-        );
-        let oer_esp32s31_ieee80211_ap::engine::ApEngineStop {
-            service,
-            beacon_storage,
-            pairwise_storage,
-            security: _,
-        } = access_point_stopped.engine;
-        let access_point = ProductionAccessPointResources {
-            tx_storage: ap_tx_storage,
-            address: service.address(),
-            beacon: beacon_storage,
-            rx_frame: access_point_stopped.rx_frame,
-            tx_frame: access_point_stopped.tx_frame,
-            peer_storage: service.into_peer_storage(),
-            pairwise_storage,
-            rx_dispatcher: access_point_stopped.data_rx,
-            rx_block_ack: access_point_stopped.rx_block_ack,
-            rx_reorder: access_point_stopped.rx_reorder,
-            rx_reorder_storage: access_point_stopped.rx_reorder_storage,
             #[cfg(feature = "diagnostics")]
-            observation_storage: access_point_stopped.observation_storage,
-        };
-        let stopped = match try_reclaim_production_station(station_owner) {
+            {
+                let after = hardware.receive_statistics_snapshot();
+                super::access_point_observation::store_access_point_rx_hardware_observation(
+                    crate::DiagnosticRxStatistics::from_deltas(
+                        after
+                            .primary
+                            .wrapping_delta_since(rx_statistics_before.primary),
+                        after
+                            .decode_errors
+                            .wrapping_delta_since(rx_statistics_before.decode_errors),
+                        after.hang.wrapping_delta_since(rx_statistics_before.hang),
+                    ),
+                )
+            }
+            let (paired_rx, mut paired_consumer) = common_rx.into_parts();
+            diagnostics_event!(
+                "open-radio: paired RX producer serviced_descriptors={}",
+                paired_rx.serviced_descriptors(),
+            );
+            let discarded = paired_consumer.discard_queued();
+            diagnostics_debug!(
+                "open-radio: paired RX stopped discarded={} serviced={}",
+                discarded,
+                paired_rx.serviced_descriptors(),
+            );
+            let (standalone_sender, _standalone_receiver) = STAGED_RX_QUEUE.split();
+            let parked_rx = paired_rx
+                .try_into_standalone_live(standalone_sender)
+                .unwrap_or_else(|_| {
+                    unreachable!("paired queue was drained before standalone restore")
+                });
+
+            let access_point_finished =
+                finish_sta_ap_access_point_role(access_point_role, physical_tx, &mut hardware)
+                    .unwrap_or_else(|_| {
+                        unreachable!("paired DATAPATH stop parks every AP TX owner")
+                    });
+            let access_point_transition = lifecycle
+                .stop_access_point()
+                .unwrap_or_else(|_| unreachable!("active paired lifecycle retains its AP role"));
+            apply_sta_ap_register_action(
+                &mut hardware,
+                sta_ap_register_action(access_point_transition, receive_identities),
+            );
+            lifecycle
+                .stop_station()
+                .unwrap_or_else(|_| unreachable!("paired teardown retains its final station role"));
+            let oer_esp32s31_ieee80211_runtime::roles::access_point::StaApAccessPointFinished {
+                stopped: access_point_stopped,
+                network_tx: _access_point_network_tx,
+                security_material: _access_point_security_material,
+                physical_tx,
+            } = access_point_finished;
+            // All physical AP publications have detached. Return software leases
+            // before handing the reusable storage back to the stopped AP owner.
+            let ap_tx_storage = _access_point_network_tx.into_storage();
+            crate::status::publish_access_point_stopped();
+            #[cfg(feature = "diagnostics")]
+            if let Some(hooks) = diagnostics {
+                super::access_point_observation::publish_stored_access_point_observation(
+                    hooks.access_point,
+                    station_channel,
+                );
+            }
+            let prepared_station = StaApStationPrepared {
+                hardware,
+                physical_rx: (),
+                station: station_role,
+                physical_tx,
+                report: station_report,
+            };
+            let station_drivers = finish_sta_ap_station(prepared_station).unwrap_or_else(|_| {
+                unreachable!("paired DATAPATH stop parks every station TX owner")
+            });
+
+            let oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedStaDrivers {
+                services: station_services,
+                report: _,
+            } = station_drivers;
+            let (hardware, station_rx, station_tx, mut station_control) =
+                station_services.into_parts();
+            let ((), station_protocol) = station_rx.into_parts();
+            let group_security = match &mut station_security_material {
+                StaAttemptSecurityMaterial::Open => group_security
+                    .take()
+                    .expect("paired Open station retains its no-key group marker"),
+                StaAttemptSecurityMaterial::Personal { connected, .. } => {
+                    let station_security = station_control
+                        .take_wpa2_security()
+                        .expect("paired WPA2 station control returns its security owner");
+                    let (returned_connected, group) = station_security.into_parts();
+                    *connected = Some(returned_connected);
+                    ConnectedStaGroupSecurity::Wpa2Personal(group)
+                }
+            };
+            let (stopped_protocol, station_sink) = station_protocol.into_stopped_with_sink();
+            let (sta_ap_rx_batch, _control_publisher) = station_sink.into_parts();
+            let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
+            let teardown = ConnectedStaTeardownPort::try_teardown(
+                SingleRoleServices::with_control(
+                    hardware,
+                    AlreadyParkedRx::new(parked_rx),
+                    station_tx,
+                    station_control,
+                ),
+                group_security,
+            )
+            .unwrap_or_else(|_| unreachable!("paired DATAPATH stop returns idle station services"));
+            tx_storage
+                .restore_resources(teardown.tx_resources)
+                .unwrap_or_else(|_| {
+                    unreachable!("paired station returns the detached ordinary TX owner")
+                });
+            let disconnected = ConnectedDisconnectedEpoch::new(
+                RunningStationNetwork::new((), network_runner),
+                teardown.hardware,
+                ConnectedParkedRx::from_live(teardown.parked_rx),
+                teardown.aggregate,
+                control_resources,
+            );
+            let station_security = match station_security_material {
+                StaAttemptSecurityMaterial::Open => StaAttemptSecurity::open(teardown.sequences),
+                StaAttemptSecurityMaterial::Personal {
+                    credentials,
+                    supplicant_nonce,
+                    message4_protection,
+                    ..
+                } => StaAttemptSecurity::new(
+                    credentials,
+                    supplicant_nonce,
+                    teardown.sequences,
+                    message4_protection,
+                ),
+            };
+            let station_owner = ProductionStationOwner::new(
+                production_station_runtime(
+                    role,
+                    interrupt_epoch,
+                    dma,
+                    tx_storage,
+                    scan_table,
+                    frame,
+                    ethernet,
+                    ProductionStationBoardResources {
+                        access_point_airtime,
+                        interface,
+                        connected_datapath,
+                        rx_protocol_runtime,
+                        sta_ap_rx_batch,
+                        initial_connected,
+                        #[cfg(feature = "diagnostics")]
+                        diagnostics,
+                    },
+                ),
+                ProductionStationPhase::RunningScan {
+                    disconnected,
+                    station,
+                },
+                station_security,
+            );
+            let oer_esp32s31_ieee80211_ap::engine::ApEngineStop {
+                service,
+                beacon_storage,
+                pairwise_storage,
+                security: _,
+            } = access_point_stopped.engine;
+            let access_point = ProductionAccessPointResources {
+                tx_storage: ap_tx_storage,
+                address: service.address(),
+                beacon: beacon_storage,
+                rx_frame: access_point_stopped.rx_frame,
+                tx_frame: access_point_stopped.tx_frame,
+                peer_storage: service.into_peer_storage(),
+                pairwise_storage,
+                rx_dispatcher: access_point_stopped.data_rx,
+                rx_block_ack: access_point_stopped.rx_block_ack,
+                rx_reorder: access_point_stopped.rx_reorder,
+                rx_reorder_storage: access_point_stopped.rx_reorder_storage,
+                #[cfg(feature = "diagnostics")]
+                observation_storage: access_point_stopped.observation_storage,
+            };
+            let stopped = match try_reclaim_production_station(station_owner) {
+                Ok(stopped) => stopped,
+                Err(failure) => {
+                    return Err(EmbassyWifiRoleEpochOutcome::Faulted(
+                        ProductionWifiFault::PairedReclaim {
+                            _station: failure,
+                            _access_point: access_point,
+                            _monitor: monitor,
+                        },
+                    ));
+                }
+            };
+            let resources = ProductionWifiStoppedResources::Returned(stopped.resources);
+            let (physical, station) = match try_split_wifi_stopped_resources(resources) {
+                Ok(resources) => resources,
+                Err(resources) => {
+                    return Err(EmbassyWifiRoleEpochOutcome::Faulted(
+                        ProductionWifiFault::StoppedOwner {
+                            _wifi: stopped.wifi,
+                            _resources: resources,
+                            _access_point: access_point,
+                            _monitor: monitor,
+                        },
+                    ));
+                }
+            };
+            Ok(WifiSupervisorStopped::new(
+                stopped.wifi,
+                physical,
+                station,
+                access_point,
+                monitor,
+            ))
+        }) {
             Ok(stopped) => stopped,
-            Err(failure) => {
-                return EmbassyWifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedReclaim {
-                    _station: failure,
-                    _access_point: access_point,
-                    _monitor: monitor,
-                });
-            }
+            Err(outcome) => return outcome,
         };
-        let resources = ProductionWifiStoppedResources::Returned(stopped.resources);
-        let (physical, station) = match try_split_wifi_stopped_resources(resources) {
-            Ok(resources) => resources,
-            Err(resources) => {
-                return EmbassyWifiRoleEpochOutcome::Faulted(ProductionWifiFault::StoppedOwner {
-                    _wifi: stopped.wifi,
-                    _resources: resources,
-                    _access_point: access_point,
-                    _monitor: monitor,
-                });
-            }
-        };
-        let stopped =
-            WifiSupervisorStopped::new(stopped.wifi, physical, station, access_point, monitor);
         if active_fault {
             return EmbassyWifiRoleEpochOutcome::Faulted(ProductionWifiFault::PairedStopped {
                 _stopped: stopped,
@@ -1208,4 +1230,14 @@ impl ProductionWifiEpochRunner {
         }
         EmbassyWifiRoleEpochOutcome::Stopped(stopped)
     }
+}
+
+/// Run a synchronous owner transfer in its own stack frame.
+///
+/// Fat LTO inlines every by-value owner move of a long async function into
+/// its one poll frame, whose stack budget the runtime audit bounds. A
+/// non-inlined call gives the transfer a frame that exists only while it runs.
+#[inline(never)]
+fn outside_poll_frame<R>(transfer: impl FnOnce() -> R) -> R {
+    transfer()
 }

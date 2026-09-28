@@ -60,6 +60,8 @@ const RETAIN_FAILED: u32 = 7;
 const RESOURCES_FAILED: u32 = 8;
 /// Completion status of an ordinary aggregate that received its response.
 const STATUS_COMPLETED: u8 = 0;
+/// The time the probe commits an aggregate, from which its MSDUs age.
+const COMMITTED_MICROS: u64 = 0;
 
 type Pool = PinnedDmaTxPool<FRAME_CAPACITY, 0, 0, SLOTS>;
 type Backing = PinnedDmaTxRadioLease<'static, FRAME_CAPACITY, 0, 0>;
@@ -176,9 +178,10 @@ oer_probe_macros::probe! {
     /// Commit `count` MPDUs of `MPDU_BYTES` each from `frames`, the first
     /// carrying `first_sequence`, publish them as one HT A-MPDU and observe
     /// one completion whose BlockAck starts at `starting_sequence` with
-    /// `bitmap_low` and `bitmap_high`, received when `received` is nonzero.
-    /// The retry state allows `attempt_limit` publications and keeps a
-    /// single missing MPDU when `retain_single` is nonzero. A retained
+    /// `bitmap_low` and `bitmap_high`, received when `received` is nonzero,
+    /// `elapsed_micros` after the commit. The retry state ages MSDUs after
+    /// `lifetime_micros` and keeps a single missing MPDU when
+    /// `retain_single` is nonzero. A retained
     /// aggregate is compacted with the Retry bit set. Writes the decision,
     /// its retry mask, the next first sequence and subframe count to
     /// `output`; returns zero, or the step that failed.
@@ -194,15 +197,13 @@ oer_probe_macros::probe! {
         bitmap_low: u32,
         bitmap_high: u32,
         received: u32,
-        attempt_limit: u32,
+        lifetime_micros: u32,
+        elapsed_micros: u32,
         retain_single: u32,
         output: *mut u32,
     ) -> u32 {
         let count = count as usize;
-        let (Some(first), Ok(limit)) = (
-            u16::try_from(first_sequence).ok().and_then(SequenceNumber::new),
-            u8::try_from(attempt_limit),
-        ) else {
+        let Some(first) = u16::try_from(first_sequence).ok().and_then(SequenceNumber::new) else {
             return INVALID_INPUT;
         };
         if count == 0 || count > SLOTS {
@@ -263,13 +264,16 @@ oer_probe_macros::probe! {
             return SUBMIT_FAILED;
         }
         let policy = AmpduRetryPolicy {
-            attempt_limit: limit,
+            lifetime_micros,
             retain_single_mpdu: retain_single != 0,
         };
-        let Ok(mut retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy) else {
+        let Ok(mut retry) =
+            AmpduRetryState::<SLOTS>::new(first, count as u8, policy, COMMITTED_MICROS)
+        else {
             return INVALID_INPUT;
         };
-        let observed = match owner.observe_retry_completion(&mut hardware, cookie, &mut retry) {
+        let now = COMMITTED_MICROS + u64::from(elapsed_micros);
+        let observed = match owner.observe_retry_completion(&mut hardware, cookie, &mut retry, now) {
             Ok(Some(observed)) => observed,
             Ok(None) => return NO_COMPLETION,
             Err(_) => return COMPLETION_FAILED,
@@ -344,8 +348,9 @@ fn timeout_double(status: u8) -> CompletionDouble {
 oer_probe_macros::probe! {
     /// Commit `count` MPDUs of `MPDU_BYTES` each from `frames`, the first
     /// carrying `first_sequence`, and publish them as one HT A-MPDU whose
-    /// retry state allows `attempt_limit` publications; the sequence stays
-    /// in flight for the step entry. Returns zero, or the step that failed.
+    /// retry state ages MSDUs after `lifetime_micros`; the sequence stays in
+    /// flight for the step entry, whose completions arrive at the commit
+    /// time. Returns zero, or the step that failed.
     ///
     /// # Safety
     /// `frames` must point to `count * MPDU_BYTES` readable bytes.
@@ -353,13 +358,10 @@ oer_probe_macros::probe! {
         frames: *const u8,
         count: u32,
         first_sequence: u32,
-        attempt_limit: u32,
+        lifetime_micros: u32,
     ) -> u32 {
         let count = count as usize;
-        let (Some(first), Ok(limit)) = (
-            u16::try_from(first_sequence).ok().and_then(SequenceNumber::new),
-            u8::try_from(attempt_limit),
-        ) else {
+        let Some(first) = u16::try_from(first_sequence).ok().and_then(SequenceNumber::new) else {
             return INVALID_INPUT;
         };
         if count == 0 || count > SLOTS {
@@ -415,10 +417,11 @@ oer_probe_macros::probe! {
             return SUBMIT_FAILED;
         }
         let policy = AmpduRetryPolicy {
-            attempt_limit: limit,
+            lifetime_micros,
             retain_single_mpdu: false,
         };
-        let Ok(retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy) else {
+        let Ok(retry) = AmpduRetryState::<SLOTS>::new(first, count as u8, policy, COMMITTED_MICROS)
+        else {
             return INVALID_INPUT;
         };
         // SAFETY: the single-threaded image owns the sequence cell here.
@@ -453,6 +456,7 @@ oer_probe_macros::probe! {
             &mut hardware,
             sequence.cookie,
             &mut sequence.retry,
+            COMMITTED_MICROS,
         ) {
             Ok(Some(observed)) => observed,
             Ok(None) => return NO_COMPLETION,

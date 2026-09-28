@@ -501,9 +501,60 @@ fn select(name: &str, root: &Path) -> Result<Selection> {
     })
 }
 
+/// A source that changed while it was read; the capture is taken again.
+#[derive(Debug)]
+struct ChangedDuringCapture(String);
+
+impl std::fmt::Display for ChangedDuringCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "source {} changed during snapshot capture", self.0)
+    }
+}
+
+impl std::error::Error for ChangedDuringCapture {}
+
+/// Captures taken before a source that keeps changing fails the snapshot.
+const CAPTURE_ATTEMPTS: u32 = 5;
+/// The pause before the next capture, for an edit in progress to finish.
+const CAPTURE_RETRY_PAUSE: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// `scopes` are repository-relative directories whose untracked files are
-/// archived without being named, each with the reason recorded for them.
+/// archived without being named, each with the reason recorded for them. A
+/// source edited while it is read is captured again, so a snapshot is always
+/// one consistent state of every source.
 fn capture_roots(
+    roots: &[(String, PathBuf)],
+    include: &[String],
+    scopes: &[(PathBuf, UntrackedReason)],
+    output: &Path,
+) -> Result<Snapshot> {
+    until_unchanged(CAPTURE_ATTEMPTS, CAPTURE_RETRY_PAUSE, || {
+        capture_roots_once(roots, include, scopes, output)
+    })
+}
+
+/// Run `capture` again after a pause while it fails only because a source
+/// changed under it, at most `attempts` times; any other failure, or the
+/// last change, is returned.
+fn until_unchanged<T>(
+    attempts: u32,
+    pause: std::time::Duration,
+    mut capture: impl FnMut() -> Result<T>,
+) -> Result<T> {
+    let mut attempt = 1;
+    loop {
+        match capture() {
+            Err(error) if attempt < attempts && error.is::<ChangedDuringCapture>() => {
+                eprintln!("hil: {error}; capturing again");
+                attempt += 1;
+                oer_process::sleep(pause)?;
+            }
+            result => return result,
+        }
+    }
+}
+
+fn capture_roots_once(
     roots: &[(String, PathBuf)],
     include: &[String],
     scopes: &[(PathBuf, UntrackedReason)],
@@ -601,9 +652,7 @@ fn capture_roots(
             || after.untracked != selection.untracked
             || read_source(&after, |_, _| Ok(()))? != *captured
         {
-            return Err(
-                format!("source {} changed during snapshot capture", selection.name).into(),
-            );
+            return Err(ChangedDuringCapture(selection.name.clone()).into());
         }
     }
     for source in &mut sources {

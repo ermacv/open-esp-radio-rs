@@ -352,3 +352,38 @@ fn a_captured_snapshot_loads_again_from_its_directory() {
     assert_eq!(loaded.directory(), snapshot.directory());
     assert!(Snapshot::load(output.path()).is_err());
 }
+
+#[test]
+fn a_capture_is_taken_again_while_a_source_changes_under_it() {
+    let pause = std::time::Duration::ZERO;
+    let mut calls = 0;
+    let captured = until_unchanged(5, pause, || {
+        calls += 1;
+        if calls < 3 {
+            Err(ChangedDuringCapture("repository".into()).into())
+        } else {
+            Ok(calls)
+        }
+    })
+    .unwrap();
+    assert_eq!(captured, 3);
+    // A source that never settles fails after the last attempt.
+    let mut calls = 0;
+    let error = until_unchanged(2, pause, || -> crate::Result<()> {
+        calls += 1;
+        Err(ChangedDuringCapture("repository".into()).into())
+    })
+    .unwrap_err();
+    assert_eq!(calls, 2);
+    assert!(error.is::<ChangedDuringCapture>());
+    // Any other failure is not retried.
+    let mut calls = 0;
+    assert!(
+        until_unchanged(5, pause, || -> crate::Result<()> {
+            calls += 1;
+            Err("untracked files".into())
+        })
+        .is_err()
+    );
+    assert_eq!(calls, 1);
+}

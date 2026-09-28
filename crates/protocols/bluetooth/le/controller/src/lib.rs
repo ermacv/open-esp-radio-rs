@@ -45,6 +45,8 @@ mod advertising;
 mod arbiter;
 mod coexistence;
 mod controller;
+#[cfg(feature = "diagnostic-mic-fault")]
+mod diagnostic;
 mod dtm;
 mod output;
 mod peripheral;

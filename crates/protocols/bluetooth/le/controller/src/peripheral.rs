@@ -177,6 +177,9 @@ struct Connection {
     /// The transmission whose request is at the backend.
     transmitting: Option<(Pending, usize)>,
     host_acl: Option<LeHostAclPacket>,
+    /// The next received encrypted data PDU has its MIC corrupted.
+    #[cfg(feature = "diagnostic-mic-fault")]
+    corrupt_next_mic: bool,
     channel_map: Option<LeChannelMapUpdate>,
     connection_update: Option<LeConnectionUpdate>,
     peer_termination: Option<u8>,
@@ -335,6 +338,8 @@ impl Peripheral {
             pending: None,
             transmitting: None,
             host_acl: None,
+            #[cfg(feature = "diagnostic-mic-fault")]
+            corrupt_next_mic: false,
             channel_map: None,
             connection_update: None,
             peer_termination: None,
@@ -748,6 +753,21 @@ impl Peripheral {
         }
     }
 
+    /// Arm one received-MIC corruption on the encrypted connection `handle`.
+    #[cfg(feature = "diagnostic-mic-fault")]
+    pub(crate) fn arm_mic_corruption(&mut self, handle: ConnHandle) -> Status {
+        if self.handle() != Some(handle) {
+            return HciError::UNKNOWN_CONN_IDENTIFIER.to_status();
+        }
+        match self.connection.as_mut() {
+            Some(connection) if connection.closing.is_none() && connection.security.is_active() => {
+                connection.corrupt_next_mic = true;
+                Status::SUCCESS
+            }
+            _ => HciError::CMD_DISALLOWED.to_status(),
+        }
+    }
+
     /// Whether a Host ACL packet can be taken now.
     pub(crate) fn acl_ready(&self) -> bool {
         self.connection
@@ -910,6 +930,20 @@ impl Connection {
         events: &mut Events,
     ) -> Option<LeControllerAclPacket> {
         let mut received = None;
+        #[cfg(feature = "diagnostic-mic-fault")]
+        let mut corrupted = [0; receive::PDU_CAPACITY];
+        #[cfg(feature = "diagnostic-mic-fault")]
+        let pdu = match self
+            .corrupt_next_mic
+            .then(|| crate::diagnostic::corrupt_data_mic(pdu, &mut corrupted))
+            .flatten()
+        {
+            Some(corrupted) if self.security.is_active() => {
+                self.corrupt_next_mic = false;
+                corrupted
+            }
+            _ => pdu,
+        };
         let decoded = receive::decode(&mut self.security, pdu, &mut self.rx, || {
             let source = random?;
             let diversifier = source.random_bytes().ok()?;

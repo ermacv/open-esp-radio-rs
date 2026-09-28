@@ -31,6 +31,11 @@ oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/rad
 oer-esp32s31-radio-runtime = { path = "../../../../runtime/esp32s31/radio" }
 static_cell = "2.1.1"
 
+[features]
+# Diagnostic images only: forwards the Controller's vendor command 0xFC01,
+# which arms one received-MIC corruption.
+diagnostic-mic-fault = ["oer-bluetooth-controller/diagnostic-mic-fault"]
+
 [lints]
 workspace = true
 

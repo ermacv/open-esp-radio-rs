@@ -753,3 +753,23 @@ fn high_duty_directed_advertising_times_out_after_1280_ms() {
     assert_eq!(&events[0][..4], &[0x3e, 19, 0x01, 0x3c]);
     assert!(!harness.core.wants_radio());
 }
+
+const ARM_MIC_CORRUPTION: Opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 0x0001);
+
+#[cfg(feature = "diagnostic-mic-fault")]
+#[test]
+fn mic_corruption_arms_only_an_encrypted_connection() {
+    let mut harness = Harness::configured();
+    assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(0x02));
+    let (mut harness, _first) = Harness::connected_from(harness);
+    assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[1, 0]), Some(0x02));
+    assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(0x0c));
+    assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0]), Some(0x12));
+}
+
+#[cfg(not(feature = "diagnostic-mic-fault"))]
+#[test]
+fn mic_corruption_is_an_unknown_command_without_the_diagnostic_feature() {
+    let (mut harness, _first) = Harness::connected();
+    assert_eq!(harness.command(ARM_MIC_CORRUPTION, &[0, 0]), Some(0x01));
+}

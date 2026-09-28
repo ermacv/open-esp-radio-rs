@@ -233,6 +233,21 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
             }
             Err(_) => {}
         }
+        #[cfg(feature = "diagnostic-mic-fault")]
+        if packet.opcode() == crate::diagnostic::ARM_MIC_CORRUPTION {
+            let (status, handle) = match *packet.parameters() {
+                [low, high] => (
+                    self.peripheral
+                        .arm_mic_corruption(bt_hci::param::ConnHandle::new(u16::from_le_bytes([
+                            low, high,
+                        ]))),
+                    [low, high],
+                ),
+                _ => (HciError::INVALID_HCI_PARAMETERS.to_status(), [0, 0]),
+            };
+            self.respond(&crate::diagnostic::command_complete(status, handle));
+            return Ok(());
+        }
         match classify_le_controller_command(packet) {
             LeControllerCommandClassification::Bootstrap(command) => {
                 self.bootstrap_command(command)

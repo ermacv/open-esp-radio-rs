@@ -13,6 +13,11 @@ oer-bluetooth-hci = { path = "../../hci" }
 oer-bluetooth-ll = { path = "../ll" }
 oer-bluetooth-radio = { path = "../radio" }
 
+[features]
+# Diagnostic images only: vendor HCI command 0xFC01 arms one corruption of a
+# received MIC. Product images never enable it.
+diagnostic-mic-fault = []
+
 [lints]
 workspace = true
 

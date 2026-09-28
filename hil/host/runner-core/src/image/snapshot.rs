@@ -18,40 +18,10 @@ use std::{
     process::Command,
 };
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct FileInput {
-    path: PathBuf,
-    size_bytes: u64,
-    sha256: String,
-    mode: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SourceInput {
-    pub name: String,
-    pub commit: String,
-    pub dirty: bool,
-    files: Vec<FileInput>,
-    /// The untracked files among `files`, and why each was archived.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    untracked: Vec<UntrackedInput>,
-}
-
-/// An untracked file a snapshot archived.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct UntrackedInput {
-    path: PathBuf,
-    by: UntrackedReason,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum UntrackedReason {
-    /// Named with `--source-include`.
-    SourceInclude,
-    /// Inside an image package, with `--include-untracked`.
-    ImagePackage,
-}
+pub use oer_hil_schema::snapshot::SourceInput;
+use oer_hil_schema::snapshot::{
+    FileInput, MANIFEST_SCHEMA, Manifest, UntrackedInput, UntrackedReason,
+};
 
 /// The firmware workspaces whose path packages an image build reads.
 const FIRMWARE_WORKSPACES: [&str; 2] = [
@@ -102,12 +72,6 @@ pub fn image_packages(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 #[derive(Deserialize, Serialize)]
-struct Manifest {
-    schema: u16,
-    sources: Vec<SourceInput>,
-}
-
-#[derive(Deserialize, Serialize)]
 pub struct Snapshot {
     schema: u16,
     snapshot_id: String,
@@ -122,10 +86,9 @@ impl Snapshot {
     }
 }
 
-impl SourceInput {
-    pub fn identity(&self) -> Result<String> {
-        Ok(digest(&serde_json::to_vec(self)?))
-    }
+/// A source's identity: the SHA-256 of its manifest entry.
+pub fn identity(source: &SourceInput) -> Result<String> {
+    Ok(digest(&serde_json::to_vec(source)?))
 }
 
 /// Owns a verified private checkout. No build falls back to the live repository.
@@ -588,7 +551,10 @@ fn capture_roots(
             .map(|(path, by)| UntrackedInput { path, by })
             .collect();
     }
-    let manifest = Manifest { schema: 1, sources };
+    let manifest = Manifest {
+        schema: MANIFEST_SCHEMA,
+        sources,
+    };
     let snapshot_id = digest(&serde_json::to_vec(&manifest)?);
     let archive_sha256 = crate::durable::sha256_file(&archive_path)?;
     atomic_json(&staging.path().join("manifest.json"), &manifest)?;

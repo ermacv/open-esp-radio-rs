@@ -1,6 +1,5 @@
 //! Independent validation of captured source identities and every archived byte.
 use super::*;
-use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Deserialize, PartialEq)]
@@ -18,45 +17,10 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-// Serialization order is the producer's v1 snapshot identity contract.
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct FileInput {
-    pub(super) path: PathBuf,
-    pub(super) size_bytes: u64,
-    pub(super) sha256: String,
-    pub(super) mode: u32,
-}
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct SourceInput {
-    pub(super) name: String,
-    commit: String,
-    dirty: bool,
-    pub(super) files: Vec<FileInput>,
-    /// The untracked files among `files` and why the producer archived
-    /// each; left out of the identity when empty, as the producer does.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    untracked: Vec<UntrackedInput>,
-}
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct UntrackedInput {
-    path: PathBuf,
-    by: UntrackedReason,
-}
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum UntrackedReason {
-    SourceInclude,
-    ImagePackage,
-}
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Manifest {
-    schema: u16,
-    pub(super) sources: Vec<SourceInput>,
-}
+// The producer writes the manifest with the same types, so its fields and
+// their order, which a source's identity digests, are one contract.
+pub(super) use oer_hil_schema::snapshot::{MANIFEST_SCHEMA, Manifest};
+
 #[derive(Deserialize)]
 struct Snapshot {
     schema: u16,
@@ -68,7 +32,7 @@ struct Snapshot {
 pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Manifest>> {
     let manifest: Manifest = read_json(&directory.join("manifest.json"))?;
     let snapshot: Snapshot = read_json(&directory.join("snapshot.json"))?;
-    if manifest.schema != 1
+    if manifest.schema != MANIFEST_SCHEMA
         || snapshot.schema != 1
         || digest(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
         || sha256_file(&directory.join("sources.tar"))? != snapshot.archive_sha256
@@ -180,7 +144,7 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use oer_hil_schema::snapshot::SourceInput;
 
     /// The source identity is the digest of the reserialized manifest entry,
     /// so an entry must read back to the producer's exact bytes.

@@ -788,7 +788,7 @@ fn validate_snapshot_materials(run: &Path, provenance: &BuildProvenance) -> Resu
         if input.name != source.name
             || input.commit != source.commit
             || input.dirty != source.dirty
-            || input.identity()? != source.workspace_sha256
+            || crate::image::snapshot::identity(input)? != source.workspace_sha256
         {
             return Err("source snapshot identity disagrees with provenance".into());
         }

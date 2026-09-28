@@ -12,6 +12,7 @@ pub mod observer;
 pub mod observer_store;
 pub mod run;
 pub mod scenario;
+pub mod snapshot;
 
 // Producer operations run Cargo; evaluators read prepared descriptors instead.
 #[cfg(feature = "producer")]

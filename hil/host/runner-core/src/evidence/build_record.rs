@@ -52,7 +52,7 @@ pub(super) fn archive_snapshot(
                 remote: None,
                 commit: source.commit.clone(),
                 dirty: source.dirty,
-                workspace_sha256: source.identity()?,
+                workspace_sha256: crate::image::snapshot::identity(source)?,
                 rebuild_status: SourceRebuildStatus::SourceSnapshot,
                 tracked_patch_path: None,
                 tracked_patch_size_bytes: None,

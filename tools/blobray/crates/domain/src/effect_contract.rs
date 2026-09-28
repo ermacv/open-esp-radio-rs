@@ -473,8 +473,84 @@ pub enum EffectSelection {
     Violation(EffectViolation),
 }
 /// Bounded per-side policy state shared by verification and retained admission.
+/// The selector identity of a concrete effect: every selector that matches
+/// the effect has this key, except a delay selector without a value.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum EffectKey {
+    Read(u32, u8),
+    Write(u32, u8),
+    Delay(u32),
+    Fence(u8, u8),
+}
+impl EffectKey {
+    fn of_event(event: &ExecutionEvent) -> Option<Self> {
+        Some(match *event {
+            ExecutionEvent::Read { address, width, .. } => Self::Read(address, width),
+            ExecutionEvent::Write { address, width, .. } => Self::Write(address, width),
+            ExecutionEvent::DelayMicros { value } => Self::Delay(value),
+            ExecutionEvent::Fence {
+                predecessor,
+                successor,
+            } => Self::Fence(predecessor, successor),
+            _ => return None,
+        })
+    }
+    /// The key of the effects `selector` matches; `None` for any delay.
+    fn of_selector(selector: EffectSelector) -> Option<Self> {
+        Some(match selector {
+            EffectSelector::MmioRead { address, width } => Self::Read(address, width),
+            EffectSelector::MmioWrite { address, width } => Self::Write(address, width),
+            EffectSelector::Delay { micros } => Self::Delay(micros?),
+            EffectSelector::Fence {
+                predecessor,
+                successor,
+            } => Self::Fence(predecessor, successor),
+        })
+    }
+}
+/// The side's rules by the effects their selectors match, each list in rule
+/// order, so an effect is tested only against rules that can select it.
+#[derive(Default)]
+struct RuleIndex {
+    keyed: std::collections::BTreeMap<EffectKey, Vec<usize>>,
+    any_delay: Vec<usize>,
+}
+impl RuleIndex {
+    fn new(rules: &[EffectRule], replacement: bool) -> Self {
+        let mut index = Self::default();
+        for (i, rule) in rules.iter().enumerate() {
+            let Some(pattern) = rule.pattern(replacement) else {
+                continue;
+            };
+            match EffectKey::of_selector(pattern.selector) {
+                Some(key) => index.keyed.entry(key).or_default().push(i),
+                None => index.any_delay.push(i),
+            }
+        }
+        index
+    }
+    /// Indices of the rules whose selector matches `event`, ascending.
+    fn candidates(&self, event: &ExecutionEvent) -> impl Iterator<Item = usize> + '_ {
+        let keyed = EffectKey::of_event(event)
+            .and_then(|key| self.keyed.get(&key))
+            .map_or(&[][..], Vec::as_slice);
+        let any = if matches!(event, ExecutionEvent::DelayMicros { .. }) {
+            &self.any_delay[..]
+        } else {
+            &[]
+        };
+        let (mut a, mut b) = (keyed.iter().peekable(), any.iter().peekable());
+        std::iter::from_fn(move || match (a.peek(), b.peek()) {
+            (Some(x), Some(y)) if x < y => a.next().copied(),
+            (Some(_), Some(_)) | (None, Some(_)) => b.next().copied(),
+            (Some(_), None) => a.next().copied(),
+            (None, None) => None,
+        })
+    }
+}
 pub struct EffectTracker<'a> {
     contract: &'a EffectContract,
+    rules: RuleIndex,
     replacement: bool,
     counts: [u32; MAX_EFFECT_RULES],
     first_unclassified: Option<EffectGap>,
@@ -495,6 +571,7 @@ impl<'a> EffectTracker<'a> {
         contract.validate()?;
         Ok(Self {
             contract,
+            rules: RuleIndex::new(&contract.rules, replacement),
             replacement,
             counts: [0; MAX_EFFECT_RULES],
             first_unclassified: None,
@@ -541,7 +618,8 @@ impl<'a> EffectTracker<'a> {
             ));
         }
         let (previous, earlier) = (self.previous.as_ref(), &self.earlier);
-        let selected = self.contract.rules.iter().enumerate().find_map(|(i, r)| {
+        let selected = self.rules.candidates(event).find_map(|i| {
+            let r = &self.contract.rules[i];
             r.pattern(self.replacement)
                 .filter(|p| {
                     let earlier = earlier.get(i).copied().unwrap_or_default();
@@ -549,11 +627,8 @@ impl<'a> EffectTracker<'a> {
                 })
                 .map(|p| (i, r, p))
         });
-        for (i, rule) in self.contract.rules.iter().enumerate() {
-            if let (Some(count), Some(pattern)) =
-                (self.earlier.get_mut(i), rule.pattern(self.replacement))
-                && pattern.selector.matches(event)
-            {
+        for i in self.rules.candidates(event) {
+            if let Some(count) = self.earlier.get_mut(i) {
                 *count += 1;
             }
         }
@@ -653,4 +728,99 @@ pub fn selected_effect_contract<'a>(
         ));
     }
     Ok(Some(selected))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn indexed_candidates_are_the_matching_rules_in_rule_order() {
+        let read = |address| EffectSelector::MmioRead { address, width: 4 };
+        let selectors = [
+            EffectSelector::Delay { micros: None },
+            read(0x10),
+            EffectSelector::Delay { micros: Some(5) },
+            EffectSelector::MmioWrite {
+                address: 0x10,
+                width: 4,
+            },
+            read(0x10),
+            EffectSelector::Delay { micros: None },
+            EffectSelector::Fence {
+                predecessor: 3,
+                successor: 3,
+            },
+            EffectSelector::Delay { micros: Some(5) },
+        ];
+        let rules: Vec<EffectRule> = selectors
+            .iter()
+            .enumerate()
+            .map(|(i, selector)| EffectRule {
+                name: format!("rule-{i}"),
+                vendor: Some(EffectPattern {
+                    selector: *selector,
+                    value: EffectValue::Any,
+                    followed_by: None,
+                    preceded_by: None,
+                    occurrence: None,
+                }),
+                // Only the vendor side names the second read.
+                replacement: (i != 4).then_some(EffectPattern {
+                    selector: *selector,
+                    value: EffectValue::Any,
+                    followed_by: None,
+                    preceded_by: None,
+                    occurrence: None,
+                }),
+                disposition: EffectDisposition::Required,
+                min_occurrences: 0,
+                max_occurrences: 1,
+                reason: "fixture".into(),
+            })
+            .collect();
+        let events = [
+            ExecutionEvent::Read {
+                address: 0x10,
+                width: 4,
+                value: 0,
+            },
+            ExecutionEvent::Read {
+                address: 0x14,
+                width: 4,
+                value: 0,
+            },
+            ExecutionEvent::Write {
+                address: 0x10,
+                width: 4,
+                value: 1,
+            },
+            ExecutionEvent::DelayMicros { value: 5 },
+            ExecutionEvent::DelayMicros { value: 6 },
+            ExecutionEvent::Fence {
+                predecessor: 3,
+                successor: 3,
+            },
+        ];
+        for replacement in [false, true] {
+            let index = RuleIndex::new(&rules, replacement);
+            for event in &events {
+                let scanned: Vec<usize> = rules
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| {
+                        r.pattern(replacement)
+                            .is_some_and(|p| p.selector.matches(event))
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                let indexed: Vec<usize> = index.candidates(event).collect();
+                assert_eq!(indexed, scanned, "{event:?} on replacement {replacement}");
+            }
+        }
+        // Delays with a value interleave with delays of any value.
+        let index = RuleIndex::new(&rules, false);
+        let delay = ExecutionEvent::DelayMicros { value: 5 };
+        assert_eq!(index.candidates(&delay).collect::<Vec<_>>(), [0, 2, 5, 7]);
+    }
 }

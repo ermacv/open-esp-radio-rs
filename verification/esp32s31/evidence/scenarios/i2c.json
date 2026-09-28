@@ -417,7 +417,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/dependence.rs",
-      "sha256": "35e4a8dbe940d2277dadc9447cb7f13ada444f46f58622fd7370d8fca7f3c497"
+      "sha256": "7514cb2b2613524f32d48f7fdad11b7ce879f5c33f49cee6487d08f671b395ad"
     },
     {
       "path": "tools/blobray/crates/application/src/devices.rs",

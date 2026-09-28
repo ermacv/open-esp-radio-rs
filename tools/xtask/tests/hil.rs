@@ -86,7 +86,7 @@ fn forwards_runner_exit_and_uses_locked_cargo_with_explicit_offline_only() {
 fn cancellation_of_wrapper_pid_reaches_runner_and_waits_for_cleanup_status() {
     let directory = fixture();
     let root = directory.path();
-    let mut child = wrapper(root).arg("wait").spawn().unwrap();
+    let mut child = wrapper(root).arg("loop").spawn().unwrap();
     let deadline = Instant::now() + Duration::from_secs(15);
     while !root.join("pid").is_file() {
         assert!(Instant::now() < deadline, "runner never started");

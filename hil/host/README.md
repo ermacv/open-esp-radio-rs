@@ -544,6 +544,27 @@ run manifest's `firmware[]` entry carries `layout_seed`, which `report
 verify` requires to equal the build record's. Comparing several seeds of the
 same commit separates placement from the source change under test.
 
+### Enqueued runs
+
+```console
+id=$(cargo hil run <scenario> --enqueue)          # returns at once with a job id
+cargo hil run <other> --enqueue --after "$id"     # starts once that job has ended
+cargo hil wait "$id"                              # blocks until the job ends
+```
+
+`run`, `run-all` and `run-plan` with `--enqueue` record a job in the arbiter
+directory's `jobs/`, start the same command detached in its own process group
+(output in `target/hil/jobs/<id>.log`), print the job's id and return. The job
+moves its record from pending to started to finished, with the typed outcome
+of its runs (the worst of them) and their ids. `--after JOB` makes a run,
+enqueued or in the foreground, start only once that job has ended, whatever
+its outcome. `wait JOB` blocks until the job ends and exits with its outcome:
+0 passed, 1 failed, 2 interrupted (or on a quarantined board), 3 blocked or
+skipped, 4 broken, 5 no run created, 6 abandoned (its process is gone without
+finishing, told by its PID and start time). `queue` lists unfinished jobs and
+which job each waits for; `queue --json` has them under `jobs`. An agent waits
+with `wait`, never by looking for process names.
+
 ### Bisecting a scenario
 
 ```console

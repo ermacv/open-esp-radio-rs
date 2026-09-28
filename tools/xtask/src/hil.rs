@@ -88,12 +88,29 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("evidence") => return crate::hil_evidence::command(ctx, &args[1..]),
         Some("perf") => return perf(ctx, &options, &args[1..]),
         Some("profile") => return profile(&args[1..]),
+        Some("wait") => return crate::hil_jobs::wait_command(&args[1..]),
         Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
     }
     // The runner has no lease options: take them from after the command
     // too, before the runner is built.
     let (options, args) = options.with_late(args)?;
+    let (enqueue, after, args) = crate::hil_jobs::take(args)?;
+    if (enqueue || after.is_some()) && !produces_runs(&args) {
+        return Err("--enqueue and --after apply to run, run-all and run-plan".into());
+    }
+    if enqueue {
+        let forwarded = args
+            .iter()
+            .cloned()
+            .chain(record_forced.then(|| OsString::from(RECORD_EVIDENCE)))
+            .collect::<Vec<_>>();
+        let id = crate::hil_jobs::enqueue(ctx, &options.owner(ctx)?, &forwarded, after)?;
+        eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
+        println!("{id}");
+        return Ok(std::process::ExitCode::SUCCESS);
+    }
+    let mut job = crate::hil_jobs::Running::begin(after.as_deref())?;
     let (baseline, args) = crate::hil_baseline::take(args)?;
     let args = args.as_slice();
     let baseline = match baseline {
@@ -206,6 +223,14 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         forward_run_receipt(&run_ids)?;
+        let store = crate::hil_store::shared_runs(HIL_TARGET)?;
+        job.finish(
+            &run_ids,
+            &run_ids
+                .iter()
+                .map(|id| crate::hil_runs::load(&store.join(id)).and_then(|run| run.outcome))
+                .collect::<Vec<_>>(),
+        )?;
         let created = runs_dirty(&run_ids)?;
         match evidence_skip_reason(
             record_forced,
@@ -239,6 +264,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil perf report|baseline|check   gated measurements per commit, baselines, regressions
   cargo hil profile RUN [--scenario S] [--repetition N] [--top N]   symbolized program-counter profiles
   cargo hil bisect --good A --bad B --scenario S [--layout-seed N]   first commit at which S stops passing
+  cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
+  cargo hil wait JOB                  block until the job ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
   cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases (alias: status)
   cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
   cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
@@ -600,10 +627,14 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
         _ => return Err("usage: cargo hil queue [--json]".into()),
     };
     let status = oer_hil_arbiter::Arbiter::open()?.status()?;
+    let jobs = crate::hil_jobs::Jobs::open()?.unfinished();
     if json {
-        println!("{}", serde_json::to_string_pretty(&status)?);
+        let mut value = serde_json::to_value(&status)?;
+        value["jobs"] = serde_json::to_value(&jobs)?;
+        println!("{}", serde_json::to_string_pretty(&value)?);
     } else {
         println!("{status}");
+        print!("{}", crate::hil_jobs::describe(&jobs));
     }
     Ok(std::process::ExitCode::SUCCESS)
 }

@@ -24,6 +24,7 @@ pub mod hil_board;
 pub mod hil_dashboard;
 pub mod hil_evidence;
 pub mod hil_flash;
+pub mod hil_jobs;
 pub mod hil_jtag;
 pub mod hil_perf;
 pub mod hil_runs;

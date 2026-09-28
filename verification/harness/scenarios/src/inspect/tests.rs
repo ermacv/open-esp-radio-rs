@@ -51,12 +51,12 @@ fn a_read_modify_write_that_ors_a_constant_sets_those_bits() {
         accesses(&corpus),
         [
             Access {
-                address: 0x2010_d830,
+                location: Location::Absolute(0x2010_d830),
                 width: 4,
                 effect: Effect::Read,
             },
             Access {
-                address: 0x2010_d830,
+                location: Location::Absolute(0x2010_d830),
                 width: 4,
                 effect: Effect::Modify {
                     clear: 0,
@@ -127,4 +127,51 @@ fn show_prints_every_definition_with_folded_constants() {
     assert!(text.starts_with("== test::sync_enable at 0x0, 0x14 bytes"));
     assert!(text.contains("= 0x2010d830"));
     assert!(show(&corpus, "absent").is_none());
+}
+
+#[test]
+fn a_store_through_a_loaded_pointer_is_a_field_of_the_argument() {
+    // lw a5, 52(a0); lw a4, 0(a5); lui a3, 0x400; or a4, a4, a3;
+    // sw a4, 0(a5); ret: set bit 22 of the word the pointer at a0+0x34
+    // addresses.
+    let corpus = corpus(
+        "set_flag",
+        code(&[
+            "03452783", "0007a703", "004006b7", "00d76733", "00e7a023", "8082",
+        ]),
+    );
+    let text = fields(&corpus, &[0x34, 0]);
+    assert!(text.contains("a0->0x34->0x0 W test::set_flag+0x10  sets bits 22"));
+    assert!(fields(&corpus, &[0x38, 0]).is_empty());
+}
+
+#[test]
+fn a_value_both_paths_agree_on_survives_the_join() {
+    // beq a1, zero, +8; addi a2, a2, 1; sw zero, 4(a0); ret: the store
+    // after the join still addresses the first argument.
+    let corpus = corpus(
+        "join",
+        code(&["00058463", "00160613", "00052223", "00008067"]),
+    );
+    assert!(fields(&corpus, &[4]).contains("a0->0x4 W test::join+0x8  = 0x0"));
+}
+
+#[test]
+fn a_relocated_low_part_names_the_symbol_once() {
+    // lui a5, %hi(g+0xc); lw a4, %lo(g+0xc)(a5); ret: the load reads
+    // g+0xc, not g+0x18.
+    let mut corpus = corpus("load", code(&["000007b7", "00c7a703", "8082"]));
+    let relocation = |kind| Reference {
+        kind,
+        target: "g".into(),
+        addend: 0xc,
+        literal: None,
+    };
+    corpus.functions[0].references = BTreeMap::from([
+        (0, relocation(object::elf::R_RISCV_HI20)),
+        (4, relocation(object::elf::R_RISCV_LO12_I)),
+    ]);
+    let text = fields(&corpus, &[0xc]);
+    assert!(text.contains("&g->0xc R test::load+0x4"));
+    assert!(fields(&corpus, &[0x18]).is_empty());
 }

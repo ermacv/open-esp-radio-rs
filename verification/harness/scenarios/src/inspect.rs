@@ -17,7 +17,8 @@ use crate::registers::Registers;
 use crate::triage::{CALLEE_SAVED, PARCEL, REGISTERS, ZERO};
 use blobray_backend_riscv::RiscvDecoder;
 use blobray_domain::{
-    FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand, SemanticOp,
+    DecodedOp, FunctionDecoder, FunctionSemantics, InstructionFlow, IntegerOp, MemoryKind, Operand,
+    SemanticOp,
 };
 use object::{
     Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex,
@@ -38,6 +39,12 @@ const STRING_LIMIT: usize = 160;
 const WORD_BYTES: u8 = 4;
 /// All bits of a word.
 const ALL: u32 = u32::MAX;
+/// The argument registers `a0` to `a7`.
+const ARGUMENTS: std::ops::Range<u8> = 10..18;
+/// Most loads a followed pointer may take from its root.
+const DEPTH: usize = 4;
+/// Most passes the dataflow takes to reach its fixed point.
+const PASSES: usize = 16;
 
 /// One vendor function of a pinned artifact.
 pub struct Function {
@@ -69,6 +76,39 @@ impl Reference {
             self.kind,
             object::elf::R_RISCV_CALL | object::elf::R_RISCV_CALL_PLT | object::elf::R_RISCV_JAL
         )
+    }
+
+    /// Whether the relocation supplies the upper bits of an address.
+    fn is_upper(&self) -> bool {
+        matches!(
+            self.kind,
+            object::elf::R_RISCV_HI20 | object::elf::R_RISCV_PCREL_HI20
+        )
+    }
+
+    /// Whether the relocation supplies the low bits of a symbol's address.
+    fn is_lower_absolute(&self) -> bool {
+        matches!(
+            self.kind,
+            object::elf::R_RISCV_LO12_I | object::elf::R_RISCV_LO12_S
+        )
+    }
+
+    /// Whether the relocation completes the address its paired `auipc`
+    /// started.
+    fn is_lower_pc_relative(&self) -> bool {
+        matches!(
+            self.kind,
+            object::elf::R_RISCV_PCREL_LO12_I | object::elf::R_RISCV_PCREL_LO12_S
+        )
+    }
+
+    /// The symbol address the relocation names.
+    fn address(&self) -> Value {
+        Value::Address {
+            base: Place::Symbol(self.target.clone()),
+            offset: self.addend as i32,
+        }
     }
 
     fn describe(&self) -> String {
@@ -259,85 +299,148 @@ impl Corpus {
                 }
             }
         }
-        // Knowledge ends where control can enter from elsewhere.
-        let targets: BTreeSet<usize> = decoded
+        let index: BTreeMap<usize, usize> = decoded
             .iter()
-            .filter_map(|(at, _, op)| match op.as_ref()?.flow {
-                InstructionFlow::Branch { displacement }
-                | InstructionFlow::Jump {
-                    displacement,
-                    link: false,
-                } => usize::try_from(*at as i64 + i64::from(displacement)).ok(),
-                _ => None,
+            .enumerate()
+            .map(|(index, (at, ..))| (*at, index))
+            .collect();
+        // The instructions control reaches next from each one, and whether
+        // it gets there through a call.
+        let successors: Vec<Vec<usize>> = decoded
+            .iter()
+            .enumerate()
+            .map(|(position, (at, _, op))| {
+                let next = position + 1;
+                let target = |displacement: i32| {
+                    usize::try_from(*at as i64 + i64::from(displacement))
+                        .ok()
+                        .and_then(|target| index.get(&target).copied())
+                };
+                let mut to = vec![];
+                match op.as_ref().map(|op| op.flow) {
+                    None
+                    | Some(InstructionFlow::Next)
+                    | Some(InstructionFlow::Jump { link: true, .. })
+                    | Some(InstructionFlow::Indirect { link: true, .. }) => to.push(next),
+                    Some(InstructionFlow::Branch { displacement }) => {
+                        to.push(next);
+                        to.extend(target(displacement));
+                    }
+                    Some(InstructionFlow::Jump {
+                        displacement,
+                        link: false,
+                    }) => to.extend(target(displacement)),
+                    Some(InstructionFlow::Indirect { link: false, .. })
+                    | Some(InstructionFlow::Stop) => {}
+                }
+                to.retain(|successor| *successor < decoded.len());
+                to
             })
             .collect();
-        let mut state = State::new();
-        let mut steps = vec![];
-        for (at, length, op) in decoded {
-            if targets.contains(&at) {
-                state = State::new();
+        // Forward dataflow to a fixed point: the state entering an
+        // instruction is the merge of the states leaving its predecessors.
+        let mut entering: Vec<Option<State>> = vec![None; decoded.len()];
+        if let Some(first) = entering.first_mut() {
+            *first = Some(State::entry());
+        }
+        for _ in 0..PASSES {
+            let mut changed = false;
+            for position in 0..decoded.len() {
+                let Some(state) = entering[position].clone() else {
+                    continue;
+                };
+                let (leaving, _) = self.execute(function, &decoded[position], state);
+                for successor in &successors[position] {
+                    let merged = match &entering[*successor] {
+                        Some(existing) => existing.merge(&leaving),
+                        None => leaving.clone(),
+                    };
+                    if entering[*successor].as_ref() != Some(&merged) {
+                        entering[*successor] = Some(merged);
+                        changed = true;
+                    }
+                }
             }
-            let Some(op) = op else {
-                state = State::new();
-                steps.push(Step {
+            if !changed {
+                break;
+            }
+        }
+        decoded
+            .iter()
+            .zip(entering)
+            .map(|(instruction, state)| {
+                self.execute(function, instruction, state.unwrap_or_else(State::new))
+                    .1
+            })
+            .collect()
+    }
+
+    /// One instruction from `state`: the state leaving it and what it shows.
+    fn execute(
+        &self,
+        function: &Function,
+        (at, length, op): &(usize, usize, Option<DecodedOp>),
+        mut state: State,
+    ) -> (State, Step) {
+        let at = *at;
+        let Some(op) = op else {
+            return (
+                State::new(),
+                Step {
                     offset: at as u32,
                     text: ".half".into(),
                     notes: vec![],
                     access: None,
-                });
-                continue;
-            };
-            let raw = &function.code[at..at + length];
-            let reference = function.references.get(&(at as u32));
-            let address = function.entry.wrapping_add(at as u32);
-            let mut notes = vec![];
-            if let Some(reference) = reference {
-                notes.push(reference.describe());
-            }
-            let call = matches!(
-                op.flow,
-                InstructionFlow::Jump { link: true, .. }
-                    | InstructionFlow::Indirect { link: true, .. }
+                },
             );
-            // A linked image names its callees by address; an archive member
-            // names them through the call's relocation, noted above.
-            if call && reference.is_none_or(|r| !r.is_call()) {
-                let target = match op.flow {
-                    InstructionFlow::Jump { displacement, .. } => {
-                        Some(address.wrapping_add_signed(displacement))
-                    }
-                    InstructionFlow::Indirect { base, offset, .. } => match state.get(base) {
-                        Value::Constant(value) => Some(value.wrapping_add_signed(offset)),
-                        _ => None,
-                    },
-                    _ => None,
-                };
-                if let Some(name) =
-                    target.and_then(|t| self.names.get(&(function.origin.clone(), t)))
-                {
-                    notes.push(format!("<{name}>"));
+        };
+        let raw = &function.code[at..at + length];
+        let reference = function.references.get(&(at as u32));
+        let address = function.entry.wrapping_add(at as u32);
+        let mut notes = vec![];
+        if let Some(reference) = reference {
+            notes.push(reference.describe());
+        }
+        let call = matches!(
+            op.flow,
+            InstructionFlow::Jump { link: true, .. } | InstructionFlow::Indirect { link: true, .. }
+        );
+        // A linked image names its callees by address; an archive member
+        // names them through the call's relocation, noted above.
+        if call && reference.is_none_or(|r| !r.is_call()) {
+            let target = match op.flow {
+                InstructionFlow::Jump { displacement, .. } => {
+                    Some(address.wrapping_add_signed(displacement))
                 }
+                InstructionFlow::Indirect { base, offset, .. } => match state.get(base) {
+                    Value::Constant(value) => Some(value.wrapping_add_signed(offset)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(name) = target.and_then(|t| self.names.get(&(function.origin.clone(), t))) {
+                notes.push(format!("<{name}>"));
             }
-            let access = state.step(
-                RiscvDecoder.lift(raw),
-                address,
-                reference.is_some(),
-                &mut notes,
-                &self.registers,
-            );
-            if call {
-                state.call();
-            } else if matches!(op.flow, InstructionFlow::Indirect { link: true, .. }) {
-                state = State::new();
-            }
-            steps.push(Step {
+        }
+        let access = state.step(
+            RiscvDecoder.lift(raw),
+            address,
+            reference,
+            &mut notes,
+            &self.registers,
+        );
+        if call {
+            state.call();
+        }
+        (
+            state,
+            Step {
                 offset: at as u32,
-                text: op.text,
+                text: op.text.clone(),
                 notes,
                 access,
-            });
-        }
-        steps
+            },
+        )
     }
 }
 
@@ -367,10 +470,83 @@ struct Step {
     access: Option<Access>,
 }
 
-/// A load or store to an address the pass resolved.
+/// A pointer the pass follows symbolically: an argument register's value at
+/// entry, a symbol's address, or the word read from a location.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Place {
+    Argument(u8),
+    Symbol(String),
+    Loaded(Box<Location>),
+}
+
+impl Place {
+    /// How many loads lead to this pointer.
+    fn depth(&self) -> usize {
+        match self {
+            Place::Argument(_) | Place::Symbol(_) => 0,
+            Place::Loaded(location) => 1 + location.depth(),
+        }
+    }
+}
+
+impl std::fmt::Display for Place {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Place::Argument(index) => write!(f, "a{index}"),
+            Place::Symbol(name) => write!(f, "&{name}"),
+            Place::Loaded(location) => write!(f, "{location}"),
+        }
+    }
+}
+
+/// A memory location an access resolves to.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Location {
+    Absolute(u32),
+    /// `offset` bytes past the pointer `Place`.
+    Field(Place, i32),
+}
+
+impl Location {
+    fn depth(&self) -> usize {
+        match self {
+            Location::Absolute(_) => 0,
+            Location::Field(place, _) => place.depth(),
+        }
+    }
+
+    /// The field offsets from the root pointer to this location, in order.
+    pub fn offsets(&self) -> Vec<i32> {
+        match self {
+            Location::Absolute(_) => vec![],
+            Location::Field(place, offset) => {
+                let mut offsets = match place {
+                    Place::Loaded(location) => location.offsets(),
+                    _ => vec![],
+                };
+                offsets.push(*offset);
+                offsets
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Location::Absolute(address) => write!(f, "{address:#010x}"),
+            Location::Field(place, offset) if *offset < 0 => {
+                write!(f, "{place}->-{:#x}", offset.unsigned_abs())
+            }
+            Location::Field(place, offset) => write!(f, "{place}->{offset:#x}"),
+        }
+    }
+}
+
+/// A load or store to a location the pass resolved.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Access {
-    pub address: u32,
+    pub location: Location,
     pub width: u8,
     pub effect: Effect,
 }
@@ -379,7 +555,7 @@ pub struct Access {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Effect {
     Read,
-    /// A store of the word read from the same address with `clear` bits
+    /// A store of the value read from the same location with `clear` bits
     /// forced to zero, `set` bits forced to one and `value` bits taken from a
     /// value the pass does not know; every other bit keeps its old value.
     Modify {
@@ -396,13 +572,20 @@ pub enum Effect {
 }
 
 /// A register's value where the pass knows something about it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Value {
     Constant(u32),
-    /// The word read from `address` with only its `keep` bits, `set` bits
-    /// forced to one and `value` bits from a value the pass does not know.
+    /// The pointer `base` plus `offset` bytes.
+    Address {
+        base: Place,
+        offset: i32,
+    },
+    /// The `width`-byte value read from `location` with only its `keep`
+    /// bits, `set` bits forced to one and `value` bits from a value the pass
+    /// does not know.
     Word {
-        address: u32,
+        location: Location,
+        width: u8,
         keep: u32,
         set: u32,
         value: u32,
@@ -415,6 +598,39 @@ enum Value {
 
 const UNKNOWN: Value = Value::Unknown { bits: ALL };
 
+impl Value {
+    /// The value as a pointer, when it is one the pass can follow.
+    fn pointer(&self) -> Option<(Place, i32)> {
+        match self {
+            Value::Address { base, offset } => Some((base.clone(), *offset)),
+            Value::Word {
+                location,
+                width: WORD_BYTES,
+                keep: ALL,
+                set: 0,
+                value: 0,
+            } if location.depth() < DEPTH => Some((Place::Loaded(Box::new(location.clone())), 0)),
+            _ => None,
+        }
+    }
+
+    /// What two paths agree on.
+    fn merge(&self, other: &Value) -> Value {
+        match (self, other) {
+            _ if self == other => self.clone(),
+            (Value::Unknown { bits: a }, Value::Unknown { bits: b }) => {
+                Value::Unknown { bits: a | b }
+            }
+            (Value::Unknown { bits }, Value::Constant(value))
+            | (Value::Constant(value), Value::Unknown { bits }) => {
+                Value::Unknown { bits: bits | value }
+            }
+            _ => UNKNOWN,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct State([Value; REGISTERS]);
 
 impl State {
@@ -422,11 +638,32 @@ impl State {
         Self([UNKNOWN; REGISTERS])
     }
 
+    /// The state at a function's entry: each argument register holds its
+    /// argument.
+    fn entry() -> Self {
+        let mut state = Self::new();
+        for (index, register) in ARGUMENTS.enumerate() {
+            state.0[usize::from(register)] = Value::Address {
+                base: Place::Argument(index as u8),
+                offset: 0,
+            };
+        }
+        state
+    }
+
+    fn merge(&self, other: &State) -> State {
+        let mut merged = self.clone();
+        for (value, other) in merged.0.iter_mut().zip(&other.0) {
+            *value = value.merge(other);
+        }
+        merged
+    }
+
     fn get(&self, register: u8) -> Value {
         if register == ZERO {
             Value::Constant(0)
         } else {
-            self.0[usize::from(register)]
+            self.0[usize::from(register)].clone()
         }
     }
 
@@ -453,13 +690,13 @@ impl State {
     }
 
     /// Advance over one lifted instruction at `address`; the access it makes.
-    /// A relocated instruction's immediate is a link-time value the pass
-    /// does not know.
+    /// A relocated upper immediate is the address of its symbol, and a
+    /// relocated low immediate completes the address its base holds.
     fn step(
         &mut self,
         op: SemanticOp,
         address: u32,
-        relocated: bool,
+        reference: Option<&Reference>,
         notes: &mut Vec<String>,
         registers: &Registers,
     ) -> Option<Access> {
@@ -469,12 +706,11 @@ impl State {
                 value,
                 pc_relative,
             } => {
-                let result = if relocated {
-                    UNKNOWN
-                } else if pc_relative {
-                    Value::Constant(address.wrapping_add(value))
-                } else {
-                    Value::Constant(value)
+                let result = match reference {
+                    Some(reference) if reference.is_upper() => reference.address(),
+                    Some(_) => UNKNOWN,
+                    None if pc_relative => Value::Constant(address.wrapping_add(value)),
+                    None => Value::Constant(value),
                 };
                 if let Value::Constant(value) = result {
                     notes.push(format!("= {value:#x}"));
@@ -488,10 +724,16 @@ impl State {
                 left,
                 right,
             } => {
-                let result = if relocated {
-                    UNKNOWN
-                } else {
-                    combine(op, self.operand(left), self.operand(right))
+                let result = match reference {
+                    Some(reference) if reference.is_lower_absolute() => reference.address(),
+                    Some(reference) if reference.is_lower_pc_relative() => {
+                        match self.operand(left) {
+                            address @ Value::Address { .. } => address,
+                            _ => UNKNOWN,
+                        }
+                    }
+                    Some(_) => UNKNOWN,
+                    None => combine(op, self.operand(left), self.operand(right)),
                 };
                 if let Value::Constant(value) = result
                     && matches!(right, Operand::Immediate(_))
@@ -510,54 +752,77 @@ impl State {
                 source,
                 ..
             } => {
-                let target = match self.get(base) {
-                    Value::Constant(base) if !relocated => {
-                        Some(base.wrapping_add_signed(displacement))
+                let base = self.get(base);
+                // A relocated low part replaces the displacement: an
+                // absolute one names the symbol, a pc-relative one completes
+                // the address its base already holds.
+                let location = match (&base, reference) {
+                    (_, Some(reference)) if reference.is_lower_absolute() => reference
+                        .address()
+                        .pointer()
+                        .map(|(place, offset)| Location::Field(place, offset)),
+                    (_, Some(reference)) if reference.is_lower_pc_relative() => base
+                        .pointer()
+                        .map(|(place, offset)| Location::Field(place, offset)),
+                    (_, Some(_)) => None,
+                    (Value::Constant(base), None) => {
+                        Some(Location::Absolute(base.wrapping_add_signed(displacement)))
                     }
-                    _ => None,
+                    (_, None) => base
+                        .pointer()
+                        .map(|(place, offset)| Location::Field(place, offset + displacement)),
                 };
-                if let Some(target) = target {
-                    notes.push(format!("[{}]", registers.name(target)));
+                match &location {
+                    Some(Location::Absolute(target)) => {
+                        notes.push(format!("[{}]", registers.name(*target)))
+                    }
+                    Some(location @ Location::Field(..)) => notes.push(format!("[{location}]")),
+                    None => {}
                 }
-                let access = target.map(|target| {
+                let access = location.clone().map(|location| {
                     let effect = match kind {
                         MemoryKind::Load => Effect::Read,
                         _ => match source.map(|s| self.get(s)) {
                             Some(Value::Word {
-                                address,
+                                location: read,
+                                width: read_width,
                                 keep,
                                 set,
                                 value,
-                            }) if address == target && width == WORD_BYTES => Effect::Modify {
-                                clear: !(keep | set | value),
-                                set,
-                                value,
+                            }) if read == location && read_width == width => {
+                                let bits = width_mask(width);
+                                Effect::Modify {
+                                    clear: !(keep | set | value) & bits,
+                                    set: set & bits,
+                                    value: value & bits,
+                                }
+                            }
+                            Some(Value::Constant(value)) => {
+                                Effect::Constant(value & width_mask(width))
+                            }
+                            Some(Value::Unknown { bits }) => Effect::Unknown {
+                                bits: bits & width_mask(width),
                             },
-                            Some(Value::Constant(value)) => Effect::Constant(value),
-                            Some(Value::Unknown { bits }) => Effect::Unknown { bits },
-                            _ => Effect::Unknown { bits: ALL },
+                            _ => Effect::Unknown {
+                                bits: width_mask(width),
+                            },
                         },
                     };
                     Access {
-                        address: target,
+                        location,
                         width,
                         effect,
                     }
                 });
                 if let Some(dest) = dest {
-                    let loaded = match target {
-                        Some(address)
-                            if kind == MemoryKind::Load
-                                && width == WORD_BYTES
-                                && address % u32::from(WORD_BYTES) == 0 =>
-                        {
-                            Value::Word {
-                                address,
-                                keep: ALL,
-                                set: 0,
-                                value: 0,
-                            }
-                        }
+                    let loaded = match location {
+                        Some(location) if kind == MemoryKind::Load => Value::Word {
+                            location,
+                            width,
+                            keep: width_mask(width),
+                            set: 0,
+                            value: 0,
+                        },
                         _ => UNKNOWN,
                     };
                     self.set(dest, loaded);
@@ -577,58 +842,97 @@ impl State {
     }
 }
 
+/// The bits a `width`-byte access covers.
+fn width_mask(width: u8) -> u32 {
+    ALL.checked_shr(u32::BITS.saturating_sub(u32::from(width) * u8::BITS))
+        .unwrap_or(ALL)
+}
+
 /// `op` over two values, keeping what the pass can say about the result.
 fn combine(op: IntegerOp, left: Value, right: Value) -> Value {
     use IntegerOp::*;
-    use Value::{Constant, Unknown, Word};
-    match (op, left, right) {
-        (_, Constant(a), Constant(b)) => Constant(op.evaluate(a, b)),
-        (Add | Or | Xor | Sub | Shl | Shr | Sar, value, Constant(0))
-        | (Add | Or | Xor, Constant(0), value) => value,
-        (And, Word { .. }, Constant(mask)) | (And, Constant(mask), Word { .. }) => {
-            let word = if matches!(left, Word { .. }) {
-                left
-            } else {
-                right
+    use Value::{Address, Constant, Unknown, Word};
+    let word = |value: &Value| matches!(value, Word { .. });
+    match (op, &left, &right) {
+        (_, Constant(a), Constant(b)) => return Constant(op.evaluate(*a, *b)),
+        (Add | Or | Xor | Sub | Shl | Shr | Sar, _, Constant(0)) => return left,
+        (Add | Or | Xor, Constant(0), _) => return right,
+        _ => {}
+    }
+    // Pointer arithmetic keeps the pointer.
+    match (op, left.pointer(), right.pointer(), &left, &right) {
+        (Add, Some((base, offset)), _, _, Constant(more))
+        | (Add, _, Some((base, offset)), Constant(more), _) => {
+            return Address {
+                base,
+                offset: offset.wrapping_add(*more as i32),
             };
-            modify(word, |keep, set, value| {
-                (keep & mask, set & mask, value & mask)
+        }
+        (Sub, Some((base, offset)), _, _, Constant(less)) => {
+            return Address {
+                base,
+                offset: offset.wrapping_sub(*less as i32),
+            };
+        }
+        _ => {}
+    }
+    // Any other arithmetic on a pointer is on a value the pass does not know.
+    let unknown = |value: Value| match value {
+        Address { .. } => UNKNOWN,
+        other => other,
+    };
+    let (left, right) = (unknown(left), unknown(right));
+    match (op, &left, &right) {
+        (And, _, Constant(mask)) | (And, Constant(mask), _) if word(&left) || word(&right) => {
+            let mask = *mask;
+            modify(
+                if word(&left) {
+                    left.clone()
+                } else {
+                    right.clone()
+                },
+                |keep, set, value| (keep & mask, set & mask, value & mask),
+            )
+        }
+        (AndNot, Word { .. }, Constant(mask)) => {
+            let mask = *mask;
+            modify(left.clone(), |keep, set, value| {
+                (keep & !mask, set & !mask, value & !mask)
             })
         }
-        (AndNot, Word { .. }, Constant(mask)) => modify(left, |keep, set, value| {
-            (keep & !mask, set & !mask, value & !mask)
-        }),
-        (Or, Word { .. }, Constant(bits)) | (Or, Constant(bits), Word { .. }) => {
-            let word = if matches!(left, Word { .. }) {
-                left
-            } else {
-                right
-            };
-            modify(word, |keep, set, value| {
-                (keep & !bits, set | bits, value & !bits)
-            })
+        (Or, _, Constant(bits)) | (Or, Constant(bits), _) if word(&left) || word(&right) => {
+            let bits = *bits;
+            modify(
+                if word(&left) {
+                    left.clone()
+                } else {
+                    right.clone()
+                },
+                |keep, set, value| (keep & !bits, set | bits, value & !bits),
+            )
         }
         (BitSet, Word { .. }, Constant(bit)) => {
             let bits = 1u32 << (bit % u32::BITS);
-            modify(left, |keep, set, value| {
+            modify(left.clone(), |keep, set, value| {
                 (keep & !bits, set | bits, value & !bits)
             })
         }
         (BitClear, Word { .. }, Constant(bit)) => {
             let bits = 1u32 << (bit % u32::BITS);
-            modify(left, |keep, set, value| {
+            modify(left.clone(), |keep, set, value| {
                 (keep & !bits, set & !bits, value & !bits)
             })
         }
         (Or, Word { .. }, Unknown { bits }) | (Or, Unknown { bits }, Word { .. }) => {
-            let word = if matches!(left, Word { .. }) {
-                left
-            } else {
-                right
-            };
-            modify(word, |keep, set, value| {
-                (keep & !bits, set & !bits, value | bits)
-            })
+            let bits = *bits;
+            modify(
+                if word(&left) {
+                    left.clone()
+                } else {
+                    right.clone()
+                },
+                |keep, set, value| (keep & !bits, set & !bits, value | bits),
+            )
         }
         (And, Unknown { bits }, Constant(mask)) | (And, Constant(mask), Unknown { bits }) => {
             Unknown { bits: bits & mask }
@@ -639,23 +943,18 @@ fn combine(op: IntegerOp, left: Value, right: Value) -> Value {
         (Or, Unknown { bits: a }, Unknown { bits: b }) => Unknown { bits: a | b },
         (And, Unknown { bits: a }, Unknown { bits: b }) => Unknown { bits: a & b },
         (Shl, Unknown { bits }, Constant(shift)) => Unknown {
-            bits: bits.checked_shl(shift).unwrap_or(0),
+            bits: bits.checked_shl(*shift).unwrap_or(0),
         },
         (Shr, Unknown { bits }, Constant(shift)) => Unknown {
-            bits: bits.checked_shr(shift).unwrap_or(0),
+            bits: bits.checked_shr(*shift).unwrap_or(0),
         },
-        (Shl | Shr | Sar | And, Word { .. }, _) => {
-            // An extracted field is a value like any other from here on.
-            match (op, right) {
-                (Shl, Constant(shift)) => Unknown {
-                    bits: ALL.checked_shl(shift).unwrap_or(0),
-                },
-                (Shr, Constant(shift)) => Unknown {
-                    bits: ALL.checked_shr(shift).unwrap_or(0),
-                },
-                _ => UNKNOWN,
-            }
-        }
+        // An extracted field is a value like any other from here on.
+        (Shl, Word { .. }, Constant(shift)) => Unknown {
+            bits: ALL.checked_shl(*shift).unwrap_or(0),
+        },
+        (Shr, Word { .. }, Constant(shift)) => Unknown {
+            bits: ALL.checked_shr(*shift).unwrap_or(0),
+        },
         _ => UNKNOWN,
     }
 }
@@ -663,14 +962,16 @@ fn combine(op: IntegerOp, left: Value, right: Value) -> Value {
 fn modify(word: Value, change: impl FnOnce(u32, u32, u32) -> (u32, u32, u32)) -> Value {
     match word {
         Value::Word {
-            address,
+            location,
+            width,
             keep,
             set,
             value,
         } => {
             let (keep, set, value) = change(keep, set, value);
             Value::Word {
-                address,
+                location,
+                width,
                 keep,
                 set,
                 value,
@@ -706,17 +1007,42 @@ pub fn load() -> Result<Corpus> {
 /// address and register, R or W, origin, function and offset, and for a
 /// store the bits it changes named by the published fields.
 pub fn xref(corpus: &Corpus, start: u32, end: u32) -> String {
+    report(
+        corpus,
+        |location| matches!(location, Location::Absolute(address) if (start..end).contains(address)),
+    )
+}
+
+/// Every access of the corpus to a field reached through pointers whose
+/// last offsets are `offsets`, from any argument or symbol: `[0x34, 0]`
+/// matches the word at offset 0 of the pointer stored at offset 0x34.
+pub fn fields(corpus: &Corpus, offsets: &[i32]) -> String {
+    report(corpus, |location| {
+        matches!(location, Location::Field(..)) && location.offsets().ends_with(offsets)
+    })
+}
+
+/// One line for each access to a location `wanted` selects.
+fn report(corpus: &Corpus, wanted: impl Fn(&Location) -> bool) -> String {
     let mut lines = BTreeSet::new();
     for function in &corpus.functions {
         for step in corpus.walk(function) {
             let Some(access) = step.access else {
                 continue;
             };
-            if !(start..end).contains(&access.address) {
+            if !wanted(&access.location) {
                 continue;
             }
-            let word = access.address & !(u32::from(WORD_BYTES) - 1);
-            let bits = |mask: u32| corpus.registers.bits(word, mask);
+            let (name, bits): (String, Box<dyn Fn(u32) -> String>) = match &access.location {
+                Location::Absolute(address) => {
+                    let word = address & !(u32::from(WORD_BYTES) - 1);
+                    (
+                        corpus.registers.name(*address),
+                        Box::new(move |mask| corpus.registers.bits(word, mask)),
+                    )
+                }
+                location => (location.to_string(), Box::new(bit_list)),
+            };
             let (mode, detail) = match access.effect {
                 Effect::Read => ("R", String::new()),
                 Effect::Modify { clear, set, value } => {
@@ -731,7 +1057,7 @@ pub fn xref(corpus: &Corpus, start: u32, end: u32) -> String {
                         parts.push(format!("from a value {}", bits(value)));
                     }
                     if parts.is_empty() {
-                        parts.push("rewrites the word read".into());
+                        parts.push("rewrites the value read".into());
                     }
                     ("W", parts.join("; "))
                 }
@@ -744,16 +1070,13 @@ pub fn xref(corpus: &Corpus, start: u32, end: u32) -> String {
                 format!(" {}-byte", access.width)
             };
             lines.insert((
-                access.address,
+                access.location.clone(),
                 function.origin.clone(),
                 function.name.clone(),
                 step.offset,
                 format!(
-                    "{} {mode}{width} {}::{}+{:#x}  {detail}",
-                    corpus.registers.name(access.address),
-                    function.origin,
-                    function.name,
-                    step.offset
+                    "{name} {mode}{width} {}::{}+{:#x}  {detail}",
+                    function.origin, function.name, step.offset
                 ),
             ));
         }
@@ -763,6 +1086,27 @@ pub fn xref(corpus: &Corpus, start: u32, end: u32) -> String {
         let _ = writeln!(text, "{}", line.trim_end());
     }
     text
+}
+
+/// The set bits of `mask` by number.
+fn bit_list(mask: u32) -> String {
+    let bits: Vec<String> = (0..u32::BITS)
+        .filter(|bit| mask & (1 << bit) != 0)
+        .map(|bit| bit.to_string())
+        .collect();
+    format!("bits {}", bits.join(","))
+}
+
+/// `text` as a field offset: hexadecimal with a `0x` prefix, or decimal,
+/// either with an optional leading `-`.
+pub fn parse_offset(text: &str) -> std::result::Result<i32, String> {
+    let (negative, magnitude) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let value = parse_address(magnitude)?;
+    let value = i32::try_from(value).map_err(|error| format!("{text}: {error}"))?;
+    Ok(if negative { -value } else { value })
 }
 
 /// Every definition of `name` in the corpus, annotated.

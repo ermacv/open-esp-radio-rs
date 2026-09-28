@@ -39,6 +39,18 @@ enum Scenario {
     },
     /// One pinned vendor function, annotated, from every artifact defining it.
     Show { function: String },
+    /// Every read and write of the pinned vendor code to a structure field
+    /// reached through pointers whose last offsets are `offsets`, from any
+    /// argument or symbol: `0x34 0` is the word at offset 0 of the pointer
+    /// stored at offset 0x34.
+    Fields {
+        #[arg(
+            required = true,
+            allow_hyphen_values = true,
+            value_parser = oer_vendor_scenario_engine::inspect::parse_offset
+        )]
+        offsets: Vec<i32>,
+    },
     /// The analog-register I2C transport of `libphy.a[phy_i2c.o]`.
     PhyI2c {
         #[command(flatten)]
@@ -157,6 +169,10 @@ fn main() -> ExitCode {
         Scenario::Xref { start, end } => inspect::load().map(|corpus| {
             let end = end.unwrap_or(start.saturating_add(inspect::WORD));
             print!("{}", inspect::xref(&corpus, start, end));
+        }),
+        Scenario::Fields { offsets } => inspect::load().map(|corpus| {
+            print!("{}", inspect::fields(&corpus, &offsets));
+            ExitCode::SUCCESS
         }),
         Scenario::Show { function } => inspect::load().and_then(|corpus| {
             let text = inspect::show(&corpus, &function)

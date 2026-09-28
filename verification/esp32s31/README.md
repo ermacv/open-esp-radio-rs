@@ -571,6 +571,7 @@ authenticated against its pinned SHA-256) without running a scenario:
 ```console
 cargo xtask vendor-scenario --chip esp32s31 xref 0x2010d830 [END]
 cargo xtask vendor-scenario --chip esp32s31 show pm_on_isr_twt_wake
+cargo xtask vendor-scenario --chip esp32s31 fields 0x34 0
 ```
 
 `xref` lists every load and store whose address a forward pass over the
@@ -580,9 +581,13 @@ register and field names of the published bindings, the origin
 store the bits it clears, sets to a constant or takes from a value the pass
 does not know, such as an argument. `show` prints each definition of a
 function with folded constants, named registers, relocation targets and the
-string literals they address. The pass is intraprocedural and forgets what it
-knows at branch targets, so an access through a pointer loaded from memory
-or computed in another function is not attributed. The engine owns both in
+string literals they address. `fields OFFSET...` lists the accesses to a
+structure field reached through pointers whose last offsets are the given
+ones, from any argument or symbol: `0x34 0` is the word at offset 0 of the
+pointer stored at offset 0x34, printed as a path such as `a0->0x34->0x0`.
+The pass is intraprocedural: it merges the states of the paths that join at a
+branch target and iterates loops to a fixed point, but a value returned by a
+call, or an address computed from an index, is not followed. The engine owns both in
 [`inspect.rs`](../harness/scenarios/src/inspect.rs).
 
 ## Inputs and probes

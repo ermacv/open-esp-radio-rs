@@ -229,6 +229,7 @@ enum ChainEvent {
     StartPrepared(u8),
     Completed,
     Control,
+    Rx,
 }
 
 /// A saturated role: every completion leaves a one-MPDU successor until the
@@ -253,6 +254,7 @@ impl<S: SoftwareTxFrame + 'static, P: MaterializedTxFrame + 'static> DatapathSer
         _: &mut dyn DatapathNetworkRxSet,
         _: DatapathRxServiceContext,
     ) -> Result<DatapathRxProgress, ()> {
+        self.log.push(ChainEvent::Rx);
         Ok(DatapathRxProgress::Drained)
     }
 
@@ -391,6 +393,79 @@ fn partial_successors_publish_without_waiting_but_yield_to_ready_control() {
             ChainEvent::StartPrepared(3),
             ChainEvent::Completed,
         ]
+    );
+}
+
+#[test]
+fn saturated_successors_yield_to_a_received_frame_within_one_transaction() {
+    let storage = Box::leak(Box::new(PacketPoolStorage::<2>::new()));
+    let allocator = Box::leak(Box::new(PacketPool::new(storage))).allocator();
+    let endpoint = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+    let interface = NetworkInterfaceId::new(0);
+    let (mut device, owned) = endpoint.split(interface, [2, 0, 0, 0, 0, 1], allocator);
+    let resources = Box::leak(Box::new(
+        PinnedTxResources::<NoopRawMutex, 64, 16, 8, 1>::new(),
+    ));
+    let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
+    let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
+    network.set_link_state(interface, LinkState::Up);
+    let mut frame = allocator.try_alloc().unwrap();
+    frame.set_len(15);
+    frame.fill(0);
+    frame[..6].fill(4);
+    device.transmit(frame).unwrap();
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let completion = Signal::new();
+    let finished = Signal::<NoopRawMutex, ()>::new();
+    let mut runner = DatapathRunner::new(
+        &irq,
+        network,
+        interface,
+        ChainServices {
+            completion: &completion,
+            log: std::vec::Vec::new(),
+            successors: 12,
+            prepared: None,
+            control_after_successor: u8::MAX,
+            control_pending: false,
+        },
+    );
+    let mut cx = Context::from_waker(Waker::noop());
+    let received = |log: &[ChainEvent]| log.contains(&ChainEvent::Rx);
+    {
+        let mut run = core::pin::pin!(runner.run_until(finished.wait()));
+        for exchange in 0..12 {
+            assert!(run.as_mut().poll(&mut cx).is_pending());
+            // A beacon arrives while the third transaction is on air.
+            if exchange == 2 {
+                irq.notify_rx_handoff();
+            }
+            completion.signal(());
+        }
+        finished.signal(());
+        assert!(run.as_mut().poll(&mut cx).is_ready());
+    }
+    let log = &runner.services.log;
+    // The frame arrives while the second successor is on air.
+    let arrival = log
+        .iter()
+        .position(|event| *event == ChainEvent::StartPrepared(2))
+        .unwrap();
+    let rx = log[arrival..]
+        .iter()
+        .position(|event| *event == ChainEvent::Rx)
+        .map(|offset| arrival + offset);
+    assert!(
+        received(&log[arrival..]),
+        "a saturated TX chain never serviced RX: {log:?}"
+    );
+    let starts_before_rx = log[arrival + 1..rx.unwrap()]
+        .iter()
+        .filter(|event| matches!(event, ChainEvent::StartPrepared(_)))
+        .count();
+    assert!(
+        starts_before_rx <= 1,
+        "RX waited {starts_before_rx} transactions behind saturated TX: {log:?}"
     );
 }
 

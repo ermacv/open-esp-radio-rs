@@ -189,16 +189,16 @@ static ACCESS_POINT_NETWORK_CONFIG_REQUESTS: Channel<
 static STATION_NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
 static ACCESS_POINT_NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> =
     Channel::new();
-#[cfg(feature = "station-exit-evidence")]
+#[cfg(feature = "driver-observation")]
 static QUALIFICATION_REQUESTS: Channel<CriticalSectionRawMutex, QualificationRequester, 3> =
     Channel::new();
-#[cfg(feature = "station-exit-evidence")]
+#[cfg(feature = "driver-observation")]
 static UDP_RX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
     Channel::new();
-#[cfg(feature = "station-exit-evidence")]
+#[cfg(feature = "driver-observation")]
 static UDP_TX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
     Channel::new();
-#[cfg(feature = "station-exit-evidence")]
+#[cfg(feature = "driver-observation")]
 static TCP_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> = Channel::new();
 #[cfg(feature = "station-exit-evidence")]
 static CONNECTED_RX_OBSERVER: ConstStaticCell<rx_qualification::HilConnectedRxObserver> =
@@ -1114,7 +1114,9 @@ async fn qualification_snapshot_task(snapshot: DiagnosticSnapshot) {
     }
 }
 
-#[cfg(feature = "station-exit-evidence")]
+// The qualification snapshot task answers these requests; it exists only
+// with driver observation.
+#[cfg(feature = "driver-observation")]
 pub(in crate::product_hil) async fn qualification_sample(
     requester: QualificationRequester,
 ) -> QualificationSample {
@@ -1130,7 +1132,7 @@ pub(in crate::product_hil) async fn qualification_sample(
     }
 }
 
-#[cfg(not(feature = "station-exit-evidence"))]
+#[cfg(not(feature = "driver-observation"))]
 pub(in crate::product_hil) async fn qualification_sample(
     _requester: QualificationRequester,
 ) -> QualificationSample {

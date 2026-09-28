@@ -225,6 +225,12 @@ ieee802154-radio = [
     "dep:oer-esp32s31-radio-runtime",
     "dep:oer-ieee802154",
 ]
+# Record the IEEE 802.15.4 engine and runtime trace points and the MAC power
+# sequence at each transmission start.
+ieee802154-trace = [
+    "oer-esp32s31-ieee802154-runtime?/trace",
+    "oer-esp32s31-hal?/ieee802154-trace",
+]
 # OpenThread over the composed client: host-driven Thread sessions.
 ieee802154-thread = [
     "ieee802154-radio",

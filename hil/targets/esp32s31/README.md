@@ -415,7 +415,9 @@ the panic handler freeze it before the reset; the next boot holds the frozen
 trace for the host, which pages it out through the
 [trace commands](../../protocol/diagnostics.md#event-trace). The
 `station-exit-evidence` feature also enables the station runtime's own trace
-events.
+events. With an IEEE 802.15.4 image, the `ieee802154-trace` feature records
+the MAC engine, runtime and transmit power-sequence events of
+[`oer-ieee802154-trace`](../../../crates/hardware/ieee802154/trace/README.md).
 
 ## Local dependency overrides
 

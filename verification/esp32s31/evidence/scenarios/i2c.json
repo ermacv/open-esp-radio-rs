@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "05ce705adb0caf1363b0c47654fa167b257b2b256ba12d4bb8eb94bcf0fbcddd",
+    "input-2": "af035ce9bd32482b089410bfc2cd082a5a345bebeebc7ecf03604948bdbd332c",
     "input-3": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195",
     "input-4": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
@@ -273,11 +273,11 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/Cargo.toml",
-      "sha256": "5d2b47a554191a0dd49e7baf9550cfb2b745e30d9885808fa05dad4135c067c0"
+      "sha256": "0fed22748e8bbc10e49e543d646ebf2b9a4b75fe4e3b3a7a4600983f480707dd"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/Cargo.toml",
-      "sha256": "684ea1dfbc2348c11730d23980b910fd06fab79041d292a9d4b6980482b9da74"
+      "sha256": "17d3718e898afa1200a6654934f6652fc07d8de9d34687277882bf74e2172e40"
     },
     {
       "path": "crates/runtime/esp32s31/phy/Cargo.toml",
@@ -290,6 +290,10 @@
     {
       "path": "crates/runtime/ieee80211/Cargo.toml",
       "sha256": "83b47e014c95b85b83288f0300fffd7107b2189188afb1eb9d42398cd2ae9427"
+    },
+    {
+      "path": "crates/trace/Cargo.toml",
+      "sha256": "f35060952d3faf15a027de7f46f246953cbfde283d8dda01b7321fae43314fdd"
     },
     {
       "path": "rust-toolchain.toml",
@@ -1113,7 +1117,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "fe76dc82259665734c5f76afe82d9e28dbc4daa5e8b3da6b2ec3018dd6805ccb"
+      "sha256": "87c947e12fe74507c2548bde0698b4f54c3a2cb56862df65cf618a64066eba0e"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -1217,7 +1221,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "c4d3c4ce2e71de7ac54aaf261f4632de8b4c448474c1e6bad06e7ba24e07268f"
+      "sha256": "139d64d0a2f30e336b2c5cbcb25acbd7cee72bb705dc6a2e42f4b242a888cc33"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",

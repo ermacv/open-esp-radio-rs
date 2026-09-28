@@ -976,7 +976,7 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "fe76dc82259665734c5f76afe82d9e28dbc4daa5e8b3da6b2ec3018dd6805ccb"
+      "sha256": "87c947e12fe74507c2548bde0698b4f54c3a2cb56862df65cf618a64066eba0e"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
@@ -1068,7 +1068,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "c4d3c4ce2e71de7ac54aaf261f4632de8b4c448474c1e6bad06e7ba24e07268f"
+      "sha256": "139d64d0a2f30e336b2c5cbcb25acbd7cee72bb705dc6a2e42f4b242a888cc33"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",

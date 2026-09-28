@@ -8,6 +8,7 @@
 
 pub mod archive;
 pub mod campaign;
+pub mod command_tree;
 pub mod context;
 pub mod device;
 pub mod durable;

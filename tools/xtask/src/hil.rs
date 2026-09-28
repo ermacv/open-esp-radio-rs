@@ -71,6 +71,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("peer") => return crate::hil_board::peer(options.owner(ctx)?, &args[1..]),
         Some("preempt") => return preempt(&options.owner(ctx)?, &args[1..]),
         Some("owner") => return owner(ctx, &args[1..]),
+        Some("__command-tree") => return command_tree(ctx),
         Some("devices") => return devices(ctx, &options, &args[1..]),
         Some("firmware") => return firmware(ctx, &options, &args[1..]),
         Some("flash") => {
@@ -371,6 +372,91 @@ impl LeaseOptions {
             .into_iter()
             .collect())
     }
+}
+
+/// `cargo hil __command-tree`: every `cargo hil` command path with its
+/// subcommands and long flags, as JSON, for checking documentation against
+/// the real command line. The stand's own commands and the runner's are
+/// merged under `hil`.
+fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
+    use clap::CommandFactory as _;
+    use oer_hil_runner_core::command_tree::{CommandNode, command_tree as walk};
+    let path = |words: &[&str]| {
+        words
+            .iter()
+            .map(|word| word.to_string())
+            .collect::<Vec<_>>()
+    };
+    let node = |words: &[&str], subcommands: &[&str], flags: &[&str]| CommandNode {
+        path: path(words),
+        subcommands: subcommands.iter().map(|word| word.to_string()).collect(),
+        flags: flags.iter().map(|word| word.to_string()).collect(),
+    };
+    let (runner, _) = prepare(ctx)?;
+    let output = std::process::Command::new(&runner)
+        .arg("__command-tree")
+        .output()?;
+    let mut runner_nodes: Vec<CommandNode> = serde_json::from_slice(&output.stdout)?;
+    let runner_top = runner_nodes
+        .first()
+        .map(|root| root.subcommands.clone())
+        .unwrap_or_default();
+    // The stand adds lease and evidence options to the runner's run commands.
+    for node in &mut runner_nodes {
+        if matches!(node.path.as_slice(), [one] if ["run", "run-all", "run-plan"].contains(&one.as_str()))
+        {
+            node.flags
+                .extend(["--record-evidence", "--baseline", "--owner"].map(String::from));
+        }
+        node.path.insert(0, String::from("hil"));
+    }
+    let stand = [
+        "queue",
+        "status",
+        "dashboard",
+        "lease",
+        "board",
+        "peer",
+        "devices",
+        "firmware",
+        "flash",
+        "runs",
+        "perf",
+        "evidence",
+        "owner",
+        "preempt",
+    ];
+    let mut root = node(&["hil"], &stand, &["--owner"]);
+    root.subcommands.extend(runner_top);
+    let mut nodes = vec![
+        root,
+        node(&["hil", "queue"], &[], &["--json"]),
+        node(&["hil", "status"], &[], &["--json"]),
+        node(&["hil", "dashboard"], &[], &["--port"]),
+        node(&["hil", "evidence"], &["record", "pending"], &[]),
+        node(&["hil", "evidence", "record"], &[], &["--run", "--since"]),
+        node(&["hil", "evidence", "pending"], &[], &[]),
+        node(&["hil", "owner"], &["set", "merge", "forget"], &[]),
+        node(&["hil", "owner", "set"], &[], &[]),
+        node(&["hil", "owner", "merge"], &[], &[]),
+        node(&["hil", "owner", "forget"], &[], &[]),
+        node(&["hil", "preempt"], &[], &["--reason"]),
+    ];
+    for (name, command) in [
+        ("lease", LeaseCli::command()),
+        ("board", BoardCli::command()),
+        ("perf", PerfCli::command()),
+        ("runs", RunsCli::command()),
+        ("firmware", FirmwareCli::command()),
+        ("devices", DevicesCli::command()),
+        ("peer", crate::hil_board::PeerCli::command()),
+        ("flash", crate::hil_flash::FlashCli::command()),
+    ] {
+        nodes.extend(walk(&command, &path(&["hil", name])));
+    }
+    nodes.extend(runner_nodes.into_iter().skip(1));
+    println!("{}", serde_json::to_string_pretty(&nodes)?);
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// `cargo hil owner [set NAME | merge OLD NEW | forget NAME]`.
@@ -737,14 +823,6 @@ fn board(
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
-    #[derive(clap::Parser)]
-    #[command(name = "cargo hil board", no_binary_name = true)]
-    enum BoardCli {
-        /// Record a flash performed outside the HIL runner.
-        Flashed(FlashedArgs),
-        #[command(flatten)]
-        Access(crate::hil_board::BoardCommand),
-    }
     let flashed = match BoardCli::try_parse_from(args)? {
         BoardCli::Flashed(flashed) => flashed,
         BoardCli::Access(command) => {
@@ -772,34 +850,6 @@ fn perf(
 ) -> Result<std::process::ExitCode> {
     use crate::hil_perf;
     use clap::Parser as _;
-    #[derive(clap::Parser)]
-    #[command(name = "cargo hil perf", no_binary_name = true)]
-    enum PerfCli {
-        /// Gated measurements of clean runs per commit, against each
-        /// scenario's baseline.
-        Report {
-            /// Scenario IDs; every scenario with a gated measurement when omitted.
-            scenarios: Vec<String>,
-            /// Only measurements whose name contains this text.
-            #[arg(long)]
-            measurement: Option<String>,
-            /// Only runs this recent, e.g. 7d.
-            #[arg(long, value_parser = parse_budget, default_value = "14d")]
-            since: std::time::Duration,
-        },
-        /// Make a clean sealed run the baseline of its scenarios.
-        Baseline {
-            run: String,
-            /// Scenarios to set; all gated scenarios of the run when omitted.
-            #[arg(long = "scenario")]
-            scenarios: Vec<String>,
-            #[arg(long)]
-            reason: String,
-        },
-        /// Fail when a run's gated measurements regressed against the
-        /// baselines.
-        Check { run: String },
-    }
     let store = crate::hil_store::shared_runs(HIL_TARGET)?
         .parent()
         .ok_or("the run store has no parent")?
@@ -873,84 +923,6 @@ fn runs(
 ) -> Result<std::process::ExitCode> {
     use crate::hil_runs;
     use clap::Parser as _;
-    #[derive(clap::Parser)]
-    #[command(name = "cargo hil runs", no_binary_name = true)]
-    enum RunsCli {
-        /// Runs of every checkout, newest last.
-        List {
-            #[arg(long)]
-            scenario: Option<String>,
-            /// passed, failed, broken, blocked, interrupted; with --scenario,
-            /// that scenario's outcome.
-            #[arg(long)]
-            outcome: Option<String>,
-            /// Commit prefix.
-            #[arg(long)]
-            commit: Option<String>,
-            /// Image class or application SHA-256 prefix.
-            #[arg(long)]
-            image: Option<String>,
-            /// Checkout directory name.
-            #[arg(long)]
-            checkout: Option<String>,
-            /// Only runs this recent, e.g. 3d or 12h.
-            #[arg(long, value_parser = parse_budget)]
-            since: Option<std::time::Duration>,
-            #[arg(long, default_value_t = 30)]
-            limit: usize,
-        },
-        /// Why a run did not pass.
-        Why {
-            run: String,
-            /// Lines of each failed repetition's uart.log.
-            #[arg(long, default_value_t = 15)]
-            tail: usize,
-        },
-        /// Measurement means of two runs side by side.
-        Compare {
-            a: String,
-            b: String,
-            /// Only measurements whose name contains this text.
-            #[arg(long)]
-            measurement: Option<String>,
-        },
-        /// A scenario's outcomes and measurements across runs.
-        History {
-            scenario: String,
-            #[arg(long)]
-            measurement: Option<String>,
-            #[arg(long, default_value_t = 30)]
-            limit: usize,
-        },
-        /// Keep a run from pruning, e.g. an A/B baseline.
-        Pin {
-            run: String,
-            #[arg(long)]
-            reason: String,
-        },
-        Unpin {
-            run: String,
-        },
-        /// Follow a run until it ends and exit with its outcome: 0 passed,
-        /// 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or
-        /// on a quarantined board.
-        #[command(group(clap::ArgGroup::new("which").required(true).args(["run", "latest"])))]
-        Wait {
-            run: Option<String>,
-            /// The newest run of this checkout.
-            #[arg(long)]
-            latest: bool,
-        },
-        /// List, or with --apply delete, runs no rule keeps.
-        Prune {
-            #[arg(long, default_value_t = PRUNE_DAYS)]
-            days: u64,
-            #[arg(long, default_value_t = PRUNE_KEEP_FAILED)]
-            keep_failed: usize,
-            #[arg(long)]
-            apply: bool,
-        },
-    }
     let local = ctx.root.join("target/hil").join(HIL_TARGET).join("runs");
     let directory = if local.exists() {
         local
@@ -1104,29 +1076,6 @@ fn firmware(
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
-    #[derive(clap::Parser)]
-    #[command(name = "cargo hil firmware", no_binary_name = true)]
-    enum FirmwareCli {
-        /// Catalog images: name, chip, project and last build.
-        List,
-        /// Build an image against the pinned ESP-IDF.
-        Build { image: String },
-        /// Build an image, then flash it to a board under a lease of that
-        /// board and journal it.
-        Flash {
-            image: String,
-            #[arg(long, value_name = "NAME|MAC")]
-            board: String,
-            /// Write and reset through OpenOCD and the chip's JTAG instead of
-            /// espflash and the USB Serial/JTAG reset lines.
-            #[arg(long)]
-            jtag: bool,
-            /// Leave the board alone when its journaled flash is this image
-            /// with the digest of the current build.
-            #[arg(long)]
-            if_changed: bool,
-        },
-    }
     match FirmwareCli::try_parse_from(args)? {
         FirmwareCli::List => crate::firmware_catalog::list(ctx)?,
         FirmwareCli::Build { image } => {
@@ -1166,62 +1115,6 @@ fn devices(
     args: &[OsString],
 ) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
-    #[derive(clap::Parser)]
-    #[command(name = "cargo hil devices", no_binary_name = true)]
-    struct DevicesCli {
-        #[arg(long)]
-        json: bool,
-        #[command(subcommand)]
-        command: Option<DevicesCommand>,
-    }
-    #[derive(clap::Subcommand)]
-    enum DevicesCommand {
-        /// Register or change a board's chip, name and reset path.
-        Set {
-            mac: String,
-            #[arg(long)]
-            chip: Option<String>,
-            #[arg(long)]
-            name: Option<String>,
-            /// USB serial number of a USB-to-UART bridge whose modem lines
-            /// drive the chip's EN and BOOT; needs `--en` and `--boot`.
-            #[arg(long, value_name = "USB_SERIAL", requires_all = ["en", "boot"])]
-            reset_uart: Option<String>,
-            /// The bridge line that pulls EN low.
-            #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
-            en: Option<oer_hil_arbiter::control::Line>,
-            /// The bridge line that pulls the boot strap low.
-            #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
-            boot: Option<oer_hil_arbiter::control::Line>,
-        },
-        /// Reset a board through its registered reset path under a lease of
-        /// that board, and print the reset reason its ROM reports.
-        Reset {
-            #[arg(value_name = "NAME|MAC")]
-            board: String,
-            /// Hold the boot strap low: the ROM waits for a download.
-            #[arg(long)]
-            download: bool,
-        },
-        /// Take a board out of service: until `release`, only this owner
-        /// (`--owner`, else the checkout) may claim it. Leases already held
-        /// run on.
-        Maintenance {
-            #[arg(value_name = "NAME|MAC")]
-            board: String,
-            #[arg(long)]
-            reason: String,
-        },
-        /// Return a board to service.
-        Release {
-            #[arg(value_name = "NAME|MAC")]
-            board: String,
-            /// What you did to a quarantined board: pressed its reset button
-            /// or power-cycled it. It returns only if it then boots.
-            #[arg(long, value_enum)]
-            confirm: Option<ConfirmArg>,
-        },
-    }
     let cli = DevicesCli::try_parse_from(args)?;
     let arbiter = oer_hil_arbiter::Arbiter::open()?;
     match cli.command {
@@ -1612,6 +1505,205 @@ pub(crate) fn exit_code(status: std::process::ExitStatus) -> std::process::ExitC
         }
     });
     std::process::ExitCode::from(code as u8)
+}
+
+// The clap parsers of the stand commands, walked by `__command-tree`.
+#[derive(clap::Parser)]
+#[command(name = "cargo hil board", no_binary_name = true)]
+enum BoardCli {
+    /// Record a flash performed outside the HIL runner.
+    Flashed(FlashedArgs),
+    #[command(flatten)]
+    Access(crate::hil_board::BoardCommand),
+}
+
+#[derive(clap::Parser)]
+#[command(name = "cargo hil perf", no_binary_name = true)]
+enum PerfCli {
+    /// Gated measurements of clean runs per commit, against each
+    /// scenario's baseline.
+    Report {
+        /// Scenario IDs; every scenario with a gated measurement when omitted.
+        scenarios: Vec<String>,
+        /// Only measurements whose name contains this text.
+        #[arg(long)]
+        measurement: Option<String>,
+        /// Only runs this recent, e.g. 7d.
+        #[arg(long, value_parser = parse_budget, default_value = "14d")]
+        since: std::time::Duration,
+    },
+    /// Make a clean sealed run the baseline of its scenarios.
+    Baseline {
+        run: String,
+        /// Scenarios to set; all gated scenarios of the run when omitted.
+        #[arg(long = "scenario")]
+        scenarios: Vec<String>,
+        #[arg(long)]
+        reason: String,
+    },
+    /// Fail when a run's gated measurements regressed against the
+    /// baselines.
+    Check { run: String },
+}
+
+#[derive(clap::Parser)]
+#[command(name = "cargo hil runs", no_binary_name = true)]
+enum RunsCli {
+    /// Runs of every checkout, newest last.
+    List {
+        #[arg(long)]
+        scenario: Option<String>,
+        /// passed, failed, broken, blocked, interrupted; with --scenario,
+        /// that scenario's outcome.
+        #[arg(long)]
+        outcome: Option<String>,
+        /// Commit prefix.
+        #[arg(long)]
+        commit: Option<String>,
+        /// Image class or application SHA-256 prefix.
+        #[arg(long)]
+        image: Option<String>,
+        /// Checkout directory name.
+        #[arg(long)]
+        checkout: Option<String>,
+        /// Only runs this recent, e.g. 3d or 12h.
+        #[arg(long, value_parser = parse_budget)]
+        since: Option<std::time::Duration>,
+        #[arg(long, default_value_t = 30)]
+        limit: usize,
+    },
+    /// Why a run did not pass.
+    Why {
+        run: String,
+        /// Lines of each failed repetition's uart.log.
+        #[arg(long, default_value_t = 15)]
+        tail: usize,
+    },
+    /// Measurement means of two runs side by side.
+    Compare {
+        a: String,
+        b: String,
+        /// Only measurements whose name contains this text.
+        #[arg(long)]
+        measurement: Option<String>,
+    },
+    /// A scenario's outcomes and measurements across runs.
+    History {
+        scenario: String,
+        #[arg(long)]
+        measurement: Option<String>,
+        #[arg(long, default_value_t = 30)]
+        limit: usize,
+    },
+    /// Keep a run from pruning, e.g. an A/B baseline.
+    Pin {
+        run: String,
+        #[arg(long)]
+        reason: String,
+    },
+    Unpin {
+        run: String,
+    },
+    /// Follow a run until it ends and exit with its outcome: 0 passed,
+    /// 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or
+    /// on a quarantined board.
+    #[command(group(clap::ArgGroup::new("which").required(true).args(["run", "latest"])))]
+    Wait {
+        run: Option<String>,
+        /// The newest run of this checkout.
+        #[arg(long)]
+        latest: bool,
+    },
+    /// List, or with --apply delete, runs no rule keeps.
+    Prune {
+        #[arg(long, default_value_t = PRUNE_DAYS)]
+        days: u64,
+        #[arg(long, default_value_t = PRUNE_KEEP_FAILED)]
+        keep_failed: usize,
+        #[arg(long)]
+        apply: bool,
+    },
+}
+
+#[derive(clap::Parser)]
+#[command(name = "cargo hil firmware", no_binary_name = true)]
+enum FirmwareCli {
+    /// Catalog images: name, chip, project and last build.
+    List,
+    /// Build an image against the pinned ESP-IDF.
+    Build { image: String },
+    /// Build an image, then flash it to a board under a lease of that
+    /// board and journal it.
+    Flash {
+        image: String,
+        #[arg(long, value_name = "NAME|MAC")]
+        board: String,
+        /// Write and reset through OpenOCD and the chip's JTAG instead of
+        /// espflash and the USB Serial/JTAG reset lines.
+        #[arg(long)]
+        jtag: bool,
+        /// Leave the board alone when its journaled flash is this image
+        /// with the digest of the current build.
+        #[arg(long)]
+        if_changed: bool,
+    },
+}
+
+#[derive(clap::Parser)]
+#[command(name = "cargo hil devices", no_binary_name = true)]
+struct DevicesCli {
+    #[arg(long)]
+    json: bool,
+    #[command(subcommand)]
+    command: Option<DevicesCommand>,
+}
+#[derive(clap::Subcommand)]
+enum DevicesCommand {
+    /// Register or change a board's chip, name and reset path.
+    Set {
+        mac: String,
+        #[arg(long)]
+        chip: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+        /// USB serial number of a USB-to-UART bridge whose modem lines
+        /// drive the chip's EN and BOOT; needs `--en` and `--boot`.
+        #[arg(long, value_name = "USB_SERIAL", requires_all = ["en", "boot"])]
+        reset_uart: Option<String>,
+        /// The bridge line that pulls EN low.
+        #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
+        en: Option<oer_hil_arbiter::control::Line>,
+        /// The bridge line that pulls the boot strap low.
+        #[arg(long, value_name = "rts|dtr", requires = "reset_uart")]
+        boot: Option<oer_hil_arbiter::control::Line>,
+    },
+    /// Reset a board through its registered reset path under a lease of
+    /// that board, and print the reset reason its ROM reports.
+    Reset {
+        #[arg(value_name = "NAME|MAC")]
+        board: String,
+        /// Hold the boot strap low: the ROM waits for a download.
+        #[arg(long)]
+        download: bool,
+    },
+    /// Take a board out of service: until `release`, only this owner
+    /// (`--owner`, else the checkout) may claim it. Leases already held
+    /// run on.
+    Maintenance {
+        #[arg(value_name = "NAME|MAC")]
+        board: String,
+        #[arg(long)]
+        reason: String,
+    },
+    /// Return a board to service.
+    Release {
+        #[arg(value_name = "NAME|MAC")]
+        board: String,
+        /// What you did to a quarantined board: pressed its reset button
+        /// or power-cycled it. It returns only if it then boots.
+        #[arg(long, value_enum)]
+        confirm: Option<ConfirmArg>,
+    },
 }
 
 #[cfg(test)]

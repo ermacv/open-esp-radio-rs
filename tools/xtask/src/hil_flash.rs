@@ -22,7 +22,7 @@ use crate::{Context, Result};
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "cargo hil flash", no_binary_name = true)]
-struct FlashCli {
+pub(crate) struct FlashCli {
     /// Registered board name or MAC.
     #[arg(long, value_name = "NAME|MAC")]
     board: String,

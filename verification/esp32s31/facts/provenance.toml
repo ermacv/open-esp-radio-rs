@@ -2403,6 +2403,13 @@ decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
+member = "esf_buf.o"
+symbol = "esf_buf_recycle_default_handler"
+code = "d4a27f1ea1912ead09a14f012294501720c73b490e17e695a46f31a2bf2a6206"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
 member = "hal_ampdu.o"
 symbol = "hal_agreement_add_extra_softap_rx_ba"
 code = "65f2bce7e5b63817deb202b591ab9c6f8d72c806543b5262505b3d43ae55ef26"
@@ -3829,6 +3836,13 @@ code = "38860379bf27e75e1401f5eab4707448e0de1d6e41990847c0a1fd0874c39528"
 
 [[function]]
 artifact = "libpp"
+member = "hal_utilities.o"
+symbol = "txformat2str"
+code = "a61d243a0119feb478b1e536ce263969a290af98b1ae152fb0ac30e292bb5dc2"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
 member = "if_hecfg.o"
 symbol = "wifi_he_get_hetb_tid_bitmap"
 code = "b9bef00760425c975e20ec9a89e8c785d68688b243899f06064caac05f7921bc"
@@ -4226,6 +4240,7 @@ artifact = "libpp"
 member = "pp.o"
 symbol = "pp_post"
 code = "5161d84875ff496618e031bafffc47e69cca6b3c1a8f5f215887989114366092"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -6244,6 +6259,7 @@ artifact = "rom"
 member = ""
 symbol = "pp_post"
 code = "b2c0dba7015129c4e9bb1cc9cb41a33ffc2184d8ce072d3c27750d992cd8c251"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"

@@ -11,6 +11,27 @@ use crate::coverage::{Decision, Place};
 /// path to compare.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "the default buffer recycle handler, which logs an unregistered buffer type \
+            and returns zero: production has no untyped buffer-type dispatch; its buffer \
+            ownership kinds are typed owners (reviewed with the Wi-Fi owner)",
+        places: &[Place::Function("esf_buf_recycle_default_handler")],
+    },
+    Decision {
+        reason: "the overflow of the posted task queue, which logs and reports the post as \
+            failed: production has no posted task queue; its wakes coalesce and its control \
+            mailbox overflow is terminal (reviewed with the Wi-Fi owner)",
+        places: &[Place::Range {
+            function: "pp_post",
+            start: 0x112,
+            end: 0x134,
+        }],
+    },
+    Decision {
+        reason: "diagnostic formatting of a transmit format for vendor logs (reviewed with the \
+            Wi-Fi owner)",
+        places: &[Place::Diagnostic("txformat2str")],
+    },
+    Decision {
         reason: "vendor assertions: each block only logs the violated invariant through \
             `wifi_log` and jumps to itself, stopping the core (a null frame or queue, an \
             inconsistent A-MPDU length, a certification rate outside its table, a PHY enabled \

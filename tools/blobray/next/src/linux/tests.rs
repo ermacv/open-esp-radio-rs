@@ -187,7 +187,9 @@ impl Fixture {
             .collect()
     }
     fn result(&mut self) -> WorkerReport {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // A safety net only: the guard's own deadline and the worker's exit
+        // end every fixture, and a loaded host can take seconds to spawn one.
+        let deadline = Instant::now() + Duration::from_secs(60);
         while self.child.try_wait().unwrap().is_none() {
             assert!(Instant::now() < deadline, "guard failed to finish cleanup");
             thread::sleep(Duration::from_millis(10));
@@ -312,7 +314,13 @@ fn exit_signal_and_missing_report_have_distinct_diagnostics() {
         ("killed", Some(libc::SIGKILL), ErrorCode::WorkerExited),
         ("missing-report", None, ErrorCode::WorkerProtocol),
     ] {
-        let result = Fixture::new(kind, budget(), None).result();
+        // The worker's exit ends the run; the deadline must not race it on a
+        // loaded host, so it is far above the ~0.2 s the exit takes.
+        let exit_budget = ResourceBudget {
+            timeout_ms: 60_000,
+            ..budget()
+        };
+        let result = Fixture::new(kind, exit_budget, None).result();
         assert_eq!(result.state, RunState::Failed);
         assert_eq!(result.error.unwrap().code, code);
         let exit = result.diagnostics.exit.unwrap();

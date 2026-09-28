@@ -44,7 +44,7 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | Investigate hardware | [Blobray task map](tools/blobray/README.md#choose-a-task), [review and publication](registers/README.md) |
 | Build and validate a station | [ESP32-S31 route](docs/station-hardware.md) |
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
-| Choose a network stack and understand its patches | [Network implementations](docs/network-implementations.md) |
+| Understand the network stack integration | [Network implementations](docs/network-implementations.md) |
 | Build a station application | [Station example](examples/esp32s31/station/README.md) |
 | Build another radio role | [AP](examples/esp32s31/access-point/README.md), [monitor](examples/esp32s31/monitor/README.md) and [Thread](examples/esp32s31/thread/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
@@ -89,6 +89,12 @@ cargo test --workspace --locked --offline
 cargo fmt --all -- --check
 cargo xtask check docs
 ```
+
+Before a push, `cargo xtask check changed` runs what the changed files need:
+formatting of every affected workspace, workspace Clippy, tests and API
+documentation of the changed packages, and the documentation, metadata,
+provenance and capability-anchor checks where they apply. The
+[tooling reference](tools/xtask/README.md) lists every check.
 
 The [CI workflow](.github/workflows/ci.yml) runs `cargo fmt --check` for every
 workspace and `cargo clippy --workspace --all-targets -- -D warnings` and

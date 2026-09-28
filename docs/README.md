@@ -34,8 +34,8 @@ You do not need to read every component reference to make a first change.
   review, publication, PAC, HAL, PHY and the station scan caller.
 - [Protocol terminology](protocol-naming.md): IEEE 802.11, Wi-Fi, IEEE 802.15.4,
   Bluetooth and module naming.
-- [Network implementation choices](network-implementations.md): original and
-  patched Xarxa, released Embassy/smoltcp, rationale and current availability.
+- [Network implementation](network-implementations.md): the owned Xarxa
+  integration, its dependency pins and how it reaches the radio.
 - [Wi-Fi network integration](wifi-egress.md): packet ownership, SRAM admission,
   completion, compatibility and research boundaries.
 - [Verification and qualification](verification-and-qualification.md): evidence

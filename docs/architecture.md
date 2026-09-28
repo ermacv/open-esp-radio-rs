@@ -105,8 +105,11 @@ completion and return. A protocol policy may request an operation without
 owning the PAC; conversely, the concrete actor owns the hardware epoch without
 becoming the authority for protocol semantics.
 
-Applications start from the public facade or the final chip composition.
-Developers of a lower subsystem start from its defining crate and owner types.
+Applications start from the public facade or the final chip composition. The
+shared radio composition (`oer::systems::esp32s31::embassy::radio`) starts the
+radio once with its periodic tasks, and each protocol composition joins it
+with its partition. Developers of a lower subsystem start from its defining
+crate and owner types.
 This is why internal crates depend on specific lower contracts and never route
 their dependencies back through `oer`.
 

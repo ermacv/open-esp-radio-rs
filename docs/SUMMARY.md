@@ -18,7 +18,7 @@
 # Station, network and PHY
 
 - [Build and investigate an ESP32-S31 station](station-hardware.md)
-- [Network implementations and why they coexist](network-implementations.md)
+- [Network implementation](network-implementations.md)
 - [Wi-Fi network integration](wifi-egress.md)
 - [PHY compiled comparison](phy/README.md)
 

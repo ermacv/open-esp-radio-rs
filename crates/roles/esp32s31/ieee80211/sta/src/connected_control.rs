@@ -13,6 +13,7 @@ use crate::{
     hardware::control::{ConnectedControlHardware, StationIndividualTwtHardwareError},
     modem_sleep::{PmActions, PmBeacon, PmTim},
     single_mpdu_tx::{ActionTxConfig, SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome},
+    trace::{BeaconMonitorOp, BeaconMonitorTrace},
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
@@ -1287,6 +1288,7 @@ impl ConnectedControlCore {
             follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {
                 monitor.observe(tx.now_micros(), observation)?;
+                self.trace_beacon_monitor(BeaconMonitorOp::Refreshed);
             }
             let beacon = PmBeacon {
                 timestamp_tsf: observation.timestamp_tsf,
@@ -1312,6 +1314,7 @@ impl ConnectedControlCore {
             self.beacon_probe_attempts = 0;
             if let Some(monitor) = &mut self.beacon_monitor {
                 monitor.observe_reachability(tx.now_micros())?;
+                self.trace_beacon_monitor(BeaconMonitorOp::ProbeAnswered);
             }
             return Ok(DatapathControlProgress::More);
         }
@@ -1746,10 +1749,23 @@ impl ConnectedControlCore {
             .as_mut()
             .expect("beacon probes require an enabled beacon monitor")
             .wait_for_reachability(now_micros, BEACON_PROBE_INTERVAL_MICROS)?;
+        self.trace_beacon_monitor(BeaconMonitorOp::ProbeStarted);
         let progress = tx.start_beacon_probe(hardware)?;
         self.beacon_probe_attempts += 1;
         self.in_flight = Some(ControlInFlight::BeaconProbe);
         Ok(progress)
+    }
+
+    fn trace_beacon_monitor(&self, op: BeaconMonitorOp) {
+        let deadline = self
+            .beacon_monitor
+            .as_ref()
+            .and_then(StaBeaconMonitor::deadline_micros)
+            .unwrap_or(0);
+        oer_trace::emit(&BeaconMonitorTrace {
+            op,
+            deadline_micros_low: deadline as u32,
+        });
     }
 
     fn disconnect_for_beacon_loss<H, X, R, const PEER_CAPACITY: usize>(
@@ -1782,6 +1798,7 @@ impl ConnectedControlCore {
         }
         self.beacon_probe_attempts = 0;
         self.beacon_lost = true;
+        self.trace_beacon_monitor(BeaconMonitorOp::Lost);
         Ok(DatapathControlProgress::Exit(
             ConnectedDisconnectReason::BeaconLoss,
         ))

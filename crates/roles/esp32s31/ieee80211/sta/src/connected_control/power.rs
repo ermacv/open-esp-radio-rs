@@ -19,6 +19,7 @@ use crate::{
         CoexPhaseView, CoexView, ModemSleep, PmAction, PmActions, PmBeacon, PmClock, PmCoexEvent,
         PmState, PmTimer, PmTraffic, SleepType,
     },
+    trace::{NetworkTxPowerTrace, PowerInputKind, PowerInputTrace},
 };
 
 use super::{
@@ -428,6 +429,7 @@ impl ConnectedControlCore {
             return Ok(None);
         };
         self.power.control_event_turn = control_event_pending;
+        trace_power_input(input, control_event_pending);
         let coex = self.power.coex_view();
         let traffic = self.power_traffic(context, control_event_pending);
         let clock = power_clock(tx);
@@ -662,6 +664,28 @@ impl ConnectedControlCore {
         self.power = commands;
         self.power.engine = engine;
     }
+}
+
+fn trace_power_input(input: PowerInput, control_event_waiting: bool) {
+    let input = match input {
+        PowerInput::Start(_) => PowerInputKind::Start,
+        PowerInput::Null(_) => PowerInputKind::Null,
+        PowerInput::Tbtt => PowerInputKind::Tbtt,
+        PowerInput::Phase(_) => PowerInputKind::CoexPhase,
+        PowerInput::Preemption(_) => PowerInputKind::Preemption,
+        PowerInput::Timer(_) => PowerInputKind::Timer,
+        PowerInput::NetworkTxReport | PowerInput::NetworkTxOffer => {
+            oer_trace::emit(&NetworkTxPowerTrace {
+                offer: input == PowerInput::NetworkTxOffer,
+                control_event_waiting,
+            });
+            return;
+        }
+    };
+    oer_trace::emit(&PowerInputTrace {
+        input,
+        control_event_waiting,
+    });
 }
 
 pub(super) fn power_clock<X: ConnectedControlTx>(tx: &X) -> PmClock {

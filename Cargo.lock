@@ -2667,6 +2667,7 @@ dependencies = [
  "oer-ieee80211-sta",
  "oer-memory",
  "oer-network-interface",
+ "oer-trace",
  "riscv",
  "static_cell",
  "xarxa-driver",
@@ -2686,6 +2687,7 @@ dependencies = [
  "oer-ieee80211-rsn",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-trace",
  "riscv",
  "static_cell",
 ]

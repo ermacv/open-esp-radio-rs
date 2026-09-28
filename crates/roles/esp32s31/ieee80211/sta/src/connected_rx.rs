@@ -49,6 +49,8 @@ use oer_ieee80211_softmac::{
 use oer_ieee80211_softmac::{MacRxCryptoStatus, MacRxEvidence};
 use static_cell::StaticCell;
 
+use crate::trace::{BeaconDispatch, BeaconVerdict};
+
 use oer_esp32s31_ieee80211_mac::{
     rx::ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
     rx::{
@@ -1679,7 +1681,10 @@ impl ConnectedRxDispatcher {
                     mpdu,
                 ) {
                     Ok(management) => management,
-                    Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+                    Err(error) => {
+                        trace_beacon(BeaconVerdict::Unextracted, None, 0);
+                        return rejected(protection, ConnectedRxError::Rx(error));
+                    }
                 };
                 let observation = match parse_sta_beacon(
                     &mpdu[..management.length],
@@ -1687,11 +1692,25 @@ impl ConnectedRxDispatcher {
                     self.config.association_id,
                 ) {
                     Ok(observation) => observation,
-                    Err(error) => return rejected(protection, ConnectedRxError::Beacon(error)),
+                    Err(error) => {
+                        trace_beacon(BeaconVerdict::Rejected, None, 0);
+                        return rejected(protection, ConnectedRxError::Beacon(error));
+                    }
                 };
                 let Some(metadata) = decode_normalized_rx_metadata(raw) else {
+                    trace_beacon(BeaconVerdict::NoMetadata, None, 0);
                     return rejected(protection, ConnectedRxError::Rx(RxError::Metadata));
                 };
+                let rssi_dbm = match metadata.rssi_dbm {
+                    oer_ieee80211_softmac::MacRxEvidence::HardwareObserved(rssi)
+                    | oer_ieee80211_softmac::MacRxEvidence::ProtocolValidated(rssi) => Some(rssi),
+                    oer_ieee80211_softmac::MacRxEvidence::Unavailable => None,
+                };
+                trace_beacon(
+                    BeaconVerdict::Published,
+                    rssi_dbm,
+                    observation.timestamp_tsf as u32,
+                );
                 sink.publish(ConnectedRxEvent::Beacon {
                     observation,
                     metadata,
@@ -2718,6 +2737,15 @@ fn public_fragmented(raw: &[u8], frame_control: u16) -> Option<bool> {
         return Some(true);
     }
     Some(*raw.get(PUBLIC_HEADER_SIZE + 22)? & 0x0f != 0)
+}
+
+#[inline(always)]
+fn trace_beacon(verdict: BeaconVerdict, rssi_dbm: Option<i8>, timestamp_tsf_low: u32) {
+    oer_trace::emit(&BeaconDispatch {
+        verdict,
+        rssi_dbm,
+        timestamp_tsf_low,
+    });
 }
 
 #[cfg(test)]

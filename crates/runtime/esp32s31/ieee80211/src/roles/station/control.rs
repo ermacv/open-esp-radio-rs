@@ -22,6 +22,7 @@ use embassy_time::{Instant, Timer};
 pub use oer_esp32s31_ieee80211_mac::rx::ampdu::{RxReorderCommand, RxReorderCommandError};
 
 use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxControlEvent;
+use oer_esp32s31_ieee80211_sta::trace::{ControlEventKind, ControlExit, ControlMailbox, MailboxOp};
 
 use oer_ieee80211_mac::twt::IndividualTwtFlowId;
 
@@ -679,8 +680,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        if matches!(event, Some(ConnectedRxControlEvent::Beacon(_))) {
-            super::beacon_path::record_consumed();
+        if let Some(event) = &event {
+            oer_trace::emit(&ControlMailbox {
+                event: ControlEventKind::from(event),
+                op: MailboxOp::Applied,
+            });
         }
         let mut reorder = EmbassyReorderSink {
             sender: self.rx_reorder_commands.as_ref(),
@@ -731,6 +735,13 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         X: ConnectedControlTx + 'a,
     {
         let progress = self.service_step(hardware, tx, context).await;
+        if let Ok(DatapathControlProgress::Exit(reason)) = progress {
+            oer_trace::emit(&ControlExit { reason });
+            oer_trace::freeze(
+                <ControlExit as oer_trace::Event>::KIND,
+                ControlExit::POST_TRIGGER_ENTRIES,
+            );
+        }
         #[cfg(feature = "diagnostics")]
         self.observe_spin(&progress, tx.now_micros());
         progress

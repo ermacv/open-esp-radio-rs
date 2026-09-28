@@ -1527,6 +1527,7 @@ dependencies = [
  "oer-ieee80211-sta",
  "oer-memory",
  "oer-network-interface",
+ "oer-trace",
  "static_cell",
 ]
 
@@ -1544,6 +1545,7 @@ dependencies = [
  "oer-ieee80211-rsn",
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
+ "oer-trace",
  "static_cell",
 ]
 
@@ -1790,6 +1792,10 @@ dependencies = [
  "oer-ieee80211-runtime",
  "oer-radio",
 ]
+
+[[package]]
+name = "oer-trace"
+version = "0.1.0"
 
 [[package]]
 name = "once_cell"

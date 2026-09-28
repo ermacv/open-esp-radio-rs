@@ -28,6 +28,7 @@ pub mod scan;
 pub mod scan_tx;
 pub mod single_mpdu_tx;
 pub mod standalone_esp_now_rx;
+pub mod trace;
 pub mod tx_epoch;
 pub mod wpa2;
 

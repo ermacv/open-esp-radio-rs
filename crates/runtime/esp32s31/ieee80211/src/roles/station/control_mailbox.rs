@@ -14,6 +14,7 @@ use oer_esp32s31_ieee80211_sta::connected::management_protection::ProtectedManag
 use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
+use oer_esp32s31_ieee80211_sta::trace::{ControlEventKind, ControlMailbox, MailboxOp};
 use oer_ieee80211_mac::station::StaDisconnect;
 use oer_ieee80211_rsn::{OwnedEapolFrame, RsnInterface};
 
@@ -336,15 +337,20 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
         let Some(event) = scheduled_connected_control(event) else {
             return;
         };
-        let beacon = matches!(event, ConnectedRxControlEvent::Beacon(_));
+        let kind = ControlEventKind::from(&event);
         let result = if matches!(event, ConnectedRxControlEvent::PeerDisconnect(_)) {
             self.terminal.try_send(event)
         } else {
             self.sender.try_send(event)
         };
-        if beacon {
-            super::beacon_path::record_published(result.is_ok());
-        }
+        oer_trace::emit(&ControlMailbox {
+            event: kind,
+            op: if result.is_ok() {
+                MailboxOp::Published
+            } else {
+                MailboxOp::Overflowed
+            },
+        });
         if let Err(TrySendError::Full(_)) = result {
             self.overflowed.store(true, Ordering::Release);
         }

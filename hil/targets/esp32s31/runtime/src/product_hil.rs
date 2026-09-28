@@ -729,14 +729,8 @@ enum StationLinkEdge {
     },
 }
 
-/// Report where a connected epoch's beacons stopped: the MAC's receive
-/// counters at its exit and the beacons that reached the control mailbox.
+/// Report the MAC's receive counters at a connected epoch's exit.
 fn log_connected_exit_evidence() {
-    let beacons = oer_esp32s31_ieee80211_runtime::roles::station::beacon_path::beacon_path_counts();
-    runtime_log(format_args!(
-        "OEXB published={} overflowed={} consumed={}",
-        beacons.published, beacons.overflowed, beacons.consumed,
-    ));
     if let Some(rx) = oer_esp32s31_ieee80211_system::exit_evidence::take_connected_exit_rx() {
         runtime_log(format_args!(
             "OEXR mpdu={} data={} other_unicast={} fcs={} abort={} buffer_full={} fifo_overflow={}",

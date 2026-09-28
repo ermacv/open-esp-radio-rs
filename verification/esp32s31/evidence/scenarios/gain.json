@@ -620,7 +620,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/effect_contract.rs",
-      "sha256": "7b3b31558786b8ea03b6e7fe50617c1676015c39ff67fc7451c05733bca8cba0"
+      "sha256": "7b082842547f5e8650d93c8c3746c8c5cfbe51f17631f01be1305ed3f5c8fd3e"
     },
     {
       "path": "tools/blobray/crates/domain/src/execution.rs",

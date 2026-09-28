@@ -18,21 +18,56 @@ use crate::{
 
 static INVENTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// The code that owns each catalog entry: the locations of its
+/// `// CAPABILITY:` anchors, by entry id.
+#[derive(Default)]
+struct CodeLocations(BTreeMap<String, Vec<crate::anchors::Location>>);
+
+impl CodeLocations {
+    fn scan(root: &Path) -> Result<Self> {
+        let (anchors, _) = crate::anchors::scan(root)?;
+        let mut locations = BTreeMap::<_, Vec<_>>::new();
+        for anchor in anchors {
+            locations
+                .entry(anchor.id)
+                .or_default()
+                .push(anchor.location);
+        }
+        Ok(Self(locations))
+    }
+
+    /// A `- Code:` line for `id`, when anchors name it.
+    fn render(&self, text: &mut String, id: &str) {
+        if let Some(locations) = self.0.get(id) {
+            text.push_str("- Code: ");
+            text.push_str(
+                &locations
+                    .iter()
+                    .map(|location| format!("`{location}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            text.push_str("\n\n");
+        }
+    }
+}
+
 pub(crate) fn write_static(
     catalog: &CatalogView,
     output_directory: &Path,
     root: &Path,
 ) -> Result<()> {
     fs::create_dir_all(output_directory)?;
+    let code = CodeLocations::scan(root)?;
     write_file(
         output_directory,
         "domain-inventory.md",
-        &render_domain(catalog, output_directory, root)?,
+        &render_domain(catalog, &code, output_directory, root)?,
     )?;
     write_file(
         output_directory,
         "capability-catalog.md",
-        &render_capabilities(catalog, output_directory, root)?,
+        &render_capabilities(catalog, &code, output_directory, root)?,
     )?;
     write_file(
         output_directory,
@@ -98,7 +133,12 @@ fn write_file(directory: &Path, name: &str, contents: &str) -> Result<()> {
     result
 }
 
-fn render_domain(catalog: &CatalogView, output: &Path, root: &Path) -> Result<String> {
+fn render_domain(
+    catalog: &CatalogView,
+    code: &CodeLocations,
+    output: &Path,
+    root: &Path,
+) -> Result<String> {
     let mut text = String::from("# Source capability inventory\n\n");
     text.push_str("This static view is generated from the canonical catalog. It reports source ownership, not qualification readiness. `IMPLEMENTED`, `PARTIAL`, `FAIL-CLOSED`, `ABSENT`, `HOST-ONLY`, and `DIAGNOSTIC` are distinct source-facet states; level describes whether the declaration is a native capability, lower primitive, or composed product.\n\n");
     render_sources(&mut text, catalog, output, root)?;
@@ -187,6 +227,7 @@ fn render_domain(catalog: &CatalogView, output: &Path, root: &Path) -> Result<St
                 if let Some(fact) = &item.source_fact {
                     text.push_str(&format!("- Canonical source fact: `{fact}`\n\n"));
                 }
+                code.render(&mut text, item.source_fact.as_deref().unwrap_or(&item.id));
                 text.push_str(&rewrite_links(
                     &item.scope_and_limitations,
                     &section.source_document,
@@ -255,7 +296,12 @@ fn render_domain(catalog: &CatalogView, output: &Path, root: &Path) -> Result<St
     Ok(text)
 }
 
-fn render_capabilities(catalog: &CatalogView, output: &Path, root: &Path) -> Result<String> {
+fn render_capabilities(
+    catalog: &CatalogView,
+    code: &CodeLocations,
+    output: &Path,
+    root: &Path,
+) -> Result<String> {
     let mut text = String::from("# Qualification capability catalog\n\n");
     text.push_str("This is a static declaration view. Every catalog capability is validated, but none receives an evidence-derived readiness verdict here.\n\n");
     render_sources(&mut text, catalog, output, root)?;
@@ -276,6 +322,7 @@ fn render_capabilities(catalog: &CatalogView, output: &Path, root: &Path) -> Res
                 code_list(&capability.source_fact_refs)
             ));
         }
+        code.render(&mut text, id);
         if !capability.vendor_roots.is_empty() {
             text.push_str("- Vendor roots: ");
             text.push_str(
@@ -832,8 +879,8 @@ mod tests {
         )
         .unwrap();
         let output = root.join("target/qualification/catalog/test-render");
-        let first = render_domain(&catalog, &output, &root).unwrap();
-        let second = render_domain(&catalog, &output, &root).unwrap();
+        let first = render_domain(&catalog, &CodeLocations::default(), &output, &root).unwrap();
+        let second = render_domain(&catalog, &CodeLocations::default(), &output, &root).unwrap();
         assert_eq!(first, second);
         assert_view_invariants(&catalog, &first);
         assert!(!first.contains(&root.display().to_string()));
@@ -900,7 +947,8 @@ scope-and-limitations = "No composition"
         let output = root.path.join("target/render");
         let bluetooth =
             CatalogView::load(&root.path, &[PathBuf::from("catalog/bluetooth.toml")]).unwrap();
-        let bluetooth_text = render_domain(&bluetooth, &output, &root.path).unwrap();
+        let bluetooth_text =
+            render_domain(&bluetooth, &CodeLocations::default(), &output, &root.path).unwrap();
         assert!(bluetooth_text.contains("## Domain: `bluetooth`"));
         assert!(bluetooth_text.contains("### bluetooth-empty"));
         assert!(bluetooth_text.contains("HOST-ONLY"));
@@ -915,10 +963,11 @@ scope-and-limitations = "No composition"
         let combined = CatalogView::load(&root.path, &paths).unwrap();
         let reversed =
             CatalogView::load(&root.path, &[paths[1].clone(), paths[0].clone()]).unwrap();
-        let combined_text = render_domain(&combined, &output, &root.path).unwrap();
+        let combined_text =
+            render_domain(&combined, &CodeLocations::default(), &output, &root.path).unwrap();
         assert_eq!(
             combined_text,
-            render_domain(&reversed, &output, &root.path).unwrap()
+            render_domain(&reversed, &CodeLocations::default(), &output, &root.path).unwrap()
         );
         for id in ["bluetooth-host", "bluetooth-diagnostic", "new-domain-item"] {
             assert_eq!(combined_text.matches(&format!("#### {id}\n")).count(), 1);
@@ -949,8 +998,11 @@ scope-and-limitations = "No composition"
         let reversed =
             CatalogView::load(&root, &paths.into_iter().rev().collect::<Vec<_>>()).unwrap();
         let output = root.join("target/qualification/catalog/test-whole-radio-render");
-        let rendered = render_domain(&catalog, &output, &root).unwrap();
-        assert_eq!(rendered, render_domain(&reversed, &output, &root).unwrap());
+        let rendered = render_domain(&catalog, &CodeLocations::default(), &output, &root).unwrap();
+        assert_eq!(
+            rendered,
+            render_domain(&reversed, &CodeLocations::default(), &output, &root).unwrap()
+        );
         assert_view_invariants(&catalog, &rendered);
     }
 
@@ -1001,11 +1053,38 @@ kind = "source-reference"
 details = "Vendor classification: `Y`."
 "#,
         );
+        // The production code that owns the shared entry.
+        let package = root.path.join("crates/radio");
+        fs::create_dir_all(package.join("src")).unwrap();
+        fs::write(
+            package.join("Cargo.toml"),
+            "[package]\nname = \"radio\"\n[package.metadata.open-radio]\nscope = \"production\"\n",
+        )
+        .unwrap();
+        fs::write(
+            package.join("src/lib.rs"),
+            "/// The entry.\n// CAPABILITY: shared-entry\npub fn entry() {}\n",
+        )
+        .unwrap();
         let catalog =
             CatalogView::load(&root.path, &[PathBuf::from("catalog/facts.toml")]).unwrap();
-        let rendered =
-            render_domain(&catalog, &root.path.join("target/render"), &root.path).unwrap();
+        let code = CodeLocations::scan(&root.path).unwrap();
+        let rendered = render_domain(
+            &catalog,
+            &code,
+            &root.path.join("target/render"),
+            &root.path,
+        )
+        .unwrap();
         assert_view_invariants(&catalog, &rendered);
+        // The projection shows where its fact's code lives; the unanchored
+        // absent item shows none.
+        assert_eq!(
+            rendered
+                .matches("- Code: `crates/radio/src/lib.rs:2`")
+                .count(),
+            1
+        );
         assert!(
             rendered
                 .contains("Displayed rows: 2. Unique source facts: 2. Explicit projections: 1.")
@@ -1066,8 +1145,13 @@ limitations = "No hardware boundary"
         );
         let catalog =
             CatalogView::load(&root.path, &[PathBuf::from("catalog/obligations.toml")]).unwrap();
-        let rendered =
-            render_capabilities(&catalog, &root.path.join("target/render"), &root.path).unwrap();
+        let rendered = render_capabilities(
+            &catalog,
+            &CodeLocations::default(),
+            &root.path.join("target/render"),
+            &root.path,
+        )
+        .unwrap();
         assert!(rendered.contains("`explicit-suite/archive:explicit_root`"));
         assert!(rendered.contains("`static` ×1"));
         assert!(rendered.contains("`portable-source-transform`"));

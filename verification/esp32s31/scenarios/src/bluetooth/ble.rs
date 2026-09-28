@@ -268,6 +268,36 @@ fn scheduler_rules() -> Vec<blobray_domain::EffectRule> {
         },
     ]
 }
+/// The BUSY selections production repeats between diagnostic reads. The first
+/// selection, and every read, still compare exactly; another selector value
+/// or a read without a selection stays a difference.
+fn busy_reselection_rules() -> Vec<blobray_domain::EffectRule> {
+    let read = blobray_domain::EffectSelector::MmioRead {
+        address: DIAGNOSTIC_VALUE,
+        width: 4,
+    };
+    vec![blobray_domain::EffectRule {
+        name: "busy-reselections".into(),
+        vendor: None,
+        replacement: Some(blobray_domain::EffectPattern {
+            selector: blobray_domain::EffectSelector::MmioWrite {
+                address: DIAGNOSTIC_SELECTOR,
+                width: 4,
+            },
+            value: blobray_domain::EffectValue::Exact { value: SELECT_BUSY },
+            preceded_by: Some(read),
+            occurrence: None,
+            followed_by: Some(read),
+        }),
+        disposition: blobray_domain::EffectDisposition::Added,
+        min_occurrences: 0,
+        max_occurrences: MAX_SELECTIONS,
+        reason: "the HAL repeats the PAC's single select-plus-two-read diagnostic transaction \
+            within its attempt budget (b0025708f), so each attempt re-publishes the identical \
+            scheduler-status selector; the vendor selects once before its unbounded read loop"
+            .into(),
+    }]
+}
 /// Full-fence predecessor and successor sets, and the fences of one case's
 /// at most two attempts, each a publication and a START clear.
 const FULL_FENCE: u8 = 0xf;
@@ -495,20 +525,23 @@ pub const LEAVES: &[Leaf] = &[
     // only when a fresh pair of reads agrees; the states model a stable
     // value and a first pair that disagrees, settling busy or idle.
     in_archive(
-        tail_prefix(
-            stated(
-                objects(
-                    leaf(
-                        "r_sym_bt_74l62ZLsZuXg67pPHSd7",
-                        "open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop",
-                        &[],
-                        false,
+        ruled(
+            tail_prefix(
+                stated(
+                    objects(
+                        leaf(
+                            "r_sym_bt_74l62ZLsZuXg67pPHSd7",
+                            "open_ble_scheduler_stop_busy_trace_r_btdm_sched_stop",
+                            &[],
+                            false,
+                        ),
+                        diagnostic_sample_abi,
                     ),
-                    diagnostic_sample_abi,
+                    DIAGNOSTIC_SAMPLE_STATES,
                 ),
-                DIAGNOSTIC_SAMPLE_STATES,
+                "wr_btdm_log_internal_x0",
             ),
-            "wr_btdm_log_internal_x0",
+            busy_reselection_rules,
         ),
         BTDM_COMMON_INPUT,
     ),
@@ -828,6 +861,32 @@ mod tests {
             .filter(|rule| rule.vendor.unwrap().selects(event, None))
             .map(|rule| rule.disposition)
             .collect()
+    }
+
+    #[test]
+    fn only_a_busy_reselection_between_reads_is_added() {
+        let rules = busy_reselection_rules();
+        let pattern = rules[0].replacement.unwrap();
+        let read = ExecutionEvent::Read {
+            address: DIAGNOSTIC_VALUE,
+            width: 4,
+            value: u32::MAX,
+        };
+        let select = |value| ExecutionEvent::Write {
+            address: DIAGNOSTIC_SELECTOR,
+            width: 4,
+            value,
+        };
+        let history = [select(SELECT_BUSY), read.clone()];
+        assert!(pattern.selects_after(&select(SELECT_BUSY), Some(&read), &history));
+        // The opening selection and a selection no read follows stay
+        // compared; any other selector value violates the rule.
+        assert!(!pattern.selects_after(&select(SELECT_BUSY), Some(&read), &[]));
+        assert!(!pattern.selects_after(&select(SELECT_BUSY), None, &history));
+        assert_eq!(
+            pattern.value,
+            blobray_domain::EffectValue::Exact { value: SELECT_BUSY }
+        );
     }
 
     #[test]

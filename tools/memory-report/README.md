@@ -106,19 +106,3 @@ array; malformed nonempty JSON remains an error. Capture retains every file
 identity and requires at least one reported definition overall. This is not a
 proof of compiler metadata coverage.
 
-For a complete compiler capture through the HIL image constructor, run manually
-from a clean checkout:
-
-```console
-cargo hil image mono bluetooth-secure-gatt
-```
-
-This builds in a fresh ignored `target/hil/esp32s31/mono/` directory and never
-flashes or acquires a fixture. `capture.json` records the source commit,
-compiler/Cargo identities, command and flags, effective locks, input JSON hashes
-and exact diagnostic ELF identity. `linked-code.json` describes that same ELF.
-Compiler files remain separate; their estimates must not be added to linked
-bytes. An interrupted or invalid capture retains `status = building`, not a
-successful manifest. Local dependency/compiler wrappers are rejected, and the
-source must remain unchanged until completion. This is an explicit diagnostic
-build, not qualified production timing evidence or a mandatory checkpoint.

@@ -21,15 +21,14 @@ The bundle also archives `effective-Cargo.lock` for the runtime workspace and
 are build materials and survive replay.
 
 `integrity.json` seals the run's complete file inventory. Replay validates the
-bundle and selected application before touching hardware. These commands run
-from the repository root and require a configured, attached HIL device:
+bundle and selected application before touching hardware. It runs from the
+repository root and requires a configured, attached HIL device:
 
 ```console
-cargo hil image replay <run-id> <image-class>
 cargo hil run <scenario-id> --firmware-from <run-id>
 ```
 
-They consume the archived build without invoking Cargo. A scenario replay
+It consumes the archived build without invoking Cargo. A scenario replay
 produces a self-contained new bundle whose provenance names the source run,
 sealed-integrity digest, build ID and firmware-source repository. Replay is
 supported for one scenario; `run-all` does not accept an archived build input.
@@ -56,31 +55,10 @@ Differences between observed and current inputs need an explicit
 [property/build applicability review](../qualification/evidence-reviews.md).
 Archiving source bytes establishes provenance, not a passing experiment.
 
-## Byte-identical rebuilds
-
-Retaining exact firmware enables replay; it does not prove that rebuilding
-the same source produces identical bytes. Use the separate verifier:
-
-```console
-cargo hil image verify-rebuild <image-class>
-cargo hil image verify-rebuild <image-class> --trim-paths
-```
-
-The verifier requires a clean commit and rejects local path overrides. It
-creates two detached worktrees with different absolute path lengths and
-isolated target roots. It compares all four firmware subjects, the effective
-embedded lockfile and full/allocated ELF section layouts. A mismatch produces
-a typed report and a failing exit status under
-`target/hil/esp32s31/reproducibility/`.
-
-`--trim-paths` selects an explicit experimental Cargo path-treatment variant.
-It is not part of ordinary image construction. Normal HIL execution builds
-once; it does not run a second build or silently normalize compiler flags.
-
-Run-bundle reproducibility is `unverified`. A passing verifier report is not
-bound into build provenance by the current implementation, and the offline
-reader rejects an unsupported `verified` claim. Neither a matching source
-commit nor a stored ELF changes that rule.
+Run-bundle reproducibility is `unverified`: retaining exact firmware enables
+replay but does not prove that rebuilding the same source produces identical
+bytes, and the offline reader rejects a `verified` claim. Neither a matching
+source commit nor a stored ELF changes that rule.
 
 ## Build record and storage
 

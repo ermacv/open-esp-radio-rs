@@ -3,34 +3,13 @@
 use std::{path::Path, time::Duration};
 
 use hil_core::scenario::ScenarioFamily as _;
-use oer_hil_protocol::{FeatureCapabilities, WifiApScheduler};
+use oer_hil_protocol::FeatureCapabilities;
 
-use crate::{
-    Result, fixture,
-    scenario::{Family, Scenario},
-};
+use crate::{Result, fixture, scenario::Scenario};
 use hil_core::{
     evidence::run::Failure, image, image::ImageClass, lab::config::LabConfig,
     session::SerialCapture,
 };
-use hil_wifi::scenario::WifiWorkload;
-
-pub(crate) fn configure_run_selection(
-    selected: &mut Scenario,
-    ap_scheduler: Option<WifiApScheduler>,
-) -> Result<()> {
-    if let Some(policy) = ap_scheduler {
-        let Family::Wifi(wifi) = &mut selected.family else {
-            return Err("--ap-scheduler requires a standalone access-point scenario".into());
-        };
-        let WifiWorkload::AccessPoint(access_point) = &mut wifi.workload else {
-            return Err("--ap-scheduler requires a standalone access-point scenario".into());
-        };
-        access_point.scheduler = policy;
-    }
-    selected.validate()?;
-    Ok(())
-}
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     fixture::preflight::scenario_precondition(lab, selected).or_else(|| {

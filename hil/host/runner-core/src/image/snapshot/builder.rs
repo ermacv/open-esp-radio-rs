@@ -56,13 +56,9 @@ impl FrozenSources {
             },
             crate::image::BuildPlacement {
                 output: Some(&output),
-                cache: crate::image::CompileCache::Shared(&crate::image::shared_compile_cache(
-                    root, class, network,
-                )),
+                cache: &crate::image::shared_compile_cache(root, class, network),
                 layout_seed,
             },
-            false,
-            false,
         )?;
         self.verify_unchanged()?;
         atomic_json(&output.join("source-snapshot.json"), &self.snapshot)?;

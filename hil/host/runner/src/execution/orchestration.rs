@@ -31,11 +31,6 @@ pub(crate) fn selection_description(tags: &[String]) -> String {
     }
 }
 
-pub(crate) enum SuiteSelection<'a> {
-    Catalog(String),
-    Campaign(&'a hil_core::campaign::Plan),
-}
-
 pub(crate) struct Invocation {
     pub(crate) arguments: Vec<OsString>,
     pub(crate) snapshot: Option<hil_core::image::snapshot::Snapshot>,
@@ -48,7 +43,7 @@ pub(crate) fn run_all(
     lab: &LabConfig,
     catalog: &Catalog,
     selected: &[&Scenario],
-    selection: SuiteSelection<'_>,
+    description: String,
     build: hil_core::image::CurrentBuild,
     invocation: Invocation,
 ) -> Result<()> {
@@ -57,16 +52,10 @@ pub(crate) fn run_all(
         lab,
         catalog,
         selected,
-        match &selection {
-            SuiteSelection::Catalog(description) => description.clone(),
-            SuiteSelection::Campaign(_) => "saved executable campaign".to_owned(),
-        },
+        description,
         Some(PlannedFirmware::BuildCurrent),
         invocation,
     )?;
-    if let SuiteSelection::Campaign(plan) = selection {
-        session.write_campaign(plan)?;
-    }
     let prebuilt = prebuild(&mut session, lab, selected, build)?;
     let lease = lease_stand(&mut session, lab, selected)?;
     let results = {

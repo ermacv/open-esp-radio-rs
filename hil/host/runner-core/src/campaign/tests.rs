@@ -11,11 +11,7 @@ fn selection_is_exactly_the_requested_scenarios() {
     let throughput = catalog.get("throughput").unwrap();
     let silence = catalog.get("silence").unwrap();
     let plan = Plan::create(&catalog, &[silence, throughput], Integration::OwnedXarxa).unwrap();
-    let (selected, _) = plan.resolve(&catalog).unwrap();
-    assert_eq!(
-        selected.iter().map(|s| s.id()).collect::<Vec<_>>(),
-        ["silence", "throughput"]
-    );
+    assert_eq!(plan.requested, ["silence", "throughput"]);
     assert!(
         plan.scenarios
             .iter()
@@ -42,8 +38,7 @@ fn named_check_selection_is_scoped_to_the_scenarios_that_publish_it() {
         &["udp.rx.maximum-silence".into()],
     )
     .unwrap();
-    let (resolved, _) = plan.resolve(&catalog).unwrap();
-    assert_eq!(resolved.len(), 1);
+    assert_eq!(plan.scenarios.len(), 1);
     assert_eq!(plan.requested, ["silence"]);
     assert!(
         matches!(&plan.scenarios[0].reasons[1], Reason::ProvidesChecks { checks } if checks == &["udp.rx.maximum-silence"])
@@ -59,30 +54,6 @@ fn named_check_selection_is_scoped_to_the_scenarios_that_publish_it() {
 }
 
 #[test]
-fn ordinary_selection_does_not_expand_and_modified_plans_fail_closed() {
-    let catalog = catalog();
-    let plan = Plan::create(
-        &catalog,
-        &[catalog.get("boot-smoke").unwrap()],
-        Integration::OwnedXarxa,
-    )
-    .unwrap();
-    assert_eq!(plan.scenarios.len(), 1);
-    let mut changed = plan.clone();
-    changed.scenarios[0].repetitions += 1;
-    assert!(changed.resolve(&catalog).is_err());
-    let mut changed = plan.clone();
-    changed.scenarios[0].scenario_sha256 = "00".repeat(32);
-    assert!(changed.resolve(&catalog).is_err());
-    let mut changed = plan.clone();
-    changed.schema = 1;
-    assert!(changed.resolve(&catalog).is_err());
-    let mut changed = plan;
-    changed.scenarios.clear();
-    assert!(changed.resolve(&catalog).is_err());
-}
-
-#[test]
 fn procedure_identity_ignores_annotations_but_tracks_execution() {
     let catalog = catalog();
     let mut scenario = catalog.get("boot-smoke").unwrap().clone();
@@ -90,20 +61,6 @@ fn procedure_identity_ignores_annotations_but_tracks_execution() {
     scenario.header.description.push_str(" Clarified wording.");
     scenario.header.tags.push("documentation".into());
     assert_eq!(original, procedure(&scenario).unwrap());
-    let plan = Plan::create(
-        &catalog,
-        &[catalog.get("boot-smoke").unwrap()],
-        Integration::OwnedXarxa,
-    )
-    .unwrap();
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("boot-smoke.toml");
-    std::fs::write(&path, toml::to_string(&scenario).unwrap()).unwrap();
-    let annotated = Catalog::<TestFamily>::load(directory.path()).unwrap();
-    assert!(plan.resolve(&annotated).is_ok());
     scenario.header.repetitions += 1;
-    std::fs::write(&path, toml::to_string(&scenario).unwrap()).unwrap();
-    let changed = Catalog::<TestFamily>::load(directory.path()).unwrap();
-    assert!(plan.resolve(&changed).is_err());
     assert_ne!(original, procedure(&scenario).unwrap());
 }

@@ -114,9 +114,8 @@ boards by MAC, fixtures such as the laptop radio, the OpenWrt host or the
 Bluetooth adapter, and the air, shared by all radio work and exclusive for
 scenarios tagged `air-exclusive` that measure the radio environment. Leases
 whose claims do not conflict run in parallel; conflicting requests are served
-by their owners' balances (below). Hardware commands (`run`, `run-all`, `run-plan`,
-`image flash`, `image replay`, `device status`, `fixture check`, the Bluetooth
-fixture commands and `cargo xtask build firmware <example> --flash`) wait for
+by their owners' balances (below). Hardware commands (`run`, `run-all`, `fixture check`, the Bluetooth
+fixture check and `cargo xtask build firmware <example> --flash`) wait for
 their claims instead of failing when they are busy. A run builds its images
 before it queues, so the lease covers flashing and execution only.
 
@@ -185,7 +184,7 @@ given order within each image class. With `--firmware-from` every named
 scenario must use the replayed image class. Prefer it to a shell loop under
 `lease`, where each nested run builds while the stand is held.
 
-`run`, `run-all` and `run-plan` with `--baseline REV` run a clean commit as
+`run` and `run-all` with `--baseline REV` run a clean commit as
 an A/B reference without touching the working tree: `cargo hil` checks REV
 out, detached, in the checkout's baseline worktree
 `target/hil/baseline/checkout` and builds the runner and firmware there, so
@@ -434,7 +433,7 @@ qualification. `wait` follows a run's `events.jsonl`, printing each step,
 until the run ends or its runner is gone, and exits with its outcome: 0
 passed, 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or on a
 quarantined board; an agent that started a run in the background waits on it
-instead of polling its log. `run`, `run-all` and `run-plan` accept `--brief`: the
+instead of polling its log. `run` and `run-all` accept `--brief`: the
 runner's output goes to a log under `target/hil/brief/`, and the command
 prints only each created run's line and, for one that did not pass, its
 `why` with the last 5 `uart.log` lines, then the log's path. `why`, `wait`, `compare` and `pin` read only the
@@ -559,8 +558,7 @@ function has not called another, so callers are exact for leaf functions.
 
 Throughput of code that runs from cached external memory depends on where
 the linker happens to place each function, so an unrelated change can move a
-figure by tens of percent. `run`, `run-all`, `run-plan`, `image build` and
-`image flash` accept `--layout-seed N` (a nonzero u32): the runtime's
+figure by tens of percent. `run`, `run-all` and `image build` accept `--layout-seed N` (a nonzero u32): the runtime's
 ordinary code and read-only data are linked in the order that seed shuffles
 them to, through the platform's `OER_LAYOUT_SEED`. Without the flag the
 runner removes any inherited `OER_LAYOUT_SEED`, so the natural order is the
@@ -578,7 +576,7 @@ cargo hil run <other> --enqueue --after "$id"     # starts once that job has end
 cargo hil wait "$id"                              # blocks until the job ends
 ```
 
-`run`, `run-all` and `run-plan` with `--enqueue` record a job in the arbiter
+`run` and `run-all` with `--enqueue` record a job in the arbiter
 directory's `jobs/`, start the same command detached in its own process group
 (output in `target/hil/jobs/<id>.log`), print the job's id and return. The job
 moves its record from pending to started to finished, with the typed outcome
@@ -592,8 +590,7 @@ scenarios, target and options (`run --validate-only`), so a mistake such as
 an unknown scenario fails in the terminal instead of in the job. `wait JOB` blocks until the job ends and exits with its outcome:
 0 passed, 1 failed, 2 interrupted (or on a quarantined board), 3 blocked or
 skipped, 4 broken, 5 no run created, 6 abandoned (its process is gone without
-finishing, told by its PID and start time). Every `run`, `run-all` and
-`run-plan`, enqueued or in the foreground, is such a job from its start, so
+finishing, told by its PID and start time). Every `run` and `run-all`, enqueued or in the foreground, is such a job from its start, so
 `queue` and the dashboard's Preparing section show runs before they ask for
 the stand: each with its phase, from the arbiter's holders and queue matched
 by the job's process or its runner child (waits for a job, building images,
@@ -706,10 +703,9 @@ requires every build there to hash to its name.
 
 ## Build and run
 
-`cargo hil plan <scenario> --out target/hil/plan.json` prepares an executable
-plan without opening a lab configuration or device. `--network` records the
-chosen network implementation. The output path must not already exist.
-`--proof <check>` filters the selected scenarios by an actually implemented
+`cargo hil plan <scenario>` prints the selection's plan without opening a lab
+configuration or device: each scenario's procedure digest, image, repetitions,
+requirements and the named checks it supplies. `--proof <check>` filters the selected scenarios by an actually implemented
 named check. Repeated `--proof` arguments require all named checks, and `--tag`
 can restrict the profile. For example:
 
@@ -720,37 +716,11 @@ cargo hil plan --tag he20 --proof udp.rx.maximum-silence
 The plan lists provided checks and selection reasons; it does not infer success
 from tags, select by changed files, or claim minimum coverage of an arbitrary
 product program. Selection never expands beyond the requested scenarios.
-Saved executable plans use schema 7; older plan schemas are rejected. Scenario
-digests drop null values, fill schema-5 defaults from
+Scenario digests drop null values, fill schema-5 defaults from
 `hil/schema/scenario-v5-defaults.json` and exclude top-level `description`,
 `tags` and `transfer`; all execution fields remain bound, including
-repetitions and the complete family table. Regenerating
-an offline plan neither executes hardware nor invalidates sealed observations.
-
-A program-backed plan reads the independent evaluator's existing evidence:
-
-```console
-cargo hil plan --qualification qualification/targets/esp32s31/wifi-sta.toml --out target/hil/plan.json
-```
-
-`--capability <id>` selects only that capability's HIL obligations. Dependencies
-remain evaluation context and do not expand execution. This mode cannot be combined
-with manual scenario, tag or proof selection. Satisfied obligations require no
-execution; excluded evidence requests review, and unresolved failures request
-investigation. Neither condition silently launches another hardware attempt.
-`run-plan` refreshes evaluator decisions before any build, lab configuration or
-fixture acquisition. New independent seals can reduce an unfinished campaign
-to an empty plan. A changed property scope requires regenerating the plan.
-Explicit manual selection remains available for an intentionally chosen rerun.
-
-`cargo hil run-plan target/hil/plan.json --check` validates the saved plan
-offline, without loading lab configuration or acquiring fixtures.
-`cargo hil run-plan target/hil/plan.json` validates every selected scenario's
-semantic digest before acquiring fixtures, then builds/flashes once per image
-class. It records the plan as `campaign.json` inside the sealed run. The plan
-selects current builds; it does not pin or reuse a historical firmware image.
-Changed scenario settings require a new plan. Hardware-dependent preflight and
-cleanup remain mandatory for every execution.
+repetitions and the complete family table. A plan neither executes hardware
+nor invalidates sealed observations.
 
 `cargo hil run <scenario>` builds and flashes the required image before the
 scenario with the owned Xarxa/Embassy network stack, the only network
@@ -805,12 +775,11 @@ Live and snapshot builds of one image class and network share the Cargo cache
 `target/hil/esp32s31/build-cache/<profile>-<class>-<network>/`. Cargo
 fingerprints decide reuse: registry packages are compiled once, while the
 freshly materialized path packages always rebuild in place under the stable
-workspace path. Reproducibility verification and compiler statistics keep a
-private cache inside their own output directory.
+workspace path.
 
 This fixes the source input set, not the entire build environment: tools, Cargo
 package caches and user-level configuration are still external. It does not
-prove byte-identical rebuilds or authorize transfer of HIL evidence. Fresh `run`, `run-all` and `run-plan` executions capture and bind a source
+prove byte-identical rebuilds or authorize transfer of HIL evidence. Fresh `run` and `run-all` executions capture and bind a source
 snapshot before building firmware; pass explicit `--source-include` arguments
 or `--include-untracked` for nonignored untracked inputs. Replay uses the archived artifact rather than
 claiming a current build. Standalone image builds use the snapshot only when
@@ -1239,10 +1208,6 @@ cover both source modes. Retries, duplicate response sequences and more than
 allows capture timing variation around the driver's 10 ms admission interval.
 Successful socket submission alone cannot satisfy these gates. OpenWrt is a
 separate observer device, but its capture still shares its client PHY.
-
-`cargo hil fixture probe-plan` prints the finite request schedule without
-loading lab configuration, opening interfaces or accessing the ESP. Installing
-the helper or executing the scenario is separate from this offline preview.
 
 A private `[air_observer]` section can attach a second OpenWrt host to station
 UDP RX/bidirectional runs: `ssh_target`, `phy` and `interface` name its SSH

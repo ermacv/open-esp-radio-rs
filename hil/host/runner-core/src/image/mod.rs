@@ -19,14 +19,10 @@ use sha2::{Digest, Sha256};
 pub use oer_esp32s31_firmware::network::Integration;
 
 mod class;
-pub mod mono;
-mod reproducibility;
 pub mod snapshot;
 pub mod source_inputs;
 pub mod stack;
 pub use class::ImageClass;
-
-pub use reproducibility::verify_rebuild;
 
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "oer-hil-esp32s31-runtime";
@@ -477,11 +473,9 @@ fn build_selected(
         },
         BuildPlacement {
             output: None,
-            cache: CompileCache::Shared(&shared_compile_cache(root, class, network)),
+            cache: &shared_compile_cache(root, class, network),
             layout_seed,
         },
-        false,
-        false,
     )
 }
 
@@ -490,22 +484,14 @@ fn build_selected(
 pub(crate) struct BuildPlacement<'a> {
     /// Artifact directory; the class/network default when absent.
     pub(crate) output: Option<&'a Path>,
-    pub(crate) cache: CompileCache<'a>,
+    /// The compile cache shared by every build of one image class and
+    /// network. Cargo fingerprints decide reuse: registry packages are
+    /// reused, while packages from a freshly materialized source tree always
+    /// rebuild.
+    pub(crate) cache: &'a Path,
     /// The runtime's layout seed. It is part of the default artifact
     /// directory; a shared compile cache only relinks for it.
     pub(crate) layout_seed: LayoutSeed,
-}
-
-/// Where Cargo keeps compiled units for one image build.
-#[derive(Clone, Copy)]
-pub(crate) enum CompileCache<'a> {
-    /// A cache shared by every build of one image class and network. Cargo
-    /// fingerprints decide reuse: registry packages are reused, while
-    /// packages from a freshly materialized source tree always rebuild.
-    Shared(&'a Path),
-    /// A private cache inside the build output, for builds whose evidence
-    /// requires isolation (reproducibility and compiler statistics).
-    Isolated,
 }
 
 /// Type-check the runtime of `class` against the committed pins, with the
@@ -594,8 +580,6 @@ fn build_resolved(
     network: Integration,
     local: LocalOverrides<'_>,
     placement: BuildPlacement<'_>,
-    trim_paths: bool,
-    mono_stats: bool,
 ) -> Result<Artifacts> {
     let LocalOverrides {
         esp_hal: local_esp_hal,
@@ -606,7 +590,7 @@ fn build_resolved(
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
     let BuildPlacement {
         output: output_override,
-        cache: compile_cache,
+        cache,
         layout_seed,
     } = placement;
     let output = output_override.map_or_else(
@@ -621,10 +605,6 @@ fn build_resolved(
         },
         Path::to_owned,
     );
-    let cache = match compile_cache {
-        CompileCache::Shared(cache) => cache.to_owned(),
-        CompileCache::Isolated => output.join("cargo"),
-    };
     let runtime_target = cache.join("runtime");
     let bootstrap_target = cache.join("bootstrap");
     fs::create_dir_all(&output)?;
@@ -685,11 +665,7 @@ fn build_resolved(
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
-    enable_experimental_path_trimming(&mut runtime, trim_paths);
     crate::image::stack::configure_image_compiler(&mut runtime, &stack_budget);
-    if mono_stats {
-        mono::configure(&mut runtime, &output)?;
-    }
     log.run(&mut runtime, "build stage-two runtime")?;
     require_file(&compiled_runtime_elf, "runtime ELF")?;
     fs::copy(&compiled_runtime_elf, &runtime_elf)?;
@@ -734,7 +710,6 @@ fn build_resolved(
     }
     bootstrap_lock.configure(&mut bootstrap);
     add_bootstrap_patches(&mut bootstrap, local_esp_hal);
-    enable_experimental_path_trimming(&mut bootstrap, trim_paths);
     crate::image::stack::configure_image_compiler(&mut bootstrap, &stack_budget);
     log.run(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&compiled_bootstrap_elf, "bootstrap ELF")?;
@@ -953,17 +928,6 @@ fn add_local_xarxa_patches(command: &mut Command, local: Option<&Path>) {
             "patch.\"https://github.com/ermacv/xarxa.git\".{package}.path=\"{}\"",
             package_root.display()
         ));
-    }
-}
-
-fn enable_experimental_path_trimming(command: &mut Command, enabled: bool) {
-    if enabled {
-        // This remains an opt-in build experiment. The normal recipe must not
-        // acquire an unstable Cargo setting until a same-source HIL A/B proves
-        // both byte identity and equivalent performance.
-        command
-            .args(["-Z", "trim-paths"])
-            .args(["--config", "profile.release.trim-paths=\"object\""]);
     }
 }
 

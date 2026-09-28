@@ -340,9 +340,8 @@ unselected ones; the evaluator report describes only the resolved product set.
 `cargo qualification plan --manifest <program> [--capability <id>]` emits a
 read-only JSON selection from the same HIL decisions as `status` and `gate`.
 Each obligation explains `satisfied`, `run`, `review` or `investigate` and binds
-its property scope. It performs no build, test or hardware action. The HIL
-runner consumes this through `cargo hil plan --qualification <program>` and
-refreshes it before resuming; already satisfied obligations do not rerun.
+its property scope. It performs no build, test or hardware action; run the
+scenarios it names with `cargo hil run`.
 Unknown impact requests review rather than silently inheriting success. A focused
 capability plan includes only its own obligations; prerequisite capabilities
 remain context, not additional execution requests.

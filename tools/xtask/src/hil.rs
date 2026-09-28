@@ -101,7 +101,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let (options, args) = options.with_late(args)?;
     let (enqueue, after, args) = crate::hil_jobs::take(args)?;
     if (enqueue || after.is_some()) && !produces_runs(&args) {
-        return Err("--enqueue and --after apply to run, run-all and run-plan".into());
+        return Err("--enqueue and --after apply to run and run-all".into());
     }
     if enqueue {
         let forwarded = args
@@ -134,7 +134,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let baseline = match baseline {
         None => None,
         Some(_) if !produces_runs(args) => {
-            return Err("--baseline applies to run, run-all and run-plan".into());
+            return Err("--baseline applies to run and run-all".into());
         }
         Some(_) if record_forced => {
             return Err(format!(
@@ -189,7 +189,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let run_receipt = tempfile::NamedTempFile::new()?;
     let brief_log = if brief {
         if !produces_runs(args) {
-            return Err(format!("{BRIEF} applies to run, run-all and run-plan").into());
+            return Err(format!("{BRIEF} applies to run and run-all").into());
         }
         let directory = ctx.root.join("target/hil/brief");
         std::fs::create_dir_all(&directory)?;
@@ -515,8 +515,7 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
         .unwrap_or_default();
     // The stand adds lease and evidence options to the runner's run commands.
     for node in &mut runner_nodes {
-        if matches!(node.path.as_slice(), [one] if ["run", "run-all", "run-plan"].contains(&one.as_str()))
-        {
+        if matches!(node.path.as_slice(), [one] if ["run", "run-all"].contains(&one.as_str())) {
             node.flags.extend(
                 [
                     "--record-evidence",
@@ -1704,8 +1703,8 @@ fn remember_pending(ctx: &Context, owner: Option<String>, run_ids: &[String]) ->
 fn produces_runs(args: &[OsString]) -> bool {
     matches!(
         args.first().and_then(|a| a.to_str()),
-        Some("run" | "run-all" | "run-plan")
-    ) && !args.iter().any(|arg| arg == "--check")
+        Some("run" | "run-all")
+    )
 }
 
 /// Record the observations that qualify on this checkout as tracked HIL
@@ -2168,8 +2167,6 @@ mod tests {
         let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
         assert!(produces_runs(&args(&["run", "boot-smoke"])));
         assert!(produces_runs(&args(&["run-all", "--tag", "wifi"])));
-        assert!(produces_runs(&args(&["run-plan", "plan.json"])));
-        assert!(!produces_runs(&args(&["run-plan", "plan.json", "--check"])));
         assert!(!produces_runs(&args(&["plan", "--scenario", "x"])));
         assert!(!produces_runs(&args(&["doctor"])));
     }

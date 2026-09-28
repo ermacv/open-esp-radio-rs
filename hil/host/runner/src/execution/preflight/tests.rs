@@ -6,22 +6,6 @@ fn catalog() -> crate::scenario::Catalog {
 }
 
 #[test]
-fn scheduler_selection_applies_only_to_standalone_access_points() {
-    let catalog = catalog();
-    let mut access_point = catalog
-        .get("diagnostic-ap-mixed-tx-work")
-        .expect("AP scenario")
-        .clone();
-    assert!(
-        configure_run_selection(
-            &mut access_point,
-            Some(WifiApScheduler::DeficitHtResponse24)
-        )
-        .is_ok()
-    );
-}
-
-#[test]
 fn boot_smoke_preflight_never_opens_a_serial_capture() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../lab.example.toml");
     let private = tempfile::tempdir().unwrap();

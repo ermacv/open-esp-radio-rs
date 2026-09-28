@@ -1,11 +1,9 @@
-//! Offline, executable selection with explicit control/experiment relations.
-//!
-//! The plan binds scenario semantics, not a firmware build. Execution builds
-//! and records the current firmware normally. Neither a dependency nor a plan
-//! confers qualification, and no previous PASS is synthesized here.
+//! The offline plan `cargo hil plan` prints: the selected scenarios, their
+//! procedure digests, requirements and the named checks they supply. It
+//! binds scenario semantics, not a firmware build, and confers no
+//! qualification.
 
 use std::collections::BTreeSet;
-mod evidence;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -48,8 +46,6 @@ pub struct Plan {
     requested_checks: Vec<String>,
     requirements: Requirements,
     scenarios: Vec<Entry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    qualification: Option<evidence::Binding>,
 }
 
 // Descriptive metadata is preserved in run provenance, but is not executed.
@@ -137,49 +133,12 @@ impl Plan {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             schema: CAMPAIGN_SCHEMA,
-            qualification: None,
             network: network.id().to_owned(),
             requested: ids.into_iter().collect(),
             requested_checks: checks,
             requirements: Requirements::union(ordered.iter().map(|s| s.requirements())),
             scenarios,
         })
-    }
-
-    /// Reconstruct the plan before acquiring fixture leases or touching a DUT.
-    /// Editing the output cannot silently change its repetitions or workload.
-    pub fn resolve<'a, F: ScenarioFamily>(
-        &self,
-        catalog: &'a Catalog<F>,
-    ) -> Result<(Vec<&'a Scenario<F>>, Integration)> {
-        if self.schema != CAMPAIGN_SCHEMA {
-            return Err("unsupported executable campaign schema".into());
-        }
-        let network: Integration = self.network.parse()?;
-        let requested = self
-            .requested
-            .iter()
-            .map(|id| catalog.get(id))
-            .collect::<Result<Vec<_>>>()?;
-        let mut expected = if let Some(binding) = &self.qualification {
-            Self::from_selection(catalog, binding.clone(), network)?
-        } else {
-            Self::create_for_checks(catalog, &requested, network, &self.requested_checks)?
-        };
-        expected.qualification = self.qualification.clone();
-        if *self != expected {
-            return Err(
-                "campaign differs from current scenario contracts; generate and review a new plan"
-                    .into(),
-            );
-        }
-        Ok((
-            self.scenarios
-                .iter()
-                .map(|entry| catalog.get(&entry.scenario))
-                .collect::<Result<_>>()?,
-            network,
-        ))
     }
 }
 

@@ -110,11 +110,7 @@ cargo hil doctor timebase
 cargo hil plan udp-rx-ht40-ceiling
 cargo hil scenario list
 cargo hil scenario validate [id]
-cargo hil image build|flash <image-class>
-cargo hil image verify-rebuild <image-class>
-cargo hil image verify-rebuild <image-class> --trim-paths
-cargo hil image replay <run-id> <image-class>
-cargo hil device status
+cargo hil image build <image-class>
 cargo hil report verify [run-id]
 cargo hil run <scenario-id>
 cargo hil run <scenario-id> --firmware-from <run-id>
@@ -192,17 +188,6 @@ foreground cycles/instructions describe their measurement windows, not CPU
 utilization or energy consumption. Measurements distinguish bytes per frame,
 frames per iteration and total payload bytes per iteration; comparisons must
 use the same geometry and source memory.
-
-`device status` attaches to the flashed runtime without reset, provisioning,
-initialization or result acknowledgement. The report includes the boot ID,
-capabilities, operation state, retained session identity, stack snapshot when
-available, and cumulative target link counters. A null stack means the target
-cannot safely snapshot it in its current state. Existing link errors are
-reported as observations. Every invocation gets its own directory under
-`target/hil/esp32s31/device-status/`, containing `status.json` and UART evidence,
-including on failure. Firmware must implement read-only boot discovery; there
-is no reset fallback. Serial-driver line behavior remains platform-dependent;
-the runner issues no reset-line sequence when attaching.
 
 Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain one
 family's workload and acceptance criteria, never serial paths or secrets.
@@ -444,14 +429,8 @@ subjects/materials/recipe separation described in
 as a binary Git patch; untracked content is identified but never copied
 implicitly, and makes source reconstruction incomplete.
 
-`cargo hil image replay <run-id> <image-class>` first performs the same offline
-bundle verification and then flashes the archived `application.bin` without
-running Cargo or changing its bytes. It is the supported primitive for exact
-same-artifact comparison. It does not by itself rerun a scenario or claim that the lab
-environment matches the original run.
-
-`cargo hil run <scenario-id> --firmware-from <run-id>` performs the same
-verification before acquiring the physical fixture, requires the archived
+`cargo hil run <scenario-id> --firmware-from <run-id>` verifies the source
+bundle offline before acquiring the physical fixture, requires the archived
 image class to match the selected scenario, and then executes the ordinary
 scenario lifecycle without invoking Cargo. The resulting run imports all
 available firmware subjects, effective lock and tracked source patches into

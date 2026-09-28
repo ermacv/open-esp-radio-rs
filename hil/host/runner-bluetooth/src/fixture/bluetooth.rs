@@ -208,66 +208,6 @@ fn require_security_failure_admission(code: Option<i32>, stderr: &[u8]) -> crate
     }
 }
 
-pub fn preflight_connect_reset(adapter: Adapter) -> crate::Result<()> {
-    preflight(adapter)?;
-    let mut command = Command::new("sudo");
-    command.args([
-        "-n",
-        "-l",
-        "/usr/local/libexec/open-radio-bluetooth",
-        "connect-reset",
-        "--adapter",
-        &adapter.to_string(),
-        "--peer",
-        "00:00:00:00:00:00",
-        "--hold-ms",
-        "0",
-        "--termination",
-        "peer-reset",
-    ]);
-    let output = oer_process::output(&mut command, Some(Duration::from_secs(5)))?;
-    if !output.status.success() {
-        return Err("installed Bluetooth helper lacks connect-reset permission; rerun cargo hil fixture install --provider linux-bluetooth with the selected --adapter".into());
-    }
-    Ok(())
-}
-
-pub fn connect_reset(
-    root: &Path,
-    adapter: Adapter,
-    peer: model::PeerAddress,
-    hold_ms: u16,
-) -> crate::Result<()> {
-    let _lease = hil_core::lab::lock::acquire_bluetooth(adapter)?;
-    let directory = root.join("target/hil/fixture-checks");
-    fs::create_dir_all(&directory)?;
-    let output = tempfile::Builder::new()
-        .prefix("bluetooth-connect-reset-")
-        .tempdir_in(directory)?
-        .keep();
-    let result = connect_reset_in(
-        &output,
-        adapter,
-        peer,
-        hold_ms,
-        BluetoothPeripheralTermination::PeerReset,
-    );
-    let summary: serde_json::Value =
-        serde_json::from_slice(&fs::read(output.join("result.json"))?)?;
-    crate::emit_json(&summary, true)?;
-    result.map(|_| ())
-}
-
-pub fn connect_reset_in(
-    output: &Path,
-    adapter: Adapter,
-    peer: model::PeerAddress,
-    hold_ms: u16,
-    termination: BluetoothPeripheralTermination,
-) -> crate::Result<model::ConnectionReset> {
-    connect_profile_in(output, adapter, peer, hold_ms, termination, false, false)
-}
-
 pub fn connect_profile_in(
     output: &Path,
     adapter: Adapter,

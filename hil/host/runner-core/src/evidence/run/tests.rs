@@ -622,31 +622,6 @@ fn finish_writes_all_views_and_completes_manifest() {
 }
 
 #[test]
-fn campaign_is_part_of_the_sealed_inventory() {
-    let catalog = crate::scenario::test_family::catalog();
-    let scenario = catalog.get("silence").unwrap();
-    let plan =
-        crate::campaign::Plan::create(&catalog, &[scenario], crate::image::Integration::OwnedXarxa)
-            .unwrap();
-    let root = temporary_directory("campaign-seal");
-    let session = integrated_session(&root);
-    session.write_campaign(&plan).unwrap();
-    let (_, completion) = session.finish(failed_suite().scenarios).unwrap();
-    let integrity: IntegrityIndex =
-        serde_json::from_slice(&fs::read(&completion.integrity_report).unwrap()).unwrap();
-    let entry = integrity
-        .files
-        .iter()
-        .find(|entry| entry.path == Path::new("campaign.json"))
-        .unwrap();
-    assert_eq!(
-        entry.sha256,
-        sha256_file(&completion.run_directory.join("campaign.json")).unwrap()
-    );
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
 fn dropped_session_marks_manifest_interrupted() {
     let root = temporary_directory("interrupted");
     drop(session(&root));
@@ -732,8 +707,6 @@ fn provenance_records_the_network_implementation_and_its_feature() {
     );
     fs::remove_dir_all(root).unwrap();
 }
-
-mod workflow;
 
 /// Upstream-Xarxa correctness artifacts over the given files, with one lock
 /// standing in for both effective locks and a host-independent environment.

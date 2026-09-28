@@ -6,11 +6,11 @@ use clap::Parser as _;
 
 use crate::scenario::{Catalog, requirements};
 use crate::{
-    Result, cli::Cli, cli::CliCommand, cli::DeviceCommand, cli::ImageCommand, cli::ReportCommand,
-    cli::ScenarioCommand, emit_json, execution::firmware::RunFirmware, execution::orchestration,
-    execution::preflight, fixture, repository_root,
+    Result, cli::Cli, cli::CliCommand, cli::ImageCommand, cli::ReportCommand, cli::ScenarioCommand,
+    emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
+    repository_root,
 };
-use hil_core::{device, image, lab, output, scenario::SCENARIO_SCHEMA};
+use hil_core::{image, lab, output, scenario::SCENARIO_SCHEMA};
 
 pub(crate) fn run() -> Result<()> {
     let root = repository_root()?;
@@ -43,14 +43,6 @@ pub(crate) fn run() -> Result<()> {
                 crate::cli::FixtureCommand::Install { .. } | crate::cli::FixtureCommand::BuildHostapd,
         } => unreachable!("install and build commands return before lab configuration is resolved"),
         CliCommand::Fixture {
-            command: crate::cli::FixtureCommand::ProbePlan,
-        } => {
-            let plan: Vec<_> = (0..hil_wifi::fixture::probe_load::model::REQUESTS)
-                .filter_map(hil_wifi::fixture::probe_load::model::request)
-                .collect();
-            emit_json(&plan, true)
-        }
-        CliCommand::Fixture {
             command:
                 crate::cli::FixtureCommand::BluetoothCheck {
                     adapter,
@@ -61,19 +53,6 @@ pub(crate) fn run() -> Result<()> {
                 oer_hil_fixture_install::Provider::LinuxBluetooth,
             )?;
             hil_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
-        }
-        CliCommand::Fixture {
-            command:
-                crate::cli::FixtureCommand::BluetoothConnectReset {
-                    adapter,
-                    peer,
-                    hold_ms,
-                },
-        } => {
-            let _software = hil_core::fixture::software::SoftwareLease::acquire_one(
-                oer_hil_fixture_install::Provider::LinuxBluetooth,
-            )?;
-            hil_bluetooth::fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms)
         }
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::Check { scenario: id },
@@ -93,68 +72,16 @@ pub(crate) fn run() -> Result<()> {
                 hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::doctor::run(&root, &lab, &selected)
         }
-        CliCommand::Plan {
-            selection,
-            out,
-            network,
-            proofs,
-            qualification,
-            capability,
-        } => {
+        CliCommand::Plan { selection, proofs } => {
             let catalog = Catalog::load(&catalog_path)?;
-            let plan = if let Some(manifest) = qualification {
-                hil_core::campaign::Plan::from_qualification(
-                    &root, &catalog, manifest, capability, network,
-                )?
-            } else {
-                let selected = selection.resolve(&catalog)?;
-                hil_core::campaign::Plan::create_for_checks(&catalog, &selected, network, &proofs)?
-            };
-            if let Some(path) = out {
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(path)?;
-                serde_json::to_writer_pretty(&mut file, &plan)?;
-            }
-            emit_json(&plan, true)
-        }
-        CliCommand::RunPlan {
-            plan,
-            check,
-            source_include,
-            include_untracked,
-            layout_seed,
-        } => {
-            let catalog = Catalog::load(&catalog_path)?;
-            let plan: hil_core::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
-            let plan = plan.refresh(&root, &catalog)?;
-            let (selected, network) = plan.resolve(&catalog)?;
-            if check || selected.is_empty() {
-                return emit_json(&plan, true);
-            }
-            let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
-            let lab = lab::config::LabConfig::load(&lab_path)?;
-            let required = requirements(&selected);
-            hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
-            // Orchestration builds the images, then leases the stand and
-            // the fixture software.
-            orchestration::run_all(
-                &root,
-                &lab,
+            let selected = selection.resolve(&catalog)?;
+            let plan = hil_core::campaign::Plan::create_for_checks(
                 &catalog,
                 &selected,
-                orchestration::SuiteSelection::Campaign(&plan),
-                hil_core::image::CurrentBuild {
-                    network,
-                    layout_seed,
-                },
-                orchestration::Invocation {
-                    arguments: invocation,
-                    snapshot: Some(snapshot),
-                    then: None,
-                },
-            )
+                image::Integration::default(),
+                &proofs,
+            )?;
+            emit_json(&plan, true)
         }
         CliCommand::Scenario { command } => {
             let catalog = Catalog::load(&catalog_path)?;
@@ -189,10 +116,8 @@ pub(crate) fn run() -> Result<()> {
                 let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
                 emit_json(&snapshot, true)
             }
-            ImageCommand::Mono { class } => image::mono::capture(&root, class),
             ImageCommand::Build {
                 classes,
-                network,
                 source_snapshot,
                 layout_seed,
             } => {
@@ -208,76 +133,27 @@ pub(crate) fn run() -> Result<()> {
                 for class in classes {
                     let artifacts = match (&frozen, &source_snapshot) {
                         (Some(frozen), Some(snapshot)) => {
-                            let artifacts = frozen.build(&root, class, network, layout_seed)?;
+                            let artifacts = frozen.build(
+                                &root,
+                                class,
+                                image::Integration::default(),
+                                layout_seed,
+                            )?;
                             let record = hil_core::evidence::build_record::publish(
                                 &root, snapshot, class, &artifacts,
                             )?;
                             eprintln!("build_record={}", record.display());
                             artifacts
                         }
-                        _ => image::build(&root, class, network, layout_seed)?,
+                        _ => {
+                            image::build(&root, class, image::Integration::default(), layout_seed)?
+                        }
                     };
                     image::print_artifacts(class, &artifacts, false)?;
                 }
                 Ok(())
             }
-            ImageCommand::VerifyRebuild { class, trim_paths } => {
-                image::verify_rebuild(&root, class, trim_paths)
-            }
-            ImageCommand::Flash {
-                class,
-                network,
-                layout_seed,
-            } => {
-                let artifacts = image::build(&root, class, network, layout_seed)?;
-                let lab = lab::config::LabConfig::load(&lab_path)?;
-                let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
-                device::flash(&root, &artifacts, &lab.device.serial)?;
-                lab::lock::record_flash(
-                    &lab.device.serial,
-                    class.id(),
-                    &artifacts.application_image,
-                    None,
-                    None,
-                    String::from("image flash of the live checkout"),
-                );
-                image::print_artifacts(class, &artifacts, true)
-            }
-            ImageCommand::Replay { run_id, class } => {
-                let firmware = hil_core::evidence::verify::archived_firmware(
-                    &root, "esp32s31", &run_id, class,
-                )?;
-                let lab = lab::config::LabConfig::load(&lab_path)?;
-                let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
-                device::flash_archived(&root, &firmware, &lab.device.serial)?;
-                lab::lock::record_flash(
-                    &lab.device.serial,
-                    firmware.image.id(),
-                    &firmware.application_path,
-                    None,
-                    None,
-                    format!("image replay of run {}", firmware.run_id),
-                );
-                emit_json(
-                    &serde_json::json!({
-                        "schema": hil_core::evidence::run::RUN_SCHEMA,
-                        "run_id": firmware.run_id,
-                        "image_class": firmware.image,
-                        "application_image": firmware.application_path,
-                        "application_sha256": firmware.application_sha256,
-                        "flashed": true
-                    }),
-                    true,
-                )
-            }
         },
-        CliCommand::Device {
-            command: DeviceCommand::Status,
-        } => {
-            let lab = lab::config::LabConfig::load(&lab_path)?;
-            let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
-            device::status(&root, &lab)
-        }
         CliCommand::Report {
             command: ReportCommand::Verify { run_id, target },
         } => {
@@ -289,23 +165,18 @@ pub(crate) fn run() -> Result<()> {
             source_include,
             include_untracked,
             source_snapshot,
-            ap_scheduler,
             firmware_from,
-            network,
             layout_seed,
             then,
             target,
             validate_only,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
-            let mut selected = orchestration::named_scenarios(&catalog, &scenarios)?;
+            let selected = orchestration::named_scenarios(&catalog, &scenarios)?;
             let target = orchestration::select_target(
                 &selected.iter().collect::<Vec<_>>(),
                 target.as_deref(),
             )?;
-            for scenario in &mut selected {
-                preflight::configure_run_selection(scenario, ap_scheduler.map(Into::into))?;
-            }
             if validate_only {
                 println!(
                     "valid: {} on {target}",
@@ -334,7 +205,7 @@ pub(crate) fn run() -> Result<()> {
                     )?))
                 }
                 None => RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
-                    network,
+                    network: image::Integration::default(),
                     layout_seed,
                 }),
             };
@@ -361,7 +232,6 @@ pub(crate) fn run() -> Result<()> {
         }
         CliCommand::RunAll {
             tag,
-            network,
             layout_seed,
             source_include,
             include_untracked,
@@ -384,9 +254,9 @@ pub(crate) fn run() -> Result<()> {
                 &lab,
                 &catalog,
                 &selected,
-                orchestration::SuiteSelection::Catalog(orchestration::selection_description(&tag)),
+                orchestration::selection_description(&tag),
                 hil_core::image::CurrentBuild {
-                    network,
+                    network: image::Integration::default(),
                     layout_seed,
                 },
                 orchestration::Invocation {

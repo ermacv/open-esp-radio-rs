@@ -29,38 +29,9 @@ pub(crate) enum CliCommand {
     Plan {
         #[command(flatten)]
         selection: Selection,
-        /// Save the executable plan. Planning never accesses the lab or DUT.
-        #[arg(long)]
-        out: Option<PathBuf>,
-        #[arg(long, default_value = "owned-xarxa")]
-        network: hil_core::image::Integration,
         /// Require every named check; controls are added only after this filter.
         #[arg(long = "proof")]
         proofs: Vec<String>,
-        /// Select missing obligations using the independent qualification evaluator.
-        #[arg(long, conflicts_with_all = ["scenario", "tag", "proofs"])]
-        qualification: Option<PathBuf>,
-        #[arg(long, requires = "qualification")]
-        capability: Option<String>,
-    },
-    /// Execute an exact saved plan after validating its current scenario inputs.
-    RunPlan {
-        plan: PathBuf,
-        /// Explicit nonignored untracked source file; repeat for each included file.
-        #[arg(long = "source-include", value_name = "FILE", conflicts_with = "check")]
-        source_include: Vec<String>,
-        /// Archive every untracked file inside a package the image builds,
-        /// recorded as such in the snapshot manifest.
-        #[arg(long, conflicts_with = "check")]
-        include_untracked: bool,
-        /// Validate the saved plan offline without acquiring fixtures or a DUT.
-        #[arg(long)]
-        check: bool,
-        /// Shuffle the runtime's code and read-only data by this nonzero
-        /// seed, recorded with the image; without it the linker keeps its
-        /// natural order.
-        #[arg(long, value_name = "SEED", conflicts_with = "check")]
-        layout_seed: Option<std::num::NonZeroU32>,
     },
     /// Inspect and validate the host-owned scenario catalog.
     Scenario {
@@ -71,11 +42,6 @@ pub(crate) enum CliCommand {
     Image {
         #[command(subcommand)]
         command: ImageCommand,
-    },
-    /// Inspect the currently flashed target without starting a workload.
-    Device {
-        #[command(subcommand)]
-        command: DeviceCommand,
     },
     /// Check sealed run bundles offline.
     Report {
@@ -108,16 +74,10 @@ pub(crate) enum CliCommand {
             conflicts_with_all = ["firmware_from", "source_include", "include_untracked"]
         )]
         source_snapshot: Option<PathBuf>,
-        /// Standalone AP: RR or deficit with the same HT/OFDM24 response-envelope model (3000-us quantum).
-        #[arg(long, value_enum)]
-        ap_scheduler: Option<ApScheduler>,
         /// Use the scenarios' image class from a sealed earlier HIL run; every
         /// selected scenario must use that class.
         #[arg(long, value_name = "RUN_ID")]
         firmware_from: Option<String>,
-        /// Network implementation: owned-xarxa, the only one.
-        #[arg(long, default_value = "owned-xarxa", conflicts_with = "firmware_from")]
-        network: hil_core::image::Integration,
         /// Shuffle the runtime's code and read-only data by this nonzero
         /// seed, recorded with the image; without it the linker keeps its
         /// natural order.
@@ -149,9 +109,6 @@ pub(crate) enum CliCommand {
         /// recorded as such in the snapshot manifest.
         #[arg(long)]
         include_untracked: bool,
-        /// Network implementation: owned-xarxa, the only one.
-        #[arg(long, default_value = "owned-xarxa")]
-        network: hil_core::image::Integration,
         /// Shuffle the runtime's code and read-only data by this nonzero
         /// seed, recorded with the image; without it the linker keeps its
         /// natural order.
@@ -164,21 +121,6 @@ pub(crate) enum CliCommand {
         #[arg(long)]
         all: bool,
     },
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub(crate) enum ApScheduler {
-    Rr,
-    Deficit,
-}
-
-impl From<ApScheduler> for oer_hil_protocol::WifiApScheduler {
-    fn from(value: ApScheduler) -> Self {
-        match value {
-            ApScheduler::Rr => Self::RrHtResponse24,
-            ApScheduler::Deficit => Self::DeficitHtResponse24,
-        }
-    }
 }
 
 #[derive(Debug, Args)]
@@ -238,8 +180,6 @@ pub(crate) enum ImageCommand {
         #[arg(long)]
         include_untracked: bool,
     },
-    /// Capture rustc mono estimates and the exact diagnostic ELF; never flash.
-    Mono { class: hil_core::image::ImageClass },
     Build {
         /// Image classes, built one after the other; with a source snapshot
         /// they share one materialization of it.
@@ -248,43 +188,12 @@ pub(crate) enum ImageCommand {
         /// Build only from a verified source snapshot directory, not the live checkout.
         #[arg(long)]
         source_snapshot: Option<PathBuf>,
-        /// Network implementation: owned-xarxa, the only one.
-        #[arg(long, default_value = "owned-xarxa")]
-        network: hil_core::image::Integration,
         /// Shuffle the runtime's code and read-only data by this nonzero
         /// seed, recorded with the image; without it the linker keeps its
         /// natural order.
         #[arg(long, value_name = "SEED")]
         layout_seed: Option<std::num::NonZeroU32>,
     },
-    /// Build one clean commit in two different checkout roots and compare every firmware subject.
-    VerifyRebuild {
-        class: hil_core::image::ImageClass,
-        /// Diagnose Cargo's experimental object-path sanitization without changing normal builds.
-        #[arg(long)]
-        trim_paths: bool,
-    },
-    Flash {
-        class: hil_core::image::ImageClass,
-        /// Network implementation: owned-xarxa, the only one.
-        #[arg(long, default_value = "owned-xarxa")]
-        network: hil_core::image::Integration,
-        /// Shuffle the runtime's code and read-only data by this nonzero
-        /// seed, recorded with the image; without it the linker keeps its
-        /// natural order.
-        #[arg(long, value_name = "SEED")]
-        layout_seed: Option<std::num::NonZeroU32>,
-    },
-    /// Verify and flash an exact application archived by an earlier HIL run.
-    Replay {
-        run_id: String,
-        class: hil_core::image::ImageClass,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum DeviceCommand {
-    Status,
 }
 
 #[derive(Debug, Subcommand)]
@@ -303,8 +212,6 @@ mod tests;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum FixtureCommand {
-    /// Print the finite probe workload without touching any fixture.
-    ProbePlan,
     /// Execute a bounded DTM command check and restore the Linux adapter.
     BluetoothCheck {
         #[arg(long, default_value = "hci0")]
@@ -312,15 +219,6 @@ pub(crate) enum FixtureCommand {
         /// v1 is an explicit diagnostic; production RF scenarios always use v2.
         #[arg(long, value_enum, default_value = "v2")]
         dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion,
-    },
-    /// Connect to a public LE peer, reset the adapter and archive restoration evidence.
-    BluetoothConnectReset {
-        #[arg(long, default_value = "hci0")]
-        adapter: hil_bluetooth::fixture::bluetooth::model::Adapter,
-        #[arg(long)]
-        peer: hil_bluetooth::fixture::bluetooth::model::PeerAddress,
-        #[arg(long, default_value = "0", value_parser = clap::value_parser!(u16).range(0..=5000))]
-        hold_ms: u16,
     },
     /// Build the pinned hostapd with explicit HIL coexistence policy support.
     BuildHostapd,

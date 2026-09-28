@@ -12,47 +12,6 @@ use oer_esp32s31_firmware::flash::{
     ota0_selector_image,
 };
 
-pub fn status(root: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
-    let parent = root.join("target/hil/esp32s31/device-status");
-    fs::create_dir_all(&parent)?;
-    let output = parent.join(format!(
-        "{}-{:08x}",
-        crate::durable::unix_millis()?,
-        std::process::id()
-    ));
-    fs::create_dir(&output)?;
-    device_status_at(&output, lab)
-}
-
-fn device_status_at(output: &Path, lab: &crate::lab::config::LabConfig) -> Result<()> {
-    let capture = crate::session::SerialCapture::attach(&lab.device.serial, output)?;
-    let result = (|| -> Result<_> {
-        let observation = capture.observe(std::time::Duration::from_secs(10))?;
-        Ok(serde_json::json!({
-            "schema": 1,
-            "protocol_version": oer_hil_protocol::PROTOCOL_VERSION,
-            "observation": observation,
-            "uart_log": output.join("uart.log"),
-        }))
-    })();
-    match capture.finish_observation_with(result) {
-        Ok(report) => {
-            crate::durable::atomic_json(&output.join("status.json"), &report)?;
-            crate::emit_json(&report, true)
-        }
-        Err(error) => {
-            let report = serde_json::json!({
-                "schema": 1, "failure": error.to_string(),
-                "uart_log": output.join("uart.log"),
-                "protocol_log": output.join("protocol.jsonl"),
-            });
-            crate::durable::atomic_json(&output.join("status.json"), &report)?;
-            crate::emit_json(&report, true)?;
-            Err(error)
-        }
-    }
-}
-
 pub fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
     flash_application(
         root,

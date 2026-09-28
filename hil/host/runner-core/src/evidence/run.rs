@@ -187,10 +187,6 @@ impl RunSession {
         atomic_json(&self.directory.join("plan.json"), plan)
     }
 
-    pub fn write_campaign(&self, plan: &crate::campaign::Plan) -> Result<()> {
-        atomic_json(&self.directory.join("campaign.json"), plan)
-    }
-
     pub fn record_lab_provenance(
         &mut self,
         provenance: &crate::lab::provenance::LabProvenance,

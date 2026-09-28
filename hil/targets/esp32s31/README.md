@@ -64,17 +64,12 @@ only a receiver address: attribution to a CTS-to-self exchange also requires
 its relationship to the following target transmission. Missing frames or PHY
 timestamps limit what the capture can establish about Duration and SIFS.
 
-Standalone HT AP scenarios accept a runtime scheduling comparison:
-
-```console
-cargo hil run diagnostic-ap-mixed-tx-work --network owned-xarxa --ap-scheduler rr
-cargo hil run diagnostic-ap-mixed-tx-work --firmware-from <RR_RUN_ID> --ap-scheduler deficit
-```
-
-Both commands use the same firmware and network implementation. Initialization
-carries the selected policy; the immutable scenario snapshot and command records
-retain `rr-ht-response24` or `deficit-ht-response24`. Omitting the option preserves
-the ordinary unmetered RR default. The shared experiment uses a 3000-us quantum,
+A standalone HT AP scenario selects a runtime scheduling policy with its
+`scheduler` field, `rr-ht-response24` or `deficit-ht-response24`; a comparison
+runs two scenario files that differ only in it, and the second can replay the
+first's firmware with `--firmware-from`. Initialization carries the selected
+policy and the scenario snapshot retains it. Omitting the field preserves the
+ordinary unmetered RR default. The shared experiment uses a 3000-us quantum,
 100-us minimum and HT aggregate admission against the issued grant. Terminal
 cost is modelled PPDU time plus 10-us SIFS and a 32-byte OFDM24 response per
 unicast publication; group publications add no response. The same response
@@ -91,7 +86,7 @@ driver owns candidate selection, grants and cancellation; HIL supplies only
 the explicit comparison model and workload.
 
 `diagnostic-ap-balanced-airtime` offers 130 Mbit/s to each of two AP clients for
-one 12-second window. It accepts the same `--ap-scheduler rr|deficit` comparison.
+one 12-second window. It accepts the same `scheduler` comparison.
 This workload does not force different peer PHY rates: AP downlink selection
 uses each station's advertised receive capabilities. An OpenWrt transmit MCS
 mask controls the opposite direction and is not evidence of downlink asymmetry.
@@ -378,9 +373,8 @@ owner disposition remain in the production service.
 
 ```console
 cargo hil doctor station-ap-loss
-cargo hil plan --tag ap-availability --out target/hil/ap-availability-plan.json
-cargo hil run-plan target/hil/ap-availability-plan.json --check
-cargo hil run-plan target/hil/ap-availability-plan.json
+cargo hil plan --tag ap-availability
+cargo hil run-all --tag ap-availability
 ```
 
 The selected scenarios distinguish recovery with fresh ICMP exchange, prolonged

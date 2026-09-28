@@ -59,13 +59,7 @@ impl FinalImageBuild {
                 .env_remove("ESP_HAL_ROOT")
                 .env_remove("EMBASSY_ROOT")
                 .env_remove("OPEN_RADIO_XARXA_ROOT")
-                .args([
-                    "image",
-                    "build",
-                    class.id(),
-                    "--network",
-                    FINAL_IMAGE_NETWORK,
-                ])
+                .args(["image", "build", class.id()])
                 .stdout(Stdio::from(File::create(&output)?))
                 .stderr(Stdio::from(File::create(&log)?)),
             std::time::Duration::from_secs(40),

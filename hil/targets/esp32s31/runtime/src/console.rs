@@ -1315,6 +1315,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
+                    #[cfg(feature = "memory-benchmark")]
                     Command::ProbeMemoryBenchmark(request) => {
                         let rejection = if !capabilities.features.memory_benchmark {
                             Some(RejectReason::Unsupported)
@@ -1340,6 +1341,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 .await;
                         }
                     }
+                    // A build without the family cannot decode the command.
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Command::ProbeMemoryBenchmark(absent) => match absent {},
                     Command::ProbeTimebase(request) => {
                         let response = if !capabilities.features.timebase_probe {
                             Event::Rejected(RejectReason::Unsupported)
@@ -1355,6 +1359,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
+                    #[cfg(feature = "ieee802154-diagnostic")]
                     Command::ProbeIeee802154EventStatus(request) => {
                         let admission = ieee802154_event_status_probe_admission(
                             capabilities.features.ieee802154_event_status_probe,
@@ -1403,6 +1408,10 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             }
                         }
                     }
+                    // A build without the family cannot decode the command.
+                    #[cfg(not(feature = "ieee802154-diagnostic"))]
+                    Command::ProbeIeee802154EventStatus(absent) => match absent {},
+                    #[cfg(feature = "ieee802154-diagnostic")]
                     Command::ProbeIeee802154Route(request) => {
                         let admission = ieee802154_event_status_probe_admission(
                             capabilities.features.ieee802154_route_probe,
@@ -1451,6 +1460,10 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             }
                         }
                     }
+                    // A build without the family cannot decode the command.
+                    #[cfg(not(feature = "ieee802154-diagnostic"))]
+                    Command::ProbeIeee802154Route(absent) => match absent {},
+                    #[cfg(feature = "ieee802154-diagnostic")]
                     Command::ProbeIeee802154EdEvent(request) => {
                         let admission = ieee802154_event_status_probe_admission(
                             capabilities.features.ieee802154_ed_event_probe,
@@ -1499,6 +1512,10 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             }
                         }
                     }
+                    // A build without the family cannot decode the command.
+                    #[cfg(not(feature = "ieee802154-diagnostic"))]
+                    Command::ProbeIeee802154EdEvent(absent) => match absent {},
+                    #[cfg(feature = "ieee802154-diagnostic")]
                     Command::RunIeee802154AirCheck(request) => {
                         let admission = ieee802154_event_status_probe_admission(
                             capabilities.features.ieee802154_air_check,
@@ -1547,6 +1564,10 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             }
                         }
                     }
+                    // A build without the family cannot decode the command.
+                    #[cfg(not(feature = "ieee802154-diagnostic"))]
+                    Command::RunIeee802154AirCheck(absent) => match absent {},
+                    #[cfg(feature = "ieee802154-diagnostic")]
                     Command::StartIeee802154Session(config) => {
                         let admission = ieee802154_event_status_probe_admission(
                             capabilities.features.ieee802154_session,
@@ -1593,6 +1614,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             }
                         }
                     }
+                    // A build without the family cannot decode the command.
+                    #[cfg(not(feature = "ieee802154-diagnostic"))]
+                    Command::StartIeee802154Session(absent) => match absent {},
                     Command::TransmitIeee802154Session(request) => {
                         #[cfg(feature = "ieee802154-radio")]
                         if request.validate() {
@@ -1731,6 +1755,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         }
                     }
+                    #[cfg(feature = "ieee802154-diagnostic")]
                     Command::StartIeee802154Thread(request) => {
                         let admission = ieee802154_event_status_probe_admission(
                             capabilities.features.ieee802154_thread,
@@ -1783,6 +1808,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             }
                         }
                     }
+                    // A build without the family cannot decode the command.
+                    #[cfg(not(feature = "ieee802154-diagnostic"))]
+                    Command::StartIeee802154Thread(absent) => match absent {},
                     Command::QueryIeee802154Thread => {
                         #[cfg(feature = "ieee802154-thread")]
                         admit_ieee802154_thread_command(
@@ -2739,10 +2767,15 @@ pub async fn logger_task(usb_device: USB_DEVICE<'static>) {
         match select3(EVENTS.receive(), rx.read(&mut rx_buffer), RECORDS.receive()).await {
             Either3::First(event) => write_event_async(&mut tx, &mut encoder, &event).await,
             Either3::Second(Ok(length)) => {
-                decoder.feed::<Command>(&rx_buffer[..length], |message| {
-                    if let Ok(command) = message {
-                        receive_command(command);
-                    }
+                decoder.feed::<Command>(&rx_buffer[..length], |message| match message {
+                    Ok(command) => receive_command(command),
+                    // A command of a radio family this image leaves out.
+                    Err(oer_hil_protocol::DecodeError::UndecodableBody(request)) => publish_event(
+                        request.session_id,
+                        request.request_id,
+                        Event::Rejected(RejectReason::Unsupported),
+                    ),
+                    Err(_) => {}
                 });
                 let counters = decoder.counters();
                 PROTOCOL_RX_FRAMES.store(counters.frames, Ordering::Release);

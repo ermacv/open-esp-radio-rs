@@ -14,8 +14,11 @@ extern crate embassy_net_owned as embassy_net;
 pub mod bluetooth_gatt;
 pub mod console;
 pub mod liveness;
+#[cfg(feature = "system")]
 pub mod memory_benchmark;
+#[cfg(feature = "wifi")]
 pub mod network;
 pub mod postmortem;
 pub mod trace;
+#[cfg(feature = "wifi")]
 pub mod traffic;

@@ -70,7 +70,7 @@ oer-esp32s31-ieee80211-runtime = { path = "../../../crates/runtime/esp32s31/ieee
 oer-ieee80211-mac = { path = "../../../crates/protocols/ieee80211/mac" }
 oer-ieee80211-sta = { path = "../../../crates/protocols/ieee80211/sta" }
 oer-ieee80211-runtime = { path = "../../../crates/runtime/ieee80211" }
-oer-hil-protocol = { path = "../../protocol" }
+oer-hil-protocol = { path = "../../protocol", default-features = false }
 oer-hil-esp32s31-telemetry = { path = "telemetry" }
 portable-atomic = { version = "1.11", default-features = false }
 postcard = { version = "1.1.3", default-features = false }

@@ -5,38 +5,13 @@
 //! vendor ABI versions, or target-specific register layouts. Those belong to
 //! the firmware adapter and the qualification manifest that selects it.
 
+#[cfg(feature = "bluetooth")]
 mod bluetooth;
+#[cfg(feature = "bluetooth")]
 mod bluetooth_gatt;
-pub use bluetooth_gatt::BluetoothGattEvidence;
+#[cfg(feature = "bluetooth")]
 mod bluetooth_secure_gatt;
-pub use bluetooth_secure_gatt::{
-    BluetoothAdvertisingStartRejection, BluetoothGattApplicationFailure, BluetoothGattResetOutcome,
-    BluetoothGattResetReadGate, BluetoothGattShutdown, BluetoothGattStopCause,
-    BluetoothNumericChallenge, BluetoothNumericDecision, BluetoothSecureGattEvidence,
-};
-mod system;
-mod trace;
-pub use system::{
-    BootEvidence, CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HangTarget, HartState,
-    POST_MORTEM_CHECKPOINT_PAGE, POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints,
-    PostMortemSummary, ResetReason, TaskSlot, TaskStall, WatchdogTestMode,
-};
-pub use trace::{
-    TRACE_ENTRY_PAGE, TRACE_SNAPSHOT_PAGE, TraceControl, TraceEntries, TraceEntry,
-    TraceSnapshotPage, TraceStatus,
-};
-mod phy_fault;
-mod phy_register_image;
-pub use phy_fault::{
-    PhyFaultCommand, PhyFaultEvidence, PhyFaultMode, PhyFaultPhase, PhyTrackingCommand,
-    PhyTrackingEvidence,
-};
-pub use phy_register_image::{
-    PHY_REGISTER_IMAGE_WORDS, PhyAnalogImageBytes, PhyRegisterImageRequest, PhyRegisterImageWords,
-};
-mod framing;
-#[cfg(feature = "async-io")]
-mod io;
+#[cfg(feature = "bluetooth")]
 pub use bluetooth::{
     BLUETOOTH_HCI_EVENT_BYTES, BLUETOOTH_HCI_PARAMETER_BYTES,
     BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES,
@@ -47,78 +22,80 @@ pub use bluetooth::{
     BluetoothSecurityFailure, bluetooth_peripheral_acl_payload,
     bluetooth_peripheral_acl_payload_for_sequence,
 };
-#[cfg(feature = "async-io")]
-pub use io::write_frame;
-mod memory_benchmark;
-mod message;
-mod wifi_airtime;
-mod wifi_rx;
-mod wifi_tx;
-pub use wifi_airtime::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
-pub use wifi_rx::{WifiRxRejection, WifiRxRejectionReason};
-pub use wifi_tx::WifiTxRetentionEvidence;
-mod stream_pattern;
-mod udp_probe;
-pub use udp_probe::UdpProbe;
-
-pub use framing::{
-    DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
-    MAX_WIRE_FRAME_BYTES, evidence_crc32c, ieee802154_frame_crc32c, startup_artifact_crc32c,
+#[cfg(feature = "bluetooth")]
+pub use bluetooth_gatt::BluetoothGattEvidence;
+#[cfg(feature = "bluetooth")]
+pub use bluetooth_secure_gatt::{
+    BluetoothAdvertisingStartRejection, BluetoothGattApplicationFailure, BluetoothGattResetOutcome,
+    BluetoothGattResetReadGate, BluetoothGattShutdown, BluetoothGattStopCause,
+    BluetoothNumericChallenge, BluetoothNumericDecision, BluetoothSecureGattEvidence,
 };
+
+#[cfg(feature = "wifi")]
+mod stream_pattern;
+#[cfg(feature = "wifi")]
+mod udp_probe;
+#[cfg(feature = "wifi")]
+mod wifi_airtime;
+#[cfg(feature = "wifi")]
+mod wifi_rx;
+#[cfg(feature = "wifi")]
+mod wifi_tx;
+#[cfg(feature = "wifi")]
+pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};
+#[cfg(feature = "wifi")]
+pub use udp_probe::UdpProbe;
+#[cfg(feature = "wifi")]
+pub use wifi_airtime::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
+#[cfg(feature = "wifi")]
+pub use wifi_rx::{WifiRxRejection, WifiRxRejectionReason};
+#[cfg(feature = "wifi")]
+pub use wifi_tx::WifiTxRetentionEvidence;
+
+#[cfg(feature = "system")]
+mod memory_benchmark;
+#[cfg(feature = "system")]
 pub use memory_benchmark::{
     MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource,
     MemoryBenchmarkStop,
 };
-pub use message::{
-    Capabilities, Command, Completion, DiagnosticFeature, DiagnosticFeatures, Direction, Envelope,
-    Event, EvidenceRecord, FailureCode, FeatureCapabilities, Finished, FlowConfig,
-    FlowTransportEvidence, IEEE802154_AIR_CHECK_MAX_CYCLES, IEEE802154_ROUTE_PROBE_MAX_ENTRIES,
-    IEEE802154_SESSION_FRAME_CAPACITY, IEEE802154_SESSION_RECORDED_FRAMES,
-    IEEE802154_THREAD_DATASET_CAPACITY, IEEE802154_THREAD_PAYLOAD_CAPACITY,
-    IEEE802154_THREAD_RECORDED_DATAGRAMS, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,
-    Ieee802154AirCheckRequest, Ieee802154AirCheckStop, Ieee802154AirCycle,
-    Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome, Ieee802154AirWindow,
-    Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
-    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
-    Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState, Ieee802154PolledEdMaskState,
-    Ieee802154PolledEdOutcome, Ieee802154PolledEdStage, Ieee802154RouteProbeEntry,
-    Ieee802154RouteProbeEvidence, Ieee802154RouteProbeRequest, Ieee802154RouteProbeStop,
-    Ieee802154RxAbortObservation, Ieee802154RxAbortReason, Ieee802154SameBitOutcome,
-    Ieee802154SessionAck, Ieee802154SessionAssessRequest, Ieee802154SessionAssessment,
-    Ieee802154SessionCoexistence, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionMaintenanceCounts, Ieee802154SessionMaintenancePolicy,
-    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionRecentRssi,
-    Ieee802154SessionRestartEvidence, Ieee802154SessionResult, Ieee802154SessionStopEvidence,
-    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
-    Ieee802154ThreadDatagram, Ieee802154ThreadDataset, Ieee802154ThreadPayload,
-    Ieee802154ThreadReceiveEvidence, Ieee802154ThreadRole, Ieee802154ThreadSendRequest,
-    Ieee802154ThreadStartRequest, Ieee802154ThreadState, Ieee802154ValidationEdDurationState,
-    Ieee802154ValidationEventEnableState, Ieee802154ValidationRxAbortEnableState,
-    InitializationConfiguration, Ipv4Endpoint, LinkHealth, NetworkCredentials,
-    NetworkCredentialsError, NetworkInfo, NetworkIpv4Configuration, NetworkSchedulerEvidence,
-    OperationStatus, PROTOCOL_VERSION, RadioEvidence, RejectReason, ResultSummary,
-    RxConsumerLedgerEvidence, RxDeliveryEvidence, RxForwardGapEvidence, RxMacOrderEvidence,
-    RxRadioEvidence, RxReorderDeliveryEvidence, RxSequenceStageEvidence, SESSION_FLOW_CAPACITY,
-    STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionFlowConfig,
-    SessionLinkRequirements, SessionReady, SessionState, StackUsage, StackWatermark,
-    StartupArtifactChunk, StartupArtifactChunkError, StartupArtifactDisposition,
-    StartupArtifactStatus, StateChange, StationAttemptFailureReason, StationDisconnectReason,
-    StationEpochEvidence, StationFailureStage, StationLifecycleEvent, StationLinkSecurity,
-    TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
-    TxAggregateTimingEvidence, TxRadioEvidence, UdpSessionPayloadIdentity,
-    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
-    WPA2_SSID_MAX_LEN, WifiAccessPointEvidence, WifiAccessPointRequest,
-    WifiAccessPointRequestError, WifiAccessPointSecurity, WifiApScheduler, WifiChannelWidth,
-    WifiDataPlanePlacement, WifiMacRxHardwareEvidence, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
-    WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
-    WifiMonitorRequest, WifiNetworkInterface, WifiRadioRestartEvidence, WifiRadioRestartRf,
-    WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
-    WifiRoleTransitionEvidence, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiScanEvidence,
-    WifiScanRequest, WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence,
-    WifiTxBufferPolicy, WifiTxUdpChecksumPolicy, WireBody, WireKind,
-};
-pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};
 
-pub use message::StationTxTerminalEvidence;
+// The shared core: framing, the envelope and its command and event sets,
+// capabilities, boot and post-mortem evidence, the trace, PHY diagnostics and
+// startup artifacts.
+mod absent;
+pub use absent::Absent;
+mod framing;
+#[cfg(feature = "async-io")]
+mod io;
+mod message;
+mod phy_fault;
+mod phy_register_image;
+mod system;
+mod trace;
+#[allow(unused_imports, reason = "empty while every family is on")]
+pub use absent::stand_ins::*;
+pub use framing::{
+    DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
+    MAX_WIRE_FRAME_BYTES, RequestIdentity, evidence_crc32c, ieee802154_frame_crc32c,
+    startup_artifact_crc32c,
+};
+#[cfg(feature = "async-io")]
+pub use io::write_frame;
+pub use message::*;
+pub use phy_fault::{
+    PhyFaultCommand, PhyFaultEvidence, PhyFaultMode, PhyFaultPhase, PhyTrackingCommand,
+    PhyTrackingEvidence,
+};
+pub use phy_register_image::{
+    PHY_REGISTER_IMAGE_WORDS, PhyAnalogImageBytes, PhyRegisterImageRequest, PhyRegisterImageWords,
+};
+pub use system::{
+    BootEvidence, CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HangTarget, HartState,
+    POST_MORTEM_CHECKPOINT_PAGE, POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints,
+    PostMortemSummary, ResetReason, TaskSlot, TaskStall, WatchdogTestMode,
+};
+pub use trace::{
+    TRACE_ENTRY_PAGE, TRACE_SNAPSHOT_PAGE, TraceControl, TraceEntries, TraceEntry,
+    TraceSnapshotPage, TraceStatus,
+};

@@ -10,9 +10,15 @@ compiled code the firmware links.
 
 | Feature | Modules |
 | --- | --- |
-| none | `console`, `liveness`, `memory_benchmark`, `network::progress`, `postmortem`, `trace`, `traffic` |
-| `secure-gatt` | `bluetooth_gatt::secure` |
+| none | `console`, `liveness`, `postmortem`, `trace` |
+| `wifi` (default) | `network::progress`, `traffic` |
+| `system` (default) | `memory_benchmark` |
+| `secure-gatt` | `bluetooth_gatt::secure`, with the protocol's `bluetooth` family |
 | `owned-network` | `network::{embassy_ipv4, sockets}` on the owned Embassy and Xarxa fork |
+
+Each feature enables the matching radio family of the HIL protocol, so an
+image that selects only its own families compiles only their protocol
+modules.
 
 Stack pins and features match the HIL target workspace, so
 host tests observe the stack configuration the firmware uses.

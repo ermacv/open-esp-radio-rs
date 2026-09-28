@@ -1970,3 +1970,42 @@ fn the_largest_hci_exchange_fits_one_frame_each_way() {
     decoder.feed(frame, |result| observed = Some(result.unwrap()));
     assert_eq!(observed, Some(event));
 }
+
+#[test]
+fn an_intact_frame_with_an_undecodable_body_names_its_request() {
+    // A command variant this build cannot decode, as a build without its
+    // radio family sees one: an intact frame whose body is no known command.
+    let expected = command(9);
+    let mut encoder = FrameEncoder::new();
+    let frame = encoder.encode(&expected).unwrap();
+    let encoded = &frame[2..frame.len() - 1];
+    let mut raw = [0u8; 64];
+    raw[..encoded.len()].copy_from_slice(encoded);
+    let length = cobs::decode_in_place(&mut raw[..encoded.len()]).unwrap();
+    let protected = length - CHECKSUM_BYTES;
+    assert_eq!(
+        protected,
+        WIRE_HEADER_BYTES + 1,
+        "Start is one variant byte"
+    );
+    raw[WIRE_HEADER_BYTES] = 0x7f;
+    let checksum = CRC32C.checksum(&raw[..protected]).to_le_bytes();
+    raw[protected..length].copy_from_slice(&checksum);
+    let mut reencoded = [0u8; 80];
+    reencoded[1] = 0;
+    let written = cobs::encode(&raw[..length], &mut reencoded[2..]);
+    let frame = &reencoded[..written + 3];
+
+    let mut decoder = FrameDecoder::new();
+    let mut observed = None;
+    decoder.feed::<Command>(frame, |result| observed = Some(result));
+    assert_eq!(
+        observed,
+        Some(Err(DecodeError::UndecodableBody(RequestIdentity {
+            boot_id: expected.boot_id,
+            session_id: expected.session_id,
+            request_id: expected.request_id,
+        })))
+    );
+    assert_eq!(decoder.counters().deserialize_errors, 1);
+}

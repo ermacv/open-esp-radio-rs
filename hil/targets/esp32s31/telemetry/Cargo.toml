@@ -16,7 +16,7 @@ oer-ieee80211-softmac = { path = "../../../../crates/protocols/ieee80211/softmac
 oer-ieee80211-mac = { path = "../../../../crates/protocols/ieee80211/mac" }
 oer-esp32s31-ieee80211-mac = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/mac" }
 oer-esp32s31-ieee80211-runtime = { path = "../../../../crates/runtime/esp32s31/ieee80211", default-features = false }
-oer-hil-protocol = { path = "../../../protocol" }
+oer-hil-protocol = { path = "../../../protocol", default-features = false, features = ["wifi"] }
 
 [package.metadata.open-radio]
 scope = "development"

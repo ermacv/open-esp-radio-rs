@@ -72,7 +72,18 @@ pub enum DecodeError {
     ProtocolVersion,
     PayloadLength,
     Checksum,
-    Deserialize,
+    /// An intact frame of this protocol version whose body this build cannot
+    /// decode: a command of a radio family the image leaves out. The header
+    /// names the request, so the receiver can reject it.
+    UndecodableBody(RequestIdentity),
+}
+
+/// The identity a frame's header gives its request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestIdentity {
+    pub boot_id: u64,
+    pub session_id: u64,
+    pub request_id: u32,
 }
 
 impl fmt::Display for DecodeError {
@@ -90,7 +101,9 @@ impl fmt::Display for DecodeError {
                 formatter.write_str("HIL frame payload length does not match its header")
             }
             Self::Checksum => formatter.write_str("HIL frame checksum mismatch"),
-            Self::Deserialize => formatter.write_str("invalid HIL postcard payload"),
+            Self::UndecodableBody(_) => formatter.write_str(
+                "HIL frame body is not decodable by this build: a command of a radio family it leaves out",
+            ),
         }
     }
 }
@@ -322,22 +335,9 @@ impl FrameDecoder {
             self.counters.checksum_errors = self.counters.checksum_errors.saturating_add(1);
             return Err(DecodeError::Checksum);
         }
-        let body = postcard::from_bytes(&self.encoded[WIRE_HEADER_BYTES..protected_length])
-            .map_err(|_| {
-                self.counters.deserialize_errors =
-                    self.counters.deserialize_errors.saturating_add(1);
-                DecodeError::Deserialize
-            })?;
-        self.counters.frames = self.counters.frames.saturating_add(1);
-        Ok(Envelope {
-            protocol_version,
+        let identity = RequestIdentity {
             boot_id: u64::from_le_bytes(
                 self.encoded[8..16]
-                    .try_into()
-                    .expect("header range is fixed"),
-            ),
-            message_sequence: u32::from_le_bytes(
-                self.encoded[16..20]
                     .try_into()
                     .expect("header range is fixed"),
             ),
@@ -351,6 +351,27 @@ impl FrameDecoder {
                     .try_into()
                     .expect("header range is fixed"),
             ),
+        };
+        // The checksum and the protocol version passed, so the body is what a
+        // build of this version sent: a body this build cannot decode belongs
+        // to a family it leaves out.
+        let body = postcard::from_bytes(&self.encoded[WIRE_HEADER_BYTES..protected_length])
+            .map_err(|_| {
+                self.counters.deserialize_errors =
+                    self.counters.deserialize_errors.saturating_add(1);
+                DecodeError::UndecodableBody(identity)
+            })?;
+        self.counters.frames = self.counters.frames.saturating_add(1);
+        Ok(Envelope {
+            protocol_version,
+            boot_id: identity.boot_id,
+            message_sequence: u32::from_le_bytes(
+                self.encoded[16..20]
+                    .try_into()
+                    .expect("header range is fixed"),
+            ),
+            session_id: identity.session_id,
+            request_id: identity.request_id,
             body,
         })
     }

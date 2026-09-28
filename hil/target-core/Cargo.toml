@@ -9,17 +9,27 @@ publish = false
 description = "Chip-independent HIL target logic shared by the firmware runtime and its host tests"
 
 [features]
-default = []
-secure-gatt = ["dep:bt-hci", "dep:embedded-io-async", "dep:gatt-application", "dep:trouble-host"]
+default = ["wifi", "system"]
+# The radio families' modules, each with its protocol family: an image
+# compiles only those it serves.
+wifi = ["oer-hil-protocol/wifi"]
+system = ["oer-hil-protocol/system"]
+secure-gatt = [
+    "dep:bt-hci",
+    "dep:embedded-io-async",
+    "dep:gatt-application",
+    "dep:trouble-host",
+    "oer-hil-protocol/bluetooth",
+]
 # The owned Xarxa stack, as in the HIL runtime that selects this crate's
 # `embassy_net` alias.
-owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned"]
+owned-network = ["wifi", "dep:embassy-net-owned", "dep:xarxa-owned"]
 
 [dependencies]
 crc = "3.3.0"
 embassy-sync = "0.8.0"
 heapless = "0.9.3"
-oer-hil-protocol = { path = "../protocol", features = ["async-io"] }
+oer-hil-protocol = { path = "../protocol", default-features = false, features = ["async-io"] }
 oer-trace = { path = "../../crates/trace" }
 bt-hci = { version = "=0.10.1", optional = true }
 embedded-io-async = { version = "0.7.0", optional = true }

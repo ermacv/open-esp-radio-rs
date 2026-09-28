@@ -64,11 +64,21 @@ impl Console {
         }
     }
 
+    /// The next complete command, or the request of an intact frame this
+    /// image cannot decode: a command of a radio family it leaves out.
     #[inline(never)]
-    fn decode(&mut self, byte: &[u8]) -> Option<Envelope<Command>> {
+    fn decode(
+        &mut self,
+        byte: &[u8],
+    ) -> Option<Result<Envelope<Command>, oer_hil_protocol::RequestIdentity>> {
         let mut command = None;
-        self.decoder
-            .feed::<Command>(byte, |frame| command = frame.ok());
+        self.decoder.feed::<Command>(byte, |frame| {
+            command = match frame {
+                Ok(frame) => Some(Ok(frame)),
+                Err(oer_hil_protocol::DecodeError::UndecodableBody(request)) => Some(Err(request)),
+                Err(_) => None,
+            }
+        });
         command
     }
 
@@ -114,8 +124,18 @@ async fn run(
         if !matches!(console.usb.read(&mut byte).await, Ok(1)) {
             core::future::pending::<()>().await;
         }
-        let Some(command) = console.decode(&byte) else {
-            continue;
+        let command = match console.decode(&byte) {
+            None => continue,
+            Some(Err(request)) => {
+                console
+                    .send(
+                        request.request_id,
+                        Event::Rejected(RejectReason::Unsupported),
+                    )
+                    .await;
+                continue;
+            }
+            Some(Ok(command)) => command,
         };
         let response = match command.validate_target(console.boot) {
             Err(reason) => Event::Rejected(reason),

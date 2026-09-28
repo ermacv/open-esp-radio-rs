@@ -27,9 +27,10 @@ journal.
   the shutdown grace. Every
   transaction first advances the balances to now: they decay with a two-hour
   half-life, every held lease charges its owner the elapsed time, an owner
-  with a ticket blocked by a holder is credited it once, and they are clamped
-  to an hour either way. After each grant the mean over the owners active in
-  the last day is subtracted.
+  with a ticket blocked by another owner's holder or by another owner's
+  ticket served before it is credited it once (a ticket behind its own
+  owner's lease earns nothing), the mean over the owners active in the last
+  day is subtracted, and they are clamped to an hour either way.
   A process that already holds a lease, or carries its token in
   `OER_HIL_LEASE`, joins it without waiting when the lease covers its claims;
   a token of an ended lease or a claim outside the lease is an error.

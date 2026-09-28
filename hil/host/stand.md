@@ -110,12 +110,16 @@ merge OLD NEW` charges an old name's balance and history to its agent, and
 names no duration: the stand charges the time a lease holds, as follows.
 
 Every lease charges its owner's balance the time it holds, and an owner whose
-request waits behind a conflicting lease is credited the time it waits, once
-however many requests it queued; an owner doing neither accrues nothing.
-Among conflicting requests the owner with the highest balance is served first,
-the earlier request on a tie. Balances halve every two hours, stay within an
-hour either way, and after each grant the mean over the owners active in the
-last day is subtracted. `cargo hil queue` and the dashboard show every balance
+request waits because of another owner, behind that owner's lease or a
+request of that owner served first, is credited the time it waits, once
+however many requests it queued. A request waiting behind its own owner's
+lease earns nothing, so queuing more work behind a running lease does not
+offset its charge. Among conflicting requests the owner with the highest
+balance is served first, the earlier request on a tie. Balances halve every
+two hours and stay within an hour either way, and every settlement subtracts
+the mean over the owners active in the last day, so balances move smoothly and
+their sum stays near zero: an idle owner drifts up while others hold and down
+while others wait. `cargo hil queue` and the dashboard show every balance
 and who is served next; the lease history records each lease's charge, its
 owner's balance at release and the balances its grant was decided by.
 

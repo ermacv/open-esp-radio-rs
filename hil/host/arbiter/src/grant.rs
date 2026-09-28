@@ -395,7 +395,6 @@ impl Arbiter {
                     preempted: None,
                     unknown: Default::default(),
                 });
-                balance::normalize(state, crate::unix_now_ms());
                 return Ok(Poll::Granted {
                     waited: started.elapsed(),
                     balance,

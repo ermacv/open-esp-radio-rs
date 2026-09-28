@@ -27,8 +27,8 @@ use oer_hil_esp32s31_telemetry::{
 #[cfg(feature = "rx-delivery-telemetry")]
 use oer_hil_protocol::RxReorderDeliveryEvidence;
 use oer_hil_protocol::{
-    Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence, ServiceInfo,
-    SessionReady, Transport as HilTransport,
+    Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence,
+    RxZeroCopyEvidence, ServiceInfo, SessionReady, Transport as HilTransport,
 };
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -167,6 +167,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let _ = crate::product_hil::MAC_IRQ.take_auxiliary_entries();
         let _ = crate::product_hil::MAC_IRQ.take_unhandled_entries();
         let pipeline_start = telemetry.pipeline.snapshot();
+        let zero_copy_start = zero_copy::start();
         let task_poll_start = telemetry.task_polls.snapshot();
         #[cfg(feature = "pc-profile")]
         crate::pc_profile::arm();
@@ -234,6 +235,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         #[cfg(feature = "station-exit-evidence")]
         let anomalies = rx_qualification::end_anomalies(session.session_id);
         let pipeline_end = telemetry.pipeline.snapshot();
+        let zero_copy = zero_copy::finish(zero_copy_start);
         let pipeline_interval = pipeline_end.wrapping_delta_since(pipeline_start);
         #[cfg(feature = "rx-delivery-telemetry")]
         let rx_delivery = (session.config.active_flow_count() == 1)
@@ -573,6 +575,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                     .saturating_add(pipeline_interval.frontier_thirty_two_plus_services),
                 mac_irq_entries,
                 mac_irq_classified_entries: mac_irq_entries,
+                zero_copy,
             }),
             tx: None,
         });
@@ -626,4 +629,36 @@ async fn settled_benchmark_counters() -> (RxSmpduSnapshot, RxPhySnapshot) {
         previous = current;
     }
     previous
+}
+
+/// Zero-copy RX accounting of one measured session.
+///
+/// The session restarts the origin's peak so `peak_held` is its own; the
+/// counts are the interval's.
+mod zero_copy {
+    use super::RxZeroCopyEvidence;
+
+    pub(super) fn start() -> oer_embassy_net_owned::ExternalRxCounters {
+        let origin = oer_esp32s31_ieee80211_system::rx_zero_copy_origin();
+        let start = origin.counters();
+        origin.restart_peak();
+        start
+    }
+
+    pub(super) fn finish(
+        start: oer_embassy_net_owned::ExternalRxCounters,
+    ) -> Option<RxZeroCopyEvidence> {
+        let origin = oer_esp32s31_ieee80211_system::rx_zero_copy_origin();
+        let interval = origin.counters().wrapping_delta_since(start);
+        let level = |slots: usize| u16::try_from(slots).unwrap_or(u16::MAX);
+        Some(RxZeroCopyEvidence {
+            cap: level(origin.cap()),
+            adopted: interval.adopted,
+            copied_over_cap: interval.copied_over_cap,
+            copied_unfit: interval.copied_unfit,
+            dropped: interval.dropped,
+            held_at_end: level(interval.held),
+            peak_held: level(interval.peak_held),
+        })
+    }
 }

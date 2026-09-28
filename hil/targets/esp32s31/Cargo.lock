@@ -2158,6 +2158,7 @@ dependencies = [
  "log",
  "oer-bluetooth-controller",
  "oer-bluetooth-hci",
+ "oer-embassy-net-owned",
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-bluetooth-system",
  "oer-esp32s31-executor-embassy",

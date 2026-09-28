@@ -93,6 +93,13 @@ impl SessionEvidence {
         {
             return Err(format!("incomplete typed RX accounting: {rx:?}").into());
         }
+        if let Some(zero_copy) = rx.zero_copy
+            && (zero_copy.cap == 0
+                || zero_copy.held_at_end > zero_copy.peak_held
+                || zero_copy.peak_held > zero_copy.cap)
+        {
+            return Err(format!("zero-copy RX exceeded its credit cap: {zero_copy:?}").into());
+        }
         Ok(rx)
     }
 

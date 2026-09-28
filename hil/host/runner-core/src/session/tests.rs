@@ -1,8 +1,8 @@
 use super::capture::test_support::hello;
 use oer_hil_protocol::{
     DecodeCounters, Direction, Envelope, Event, Finished, FlowTransportEvidence, RadioEvidence,
-    ResultSummary, RxRadioEvidence, SessionLinkRequirements, SessionReady, StackUsage,
-    StackWatermark, StationLifecycleEvent, TransportEvidence,
+    ResultSummary, RxRadioEvidence, RxZeroCopyEvidence, SessionLinkRequirements, SessionReady,
+    StackUsage, StackWatermark, StationLifecycleEvent, TransportEvidence,
 };
 
 use crate::session::{
@@ -170,6 +170,33 @@ fn typed_rx_radio_enforces_order_and_provenance_without_text() {
             .require_rx_radio_health(4)
             .is_err()
     );
+}
+
+#[test]
+fn typed_rx_radio_rejects_zero_copy_holdings_above_the_cap() {
+    let within = RxZeroCopyEvidence {
+        cap: 16,
+        adopted: 90,
+        copied_over_cap: 10,
+        held_at_end: 4,
+        peak_held: 16,
+        ..RxZeroCopyEvidence::default()
+    };
+    let mut rx = healthy_he_rx();
+    rx.zero_copy = Some(within);
+    assert!(session_with_rx(rx).require_rx_radio_health(4).is_ok());
+
+    rx.zero_copy = Some(RxZeroCopyEvidence {
+        peak_held: 17,
+        ..within
+    });
+    assert!(session_with_rx(rx).require_rx_radio_health(4).is_err());
+    rx.zero_copy = Some(RxZeroCopyEvidence {
+        held_at_end: 5,
+        peak_held: 4,
+        ..within
+    });
+    assert!(session_with_rx(rx).require_rx_radio_health(4).is_err());
 }
 
 #[test]

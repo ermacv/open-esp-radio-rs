@@ -424,6 +424,29 @@ pub struct RxRadioEvidence {
     pub rx_frontier_histogram_samples: u32,
     pub mac_irq_entries: u32,
     pub mac_irq_classified_entries: u32,
+    /// Zero-copy network publication of detached DMA slots, when the image
+    /// publishes RX through a handoff-pool origin.
+    pub zero_copy: Option<RxZeroCopyEvidence>,
+}
+
+/// Zero-copy RX accounting of one measured interval.
+///
+/// Event counts cover the interval; `held_at_end` and `peak_held` are DMA
+/// slots retained by the network stack, bounded by `cap`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxZeroCopyEvidence {
+    /// Handoff slots the network may hold at once.
+    pub cap: u16,
+    /// Frames published to the stack without a copy.
+    pub adopted: u32,
+    /// Admissions refused at the cap, left to the copying path.
+    pub copied_over_cap: u32,
+    /// Admitted frames whose storage did not fit a packet and were copied.
+    pub copied_unfit: u32,
+    /// Admitted frames dropped because the queue was full or the link down.
+    pub dropped: u32,
+    pub held_at_end: u16,
+    pub peak_held: u16,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

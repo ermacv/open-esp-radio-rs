@@ -1235,6 +1235,15 @@ fn maximum_radio_evidence_fits_and_round_trips() {
                 rx_frontier_histogram_samples: u32::MAX,
                 mac_irq_entries: u32::MAX,
                 mac_irq_classified_entries: u32::MAX,
+                zero_copy: Some(crate::RxZeroCopyEvidence {
+                    cap: u16::MAX,
+                    adopted: u32::MAX,
+                    copied_over_cap: u32::MAX,
+                    copied_unfit: u32::MAX,
+                    dropped: u32::MAX,
+                    held_at_end: u16::MAX,
+                    peak_held: u16::MAX,
+                }),
             }),
             tx: Some(TxRadioEvidence {
                 station_terminal: crate::StationTxTerminalEvidence {

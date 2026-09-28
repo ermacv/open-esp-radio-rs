@@ -48,9 +48,10 @@ materials. Build execution never falls back to the live checkout. Older bundles
 can contain clean-commit or tracked-patch provenance; incomplete source records
 remain diagnostic inputs.
 
-A verified snapshot matching the complete current source selection is
-direct qualification evidence, subject to the scenario's remaining requirements.
-Dirty state and commit identity do not override a complete content match.
+A verified snapshot matching the current sources in every file the observation
+depends on ([which files](../qualification/evidence-reviews.md)) is direct
+qualification evidence, subject to the scenario's remaining requirements.
+Dirty state and commit identity do not override that content match.
 Differences between observed and current inputs need an explicit
 [property/build applicability review](../qualification/evidence-reviews.md).
 Archiving source bytes establishes provenance, not a passing experiment.

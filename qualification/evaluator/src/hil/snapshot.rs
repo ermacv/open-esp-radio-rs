@@ -89,6 +89,27 @@ pub(super) fn verified(directory: &Path, sources: &[Source]) -> Result<Option<Ma
 
 /// A direct observation binds the complete current source selection. Property
 /// reviews deliberately bind a narrower, explicitly reviewed set elsewhere.
+/// The closure of the checkout at `root`, computed once per evaluation;
+/// `None` when Cargo cannot list it, and then every file is compared.
+fn closure_of(root: &Path) -> Option<std::sync::Arc<super::closure::Closure>> {
+    static CLOSURES: std::sync::Mutex<
+        BTreeMap<PathBuf, Option<std::sync::Arc<super::closure::Closure>>>,
+    > = std::sync::Mutex::new(BTreeMap::new());
+    let root = root.canonicalize().ok()?;
+    CLOSURES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(root.clone())
+        .or_insert_with(|| {
+            super::closure::Closure::of(&root)
+                .ok()
+                .map(std::sync::Arc::new)
+        })
+        .clone()
+}
+
+/// Whether the run's snapshot is the checkout's current state in every file
+/// that can change the observation (see [`super::closure`]).
 pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<bool> {
     let directory = run.join("source/snapshot");
     // Reject known differences before scanning the archive a second time. The
@@ -111,15 +132,27 @@ pub(super) fn current(root: &Path, run: &Path, sources: &[Source]) -> Result<boo
     if !output.status.success() {
         return Ok(false);
     }
+    let closure = closure_of(root);
+    let relevant = |path: &Path| {
+        closure
+            .as_ref()
+            .is_none_or(|closure| closure.contains(path))
+    };
     let tracked = std::str::from_utf8(&output.stdout)?
         .split('\0')
         .filter(|p| !p.is_empty())
         .map(PathBuf::from)
+        .filter(|path| relevant(path))
         .collect::<BTreeSet<_>>();
-    if tracked != repository.files.iter().map(|f| f.path.clone()).collect() {
+    let captured = repository
+        .files
+        .iter()
+        .filter(|file| relevant(&file.path))
+        .collect::<Vec<_>>();
+    if tracked != captured.iter().map(|f| f.path.clone()).collect() {
         return Ok(false);
     }
-    for file in &repository.files {
+    for file in captured {
         let Some(identity) = super::subject::file(root, &file.path)? else {
             return Ok(false);
         };

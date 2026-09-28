@@ -3,6 +3,7 @@
 mod attempt;
 mod build_record;
 mod checks;
+mod closure;
 mod decision;
 mod measurement;
 mod observer;

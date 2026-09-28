@@ -7,9 +7,17 @@ map. It is an engineering conclusion about applicability, not a new execution.
 No review is inferred from an unchanged commit, a later PASS, or a capability's
 implementation status.
 
-The default is `current-source-composition`: a fully matching verified snapshot
-needs no review when the executed procedure and the host observer also match,
-even when dirty or recorded under another commit. Reviews
+The default is `current-source-composition`: a verified snapshot that matches
+the checkout in every file the observation depends on needs no review when the
+executed procedure and the host observer also match, even when dirty or
+recorded under another commit. Those files are the path packages the firmware
+workspaces build and the path packages the HIL runner depends on (both from
+Cargo's locked metadata of the evaluated checkout), the firmware workspace
+`hil/targets/esp32s31`, `platform/esp32s31`, `hil/scenarios`, `.cargo/` and
+the root `Cargo.toml`, `Cargo.lock` and toolchain files. A change elsewhere,
+such as documentation or an unrelated crate, leaves the snapshot current; a
+package that joined these since the run has no files in the snapshot and makes
+it stale. When Cargo cannot list them, every file is compared. Reviews
 justify differences between observed and current subjects. An optional `hil-reviews` list
 in a capability declaration references repository-relative TOML files. Keep
 accepted records with the capability's reviewed inputs; generated reports and

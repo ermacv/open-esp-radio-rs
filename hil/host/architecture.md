@@ -446,8 +446,9 @@ The qualification evaluator consumes these same sealed bundles through an
 independent reader. `qualification/targets/<chip>/*.toml` maps capabilities to
 scenario IDs and minimum passing repetitions; only a bundle produced from the
 current source composition or admitted by an explicit property/build review
-can satisfy the HIL axis. A verified full snapshot match is sufficient even
-when the checkout is dirty or the commit identity differs. The
+can satisfy the HIL axis. A verified snapshot that matches every file the
+observation depends on is sufficient even when the checkout is dirty or the
+commit identity differs. The
 derived views and Markdown narratives are never proof inputs.
 
 `boot-smoke` intentionally precedes the radio protocol and proves only runtime

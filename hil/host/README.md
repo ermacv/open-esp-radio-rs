@@ -827,8 +827,8 @@ handwritten HIL status. A capability is HIL-qualified only when its declared
 scenario and repetition requirement is satisfied by a completed bundle or a
 separately sealed attempt under the default current-source-composition policy or an explicit
 [property-scoped applicability review](../../qualification/evidence-reviews.md)
-with validated build and owner bindings. A verified snapshot matching all current
-source inputs is directly applicable even when dirty, provided the executed
+with validated build and owner bindings. A verified snapshot matching the current
+source inputs the observation depends on is directly applicable even when dirty, provided the executed
 procedure and relevant host observer inputs also match. Its existence alone does
 not establish this match or a passing observation. Scenario IDs and achievable repetition counts are checked against the
 versioned catalog in `hil/scenarios`.

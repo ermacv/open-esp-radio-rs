@@ -304,8 +304,8 @@ Broader checkpoints select their full scope explicitly. The strict `gate`
 assesses that scope against its declared requirements; ordinary changes do not
 implicitly launch a complete vendor/HIL campaign. Missing equipment limits the
 properties that can be observed, not the recorded implementation state.
-Direct HIL eligibility accepts a validated snapshot matching all current source
-inputs. A missing commit or dirty state alone does not require review. An explicit property/build review can
+Direct HIL eligibility accepts a validated snapshot matching the current source
+inputs the observation depends on. A missing commit or dirty state alone does not require review. An explicit property/build review can
 establish applicability of earlier observations. The engineering map exposes
 original exclusions and review decisions without claiming that a commit change
 resolved a failure.

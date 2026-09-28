@@ -17,9 +17,10 @@ use std::{
 use crate::{Context, Result, process};
 
 /// Subdirectories of `target/` that are never worth cloning: incremental
-/// session data is keyed to this checkout's paths, and HIL outputs live in
-/// the shared run store or are rebuilt per image.
-const SKIPPED: &[&str] = &["incremental", "hil"];
+/// session data is keyed to this checkout's paths, HIL outputs live in the
+/// shared run store or are rebuilt per image, and vendor firmware builds keep
+/// CMake caches that record this checkout's absolute source directory.
+const SKIPPED: &[&str] = &["incremental", "hil", "vendor-firmware"];
 
 /// Whether a `target/` entry at `relative` is left out of the seed.
 pub fn skipped(relative: &Path) -> bool {
@@ -240,6 +241,7 @@ mod tests {
     #[test]
     fn seeds_skip_incremental_data_and_hil_outputs() {
         assert!(skipped(Path::new("hil")));
+        assert!(skipped(Path::new("vendor-firmware")));
         assert!(skipped(Path::new("debug/incremental")));
         assert!(!skipped(Path::new("debug")));
         assert!(!skipped(Path::new("riscv32imafc-unknown-none-elf")));

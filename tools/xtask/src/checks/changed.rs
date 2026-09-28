@@ -32,6 +32,10 @@ pub struct Plan {
     /// HIL target, protocol or target-core sources changed: the firmware
     /// feature sets to type-check, by image class.
     pub firmware: BTreeSet<FirmwareSet>,
+    /// Shared platform boot, runtime entry or linker placement changed:
+    /// link one standalone example, since a type-check never runs the
+    /// linker scripts' assertions.
+    pub platform_link: bool,
     /// A Cargo manifest or lockfile changed.
     pub metadata: bool,
     /// Code, register models, vendor docs or provenance facts changed: vendor
@@ -91,6 +95,9 @@ pub fn plan(
             .any(|prefix| path.starts_with(prefix))
         {
             plan.firmware.extend(FirmwareSet::affected_by(path));
+        }
+        if path.starts_with("platform") {
+            plan.platform_link = true;
         }
         if name == "Cargo.toml" || name == "Cargo.lock" {
             plan.metadata = true;
@@ -275,6 +282,10 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     }
     if plan.phy_graph {
         super::phy::run(ctx, "esp32s31")?;
+    }
+    if plan.platform_link {
+        println!("check changed: linking the station example for the platform change");
+        crate::firmware::build(ctx, "station", &[], false, None)?;
     }
     if let Some(anchored) = &plan.capabilities {
         super::docs::capabilities(ctx, &anchored.iter().cloned().collect::<Vec<_>>())?;
@@ -478,6 +489,8 @@ mod tests {
         );
         let plan = run(&["qualification/catalog/esp32s31/coex.toml"]);
         assert_eq!(plan.capabilities, Some(BTreeSet::new()));
+        assert!(run(&["platform/esp32s31/linker/runtime/sections.x"]).platform_link);
+        assert!(!run(&["docs/guide.md"]).platform_link);
         assert!(
             run(&["qualification/evaluator/src/main.rs"])
                 .packages

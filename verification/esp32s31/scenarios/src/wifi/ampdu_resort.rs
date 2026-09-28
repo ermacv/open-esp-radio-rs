@@ -36,9 +36,11 @@ const RESORT_PROBE: &str = "open_libpp_ampdu_trace_resort";
 /// reads, one of `QUEUE_STRIDE` bytes per queue.
 const TX_RX: &str = "pTxRx";
 const QUEUE_STRIDE: u32 = 0x34;
-/// Queue-record fields: the pending count byte, the queue-valid byte, the
+/// Queue-record fields: the ordinary queue's first `esf_buf`, the pending
+/// count byte, the queue-valid byte, the
 /// BlockAck starting sequence, the TID, the resorted aggregate's first
 /// `esf_buf`, and the bitmap's high and low words.
+const QUEUE_ORDINARY: u32 = 0x20;
 const QUEUE_COUNT: u32 = 0x28;
 const QUEUE_VALID: u32 = 0x29;
 const QUEUE_STARTING_SEQUENCE: u32 = 0x2a;
@@ -46,6 +48,8 @@ const QUEUE_TID: u32 = 0x2c;
 const QUEUE_AGGREGATE: u32 = 0x34;
 const QUEUE_BITMAP_HIGH: u32 = 0x38;
 const QUEUE_BITMAP_LOW: u32 = 0x3c;
+/// Bytes of one queue record a case observes.
+const QUEUE_RECORD_BYTES: u32 = 0x40;
 /// Bytes of the transmit context the queue records occupy.
 const TX_RX_BYTES: u32 = 0x200;
 /// The queue the aggregate completed on: best effort, TID zero.
@@ -74,12 +78,22 @@ const DMA_LENGTH_SHIFT: u32 = 12;
 const DMA_END_OF_FRAME: u32 = 1 << 30;
 /// Transmit descriptor word 0 of an aggregate member: the A-MPDU marker,
 /// and the first member's additional marker.
-const DESCRIPTOR_BYTES: u32 = 0x40;
+/// `ppResortTxAMPDU` copies a whole 0x48-byte descriptor to its stack.
+const DESCRIPTOR_BYTES: u32 = 0x48;
 const DESCRIPTOR_AMPDU: u32 = 0x0040_0000;
 const DESCRIPTOR_FIRST: u32 = 0x0008_0000;
+/// Transmit descriptor word 0 flag of an S-MPDU: `ppSelectTxFormat` sets it
+/// when it takes the single-MPDU rate (`rcGetSMPDURate`).
+const DESCRIPTOR_SMPDU: u32 = 0x4000_0000;
 /// The access context `GetAccess` returns and the station context, whose
 /// byte at `STATION_BAR_PENDING` holds one BlockAckReq-pending bit per TID.
 const ACCESS_BYTES: u32 = 0x80;
+/// The access context's end-of-exchange byte: `lmacEndFrameExchangeSequence`
+/// writes 3 when a Trigger-based success (`lmacProcessTBSuccess`) ends an
+/// S-MPDU, and `ppResortTxAMPDU` then recycles the whole aggregate without
+/// reading a BlockAck.
+const ACCESS_END: usize = 0x13;
+const ACCESS_END_TRIGGER_SUCCESS: u8 = 3;
 const STATION_BYTES: u32 = 0x40;
 const STATION_BAR_PENDING: usize = 0x28;
 /// Vendor arenas.
@@ -125,8 +139,6 @@ const RESORT_EVENTS: u32 = 1 << 12;
 /// frame state.
 const ANSWERED: &[(&str, u32)] = &[
     ("rcUpdateTxDoneAmpdu2", 0),
-    ("trc_isTxAmpduOperational", 1),
-    ("trc_tid_isTxAmpduOperational", 1),
     (AGED, 0),
     ("lmacRecycleMPDU", 0),
     ("lmacDiscardAgedMSDU", 0),
@@ -157,6 +169,18 @@ const BAR_GAP: &str = "the vendor sends a BlockAckReq (ppFillAMPDUBar, ppReSendB
     recipient's window advances only by its own timeout (known gap, reviewed with the Wi-Fi \
     owner)";
 
+/// Known gap: production keeps retrying an aggregate after its agreement
+/// ended.
+const SESSION_GAP: &str = "after a resort whose BlockAck agreement is no longer operational \
+    (trc_isTxAmpduOperational, trc_tid_isTxAmpduOperational), the vendor moves the remaining \
+    MPDUs to the ordinary queue, converting an HE aggregate head through ppHEAMPDU2Normal; \
+    production's completion path does not consult the agreement and republishes the \
+    aggregate (known gap)";
+/// Whether the station's BlockAck agreement for the TID is operational.
+const OPERATIONAL: &[&str] = &["trc_isTxAmpduOperational", "trc_tid_isTxAmpduOperational"];
+/// The vendor conversion of an aggregate head to an ordinary frame.
+const TO_ORDINARY: &str = "ppHEAMPDU2Normal";
+
 /// The vendor aging check, executed after `lmacInit` in the aging cases.
 const AGED: &str = "lmacMSDUAged";
 
@@ -182,6 +206,24 @@ struct Completion {
     /// An expected difference: its reason, the MPDU whose Retry bit
     /// differs and whether the vendor side has the bit.
     difference: Option<Difference>,
+    /// Whether the BlockAck agreement is still operational at the resort.
+    operational: bool,
+    /// An S-MPDU that a Trigger-based success ended: no BlockAck is read.
+    trigger_based: bool,
+    /// Where the aggregate's MPDUs go afterwards on each side, when the
+    /// sides differ, with the reason.
+    disposition: Option<(Disposition, Disposition, &'static str)>,
+}
+
+/// Where a completion leaves the aggregate's remaining MPDUs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Disposition {
+    /// Kept in the aggregate for the next A-MPDU.
+    Aggregate,
+    /// Handed to the ordinary queue as individual frames.
+    Ordinary,
+    /// None kept: the aggregate ended.
+    Finished,
 }
 
 #[derive(Clone, Copy)]
@@ -216,6 +258,9 @@ const fn completion(
         vendor_attempts: 0,
         aging: None,
         difference: None,
+        operational: true,
+        trigger_based: false,
+        disposition: None,
     }
 }
 
@@ -248,6 +293,7 @@ const COMPLETIONS: &[Completion] = &[
             mpdu: 2,
             vendor_retry: true,
         }),
+        disposition: Some((Disposition::Aggregate, Disposition::Finished, HT_SINGLE)),
         ..completion("single-missing-ht", 4, 100, 100, 0b1011)
     },
     // The peer advanced SSN past the first MPDU, already delivered.
@@ -277,6 +323,30 @@ const COMPLETIONS: &[Completion] = &[
     Completion {
         aging: Some(Aging::Expired),
         ..completion("lifetime-expired", 4, 100, 100, 0b0101)
+    },
+    // The agreement ended before the resort: both sides mark the missing
+    // MPDUs, but only the vendor leaves the aggregate.
+    Completion {
+        operational: false,
+        disposition: Some((Disposition::Ordinary, Disposition::Aggregate, SESSION_GAP)),
+        ..completion("agreement-ended", 4, 100, 100, 0b0101)
+    },
+    // With the head missing too, the vendor converts it to an ordinary frame.
+    Completion {
+        operational: false,
+        disposition: Some((Disposition::Ordinary, Disposition::Aggregate, SESSION_GAP)),
+        ..completion("agreement-ended-head-missing", 4, 100, 100, 0b1010)
+    },
+    // Nothing is left to hand over when every MPDU was acknowledged.
+    Completion {
+        operational: false,
+        ..completion("agreement-ended-all-acknowledged", 4, 100, 100, 0b1111)
+    },
+    // A Trigger-based success ends an S-MPDU without a BlockAck: neither
+    // side marks the MPDU, and both end the aggregate.
+    Completion {
+        trigger_based: true,
+        ..completion("trigger-based-smpdu", 1, 100, 100, 0)
     },
 ];
 
@@ -554,6 +624,10 @@ fn case_rows(
         record + QUEUE_BITMAP_LOW as usize,
         completion.bitmap as u32,
     );
+    let mut access_context = vec![0u8; ACCESS_BYTES as usize];
+    if completion.trigger_based {
+        access_context[ACCESS_END] = ACCESS_END_TRIGGER_SUCCESS;
+    }
     let mut station = vec![0u8; STATION_BYTES as usize];
     if completion.bar_pending {
         station[STATION_BAR_PENDING] = 1 << TID;
@@ -561,13 +635,17 @@ fn case_rows(
     let mut memory = vec![
         known(symbol(TX_RX)?, 4, &ARENA_TX_RX.to_le_bytes())?,
         known(ARENA_TX_RX, TX_RX_BYTES, &tx_rx)?,
-        known(ARENA_ACCESS, ACCESS_BYTES, &vec![0; ACCESS_BYTES as usize])?,
+        known(ARENA_ACCESS, ACCESS_BYTES, &access_context)?,
         known(ARENA_STATION, STATION_BYTES, &station)?,
     ];
     let aggregate = Aggregate {
         count,
         first_sequence: completion.first_sequence,
-        descriptor_flags: 0,
+        descriptor_flags: if completion.trigger_based {
+            DESCRIPTOR_SMPDU
+        } else {
+            0
+        },
         vendor_attempts: completion.vendor_attempts,
         record: None,
     };
@@ -579,10 +657,24 @@ fn case_rows(
         address,
         length: HEADER_BYTES,
     };
-    let vendor_observed: Vec<MemorySelection> = (0..count)
+    // After the headers, the vendor queue record: where its MPDUs went.
+    let mut vendor_observed: Vec<MemorySelection> = (0..count)
         .map(|index| header(format!("mpdu-{index}-header"), vendor_frame(index)))
         .collect();
+    vendor_observed.push(MemorySelection {
+        name: "queue-record".into(),
+        address: ARENA_TX_RX + QUEUE * QUEUE_STRIDE,
+        length: QUEUE_RECORD_BYTES,
+    });
     let mut vendor = direct(symbol(VENDOR)?, &[QUEUE], memory, vec![], vendor_observed);
+    for name in OPERATIONAL {
+        vendor.calls.push(answered(
+            name,
+            symbol(name)?,
+            crate::mac::call_boundary(&image, name),
+            u32::from(completion.operational),
+        ));
+    }
     let access = symbol("GetAccess")?;
     vendor.calls.push(answered(
         "GetAccess",
@@ -614,9 +706,15 @@ fn case_rows(
         ));
     }
 
-    let production_observed: Vec<MemorySelection> = (0..count)
+    // After the headers, the production decision words.
+    let mut production_observed: Vec<MemorySelection> = (0..count)
         .map(|index| header(format!("mpdu-{index}-header"), frames[index]))
         .collect();
+    production_observed.push(MemorySelection {
+        name: "decision".into(),
+        address: PRODUCTION_OUTPUT,
+        length: OUTPUT_WORDS * 4,
+    });
     let mut production = ctx.session.probes.invoke(
         RESORT_PROBE,
         vec![
@@ -644,6 +742,10 @@ fn case_rows(
             (
                 "retain_single",
                 Arg::Word(Some(i64::from(completion.retain_single))),
+            ),
+            (
+                "trigger_flow",
+                Arg::Word(Some(i64::from(completion.trigger_based))),
             ),
             ("output", Arg::Word(Some(i64::from(PRODUCTION_OUTPUT)))),
         ],
@@ -709,9 +811,82 @@ fn case_rows(
     Ok(rows)
 }
 
+/// The production decision that ends an aggregate through the Trigger-based
+/// completion path.
+const DECISION_TRIGGER: u32 = 4;
+
+/// Final bytes of observed selection `selection` of one case side.
+fn observed(
+    records: &[blobray_domain::ExecutionEvidence],
+    case: u32,
+    side: bool,
+    selection: u16,
+) -> Result<Vec<u8>> {
+    let mut bytes = vec![];
+    for record in records {
+        if let blobray_domain::ExecutionEvidence::FinalMemory {
+            case: c,
+            replacement,
+            chunk,
+        } = record
+            && *c == case
+            && *replacement == side
+            && chunk.selection == selection
+        {
+            let mask = chunk
+                .mask()
+                .ok_or_else(|| invalid("a final-memory chunk with an invalid length"))?;
+            if chunk.known != mask || chunk.available != mask || chunk.offset != bytes.len() as u32
+            {
+                return Err(invalid(format!(
+                    "case {case}: selection {selection} is not wholly known"
+                )));
+            }
+            bytes.extend_from_slice(&chunk.bytes[..usize::from(chunk.length)]);
+        }
+    }
+    Ok(bytes)
+}
+
+fn read_word(bytes: &[u8], offset: u32) -> Result<u32> {
+    let offset = offset as usize;
+    bytes
+        .get(offset..offset + 4)
+        .map(|b| u32::from_le_bytes(b.try_into().expect("four bytes")))
+        .ok_or_else(|| invalid("an observed selection is too short"))
+}
+
+/// Where each side left the aggregate's MPDUs: the vendor by its queue
+/// record, production by its decision.
+fn dispositions(
+    records: &[blobray_domain::ExecutionEvidence],
+    case: u32,
+    count: usize,
+) -> Result<(Disposition, Disposition)> {
+    let queue = observed(records, case, false, count as u16)?;
+    let vendor = match (
+        read_word(&queue, QUEUE_AGGREGATE)?,
+        read_word(&queue, QUEUE_ORDINARY)?,
+    ) {
+        (0, 0) => Disposition::Finished,
+        (0, _) => Disposition::Ordinary,
+        _ => Disposition::Aggregate,
+    };
+    let decision = read_word(&observed(records, case, true, count as u16)?, 0)?;
+    let production = match decision {
+        STEP_RETAIN => Disposition::Aggregate,
+        STEP_FINISH | DECISION_TRIGGER => Disposition::Finished,
+        other => return Err(invalid(format!("production decided {other}"))),
+    };
+    Ok((vendor, production))
+}
+
 /// Compare every completion: each matches, or differs for its reviewed
-/// reason; production succeeds in every case, and the vendor sends its
-/// BlockAckReq exactly when the station has one pending.
+/// reason; both sides leave the MPDUs in the same place unless a reviewed
+/// difference or known gap says otherwise; production succeeds in every
+/// case, and the vendor sends its BlockAckReq exactly when the station has
+/// one pending and converts the aggregate head exactly when it hands a
+/// missing head to the ordinary queue.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
     let frames = layout(ctx)?;
     let conf = vendor_conf(ctx)?;
@@ -722,6 +897,7 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
     );
     let image = ctx.image_symbols()?;
     let request_bar = ctx.symbol_address(&image, "ppReSendBar")?;
+    let to_ordinary = ctx.symbol_address(&image, TO_ORDINARY)?;
     for completion in COMPLETIONS {
         let rows = case_rows(ctx, &frames, aggregate, *completion)?;
         let compared = rows.len() as u32 - 1;
@@ -769,11 +945,38 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                 )));
             }
         }
-        let sent_bar = crate::evidence::events(&records, compared, false)
-            .iter()
-            .any(|event| {
-                matches!(event, blobray_domain::ExecutionEvent::ModeledCall { target, .. } if *target == request_bar)
-            });
+        let found = dispositions(&records, compared, completion.count)?;
+        let expected = match completion.disposition {
+            Some((vendor, production, _)) => (vendor, production),
+            None => (found.0, found.0),
+        };
+        if found != expected {
+            return Err(invalid(format!(
+                "{label}: the vendor left the MPDUs {:?} and production {:?}, expected {expected:?}{}",
+                found.0,
+                found.1,
+                completion
+                    .disposition
+                    .map(|(_, _, reason)| format!(": {reason}"))
+                    .unwrap_or_default()
+            )));
+        }
+        let called = |address: u32| {
+            crate::evidence::events(&records, compared, false)
+                .iter()
+                .any(|event| {
+                    matches!(event, blobray_domain::ExecutionEvent::ModeledCall { target, .. } if *target == address)
+                })
+        };
+        let head_missing = completion.bitmap & 1 == 0;
+        let converted = found.0 == Disposition::Ordinary && head_missing;
+        if called(to_ordinary) != converted {
+            return Err(invalid(format!(
+                "{label}: the vendor {}converted the aggregate head: {SESSION_GAP}",
+                if converted { "has not " } else { "" }
+            )));
+        }
+        let sent_bar = called(request_bar);
         if sent_bar != completion.bar_pending {
             return Err(invalid(format!(
                 "{label}: the vendor BlockAckReq was {}sent: {BAR_GAP}",

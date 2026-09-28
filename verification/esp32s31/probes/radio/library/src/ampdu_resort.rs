@@ -181,7 +181,10 @@ oer_probe_macros::probe! {
     /// `bitmap_low` and `bitmap_high`, received when `received` is nonzero,
     /// `elapsed_micros` after the commit. The retry state ages MSDUs after
     /// `lifetime_micros` and keeps a single missing MPDU when
-    /// `retain_single` is nonzero. A retained
+    /// `retain_single` is nonzero. When `trigger_flow` is nonzero the
+    /// completion is instead an acknowledgement timeout of a queue in
+    /// Trigger flow with no Trigger-based packets pending, which ends the
+    /// aggregate through the vendor's Trigger-based success. A retained
     /// aggregate is compacted with the Retry bit set. Writes the decision,
     /// its retry mask, the next first sequence and subframe count to
     /// `output`; returns zero, or the step that failed.
@@ -200,6 +203,7 @@ oer_probe_macros::probe! {
         lifetime_micros: u32,
         elapsed_micros: u32,
         retain_single: u32,
+        trigger_flow: u32,
         output: *mut u32,
     ) -> u32 {
         let count = count as usize;
@@ -249,13 +253,25 @@ oer_probe_macros::probe! {
         };
         let bitmap = u64::from(bitmap_high) << 32 | u64::from(bitmap_low);
         let mut hardware = CompletionDouble {
-            completion: Some(MacHtAmpduCompletionObservation::new_validation(
-                MacTxCompletionObservation::new_validation(STATUS_COMPLETED, 0),
-                0,
-                starting_sequence as u16,
-                bitmap,
-                received != 0,
-            )),
+            completion: Some(if trigger_flow != 0 {
+                MacHtAmpduCompletionObservation::new_validation(
+                    MacTxCompletionObservation::new_validation(STATUS_ACK_TIMEOUT, 0)
+                        .with_trigger_flow_model(true)
+                        .with_trigger_packet_counts_model(0, false, 0),
+                    0,
+                    0,
+                    0,
+                    false,
+                )
+            } else {
+                MacHtAmpduCompletionObservation::new_validation(
+                    MacTxCompletionObservation::new_validation(STATUS_COMPLETED, 0),
+                    0,
+                    starting_sequence as u16,
+                    bitmap,
+                    received != 0,
+                )
+            }),
         };
         if owner
             .submit(&mut hardware, cookie, LegacyTxQueue::BestEffort, config)

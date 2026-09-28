@@ -1,7 +1,10 @@
 //! Explicit, content-addressed source input capture, independent of firmware builds.
 //!
 //! Tracked files are included automatically. Every nonignored untracked file
-//! must be named explicitly before any content is archived. This is a source
+//! must be named explicitly before any content is archived, or, with
+//! `--include-untracked`, lie inside a path package of the firmware
+//! workspaces, the packages an image build reads. The manifest lists every
+//! untracked file it archived and why. This is a source
 //! snapshot, not a hermetic build or a qualification decision.
 
 use crate::{Result, durable::atomic_json};
@@ -29,6 +32,73 @@ pub struct SourceInput {
     pub commit: String,
     pub dirty: bool,
     files: Vec<FileInput>,
+    /// The untracked files among `files`, and why each was archived.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    untracked: Vec<UntrackedInput>,
+}
+
+/// An untracked file a snapshot archived.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct UntrackedInput {
+    path: PathBuf,
+    by: UntrackedReason,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum UntrackedReason {
+    /// Named with `--source-include`.
+    SourceInclude,
+    /// Inside an image package, with `--include-untracked`.
+    ImagePackage,
+}
+
+/// The firmware workspaces whose path packages an image build reads.
+const FIRMWARE_WORKSPACES: [&str; 2] = [
+    "hil/targets/esp32s31/Cargo.toml",
+    "platform/esp32s31/bootstrap/Cargo.toml",
+];
+
+/// Repository-relative directories of the path packages the firmware
+/// workspaces build, from Cargo's locked metadata.
+pub fn image_packages(root: &Path) -> Result<Vec<PathBuf>> {
+    #[derive(Deserialize)]
+    struct Metadata {
+        packages: Vec<Package>,
+    }
+    #[derive(Deserialize)]
+    struct Package {
+        source: Option<String>,
+        manifest_path: PathBuf,
+    }
+    let root = root.canonicalize()?;
+    let mut directories = BTreeSet::new();
+    for workspace in FIRMWARE_WORKSPACES {
+        let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+            .args(["metadata", "--format-version", "1", "--offline", "--locked"])
+            .arg("--manifest-path")
+            .arg(root.join(workspace))
+            .supervised_output()?;
+        if !output.status.success() {
+            return Err(format!(
+                "cannot list the packages of {workspace}: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )
+            .into());
+        }
+        let metadata: Metadata = serde_json::from_slice(&output.stdout)?;
+        for package in metadata.packages.into_iter().filter(|p| p.source.is_none()) {
+            let directory = package
+                .manifest_path
+                .parent()
+                .ok_or("package manifest has no directory")?
+                .canonicalize()?;
+            if let Ok(relative) = directory.strip_prefix(&root) {
+                directories.insert(relative.to_owned());
+            }
+        }
+    }
+    Ok(directories.into_iter().collect())
 }
 
 #[derive(Deserialize, Serialize)]
@@ -299,7 +369,15 @@ struct Selection {
     untracked: BTreeSet<PathBuf>,
 }
 
-pub fn capture(root: &Path, include: &[String]) -> Result<Snapshot> {
+/// Capture the sources at `root`, with the untracked files `include` names
+/// and, when `include_untracked`, every untracked file inside an image
+/// package.
+pub fn capture(root: &Path, include: &[String], include_untracked: bool) -> Result<Snapshot> {
+    let packages = if include_untracked {
+        image_packages(root)?
+    } else {
+        Vec::new()
+    };
     let mut roots = vec![("repository".to_owned(), root.canonicalize()?)];
     for (name, variable) in [
         ("esp-hal", "ESP_HAL_ROOT"),
@@ -313,6 +391,7 @@ pub fn capture(root: &Path, include: &[String]) -> Result<Snapshot> {
     capture_roots(
         &roots,
         include,
+        &packages,
         &root.join("target/hil/esp32s31/source-snapshots"),
     )
 }
@@ -399,16 +478,19 @@ fn select(name: &str, root: &Path) -> Result<Selection> {
     })
 }
 
+/// `packages` are repository-relative directories whose untracked files are
+/// archived without being named.
 fn capture_roots(
     roots: &[(String, PathBuf)],
     include: &[String],
+    packages: &[PathBuf],
     output: &Path,
 ) -> Result<Snapshot> {
     let selections = roots
         .iter()
         .map(|(name, root)| select(name, root))
         .collect::<Result<Vec<_>>>()?;
-    let mut accepted = BTreeMap::<String, BTreeSet<PathBuf>>::new();
+    let mut accepted = BTreeMap::<String, BTreeMap<PathBuf, UntrackedReason>>::new();
     for value in include {
         let (role, file) = value.split_once(':').unwrap_or(("repository", value));
         let path = PathBuf::from(file);
@@ -420,8 +502,23 @@ fn capture_roots(
         if !source.untracked.contains(&path) {
             return Err(format!("--source-include is not an untracked file: {role}:{file}").into());
         }
-        if !accepted.entry(role.into()).or_default().insert(path) {
+        if accepted
+            .entry(role.into())
+            .or_default()
+            .insert(path, UntrackedReason::SourceInclude)
+            .is_some()
+        {
             return Err(format!("duplicate --source-include: {role}:{file}").into());
+        }
+    }
+    if let Some(repository) = selections.iter().find(|s| s.name == "repository") {
+        let accepted = accepted.entry(repository.name.clone()).or_default();
+        for path in &repository.untracked {
+            if packages.iter().any(|package| path.starts_with(package)) {
+                accepted
+                    .entry(path.clone())
+                    .or_insert(UntrackedReason::ImagePackage);
+            }
         }
     }
     let unresolved = selections
@@ -429,7 +526,7 @@ fn capture_roots(
         .flat_map(|s| {
             s.untracked
                 .iter()
-                .filter(|p| !accepted.get(&s.name).is_some_and(|v| v.contains(*p)))
+                .filter(|p| !accepted.get(&s.name).is_some_and(|v| v.contains_key(*p)))
                 .map(|p| format!("{}:{}", s.name, p.display()))
         })
         .collect::<Vec<_>>();
@@ -437,7 +534,8 @@ fn capture_roots(
         return Err(format!(
             "source snapshot blocked by untracked files, which a build could read. For each \
              one, commit it, add it to this run with `--source-include <path>` (another \
-             source: `--source-include <role>:<path>`), or remove or ignore it:\n{}",
+             source: `--source-include <role>:<path>`), or remove or ignore it; \
+             `--include-untracked` adds those inside the packages an image builds:\n{}",
             unresolved.join("\n")
         )
         .into());
@@ -481,6 +579,14 @@ fn capture_roots(
                 format!("source {} changed during snapshot capture", selection.name).into(),
             );
         }
+    }
+    for source in &mut sources {
+        source.untracked = accepted
+            .remove(&source.name)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(path, by)| UntrackedInput { path, by })
+            .collect();
     }
     let manifest = Manifest { schema: 1, sources };
     let snapshot_id = digest(&serde_json::to_vec(&manifest)?);
@@ -575,6 +681,7 @@ fn read_source(
         commit: selection.commit.clone(),
         dirty: selection.dirty,
         files,
+        untracked: Vec::new(),
     })
 }
 
@@ -598,6 +705,7 @@ use materialize::materialize;
 pub fn test_capture(root: &Path) -> Snapshot {
     capture_roots(
         &[("repository".into(), root.to_owned())],
+        &[],
         &[],
         &root.join("target/snapshots"),
     )

@@ -124,6 +124,7 @@ pub(crate) fn run() -> Result<()> {
             plan,
             check,
             source_include,
+            include_untracked,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let plan: hil_core::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
@@ -132,7 +133,7 @@ pub(crate) fn run() -> Result<()> {
             if check || selected.is_empty() {
                 return emit_json(&plan, true);
             }
-            let snapshot = image::snapshot::capture(&root, &source_include)?;
+            let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
@@ -178,8 +179,11 @@ pub(crate) fn run() -> Result<()> {
             }
         }
         CliCommand::Image { command } => match command {
-            ImageCommand::Snapshot { source_include } => {
-                let snapshot = image::snapshot::capture(&root, &source_include)?;
+            ImageCommand::Snapshot {
+                source_include,
+                include_untracked,
+            } => {
+                let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
                 emit_json(&snapshot, true)
             }
             ImageCommand::Mono { class } => image::mono::capture(&root, class),
@@ -268,6 +272,7 @@ pub(crate) fn run() -> Result<()> {
         CliCommand::Run {
             scenarios,
             source_include,
+            include_untracked,
             ap_scheduler,
             firmware_from,
             network,
@@ -284,7 +289,11 @@ pub(crate) fn run() -> Result<()> {
                 preflight::configure_run_selection(scenario, ap_scheduler.map(Into::into))?;
             }
             let snapshot = if firmware_from.is_none() {
-                Some(image::snapshot::capture(&root, &source_include)?)
+                Some(image::snapshot::capture(
+                    &root,
+                    &source_include,
+                    include_untracked,
+                )?)
             } else {
                 None
             };
@@ -322,6 +331,7 @@ pub(crate) fn run() -> Result<()> {
             tag,
             network,
             source_include,
+            include_untracked,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
@@ -330,7 +340,7 @@ pub(crate) fn run() -> Result<()> {
                 tag: tag.clone(),
             }
             .resolve(&catalog)?;
-            let snapshot = image::snapshot::capture(&root, &source_include)?;
+            let snapshot = image::snapshot::capture(&root, &source_include, include_untracked)?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             // Orchestration builds the images, then leases the stand and

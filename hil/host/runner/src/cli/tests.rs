@@ -13,12 +13,41 @@ fn source_snapshot_accepts_only_explicit_repeated_file_arguments() {
     ])
     .unwrap();
     let CliCommand::Image {
-        command: ImageCommand::Snapshot { source_include },
+        command:
+            ImageCommand::Snapshot {
+                source_include,
+                include_untracked,
+            },
     } = cli.command
     else {
         panic!("snapshot expected")
     };
     assert_eq!(source_include, ["new.rs", "esp-hal:src/new.rs"]);
+    assert!(!include_untracked);
+}
+
+#[test]
+fn include_untracked_is_a_run_flag_that_replaying_firmware_excludes() {
+    let run =
+        Cli::try_parse_from(["cargo-hil", "run", "boot-smoke", "--include-untracked"]).unwrap();
+    assert!(matches!(
+        run.command,
+        CliCommand::Run {
+            include_untracked: true,
+            ..
+        }
+    ));
+    assert!(
+        Cli::try_parse_from([
+            "cargo-hil",
+            "run",
+            "boot-smoke",
+            "--include-untracked",
+            "--firmware-from",
+            "sealed-run-1",
+        ])
+        .is_err()
+    );
 }
 
 #[test]

@@ -535,8 +535,13 @@ cargo hil image build performance --source-snapshot target/hil/esp32s31/source-s
 Snapshot capture is offline and does not load fixture secrets, build firmware or
 access a device. Tracked regular files are captured automatically. Every
 nonignored untracked file must be explicitly named with a repeated
-`--source-include`; unresolved files block capture with their names, before
-content is archived. Directory selections and ignored files are not accepted.
+`--source-include`, or, with `--include-untracked`, lie inside a path package
+of the firmware workspaces (`hil/targets/esp32s31` and
+`platform/esp32s31/bootstrap`, as Cargo's locked metadata lists them), the
+packages an image build reads; unresolved files block capture with their
+names, before content is archived. The manifest lists every archived untracked
+file with `by: source-include` or `by: image-package`, and a run with either
+option records no evidence unless `--record-evidence` asks for it. Directory selections and ignored files are not accepted.
 For the configured local overrides, qualify each new file with `esp-hal:`,
 `embassy:` or `xarxa:`. No symlink or submodule content is silently followed;
 such inputs require review and are rejected by this capture interface.
@@ -564,7 +569,7 @@ This fixes the source input set, not the entire build environment: tools, Cargo
 package caches and user-level configuration are still external. It does not
 prove byte-identical rebuilds or authorize transfer of HIL evidence. Fresh `run`, `run-all` and `run-plan` executions capture and bind a source
 snapshot before building firmware; pass explicit `--source-include` arguments
-for nonignored untracked inputs. Replay uses the archived artifact rather than
+or `--include-untracked` for nonignored untracked inputs. Replay uses the archived artifact rather than
 claiming a current build. Standalone image builds use the snapshot only when
 `--source-snapshot` is supplied.
 Such a build also publishes `target/hil/esp32s31/builds/<identity>/build.json`,

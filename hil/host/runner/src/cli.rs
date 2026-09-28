@@ -54,6 +54,10 @@ pub(crate) enum CliCommand {
         /// Explicit nonignored untracked source file; repeat for each included file.
         #[arg(long = "source-include", value_name = "FILE", conflicts_with = "check")]
         source_include: Vec<String>,
+        /// Archive every untracked file inside a package the image builds,
+        /// recorded as such in the snapshot manifest.
+        #[arg(long, conflicts_with = "check")]
+        include_untracked: bool,
         /// Validate the saved plan offline without acquiring fixtures or a DUT.
         #[arg(long)]
         check: bool,
@@ -91,6 +95,10 @@ pub(crate) enum CliCommand {
             conflicts_with = "firmware_from"
         )]
         source_include: Vec<String>,
+        /// Archive every untracked file inside a package the image builds,
+        /// recorded as such in the snapshot manifest.
+        #[arg(long, conflicts_with = "firmware_from")]
+        include_untracked: bool,
         /// Standalone AP: RR or deficit with the same HT/OFDM24 response-envelope model (3000-us quantum).
         #[arg(long, value_enum)]
         ap_scheduler: Option<ApScheduler>,
@@ -117,6 +125,10 @@ pub(crate) enum CliCommand {
         /// Explicit nonignored untracked source file; repeat for each included file.
         #[arg(long = "source-include", value_name = "FILE")]
         source_include: Vec<String>,
+        /// Archive every untracked file inside a package the image builds,
+        /// recorded as such in the snapshot manifest.
+        #[arg(long)]
+        include_untracked: bool,
         /// Network implementation: owned-xarxa, the only one.
         #[arg(long, default_value = "owned-xarxa")]
         network: hil_core::image::Integration,
@@ -193,6 +205,10 @@ pub(crate) enum ImageCommand {
         /// Explicit untracked file: repository-relative path or ROLE:path for a local override.
         #[arg(long = "source-include", value_name = "FILE")]
         source_include: Vec<String>,
+        /// Archive every untracked file inside a package the image builds,
+        /// recorded as such in the snapshot manifest.
+        #[arg(long)]
+        include_untracked: bool,
     },
     /// Capture rustc mono estimates and the exact diagnostic ELF; never flash.
     Mono { class: hil_core::image::ImageClass },

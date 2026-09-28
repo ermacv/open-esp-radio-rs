@@ -19,6 +19,7 @@ pub fn test_snapshot(inputs: &Path) -> (tempfile::TempDir, Snapshot) {
     let snapshot = capture_roots(
         &[("repository".into(), root.path().to_owned())],
         &[],
+        &[],
         &root.path().join("snapshots"),
     )
     .unwrap();
@@ -50,13 +51,13 @@ fn untracked_evidence_shards_neither_block_nor_enter_a_snapshot() {
     fs::write(root.path().join("hil/evidence/esp32s31/station.json"), "{}").unwrap();
     fs::write(root.path().join("new.rs"), "pub fn new() {}\n").unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let error = capture_roots(&roots, &[], &target)
+    let error = capture_roots(&roots, &[], &[], &target)
         .err()
         .unwrap()
         .to_string();
     assert!(error.contains("--source-include <path>"), "{error}");
     assert!(!error.contains("station.json"), "{error}");
-    let snapshot = capture_roots(&roots, &["new.rs".into()], &target).unwrap();
+    let snapshot = capture_roots(&roots, &["new.rs".into()], &[], &target).unwrap();
     let mut archive =
         tar::Archive::new(fs::File::open(snapshot.directory.join("sources.tar")).unwrap());
     assert!(!archive.entries().unwrap().any(|e| {
@@ -75,14 +76,14 @@ fn untracked_selection_is_explicit_complete_and_does_not_archive_secrets() {
     fs::write(root.path().join("new.rs"), "pub fn new() {}\n").unwrap();
     fs::write(root.path().join("secret.txt"), "do not archive").unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let error = capture_roots(&roots, &[], &target)
+    let error = capture_roots(&roots, &[], &[], &target)
         .err()
         .unwrap()
         .to_string();
     assert!(error.contains("repository:new.rs"));
     assert!(!error.contains("secret.txt"));
     assert!(!target.exists());
-    let snapshot = capture_roots(&roots, &["new.rs".into()], &target).unwrap();
+    let snapshot = capture_roots(&roots, &["new.rs".into()], &[], &target).unwrap();
     let mut archive =
         tar::Archive::new(fs::File::open(snapshot.directory.join("sources.tar")).unwrap());
     let entries = archive
@@ -104,7 +105,7 @@ fn untracked_selection_is_explicit_complete_and_does_not_archive_secrets() {
         "new.rs/child",
     ] {
         assert!(
-            capture_roots(&roots, &[invalid.into()], &target).is_err(),
+            capture_roots(&roots, &[invalid.into()], &[], &target).is_err(),
             "{invalid}"
         );
     }
@@ -115,8 +116,8 @@ fn snapshot_is_deterministic_and_tracks_actual_bytes_even_when_git_ignores_chang
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let first = capture_roots(&roots, &[], output.path()).unwrap();
-    let second = capture_roots(&roots, &[], output.path()).unwrap();
+    let first = capture_roots(&roots, &[], &[], output.path()).unwrap();
+    let second = capture_roots(&roots, &[], &[], output.path()).unwrap();
     assert_eq!(first.snapshot_id, second.snapshot_id);
     assert_eq!(first.archive_sha256, second.archive_sha256);
     git(
@@ -125,7 +126,7 @@ fn snapshot_is_deterministic_and_tracks_actual_bytes_even_when_git_ignores_chang
     )
     .unwrap();
     fs::write(root.path().join("Cargo.toml"), "different\n").unwrap();
-    let changed = capture_roots(&roots, &[], output.path()).unwrap();
+    let changed = capture_roots(&roots, &[], &[], output.path()).unwrap();
     assert_ne!(first.snapshot_id, changed.snapshot_id);
     assert_ne!(first.archive_sha256, changed.archive_sha256);
     let first_bytes = fs::read(first.directory.join("sources.tar")).unwrap();
@@ -142,8 +143,8 @@ fn override_roles_require_their_own_explicit_files() {
         ("repository".into(), root.path().into()),
         ("esp-hal".into(), other.path().into()),
     ];
-    assert!(capture_roots(&roots, &["new.rs".into()], output.path()).is_err());
-    assert!(capture_roots(&roots, &["esp-hal:new.rs".into()], output.path()).is_ok());
+    assert!(capture_roots(&roots, &["new.rs".into()], &[], output.path()).is_err());
+    assert!(capture_roots(&roots, &["esp-hal:new.rs".into()], &[], output.path()).is_ok());
 }
 
 #[test]
@@ -151,9 +152,9 @@ fn persisted_archive_corruption_is_not_overwritten_on_reuse() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let snapshot = capture_roots(&roots, &[], output.path()).unwrap();
+    let snapshot = capture_roots(&roots, &[], &[], output.path()).unwrap();
     fs::write(snapshot.directory.join("sources.tar"), b"corrupt").unwrap();
-    assert!(capture_roots(&roots, &[], output.path()).is_err());
+    assert!(capture_roots(&roots, &[], &[], output.path()).is_err());
     assert_eq!(
         fs::read(snapshot.directory.join("sources.tar")).unwrap(),
         b"corrupt"
@@ -167,7 +168,7 @@ fn links_cannot_capture_bytes_outside_the_selected_checkout() {
     let output = tempfile::tempdir().unwrap();
     std::os::unix::fs::symlink("/etc/passwd", root.path().join("external")).unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    assert!(capture_roots(&roots, &["external".into()], output.path()).is_err());
+    assert!(capture_roots(&roots, &["external".into()], &[], output.path()).is_err());
 }
 
 #[test]
@@ -186,7 +187,7 @@ fn materialized_inputs_do_not_follow_later_changes_to_the_live_tree() {
     .unwrap();
     let output = tempfile::tempdir().unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let snapshot = capture_roots(&roots, &["src/lib.rs".into()], output.path()).unwrap();
+    let snapshot = capture_roots(&roots, &["src/lib.rs".into()], &[], output.path()).unwrap();
     fs::write(
         root.path().join("src/lib.rs"),
         "compile_error!(\"live tree is not the snapshot\");\n",
@@ -217,7 +218,7 @@ fn materialization_rejects_modified_manifest_and_archive_before_building() {
         let root = repository();
         let output = tempfile::tempdir().unwrap();
         let roots = vec![("repository".into(), root.path().to_owned())];
-        let snapshot = capture_roots(&roots, &[], output.path()).unwrap();
+        let snapshot = capture_roots(&roots, &[], &[], output.path()).unwrap();
         fs::write(snapshot.directory.join(changed), "corrupt").unwrap();
         let build = tempfile::tempdir().unwrap();
         assert!(materialize(&snapshot.directory, build.path()).is_err());
@@ -230,10 +231,10 @@ fn a_build_workspace_is_stable_exclusive_and_replaced_on_reuse() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let first = capture_roots(&roots, &[], output.path()).unwrap();
+    let first = capture_roots(&roots, &[], &[], output.path()).unwrap();
     fs::write(root.path().join("Cargo.toml"), "changed\n").unwrap();
     git(root.path(), &["commit", "-qam", "changed"]).unwrap();
-    let second = capture_roots(&roots, &[], &output.path().join("second")).unwrap();
+    let second = capture_roots(&roots, &[], &[], &output.path().join("second")).unwrap();
     let build = tempfile::tempdir().unwrap();
     let workspace = build.path().join("source-build");
     let opened = FrozenSources::open_in_workspace(&first.directory, &workspace).unwrap();
@@ -265,7 +266,7 @@ fn concurrent_builds_take_free_workspace_slots_without_waiting() {
     let root = repository();
     let output = tempfile::tempdir().unwrap();
     let roots = vec![("repository".into(), root.path().to_owned())];
-    let snapshot = capture_roots(&roots, &[], output.path()).unwrap();
+    let snapshot = capture_roots(&roots, &[], &[], output.path()).unwrap();
     let build = tempfile::tempdir().unwrap();
     let base = build.path().join("source-build");
     let held = (0..super::WORKSPACE_SLOTS)
@@ -287,5 +288,39 @@ fn concurrent_builds_take_free_workspace_slots_without_waiting() {
     assert_eq!(
         reused.repository(),
         build.path().join("source-build-0/repository")
+    );
+}
+
+#[test]
+fn include_untracked_archives_only_files_inside_image_packages_and_records_why() {
+    let root = repository();
+    let output = tempfile::tempdir().unwrap();
+    let target = output.path().join("snapshots");
+    fs::create_dir_all(root.path().join("crates/driver/src")).unwrap();
+    fs::write(
+        root.path().join("crates/driver/src/new.rs"),
+        "pub fn new() {}\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("notes.txt"), "scratch\n").unwrap();
+    let roots = vec![("repository".into(), root.path().to_owned())];
+    let packages = [PathBuf::from("crates/driver")];
+    // A file outside every image package still has to be named.
+    let error = capture_roots(&roots, &[], &packages, &target)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("repository:notes.txt"), "{error}");
+    assert!(!error.contains("new.rs"), "{error}");
+    let snapshot = capture_roots(&roots, &["notes.txt".into()], &packages, &target).unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(snapshot.directory.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        manifest["sources"][0]["untracked"],
+        serde_json::json!([
+            {"path": "crates/driver/src/new.rs", "by": "image-package"},
+            {"path": "notes.txt", "by": "source-include"},
+        ])
     );
 }

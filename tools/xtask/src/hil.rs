@@ -157,8 +157,9 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         match evidence_skip_reason(
             record_forced,
             args.iter().any(|arg| {
-                arg.to_str()
-                    .is_some_and(|arg| arg.starts_with("--source-include"))
+                arg.to_str().is_some_and(|arg| {
+                    arg.starts_with("--source-include") || arg == "--include-untracked"
+                })
             }),
             &created,
         ) {
@@ -1328,7 +1329,8 @@ fn runs_dirty(run_ids: &[String]) -> Result<Vec<bool>> {
 }
 
 /// Why a finished invocation records no evidence: it created no run, a run
-/// came from a dirty tree, or sources were added with `--source-include`.
+/// came from a dirty tree, or untracked sources were added with
+/// `--source-include` or `--include-untracked`.
 /// Such runs are experiments; `--record-evidence` records them anyway.
 fn evidence_skip_reason(
     forced: bool,

@@ -80,6 +80,16 @@ pub(crate) fn checkpoint(name: &str, arg: u32) {
     let _ = excess;
 }
 
+/// Record the hang the watchdog found. The stalled hart may hold the
+/// critical section, so, as for a panic, the record is written without it.
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+pub(crate) fn record_hang(hang: &oer_hil_protocol::HangFault) {
+    // SAFETY: see `record_panic`; the chip resets right after.
+    #[allow(unsafe_code, reason = "a hang cannot wait for the critical section")]
+    let record = unsafe { &mut *RECORD.0.get() };
+    record.record_hang(hang);
+}
+
 /// Record the panic being handled. The other hart may hold the critical
 /// section while this one panics, so the record is written without it; a
 /// checkpoint racing this write can at worst fail its own CRC.

@@ -1093,6 +1093,17 @@ impl SerialCapture {
         Ok(checkpoints)
     }
 
+    /// Stall `target`'s executor; the target's hang watchdog then resets it.
+    pub fn inject_hang(&self, target: oer_hil_protocol::HangTarget) -> Result<()> {
+        match self
+            .send_command(0, Command::InjectHang(target), Duration::from_secs(5))?
+            .body
+        {
+            Event::HangInjected(observed) if observed == target => Ok(()),
+            response => Err(format!("hang injection {target:?} rejected: {response:?}").into()),
+        }
+    }
+
     pub fn system_watchdog_test(&self, mode: oer_hil_protocol::WatchdogTestMode) -> Result<()> {
         match self
             .send_command(0, Command::SystemWatchdogTest(mode), Duration::from_secs(5))?

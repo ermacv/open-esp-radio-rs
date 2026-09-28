@@ -21,6 +21,9 @@ pub enum SystemScenario {
     BootSmoke {},
     /// SoC watchdog reset on its exclusive radio-free image.
     Watchdog {},
+    /// The hang watchdog of the correctness image records a stalled
+    /// executor's post-mortem and resets the chip.
+    HangWatchdog {},
     MemoryBenchmark {
         boots: u8,
         iterations: u16,
@@ -45,7 +48,7 @@ const BOOT_SMOKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1
 impl SystemScenario {
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::BootSmoke {} | Self::Watchdog {} => Ok(()),
+            Self::BootSmoke {} | Self::Watchdog {} | Self::HangWatchdog {} => Ok(()),
             Self::MemoryBenchmark {
                 boots,
                 iterations,
@@ -95,6 +98,7 @@ impl SystemScenario {
         Plan::target_only(match self {
             Self::BootSmoke {} => ImageClass::BootSmoke,
             Self::Watchdog {} => ImageClass::SystemWatchdog,
+            Self::HangWatchdog {} => ImageClass::Correctness,
             Self::MemoryBenchmark { .. } => ImageClass::DiagnosticMemoryBenchmark,
             Self::Timebase { .. } => ImageClass::Correctness,
         })
@@ -106,6 +110,7 @@ impl SystemScenario {
                 capture.wait_for_boot_smoke(BOOT_SMOKE_TIMEOUT)
             }),
             Self::Watchdog {} => system::watchdog::run(output, context),
+            Self::HangWatchdog {} => system::hang_watchdog::run(output, context),
             Self::MemoryBenchmark {
                 boots,
                 iterations,
@@ -151,6 +156,7 @@ mod tests {
         for (text, image) in [
             ("kind = 'boot-smoke'", ImageClass::BootSmoke),
             ("kind = 'watchdog'", ImageClass::SystemWatchdog),
+            ("kind = 'hang-watchdog'", ImageClass::Correctness),
             (
                 "kind = 'memory-benchmark'\nboots = 1\niterations = 1\nsizes = [64]",
                 ImageClass::DiagnosticMemoryBenchmark,

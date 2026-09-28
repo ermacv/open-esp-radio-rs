@@ -1170,9 +1170,8 @@ async fn network_config_task(iface: Iface<'static>, network_interface: WifiNetwo
 /// CPU1-local network composition used by the production split topology.
 #[embassy_executor::task]
 pub(crate) async fn secondary_network_task(spawner: Spawner) {
-    #[cfg(feature = "wifi-ble-coex")]
     spawner.spawn(
-        crate::hang_sentinel::network_core_heartbeat_task()
+        crate::hang_watchdog::network_heartbeat_task()
             .expect("network core heartbeat must allocate once"),
     );
     run_network_composition(spawner, APP_NETWORK_START.receive().await).await
@@ -1788,9 +1787,9 @@ pub async fn run(
     let radio = phy_register_image::adopt(radio);
     spawner.spawn(phy_tracking_task(radio).expect("PHY tracking task must allocate once"));
     spawner.spawn(coex_schedule_task(radio).expect("coexistence schedule task must allocate once"));
-    #[cfg(feature = "wifi-ble-coex")]
     spawner.spawn(
-        crate::hang_sentinel::heartbeat_task().expect("hang sentinel heartbeat must allocate once"),
+        crate::hang_watchdog::protocol_heartbeat_task()
+            .expect("protocol heartbeat must allocate once"),
     );
     #[cfg(feature = "wifi-ble-coex")]
     crate::bluetooth::shared::start(

@@ -15,6 +15,15 @@ pub enum WatchdogTestMode {
     LateRestoration,
 }
 
+/// The executor a diagnostic hang stalls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HangTarget {
+    /// The core 0 protocol executor.
+    ProtocolExecutor,
+    /// The core 1 network executor.
+    NetworkExecutor,
+}
+
 /// Platform reset classification, independent of radio protocol resets.
 /// [`BootEvidence::raw_reset_reason`] keeps the chip's own code, so a reason
 /// this classification merges or does not name is never lost.

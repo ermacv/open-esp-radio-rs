@@ -509,6 +509,9 @@ pub enum Command {
     GetPostMortemCheckpoints {
         first: u8,
     },
+    /// Diagnostic: stall `HangTarget`'s executor with interrupts enabled, so
+    /// the hang watchdog records a post-mortem and resets the chip.
+    InjectHang(crate::HangTarget),
     PhyFault(crate::PhyFaultCommand),
     /// Suspend, resume or report the shared PHY's periodic tracking timer.
     PhyTracking(crate::PhyTrackingCommand),
@@ -1107,6 +1110,8 @@ pub enum Event {
     SystemWatchdogTest(crate::WatchdogTestMode),
     BootStatus(crate::BootEvidence),
     PostMortemCheckpoints(crate::PostMortemCheckpoints),
+    /// The stall is armed; the chip resets once the watchdog detects it.
+    HangInjected(crate::HangTarget),
     PhyFault(crate::PhyFaultEvidence),
     PhyTracking(crate::PhyTrackingEvidence),
     BluetoothPeripheral(crate::BluetoothPeripheralEvidence),

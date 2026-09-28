@@ -24,6 +24,8 @@ use esp_hal::{
     peripherals::USB_DEVICE,
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
+#[cfg(not(feature = "memory-benchmark"))]
+use oer_hil_protocol::HangTarget;
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use oer_hil_protocol::Ieee802154EdEventProbeRequest;
 #[cfg(feature = "ieee802154-event-status-probe")]
@@ -1204,6 +1206,33 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::InvalidState)
                         };
                         publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Command::InjectHang(target) => {
+                        let response = if session_id == 0 {
+                            crate::hang_watchdog::inject(match target {
+                                HangTarget::ProtocolExecutor => {
+                                    crate::hang_watchdog::Executor::Protocol
+                                }
+                                HangTarget::NetworkExecutor => {
+                                    crate::hang_watchdog::Executor::Network
+                                }
+                            });
+                            Event::HangInjected(target)
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    // The memory benchmark image has no hang watchdog.
+                    #[cfg(feature = "memory-benchmark")]
+                    Command::InjectHang(_) => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::InvalidState),
+                        )
+                        .await;
                     }
                     Command::QueryStackUsage | Command::QueryInterruptStackUsage => {
                         let response = if initialized

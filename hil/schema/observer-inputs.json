@@ -62,6 +62,7 @@
     "bluetooth/peripheral": false,
     "system/boot-smoke": false,
     "system/watchdog": true,
+    "system/hang-watchdog": true,
     "system/memory-benchmark": true,
     "system/timebase": true,
     "ieee802154/event-status": false,

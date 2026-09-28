@@ -104,8 +104,8 @@ mod console;
 mod exception;
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
-#[cfg(feature = "wifi-ble-coex")]
-mod hang_sentinel;
+#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+mod hang_watchdog;
 #[cfg(feature = "memory-benchmark")]
 mod memory_benchmark;
 #[cfg(feature = "open-radio-hil")]
@@ -361,8 +361,8 @@ extern "C" fn runtime_main() -> ! {
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0));
-    #[cfg(feature = "wifi-ble-coex")]
-    hang_sentinel::start(peripherals.SYSTIMER);
+    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    hang_watchdog::start(peripherals.SYSTIMER);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let watchdog_service = watchdog::init(peripherals.TIMG1);
 
@@ -522,6 +522,8 @@ fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
         psram_task_stack::install_current_hart_interrupt_stack();
     }
     paint_app_core_stack();
+    #[cfg(not(feature = "memory-benchmark"))]
+    hang_watchdog::bind_core1_sampler();
     // SAFETY: Core 1 enters directly from ROM rather than through
     // `_runtime_start` with MIE clear; its per-hart vector state and stack
     // ownership are complete, so hand interrupt enable to its executor.

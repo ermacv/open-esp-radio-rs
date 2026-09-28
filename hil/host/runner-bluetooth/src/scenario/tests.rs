@@ -18,13 +18,44 @@ fn each_workload_selects_its_image() {
         ),
         ("kind = 'scannable-advertising'", ImageClass::BluetoothDtm),
         ("kind = 'directed-advertising'", ImageClass::BluetoothDtm),
+        (
+            "kind = 'dtm-peer'\nminimum_packets = 100",
+            ImageClass::BluetoothDtm,
+        ),
     ] {
         let scenario = parse(text);
         scenario.validate().unwrap();
         let plan = scenario.plan();
         assert_eq!(plan.image, image, "{text}");
-        assert!(plan.requirements.bluetooth_adapter && !plan.requirements.network());
+        assert!(!plan.requirements.network());
+        assert_eq!(
+            plan.requirements.bluetooth_adapter,
+            scenario.adapter_preflight().is_some(),
+            "{text}"
+        );
     }
+}
+
+#[test]
+fn the_peer_scenario_claims_the_peer_board_and_no_linux_adapter() {
+    let scenario = parse("kind = 'dtm-peer'\nminimum_packets = 100");
+    let plan = scenario.plan();
+    assert!(plan.requirements.peer && !plan.requirements.bluetooth_adapter);
+    assert_eq!(
+        scenario.peer_image(),
+        Some(crate::fixture::dtm_peer::DTM_PEER_IMAGE)
+    );
+    assert!(
+        !parse("kind = 'dtm'\nboots = 1\nminimum_packets = 10")
+            .plan()
+            .requirements
+            .peer
+    );
+    assert!(
+        parse("kind = 'dtm-peer'\nminimum_packets = 0")
+            .validate()
+            .is_err()
+    );
 }
 
 #[test]

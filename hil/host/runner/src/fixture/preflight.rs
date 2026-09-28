@@ -126,7 +126,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
 /// Scenario-specific Bluetooth adapter checks and the station fixture PHY.
 pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     let adapter_preflight = match &selected.family {
-        Family::Bluetooth(bluetooth) => Some(bluetooth.adapter_preflight()),
+        Family::Bluetooth(bluetooth) => bluetooth.adapter_preflight(),
         Family::Coexistence(_) => {
             Some(hil_bluetooth::fixture::bluetooth::att::preflight as fn(_) -> crate::Result<()>)
         }

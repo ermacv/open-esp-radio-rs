@@ -55,6 +55,7 @@
     "bluetooth/dtm": true,
     "bluetooth/scannable-advertising": false,
     "bluetooth/directed-advertising": true,
+    "bluetooth/dtm-peer": true,
     "system/boot-smoke": false,
     "system/watchdog": true,
     "system/hang-watchdog": true,

@@ -48,6 +48,10 @@ pub enum BluetoothScenario {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         quiet_cycles: Option<u16>,
     },
+    /// Direct Test Mode with the ESP32-C5 reference peer: the ESP32-S31
+    /// receives LE 1M, 2M and Coded (S=8 and S=2) and transmits LE 1M and
+    /// 2M, with a silence control on each receiver.
+    DtmPeer { minimum_packets: u16 },
 }
 
 /// Mutually exclusive terminal proofs; neither substitutes for the other.
@@ -74,6 +78,9 @@ impl BluetoothScenario {
                 }
                 Ok(())
             }
+            Self::DtmPeer { minimum_packets } => {
+                bounded(*minimum_packets, 1, 1000, "minimum_packets")
+            }
             _ => Ok(()),
         }
     }
@@ -82,9 +89,10 @@ impl BluetoothScenario {
         match self {
             Self::Gatt {} => ImageClass::BluetoothGatt,
             Self::SecureGatt { .. } => ImageClass::BluetoothSecureGatt,
-            Self::Dtm { .. } | Self::ScannableAdvertising {} | Self::DirectedAdvertising {} => {
-                ImageClass::BluetoothDtm
-            }
+            Self::Dtm { .. }
+            | Self::DtmPeer { .. }
+            | Self::ScannableAdvertising {}
+            | Self::DirectedAdvertising {} => ImageClass::BluetoothDtm,
         }
     }
 
@@ -92,13 +100,16 @@ impl BluetoothScenario {
     /// scenario uses the peer; [`crate::fixture::dtm_peer`] drives the
     /// Direct Test Mode peer.
     pub fn peer_image(&self) -> Option<hil_core::fixture::peer_line::PeerImage> {
-        None
+        match self {
+            Self::DtmPeer { .. } => Some(crate::fixture::dtm_peer::DTM_PEER_IMAGE),
+            _ => None,
+        }
     }
 
     pub fn plan(&self) -> Plan {
         Plan {
             requirements: Requirements {
-                bluetooth_adapter: true,
+                bluetooth_adapter: self.adapter_preflight().is_some(),
                 peer: self.peer_image().is_some(),
                 ..Requirements::default()
             },
@@ -112,20 +123,24 @@ impl BluetoothScenario {
     pub fn served_by(&self, features: &FeatureCapabilities) -> bool {
         match self {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
-            Self::ScannableAdvertising {} | Self::DirectedAdvertising {} => features.bluetooth_hci,
+            Self::ScannableAdvertising {} | Self::DirectedAdvertising {} | Self::DtmPeer { .. } => {
+                features.bluetooth_hci
+            }
             Self::Dtm { .. } => features.bluetooth_dtm,
         }
     }
 
-    /// The Linux adapter capabilities this workload needs.
-    pub fn adapter_preflight(&self) -> fn(Adapter) -> Result<()> {
-        match self {
+    /// The Linux adapter capabilities this workload needs, or `None` when it
+    /// uses no Linux adapter.
+    pub fn adapter_preflight(&self) -> Option<fn(Adapter) -> Result<()>> {
+        Some(match self {
             Self::Gatt {}
             | Self::SecureGatt { .. }
             | Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {} => fixture::att::preflight,
             Self::Dtm { .. } => fixture::preflight,
-        }
+            Self::DtmPeer { .. } => return None,
+        })
     }
 
     pub fn run(&self, output: &Path, context: &Context<'_>) -> Result<()> {
@@ -142,6 +157,9 @@ impl BluetoothScenario {
                 minimum_packets,
                 quiet_cycles,
             } => workload::run(*boots, *minimum_packets, *quiet_cycles, output, context),
+            Self::DtmPeer { minimum_packets } => {
+                workload::dtm_peer::run(*minimum_packets, output, context)
+            }
         }
     }
 }

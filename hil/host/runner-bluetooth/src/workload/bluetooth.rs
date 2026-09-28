@@ -2,6 +2,7 @@
 
 pub mod coexistence;
 pub mod directed;
+pub mod dtm_peer;
 pub mod gatt;
 mod hci;
 pub mod scannable;

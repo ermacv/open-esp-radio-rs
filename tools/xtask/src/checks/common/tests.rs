@@ -498,3 +498,28 @@ fn package_names_share_one_prefix_and_only_the_facade_is_branded() {
         assert!(validate_package_name(name, layer).is_err(), "{name}");
     }
 }
+
+#[test]
+fn only_verification_packages_declare_an_evidence_role() {
+    assert_eq!(
+        evidence_role("v", "verification", Some("verdict")).unwrap(),
+        Some(Evidence::Verdict)
+    );
+    assert_eq!(
+        evidence_role("r", "verification", Some("report")).unwrap(),
+        Some(Evidence::Report)
+    );
+    assert!(evidence_role("v", "verification", None).is_err());
+    assert!(evidence_role("v", "verification", Some("other")).is_err());
+    assert_eq!(evidence_role("t", "tool", None).unwrap(), None);
+    assert!(evidence_role("t", "tool", Some("verdict")).is_err());
+}
+
+#[test]
+fn a_verdict_never_depends_on_a_report() {
+    let (verdict, report) = (Some(Evidence::Verdict), Some(Evidence::Report));
+    assert!(!evidence_edge_allowed(verdict, report));
+    assert!(evidence_edge_allowed(report, verdict));
+    assert!(evidence_edge_allowed(verdict, verdict));
+    assert!(evidence_edge_allowed(None, report));
+}

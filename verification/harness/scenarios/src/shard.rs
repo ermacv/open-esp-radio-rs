@@ -51,12 +51,14 @@ const PROBE_IMAGE_DIRECTORY: &str = "elf";
 pub fn dep_info(root: &Path, artifact: &Path) -> Result<Vec<PathBuf>> {
     let mut path = artifact.as_os_str().to_owned();
     path.push(".d");
-    let text = std::fs::read_to_string(&path).map_err(|e| {
-        format!(
-            "{}: {e}; build the artifact first",
-            Path::new(&path).display()
-        )
-    })?;
+    dep_info_file(root, Path::new(&path))
+}
+
+/// Repository-relative sources the dep-info file at `path` records, as
+/// [`dep_info`] reads them.
+pub fn dep_info_file(root: &Path, path: &Path) -> Result<Vec<PathBuf>> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("{}: {e}; build the artifact first", path.display()))?;
     let first = text.lines().next().unwrap_or_default();
     let list = first.split_once(": ").map_or("", |(_, list)| list);
     let mut files = std::collections::BTreeSet::new();
@@ -85,13 +87,24 @@ pub fn dep_info(root: &Path, artifact: &Path) -> Result<Vec<PathBuf>> {
     Ok(files.into_iter().collect())
 }
 
+/// The `package.metadata.open-radio.evidence` role of a package whose code
+/// only renders reports; its sources never enter a shard.
+const REPORT_ROLE: &str = "report";
+
+/// Path packages in the resolved dependency closure of a package: those
+/// whose sources a shard may record, and the report packages it reaches.
+struct PathClosure {
+    directories: Vec<PathBuf>,
+    report: Vec<PathBuf>,
+}
+
 /// Path packages in the resolved dependency closure of `package`.
 fn path_closure(
     root: &Path,
     manifest: &str,
     package: &str,
     platform: Option<&str>,
-) -> Result<Vec<PathBuf>> {
+) -> Result<PathClosure> {
     let mut command = std::process::Command::new("cargo");
     command
         .current_dir(root)
@@ -133,19 +146,48 @@ fn path_closure(
         }
     }
     let mut directories = std::collections::BTreeSet::new();
+    let mut report = std::collections::BTreeSet::new();
     for package in packages {
         let local = package["source"].is_null();
         if local && seen.contains(package["id"].as_str().unwrap_or_default()) {
             let manifest = Path::new(package["manifest_path"].as_str().ok_or("manifest path")?);
             let directory = manifest.parent().ok_or("manifest directory")?;
-            directories.insert(directory.canonicalize()?.strip_prefix(root)?.to_path_buf());
+            let directory = directory.canonicalize()?.strip_prefix(root)?.to_path_buf();
+            if package["metadata"]["open-radio"]["evidence"] == REPORT_ROLE {
+                report.insert(directory);
+            } else {
+                directories.insert(directory);
+            }
         }
     }
-    Ok(directories.into_iter().collect())
+    Ok(PathClosure {
+        directories: directories.into_iter().collect(),
+        report: report.into_iter().collect(),
+    })
 }
 
-/// What Cargo compiled for one shard: the probe image's and the scenario
-/// binary's dep-info, and the manifests of their path packages.
+/// Why a shard cannot be written without the verdict libraries' dep-info.
+const VERDICT_DEP_INFO_REQUIRED: &str = "shards are written only through cargo xtask vendor-scenario, which passes the verdict libraries' dep-info";
+
+/// Fail when a shard would record a file of a report package: report code
+/// decides no verdict, so it must not stale the evidence.
+pub fn check_verdict_sources(paths: &[PathBuf], report: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        if let Some(package) = report.iter().find(|package| path.starts_with(package)) {
+            return Err(format!(
+                "shard source {} belongs to the report package {}",
+                path.display(),
+                package.display()
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// What Cargo compiled for one shard: the probe image's dep-info, the
+/// dep-info of the libraries that decide the verdicts, and the manifests of
+/// their path packages.
 pub struct Closures {
     pub probe: Vec<PathBuf>,
     pub tool: Vec<PathBuf>,
@@ -154,7 +196,7 @@ pub struct Closures {
 
 /// The sources a shard records, sorted: production crates and probe
 /// libraries by the files the executions ran (all of them on a fallback),
-/// and globally what Cargo compiled into the scenario binary, the probe
+/// and globally what Cargo compiled into the verdict libraries, the probe
 /// images' placement and entry code, every package manifest, the lock
 /// files, the schema, the probe compiler and the toolchain.
 pub fn source_paths(
@@ -201,14 +243,20 @@ pub fn source_paths(
 
 /// The shard of `scenario`'s claims against the probe image at
 /// `production`: the sources are the image package's path closure, the
-/// scenario code and engine, and the shared schema.
+/// verdict libraries named by their dep-info files `verdict`, and the
+/// shared schema. Report packages the scenario package reaches are left
+/// out, and a source inside one is an error.
 pub fn shard(
     scenario: &str,
     production: &Path,
     claims: &session::Claims,
     probes: &ProbeImages,
     tool_package: &str,
+    verdict: &[PathBuf],
 ) -> Result<Index> {
+    if verdict.is_empty() {
+        return Err(VERDICT_DEP_INFO_REQUIRED.into());
+    }
     let root = observation::root()?;
     let target = crate::chip().name;
     let package = production
@@ -221,16 +269,21 @@ pub fn shard(
                 production.display()
             )
         })?;
-    let mut manifests = vec![];
-    for directory in path_closure(&root, probes.manifest, package, Some(probes.target))?
-        .into_iter()
-        .chain(path_closure(&root, TOOL_MANIFEST, tool_package, None)?)
-    {
-        manifests.push(directory.join(PACKAGE_MANIFEST));
+    let probe_closure = path_closure(&root, probes.manifest, package, Some(probes.target))?;
+    let tool_closure = path_closure(&root, TOOL_MANIFEST, tool_package, None)?;
+    let manifests = probe_closure
+        .directories
+        .iter()
+        .chain(&tool_closure.directories)
+        .map(|directory| directory.join(PACKAGE_MANIFEST))
+        .collect();
+    let mut tool = std::collections::BTreeSet::new();
+    for file in verdict {
+        tool.extend(dep_info_file(&root, file)?);
     }
     let closures = Closures {
         probe: dep_info(&root, production)?,
-        tool: dep_info(&root, &std::env::current_exe()?)?,
+        tool: tool.into_iter().collect(),
         manifests,
     };
     let dependencies = &claims.dependencies;
@@ -240,6 +293,12 @@ pub fn shard(
         &dependencies.files,
         dependencies.fallback.is_some(),
     );
+    let report: Vec<PathBuf> = probe_closure
+        .report
+        .into_iter()
+        .chain(tool_closure.report)
+        .collect();
+    check_verdict_sources(&paths, &report)?;
     let sources = paths
         .into_iter()
         .map(|path| {
@@ -408,6 +467,16 @@ mod source_tests {
         assert!(shard.contains(Path::new(
             "verification/chip/probes/radio/library/src/i2c.rs"
         )));
+    }
+
+    #[test]
+    fn a_report_package_file_cannot_be_a_shard_source() {
+        let report = [PathBuf::from("verification/harness/report")];
+        let verdict = [PathBuf::from("verification/harness/scenarios/src/shard.rs")];
+        assert!(check_verdict_sources(&verdict, &report).is_ok());
+        let leaked = [PathBuf::from("verification/harness/report/src/triage.rs")];
+        let error = check_verdict_sources(&leaked, &report).unwrap_err();
+        assert!(error.to_string().contains("report package"));
     }
 
     #[test]

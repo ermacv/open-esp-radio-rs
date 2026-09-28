@@ -23,4 +23,5 @@ workspace = true
 [package.metadata.open-radio]
 scope = "development"
 layer = "verification"
+evidence = "report"
 platform = "host"

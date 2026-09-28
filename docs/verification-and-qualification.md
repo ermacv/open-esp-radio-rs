@@ -178,7 +178,14 @@ show which vendor behavior the comparisons never exercised, which executed
 production lines they cannot notice and which vendor state they never compare. Any
 change to a shard's sources makes that shard stale: its evidence supports no
 claim until its scenario runs again, while shards whose sources are unchanged
-stay current. An absent index directory means no vendor evidence is
+stay current. The scenario code a shard records is what Cargo compiled into
+the libraries that decide verdicts: the scenario engine and the chip's
+scenario library, whose dep-info `cargo xtask vendor-scenario` passes to the
+scenario binary. Every verification package declares
+`package.metadata.open-radio.evidence` as `verdict` or `report`; a report
+package only renders reviewer aids, a verdict package may not depend on one,
+and writing or checking a shard fails when it would record a report
+package's file, so editing a report leaves every shard current. An absent index directory means no vendor evidence is
 available: affected capabilities remain unqualified while status and HIL
 planning still work. An unreadable, malformed or inconsistent existing shard,
 or a file in the directory that is not a shard, remains an error.

@@ -1,18 +1,21 @@
 [package]
 workspace = "../../../tools/blobray"
-name = "oer-esp32c5-vendor-scenarios"
+name = "oer-esp32c5-vendor-scenarios-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Typed ESP32-C5 vendor-comparison scenarios driven through the Blobray CLI"
+description = "Command line of the typed ESP32-C5 vendor-comparison scenarios and their reviewer commands"
+
+[[bin]]
+name = "esp32c5-vendor-scenarios"
+path = "src/main.rs"
 
 [dependencies]
-blobray-application = { path = "../../../tools/blobray/crates/application" }
-blobray-domain = { path = "../../../tools/blobray/crates/domain" }
-oer-vendor-scenario-engine = { path = "../../harness/scenarios" }
+oer-esp32c5-vendor-scenarios = { path = "../scenarios" }
+oer-vendor-scenario-report = { path = "../../harness/report" }
 clap = { version = "=4.5.48", features = ["derive"] }
 
 [lints]
@@ -21,5 +24,5 @@ workspace = true
 [package.metadata.open-radio]
 scope = "development"
 layer = "verification"
-evidence = "verdict"
+evidence = "report"
 platform = "host"

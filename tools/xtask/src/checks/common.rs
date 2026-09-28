@@ -201,6 +201,69 @@ pub struct Classification<'a> {
     pub scope: &'a str,
     pub layer: &'a str,
     pub platform: Platform<'a>,
+    /// The role of a verification package in the evidence shards.
+    pub evidence: Option<Evidence>,
+}
+
+/// What a verification package's code does for the evidence shards: decide
+/// a verdict or a recorded set, whose sources a shard records, or only
+/// render a report, whose sources a shard never records.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Evidence {
+    Verdict,
+    Report,
+}
+
+/// The layer whose packages declare an [`Evidence`] role.
+const EVIDENCE_LAYER: &str = "verification";
+
+/// The evidence role `value` declares for a package of `layer`: required
+/// in the verification layer and forbidden elsewhere.
+pub fn evidence_role(name: &str, layer: &str, value: Option<&str>) -> Result<Option<Evidence>> {
+    match (layer == EVIDENCE_LAYER, value) {
+        (true, Some("verdict")) => Ok(Some(Evidence::Verdict)),
+        (true, Some("report")) => Ok(Some(Evidence::Report)),
+        (true, _) => Err(format!(
+            "package {name} of the verification layer needs open-radio.evidence = \"verdict\" or \"report\""
+        )
+        .into()),
+        (false, None) => Ok(None),
+        (false, Some(_)) => Err(format!(
+            "package {name} outside the verification layer declares open-radio.evidence"
+        )
+        .into()),
+    }
+}
+
+/// Whether a package with evidence role `source` may depend on one with
+/// role `target`: a verdict never depends on a report, so report code can
+/// neither decide a verdict nor enter a shard's sources.
+pub fn evidence_edge_allowed(source: Option<Evidence>, target: Option<Evidence>) -> bool {
+    !(source == Some(Evidence::Verdict) && target == Some(Evidence::Report))
+}
+
+/// Apply [`evidence_edge_allowed`] to every path dependency of `packages`.
+pub fn validate_evidence_edges(packages: &[SourcePackage]) -> Result<()> {
+    for source in packages {
+        let source_role = classification(&source.package)?.evidence;
+        for dependency in &source.package.dependencies {
+            let Some(path) = &dependency.path else {
+                continue;
+            };
+            let manifest = path.join("Cargo.toml").as_std_path().canonicalize()?;
+            let Some(target) = packages.iter().find(|item| item.manifest == manifest) else {
+                continue;
+            };
+            if !evidence_edge_allowed(source_role, classification(&target.package)?.evidence) {
+                return Err(format!(
+                    "verdict package {} depends on report package {}",
+                    source.package.name, dependency.name
+                )
+                .into());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Classification is required for every source package, regardless of its path.
@@ -243,10 +306,18 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
             .into());
         }
     };
+    let evidence = evidence_role(
+        &package.name,
+        layer,
+        metadata
+            .and_then(|value| value.get("evidence"))
+            .and_then(serde_json::Value::as_str),
+    )?;
     let class = Classification {
         scope,
         layer,
         platform,
+        evidence,
     };
     let expected_scope = match class.layer {
         "contract" | "protocol" | "hardware" | "role" | "adapter" | "runtime" | "service"

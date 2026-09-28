@@ -56,6 +56,52 @@ fn probes(chip: &str) -> (String, String) {
     )
 }
 
+/// Repository-relative directories of the packages whose code only renders
+/// reports: no shard may record one of their files.
+fn report_packages(ctx: &Context) -> Result<Vec<PathBuf>> {
+    let mut directories = vec![];
+    for package in crate::checks::common::source_packages(ctx)? {
+        if crate::checks::common::classification(&package.package)?.evidence
+            == Some(crate::checks::common::Evidence::Report)
+        {
+            let directory = package.manifest.parent().ok_or("manifest directory")?;
+            directories.push(directory.strip_prefix(&ctx.root)?.to_path_buf());
+        }
+    }
+    Ok(directories)
+}
+
+/// Fail when a shard in `directory` records a file of a report package; the
+/// engine refuses to write one, and this catches a shard that bypassed it.
+fn reject_report_sources(ctx: &Context, directory: &Path) -> Result<()> {
+    let report = report_packages(ctx)?;
+    for entry in std::fs::read_dir(ctx.root.join(directory))? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some(scenario_evidence::SHARD_EXTENSION) {
+            continue;
+        }
+        let Some(shard) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<scenario_evidence::Index>(&text).ok())
+        else {
+            continue;
+        };
+        if let Some(source) = shard.sources.iter().find(|source| {
+            report
+                .iter()
+                .any(|package| source.path.starts_with(package))
+        }) {
+            return Err(format!(
+                "shard {} records {}, a file of a report package",
+                path.display(),
+                source.path.display()
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
 /// Scenario names of the shards in `directory` that are stale or unreadable.
 pub fn stale(root: &Path, directory: &Path) -> Result<Vec<String>> {
     let mut names = vec![];
@@ -94,6 +140,7 @@ pub fn run(
 ) -> Result<ExitCode> {
     let directory = directory(&ctx.root, chip)?;
     let directory = Path::new(&directory);
+    reject_report_sources(ctx, directory)?;
     let selected = if scenarios.is_empty() {
         stale(&ctx.root, directory)?
     } else {
@@ -293,6 +340,7 @@ pub fn check(
     output: PathBuf,
 ) -> Result<ExitCode> {
     let directory = ctx.root.join(directory(&ctx.root, chip)?);
+    reject_report_sources(ctx, &directory)?;
     let mut committed = vec![];
     for entry in std::fs::read_dir(&directory)? {
         let path = entry?.path();

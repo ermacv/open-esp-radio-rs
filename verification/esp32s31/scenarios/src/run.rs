@@ -216,6 +216,10 @@ pub struct Common {
     /// reads into this directory; `all` writes every scenario's shard.
     #[arg(long)]
     index: Option<PathBuf>,
+    /// Dep-info files of the libraries that decide the verdicts, from the
+    /// binary's `--verdict-dep-info`.
+    #[arg(skip)]
+    verdict: Vec<PathBuf>,
 }
 
 /// Resolve `common`'s mutants against the radio probe and, for the
@@ -240,6 +244,7 @@ struct Shard {
     scenario: &'static str,
     index: Option<PathBuf>,
     production: PathBuf,
+    verdict: Vec<PathBuf>,
 }
 
 impl Shard {
@@ -248,6 +253,7 @@ impl Shard {
             scenario,
             index: common.index.clone(),
             production: common.production.clone(),
+            verdict: common.verdict.clone(),
         }
     }
 }
@@ -260,7 +266,7 @@ fn single(shard: Shard, outcome: Result<Outcome>) -> Result<ExitCode> {
         if code != ExitCode::SUCCESS {
             return Ok(code);
         }
-        let index = evidence::shard(shard.scenario, &shard.production, &claims)?;
+        let index = evidence::shard(shard.scenario, &shard.production, &claims, &shard.verdict)?;
         evidence::write(directory, &index)?;
     }
     Ok(code)
@@ -778,13 +784,19 @@ mod evidence {
         target: PROBES_TARGET,
     };
 
-    pub fn shard(scenario: &str, production: &Path, claims: &session::Claims) -> Result<Index> {
+    pub fn shard(
+        scenario: &str,
+        production: &Path,
+        claims: &session::Claims,
+        verdict: &[PathBuf],
+    ) -> Result<Index> {
         oer_vendor_scenario_engine::shard::shard(
             scenario,
             production,
             claims,
             &PROBES,
             env!("CARGO_PKG_NAME"),
+            verdict,
         )
     }
 
@@ -1025,7 +1037,10 @@ fn all(common: Common, inputs: AllInputs, report: &dyn RunReport) -> Result<Exit
             } else {
                 &common.production
             };
-            evidence::write(directory, &evidence::shard(name, production, claims)?)?;
+            evidence::write(
+                directory,
+                &evidence::shard(name, production, claims, &common.verdict)?,
+            )?;
         }
     }
     println!("all PHY comparison scenarios passed");
@@ -1033,6 +1048,24 @@ fn all(common: Common, inputs: AllInputs, report: &dyn RunReport) -> Result<Exit
 }
 
 impl Scenario {
+    /// The inputs every comparison scenario shares.
+    fn common_mut(&mut self) -> Option<&mut Common> {
+        match self {
+            Scenario::Gain { common, .. }
+            | Scenario::Channel { common }
+            | Scenario::RxGain { common, .. }
+            | Scenario::TxDc { common, .. }
+            | Scenario::CoexHw { common, .. }
+            | Scenario::Coex { common, .. }
+            | Scenario::WifiMac { common, .. }
+            | Scenario::Tracking { common, .. }
+            | Scenario::I2c { common, .. }
+            | Scenario::Bluetooth { common, .. }
+            | Scenario::All { common, .. } => Some(common),
+            Scenario::Research { .. } => None,
+        }
+    }
+
     /// Resolve the mutants of the scenario's inputs against their probes.
     fn resolve_mutants(&mut self) -> Result<()> {
         match self {
@@ -1060,8 +1093,12 @@ impl Scenario {
     }
 }
 
-/// Run `scenario`, handing each suite's findings to `report`.
-pub fn run(mut scenario: Scenario, report: &dyn RunReport) -> ExitCode {
+/// Run `scenario`, handing each suite's findings to `report`; `verdict`
+/// names the dep-info files of the libraries that decide its verdicts.
+pub fn run(mut scenario: Scenario, report: &dyn RunReport, verdict: Vec<PathBuf>) -> ExitCode {
+    if let Some(common) = scenario.common_mut() {
+        common.verdict = verdict;
+    }
     if let Err(error) = scenario.resolve_mutants() {
         eprintln!("error: {error}");
         return ExitCode::FAILURE;

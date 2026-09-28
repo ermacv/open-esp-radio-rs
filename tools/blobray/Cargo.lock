@@ -491,6 +491,14 @@ dependencies = [
  "blobray-domain",
  "clap",
  "oer-vendor-scenario-engine",
+]
+
+[[package]]
+name = "oer-esp32c5-vendor-scenarios-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "oer-esp32c5-vendor-scenarios",
  "oer-vendor-scenario-report",
 ]
 
@@ -508,12 +516,20 @@ dependencies = [
  "object",
  "oer-probe-codegen",
  "oer-vendor-scenario-engine",
- "oer-vendor-scenario-report",
  "serde",
  "serde_json",
  "sha2",
  "tempfile",
  "toml",
+]
+
+[[package]]
+name = "oer-esp32s31-vendor-scenarios-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "oer-esp32s31-vendor-scenarios",
+ "oer-vendor-scenario-report",
 ]
 
 [[package]]

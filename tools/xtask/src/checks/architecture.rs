@@ -13,7 +13,8 @@ const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
 pub fn run(ctx: &Context) -> Result<()> {
     // The Blobray workspace names its own packages.
     let blobray = ctx.root.join("tools/blobray").canonicalize()?;
-    for package in source_packages(ctx)? {
+    let sources = source_packages(ctx)?;
+    for package in &sources {
         if package.manifest.starts_with(&blobray) {
             continue;
         }
@@ -22,6 +23,9 @@ pub fn run(ctx: &Context) -> Result<()> {
             classification(&package.package)?.layer,
         )?;
     }
+    // A verdict package never depends on a report package, so report code
+    // stays out of the shards' sources.
+    validate_evidence_edges(&sources)?;
     let tracked = String::from_utf8(
         process::capture(ctx.command("git").args(["ls-files", "crates/hardware"]))?.stdout,
     )?;

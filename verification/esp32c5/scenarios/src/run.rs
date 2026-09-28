@@ -60,6 +60,10 @@ pub struct Common {
     /// Write each scenario's shard of the evidence index into this directory.
     #[arg(long)]
     index: Option<PathBuf>,
+    /// Dep-info files of the libraries that decide the verdicts, from the
+    /// binary's `--verdict-dep-info`.
+    #[arg(skip)]
+    verdict: Vec<PathBuf>,
 }
 
 /// The transport suite: every leaf must MATCH and meet its expectation.
@@ -101,6 +105,7 @@ fn record(common: &Common, scenario: &str, claims: &session::Claims) -> Result<(
             claims,
             &PROBES,
             env!("CARGO_PKG_NAME"),
+            &common.verdict,
         )?;
         shard::write(directory, &index)?;
     }
@@ -132,8 +137,12 @@ fn all(common: &Common, report: &dyn RunReport) -> Result<()> {
     record(common, "phy-i2c", &claims)
 }
 
-/// Run `scenario`, handing each suite's findings to `report`.
-pub fn run(scenario: Scenario, report: &dyn RunReport) -> ExitCode {
+/// Run `scenario`, handing each suite's findings to `report`; `verdict`
+/// names the dep-info files of the libraries that decide its verdicts.
+pub fn run(mut scenario: Scenario, report: &dyn RunReport, verdict: Vec<PathBuf>) -> ExitCode {
+    match &mut scenario {
+        Scenario::PhyI2c { common } | Scenario::All { common } => common.verdict = verdict,
+    }
     let result = match scenario {
         Scenario::PhyI2c { common } => {
             phy_i2c(&common, report).and_then(|claims| record(&common, "phy-i2c", &claims))

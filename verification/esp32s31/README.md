@@ -636,9 +636,10 @@ record them as a scenario source.
 
 Domain modules keep their crate-root paths (`crate::gain`, `crate::ble`) as
 re-exports. The library's `run.rs` holds the scenario command line and the
-dispatch that decides verdicts and writes shards; `main.rs` only adds the
-reviewer commands of the [report crate](../harness/README.md) and passes its
-reviewer to `run`.
+dispatch that decides verdicts and writes shards. The binary lives in its own
+report package, [`scenarios-cli`](scenarios-cli): it adds the reviewer
+commands of the [report crate](../harness/README.md) and passes its reviewer
+to `run`, so neither changes a shard's sources.
 
 ## Coverage decisions
 

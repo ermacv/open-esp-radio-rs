@@ -3,6 +3,7 @@
 use clap::{Parser, Subcommand};
 use oer_esp32c5_vendor_scenarios::run::{self, Scenario};
 use oer_vendor_scenario_report::{Reviewer, inspect};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -10,6 +11,11 @@ use std::process::ExitCode;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Dep-info file of a library that decides the verdicts; `cargo xtask
+    /// vendor-scenario` passes one for each, and shards are written only
+    /// with them.
+    #[arg(long = "verdict-dep-info", global = true, hide = true)]
+    verdict_dep_info: Vec<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -22,8 +28,9 @@ enum Command {
 
 fn main() -> ExitCode {
     oer_esp32c5_vendor_scenarios::install();
-    match Cli::parse().command {
-        Command::Scenario(scenario) => run::run(scenario, &Reviewer),
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Scenario(scenario) => run::run(scenario, &Reviewer, cli.verdict_dep_info),
         Command::Inspect(command) => match inspect::run(command) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {

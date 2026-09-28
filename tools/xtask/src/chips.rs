@@ -19,6 +19,15 @@ pub fn supported(root: &Path) -> Result<Vec<String>> {
     oer_chip_profile::supported(root)
 }
 
+/// A chip's typed vendor scenarios: the library that decides their
+/// verdicts, and the command package whose binary runs them.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Scenarios {
+    pub library: String,
+    pub command: String,
+    pub binary: String,
+}
+
 /// One supported chip.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Chip(String);
@@ -65,12 +74,13 @@ impl Chip {
         self.verification("facts/provenance.toml")
     }
 
-    /// Package and binary of the chip's typed vendor scenarios.
-    pub fn scenarios(&self) -> (String, String) {
-        (
-            format!("oer-{}-vendor-scenarios", self.0),
-            format!("{}-vendor-scenarios", self.0),
-        )
+    /// Packages and binary of the chip's typed vendor scenarios.
+    pub fn scenarios(&self) -> Scenarios {
+        Scenarios {
+            library: format!("oer-{}-vendor-scenarios", self.0),
+            command: format!("oer-{}-vendor-scenarios-cli", self.0),
+            binary: format!("{}-vendor-scenarios", self.0),
+        }
     }
 
     /// Whether `path` lies in a directory named after another chip, so a
@@ -112,10 +122,11 @@ mod tests {
         );
         assert_eq!(
             chip.scenarios(),
-            (
-                "oer-esp32c5-vendor-scenarios".to_owned(),
-                "esp32c5-vendor-scenarios".to_owned()
-            )
+            Scenarios {
+                library: "oer-esp32c5-vendor-scenarios".to_owned(),
+                command: "oer-esp32c5-vendor-scenarios-cli".to_owned(),
+                binary: "esp32c5-vendor-scenarios".to_owned(),
+            }
         );
     }
 

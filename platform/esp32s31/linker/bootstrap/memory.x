@@ -6,8 +6,9 @@ MEMORY
        region for iram_text_seg and dram_seg, so RAM-resident code consumes
        only its actual section size instead of a fixed IRAM reservation.
 
-       The SRAM end is ESP-IDF's SRAM_SEG_END: the memory above it is retained
-       for the second-stage loader and the ROM boot stack. */
+       The SRAM end is ESP-IDF's SRAM_SEG_END; the ROM boot stack side lies
+       above it. The second-stage loader runs below it, from
+       SECOND_STAGE_LOADER_START, while it loads this image (see sections.x). */
     SRAM   (RWX) : ORIGIN = SRAM_ORIGIN, LENGTH = SRAM_LENGTH
 
     /* ESP32-S31 has one unified 64 MiB flash-mapped instruction/data window. */

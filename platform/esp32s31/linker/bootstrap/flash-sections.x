@@ -41,26 +41,6 @@ SECTIONS {
     *(.rodata .rodata.*)
     *(.srodata .srodata.*)
 
-    /* Store the external-memory initializers in a normal flash-mapped
-       segment. The second-stage bootloader must not load 0x50000000. */
-    . = ALIGN(16);
-    __psram_init_load = ABSOLUTE(.);
-    __psram_text_load = ABSOLUTE(.);
-    KEEP(*(.psram.text .psram.text.*));
-    __psram_text_load_end = ABSOLUTE(.);
-    __psram_text_size = __psram_text_load_end - __psram_text_load;
-    . = ALIGN(16);
-    __psram_rodata_load = ABSOLUTE(.);
-    KEEP(*(.psram.rodata .psram.rodata.*));
-    __psram_rodata_load_end = ABSOLUTE(.);
-    __psram_rodata_size = __psram_rodata_load_end - __psram_rodata_load;
-    . = ALIGN(16);
-    __psram_data_load = ABSOLUTE(.);
-    KEEP(*(.psram.data.init .psram.data.init.*));
-    __psram_data_load_end = ABSOLUTE(.);
-    __psram_data_size = __psram_data_load_end - __psram_data_load;
-    . = ALIGN(16);
-    __psram_init_load_end = ABSOLUTE(.);
     _rodata_end = ABSOLUTE(.);
   } > RODATA
 

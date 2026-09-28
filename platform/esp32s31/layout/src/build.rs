@@ -142,7 +142,6 @@ pub fn configure_bootstrap(bin: &str, linker_dir: &Path) {
             "bootstrap/memory.x",
             "bootstrap/sections.x",
             "bootstrap/flash-sections.x",
-            "bootstrap/psram-sections.x",
         ],
         "-Tbootstrap/link.x",
     );
@@ -155,6 +154,11 @@ pub fn configure_bootstrap(bin: &str, linker_dir: &Path) {
         bin,
         "BOOTSTRAP_FLASH_TEXT_LENGTH",
         memory::BOOTSTRAP_FLASH_TEXT.length,
+    );
+    defsym(
+        bin,
+        "SECOND_STAGE_LOADER_START",
+        memory::SECOND_STAGE_LOADER_START,
     );
 }
 

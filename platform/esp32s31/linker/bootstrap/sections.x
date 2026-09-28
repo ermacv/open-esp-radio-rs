@@ -39,7 +39,24 @@ INCLUDE "bootstrap/flash-sections.x"
 INCLUDE "text.x"
 PROVIDE(__flash_text_start = ADDR(.text));
 PROVIDE(__flash_text_end = ADDR(.text) + SIZEOF(.text));
-INCLUDE "bootstrap/psram-sections.x"
+
+/* The bootstrap owns no PSRAM sections: stage two owns all of PSRAM after the
+   probe page. An input section placed in PSRAM here would be linked at a Flash
+   or SRAM address and never initialized. */
+SECTIONS
+{
+  .psram.unsupported (NOLOAD) :
+  {
+    *(.psram.text .psram.text.* .psram.rodata .psram.rodata.*);
+    *(.psram.data .psram.data.* .psram.bss .psram.bss.* .psram.noinit .psram.noinit.*);
+  } > RWDATA
+}
+ASSERT(SIZEOF(.psram.unsupported) == 0,
+       "the bootstrap owns no PSRAM sections; stage two owns PSRAM");
+/* The second-stage loader executes from SECOND_STAGE_LOADER_START upwards
+   while it loads this image, so every loaded SRAM segment must end below it. */
+ASSERT(ADDR(.data.wifi) + SIZEOF(.data.wifi) <= SECOND_STAGE_LOADER_START,
+       "a loaded bootstrap SRAM segment reaches the second-stage loader");
 INCLUDE "rtc_fast.x"
 INCLUDE "stack.x"
 INCLUDE "metadata.x"

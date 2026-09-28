@@ -8,7 +8,7 @@ pub const OTA_SELECTOR_OFFSET: u32 = 0xd000;
 pub const OTA_0_OFFSET: u32 = 0x1_0000;
 /// Size of `ota_0` in `platform/esp32s31/partitions/applications.csv`, the
 /// partition every application image is encoded for.
-pub const OTA_0_BYTES: u32 = 0x70_0000;
+pub const OTA_0_BYTES: u32 = 0xff_0000;
 /// Share of `ota_0` from which image encoding warns that the partition is
 /// nearly full, before an image stops fitting.
 pub const OTA_0_WARNING_PERCENT: u64 = 90;

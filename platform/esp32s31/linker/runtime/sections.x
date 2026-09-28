@@ -13,6 +13,15 @@ SECTIONS
     *(.rtc_fast.data .rtc_fast.data.*);
   } > RTC_FAST
 
+  /* `.noinit` promises memory that survives a reset, but stage two keeps
+     reset-retained state only in `.rtc_fast.persistent`; any other RAM is
+     re-initialized on every boot. Reject the promise instead of zeroing it. */
+  .noinit.unsupported (NOLOAD) :
+  {
+    *(.noinit .noinit.*);
+    *(.uninit .uninit.*);
+  } > RTC_FAST
+
   .rtc_fast.bss (NOLOAD) :
   {
     . = ALIGN(4);
@@ -228,7 +237,6 @@ SECTIONS
     __runtime_explicit_psram_bss_end = ABSOLUTE(.);
     *(.sbss .sbss.*);
     *(.bss .bss.*);
-    *(.noinit .noinit.*);
     *(COMMON);
     . = ALIGN(16);
     __runtime_data_bss_end = ABSOLUTE(.);
@@ -265,6 +273,13 @@ ASSERT(__runtime_payload_end <= ORIGIN(RUNTIME_CODE) + LENGTH(RUNTIME_CODE),
        "runtime initialized payload does not fit selected code region");
 ASSERT(SIZEOF(.rtc_fast.unsupported) == 0,
        "runtime RTC-fast code/data requires an explicit bootstrap copy contract");
+ASSERT(SIZEOF(.noinit.unsupported) == 0,
+       "stage two retains state across a reset only in .rtc_fast.persistent");
+/* Stage two's entry does not clear RTC-fast BSS (the bootloader and ROM may
+   leave anything there); zero-initialized RTC-fast state needs that clearing
+   first. */
+ASSERT(SIZEOF(.rtc_fast.bss) == 0,
+       "runtime entry does not zero .rtc_fast.bss");
 /* ESP-IDF keeps the tail of the ESP32-S31 LP RAM as lp_reserved_seg:
  * RESERVE_RTC_MEM = the RTC timer data (RTC_TIMER_RESERVE_RTC, 24 bytes)
  * + the bootloader's retained data (ESP_BOOTLOADER_RESERVE_RTC)

@@ -26,3 +26,17 @@ incompatible header change.
 The crate belongs to the root workspace so host tools and tests build it; the
 platform workspace excludes it and consumes it by path. Run its tests with
 `cargo test -p oer-esp32s31-platform-layout`.
+
+## Layout seed
+
+Code that runs from cached external memory is sensitive to where the linker
+happens to place each function: an unrelated dependency change can re-sort
+them and move a throughput figure by tens of percent. Setting
+`OER_LAYOUT_SEED` to a nonzero decimal `u32` while building a runtime image
+makes the linker shuffle the ordinary `.text.*` and `.rodata.*` input sections
+with that seed. The same seed reproduces the same image; only the binary is
+relinked. The entry, trap and instruction-stream sections and the explicitly
+placed ISR, hot and critical sections keep their placement. A performance
+comparison measures several seeds of the same source instead of one
+accidental placement. Zero is rejected, because the linker would read it as a
+random seed that no build record could reproduce.

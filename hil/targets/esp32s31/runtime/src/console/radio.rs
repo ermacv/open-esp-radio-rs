@@ -320,7 +320,7 @@ pub async fn complete_session(
     tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     rx_zero_copy: Option<oer_hil_protocol::RxZeroCopyEvidence>,
-    passed: bool,
+    verdict: oer_hil_protocol::SessionVerdict,
 ) {
     let evidence = TransportEvidence::from_flows(flow_evidence);
     SESSION_RESULTS
@@ -332,7 +332,7 @@ pub async fn complete_session(
             tx_timing,
             rx_delivery,
             rx_zero_copy,
-            passed,
+            verdict,
         })
         .await;
 }

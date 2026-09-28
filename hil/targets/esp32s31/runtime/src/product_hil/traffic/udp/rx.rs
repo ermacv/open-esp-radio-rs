@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use core::sync::atomic::Ordering;
+use oer_hil_protocol::{SessionFailure, SessionVerdict};
 
 use crate::product_hil::network::sockets::{Stack, UdpRxStorage, new_udp, recv_from_with};
 use embassy_futures::{
@@ -507,7 +508,19 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         log_open_radio_core0_rx_service_histogram(&core0_rx_service_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
-        let passed = datagrams != 0 && terminal_seen && receive_errors == 0;
+        // The first check that failed, in the order the verdict evaluates.
+        let verdict = if datagrams == 0 {
+            SessionVerdict::Failed(SessionFailure::NoDatagrams)
+        } else if !terminal_seen {
+            SessionVerdict::Failed(SessionFailure::NoTerminal {
+                received: u32::try_from(datagrams).unwrap_or(u32::MAX),
+                highest_sequence: sequence.highest,
+            })
+        } else if receive_errors != 0 {
+            SessionVerdict::Failed(SessionFailure::ReceiveErrors(receive_errors))
+        } else {
+            SessionVerdict::Passed
+        };
         let radio = crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION.then_some(RadioEvidence {
             rx: Some(RxRadioEvidence {
                 phy_format: u8::try_from(rx_qualification::LAST_FORMAT.load(Ordering::Relaxed))
@@ -588,7 +601,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 None,
                 rx_delivery,
                 zero_copy,
-                passed,
+                verdict,
             ),
         )
         .await;

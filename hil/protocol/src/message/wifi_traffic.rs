@@ -713,9 +713,6 @@ pub enum SessionFailure {
         overflows: u32,
         tx_dropped: u32,
     },
-    /// The workload failed without naming its check; to be replaced by the
-    /// workloads' own reasons.
-    Unreported,
 }
 
 impl core::fmt::Display for SessionFailure {
@@ -759,7 +756,6 @@ impl core::fmt::Display for SessionFailure {
                 "control link errors (COBS {cobs_errors}, checksum {checksum_errors}, decode \
                  {decode_errors}, overflows {overflows}, dropped {tx_dropped})"
             ),
-            Self::Unreported => f.write_str("the workload did not report which check failed"),
         }
     }
 }

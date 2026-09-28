@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use oer_hil_protocol::SessionVerdict;
 use oer_hil_protocol::{
     Direction, FlowTransportEvidence, RadioEvidence, RxDeliveryEvidence, RxZeroCopyEvidence,
     SESSION_FLOW_CAPACITY, TxAggregateTimingEvidence,
@@ -30,7 +31,7 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     tx_timing: Option<TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     rx_zero_copy: Option<RxZeroCopyEvidence>,
-    passed: bool,
+    verdict: SessionVerdict,
 }
 
 impl OpenRadioBidirectionalResult {
@@ -42,7 +43,7 @@ impl OpenRadioBidirectionalResult {
         tx_timing: Option<TxAggregateTimingEvidence>,
         rx_delivery: Option<RxDeliveryEvidence>,
         rx_zero_copy: Option<RxZeroCopyEvidence>,
-        passed: bool,
+        verdict: SessionVerdict,
     ) -> Self {
         Self {
             session_id,
@@ -52,7 +53,7 @@ impl OpenRadioBidirectionalResult {
             tx_timing,
             rx_delivery,
             rx_zero_copy,
-            passed,
+            verdict,
         }
     }
 }
@@ -89,11 +90,15 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                 tx_sessions.send(session).await;
                 let first = results.receive().await;
                 let second = results.receive().await;
-                let valid_pair = first.session_id == session.session_id
-                    && second.session_id == session.session_id
-                    && first.direction != second.direction;
-                let (flow_evidence, valid_flows) =
-                    merge_flow_evidence(first.flow_evidence, second.flow_evidence);
+                // This coordinator hands each direction its one session and
+                // collects both results before the next session starts.
+                assert!(
+                    first.session_id == session.session_id
+                        && second.session_id == session.session_id
+                        && first.direction != second.direction,
+                    "bidirectional results belong to the coordinated session",
+                );
+                let flow_evidence = merge_flow_evidence(first.flow_evidence, second.flow_evidence);
                 complete_session(
                     session.session_id,
                     flow_evidence,
@@ -105,7 +110,10 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                         second.rx_delivery
                     },
                     first.rx_zero_copy.or(second.rx_zero_copy),
-                    valid_pair && valid_flows && first.passed && second.passed,
+                    match first.verdict {
+                        SessionVerdict::Passed => second.verdict,
+                        failed => failed,
+                    },
                 )
                 .await;
                 super::session_evidence_published();
@@ -119,19 +127,18 @@ async fn complete_single_direction(
     expected_direction: OpenRadioBidirectionalDirection,
     result: OpenRadioBidirectionalResult,
 ) {
-    let valid = result.session_id == session_id && result.direction == expected_direction;
-    let mut flow_evidence = result.flow_evidence;
-    if !valid && let Some(flow) = flow_evidence.iter_mut().flatten().next() {
-        flow.transport_errors = flow.transport_errors.saturating_add(1);
-    }
+    assert!(
+        result.session_id == session_id && result.direction == expected_direction,
+        "a single-direction result belongs to the coordinated session",
+    );
     complete_session(
         session_id,
-        flow_evidence,
+        result.flow_evidence,
         result.radio,
         result.tx_timing,
         result.rx_delivery,
         result.rx_zero_copy,
-        valid && result.passed,
+        result.verdict,
     )
     .await;
     super::session_evidence_published();
@@ -140,9 +147,8 @@ async fn complete_single_direction(
 fn merge_flow_evidence(
     first: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     second: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
-) -> ([Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY], bool) {
-    let mut valid = true;
-    let merged = core::array::from_fn(|index| match (first[index], second[index]) {
+) -> [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY] {
+    core::array::from_fn(|index| match (first[index], second[index]) {
         (Some(first), Some(second)) if first.flow_id == second.flow_id => {
             Some(FlowTransportEvidence {
                 rx_maximum_silence_micros: first
@@ -160,12 +166,8 @@ fn merge_flow_evidence(
             })
         }
         (None, None) => None,
-        _ => {
-            valid = false;
-            None
-        }
-    });
-    (merged, valid)
+        _ => panic!("both directions of one session report the same flows"),
+    })
 }
 
 pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(

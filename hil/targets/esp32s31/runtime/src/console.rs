@@ -493,7 +493,7 @@ struct SessionResult {
     tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     rx_zero_copy: Option<oer_hil_protocol::RxZeroCopyEvidence>,
-    passed: bool,
+    verdict: SessionVerdict,
 }
 
 /// Frozen before publication. Replaying a result must not sample live
@@ -2761,7 +2761,7 @@ async fn publish_result(retained: RetainedSessionResult, request_id: u32) {
         request_id,
         Event::Finished(Finished {
             summary: ResultSummary {
-                verdict: session_verdict(result.passed, &link),
+                verdict: session_verdict(result.verdict, &link),
                 evidence_records,
             },
             evidence_crc32c: checksum,
@@ -2771,9 +2771,9 @@ async fn publish_result(retained: RetainedSessionResult, request_id: u32) {
 }
 
 /// The session's verdict: the workload's own, then the control link's.
-fn session_verdict(workload_passed: bool, link: &LinkHealth) -> SessionVerdict {
-    if !workload_passed {
-        return SessionVerdict::Failed(SessionFailure::Unreported);
+fn session_verdict(workload: SessionVerdict, link: &LinkHealth) -> SessionVerdict {
+    if let SessionVerdict::Failed(_) = workload {
+        return workload;
     }
     if link.rx_cobs_errors != 0
         || link.rx_checksum_errors != 0

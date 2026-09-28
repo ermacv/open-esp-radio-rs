@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use crate::product_hil::network::sockets::{Stack, accept, listen, new_tcp};
+use oer_hil_protocol::{SessionFailure, SessionVerdict};
 use oer_hil_target_core::traffic::connection;
 
 use embassy_futures::join::join;
@@ -257,14 +258,36 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             .errors
             .saturating_add(tx.errors)
             .saturating_add(health_errors);
-        let passed = ownership_valid
-            && connected
-            && transport_errors == 0
-            && match session.config.direction {
-                HilDirection::Rx => rx.units == 1 && rx.pattern_ok,
-                HilDirection::Tx => tx.units == 1,
-                HilDirection::Bidirectional => rx.units == 1 && tx.units == 1 && rx.pattern_ok,
-            };
+        let (units_complete, pattern_checked) = match session.config.direction {
+            HilDirection::Rx => (rx.units == 1, true),
+            HilDirection::Tx => (tx.units == 1, false),
+            HilDirection::Bidirectional => (rx.units == 1 && tx.units == 1, true),
+        };
+        // The first check that failed, in the order the verdict evaluates.
+        let verdict = if !ownership_valid {
+            SessionVerdict::Failed(SessionFailure::OwnershipInvalid)
+        } else if !connected {
+            SessionVerdict::Failed(SessionFailure::NotConnected)
+        } else if rx.errors != 0 {
+            SessionVerdict::Failed(SessionFailure::ReceiveErrors(rx.errors))
+        } else if tx.errors != 0 {
+            SessionVerdict::Failed(SessionFailure::TransmitErrors(tx.errors))
+        } else if health_errors != 0 {
+            SessionVerdict::Failed(SessionFailure::Health {
+                buffer_full: u32::from(hardware_delta.buffer_full),
+                fifo_overflow: u32::from(hardware_delta.fifo_overflow),
+                queue_dropped,
+            })
+        } else if !units_complete {
+            SessionVerdict::Failed(SessionFailure::Incomplete {
+                rx_units: u32::try_from(rx.units).unwrap_or(u32::MAX),
+                tx_units: u32::try_from(tx.units).unwrap_or(u32::MAX),
+            })
+        } else if pattern_checked && !rx.pattern_ok {
+            SessionVerdict::Failed(SessionFailure::PatternMismatch)
+        } else {
+            SessionVerdict::Passed
+        };
         runtime_log(format_args!(
             "OTCP dir={:?} rb={} tb={} ru={} tu={} u={} e={} bf={} fo={} enq={} drop={} eof={} pat={}",
             session.config.direction,
@@ -325,7 +348,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             aggregate_evidence.map(|(_, timing)| timing),
             None,
             None,
-            passed,
+            verdict,
         )
         .await;
         super::session_evidence_published();

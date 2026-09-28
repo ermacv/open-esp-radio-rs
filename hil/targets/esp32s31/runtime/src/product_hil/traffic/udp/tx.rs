@@ -17,6 +17,7 @@ use oer_hil_protocol::{
     FlowTransportEvidence, SESSION_FLOW_CAPACITY, ServiceInfo, SessionConfig, SessionReady,
     Transport as HilTransport, TransportEvidence,
 };
+use oer_hil_protocol::{SessionFailure, SessionVerdict};
 
 use crate::{
     console::{publish_event_reliably, runtime_log},
@@ -562,7 +563,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 aggregate_evidence.map(|(_, timing)| timing),
                 None,
                 None,
-                send_errors == 0,
+                if send_errors == 0 {
+                    SessionVerdict::Passed
+                } else {
+                    SessionVerdict::Failed(SessionFailure::TransmitErrors(send_errors))
+                },
             ),
         )
         .await;

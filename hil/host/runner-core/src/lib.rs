@@ -6,7 +6,6 @@
 //! depend on this crate; the `oer-hil-runner` binary composes them.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
-pub mod archive;
 pub mod campaign;
 pub mod context;
 pub mod device;

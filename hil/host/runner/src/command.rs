@@ -75,7 +75,6 @@ pub(crate) fn run() -> Result<()> {
             )?;
             hil_bluetooth::fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms)
         }
-        CliCommand::Archive { command } => hil_core::archive::run(&root, command),
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::Check { scenario: id },
         } => {
@@ -279,17 +278,12 @@ pub(crate) fn run() -> Result<()> {
             let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
             device::status(&root, &lab)
         }
-        CliCommand::Report { command } => match command {
-            ReportCommand::Rebuild { target } => {
-                let completion = hil_core::evidence::reporting::history::rebuild(&root, &target)?;
-                emit_json(&completion, false)
-            }
-            ReportCommand::Verify { run_id, target } => {
-                let completion =
-                    hil_core::evidence::verify::verify(&root, &target, run_id.as_deref())?;
-                emit_json(&completion, false)
-            }
-        },
+        CliCommand::Report {
+            command: ReportCommand::Verify { run_id, target },
+        } => {
+            let completion = hil_core::evidence::verify::verify(&root, &target, run_id.as_deref())?;
+            emit_json(&completion, false)
+        }
         CliCommand::Run {
             scenarios,
             source_include,

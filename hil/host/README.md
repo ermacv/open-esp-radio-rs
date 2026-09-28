@@ -861,15 +861,11 @@ lifecycle. Fixture cleanup and recovery remain with their existing owners.
 
 ## Inspect evidence
 
-The target-level `history.json` and `history.html` are deterministic derived
-views over those bundles. Independently sealed attempts contribute observations
-and measurements while a campaign is running or interrupted. When an attempts
-directory exists it supplies the completion boundaries; the final suite is not
-counted a second time. Run totals still describe enclosing invocations. Trends
-remain scenario aggregates, not a proof of comparable firmware/fixture conditions.
-Rebuild them at any time with
-`cargo hil report rebuild`; no DUT or private lab configuration is required.
-Verify the structure and content digests of one bundle with
+`cargo hil runs history <scenario>` reads a scenario's outcomes and
+measurements straight from the bundles in the store and starts with its pass
+rate and how many of its newest runs in a row did not pass; there is no
+derived history file to rebuild. Trends are scenario aggregates, not a proof
+of comparable firmware or fixture conditions. Verify the structure and content digests of one bundle with
 `cargo hil report verify <run-id>`, or omit the ID to verify all bundles. This
 also runs without a DUT or private lab configuration.
 

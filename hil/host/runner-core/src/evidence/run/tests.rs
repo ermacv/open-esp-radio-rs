@@ -613,13 +613,6 @@ fn finish_writes_all_views_and_completes_manifest() {
     assert!(completion.junit_report.is_file());
     assert!(completion.html_report.is_file());
     assert!(completion.integrity_report.is_file());
-    assert!(completion.history_report.as_ref().unwrap().is_file());
-    assert!(completion.history_html.as_ref().unwrap().is_file());
-    assert!(completion.history_failure.is_none());
-    let history: crate::evidence::reporting::history::HistoryReport =
-        serde_json::from_slice(&fs::read(completion.history_report.as_ref().unwrap()).unwrap())
-            .unwrap();
-    assert_eq!(history.counts.runs, 1);
     let final_manifest: RunManifest =
         serde_json::from_slice(&fs::read(completion.run_directory.join("manifest.json")).unwrap())
             .unwrap();
@@ -700,47 +693,6 @@ fn seal_failure_rolls_the_manifest_back_to_interrupted() {
 }
 
 #[test]
-fn an_unrelated_unreadable_bundle_cannot_revoke_a_sealed_run() {
-    for failed in [false, true] {
-        let root = temporary_directory("history-failure");
-        let session = integrated_session(&root);
-        let unrelated = root.join("runs/unrelated-incomplete-bundle");
-        fs::create_dir_all(&unrelated).unwrap();
-        let scenarios = if failed {
-            failed_suite().scenarios
-        } else {
-            Vec::new()
-        };
-        let (suite, completion) = session.finish(scenarios).unwrap();
-        assert_eq!(
-            suite.outcome,
-            if failed {
-                Outcome::Failed
-            } else {
-                Outcome::Passed
-            }
-        );
-        assert_eq!(suite.outcome, completion.outcome);
-        // An unreadable bundle beside it is left out of the history.
-        assert!(completion.history_failure.is_none());
-        let history: crate::evidence::reporting::history::HistoryReport =
-            serde_json::from_slice(&fs::read(completion.history_report.unwrap()).unwrap()).unwrap();
-        assert_eq!(history.runs.len(), 1);
-        assert!(history.skipped[0].reason.contains("no manifest"));
-        let manifest: RunManifest = serde_json::from_slice(
-            &fs::read(completion.run_directory.join("manifest.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(manifest.state, RunState::Completed);
-        let sealed = fs::read(&completion.integrity_report).unwrap();
-        fs::remove_dir(unrelated).unwrap();
-        crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
-        assert_eq!(fs::read(completion.integrity_report).unwrap(), sealed);
-        fs::remove_dir_all(root).unwrap();
-    }
-}
-
-#[test]
 fn broken_or_interrupted_repetitions_can_retain_failed_measurements() {
     for outcome in [Outcome::Broken, Outcome::Interrupted] {
         let mut suite = failed_suite();
@@ -778,72 +730,6 @@ fn provenance_records_the_network_implementation_and_its_feature() {
             .split(',')
             .any(|feature| feature == network.feature())
     );
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn history_counts_sealed_attempt_once_before_and_after_campaign_completion() {
-    let root = temporary_directory("sealed-history");
-    let mut session = integrated_session(&root);
-    let scenario = crate::scenario::test_family::scenario(include_str!(
-        "../../../../../scenarios/system/boot-smoke.toml"
-    ));
-    let result = ScenarioResult::from_repetitions(
-        scenario.id().to_owned(),
-        scenario.image(),
-        1,
-        vec![RepetitionResult {
-            schema: RUN_SCHEMA,
-            repetition: 1,
-            outcome: Outcome::Passed,
-            started_unix_millis: 1,
-            duration_millis: 1,
-            artifact_directory: PathBuf::from("scenarios/boot-smoke/repetition-001"),
-            attachments: vec![],
-            measurements: vec![Measurement::observed(
-                "boot.cycles",
-                12,
-                MeasurementUnit::Count,
-            )],
-            failure: None,
-        }],
-    );
-    session.seal_scenario(&scenario, &result).unwrap();
-    let read = || {
-        crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
-        serde_json::from_slice::<crate::evidence::reporting::history::HistoryReport>(
-            &fs::read(root.join("history.json")).unwrap(),
-        )
-        .unwrap()
-    };
-    let history = read();
-    assert_eq!(history.counts.running, 1);
-    assert!(history.source_watermark_unix_millis > history.runs[0].started_unix_millis);
-    assert_eq!(history.scenarios[0].observations, 1);
-    assert_eq!(history.measurements[0].observations, 1);
-    let mut interrupted = session.manifest.clone();
-    interrupted.state = RunState::Interrupted;
-    interrupted.finished_unix_millis = Some(2);
-    interrupted.duration_millis = Some(1);
-    atomic_json(&session.directory.join("manifest.json"), &interrupted).unwrap();
-    assert_eq!(read().scenarios[0].observations, 1);
-    let run = session.directory.clone();
-    session.finish(vec![result]).unwrap();
-    let history = read();
-    assert_eq!(history.counts.completed, 1);
-    assert_eq!(history.scenarios[0].observations, 1);
-    assert_eq!(history.measurements[0].observations, 1);
-    fs::write(run.join("scenarios/boot-smoke/result.json"), b"{}").unwrap();
-    // An unreadable run, such as one of another runner version in the shared
-    // store, is named and left out rather than failing the whole view.
-    let completion = crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
-    assert_eq!((completion.runs, completion.skipped), (0, 1));
-    let history = read();
-    assert_eq!(
-        history.skipped[0].run_directory,
-        run.strip_prefix(&root).unwrap()
-    );
-    assert!(history.runs.is_empty());
     fs::remove_dir_all(root).unwrap();
 }
 

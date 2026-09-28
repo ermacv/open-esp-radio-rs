@@ -3051,7 +3051,6 @@ version = "0.1.0"
 dependencies = [
  "addr2line",
  "clap",
- "flate2",
  "fs2",
  "libc",
  "mio",

@@ -881,6 +881,30 @@ pub fn history(runs: &[Run], scenario: &str, filter: Option<&str>) -> String {
     text
 }
 
+/// How stable `scenario` is over `runs`: its pass rate and how many of its
+/// newest runs in a row did not pass.
+pub fn stability(runs: &[Run], scenario: &str) -> String {
+    let outcomes = runs
+        .iter()
+        .filter_map(|run| run.scenarios.iter().find(|s| s.id == scenario))
+        .map(|result| result.outcome)
+        .collect::<Vec<_>>();
+    let passed = outcomes
+        .iter()
+        .filter(|outcome| outcome.is_passed())
+        .count();
+    let streak = outcomes
+        .iter()
+        .rev()
+        .take_while(|outcome| !outcome.is_passed())
+        .count();
+    format!(
+        "{scenario}: {passed} of {} runs passed ({:.0}%), {streak} newest in a row did not pass\n",
+        outcomes.len(),
+        100.0 * passed as f64 / outcomes.len().max(1) as f64
+    )
+}
+
 /// Runs pinned by owners, with their reasons.
 pub fn pins(store: &Path) -> BTreeMap<String, Value> {
     read(&store.join("pins.json"))
@@ -1251,6 +1275,10 @@ mod tests {
         assert!(compared.contains("-50.0%"), "{compared}");
         let history = history(&runs, "s", Some("rx"));
         assert_eq!(history.lines().filter(|l| l.starts_with('r')).count(), 2);
+        assert_eq!(
+            stability(&runs, "s"),
+            "s: 1 of 2 runs passed (50%), 1 newest in a row did not pass\n"
+        );
     }
 
     #[test]

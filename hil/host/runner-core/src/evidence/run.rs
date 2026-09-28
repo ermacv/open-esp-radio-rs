@@ -20,10 +20,8 @@ mod archive;
 mod attempt;
 pub use attempt::completed_attempts;
 mod integrity;
-mod lock;
-mod snapshot;
-pub use lock::IndexGuard;
 mod model;
+mod snapshot;
 pub mod validation;
 use crate::evidence::reporting::render;
 
@@ -99,7 +97,6 @@ impl RunSession {
         let target_directory = root.join("target/hil").join(target);
         let runs = target_directory.join("runs");
         fs::create_dir_all(&runs)?;
-        let _publication = IndexGuard::acquire(&target_directory)?;
         let directory = create_unique_directory(&runs, &run_id)?;
         let mut unpublished_directory = UnpublishedRunDirectory::new(directory.clone());
         let run_id = directory
@@ -267,23 +264,6 @@ impl RunSession {
         atomic_json(&self.directory.join("manifest.json"), &self.manifest)?;
         let integrity_report = write_integrity_index(&self.directory, &self.manifest.run_id)?;
         self.finished = true;
-        // The sealed run is authoritative. A derived view of other bundles
-        // cannot revoke its completion or suppress its machine-readable result.
-        let history = crate::evidence::reporting::history::rebuild_at(
-            &self.target_directory,
-            &self.manifest.target,
-        );
-        let (history_report, history_html, history_failure) = match history {
-            Ok(history) => (
-                Some(history.history_report),
-                Some(history.html_report),
-                None,
-            ),
-            Err(error) => {
-                eprintln!("run sealed; history rebuild failed: {error}");
-                (None, None, Some(error.to_string()))
-            }
-        };
         let completion = CompletionReport {
             schema: RUN_SCHEMA,
             run_id: self.manifest.run_id.clone(),
@@ -293,9 +273,6 @@ impl RunSession {
             junit_report: self.directory.join("junit.xml"),
             html_report: self.directory.join("report.html"),
             integrity_report,
-            history_report,
-            history_html,
-            history_failure,
         };
         Ok((suite, completion))
     }

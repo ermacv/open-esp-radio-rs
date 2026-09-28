@@ -406,7 +406,4 @@ pub struct CompletionReport {
     pub junit_report: PathBuf,
     pub html_report: PathBuf,
     pub integrity_report: PathBuf,
-    pub history_report: Option<PathBuf>,
-    pub history_html: Option<PathBuf>,
-    pub history_failure: Option<String>,
 }

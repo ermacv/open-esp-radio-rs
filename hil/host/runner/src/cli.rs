@@ -18,11 +18,6 @@ pub(crate) struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum CliCommand {
-    /// Preserve and retrieve verified HIL evidence without accessing hardware.
-    Archive {
-        #[command(subcommand)]
-        command: hil_core::archive::Command,
-    },
     /// Check the selected scenarios' tools and fixture, without resetting hardware.
     Doctor(Selection),
     /// Apply and verify a scenario's fixture, then restore it. Never accesses the DUT.
@@ -82,7 +77,7 @@ pub(crate) enum CliCommand {
         #[command(subcommand)]
         command: DeviceCommand,
     },
-    /// Rebuild derived views from immutable run bundles.
+    /// Check sealed run bundles offline.
     Report {
         #[command(subcommand)]
         command: ReportCommand,
@@ -294,12 +289,6 @@ pub(crate) enum DeviceCommand {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum ReportCommand {
-    /// Rebuild history.json and history.html without attached hardware.
-    Rebuild {
-        /// Chip whose runs to read.
-        #[arg(long, default_value = hil_core::lab::config::DEFAULT_TARGET)]
-        target: String,
-    },
     /// Verify one run bundle, or every bundle when RUN_ID is omitted.
     Verify {
         run_id: Option<String>,

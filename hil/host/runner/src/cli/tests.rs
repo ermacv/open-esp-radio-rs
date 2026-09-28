@@ -442,30 +442,6 @@ fn qualification_planning_has_an_explicit_scope_and_excludes_manual_selectors() 
 }
 
 #[test]
-fn archive_cli_does_not_require_lab_or_network_for_offline_commands() {
-    for args in [
-        vec![
-            "hil",
-            "archive",
-            "export",
-            "comparison",
-            "--run",
-            "run-1",
-            "--run",
-            "run-2",
-        ],
-        vec!["hil", "archive", "verify", "comparison.tar.gz"],
-        vec!["hil", "archive", "import", "comparison.tar.gz"],
-    ] {
-        Cli::try_parse_from(args).unwrap();
-    }
-    // The private GitHub transport is gone; archives move offline only.
-    for command in ["publish", "fetch"] {
-        assert!(Cli::try_parse_from(["hil", "archive", command, "x", "--repo", "o/r"]).is_err());
-    }
-}
-
-#[test]
 fn removed_network_implementations_are_rejected() {
     for removed in ["upstream-xarxa", "patched-xarxa", "upstream-smoltcp"] {
         assert!(

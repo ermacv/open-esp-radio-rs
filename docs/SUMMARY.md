@@ -29,5 +29,4 @@
 # Evidence
 
 - [Verification and qualification contract](verification-and-qualification.md)
-- [Durable HIL evidence](hil-archives.md)
 - [HIL artifact and build provenance](hil-reproducibility.md)

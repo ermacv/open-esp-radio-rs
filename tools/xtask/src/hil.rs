@@ -1177,7 +1177,8 @@ fn runs(
                 .collect::<Vec<_>>();
             let start = containing.len().saturating_sub(limit);
             print!(
-                "{}",
+                "{}{}",
+                hil_runs::stability(&containing, &scenario),
                 hil_runs::history(&containing[start..], &scenario, measurement.as_deref())
             );
         }

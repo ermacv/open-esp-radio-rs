@@ -81,7 +81,7 @@ claim an earlier physical action:
 | 4. Flash | `device` gives `espflash` that archived application path together with the recorded bootstrap/partition images. The workload never flashes a different build-tree copy. |
 | 5. Repetitions | `fixture::prepared` owns peer/host preparation; `session` owns serial reset, raw `uart.bin`, decoded protocol and target-health state; a workload owns its child processes and typed observations. Primary failures remain distinct from infrastructure failures. |
 | 6. Cleanup and attachment indexing | Each repetition enters a cleanup scope before fixture preparation. Cleanup/restoration finishes before attachments and `result.json` are collected. `cleanup.json` preserves every attempted restoration and its failure independently of the workload result. |
-| 7. Suite and seal | After all scenario results, `RunSession::finish` writes `suite.json`, JUnit, HTML and the final event/manifest, then writes `integrity.json`. Only after this seal does it rebuild disposable history views. |
+| 7. Suite and seal | After all scenario results, `RunSession::finish` writes `suite.json`, JUnit, HTML and the final event/manifest, then writes `integrity.json`. |
 | 8. Independent evaluation | Qualification reads the sealed bundle through its own reader and applies target requirements, exact commit/clean-source policy and repetition rules. Runner `PASS`, HTML and a valid hash inventory are insufficient on their own. |
 
 SIGINT/SIGTERM wakes owned protocol and process waits. Ordinary unwinding
@@ -115,10 +115,7 @@ cargo hil image verify-rebuild <image-class>
 cargo hil image verify-rebuild <image-class> --trim-paths
 cargo hil image replay <run-id> <image-class>
 cargo hil device status
-cargo hil report rebuild
 cargo hil report verify [run-id]
-cargo hil archive export <archive-id> --run <run-id>
-cargo hil archive verify|import <archive.tar.gz>
 cargo hil run <scenario-id>
 cargo hil run <scenario-id> --firmware-from <run-id>
 cargo hil run-all --tag qualification   # or --all for the whole catalog
@@ -165,9 +162,6 @@ recorded after joining the receivers and collecting/acknowledging available
 terminal evidence, so they do not discard the other direction's delivery.
 Single-cycle measurements do not replace the catalog's repeated AP lifecycle
 qualification scenarios.
-
-Durable evidence packages are described in
-[HIL archives](../../docs/hil-archives.md). Archive commands do not access the DUT.
 
 `plan [scenario] [--tag ...]` resolves requirements from the catalog offline;
 it does not read the lab configuration, inspect tools or contact hardware. `doctor`
@@ -317,8 +311,7 @@ feature. Broken or interrupted repetitions can retain failed measurements;
 a passed repetition cannot. Rendering never parses Markdown to decide an
 outcome. Host ICMP and TCP measurements are recorded before UART finalization,
 so a later link failure does not discard completed host observations.
-The HTML run report groups measurements by repetition in expandable sections;
-the history page filters measurement trends by scenario or metric name.
+The HTML run report groups measurements by repetition in expandable sections.
 
 The context owns the shared capture lifecycle: cancellation check, output-scope
 validation, reset, observation collection and finalization. Bounded control
@@ -424,27 +417,10 @@ Reconnect stores captures per boot. The command emits one completion
 JSON object on stdout; diagnostics, progress and inherited child-process output
 belong on stderr.
 
-After a completed run, the runner deterministically rebuilds
-`target/hil/esp32s31/history.json` and `history.html`. These are disposable
-views, not authoritative state: `cargo hil report rebuild` recreates them from
-the immutable manifests and suites without hardware access. The history view
-shows run/cell/DUT provenance plus per-scenario pass rate, mixed-outcome
-flakiness and the current consecutive non-passed count. Measurement series are
-kept separate by scenario, name, unit and threshold contract, and expose
-minimum/latest/maximum values plus failed-verdict counts. A malformed or
-inconsistent run bundle makes rebuilding fail closed.
-
-Publication of a new run directory and history snapshots share a short-lived
-index lock. History writers hold it through snapshot and publication, so a
-slower writer cannot overwrite a newer snapshot. The holder writes its PID
-into the lock file; a runner that finds the lock taken waits up to ten
-minutes (a history rebuild over a large store takes that long), saying after
-a second whom it waits for, instead of failing. Firmware builds and hardware
-workloads run outside that lock. A malformed unrelated bundle still makes
-`report rebuild` fail explicitly. It cannot revoke a completed run: the run's
-completion JSON retains its outcome and artifact paths, sets `history_report`
-and `history_html` to null, and reports `history_failure`. Retrying the derived
-view does not change the sealed bundle.
+A run's directory is created with a unique name and needs no lock shared
+with other runners. The runner keeps no derived view over other runs:
+`cargo hil runs list`, `runs history` and the dashboard read the bundles
+themselves.
 
 `cargo hil report verify [run-id]` performs a read-only offline integrity
 check. With no run ID it checks every bundle. It validates manifest/suite
@@ -490,7 +466,7 @@ scenario IDs and minimum passing repetitions; only a bundle produced from the
 current source composition or admitted by an explicit property/build review
 can satisfy the HIL axis. A verified full snapshot match is sufficient even
 when the checkout is dirty or the commit identity differs. The
-derived history views and Markdown narratives are never proof inputs.
+derived views and Markdown narratives are never proof inputs.
 
 `boot-smoke` intentionally precedes the radio protocol and proves only runtime
 relocation plus one Embassy timer wake. It uses its single fixed PASS record;
@@ -524,9 +500,8 @@ boundaries:
   for its boot evidence and trace, and classifies hangs and unexpected
   resets; `recovery` owns the reset ladder for a target that does not answer
   and decides whether its board is recoverable or quarantined.
-- `evidence` owns sealed run models, archive/integrity/verification and build
-  provenance; `evidence::reporting` renders the bundle's HTML/JUnit and the
-  rebuildable history views. `failure` classifies errors as scenario or
+- `evidence` owns sealed run models, integrity/verification and build
+  provenance; `evidence::reporting` renders the bundle's HTML/JUnit. `failure` classifies errors as scenario or
   infrastructure failures, and `durable` provides atomic files, digests and
   timestamps to every producer.
 

@@ -34,6 +34,9 @@ pub(crate) struct Devices<'m> {
     ports: AdmittedVec<'m, Port>,
     /// Retained apertures as (start, end, model), sorted and disjoint.
     apertures: AdmittedVec<'m, (u32, u64, usize)>,
+    /// `[start, end)` of the last searched range holding no port and no
+    /// aperture; ordinary memory accesses repeat it.
+    gap: std::cell::Cell<(u64, u64)>,
 }
 impl<'m> Devices<'m> {
     pub fn new(memory: &'m WorkingMemory) -> Self {
@@ -42,23 +45,59 @@ impl<'m> Devices<'m> {
             instances: AdmittedVec::new(memory),
             ports: AdmittedVec::new(memory),
             apertures: AdmittedVec::new(memory),
+            gap: std::cell::Cell::new((0, 0)),
         }
+    }
+    /// Whether `[address, end)` lies in the remembered device-free range.
+    fn in_gap(&self, address: u32, end: u64) -> bool {
+        let (low, high) = self.gap.get();
+        low <= u64::from(address) && end <= high
+    }
+    /// Remember the device-free range around `[address, end)`, which starts
+    /// before port `index` and misses every port and aperture.
+    fn remember_gap(&self, index: usize, address: u32, end: u64) {
+        let mut low = index.checked_sub(1).map_or(0, |i| {
+            u64::from(self.ports[i].address) + u64::from(self.ports[i].width)
+        });
+        let mut high = self
+            .ports
+            .get(index)
+            .map_or(1 << u32::BITS, |p| u64::from(p.address));
+        for (start, stop, _) in &*self.apertures {
+            if *stop <= u64::from(address) {
+                low = low.max(*stop);
+            } else if end <= u64::from(*start) {
+                high = high.min(u64::from(*start));
+            } else {
+                return;
+            }
+        }
+        self.gap.set((low, high));
     }
     pub fn overlaps(&self, address: u32, length: u64, c: &mut dyn RunControl) -> Result<bool> {
         c.checkpoint(self.ports.len().max(1).ilog2() as u64 + 1)?;
         let end = u64::from(address) + length;
+        // The same work is charged whether or not the search runs.
+        if self.in_gap(address, end) {
+            c.checkpoint(self.apertures.len() as u64 + 1)?;
+            return Ok(false);
+        }
         let i = self
             .ports
             .partition_point(|p| u64::from(p.address) + u64::from(p.width) <= u64::from(address));
         c.checkpoint(self.apertures.len() as u64 + 1)?;
-        Ok(self
+        let overlaps = self
             .ports
             .get(i)
             .is_some_and(|p| u64::from(p.address) < end)
             || self
                 .apertures
                 .iter()
-                .any(|(start, stop, _)| u64::from(*start) < end && u64::from(address) < *stop))
+                .any(|(start, stop, _)| u64::from(*start) < end && u64::from(address) < *stop);
+        if !overlaps {
+            self.remember_gap(i, address, end);
+        }
+        Ok(overlaps)
     }
     pub fn install(
         &mut self,
@@ -102,6 +141,7 @@ impl<'m> Devices<'m> {
         Ok(())
     }
     fn rebuild(&mut self, c: &mut dyn RunControl) -> Result<()> {
+        self.gap.set((0, 0));
         while self.ports.pop().is_some() {}
         while self.apertures.pop().is_some() {}
         for (model, instance) in self.instances.iter().enumerate() {
@@ -195,6 +235,11 @@ impl<'m> Devices<'m> {
     }
     fn port(&self, address: u32, width: u8, c: &mut dyn RunControl) -> Result<Option<Port>> {
         c.checkpoint(self.ports.len().max(1).ilog2() as u64 + 1)?;
+        let end = u64::from(address) + u64::from(width);
+        if self.in_gap(address, end) {
+            c.checkpoint(self.apertures.len() as u64 + 1)?;
+            return Ok(None);
+        }
         let index = self
             .ports
             .partition_point(|p| u64::from(p.address) + u64::from(p.width) <= u64::from(address));
@@ -202,24 +247,26 @@ impl<'m> Devices<'m> {
             .ports
             .get(index)
             .copied()
-            .filter(|p| u64::from(p.address) < u64::from(address) + u64::from(width));
+            .filter(|p| u64::from(p.address) < end);
         if exact.is_some() {
             return Ok(exact);
         }
         // Exact ports take precedence; an aligned remainder falls to an aperture.
         c.checkpoint(self.apertures.len() as u64 + 1)?;
-        Ok(self
+        let aperture = self
             .apertures
             .iter()
-            .find(|(start, end, _)| {
-                *start <= address && u64::from(address) + u64::from(width) <= *end
-            })
+            .find(|(start, stop, _)| *start <= address && end <= *stop)
             .map(|(_, _, model)| Port {
                 address,
                 width,
                 model: *model,
                 slot: APERTURE_SLOT,
-            }))
+            });
+        if aperture.is_none() {
+            self.remember_gap(index, address, end);
+        }
+        Ok(aperture)
     }
     /// Outer None means no device claims these bytes; inner None is a model gap.
     pub fn read(
@@ -718,6 +765,55 @@ mod tests {
                 values: vec![7; MAX_DEVICE_VALUES],
             },
         }
+    }
+    #[test]
+    fn accesses_outside_every_port_charge_the_same_work_as_a_search() {
+        struct Units(u64);
+        impl RunControl for Units {
+            fn checkpoint(&mut self, units: u64) -> Result<()> {
+                self.0 += units;
+                Ok(())
+            }
+        }
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let mut devices = Devices::new(&memory);
+        let mut c = || Ok(());
+        devices
+            .install(
+                &[declaration(RegionLifetime::Session)],
+                &mut c,
+                &mut |_, _, _| Ok(()),
+            )
+            .unwrap();
+        let probe = |devices: &Devices, address: u32| {
+            let mut units = Units(0);
+            let hit = devices.overlaps(address, 4, &mut units).unwrap();
+            (hit, units.0)
+        };
+        let (outside, outside_units) = probe(&devices, 0x100);
+        let (straddling, straddling_units) = probe(&devices, 0x1002);
+        let (port, port_units) = probe(&devices, 0x1004);
+        assert_eq!((outside, straddling, port), (false, true, true));
+        assert_eq!(outside_units, port_units);
+        assert_eq!(straddling_units, port_units);
+        let (after, after_units) = probe(&devices, 0x1008);
+        assert!(!after);
+        assert_eq!(after_units, port_units);
+        // The remembered range below the ports answers without a search.
+        assert_eq!(probe(&devices, 0x100), (false, outside_units));
+        assert_eq!(probe(&devices, 0xffc), (false, outside_units));
+        assert_eq!(probe(&devices, 0xffe), (true, port_units));
+        let mut units = Units(0);
+        assert!(devices.port(0x200, 4, &mut units).unwrap().is_none());
+        let searched = units.0;
+        let mut units = Units(0);
+        assert!(devices.port(0x204, 4, &mut units).unwrap().is_none());
+        assert_eq!(units.0, searched);
+        let mut units = Units(0);
+        assert_eq!(
+            devices.port(0x1004, 4, &mut units).unwrap().unwrap().slot,
+            1
+        );
     }
     #[test]
     fn closure_releases_owned_payload_and_state_while_warm_keeps_them() {

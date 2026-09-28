@@ -94,8 +94,11 @@ fn record(ctx: &Context, args: &[&str]) -> Result<()> {
     let (_, receipt) = crate::hil::prepare(ctx)?;
     crate::hil::record_evidence(ctx, &receipt, &runs)?;
     forget(&ctx.root, &runs)?;
+    // The evaluator's HIL-EVIDENCE line counts the shards it wrote; a run
+    // whose observations do not qualify on this checkout writes none.
     println!(
-        "hil: recorded the evidence of {} run(s); commit hil/evidence with the change it qualifies",
+        "hil: the evaluator read {} run(s); commit any hil/evidence changes with the change \
+         they qualify",
         runs.len()
     );
     Ok(())

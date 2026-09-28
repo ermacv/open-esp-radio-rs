@@ -435,9 +435,15 @@ board is on a switchable hub port, so the stand cannot power-cycle one; a
 board neither reset brings back needs a person. The failure then names where core 0 was when the reset hit, from the
 ROM banner's saved program counter symbolized like a hang: stuck in code, or
 idle in its executor. A step that brings it back is journaled as a recovery, `hardware` when
-the port had vanished or the ROM waited for a download. A board no step brings
-back, or with three hardware-level recoveries within an hour, is quarantined:
-the repetition and the run's remaining repetitions end `board-quarantined`,
+the port had vanished or the ROM waited for a download. When the ROM answers
+a reset, booting from flash or waiting for a download, but the firmware does
+not, the failure names a firmware or host fault: the stand can reflash the
+board, so it goes on serving. Only a board whose ROM stays silent after every
+reset path the stand has (EN, then RTS), which no script can bring back to a
+state where firmware can be loaded, is quarantined; frequent recoveries are
+shown as its health, never a quarantine. A cancelled run judges no board. On a
+quarantine the repetition and the run's remaining repetitions end
+`board-quarantined`,
 which is no verdict on the code under test, every request for the board is
 refused with the reason, and the user is notified. What the stand saw stays in
 the repetition's `post-mortem/`, which the quarantine names. After pressing

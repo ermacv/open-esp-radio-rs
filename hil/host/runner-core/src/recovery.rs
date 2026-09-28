@@ -3,14 +3,17 @@
 //! When a failed repetition's target does not answer the post-mortem query,
 //! the runner climbs a ladder: it pulses EN through the board's registered
 //! reset path, or RTS on the chip's own USB port for a board without one, and
-//! asks again; a power cycle through a switchable hub port is
-//! the next step once boards have one. A step that brings the board back is
-//! journaled as a recovery; it counts as hardware-level when the port had
-//! vanished or the ROM was waiting for a download, which firmware cannot
-//! cause. A board no step brings back, or that needed hardware-level recovery
-//! too often, is quarantined: it serves nobody until a person resets or
-//! power-cycles it. What the stand saw is kept in the repetition's
-//! `post-mortem/`, which the quarantine names.
+//! asks again. A step that brings the board back is journaled as a recovery;
+//! it counts as hardware-level when the port had vanished or the ROM was
+//! waiting for a download, which firmware cannot cause.
+//!
+//! A board is quarantined only when no script can bring it back to a state
+//! in which firmware can be loaded: its ROM stays silent after the reset. A
+//! ROM that answers, booting from flash or waiting for a download, means the
+//! stand can reflash the board, however bad its firmware; such a board is
+//! never quarantined, however often it needed recovering. A quarantined board
+//! serves nobody until a person resets or power-cycles it. What the stand saw
+//! is kept in the repetition's `post-mortem/`, which the quarantine names.
 
 use std::{
     path::{Path, PathBuf},
@@ -31,6 +34,13 @@ pub enum Recovery {
         /// Where core 0 was when the reset hit, from the ROM banner.
         core0: Option<String>,
         finding: Box<Finding>,
+    },
+    /// After `step` the ROM answered, but the firmware did not: a firmware
+    /// or host fault. The stand can reflash the board, so it is not
+    /// quarantined.
+    BootedSilent {
+        step: RecoveryStep,
+        reset_line: String,
     },
     /// The board was quarantined for `trigger`.
     Quarantined {
@@ -61,6 +71,10 @@ impl Recovery {
                     .as_deref()
                     .map(|core0| format!("; core 0 was at {core0}"))
                     .unwrap_or_default()
+            ),
+            Self::BootedSilent { step, reset_line } => format!(
+                "the target did not answer; after {step:?} its ROM answered ({reset_line}) \
+                 but the firmware did not: a firmware or host fault, not a board fault"
             ),
             Self::Quarantined { reason, .. } => format!("the board was quarantined: {reason}"),
         }
@@ -95,21 +109,31 @@ pub fn recover(
         .into_iter()
         .find(|device| device.mac == mac)
         .and_then(|device| device.control?.reset);
-    let (step, banner) = match reset {
+    let rts = || {
+        post_mortem::current_port(port, Some(&mac), Duration::from_secs(5))
+            .and_then(|port| rts_reset(&port).ok())
+    };
+    let line_of = |banner: &Option<String>| {
+        banner
+            .as_deref()
+            .and_then(oer_hil_arbiter::control::reset_line)
+            .map(str::to_owned)
+    };
+    let (mut step, mut banner) = match &reset {
         Some(reset) => (
             RecoveryStep::EnReset,
             reset.reset(oer_hil_arbiter::BootMode::Normal).ok(),
         ),
-        None => (
-            RecoveryStep::RtsReset,
-            post_mortem::current_port(port, Some(&mac), Duration::from_secs(5))
-                .and_then(|port| rts_reset(&port).ok()),
-        ),
+        None => (RecoveryStep::RtsReset, rts()),
     };
-    let reset_line = banner
-        .as_deref()
-        .and_then(oer_hil_arbiter::control::reset_line)
-        .map(str::to_owned);
+    // Every path is tried before a silent ROM is taken for a lost board.
+    if line_of(&banner).is_none() && reset.is_some() {
+        let retried = rts();
+        if line_of(&retried).is_some() {
+            (step, banner) = (RecoveryStep::RtsReset, retried);
+        }
+    }
+    let reset_line = line_of(&banner);
     let core0 = banner.as_deref().and_then(saved_pc).map(|address| {
         let symbols = elf.and_then(|elf| addr2line::Loader::new(elf).ok());
         post_mortem::symbol(symbols.as_ref(), address)
@@ -127,6 +151,13 @@ pub fn recover(
                  quarantined"
             );
             return None;
+        }
+        // A ROM that answers can be reflashed: only a silent one needs a person.
+        if let Some(line) = reset_line.as_deref().filter(|line| rom_answers(line)) {
+            return Some(Recovery::BootedSilent {
+                step,
+                reset_line: line.to_owned(),
+            });
         }
         return quarantine(
             &arbiter,
@@ -153,23 +184,6 @@ pub fn recover(
             origin: origin.to_owned(),
         },
     );
-    if hardware
-        && arbiter
-            .recent_hardware_recoveries(&mac)
-            .is_ok_and(|count| count >= oer_hil_arbiter::maintenance::FLAKY_RECOVERIES)
-    {
-        return quarantine(
-            &arbiter,
-            &mac,
-            QuarantineTrigger::Flaky,
-            format!(
-                "it needed hardware-level recovery {} times within {} minutes",
-                oer_hil_arbiter::maintenance::FLAKY_RECOVERIES,
-                oer_hil_arbiter::maintenance::FLAKY_WINDOW.as_secs() / 60
-            ),
-            &evidence,
-        );
-    }
     Some(Recovery::Recovered {
         step,
         hardware,
@@ -177,6 +191,12 @@ pub fn recover(
         core0,
         finding: Box::new(finding),
     })
+}
+
+/// Whether a ROM reset line shows a ROM that answers, booting from flash or
+/// waiting for a download: the stand can load firmware into the board.
+fn rom_answers(line: &str) -> bool {
+    line.starts_with("rst:") && line.contains("boot:")
 }
 
 /// Whether an unanswered query after a reset judges the board. A cancelled
@@ -273,6 +293,18 @@ fn console_waits_for_download(output: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_board_whose_rom_stays_silent_is_quarantined() {
+        // A ROM that answers can be reflashed, whatever the firmware does.
+        assert!(rom_answers(
+            "rst:0x17 (CHIP_USB_UART_RESET),boot:0x5f (SPI_FAST_FLASH_BOOT)"
+        ));
+        assert!(rom_answers(
+            "rst:0x1 (POWERON),boot:0x4 (DOWNLOAD(USB/UART0))"
+        ));
+        assert!(!rom_answers("garbled output"));
+    }
 
     #[test]
     fn a_cancelled_run_never_quarantines_its_board() {

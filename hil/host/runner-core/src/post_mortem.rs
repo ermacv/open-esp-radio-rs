@@ -76,7 +76,17 @@ pub fn inspect(
     let capture = SerialCapture::attach(&port, &output.join("post-mortem")).ok()?;
     let started = std::time::Instant::now();
     let answer = loop {
-        match capture.boot_status() {
+        // Attached without a reset, the capture has seen no hello: discovery,
+        // the one command a target answers without its boot identity, names
+        // it first. A target that rebooted has sent its hello already.
+        let status = if capture.latest_boot_id().is_none() {
+            capture
+                .discover(Duration::from_secs(2))
+                .and_then(|_| capture.boot_status())
+        } else {
+            capture.boot_status()
+        };
+        match status {
             Ok(boot) => break Some(boot),
             Err(_) if started.elapsed() < ANSWER_WITHIN => {
                 if oer_process::sleep(Duration::from_millis(500)).is_err() {

@@ -46,7 +46,6 @@ jobs:
       - name: Fetch locked dependencies
         run: |
           cargo fetch --locked
-          cargo fetch --locked --manifest-path crates/composition/esp32s31/embassy/ieee80211/Cargo.toml
       - name: API documentation and doctests
         run: cargo xtask doc
       - name: Markdown links and qualification catalogs
@@ -72,7 +71,6 @@ jobs:
           mkdir -p "$site/api"
           cp -r target/doc "$site/api/host"
           cp -r target/riscv32imafc-unknown-none-elf/doc "$site/api/esp32s31"
-          cp -r crates/composition/esp32s31/embassy/ieee80211/target/riscv32imafc-unknown-none-elf/doc "$site/api/esp32s31-wifi"
       - name: Package site
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

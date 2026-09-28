@@ -34,7 +34,6 @@ jobs:
           for manifest in \
             Cargo.toml \
             tools/blobray/Cargo.toml \
-            crates/composition/esp32s31/embassy/ieee80211/Cargo.toml \
             platform/esp32s31/Cargo.toml \
             hil/targets/esp32s31/Cargo.toml \
             examples/*/Cargo.toml \
@@ -130,7 +129,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            crates/composition/esp32s31/embassy/ieee80211/target
           key: architecture-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: architecture-${{ runner.os }}-
       - name: Fetch every workspace
@@ -157,7 +155,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             hil/targets/esp32s31/target
-            crates/composition/esp32s31/embassy/ieee80211/target
           key: network-profiles-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
           restore-keys: network-profiles-${{ runner.os }}-
       - name: HIL runtime
@@ -166,7 +163,7 @@ jobs:
             --no-default-features --features "open-radio-hil,owned-network,code-psram,profile-psram-data,psram-task-stack"
       - name: Wi-Fi composition
         run: |
-          cargo check --locked --manifest-path crates/composition/esp32s31/embassy/ieee80211/Cargo.toml --target "$TARGET"
+          cargo check --locked -p oer-esp32s31-ieee80211-system --target "$TARGET"
 
   # The ESP32-S31 examples share one workspace; run Cargo from an example's
   # directory so the workspace `.cargo/config.toml` selects the chip target. Every feature profile an

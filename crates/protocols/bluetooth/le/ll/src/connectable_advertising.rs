@@ -1,5 +1,6 @@
 //! Legacy connectable advertising PDUs: `ADV_IND` with its Channel Selection
-//! Algorithm #2 capability and the matching `SCAN_RSP`.
+//! Algorithm #2 capability and the matching `SCAN_RSP`, and the directed
+//! `ADV_DIRECT_IND`.
 
 use crate::{
     LeDeviceAddress, LeDeviceAddressKind,
@@ -11,6 +12,8 @@ use crate::{
 const ADVERTISING_HEADER_LENGTH: usize = 2;
 const DEVICE_ADDRESS_LENGTH: usize = 6;
 const ADV_IND_TYPE: u8 = 0;
+const ADV_DIRECT_IND_TYPE: u8 = 1;
+const RX_ADD_RANDOM: u8 = 1 << 7;
 const SCAN_RSP_TYPE: u8 = 4;
 const PDU_TYPE_MASK: u8 = 0x0f;
 const RESERVED_HEADER_BITS: u8 = (1 << 4) | (1 << 7);
@@ -140,6 +143,70 @@ impl<'a> LegacyConnectableAdvertisement<'a> {
                 LeChannelSelectionAlgorithmTwoSupport::Supported
             },
         ))
+    }
+}
+
+/// Semantic `ADV_DIRECT_IND`: connectable advertising addressed to one
+/// initiator, which neither carries data nor answers scan requests.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LegacyDirectedAdvertisement {
+    advertiser: LeDeviceAddress,
+    target: LeDeviceAddress,
+    channel_selection_two: LeChannelSelectionAlgorithmTwoSupport,
+}
+
+impl LegacyDirectedAdvertisement {
+    pub const fn new(
+        advertiser: LeDeviceAddress,
+        target: LeDeviceAddress,
+        channel_selection_two: LeChannelSelectionAlgorithmTwoSupport,
+    ) -> Self {
+        Self {
+            advertiser,
+            target,
+            channel_selection_two,
+        }
+    }
+
+    pub const fn advertiser(self) -> LeDeviceAddress {
+        self.advertiser
+    }
+
+    /// The only initiator whose connection indication the set accepts.
+    pub const fn target(self) -> LeDeviceAddress {
+        self.target
+    }
+
+    pub const fn encoded_len(self) -> usize {
+        ADVERTISING_HEADER_LENGTH + 2 * DEVICE_ADDRESS_LENGTH
+    }
+
+    /// Encode the complete Link Layer PDU into bounded caller storage.
+    pub fn encode(self, destination: &mut [u8]) -> Result<usize, LegacyAdvertisingEncodeError> {
+        let required = self.encoded_len();
+        if destination.len() < required {
+            return Err(LegacyAdvertisingEncodeError::DestinationTooSmall {
+                required,
+                available: destination.len(),
+            });
+        }
+        destination[0] = ADV_DIRECT_IND_TYPE
+            | match self.advertiser.kind() {
+                LeDeviceAddressKind::Public => 0,
+                LeDeviceAddressKind::Random => TX_ADD_RANDOM,
+            }
+            | match self.target.kind() {
+                LeDeviceAddressKind::Public => 0,
+                LeDeviceAddressKind::Random => RX_ADD_RANDOM,
+            }
+            | match self.channel_selection_two {
+                LeChannelSelectionAlgorithmTwoSupport::Unsupported => 0,
+                LeChannelSelectionAlgorithmTwoSupport::Supported => CHANNEL_SELECTION_TWO,
+            };
+        destination[1] = (2 * DEVICE_ADDRESS_LENGTH) as u8;
+        destination[2..8].copy_from_slice(&self.advertiser.wire_bytes());
+        destination[8..14].copy_from_slice(&self.target.wire_bytes());
+        Ok(required)
     }
 }
 

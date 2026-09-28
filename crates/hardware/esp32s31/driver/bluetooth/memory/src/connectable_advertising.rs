@@ -192,14 +192,16 @@ impl LegacyConnectableAdvertisingOwnAddress {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LegacyConnectableAdvertisingMemoryInput<'a> {
     adv_ind: LegacyConnectableAdvIndPacketInput<'a>,
-    scan_response: LegacyConnectableScanResponsePacketInput<'a>,
+    scan_response: Option<LegacyConnectableScanResponsePacketInput<'a>>,
     own_address: LegacyConnectableAdvertisingOwnAddress,
 }
 
 impl<'a> LegacyConnectableAdvertisingMemoryInput<'a> {
+    /// `scan_response` is absent for a set that only receives, such as
+    /// directed advertising: its primary TX header then has no successor.
     pub const fn new(
         adv_ind: LegacyConnectableAdvIndPacketInput<'a>,
-        scan_response: LegacyConnectableScanResponsePacketInput<'a>,
+        scan_response: Option<LegacyConnectableScanResponsePacketInput<'a>>,
         own_address: LegacyConnectableAdvertisingOwnAddress,
     ) -> Self {
         Self {
@@ -286,14 +288,18 @@ impl LinkStateStorage {
         (rx_head, rx_tail, rx_spare): (u32, u32, u32),
         own_address: LegacyAdvertisingOwnAddress,
         default_tx_power: crate::LeTxPower,
+        scan_response: bool,
     ) {
         let mut words =
             self.reviewed_words()
                 .reset(binding.adv_ind_header, own_address, default_tx_power);
         // The common no-response projection clears this consumer. Advertising
-        // reset installs the primary TX header's successor for SCAN_RSP.
-        words.word_04 = (words.word_04 & !COMPRESSED_LINK_MASK)
-            | binding.scan_response_header.compressed_image();
+        // reset installs the primary TX header's successor for SCAN_RSP; a
+        // set without one keeps it empty.
+        words.word_04 &= !COMPRESSED_LINK_MASK;
+        if scan_response {
+            words.word_04 |= binding.scan_response_header.compressed_image();
+        }
         // adv_alloc_rxbuf prepares an empty private RX link before reset.
         // The later memory-manager broker selects the global RX class and
         // updates software head/tail, without installing a private consumer.
@@ -392,7 +398,7 @@ pub struct LegacyConnectableAdvertisingBinding {
 #[derive(Clone, Copy)]
 pub struct LegacyConnectableAdvertisingPrepared {
     adv_ind: AdvertisingTxPacketLength,
-    scan_response: AdvertisingTxPacketLength,
+    scan_response: Option<AdvertisingTxPacketLength>,
 }
 
 /// Preparation state of one instance.
@@ -535,18 +541,28 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
         let adv_ind = graph
             .adv_ind_packet
             .prepare_validated_encoded_pdu(input.adv_ind.0);
-        let scan_response = graph
-            .scan_response_packet
-            .prepare_validated_encoded_pdu(input.scan_response.0);
         graph.adv_ind_packet.lower_advertiser_address(adv_ind);
-        graph
-            .scan_response_packet
-            .lower_advertiser_address(scan_response);
+        let scan_response = input.scan_response.map(|input| {
+            let length = graph
+                .scan_response_packet
+                .prepare_validated_encoded_pdu(input.0);
+            graph.scan_response_packet.lower_advertiser_address(length);
+            length
+        });
+        if scan_response.is_none() {
+            // The primary header is the whole TX chain.
+            graph
+                .adv_ind_header
+                .initialize_bound_tx_with_successor(cpu.binding.adv_ind_packet, None);
+            graph.link_state.words[LINK_STATE_TX_TAIL]
+                .set(cpu.binding.adv_ind_header.controller_address().address());
+        }
         graph.link_state.prepare_profile(
             cpu.binding,
             chain.snapshot(),
             input.own_address.codec(),
             default_tx_power,
+            scan_response.is_some(),
         );
         *cpu.state =
             LegacyConnectableAdvertisingState::Prepared(LegacyConnectableAdvertisingPrepared {
@@ -663,11 +679,10 @@ impl<const N: usize> LegacyConnectableAdvertisingPool<N> {
     }
 
     pub fn scan_response_pdu(&self, instance: &SchedulerRoleInstance) -> Option<&[u8]> {
-        self.prepared(instance).map(|(graph, prepared)| {
-            graph
-                .scan_response_packet
-                .prepared_pdu(prepared.scan_response)
-        })
+        let (graph, prepared) = self.prepared(instance)?;
+        prepared
+            .scan_response
+            .map(|length| graph.scan_response_packet.prepared_pdu(length))
     }
 
     /// Packets that the instance receives.

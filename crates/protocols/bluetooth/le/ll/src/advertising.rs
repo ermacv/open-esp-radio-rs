@@ -1,4 +1,5 @@
-//! Legacy advertising data and the `ADV_NONCONN_IND` PDU.
+//! Legacy advertising data and the non-connectable `ADV_NONCONN_IND` and
+//! `ADV_SCAN_IND` PDUs.
 
 use crate::{LeDeviceAddress, LeDeviceAddressKind};
 
@@ -10,8 +11,9 @@ pub const LEGACY_ADVERTISING_PDU_CAPACITY: usize = 39;
 const ADVERTISING_HEADER_LENGTH: usize = 2;
 const DEVICE_ADDRESS_LENGTH: usize = 6;
 const ADV_NONCONN_IND_TYPE: u8 = 0b0010;
+const ADV_SCAN_IND_TYPE: u8 = 0b0110;
 const TX_ADD_RANDOM: u8 = 1 << 6;
-const ADV_NONCONN_IND_RESERVED_HEADER_BITS: u8 = (1 << 4) | (1 << 5) | (1 << 7);
+const NONCONNECTABLE_RESERVED_HEADER_BITS: u8 = (1 << 4) | (1 << 5) | (1 << 7);
 
 /// Borrowed or internally owned legacy advertising data with a checked limit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,17 +97,50 @@ pub enum LegacyAdvertisingDataError {
     TooLong { length: usize },
 }
 
-/// Semantic `ADV_NONCONN_IND` payload.
+/// Whether a non-connectable advertisement answers scan requests.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacyNonconnectableKind {
+    /// `ADV_NONCONN_IND`: neither connectable nor scannable.
+    NonScannable,
+    /// `ADV_SCAN_IND`: scannable, answered by a `SCAN_RSP`.
+    Scannable,
+}
+
+impl LegacyNonconnectableKind {
+    const fn pdu_type(self) -> u8 {
+        match self {
+            Self::NonScannable => ADV_NONCONN_IND_TYPE,
+            Self::Scannable => ADV_SCAN_IND_TYPE,
+        }
+    }
+}
+
+/// Semantic non-connectable undirected advertisement: `ADV_NONCONN_IND` or
+/// `ADV_SCAN_IND`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LegacyNonconnectableAdvertisement<'a> {
+    kind: LegacyNonconnectableKind,
     advertiser: LeDeviceAddress,
     data: LegacyAdvertisingData<'a>,
 }
 
 impl<'a> LegacyNonconnectableAdvertisement<'a> {
-    /// Construct a non-connectable, non-scannable undirected advertisement.
-    pub const fn new(advertiser: LeDeviceAddress, data: LegacyAdvertisingData<'a>) -> Self {
-        Self { advertiser, data }
+    /// Construct a non-connectable undirected advertisement of `kind`.
+    pub const fn new(
+        kind: LegacyNonconnectableKind,
+        advertiser: LeDeviceAddress,
+        data: LegacyAdvertisingData<'a>,
+    ) -> Self {
+        Self {
+            kind,
+            advertiser,
+            data,
+        }
+    }
+
+    /// Whether the advertisement answers scan requests.
+    pub const fn kind(self) -> LegacyNonconnectableKind {
+        self.kind
     }
 
     /// Advertiser address and TxAdd class.
@@ -141,14 +176,14 @@ impl<'a> LegacyNonconnectableAdvertisement<'a> {
             LeDeviceAddressKind::Public => 0,
             LeDeviceAddressKind::Random => TX_ADD_RANDOM,
         };
-        destination[0] = ADV_NONCONN_IND_TYPE | tx_add;
+        destination[0] = self.kind.pdu_type() | tx_add;
         destination[1] = (DEVICE_ADDRESS_LENGTH + self.data.len()) as u8;
         destination[2..8].copy_from_slice(&self.advertiser.wire_bytes());
         destination[8..required].copy_from_slice(self.data.as_bytes());
         Ok(required)
     }
 
-    /// Decode one exact `ADV_NONCONN_IND` PDU.
+    /// Decode one exact `ADV_NONCONN_IND` or `ADV_SCAN_IND` PDU.
     pub fn decode(source: &'a [u8]) -> Result<Self, LegacyAdvertisingDecodeError> {
         if source.len() < ADVERTISING_HEADER_LENGTH {
             return Err(LegacyAdvertisingDecodeError::TruncatedHeader {
@@ -157,11 +192,14 @@ impl<'a> LegacyNonconnectableAdvertisement<'a> {
         }
 
         let header = source[0];
-        let pdu_type = header & 0x0f;
-        if pdu_type != ADV_NONCONN_IND_TYPE {
-            return Err(LegacyAdvertisingDecodeError::UnexpectedPduType { pdu_type });
-        }
-        if header & ADV_NONCONN_IND_RESERVED_HEADER_BITS != 0 {
+        let kind = match header & 0x0f {
+            ADV_NONCONN_IND_TYPE => LegacyNonconnectableKind::NonScannable,
+            ADV_SCAN_IND_TYPE => LegacyNonconnectableKind::Scannable,
+            pdu_type => {
+                return Err(LegacyAdvertisingDecodeError::UnexpectedPduType { pdu_type });
+            }
+        };
+        if header & NONCONNECTABLE_RESERVED_HEADER_BITS != 0 {
             return Err(LegacyAdvertisingDecodeError::ReservedHeaderBitsSet);
         }
 
@@ -183,7 +221,7 @@ impl<'a> LegacyNonconnectableAdvertisement<'a> {
 
         let mut wire_bytes = [0; DEVICE_ADDRESS_LENGTH];
         wire_bytes.copy_from_slice(&source[2..8]);
-        let kind = if header & TX_ADD_RANDOM == 0 {
+        let address_kind = if header & TX_ADD_RANDOM == 0 {
             LeDeviceAddressKind::Public
         } else {
             LeDeviceAddressKind::Random
@@ -191,7 +229,8 @@ impl<'a> LegacyNonconnectableAdvertisement<'a> {
         let data = LegacyAdvertisingData::new(&source[8..required])
             .expect("the checked legacy payload length bounds its advertising data");
         Ok(Self::new(
-            LeDeviceAddress::from_wire_bytes(wire_bytes, kind),
+            kind,
+            LeDeviceAddress::from_wire_bytes(wire_bytes, address_kind),
             data,
         ))
     }
@@ -209,7 +248,7 @@ pub enum LegacyAdvertisingEncodeError {
 pub enum LegacyAdvertisingDecodeError {
     /// The two-octet advertising header is incomplete.
     TruncatedHeader { available: usize },
-    /// The PDU is not an `ADV_NONCONN_IND`.
+    /// The PDU is neither `ADV_NONCONN_IND` nor `ADV_SCAN_IND`.
     UnexpectedPduType { pdu_type: u8 },
     /// ChSel, RxAdd or another reserved header bit was nonzero.
     ReservedHeaderBitsSet,

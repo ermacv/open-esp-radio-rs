@@ -80,18 +80,27 @@ pub struct AccessAddress(pub [u8; 4]);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CrcInit(pub [u8; 3]);
 
+/// What an advertising set listens for after each of its PDUs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdvertisingReception<'pdu> {
+    /// The set only transmits.
+    None,
+    /// The set answers `SCAN_REQ` with this `SCAN_RSP` and reports every
+    /// reception.
+    ScanResponse(AdvertisingPdu<'pdu>),
+    /// The set reports every reception without answering.
+    Report,
+}
+
 /// Configuration of one legacy advertising set.
-///
-/// Without a scan response the set advertises non-connectably; with one it
-/// answers scan requests and accepts connection indications.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdvertisingConfiguration<'pdu> {
     /// The set.
     pub set: AdvertisingSetId,
     /// The advertising PDU.
     pub pdu: AdvertisingPdu<'pdu>,
-    /// The scan response of a response-capable set.
-    pub scan_response: Option<AdvertisingPdu<'pdu>>,
+    /// What the set listens for.
+    pub reception: AdvertisingReception<'pdu>,
     /// Transmit power.
     pub tx_power: TxPower,
 }

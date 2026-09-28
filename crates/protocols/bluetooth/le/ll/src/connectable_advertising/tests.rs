@@ -111,3 +111,45 @@ fn a_scan_response_carries_the_advertiser_and_its_data() {
     assert_eq!(&pdu[..length], [0x44, 10, 7, 8, 9, 10, 11, 12, 3, 9, 8, 7]);
     assert!(data.encode(advertiser, &mut [0; 11]).is_err());
 }
+
+#[test]
+fn a_directed_advertisement_carries_both_addresses_and_their_kinds() {
+    let advertiser =
+        LeDeviceAddress::from_wire_bytes([1, 2, 3, 4, 5, 6], LeDeviceAddressKind::Public);
+    let target =
+        LeDeviceAddress::from_wire_bytes([7, 8, 9, 10, 11, 0xcc], LeDeviceAddressKind::Random);
+    let directed = LegacyDirectedAdvertisement::new(
+        advertiser,
+        target,
+        LeChannelSelectionAlgorithmTwoSupport::Supported,
+    );
+    let mut encoded = [0; 14];
+    assert_eq!(directed.encode(&mut encoded), Ok(14));
+    // ADV_DIRECT_IND, ChSel, public TxAdd, random RxAdd.
+    assert_eq!(
+        encoded,
+        [
+            0x01 | 0x20 | 0x80,
+            12,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            0xcc
+        ]
+    );
+    assert_eq!(
+        directed.encode(&mut [0; 13]),
+        Err(LegacyAdvertisingEncodeError::DestinationTooSmall {
+            required: 14,
+            available: 13,
+        })
+    );
+}

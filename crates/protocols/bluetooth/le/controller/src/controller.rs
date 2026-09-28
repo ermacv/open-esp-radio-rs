@@ -761,12 +761,13 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
                 self.respond_advertising(opcode, HciError::CMD_DISALLOWED.to_status());
             }
             (true, false) => {
-                if let Ok(LeLegacyAdvertisingEnableRequest::Connectable(_)) =
-                    self.advertising.enable_request(
-                        self.bootstrap.config().public_address(),
-                        self.bootstrap.requested_random_address(),
-                    )
-                {
+                if let Ok(
+                    LeLegacyAdvertisingEnableRequest::Connectable(_)
+                    | LeLegacyAdvertisingEnableRequest::Directed(_),
+                ) = self.advertising.enable_request(
+                    self.bootstrap.config().public_address(),
+                    self.bootstrap.requested_random_address(),
+                ) {
                     // One connection at a time, and encryption needs entropy.
                     if self.peripheral.is_active() {
                         self.respond_advertising(opcode, HciError::CMD_DISALLOWED.to_status());
@@ -990,7 +991,20 @@ impl<'r, const OUTPUT: usize> LeController<'r, OUTPUT> {
         let accepted = result.is_ok();
         match self.in_flight.take() {
             Some(Owner::Dtm) => self.dtm.request_done(accepted),
-            Some(Owner::AdvertiserControl) => self.advertiser.control_done(accepted),
+            Some(Owner::AdvertiserControl) => {
+                self.advertiser.control_done(accepted);
+                if self.advertiser.take_timeout() {
+                    let (mask, le) = (self.bootstrap.event_mask(), self.bootstrap.le_event_mask());
+                    if mask.is_le_meta_enabled()
+                        && le.is_le_conn_complete_enabled()
+                        && let Ok(event) = LePeripheralConnectionCompleteEvent::failed(
+                            HciError::ADV_TIMEOUT.to_status(),
+                        )
+                    {
+                        self.output.push_event(event.as_bytes());
+                    }
+                }
+            }
             Some(Owner::AdvertiserEvent) => self.advertiser.event_done(accepted),
             Some(Owner::ScannerControl) => self.scanner.control_done(accepted),
             Some(Owner::ScannerWindow) => self.scanner.window_done(accepted),

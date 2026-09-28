@@ -539,3 +539,153 @@ fn a_peer_without_data_length_update_keeps_the_minimum() {
     };
     assert_eq!(fragment.len(), 27);
 }
+
+#[test]
+fn a_scannable_set_answers_scans_but_ignores_connection_indications() {
+    let mut harness = Harness::configured();
+    let mut parameters = super::nonconnectable_parameters();
+    parameters[4] = 0x02; // ADV_SCAN_IND
+    assert_eq!(
+        harness.command(super::SET_ADV_PARAMS, &parameters),
+        Some(SUCCESS)
+    );
+    harness.send(SET_ADV_ENABLE, &[1]);
+    let Some(Request::ConfigureConnectable(adv_scan_ind, scan_rsp)) = harness.step() else {
+        panic!("a response-capable set");
+    };
+    assert_eq!(adv_scan_ind[..8], [0x06, 6, 6, 5, 4, 3, 2, 1]);
+    assert_eq!(scan_rsp[..8], [0x04, 6, 6, 5, 4, 3, 2, 1]);
+    assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+    let Some(Request::Advertise(event)) = harness.step() else {
+        panic!("an advertising event");
+    };
+    // The scan exchange fits the channel spacing; a connection indication
+    // needs no room.
+    let air = |length: u32| (length - 2) * 8 + 80;
+    let scan = air(adv_scan_ind.len() as u32) + 4 + 150 + 176 + 150 + air(scan_rsp.len() as u32);
+    assert_eq!(
+        event.channel_spacing.as_micros(),
+        super::TIMING.preparation_lead.as_micros() + scan
+    );
+    harness.core.outcome(RadioOutcome::Received {
+        id: event.id,
+        pdu: ReceivedPdu {
+            pdu: &connect_ind(),
+            rssi_dbm: -50,
+            captured_at: Some(RadioInstant::from_micros(INDICATION_AT)),
+        },
+    });
+    harness.end(event.id);
+    assert!(matches!(harness.step(), Some(Request::Advertise(_))));
+    assert!(harness.drain().is_empty());
+}
+
+/// Directed parameters addressed to the random initiator of [`connect_ind`].
+fn directed_parameters(adv_kind: u8) -> [u8; 15] {
+    let mut parameters = super::nonconnectable_parameters();
+    parameters[4] = adv_kind;
+    parameters[6] = 0x01; // random peer
+    parameters[7..13].copy_from_slice(&[0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xc6]);
+    parameters
+}
+
+#[test]
+fn low_duty_directed_advertising_connects_only_its_target() {
+    let mut harness = Harness::configured();
+    let mask = [0x90, 0x08, 0, 0, 0, 0, 0, 0x20];
+    assert_eq!(harness.command(SET_EVENT_MASK, &mask), Some(SUCCESS));
+    assert_eq!(
+        harness.command(super::SET_ADV_PARAMS, &directed_parameters(0x04)),
+        Some(SUCCESS)
+    );
+    harness.send(SET_ADV_ENABLE, &[1]);
+    let Some(Request::ConfigureDirected(pdu)) = harness.step() else {
+        panic!("a directed set that only receives");
+    };
+    // ADV_DIRECT_IND with ChSel and a random target: AdvA then TargetA.
+    assert_eq!(
+        pdu,
+        [
+            0x01 | 0x20 | 0x80,
+            12,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            0xa1,
+            0xa2,
+            0xa3,
+            0xa4,
+            0xa5,
+            0xc6
+        ]
+    );
+    assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+
+    // Another initiator is ignored.
+    let Some(Request::Advertise(event)) = harness.step() else {
+        panic!("an advertising event");
+    };
+    let mut stranger = connect_ind();
+    stranger[2] = 0xb1;
+    harness.core.outcome(RadioOutcome::Received {
+        id: event.id,
+        pdu: ReceivedPdu {
+            pdu: &stranger,
+            rssi_dbm: -50,
+            captured_at: Some(RadioInstant::from_micros(INDICATION_AT)),
+        },
+    });
+    harness.end(event.id);
+    assert!(harness.drain().is_empty());
+
+    let Some(Request::Advertise(event)) = harness.step() else {
+        panic!("advertising continues");
+    };
+    harness.core.outcome(RadioOutcome::Received {
+        id: event.id,
+        pdu: ReceivedPdu {
+            pdu: &connect_ind(),
+            rssi_dbm: -50,
+            captured_at: Some(RadioInstant::from_micros(INDICATION_AT)),
+        },
+    });
+    assert!(matches!(harness.step(), Some(Request::OpenConnection(_))));
+}
+
+#[test]
+fn high_duty_directed_advertising_times_out_after_1280_ms() {
+    let mut harness = Harness::configured();
+    assert_eq!(
+        harness.command(super::SET_ADV_PARAMS, &directed_parameters(0x01)),
+        Some(SUCCESS)
+    );
+    harness.send(SET_ADV_ENABLE, &[1]);
+    assert!(matches!(
+        harness.step(),
+        Some(Request::ConfigureDirected(_))
+    ));
+    assert_eq!(harness.status_of(SET_ADV_ENABLE), Some(SUCCESS));
+    let mut anchors = Vec::new();
+    loop {
+        match harness.step() {
+            Some(Request::Advertise(event)) => {
+                anchors.push(event.anchor.as_micros());
+                harness.now = event.anchor.as_micros();
+                harness.end(event.id);
+            }
+            Some(Request::RemoveAdvertising) => break,
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    // Events 3.75 ms apart without the advertising delay, for 1.28 s.
+    assert!(anchors.windows(2).all(|pair| pair[1] - pair[0] == 3_750));
+    assert_eq!(anchors.len(), 1_280_000 / 3_750 + 1);
+    // LE Connection Complete reports the Advertising Timeout.
+    let events = harness.drain();
+    assert_eq!(events.len(), 1);
+    assert_eq!(&events[0][..4], &[0x3e, 19, 0x01, 0x3c]);
+    assert!(!harness.core.wants_radio());
+}

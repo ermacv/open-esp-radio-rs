@@ -4,11 +4,12 @@ use core::convert::Infallible;
 
 use crate::coexistence::{self, CoexistenceProfile};
 use oer_bluetooth_radio::{
-    AdvertisingChannel, AdvertisingConfiguration, AdvertisingEvent, AdvertisingSetId,
-    ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming,
-    ConnectionId, DataPduKind, EventId, EventResult, RadioDuration, RadioFault, RadioInstant,
-    RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit, TxPower,
+    AdvertisingChannel, AdvertisingConfiguration, AdvertisingEvent, AdvertisingReception,
+    AdvertisingSetId, ConnectionAllowances, ConnectionConfiguration, ConnectionEvent,
+    ConnectionEventTiming, ConnectionId, DataPduKind, EventId, EventResult, RadioDuration,
+    RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError,
+    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit,
+    TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -954,7 +955,12 @@ impl<
             return Err(RequestError::AlreadyConfigured);
         }
         let tx_power = le_tx_power(configuration.tx_power)?;
-        match configuration.scan_response {
+        let scan_response = match configuration.reception {
+            AdvertisingReception::None => None,
+            AdvertisingReception::ScanResponse(scan_response) => Some(Some(scan_response)),
+            AdvertisingReception::Report => Some(None),
+        };
+        match scan_response {
             None => {
                 let index = free_slot(&self.legacy)?;
                 let pool = &mut self.memory.legacy;
@@ -975,15 +981,18 @@ impl<
             Some(scan_response) => {
                 let index = free_slot(&self.connectable)?;
                 let pdu = configuration.pdu.bytes();
-                let response = scan_response.bytes();
                 let adv_ind =
                     LegacyConnectableAdvIndPacketInput::try_from_encoded_extent(pdu, pdu[1])
                         .map_err(|_| RequestError::Unsupported)?;
-                let scan_response =
-                    LegacyConnectableScanResponsePacketInput::try_from_encoded_extent(
-                        response,
-                        response[1],
-                    )
+                let scan_response = scan_response
+                    .map(|response| {
+                        let response = response.bytes();
+                        LegacyConnectableScanResponsePacketInput::try_from_encoded_extent(
+                            response,
+                            response[1],
+                        )
+                    })
+                    .transpose()
                     .map_err(|_| RequestError::Unsupported)?;
                 // TxAdd selects the advertiser address type.
                 let own_address = if pdu[0] & 0x40 == 0 {

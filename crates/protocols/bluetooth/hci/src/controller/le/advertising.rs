@@ -82,8 +82,16 @@ pub enum LeLegacyAdvertisingOwnAddressKind {
 pub enum LeLegacyAdvertisingRole {
     /// Transmit `ADV_NONCONN_IND` without receiving a response.
     Nonconnectable,
+    /// Transmit `ADV_SCAN_IND` and answer `SCAN_REQ` with `SCAN_RSP`.
+    Scannable,
     /// Transmit `ADV_IND` and permit `SCAN_REQ` or `CONNECT_IND` responses.
     Connectable,
+    /// Transmit `ADV_DIRECT_IND` at most 3.75 ms apart for 1.28 s and
+    /// accept `CONNECT_IND` from the peer only.
+    DirectedHighDuty,
+    /// Transmit `ADV_DIRECT_IND` at the advertising interval and accept
+    /// `CONNECT_IND` from the peer only.
+    DirectedLowDuty,
 }
 
 /// Non-empty HCI primary-channel selection with reserved bits rejected.
@@ -137,6 +145,26 @@ pub struct LeLegacyAdvertisingParameters {
     interval: LeLegacyAdvertisingIntervalRange,
     own_address_kind: LeLegacyAdvertisingOwnAddressKind,
     channels: LeLegacyAdvertisingPrimaryChannels,
+    peer: LeLegacyAdvertisingPeer,
+}
+
+/// The peer a directed set addresses.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyAdvertisingPeer {
+    random: bool,
+    address: [u8; 6],
+}
+
+impl LeLegacyAdvertisingPeer {
+    /// Whether the peer address is random rather than public.
+    pub const fn is_random(self) -> bool {
+        self.random
+    }
+
+    /// The peer's device address.
+    pub fn address(self) -> BdAddr {
+        BdAddr::new(self.address)
+    }
 }
 
 impl LeLegacyAdvertisingParameters {
@@ -158,6 +186,11 @@ impl LeLegacyAdvertisingParameters {
     /// Complete non-empty primary-channel selection.
     pub const fn channels(self) -> LeLegacyAdvertisingPrimaryChannels {
         self.channels
+    }
+
+    /// The peer of a directed role; other roles ignore it.
+    pub const fn peer(self) -> LeLegacyAdvertisingPeer {
+        self.peer
     }
 }
 
@@ -193,6 +226,12 @@ impl LeLegacyScanResponseData {
 }
 
 impl LeLegacyAdvertisingData {
+    /// No advertising data.
+    pub const EMPTY: Self = Self {
+        bytes: [0; LE_LEGACY_ADVERTISING_DATA_CAPACITY],
+        length: 0,
+    };
+
     /// Borrow only the Host-declared advertising-data prefix.
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..usize::from(self.length)]
@@ -296,20 +335,21 @@ impl LeLegacyNonconnectableAdvertisingEnableRequest {
     }
 }
 
-/// Immutable connectable Host snapshot retained from Enable until radio start.
+/// Immutable scannable or connectable Host snapshot retained from Enable until
+/// radio start.
 ///
 /// Scan-response data is present only on this response-capable request. The
 /// value grants no scheduler, SRAM, radio, or response-completion authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LeLegacyConnectableAdvertisingEnableRequest {
+pub struct LeLegacyResponseCapableAdvertisingEnableRequest {
     parameters: LeLegacyAdvertisingParameters,
     data: LeLegacyAdvertisingData,
     scan_response_data: LeLegacyScanResponseData,
     advertiser: LeLegacyAdvertisingAddress,
 }
 
-impl LeLegacyConnectableAdvertisingEnableRequest {
-    /// Exact accepted connectable parameter snapshot.
+impl LeLegacyResponseCapableAdvertisingEnableRequest {
+    /// Exact accepted parameter snapshot.
     pub const fn parameters(self) -> LeLegacyAdvertisingParameters {
         self.parameters
     }
@@ -330,13 +370,42 @@ impl LeLegacyConnectableAdvertisingEnableRequest {
     }
 }
 
+/// Immutable directed Host snapshot retained from Enable until radio start.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyDirectedAdvertisingEnableRequest {
+    parameters: LeLegacyAdvertisingParameters,
+    advertiser: LeLegacyAdvertisingAddress,
+}
+
+impl LeLegacyDirectedAdvertisingEnableRequest {
+    /// Exact accepted parameter snapshot, including the peer.
+    pub const fn parameters(self) -> LeLegacyAdvertisingParameters {
+        self.parameters
+    }
+
+    /// Whether the set advertises at high duty cycle for 1.28 s.
+    pub fn is_high_duty(self) -> bool {
+        self.parameters.role == LeLegacyAdvertisingRole::DirectedHighDuty
+    }
+
+    /// Address resolved at the Enable ordering boundary.
+    pub const fn advertiser(self) -> LeLegacyAdvertisingAddress {
+        self.advertiser
+    }
+}
+
 /// Role-specific snapshot of the configuration taken by Enable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeLegacyAdvertisingEnableRequest {
-    /// Non-connectable undirected advertising.
+    /// Non-connectable, non-scannable undirected advertising.
     Nonconnectable(LeLegacyNonconnectableAdvertisingEnableRequest),
+    /// Scannable non-connectable undirected advertising with its scan
+    /// response.
+    Scannable(LeLegacyResponseCapableAdvertisingEnableRequest),
     /// Connectable undirected advertising with its scan response.
-    Connectable(LeLegacyConnectableAdvertisingEnableRequest),
+    Connectable(LeLegacyResponseCapableAdvertisingEnableRequest),
+    /// Connectable directed advertising.
+    Directed(LeLegacyDirectedAdvertisingEnableRequest),
 }
 
 /// Enable asked for a random own address that the Host never set.
@@ -398,6 +467,10 @@ impl LeLegacyAdvertisingConfiguration {
                     channel_38: true,
                     channel_39: true,
                 },
+                peer: LeLegacyAdvertisingPeer {
+                    random: false,
+                    address: [0; 6],
+                },
             },
             data: LeLegacyAdvertisingData {
                 bytes: [0; LE_LEGACY_ADVERTISING_DATA_CAPACITY],
@@ -450,15 +523,34 @@ impl LeLegacyAdvertisingConfiguration {
                     },
                 )
             }
-            LeLegacyAdvertisingRole::Connectable => LeLegacyAdvertisingEnableRequest::Connectable(
-                LeLegacyConnectableAdvertisingEnableRequest {
-                    parameters,
-                    data: self.data,
-                    scan_response_data: self.scan_response_data,
-                    advertiser,
-                },
-            ),
+            LeLegacyAdvertisingRole::Scannable => {
+                LeLegacyAdvertisingEnableRequest::Scannable(self.response_capable(advertiser))
+            }
+            LeLegacyAdvertisingRole::Connectable => {
+                LeLegacyAdvertisingEnableRequest::Connectable(self.response_capable(advertiser))
+            }
+            LeLegacyAdvertisingRole::DirectedHighDuty
+            | LeLegacyAdvertisingRole::DirectedLowDuty => {
+                LeLegacyAdvertisingEnableRequest::Directed(
+                    LeLegacyDirectedAdvertisingEnableRequest {
+                        parameters,
+                        advertiser,
+                    },
+                )
+            }
         })
+    }
+
+    fn response_capable(
+        &self,
+        advertiser: LeLegacyAdvertisingAddress,
+    ) -> LeLegacyResponseCapableAdvertisingEnableRequest {
+        LeLegacyResponseCapableAdvertisingEnableRequest {
+            parameters: self.parameters,
+            data: self.data,
+            scan_response_data: self.scan_response_data,
+            advertiser,
+        }
     }
 
     /// Current parameters.
@@ -549,16 +641,22 @@ impl LeLegacyAdvertisingCommand {
             adv_interval_max,
             adv_kind,
             own_addr_kind,
-            peer_addr_kind: _,
-            peer_addr: _,
+            peer_addr_kind,
+            peer_addr,
             adv_channel_map,
             adv_filter_policy,
         } = parameters;
 
         let role = if adv_kind == AdvKind::AdvNonconnInd {
             LeLegacyAdvertisingRole::Nonconnectable
+        } else if adv_kind == AdvKind::AdvScanInd {
+            LeLegacyAdvertisingRole::Scannable
         } else if adv_kind == AdvKind::AdvInd {
             LeLegacyAdvertisingRole::Connectable
+        } else if adv_kind == AdvKind::AdvDirectIndHigh {
+            LeLegacyAdvertisingRole::DirectedHighDuty
+        } else if adv_kind == AdvKind::AdvDirectIndLow {
+            LeLegacyAdvertisingRole::DirectedLowDuty
         } else {
             return Err(LeLegacyAdvertisingDecodeError::UnsupportedFeature { command });
         };
@@ -575,8 +673,47 @@ impl LeLegacyAdvertisingCommand {
             return Err(LeLegacyAdvertisingDecodeError::UnsupportedFeature { command });
         };
 
-        let minimum_units_625_us = adv_interval_min.as_u16();
-        let maximum_units_625_us = adv_interval_max.as_u16();
+        let peer = if peer_addr_kind == AddrKind::PUBLIC {
+            LeLegacyAdvertisingPeer {
+                random: false,
+                address: peer_addr
+                    .raw()
+                    .try_into()
+                    .expect("a device address has six octets"),
+            }
+        } else if peer_addr_kind == AddrKind::RANDOM {
+            LeLegacyAdvertisingPeer {
+                random: true,
+                address: peer_addr
+                    .raw()
+                    .try_into()
+                    .expect("a device address has six octets"),
+            }
+        } else if matches!(
+            role,
+            LeLegacyAdvertisingRole::DirectedHighDuty | LeLegacyAdvertisingRole::DirectedLowDuty
+        ) {
+            return Err(LeLegacyAdvertisingDecodeError::InvalidParameters { command });
+        } else {
+            LeLegacyAdvertisingPeer {
+                random: false,
+                address: peer_addr
+                    .raw()
+                    .try_into()
+                    .expect("a device address has six octets"),
+            }
+        };
+
+        // High duty cycle directed advertising ignores the interval.
+        let (minimum_units_625_us, maximum_units_625_us) =
+            if role == LeLegacyAdvertisingRole::DirectedHighDuty {
+                (
+                    LEGACY_ADVERTISING_INTERVAL_DEFAULT,
+                    LEGACY_ADVERTISING_INTERVAL_DEFAULT,
+                )
+            } else {
+                (adv_interval_min.as_u16(), adv_interval_max.as_u16())
+            };
         if minimum_units_625_us < LEGACY_ADVERTISING_INTERVAL_MIN
             || maximum_units_625_us > LEGACY_ADVERTISING_INTERVAL_MAX
             || minimum_units_625_us > maximum_units_625_us
@@ -601,6 +738,7 @@ impl LeLegacyAdvertisingCommand {
                 channel_38: adv_channel_map.is_channel_38_enabled(),
                 channel_39: adv_channel_map.is_channel_39_enabled(),
             },
+            peer,
         }))
     }
 

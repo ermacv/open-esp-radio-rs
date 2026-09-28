@@ -2,6 +2,7 @@ use super::*;
 
 fn sample_advertisement<'a>(data: &'a [u8]) -> LegacyNonconnectableAdvertisement<'a> {
     LegacyNonconnectableAdvertisement::new(
+        LegacyNonconnectableKind::NonScannable,
         LeDeviceAddress::from_wire_bytes(
             [0xa6, 0xa5, 0xa4, 0xa3, 0xa2, 0xc1],
             LeDeviceAddressKind::Random,
@@ -23,6 +24,22 @@ fn core_sample_adv_nonconn_ind_roundtrips_at_the_air_interface_boundary() {
     assert_eq!(
         LegacyNonconnectableAdvertisement::decode(&encoded[..length]),
         Ok(advertisement)
+    );
+}
+
+#[test]
+fn a_scannable_advertisement_is_an_adv_scan_ind() {
+    let scannable = LegacyNonconnectableAdvertisement::new(
+        LegacyNonconnectableKind::Scannable,
+        LeDeviceAddress::from_wire_bytes([1, 2, 3, 4, 5, 6], LeDeviceAddressKind::Public),
+        LegacyAdvertisingData::new(&[9]).unwrap(),
+    );
+    let mut encoded = [0; LEGACY_ADVERTISING_PDU_CAPACITY];
+    let length = scannable.encode(&mut encoded).unwrap();
+    assert_eq!(&encoded[..length], &[0x06, 7, 1, 2, 3, 4, 5, 6, 9]);
+    assert_eq!(
+        LegacyNonconnectableAdvertisement::decode(&encoded[..length]),
+        Ok(scannable)
     );
 }
 

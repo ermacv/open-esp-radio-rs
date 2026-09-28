@@ -176,6 +176,11 @@ impl LeTxBufferHeaderStorage {
         self.install([0, 0, 0, 0x8000_0000, 2, 0]);
     }
 
+    #[cfg(test)]
+    pub(super) fn successor_image(&self) -> u32 {
+        self.read_word(0) & Self::COMPRESSED_LINK_MASK
+    }
+
     pub(super) fn link_successor(&self, successor: ControllerSramLinkAddress) {
         self.words[0]
             .set((self.read_word(0) & !Self::COMPRESSED_LINK_MASK) | successor.compressed_image());

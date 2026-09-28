@@ -65,8 +65,13 @@ fn chain(class: RxMemoryListClass) -> LeRxChain<2> {
 fn input() -> LegacyConnectableAdvertisingMemoryInput<'static> {
     LegacyConnectableAdvertisingMemoryInput::new(
         LegacyConnectableAdvIndPacketInput::try_from_encoded_extent(&ADV_IND_PDU, 9).unwrap(),
-        LegacyConnectableScanResponsePacketInput::try_from_encoded_extent(&SCAN_RESPONSE_PDU, 6)
+        Some(
+            LegacyConnectableScanResponsePacketInput::try_from_encoded_extent(
+                &SCAN_RESPONSE_PDU,
+                6,
+            )
             .unwrap(),
+        ),
         LegacyConnectableAdvertisingOwnAddress::Random(ADVERTISER),
     )
 }
@@ -130,8 +135,50 @@ fn preparation_chains_both_pdus_and_joins_the_non_scanning_chain() {
     assert_eq!(
         graph
             .scan_response_packet
-            .model_transmitted_pdu(prepared.scan_response, ADVERTISER),
+            .model_transmitted_pdu(prepared.scan_response.unwrap(), ADVERTISER),
         SCAN_RESPONSE_PDU
+    );
+}
+
+#[test]
+fn a_set_without_scan_response_transmits_one_node_and_still_receives() {
+    let mut pool = pool();
+    let chain = chain(RxMemoryListClass::NonScanning);
+    let instance = pool.acquire().unwrap();
+    let only_receiving = LegacyConnectableAdvertisingMemoryInput::new(
+        LegacyConnectableAdvIndPacketInput::try_from_encoded_extent(&ADV_IND_PDU, 9).unwrap(),
+        None,
+        LegacyConnectableAdvertisingOwnAddress::Random(ADVERTISER),
+    );
+    let power = crate::LeTxPower::from_dbm(0).expect("provider level");
+    pool.prepare(&instance, only_receiving, &chain, power)
+        .unwrap();
+    assert_eq!(pool.adv_ind_pdu(&instance), Some(&ADV_IND_PDU[..]));
+    assert_eq!(pool.scan_response_pdu(&instance), None);
+    {
+        let (graph, binding, _) = pool.shared(&instance).unwrap();
+        let words = &graph.link_state.words;
+        assert_eq!(graph.adv_ind_header.successor_image(), 0);
+        assert_eq!(words[LINK_STATE_WORD_04].get() & COMPRESSED_LINK_MASK, 0);
+        assert_eq!(
+            words[LINK_STATE_TX_TAIL].get(),
+            binding.adv_ind_header.controller_address().address()
+        );
+        // Receptions still join the non-scanning chain.
+        assert_eq!(words[LINK_STATE_RX_LIST_CLASS].get() >> 28, 2);
+    }
+
+    // Clearing restores the two-node chain for the next set.
+    pool.clear(&instance).unwrap();
+    pool.prepare(&instance, input(), &chain, power).unwrap();
+    let (graph, binding, _) = pool.shared(&instance).unwrap();
+    assert_eq!(
+        graph.adv_ind_header.successor_image(),
+        binding.scan_response_header.compressed_image()
+    );
+    assert_eq!(
+        graph.link_state.words[LINK_STATE_TX_TAIL].get(),
+        binding.scan_response_header.controller_address().address()
     );
 }
 

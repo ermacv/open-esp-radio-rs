@@ -4,11 +4,11 @@ use oer_esp32s31_bluetooth_memory::BlePhyLe1MPacketStartCalibration;
 
 use oer_bluetooth_radio::{
     AccessAddress, AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration,
-    AdvertisingEvent, AdvertisingPdu, AdvertisingSetId, CoexistenceLevel, ConnectionConfiguration,
-    ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit, DataChannel, DataPdu,
-    DataPduKind, EventId, EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
-    RadioWindow, RequestError, ScanWindow, ScannerConfiguration, ScannerId, TestChannel, TestPhy,
-    TestReceive, TestReport, TxPower,
+    AdvertisingEvent, AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel,
+    ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
+    DataChannel, DataPdu, DataPduKind, EventId, EventResult, RadioDuration, RadioInstant,
+    RadioOutcome, RadioRequest, RadioWindow, RequestError, ScanWindow, ScannerConfiguration,
+    ScannerId, TestChannel, TestPhy, TestReceive, TestReport, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -99,7 +99,7 @@ fn configure_legacy(radio: &mut Radio, sink: &mut Sink) {
             RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
                 set: AdvertisingSetId::new(0),
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
-                scan_response: None,
+                reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
             }),
             sink,
@@ -327,6 +327,35 @@ fn a_waiting_event_is_cancelled_at_once_and_a_listed_one_on_the_next_drive() {
 }
 
 #[test]
+fn a_directed_set_receives_without_a_scan_response() {
+    // ADV_DIRECT_IND from a public advertiser to a random target.
+    const ADV_DIRECT_IND: [u8; 14] = [0xa1, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0xcc];
+    let mut radio = radio();
+    let mut sink = Sink::default();
+    radio
+        .request(
+            RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
+                set: AdvertisingSetId::new(4),
+                pdu: AdvertisingPdu::new(&ADV_DIRECT_IND).unwrap(),
+                reception: AdvertisingReception::Report,
+                tx_power: TxPower::from_dbm(0),
+            }),
+            &mut sink,
+        )
+        .unwrap();
+    let slot = &radio.connectable[0]
+        .as_ref()
+        .expect("a receiving set")
+        .instance;
+    assert_eq!(
+        radio.memory.connectable.adv_ind_pdu(slot),
+        Some(&ADV_DIRECT_IND[..])
+    );
+    assert_eq!(radio.memory.connectable.scan_response_pdu(slot), None);
+    assert!(radio.legacy.iter().all(Option::is_none));
+}
+
+#[test]
 fn a_connectable_set_receives_its_requests() {
     let mut radio = radio();
     let mut sink = Sink::default();
@@ -335,7 +364,9 @@ fn a_connectable_set_receives_its_requests() {
             RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
                 set: AdvertisingSetId::new(3),
                 pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
-                scan_response: Some(AdvertisingPdu::new(&SCAN_RSP).unwrap()),
+                reception: AdvertisingReception::ScanResponse(
+                    AdvertisingPdu::new(&SCAN_RSP).unwrap(),
+                ),
                 tx_power: TxPower::from_dbm(0),
             }),
             &mut sink,
@@ -358,7 +389,9 @@ fn a_connectable_set_receives_its_requests() {
             RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
                 set: AdvertisingSetId::new(3),
                 pdu: AdvertisingPdu::new(&ADV_IND).unwrap(),
-                scan_response: Some(AdvertisingPdu::new(&SCAN_RSP).unwrap()),
+                reception: AdvertisingReception::ScanResponse(
+                    AdvertisingPdu::new(&SCAN_RSP).unwrap(),
+                ),
                 tx_power: TxPower::from_dbm(0),
             }),
             &mut sink,
@@ -714,7 +747,7 @@ fn configuration_errors_leave_the_radio_unchanged() {
             RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
                 set: AdvertisingSetId::new(0),
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
-                scan_response: None,
+                reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
             }),
             &mut sink,
@@ -727,7 +760,7 @@ fn configuration_errors_leave_the_radio_unchanged() {
             RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
                 set: AdvertisingSetId::new(1),
                 pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
-                scan_response: None,
+                reception: AdvertisingReception::None,
                 tx_power: TxPower::from_dbm(0),
             }),
             &mut sink,

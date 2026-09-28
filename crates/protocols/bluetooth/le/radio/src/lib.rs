@@ -34,9 +34,10 @@ pub use channel::{
 pub use outcome::{EventResult, RadioFault, RadioOutcome, ReceivedPdu, TestReport};
 pub use pdu::{AdvertisingPdu, DataPdu, DataPduKind, PduError, TestPayloadType};
 pub use request::{
-    AccessAddress, AdvertisingConfiguration, AdvertisingEvent, AdvertisingSetId, CoexistenceLevel,
-    ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming,
-    ConnectionId, CrcInit, EventId, RadioRequest, RadioTiming, RequestError, ScanWindow,
-    ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestTransmit, TxPower,
+    AccessAddress, AdvertisingConfiguration, AdvertisingEvent, AdvertisingReception,
+    AdvertisingSetId, CoexistenceLevel, ConnectionAllowances, ConnectionConfiguration,
+    ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit, EventId, RadioRequest,
+    RadioTiming, RequestError, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive,
+    TestTransmit, TxPower,
 };
 pub use time::{RadioDuration, RadioInstant, RadioWindow, WindowError};

@@ -256,6 +256,37 @@ suffix described in [the RX-list contract](bluetooth-passive-scanning.md):
 clear the reviewed current-pointer control field, then preserve a fresh
 observation through the following write-back.
 
+## Scannable and directed sets
+
+The pinned bodies select the graph from the advertising properties at
+`advsm+0x0c` (bit 0 connectable, bit 1 scannable, bit 2 directed, bit 3 high
+duty cycle, bit 4 legacy). The TX-chain allocation
+`r_sym_ble_b3ZDeCz8LKJWE1p1nl50` builds the second, `SCAN_RSP` node exactly
+when bit 1 is set, so `ADV_SCAN_IND` uses the same two-node graph as
+`ADV_IND`. The receive allocation `r_sym_ble_jDCJzglWI0uBeh2sNaOW` enables
+receive-buffer insertion whenever bit 0 or bit 1 is set, and the scheduler
+window body `r_sym_ble_VJhDIFgEJhr4DAUSUJBU` adds the response-capable window
+under the same condition. The advertising reset
+`r_sym_ble_7lsXnox2LxrGG0FmY7qR` differs only for a directed set, whose filter
+policy field at link-state `+0x2c` bits 25:24 it clears.
+
+A directed set is therefore connectable but not scannable: it receives on the
+non-scanning chain with a single TX node and no scan-response consumer. The
+legacy primary-channel builder `r_sym_ble_GMKJqD73JoiGMGSQZS6e` writes the
+`ADV_DIRECT_IND` header with the ChSel bit and RxAdd for a random target,
+copies TargetA as the controller data and returns a 12-octet payload; the
+hardware inserts AdvA as for the undirected PDUs. The S31 memory profile
+takes the scan response as optional and, without one, leaves the primary
+header without successor, makes it the TX tail and keeps the compressed
+scan-response consumer empty. The radio contract names what a set listens
+for: nothing, scan requests answered by a scan response, or receptions only.
+
+The Controller core accepts a connection indication from a scannable set
+never and from a directed set only when InitA equals the target. High duty
+cycle directed events follow each other 3.75 ms apart without the
+advertising delay and end after 1.28 s with LE Connection Complete status
+Advertising Timeout.
+
 ## Minimum production admission contract
 
 Legacy connection channel selection uses both transmitted ChSel fields, as

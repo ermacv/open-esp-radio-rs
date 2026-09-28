@@ -6,9 +6,10 @@ use oer_bluetooth_hci::{
     LeRandomUnavailable,
 };
 use oer_bluetooth_radio::{
-    AdvertisingChannel, AdvertisingChannels, AdvertisingEvent, ConnectionAllowances,
-    ConnectionConfiguration, ConnectionEvent, DataPduKind, EventId, EventResult, RadioDuration,
-    RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError, ScanWindow,
+    AdvertisingChannel, AdvertisingChannels, AdvertisingEvent, AdvertisingReception,
+    ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, DataPduKind, EventId,
+    EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu,
+    RequestError, ScanWindow,
 };
 
 use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLACK};
@@ -80,6 +81,7 @@ static RANDOM: FixedRandom = FixedRandom;
 enum Request {
     ConfigureAdvertising(Vec<u8>),
     ConfigureConnectable(Vec<u8>, Vec<u8>),
+    ConfigureDirected(Vec<u8>),
     OpenConnection(ConnectionConfiguration),
     ConnectionEvent(ConnectionEvent),
     Transmit(DataPduKind, Vec<u8>),
@@ -98,15 +100,18 @@ enum Request {
 impl From<RadioRequest<'_>> for Request {
     fn from(request: RadioRequest<'_>) -> Self {
         match request {
-            RadioRequest::ConfigureAdvertising(configuration) => {
-                match configuration.scan_response {
-                    Some(response) => Self::ConfigureConnectable(
-                        configuration.pdu.bytes().to_vec(),
-                        response.bytes().to_vec(),
-                    ),
-                    None => Self::ConfigureAdvertising(configuration.pdu.bytes().to_vec()),
+            RadioRequest::ConfigureAdvertising(configuration) => match configuration.reception {
+                AdvertisingReception::ScanResponse(response) => Self::ConfigureConnectable(
+                    configuration.pdu.bytes().to_vec(),
+                    response.bytes().to_vec(),
+                ),
+                AdvertisingReception::Report => {
+                    Self::ConfigureDirected(configuration.pdu.bytes().to_vec())
                 }
-            }
+                AdvertisingReception::None => {
+                    Self::ConfigureAdvertising(configuration.pdu.bytes().to_vec())
+                }
+            },
             RadioRequest::OpenConnection(configuration) => Self::OpenConnection(configuration),
             RadioRequest::ConnectionEvent(event) => Self::ConnectionEvent(event),
             RadioRequest::Transmit { pdu, .. } => {

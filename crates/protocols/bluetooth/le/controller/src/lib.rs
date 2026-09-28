@@ -11,9 +11,10 @@
 //!
 //! The roles run concurrently where the specification allows:
 //!
-//! - legacy undirected advertising, non-connectable or connectable with its
+//! - legacy advertising: non-connectable, scannable or connectable with its
 //!   scan response, with the pseudo-random advertising delay and live
-//!   advertising-data updates;
+//!   advertising-data updates, and connectable directed at high or low duty
+//!   cycle;
 //! - one peripheral connection created by a connection indication to the
 //!   connectable set: connection events widened for clock drift, supervision
 //!   and establishment timeouts, Channel Map and Connection Update instants,

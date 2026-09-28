@@ -9,9 +9,9 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Timer;
 use oer_bluetooth_radio::{
     AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent,
-    AdvertisingPdu, AdvertisingSetId, CoexistenceLevel, EventId, EventResult, RadioDuration,
-    RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu, RequestError,
-    TestChannel, TestPhy, TestReceive, TxPower,
+    AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel, EventId, EventResult,
+    RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu,
+    RequestError, TestChannel, TestPhy, TestReceive, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -237,7 +237,7 @@ fn configure() -> RadioRequest<'static> {
     RadioRequest::ConfigureAdvertising(AdvertisingConfiguration {
         set: AdvertisingSetId::new(0),
         pdu: AdvertisingPdu::new(&NONCONN).unwrap(),
-        scan_response: None,
+        reception: AdvertisingReception::None,
         tx_power: TxPower::from_dbm(0),
     })
 }

@@ -75,7 +75,8 @@ fn rejects_malformed_invalid_and_unsupported_values_with_exact_status() {
         ),
         (
             LeSetAdvParams::OPCODE,
-            &[0x20, 0, 0x40, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0][..],
+            // A resolvable private own address needs privacy.
+            &[0x20, 0, 0x40, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 7, 0][..],
             HciError::UNSUPPORTED.to_status(),
         ),
         (
@@ -100,26 +101,42 @@ fn rejects_malformed_invalid_and_unsupported_values_with_exact_status() {
 }
 
 #[test]
-fn rejects_every_directed_scannable_only_and_filtered_parameter_profile() {
-    for unsupported_adv_kind in [1, 2, 4] {
-        let mut body = [0; 15];
-        body[..4].copy_from_slice(&[0x20, 0, 0x40, 0]);
-        body[4] = unsupported_adv_kind;
-        body[13] = 0x07;
-        let error = LeLegacyAdvertisingCommand::decode(HciCommandPacket::new(
-            LeSetAdvParams::OPCODE,
-            &body,
-        ))
-        .expect_err("directed and scannable-only roles remain unsupported");
-        assert_eq!(
-            error
-                .into_command_complete()
-                .expect("Set Advertising Parameters owns the rejection")
-                .status(),
-            HciError::UNSUPPORTED.to_status()
-        );
-    }
+fn directed_roles_take_their_peer_and_reject_other_peer_kinds() {
+    let mut body = [0; 15];
+    // High duty ignores the invalid zero interval.
+    body[4] = 1;
+    body[6] = 1; // random peer
+    body[7..13].copy_from_slice(&[1, 2, 3, 4, 5, 0xc6]);
+    body[13] = 0x07;
+    let Ok(LeLegacyAdvertisingCommand::SetParameters(parameters)) =
+        LeLegacyAdvertisingCommand::decode(HciCommandPacket::new(LeSetAdvParams::OPCODE, &body))
+    else {
+        panic!("high duty directed parameters decode");
+    };
+    assert_eq!(parameters.role(), LeLegacyAdvertisingRole::DirectedHighDuty);
+    assert!(parameters.peer().is_random());
+    assert_eq!(
+        parameters.peer().address(),
+        BdAddr::new([1, 2, 3, 4, 5, 0xc6])
+    );
 
+    body[4] = 4;
+    body[..4].copy_from_slice(&[0x20, 0, 0x40, 0]);
+    body[6] = 2; // a resolvable peer identity needs privacy
+    let error =
+        LeLegacyAdvertisingCommand::decode(HciCommandPacket::new(LeSetAdvParams::OPCODE, &body))
+            .expect_err("a directed peer must be public or random");
+    assert_eq!(
+        error
+            .into_command_complete()
+            .expect("Set Advertising Parameters owns the rejection")
+            .status(),
+        HciError::INVALID_HCI_PARAMETERS.to_status()
+    );
+}
+
+#[test]
+fn rejects_every_filtered_parameter_profile() {
     for unsupported_filter_policy in [1, 2, 3] {
         let mut body = [0; 15];
         body[..4].copy_from_slice(&[0x20, 0, 0x40, 0]);
@@ -246,6 +263,34 @@ fn enable_freezes_parameters_data_and_resolved_public_address() {
     assert!(request.parameters().channels().channel_37());
     assert!(!request.parameters().channels().channel_38());
     assert!(request.parameters().channels().channel_39());
+}
+
+#[test]
+fn scannable_parameters_enable_a_response_capable_scannable_set() {
+    let mut body = [0; 15];
+    body[..4].copy_from_slice(&[0x20, 0, 0x40, 0]);
+    body[4] = 2; // ADV_SCAN_IND
+    body[13] = 0x07;
+    let parameters =
+        LeLegacyAdvertisingCommand::decode(HciCommandPacket::new(LeSetAdvParams::OPCODE, &body))
+            .expect("scannable parameters decode");
+    let mut state = LeLegacyAdvertisingConfiguration::new();
+    state.configure(configuration(parameters));
+    assert_eq!(
+        state.parameters().role(),
+        LeLegacyAdvertisingRole::Scannable
+    );
+    state.configure(configuration(data_command(
+        LeSetScanResponseData::OPCODE,
+        &[2, 1, 6],
+    )));
+    let public_address = BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]);
+    let Ok(LeLegacyAdvertisingEnableRequest::Scannable(request)) =
+        state.enable_request(public_address, None)
+    else {
+        panic!("ADV_SCAN_IND parameters start a scannable set");
+    };
+    assert_eq!(request.scan_response_data().as_bytes(), &[2, 1, 6]);
 }
 
 #[test]

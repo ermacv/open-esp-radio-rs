@@ -75,8 +75,8 @@ pub use controller::le::advertising::{
     LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingIntervalRange,
     LeLegacyAdvertisingOwnAddressKind, LeLegacyAdvertisingParameters,
     LeLegacyAdvertisingPrimaryChannels, LeLegacyAdvertisingRandomAddressMissing,
-    LeLegacyAdvertisingRole, LeLegacyConnectableAdvertisingEnableRequest,
-    LeLegacyNonconnectableAdvertisingEnableRequest, LeLegacyScanResponseData,
+    LeLegacyAdvertisingRole, LeLegacyNonconnectableAdvertisingEnableRequest,
+    LeLegacyResponseCapableAdvertisingEnableRequest, LeLegacyScanResponseData,
 };
 pub use controller::le::data_length::{
     LE_DATA_LENGTH_CHANGE_EVENT_CAPACITY, LE_DATA_LENGTH_COMMAND_COMPLETE_EVENT_CAPACITY,

@@ -40,7 +40,7 @@ instead of `0x7C`. Such reviews use `provenance = "derived"` and
 `completeness = "partial"`. Functions whose C5 bodies differ structurally are
 never evidence for these facts, and ESP32-S31 HIL observations are not
 carried over. The fragments publish register views only; no ESP32-C5 driver
-owns them yet.
+owns them.
 
 ```console
 cargo registers validate --manifest registers/esp32c5/publication/registers.toml

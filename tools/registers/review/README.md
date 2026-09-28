@@ -30,6 +30,6 @@ coordinates and whose scalar string value is
 `REGION.NAME`. That one reviewed fact identifies existing geometry or
 authorizes materializing absent geometry. The domain-agnostic review-model
 keeps the semantic domain typed; the register consumer validates the scalar and
-rejects the retired `register-declaration` and `register-name` kinds. Merely
+rejects the `register-declaration` and `register-name` kinds. Merely
 observing software reads or writes never constitutes an identity fact and
 never proves hardware access or W1C semantics.

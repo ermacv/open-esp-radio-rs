@@ -2,7 +2,7 @@
 
 The [native manifest](registers.toml) selects reviewed hardware geometry, sparse
 assertions, applicability, memory/ownership policy, the restricted PAC API pack,
-lints and nine evidence catalogs. It does not select a vendor investigation or
+lints and the source evidence catalogs. It does not select a vendor investigation or
 binary model.
 
 ```console

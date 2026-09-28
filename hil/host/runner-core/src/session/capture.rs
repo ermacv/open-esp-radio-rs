@@ -268,10 +268,21 @@ impl SerialCapture {
         crate::durable::atomic_write(&self.output.join("uart.bin"), &bytes)?;
         crate::durable::atomic_write(&self.output.join("uart.log"), uart.as_bytes())?;
         let mut log = Vec::new();
-        for message in &state.messages {
+        for sent in &state.sent {
             serde_json::to_writer(
                 &mut log,
-                &serde_json::json!({"record": "target-event", "envelope": message}),
+                &serde_json::json!({"record": "host-command", "command": sent}),
+            )?;
+            log.push(b'\n');
+        }
+        for (index, message) in state.messages.iter().enumerate() {
+            serde_json::to_writer(
+                &mut log,
+                &serde_json::json!({
+                    "record": "target-event",
+                    "envelope": message,
+                    "host_received_unix_micros": state.received_unix_micros.get(index),
+                }),
             )?;
             log.push(b'\n');
         }
@@ -427,6 +438,7 @@ fn capture_serial(
                     state.health.observe(&message, before_read);
                     if state.messages.len() < PROTOCOL_EVENT_CAPACITY {
                         state.messages.push(message);
+                        state.received_unix_micros.push(super::host_unix_micros());
                     } else {
                         state.health.fail(format!(
                             "host protocol event capacity {PROTOCOL_EVENT_CAPACITY} exhausted"

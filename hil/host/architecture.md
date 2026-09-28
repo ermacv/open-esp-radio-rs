@@ -375,8 +375,11 @@ A session unwound by a runner error is marked interrupted in the manifest.
 Each UART capture owns its output directory before opening or resetting the
 serial device. `uart.bin` is the exact received stream, written as bytes arrive;
 `uart.log` is its lossy UTF-8 view for diagnostics. `protocol.jsonl` contains
-received target events, decoder counters, a `capture-end` record with the first
-typed link failure, and the final target-health query when available. Host
+a `host-command` record for every command the host sent (request id, session,
+variant name and host send time, never the payload), received target events
+with their host receive time, decoder counters, a `capture-end` record with
+the first typed link failure, and the final target-health query when
+available. Host
 commands and host error messages are never inserted into the received stream.
 
 Serial open, reset, read, write and worker failures wake protocol waits. Decode

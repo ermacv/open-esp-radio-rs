@@ -347,6 +347,7 @@ impl SerialCapture {
         self.check_link()?;
         let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
         let event_count = self.protocol_event_count();
+        let kind = super::command_kind(&body);
         let command = Envelope::new(boot_id, request_id, session_id, request_id, body);
         let mut encoder = FrameEncoder::new();
         let frame = encoder
@@ -357,6 +358,17 @@ impl SerialCapture {
             .send(Zeroizing::new(frame))
             .map_err(|_| LinkError::transport("serial worker stopped before HIL command"))?;
         self.worker_wake.wake()?;
+        self.protocol
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .sent
+            .push(super::SentCommand {
+                request_id,
+                session_id,
+                kind,
+                host_sent_unix_micros: super::host_unix_micros(),
+            });
         self.wait_for_protocol_after(event_count, timeout, |message| {
             command_response_matches(
                 message,

@@ -551,3 +551,15 @@ fn pause_accepts_capability_reply_only_in_the_established_boot() {
     assert!(station_unchanged_since_in(&events, 1).is_err());
     assert!(station_unchanged_since_in(&events, 0).is_err());
 }
+
+#[test]
+fn a_sent_command_is_logged_by_its_variant_name_without_its_payload() {
+    assert_eq!(
+        super::command_kind(&oer_hil_protocol::Command::GetCapabilities),
+        "GetCapabilities"
+    );
+    assert_eq!(
+        super::command_kind(&oer_hil_protocol::Command::GetPostMortemCheckpoints { first: 3 }),
+        "GetPostMortemCheckpoints"
+    );
+}

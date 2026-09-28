@@ -65,9 +65,45 @@ struct ProtocolState {
     expected_reboot: Option<ExpectedReboot>,
     observed_reboot: Option<RebootObservation>,
     messages: Vec<Envelope<Event>>,
+    /// When the host decoded each of `messages`, in Unix microseconds.
+    received_unix_micros: Vec<u64>,
+    /// Every command the host sent, in order.
+    sent: Vec<SentCommand>,
     health: ProtocolHealth,
     failure: Option<LinkError>,
     closed: bool,
+}
+
+/// A command the host sent: its identity and when, never its payload, which
+/// can carry credentials.
+#[derive(serde::Serialize)]
+struct SentCommand {
+    request_id: u32,
+    session_id: u64,
+    /// The command's variant name.
+    kind: String,
+    host_sent_unix_micros: u64,
+}
+
+/// Microseconds since the Unix epoch on the host clock.
+fn host_unix_micros() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_micros() as u64)
+}
+
+/// The variant name of a serialized command: `"GetCapabilities"` or the key
+/// of `{"StartStation": {...}}`.
+fn command_kind(command: &oer_hil_protocol::Command) -> String {
+    match serde_json::to_value(command) {
+        Ok(serde_json::Value::String(name)) => name,
+        Ok(serde_json::Value::Object(fields)) => fields
+            .keys()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| String::from("unknown")),
+        _ => String::from("unknown"),
+    }
 }
 
 impl ProtocolState {

@@ -48,6 +48,9 @@ const REGISTER_ARGUMENTS: usize = 8;
 /// Instructions of one function's recovered CFG; a larger function gets no
 /// post-dominators, so its branches control the rest of their frame.
 const MAX_FUNCTION_INSTRUCTIONS: usize = 1 << 16;
+/// Dependencies of one step above which deduplication sorts instead of
+/// comparing each against those already kept.
+const LINEAR_DEDUP: usize = 32;
 /// Working memory admitted per logged entry for the dependence graph.
 const ENTRY_COST: u64 = 48;
 
@@ -492,8 +495,22 @@ impl Forward<'_> {
         self.reads.clear();
         self.writes.clear();
         self.outputs.clear();
-        deps.sort_unstable();
-        deps.dedup();
+        // The walk only marks reachable steps, so the order of a step's
+        // dependencies is free; a step has a handful of them.
+        if deps.len() > LINEAR_DEDUP {
+            deps.sort_unstable();
+            deps.dedup();
+        } else {
+            let mut kept = 0;
+            for i in 0..deps.len() {
+                let dependency = deps[i];
+                if !deps[..kept].contains(&dependency) {
+                    deps[kept] = dependency;
+                    kept += 1;
+                }
+            }
+            deps.truncate(kept);
+        }
         self.graph.deps.extend_from_slice(&deps);
         self.scratch = deps;
         self.graph.offsets.push(self.graph.deps.len() as u32);
@@ -779,25 +796,38 @@ impl<'x> Analyzer<'x> {
         let seeds = std::mem::take(&mut graph.seeds);
         let effect_seeds = std::mem::take(&mut graph.effect_seeds);
         let state_seeds = std::mem::take(&mut graph.state_seeds);
+        // Steps far outnumber distinct instructions: number the distinct
+        // pcs once, so each walk reduces its marks without sorting steps.
+        let mut numbers = HashMap::<u32, u32>::default();
+        let mut executed = Vec::new();
+        let step_numbers: Vec<u32> = graph
+            .pcs
+            .iter()
+            .map(|pc| {
+                *numbers.entry(*pc).or_insert_with(|| {
+                    executed.push(*pc);
+                    executed.len() as u32 - 1
+                })
+            })
+            .collect();
         let walk = |seeds: Vec<u32>| {
             let marked = graph.walk(seeds);
-            let mut pcs: Vec<u32> = graph
-                .pcs
+            let mut hit = vec![false; executed.len()];
+            for (number, marked) in step_numbers.iter().zip(&marked) {
+                if *marked {
+                    hit[*number as usize] = true;
+                }
+            }
+            executed
                 .iter()
-                .zip(&marked)
-                .filter_map(|(pc, marked)| marked.then_some(*pc))
-                .collect();
-            pcs.sort_unstable();
-            pcs.dedup();
-            pcs
+                .zip(hit)
+                .filter_map(|(pc, hit)| hit.then_some(*pc))
+                .collect::<Vec<u32>>()
         };
         let observed = walk(seeds);
         let effect = walk(effect_seeds);
         let state = walk(state_seeds);
         c.checkpoint(3 * graph.pcs.len() as u64)?;
-        let mut executed = graph.pcs;
-        executed.sort_unstable();
-        executed.dedup();
         result.executed.extend(executed);
         result.observed.extend(observed);
         result.effect.extend(effect);

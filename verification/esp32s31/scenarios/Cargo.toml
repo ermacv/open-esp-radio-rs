@@ -35,5 +35,5 @@ workspace = true
 
 [package.metadata.open-radio]
 scope = "development"
-layer = "tool"
+layer = "verification"
 platform = "host"

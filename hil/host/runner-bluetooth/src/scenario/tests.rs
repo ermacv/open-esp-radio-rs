@@ -113,10 +113,14 @@ fn peripheral_scenarios_bound_their_cycles_and_name_the_termination() {
 }
 
 #[test]
-fn the_active_data_mic_failure_waits_for_its_hook() {
-    assert!(
-        parse("kind = 'security-failure'\nfailure = 'active-data-mic'")
-            .validate()
-            .is_err()
-    );
+fn the_active_data_mic_failure_needs_the_diagnostic_image() {
+    let scenario = parse("kind = 'security-failure'\nfailure = 'active-data-mic'");
+    scenario.validate().unwrap();
+    assert_eq!(scenario.image(), ImageClass::BluetoothHciDiagnostics);
+    let plain = ImageClass::BluetoothHci.console_capabilities().unwrap();
+    assert!(!scenario.served_by(&plain));
+    let diagnostic = ImageClass::BluetoothHciDiagnostics
+        .console_capabilities()
+        .unwrap();
+    assert!(scenario.served_by(&diagnostic));
 }

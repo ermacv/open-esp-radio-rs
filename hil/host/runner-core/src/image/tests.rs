@@ -471,7 +471,7 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
 }
 
 #[test]
-fn the_lifecycle_flag_alone_tells_the_diagnostic_hci_image_apart() {
+fn the_diagnostic_hooks_tell_the_diagnostic_hci_image_apart() {
     let plain = ImageClass::BluetoothHci.console_capabilities().unwrap();
     let diagnostic = ImageClass::BluetoothHciDiagnostics
         .console_capabilities()
@@ -480,9 +480,22 @@ fn the_lifecycle_flag_alone_tells_the_diagnostic_hci_image_apart() {
         diagnostic,
         FeatureCapabilities {
             bluetooth_hci_lifecycle: true,
+            bluetooth_mic_fault: true,
             ..plain
         }
     );
+    for partial in [
+        FeatureCapabilities {
+            bluetooth_hci_lifecycle: true,
+            ..plain
+        },
+        FeatureCapabilities {
+            bluetooth_mic_fault: true,
+            ..plain
+        },
+    ] {
+        assert_eq!(classify_flashed_capabilities(&partial), None);
+    }
     assert_eq!(
         classify_flashed_capabilities(&plain),
         Some(ImageClass::BluetoothHci)
@@ -494,7 +507,7 @@ fn the_lifecycle_flag_alone_tells_the_diagnostic_hci_image_apart() {
     assert!(
         ImageClass::BluetoothHciDiagnostics
             .runtime_features()
-            .contains("bluetooth-hci-lifecycle")
+            .contains("bluetooth-hci-lifecycle,bluetooth-mic-fault")
     );
     assert!(!ImageClass::BluetoothHciDiagnostics.requires_driver_observation());
 }

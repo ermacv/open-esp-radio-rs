@@ -11,7 +11,9 @@
 //!   frame is echoed as one ACL packet;
 //! - LE Long Term Key Requests are answered by the connection's key policy:
 //!   the fixed public test keys, or a deliberate missing, wrong or missing
-//!   refresh key;
+//!   refresh key; for an active-data MIC failure the Host arms the
+//!   Controller's diagnostic MIC fault as soon as the connection completes,
+//!   and no data may reach it;
 //! - with PHY tracking required, the image's `PhyTracking` counters are read
 //!   when the connection completes and when it ends, and periodic tracking
 //!   must have completed at least one pass in between without a skip;
@@ -80,6 +82,9 @@ const LE_CONNECTION_UPDATE_COMPLETE: u8 = 0x03;
 const LE_LONG_TERM_KEY_REQUEST: u8 = 0x05;
 const LE_LONG_TERM_KEY_REQUEST_REPLY: u16 = 0x201a;
 const LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY: u16 = 0x201b;
+/// The Controller's diagnostic command: corrupt the MIC of the next received
+/// encrypted data PDU of one connection.
+const ARM_MIC_FAULT: u16 = 0xfc01;
 const KEY_MISSING: u8 = 0x06;
 const SUPERVISION_TIMEOUT: u8 = 0x08;
 const REMOTE_USER_TERMINATED: u8 = 0x13;
@@ -153,6 +158,8 @@ struct Profile {
     reasons: &'static [u8],
     /// Periodic PHY tracking must complete a pass during the connection.
     phy_tracking: bool,
+    /// Arm the Controller's MIC fault when the connection completes.
+    mic_fault: bool,
 }
 
 impl Profile {
@@ -172,6 +179,7 @@ impl Profile {
             refreshes: u32::from(security == Security::KeyRefresh),
             local,
             phy_tracking: false,
+            mic_fault: false,
             reasons: match termination {
                 Termination::PeerReset => &[SUPERVISION_TIMEOUT],
                 Termination::PeerRfkill => &[SUPERVISION_TIMEOUT, REMOTE_USER_TERMINATED],
@@ -182,15 +190,18 @@ impl Profile {
     }
 
     fn security_failure(failure: BluetoothSecurityFailure) -> Result<Self> {
-        let (keys, reasons): (Keys, &'static [u8]) = match failure {
+        let (keys, reasons, mic_fault): (Keys, &'static [u8], bool) = match failure {
             // The link survives the refusal until the central disconnects.
-            BluetoothSecurityFailure::MissingKey => (Keys::Missing, &[REMOTE_USER_TERMINATED]),
-            // The central's encrypted response fails authentication here.
-            BluetoothSecurityFailure::WrongKey => (Keys::Wrong, &[MIC_FAILURE]),
-            BluetoothSecurityFailure::MissingRefreshKey => (Keys::MissingRefresh, &[KEY_MISSING]),
-            BluetoothSecurityFailure::ActiveDataMic => {
-                return Err("active-data-mic needs the diagnostic MIC hook".into());
+            BluetoothSecurityFailure::MissingKey => {
+                (Keys::Missing, &[REMOTE_USER_TERMINATED], false)
             }
+            // The central's encrypted response fails authentication here.
+            BluetoothSecurityFailure::WrongKey => (Keys::Wrong, &[MIC_FAILURE], false),
+            BluetoothSecurityFailure::MissingRefreshKey => {
+                (Keys::MissingRefresh, &[KEY_MISSING], false)
+            }
+            // The central's first encrypted data fails authentication here.
+            BluetoothSecurityFailure::ActiveDataMic => (Keys::Valid, &[MIC_FAILURE], true),
         };
         Ok(Self {
             echoes: 0,
@@ -200,6 +211,7 @@ impl Profile {
             local: None,
             reasons,
             phy_tracking: false,
+            mic_fault,
         })
     }
 }
@@ -535,8 +547,19 @@ impl<'a> Host<'a> {
                     if let Some(reply) = reply {
                         self.answer(&link, reply)?;
                     }
+                    if profile.mic_fault
+                        && !link.mic_armed
+                        && let Some(handle) = link.handle
+                    {
+                        self.arm_mic_fault(handle)?;
+                        link.mic_armed = true;
+                        cycle.mic_armed = true;
+                    }
                 }
                 Packet::Acl(packet) => {
+                    if profile.mic_fault {
+                        return Err("data reached the Host despite the corrupted MIC".into());
+                    }
                     let (handle, frame) = link.acl(&packet, cycle)?;
                     if link.held_until.is_none() {
                         hci::return_credits(self.capture, handle, 1)?;
@@ -571,6 +594,15 @@ impl<'a> Host<'a> {
             Termination::PeerReset | Termination::PeerRfkill => {}
         }
         link.terminated_locally = true;
+        Ok(())
+    }
+
+    /// Corrupt the MIC of the next encrypted data PDU `handle` receives.
+    fn arm_mic_fault(&self, handle: u16) -> Result<()> {
+        let returned = hci::command(self.capture, ARM_MIC_FAULT, &handle.to_le_bytes())?;
+        if returned != handle.to_le_bytes() {
+            return Err(format!("the MIC fault command returned {returned:02x?}").into());
+        }
         Ok(())
     }
 
@@ -656,6 +688,7 @@ struct Link {
     key_requests: u32,
     encrypted: bool,
     refreshes: u32,
+    mic_armed: bool,
     terminated_locally: bool,
     ended: bool,
     reason: Option<u8>,
@@ -863,6 +896,9 @@ impl Link {
         if profile.phy_tracking {
             tracked_during(cycle.tracking_before, cycle.tracking_after)?;
         }
+        if profile.mic_fault != self.mic_armed {
+            return Err("the MIC fault was not armed as the profile asks".into());
+        }
         match self.reason {
             Some(reason) if profile.reasons.contains(&reason) => Ok(()),
             None if profile.reasons.is_empty() => Ok(()),
@@ -951,6 +987,7 @@ struct Cycle {
     other_events: u32,
     tracking_before: Option<PhyTrackingEvidence>,
     tracking_after: Option<PhyTrackingEvidence>,
+    mic_armed: bool,
     error: Option<String>,
 }
 
@@ -973,6 +1010,7 @@ impl Default for Cycle {
             other_events: 0,
             tracking_before: None,
             tracking_after: None,
+            mic_armed: false,
             error: None,
         }
     }

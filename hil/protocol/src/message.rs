@@ -108,6 +108,10 @@ pub struct FeatureCapabilities {
     /// ([`crate::BluetoothHciLifecycle`]); a diagnostic image only.
     #[serde(default)]
     pub bluetooth_hci_lifecycle: bool,
+    /// The Controller's diagnostic vendor command 0xFC01, which corrupts the
+    /// MIC of the next received encrypted data PDU; a diagnostic image only.
+    #[serde(default)]
+    pub bluetooth_mic_fault: bool,
     pub udp: bool,
     pub tcp: bool,
     pub rx: bool,

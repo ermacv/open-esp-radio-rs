@@ -89,16 +89,21 @@ pub fn classify_flashed_capabilities(
             bluetooth_dtm: true,
             bluetooth_hci: features.bluetooth_hci,
             bluetooth_hci_lifecycle: features.bluetooth_hci_lifecycle,
+            bluetooth_mic_fault: features.bluetooth_mic_fault,
             // Sealed older Bluetooth images retain their original placement.
             phy_rx_hot_sram: features.phy_rx_hot_sram,
             structured_evidence: true,
             psram_task_stack: true,
             ..FeatureCapabilities::default()
         };
-        let class = if features.bluetooth_hci_lifecycle {
-            ImageClass::BluetoothHciDiagnostics
-        } else {
-            ImageClass::BluetoothHci
+        // The diagnostic image carries both hooks; one alone is no image.
+        let class = match (
+            features.bluetooth_hci_lifecycle,
+            features.bluetooth_mic_fault,
+        ) {
+            (true, true) => ImageClass::BluetoothHciDiagnostics,
+            (false, false) => ImageClass::BluetoothHci,
+            _ => return None,
         };
         return (*features == expected).then_some(class);
     }

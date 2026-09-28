@@ -1,0 +1,9 @@
+schema = 5
+id = "bluetooth-peripheral-active-data-mic"
+description = "Runner-driven HCI Host on the diagnostic image arms the Controller's MIC fault as the connection completes; the central's first encrypted data PDU fails authentication, no data reaches the Host and the Controller leaves the connection at once with MIC failure, then an encrypted connection with two ACL echoes succeeds; not over-air corruption"
+repetitions = 3
+tags = ["bluetooth", "peripheral", "acl", "encryption", "key-failure", "air-exclusive"]
+
+[bluetooth]
+kind = "security-failure"
+failure = "active-data-mic"

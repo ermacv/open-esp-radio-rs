@@ -9,7 +9,7 @@ pub enum ImageClass {
     SystemWatchdog,
     BluetoothHci,
     /// The HCI passthrough image that also restarts and retires its
-    /// Controller epoch on request.
+    /// Controller epoch on request and arms the Controller's MIC fault.
     BluetoothHciDiagnostics,
     BluetoothGatt,
     BluetoothSecureGatt,
@@ -152,6 +152,7 @@ impl ImageClass {
                 phy_rx_hot_sram: true,
                 bluetooth_hci: true,
                 bluetooth_hci_lifecycle: true,
+                bluetooth_mic_fault: true,
                 ..dtm
             },
             _ => return None,
@@ -174,7 +175,7 @@ impl ImageClass {
             Self::SystemWatchdog => "system-watchdog",
             Self::BluetoothHci => "bluetooth-hil,phy-rx-hot-sram",
             Self::BluetoothHciDiagnostics => {
-                "bluetooth-hil,phy-rx-hot-sram,bluetooth-hci-lifecycle"
+                "bluetooth-hil,phy-rx-hot-sram,bluetooth-hci-lifecycle,bluetooth-mic-fault"
             }
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "open-radio-hil",

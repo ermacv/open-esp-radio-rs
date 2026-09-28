@@ -10,6 +10,7 @@ const PLAIN: Profile = Profile {
     local: None,
     reasons: &[SUPERVISION_TIMEOUT],
     phy_tracking: false,
+    mic_fault: false,
 };
 
 fn connected() -> (Link, Cycle) {
@@ -291,7 +292,26 @@ fn key_failures_end_with_their_own_reason_and_no_encryption() {
         link.encrypted = true;
         assert!(link.finish(profile, &cycle).is_err(), "{failure:?}");
     }
-    assert!(Profile::security_failure(BluetoothSecurityFailure::ActiveDataMic).is_err());
+    let mic = Profile::security_failure(BluetoothSecurityFailure::ActiveDataMic).unwrap();
+    let (mut link, mut cycle) = connected();
+    assert_eq!(
+        link.event(
+            &key_request(BLUETOOTH_TEST_RAND, BLUETOOTH_TEST_EDIV),
+            mic,
+            &mut cycle,
+        )
+        .unwrap(),
+        Some(KeyReply::Key(BLUETOOTH_TEST_LTK))
+    );
+    link.event(&[ENCRYPTION_CHANGE, 4, 0, 1, 0, 1], mic, &mut cycle)
+        .unwrap();
+    link.reason = Some(MIC_FAILURE);
+    assert!(
+        link.finish(mic, &cycle).is_err(),
+        "the fault was never armed"
+    );
+    link.mic_armed = true;
+    assert!(link.finish(mic, &cycle).is_ok());
 }
 
 #[test]

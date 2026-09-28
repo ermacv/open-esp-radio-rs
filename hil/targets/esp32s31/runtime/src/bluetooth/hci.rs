@@ -140,6 +140,7 @@ impl console::Profile for Profile {
             bluetooth_dtm: true,
             bluetooth_hci: true,
             bluetooth_hci_lifecycle: cfg!(feature = "bluetooth-hci-lifecycle"),
+            bluetooth_mic_fault: cfg!(feature = "bluetooth-mic-fault"),
             phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
             ..FeatureCapabilities::default()
         }

@@ -124,12 +124,6 @@ impl BluetoothScenario {
                 bounded(*connections, 1, 100, "connections")?;
                 bounded(*hold_millis, 0, 5000, "hold_millis")
             }
-            Self::SecurityFailure { failure, .. } => {
-                if *failure == BluetoothSecurityFailure::ActiveDataMic {
-                    return Err("active-data-mic needs the diagnostic MIC hook".into());
-                }
-                Ok(())
-            }
             _ => Ok(()),
         }
     }
@@ -147,9 +141,19 @@ impl BluetoothScenario {
                 retire_after: false,
                 ..
             }
-            | Self::SecurityFailure { .. }
+            | Self::SecurityFailure {
+                failure:
+                    BluetoothSecurityFailure::MissingKey
+                    | BluetoothSecurityFailure::WrongKey
+                    | BluetoothSecurityFailure::MissingRefreshKey,
+                ..
+            }
             | Self::AclBackpressure {} => ImageClass::BluetoothHci,
-            Self::Peripheral { .. } => ImageClass::BluetoothHciDiagnostics,
+            Self::Peripheral { .. }
+            | Self::SecurityFailure {
+                failure: BluetoothSecurityFailure::ActiveDataMic,
+                ..
+            } => ImageClass::BluetoothHciDiagnostics,
         }
     }
 
@@ -183,8 +187,12 @@ impl BluetoothScenario {
             Self::ScannableAdvertising {}
             | Self::DirectedAdvertising {}
             | Self::DtmPeer { .. }
-            | Self::SecurityFailure { .. }
             | Self::AclBackpressure {} => features.bluetooth_hci,
+            Self::SecurityFailure { failure, .. } => {
+                features.bluetooth_hci
+                    && (features.bluetooth_mic_fault
+                        || *failure != BluetoothSecurityFailure::ActiveDataMic)
+            }
             Self::Peripheral {
                 restart_between_connections,
                 retire_after,

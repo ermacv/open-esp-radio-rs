@@ -30,15 +30,14 @@ Generated runs stay below `target/hil/<chip>/runs`; they are not tracked.
 A run never writes tracked files. After `run` or `run-all` from a
 clean tree, `cargo hil` notes the runs with passed scenarios as the checkout's
 pending evidence in `target/hil/pending-evidence.json`. `cargo hil evidence
-record` records the observations of those runs, of the `--run ID` runs, or of
-the clean completed runs of commits in `--since REV..HEAD`, that qualify on the
-current checkout as tracked shards in `hil/evidence/<chip>/` (`cargo
+record` records the observations of those runs, or of the `--run ID` runs,
+that qualify on the current checkout as tracked shards in `hil/evidence/<chip>/` (`cargo
 qualification hil-evidence --hil-target <chip> --run ID...`, with the current
 observer receipt), bound to the firmware and observer sources rather than to
 the commit. `cargo hil evidence pending` lists the pending runs, and `cargo
 xtask check changed` reminds of pending runs of scenarios a qualification
-catalog names. `--record-evidence` on a run records its evidence at once, also
-from a dirty tree or with `--source-include`. Commit the shards with the change
+catalog names. A run from a dirty tree or with untracked sources is recorded
+only when named with `--run ID`. Commit the shards with the change
 they qualify; see
 [qualification](../qualification/README.md#evidence-ownership).
 

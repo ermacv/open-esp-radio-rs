@@ -51,16 +51,10 @@ pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)
 pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     use_shared_store(ctx)?;
     let (options, args) = LeaseOptions::split(args)?;
-    let record_forced = args.iter().any(|arg| arg == RECORD_EVIDENCE);
-    let brief = args.iter().any(|arg| arg == BRIEF);
-    let args = args
-        .into_iter()
-        .filter(|arg| arg != RECORD_EVIDENCE && arg != BRIEF)
-        .collect::<Vec<_>>();
     let args = args.as_slice();
     match args.first().and_then(|argument| argument.to_str()) {
         None | Some("help" | "--help" | "-h") => println!("{STAND_HELP}"),
-        Some("queue" | "status") => return queue(&args[1..]),
+        Some("queue") => return queue(&args[1..]),
         Some("dashboard") => {
             return crate::hil_dashboard::serve(
                 &crate::hil_store::shared_runs(HIL_TARGET)?,
@@ -91,7 +85,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("wait") if args.get(1).is_some_and(|arg| arg == "--service") => {
             return wait_for_service(&args[2..]);
         }
-        Some("wait") => return crate::hil_jobs::wait_command(&args[1..]),
+        Some("wait") => return wait(&args[1..]),
         Some("ab") => return crate::hil_ab::run(ctx, &options.owner(ctx)?, &args[1..]),
         Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
@@ -104,13 +98,8 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         return Err("--enqueue and --after apply to run and run-all".into());
     }
     if enqueue {
-        let forwarded = args
-            .iter()
-            .cloned()
-            .chain(record_forced.then(|| OsString::from(RECORD_EVIDENCE)))
-            .collect::<Vec<_>>();
         validate_enqueued(ctx, &args)?;
-        let id = crate::hil_jobs::enqueue(ctx, &options.owner(ctx)?, &forwarded, after)?;
+        let id = crate::hil_jobs::enqueue(ctx, &options.owner(ctx)?, &args, after)?;
         eprintln!("hil: enqueued job {id}; `cargo hil wait {id}` blocks until it ends");
         println!("{id}");
         return Ok(std::process::ExitCode::SUCCESS);
@@ -129,35 +118,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     } else {
         None
     };
-    let (baseline, args) = crate::hil_baseline::take(args)?;
     let args = args.as_slice();
-    let baseline = match baseline {
-        None => None,
-        Some(_) if !produces_runs(args) => {
-            return Err("--baseline applies to run and run-all".into());
-        }
-        Some(_) if record_forced => {
-            return Err(format!(
-                "a baseline run records no evidence; {RECORD_EVIDENCE} cannot accompany --baseline"
-            )
-            .into());
-        }
-        Some(revision) => {
-            let (baseline, lock) = crate::hil_baseline::checkout(ctx, &revision)?;
-            use_shared_store(&baseline)?;
-            Some((baseline, lock))
-        }
-    };
-    // A baseline runs for this checkout's owner, which its worktree has
-    // none of.
-    let options = match &baseline {
-        Some(_) => LeaseOptions {
-            owner: Some(options.owner(ctx)?),
-        },
-        None => options,
-    };
-    let outer_root = ctx.root.clone();
-    let ctx = baseline.as_ref().map_or(ctx, |(baseline, _)| baseline);
     // The runner and its image builds are the largest writers to the build
     // disk: sweep stale caches when it runs low, and stop before it is full.
     if let Err(error) = crate::sweep::automatically(&ctx.root) {
@@ -187,23 +148,6 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     // The runner names every run it creates here, so exactly this
     // invocation's runs are recorded.
     let run_receipt = tempfile::NamedTempFile::new()?;
-    let brief_log = if brief {
-        if !produces_runs(args) {
-            return Err(format!("{BRIEF} applies to run and run-all").into());
-        }
-        let directory = ctx.root.join("target/hil/brief");
-        std::fs::create_dir_all(&directory)?;
-        Some(
-            tempfile::Builder::new()
-                .prefix("run-")
-                .suffix(".log")
-                .tempfile_in(directory)?
-                .keep()?
-                .1,
-        )
-    } else {
-        None
-    };
     let mut command = ctx.command(&runner);
     command
         .args(args)
@@ -217,32 +161,12 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .env(oer_hil_arbiter::control::OPENOCD_ENV, program)
             .env(oer_hil_arbiter::control::OPENOCD_SCRIPTS_ENV, scripts);
     }
-    if baseline.is_some() {
-        // The baseline's images compile into this checkout's warm caches.
-        command.env(
-            oer_hil_runner_core::image::BUILD_CACHE_ENV,
-            outer_root.join("target/hil/esp32s31/build-cache"),
-        );
-    }
-    if let Some(log) = &brief_log {
-        let file = std::fs::File::create(log)?;
-        command.stdout(file.try_clone()?).stderr(file);
-        eprintln!("hil: runner output goes to {}", log.display());
-    }
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         &mut command,
         std::time::Duration::from_secs(300),
     )?;
     let status = child.wait_forwarding_cancellation()?;
-    if let Some(log) = &brief_log {
-        let run_ids = std::fs::read_to_string(run_receipt.path())?;
-        print!("{}", brief_summary(run_ids.lines(), log)?);
-    }
-    if produces_runs(args) && baseline.is_some() {
-        eprintln!(
-            "hil: a baseline run is a reference, not evidence of this checkout: none recorded"
-        );
-    } else if produces_runs(args) {
+    if produces_runs(args) {
         let run_ids = std::fs::read_to_string(run_receipt.path())?
             .lines()
             .map(str::to_owned)
@@ -263,7 +187,6 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
         } else {
             match evidence_skip_reason(
-                record_forced,
                 args.iter().any(|arg| {
                     arg.to_str().is_some_and(|arg| {
                         arg.starts_with("--source-include")
@@ -273,12 +196,12 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
                 }),
                 &created,
             ) {
-                None if record_forced => record_evidence(ctx, &receipt_path, &run_ids)?,
                 None => remember_pending(ctx, options.owner(ctx).ok(), &run_ids)?,
                 // A runner that created no run has said why itself.
                 Some(_) if created.is_empty() => {}
                 Some(reason) => eprintln!(
-                    "hil: HIL evidence not recorded: {reason}; pass {RECORD_EVIDENCE} to record it"
+                    "hil: HIL evidence not noted as pending: {reason}; \
+                     `cargo hil evidence record --run ID` records it"
                 ),
             }
         }
@@ -298,8 +221,8 @@ Stand commands (shared by every checkout of this user):
   cargo hil ab --a VARIANT --b VARIANT --scenario S [--repetitions N] [--layout-seeds K]   A/B comparison with noise-aware verdicts
   cargo hil run ... --enqueue [--after JOB]   start the run detached as a job and print its id
   cargo hil wait --service [BOARD...] block until the boards (all when none) and the stand are in service
-  cargo hil wait JOB                  block until the job ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
-  cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases (alias: status)
+  cargo hil wait JOB|RUN              block until the job or run ends; exit 0 passed, 1 failed, 2 interrupted, 3 blocked, 4 broken, 5 no run, 6 abandoned
+  cargo hil queue [--json]            holders, balances, queue with expected starts, boards, recent leases
   cargo hil board reset BOARD [--via rts|jtag|en] [--download]   reset under a lease; prints the ROM reset line
   cargo hil board check BOARD         attached, firmware, maintenance, reset paths, whether it answers; no reset
   cargo hil board console BOARD [--for 10s] [--until TEXT]       the console without a reset, under a lease
@@ -321,16 +244,13 @@ Stand commands (shared by every checkout of this user):
   cargo hil devices reset BOARD [--download]   reset through the registered reset path
   cargo hil [--owner NAME] devices maintenance BOARD|--stand --reason TEXT   only NAME may claim BOARD (or the stand) until release; other runs wait
   cargo hil devices release BOARD [--confirm reset|power-cycle|rom-answers]
-  cargo hil runs list [--scenario S] [--outcome O] [--commit C] [--image I] [--since 3d]
+  cargo hil runs list [--scenario S] [--outcome O] [--image I] [--since 3d]
   cargo hil runs why RUN              why a run did not pass: failure, missed criteria, log tail
-  cargo hil runs wait RUN|--latest    follow a run to its end; exit 0 passed, 1 failed, 2 interrupted
   cargo hil runs compare A B [--measurement TEXT]   measurement means side by side
   cargo hil runs history SCENARIO [--measurement TEXT]
   cargo hil runs pin RUN --reason TEXT | unpin RUN
   cargo hil runs prune [--days 30] [--keep-failed 5] [--apply]
-  cargo hil run SCENARIO... --baseline REV   build and run a clean revision in this checkout's
-                                      baseline worktree (target/hil/baseline); the tree is untouched
-  cargo hil evidence record [--run ID ...] [--since REV]   write runs' qualifying observations as tracked shards;
+  cargo hil evidence record [--run ID ...]   write runs' qualifying observations as tracked shards;
                                       default: this checkout's pending clean runs
   cargo hil evidence pending          clean runs whose evidence is not recorded yet
   cargo hil firmware list             tracked ESP-IDF images (peers, vendor references)
@@ -355,8 +275,8 @@ exit status 124). `cargo hil queue` shows every balance and who goes next.
 Scenarios tagged `air-exclusive` claim the air exclusively.
 
 Runs never write tracked files: a clean run's passed scenarios become this
-checkout's pending evidence, recorded by `cargo hil evidence record`. Add
---record-evidence to a run to record its evidence at once, even from a dirty tree.
+checkout's pending evidence, recorded by `cargo hil evidence record`; record
+any other run, such as one from a dirty tree, with `--run ID`.
 
 Runner commands (`cargo hil run A B C` runs several scenarios under one lease):";
 
@@ -377,8 +297,7 @@ struct LeaseOptions {
 }
 
 impl LeaseOptions {
-    /// Split a leading `--owner NAME` from the remaining arguments; the
-    /// retired `--budget` and `--short` are refused.
+    /// Split a leading `--owner NAME` from the remaining arguments.
     fn split(args: &[OsString]) -> Result<(Self, Vec<OsString>)> {
         let mut options = Self::default();
         let mut rest = args.iter();
@@ -400,9 +319,6 @@ impl LeaseOptions {
             };
             match name {
                 "--owner" => options.owner = Some(value()?),
-                "--budget" | "--short" => {
-                    return Err(format!("{name}: {}", oer_hil_arbiter::NO_BUDGETS).into());
-                }
                 _ => {
                     remaining.push(argument.clone());
                     remaining.extend(rest.cloned());
@@ -439,9 +355,6 @@ impl LeaseOptions {
                         .ok_or("--owner requires a value")?
                         .to_owned(),
                 },
-                "--budget" | "--short" => {
-                    return Err(format!("{name}: {}", oer_hil_arbiter::NO_BUDGETS).into());
-                }
                 _ => {
                     remaining.push(argument.clone());
                     continue;
@@ -516,17 +429,8 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
     // The stand adds lease and evidence options to the runner's run commands.
     for node in &mut runner_nodes {
         if matches!(node.path.as_slice(), [one] if ["run", "run-all"].contains(&one.as_str())) {
-            node.flags.extend(
-                [
-                    "--record-evidence",
-                    "--baseline",
-                    "--owner",
-                    "--brief",
-                    "--enqueue",
-                    "--after",
-                ]
-                .map(String::from),
-            );
+            node.flags
+                .extend(["--owner", "--enqueue", "--after", "--after-any"].map(String::from));
         }
         node.path.insert(0, String::from("hil"));
     }
@@ -555,10 +459,9 @@ fn command_tree(ctx: &Context) -> Result<std::process::ExitCode> {
     let mut nodes = vec![
         root,
         node(&["hil", "queue"], &[], &["--json"]),
-        node(&["hil", "status"], &[], &["--json"]),
         node(&["hil", "dashboard"], &[], &["--port"]),
         node(&["hil", "evidence"], &["record", "pending"], &[]),
-        node(&["hil", "evidence", "record"], &[], &["--run", "--since"]),
+        node(&["hil", "evidence", "record"], &[], &["--run"]),
         node(&["hil", "evidence", "pending"], &[], &[]),
         node(&["hil", "owner"], &["set", "merge", "forget"], &[]),
         node(&["hil", "owner", "set"], &[], &[]),
@@ -690,6 +593,25 @@ fn queue(args: &[OsString]) -> Result<std::process::ExitCode> {
     Ok(std::process::ExitCode::SUCCESS)
 }
 
+/// `cargo hil wait ID`: block until the job or run ID names ends, and exit
+/// with its outcome. A job is waited for through its record, a run by
+/// following its bundle.
+fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
+    let [id] = args else {
+        return Err("usage: cargo hil wait JOB|RUN, or cargo hil wait --service [BOARD...]".into());
+    };
+    let text = id.to_str().ok_or("an id is text")?;
+    if crate::hil_jobs::Jobs::open()?.read(text).is_ok() {
+        return crate::hil_jobs::wait_command(args);
+    }
+    let store = crate::hil_store::shared_runs(HIL_TARGET)?;
+    let run = crate::hil_runs::load(&store.join(text))
+        .ok_or_else(|| format!("{text} is neither a job nor a run in {}", store.display()))?;
+    Ok(std::process::ExitCode::from(crate::hil_runs::wait(
+        &run.directory,
+    )?))
+}
+
 /// `cargo hil wait --service [BOARD...]`: block until the boards (every
 /// board when none is named) and the stand are back in service.
 fn wait_for_service(args: &[OsString]) -> Result<std::process::ExitCode> {
@@ -787,10 +709,6 @@ fn parse_budget(text: &str) -> std::result::Result<std::time::Duration, String> 
     oer_hil_arbiter::parse_duration(text).map_err(|error| error.to_string())
 }
 
-fn retired_budget(_: &str) -> std::result::Result<String, String> {
-    Err(String::from(oer_hil_arbiter::NO_BUDGETS))
-}
-
 /// `cargo hil lease [OPTIONS] -- COMMAND...`
 #[derive(Debug, clap::Parser)]
 #[command(name = "cargo hil lease", no_binary_name = true)]
@@ -798,12 +716,6 @@ struct LeaseCli {
     /// Who holds the lease.
     #[arg(long)]
     owner: Option<String>,
-    /// Retired: the stand charges the time a lease holds.
-    #[arg(long, hide = true, value_parser = retired_budget)]
-    budget: Option<String>,
-    /// Retired: there are no short leases.
-    #[arg(long, hide = true)]
-    short: bool,
     /// A board the command uses, by registered name, chip or MAC;
     /// repeatable.
     #[arg(long = "board", value_name = "NAME|MAC")]
@@ -910,9 +822,6 @@ impl FlashedArgs {
 fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = LeaseCli::try_parse_from(args)?;
-    if cli.short {
-        return Err(format!("--short: {}", oer_hil_arbiter::NO_BUDGETS).into());
-    }
     let options = LeaseOptions {
         owner: cli.owner.or(outer.owner),
     };
@@ -1104,22 +1013,6 @@ fn runs(
         .ok_or("the run store has no parent")?
         .to_owned();
     let parsed = RunsCli::try_parse_from(args)?;
-    // Waiting reads one run, not the whole store.
-    if let RunsCli::Wait { run, .. } = &parsed {
-        let checkout = ctx
-            .root
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned());
-        let run = match run {
-            Some(run) => hil_runs::load(&directory.join(run))
-                .ok_or_else(|| format!("no run {run} in {}", directory.display()))?,
-            None => hil_runs::newest_of(&directory, checkout.as_deref())
-                .ok_or("this checkout has no run")?,
-        };
-        return Ok(std::process::ExitCode::from(hil_runs::wait(
-            &run.directory,
-        )?));
-    }
     // Reading every run takes long; commands about one run read only it.
     let all = || hil_runs::all(&directory);
     let find = |id: &str| {
@@ -1133,18 +1026,14 @@ fn runs(
         RunsCli::List {
             scenario,
             outcome,
-            commit,
             image,
-            checkout,
             since,
             limit,
         } => {
             let filter = hil_runs::Filter {
                 scenario,
                 outcome,
-                commit,
                 image,
-                checkout,
                 since_millis: since.map(|since| now.saturating_sub(since.as_millis() as u64)),
             };
             let all = all()?;
@@ -1158,7 +1047,6 @@ fn runs(
         }
         RunsCli::Show { run } => print!("{}", hil_runs::show(&find(&run)?)),
         RunsCli::Why { run, tail } => print!("{}", hil_runs::why(&find(&run)?, tail)),
-        RunsCli::Wait { .. } => unreachable!("handled before the store is read"),
         RunsCli::Compare { a, b, measurement } => print!(
             "{}",
             hil_runs::compare(&find(&a)?, &find(&b)?, measurement.as_deref())
@@ -1517,21 +1405,12 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-/// Make this checkout's run directory of every supported chip the shared
-/// store, migrating its runs.
+/// Make this checkout's run directory of every supported chip a link to the
+/// shared store.
 fn use_shared_store(ctx: &Context) -> Result<()> {
     for chip in oer_chip_profile::supported(&ctx.root)? {
         let local = ctx.root.join("target/hil").join(&chip).join("runs");
-        match crate::hil_store::link_runs(&local, &crate::hil_store::shared_runs(&chip)?)? {
-            crate::hil_store::Linked::Migrated { runs, kept } => eprintln!(
-                "hil: moved {runs} {chip} runs into the shared store; the old directory is {}",
-                kept.display()
-            ),
-            crate::hil_store::Linked::Deferred { active } => eprintln!(
-                "hil: run {active} is in progress; this checkout joins the shared {chip} store later"
-            ),
-            crate::hil_store::Linked::Existing | crate::hil_store::Linked::Created => {}
-        }
+        crate::hil_store::link_runs(&local, &crate::hil_store::shared_runs(&chip)?)?;
     }
     Ok(())
 }
@@ -1539,69 +1418,16 @@ fn use_shared_store(ctx: &Context) -> Result<()> {
 /// The HIL target the runner executes on.
 pub(crate) const HIL_TARGET: &str = "esp32s31";
 
-/// Forces recording HIL evidence after a run that would otherwise skip it.
-const RECORD_EVIDENCE: &str = "--record-evidence";
-/// Keep the runner's output in a log and print only each run's outcome, with
-/// why it did not pass.
-const BRIEF: &str = "--brief";
-
-/// Lines of `uart.log` a brief summary shows per failed repetition.
-const BRIEF_UART_LINES: usize = 5;
-
-/// One line per run of `run_ids`, with `runs why` for the ones that did not
-/// pass, then where the runner's whole output is.
-fn brief_summary<'a>(
-    run_ids: impl Iterator<Item = &'a str>,
-    log: &std::path::Path,
-) -> Result<String> {
-    Ok(brief_summary_in(
-        &crate::hil_store::shared_runs(HIL_TARGET)?,
-        run_ids,
-        log,
-    ))
-}
-
-fn brief_summary_in<'a>(
-    store: &std::path::Path,
-    run_ids: impl Iterator<Item = &'a str>,
-    log: &std::path::Path,
-) -> String {
-    let mut text = String::new();
-    let mut any = false;
-    for id in run_ids {
-        any = true;
-        match crate::hil_runs::load(&store.join(id)) {
-            Some(run) => {
-                text.push_str(&crate::hil_runs::list_line(&run));
-                text.push('\n');
-                if run.outcome != Some(oer_hil_schema::run::Outcome::Passed) {
-                    text.push_str(&crate::hil_runs::why(&run, BRIEF_UART_LINES));
-                }
-            }
-            None => text.push_str(&format!("{id}: unreadable run\n")),
-        }
-    }
-    if !any {
-        text.push_str("no run was created\n");
-    }
-    text.push_str(&format!("runner output: {}\n", log.display()));
-    text
-}
-
 /// Check an enqueued `run`'s scenarios and options with the runner now, so
 /// a mistake shows in the terminal instead of in a job that ends no-run
-/// minutes later. A baseline run is checked by its own runner when it starts.
+/// minutes later.
 fn validate_enqueued(ctx: &Context, args: &[OsString]) -> Result<()> {
     if args.first().and_then(|arg| arg.to_str()) != Some("run") {
         return Ok(());
     }
-    let (baseline, args) = crate::hil_baseline::take(args.to_vec())?;
-    if baseline.is_some() {
-        return Ok(());
-    }
     let (runner, _) = prepare(ctx)?;
     let output = oer_process::output(
-        ctx.command(&runner).args(&args).arg("--validate-only"),
+        ctx.command(&runner).args(args).arg("--validate-only"),
         Some(std::time::Duration::from_secs(120)),
     )?;
     if !output.status.success() {
@@ -1652,17 +1478,11 @@ fn runs_dirty(run_ids: &[String]) -> Result<Vec<bool>> {
 
 /// Why a finished invocation records no evidence: it created no run, a run
 /// came from a dirty tree, or untracked sources were added with
-/// `--source-include` or `--include-untracked`.
-/// Such runs are experiments; `--record-evidence` records them anyway.
-fn evidence_skip_reason(
-    forced: bool,
-    source_include: bool,
-    created_dirty: &[bool],
-) -> Option<&'static str> {
+/// `--source-include` or `--include-untracked`. Such runs are experiments;
+/// `cargo hil evidence record --run ID` records them anyway.
+fn evidence_skip_reason(source_include: bool, created_dirty: &[bool]) -> Option<&'static str> {
     if created_dirty.is_empty() {
         Some("the runner created no run")
-    } else if forced {
-        None
     } else if created_dirty.iter().any(|dirty| *dirty) {
         Some("the run was built from a dirty tree")
     } else if source_include {
@@ -1673,7 +1493,7 @@ fn evidence_skip_reason(
 }
 
 /// Note clean runs as pending evidence of this checkout: a run never writes
-/// tracked files unless asked to with `--record-evidence`.
+/// tracked files.
 fn remember_pending(ctx: &Context, owner: Option<String>, run_ids: &[String]) -> Result<()> {
     let store = crate::hil_store::shared_runs(HIL_TARGET)?;
     let pending = run_ids
@@ -1959,15 +1779,9 @@ enum RunsCli {
         /// that scenario's outcome.
         #[arg(long)]
         outcome: Option<String>,
-        /// Commit prefix.
-        #[arg(long)]
-        commit: Option<String>,
         /// Image class or application SHA-256 prefix.
         #[arg(long)]
         image: Option<String>,
-        /// Checkout directory name.
-        #[arg(long)]
-        checkout: Option<String>,
         /// Only runs this recent, e.g. 3d or 12h.
         #[arg(long, value_parser = parse_budget)]
         since: Option<std::time::Duration>,
@@ -2010,16 +1824,6 @@ enum RunsCli {
     },
     Unpin {
         run: String,
-    },
-    /// Follow a run until it ends and exit with its outcome: 0 passed,
-    /// 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or
-    /// on a quarantined board.
-    #[command(group(clap::ArgGroup::new("which").required(true).args(["run", "latest"])))]
-    Wait {
-        run: Option<String>,
-        /// The newest run of this checkout.
-        #[arg(long)]
-        latest: bool,
     },
     /// List, or with --apply delete, runs no rule keeps.
     Prune {
@@ -2124,32 +1928,12 @@ enum DevicesCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::{brief_summary_in, evidence_skip_reason};
-
     #[test]
-    fn a_brief_summary_names_each_run_and_the_full_output() {
-        let store = tempfile::tempdir().unwrap();
-        let log = std::path::Path::new("/tmp/run.log");
-        assert_eq!(
-            brief_summary_in(store.path(), std::iter::empty(), log),
-            "no run was created\nrunner output: /tmp/run.log\n"
-        );
-        let text = brief_summary_in(store.path(), ["123-x"].into_iter(), log);
-        assert!(text.starts_with("123-x: unreadable run\n"), "{text}");
-        assert!(text.ends_with("runner output: /tmp/run.log\n"), "{text}");
-    }
-
-    #[test]
-    fn evidence_is_recorded_only_for_clean_runs_unless_forced() {
-        assert_eq!(evidence_skip_reason(false, false, &[false]), None);
-        assert!(evidence_skip_reason(false, false, &[]).is_some());
-        assert!(
-            evidence_skip_reason(true, false, &[]).is_some(),
-            "no run, nothing to record"
-        );
-        assert!(evidence_skip_reason(false, false, &[false, true]).is_some());
-        assert!(evidence_skip_reason(false, true, &[false]).is_some());
-        assert_eq!(evidence_skip_reason(true, true, &[true]), None);
+    fn evidence_is_noted_as_pending_only_for_clean_runs() {
+        assert_eq!(evidence_skip_reason(false, &[false]), None);
+        assert!(evidence_skip_reason(false, &[]).is_some());
+        assert!(evidence_skip_reason(false, &[false, true]).is_some());
+        assert!(evidence_skip_reason(true, &[false]).is_some());
     }
 
     use super::*;
@@ -2199,17 +1983,9 @@ mod tests {
         );
         assert!(
             LeaseOptions::default()
-                .with_late(&args(&["run", "--budget", "5m"]))
-                .is_err()
-        );
-        assert!(
-            LeaseOptions::default()
                 .with_late(&args(&["run", "--owner"]))
                 .is_err()
         );
-        // Budgets are retired: the stand charges held time.
-        assert!(LeaseOptions::split(&args(&["--budget", "15m"])).is_err());
-        assert!(LeaseOptions::split(&args(&["--short", "run"])).is_err());
         let (options, rest) = LeaseOptions::split(&args(&["run", "x"])).unwrap();
         assert_eq!(options, LeaseOptions::default());
         assert_eq!(rest.len(), 2);

@@ -425,9 +425,7 @@ pub fn collect_observers(runs: &Path) -> Result<usize> {
 pub struct Filter {
     pub scenario: Option<String>,
     pub outcome: Option<String>,
-    pub commit: Option<String>,
     pub image: Option<String>,
-    pub checkout: Option<String>,
     pub since_millis: Option<u64>,
 }
 
@@ -451,20 +449,11 @@ impl Filter {
         };
         scenario(run)
             && outcome(run)
-            && self.commit.as_ref().is_none_or(|prefix| {
-                run.commit
-                    .as_ref()
-                    .is_some_and(|commit| commit.starts_with(prefix.as_str()))
-            })
             && self.image.as_ref().is_none_or(|wanted| {
                 run.images
                     .iter()
                     .any(|(class, sha)| class == wanted || sha.starts_with(wanted.as_str()))
             })
-            && self
-                .checkout
-                .as_ref()
-                .is_none_or(|wanted| run.checkout.as_deref() == Some(wanted.as_str()))
             && self
                 .since_millis
                 .is_none_or(|since| run.started_millis >= since)
@@ -1218,13 +1207,6 @@ mod tests {
             ..Filter::default()
         };
         assert_eq!(runs.iter().filter(|run| filter.matches(run)).count(), 1);
-        assert!(
-            Filter {
-                commit: Some("0123".into()),
-                ..Filter::default()
-            }
-            .matches(&runs[0])
-        );
         assert!(
             !Filter {
                 image: Some("performance".into()),

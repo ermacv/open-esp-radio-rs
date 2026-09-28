@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_hil_schema::run::{Outcome, RunState};
+use oer_hil_schema::run::Outcome;
 use serde::{Deserialize, Serialize};
 
 use crate::{Context, Result};
@@ -34,12 +34,12 @@ pub struct Pending {
 }
 
 const HELP: &str = "\
-usage: cargo hil evidence record [--run ID ...] [--since REV]
+usage: cargo hil evidence record [--run ID ...]
        cargo hil evidence pending
 
 record   write the qualifying observations of runs as tracked shards in
-         hil/evidence/<chip>/: the --run runs, the clean completed runs of
-         commits in REV..HEAD with --since, or else this checkout's pending runs
+         hil/evidence/<chip>/: the --run runs, or else this checkout's pending
+         runs
 pending  list this checkout's clean runs whose evidence is not recorded";
 
 /// `cargo hil evidence ...`.
@@ -73,18 +73,14 @@ pub fn command(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCod
 
 fn record(ctx: &Context, args: &[&str]) -> Result<()> {
     let mut runs = Vec::new();
-    let mut since = None;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match *arg {
             "--run" => runs.push(rest.next().ok_or("--run needs a run ID")?.to_string()),
-            "--since" => since = Some(*rest.next().ok_or("--since needs a revision")?),
             other => return Err(format!("unknown argument {other}\n{HELP}").into()),
         }
     }
-    if let Some(since) = since {
-        runs.extend(runs_since(ctx, since)?);
-    } else if runs.is_empty() {
+    if runs.is_empty() {
         runs = live(&load(&ctx.root)?)?
             .into_iter()
             .map(|entry| entry.run)
@@ -111,67 +107,6 @@ fn record(ctx: &Context, args: &[&str]) -> Result<()> {
         runs.len()
     );
     Ok(())
-}
-
-/// Clean, completed runs in the store built from a commit in `since..HEAD`.
-fn runs_since(ctx: &Context, since: &str) -> Result<Vec<String>> {
-    let output = ctx
-        .command("git")
-        .args(["rev-list", &format!("{since}..HEAD")])
-        .current_dir(&ctx.root)
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "git rev-list {since}..HEAD failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
-    }
-    let commits = String::from_utf8(output.stdout)?
-        .lines()
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
-    let store = crate::hil_store::shared_runs(crate::hil::HIL_TARGET)?;
-    let mut runs = Vec::new();
-    for entry in std::fs::read_dir(&store)? {
-        let path = entry?.path();
-        let Ok(bytes) = std::fs::read(path.join("manifest.json")) else {
-            continue;
-        };
-        // A manifest outside the known vocabulary is not selected.
-        let Ok(manifest) = serde_json::from_slice::<Manifest>(&bytes) else {
-            continue;
-        };
-        if selected_since(&manifest, &commits) {
-            runs.push(manifest.run_id);
-        }
-    }
-    Ok(runs)
-}
-
-/// The part of a run manifest that selects it.
-#[derive(Deserialize)]
-struct Manifest {
-    run_id: String,
-    state: RunState,
-    repository: Repository,
-}
-
-#[derive(Deserialize)]
-struct Repository {
-    commit: Option<String>,
-    dirty: bool,
-}
-
-/// Whether a run manifest is a clean completed run of one of `commits`.
-fn selected_since(manifest: &Manifest, commits: &BTreeSet<String>) -> bool {
-    manifest.state == RunState::Completed
-        && !manifest.repository.dirty
-        && manifest
-            .repository
-            .commit
-            .as_ref()
-            .is_some_and(|commit| commits.contains(commit))
 }
 
 /// The part of a suite summary naming passed scenarios.
@@ -421,35 +356,6 @@ mod tests {
         );
         forget(root.path(), &[String::from("r1")]).unwrap();
         assert_eq!(load(root.path()).unwrap(), [pending("r3", &["b"])]);
-    }
-
-    #[test]
-    fn since_selects_clean_completed_runs_of_the_commits() {
-        let commits = BTreeSet::from([String::from("c1")]);
-        let manifest = |state: RunState, dirty: bool, commit: &str| Manifest {
-            run_id: String::from("r"),
-            state,
-            repository: Repository {
-                commit: Some(commit.into()),
-                dirty,
-            },
-        };
-        assert!(selected_since(
-            &manifest(RunState::Completed, false, "c1"),
-            &commits
-        ));
-        assert!(!selected_since(
-            &manifest(RunState::Completed, true, "c1"),
-            &commits
-        ));
-        assert!(!selected_since(
-            &manifest(RunState::Interrupted, false, "c1"),
-            &commits
-        ));
-        assert!(!selected_since(
-            &manifest(RunState::Completed, false, "c2"),
-            &commits
-        ));
     }
 
     #[test]

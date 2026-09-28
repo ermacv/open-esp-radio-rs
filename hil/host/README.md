@@ -184,18 +184,6 @@ given order within each image class. With `--firmware-from` every named
 scenario must use the replayed image class. Prefer it to a shell loop under
 `lease`, where each nested run builds while the stand is held.
 
-`run` and `run-all` with `--baseline REV` run a clean commit as
-an A/B reference without touching the working tree: `cargo hil` checks REV
-out, detached, in the checkout's baseline worktree
-`target/hil/baseline/checkout` and builds the runner and firmware there, so
-both speak REV's protocol and the run is a clean run of REV. The worktree keeps
-its own `target/`, so later baselines build incrementally, and its images
-compile into the checkout's own warm image caches (`OER_HIL_BUILD_CACHE`, which
-a baseline runner that predates it ignores): registry packages are reused
-from the first baseline on; one baseline of a checkout runs at a time. A revision whose stand state schema differs from the
-checkout's is refused before anything is built, because its runner could not
-share the stand. The lease is held for the checkout's owner, and a baseline
-run records no evidence.
 `lease` runs one command under one lease; every `cargo hil` command inside it
 joins that lease when the lease already holds what it needs, so no other owner
 can flash between the runs of a series. `--board NAME|MAC` (repeatable) and
@@ -242,9 +230,8 @@ TEXT` stops another owner's lease the same way at once: its owner is charged
 no longer from that moment, the holder prints who preempted it and why when it
 releases, the history records it as `preempted-on-request`, and the user is
 notified. Estimates from earlier leases of
-the same work only predict when a waiting request starts. A top-level run
-given `--record-evidence` records its evidence shards after its lease is
-released; otherwise `cargo hil evidence record` does. `cargo hil doctor`
+the same work only predict when a waiting request starts. `cargo hil evidence
+record` records a run's evidence shards. `cargo hil doctor`
 reports conflicting holders without queueing.
 
 A command started in the background returns when its lease ends; its exit is
@@ -401,17 +388,13 @@ waits for such a process to finish.
 Every checkout's `target/hil/esp32s31/runs` is a link to one store shared by
 all checkouts of this user, `~/.local/share/open-esp-radio/hil/esp32s31/runs`
 (`$XDG_DATA_HOME`, or `$OER_HIL_STORE/<target>/runs`). `cargo hil` creates the
-link; a checkout that still has its own run directory is migrated on its next
-`cargo hil` command by hard-linking every file into the store, and the old
-directory stays as `runs.before-shared-store`. A run in progress defers the
-migration. Qualification reads the store from any checkout and still decides
+link, and refuses a checkout whose own run directory holds runs. Qualification reads the store from any checkout and still decides
 per bundle whether it applies to that checkout's sources.
 
 ```console
 cargo hil runs list --scenario station-reconnect --outcome failed --since 7d
 cargo hil runs show <run-id>          # where its artifacts are
 cargo hil runs why <run-id>
-cargo hil runs wait <run-id>          # or --latest: this checkout's newest run
 cargo hil runs compare <run-a> <run-b> --measurement mbps
 cargo hil runs history <scenario> --measurement mbps
 cargo hil runs pin <run-id> --reason "A/B baseline"
@@ -420,8 +403,8 @@ cargo hil runs prune --apply
 ```
 
 `list` shows each run's time, outcome, checkout, commit (`+` when dirty),
-images and scenario outcomes, filtered by scenario, outcome, commit prefix,
-image class or digest prefix, checkout and age. `show` prints the run's
+images and scenario outcomes, filtered by scenario, outcome, image class or
+digest prefix and age. `show` prints the run's
 directory in the store, its reports, and per scenario and repetition the
 outcome, the artifact directory and the files in it; use it rather than
 `find`, which does not follow the store link. `why` names, per failed
@@ -429,14 +412,12 @@ repetition, the recorded failure, the measurements that missed their
 criteria (a criterion miss, unlike a fault), cleanup failures, host USB
 events of its boards, the artifact directory and the end of `uart.log`. `compare` and `history` use per-scenario
 means of numeric measurements over repetitions. These views never decide
-qualification. `wait` follows a run's `events.jsonl`, printing each step,
-until the run ends or its runner is gone, and exits with its outcome: 0
-passed, 1 failed, broken, blocked or skipped, 2 interrupted, abandoned or on a
-quarantined board; an agent that started a run in the background waits on it
-instead of polling its log. `run` and `run-all` accept `--brief`: the
-runner's output goes to a log under `target/hil/brief/`, and the command
-prints only each created run's line and, for one that did not pass, its
-`why` with the last 5 `uart.log` lines, then the log's path. `why`, `wait`, `compare` and `pin` read only the
+qualification. `cargo hil wait RUN` follows a run's `events.jsonl`, printing
+each step, until the run ends or its runner is gone, and exits with its
+outcome: 0 passed, 1 failed, broken, blocked or skipped, 2 interrupted,
+abandoned or on a quarantined board; an agent that started a run in the
+background waits on it instead of polling its log. The same `cargo hil wait`
+takes a job id (below) or `--service`. `why`, `compare` and `pin` read only the
 runs they name.
 
 When a repetition fails, the runner attaches to the target without resetting
@@ -754,7 +735,8 @@ packages an image build reads, or inside the HIL host packages and scenarios
 unresolved files block capture with their names and the `--source-include`
 arguments that add them all, ready to paste, before content is archived. The manifest lists every archived untracked
 file with `by: source-include`, `by: image-package` or `by: hil-host`, and a run with any
-option records no evidence unless `--record-evidence` asks for it. Directory selections and ignored files are not accepted.
+option is not noted as pending evidence; `cargo hil evidence record --run ID`
+records it. Directory selections and ignored files are not accepted.
 For the configured local overrides, qualify each new file with `esp-hal:`,
 `embassy:` or `xarxa:`. No symlink or submodule content is silently followed;
 such inputs require review and are rejected by this capture interface.

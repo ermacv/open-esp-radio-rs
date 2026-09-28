@@ -3956,6 +3956,12 @@ decisions = ["coverage.rs"]
 [[function]]
 artifact = "libpp"
 member = "lmac.o"
+symbol = "lmacMSDUAged"
+code = "07e43ca95c237dc9fbbb106380fed4cd19d995f8e5d633877d489923ed4c8217"
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
 symbol = "lmacProcessAckTimeout"
 code = "6beee0b6c99ff68889bfe217af500eba07c8524e0e015b27fd67c8046e7e6beb"
 decisions = ["state.rs"]
@@ -4969,6 +4975,12 @@ member = ""
 symbol = "lmacIsLongFrame"
 code = "ee92b131eef7fc32f3a72e9e3736a9aab365d22d4d0e92d5e4365df9d56576a4"
 decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "lmacMSDUAged"
+code = "cda95271b525bc9e369348982e3c9461c18682a6a96ea440e7d9d2188f4c3fd8"
 
 [[function]]
 artifact = "rom"

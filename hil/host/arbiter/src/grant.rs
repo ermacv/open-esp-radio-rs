@@ -146,7 +146,7 @@ enum Poll {
 }
 
 /// A waiting message is repeated at this interval when nothing changed.
-const REPORT_INTERVAL: Duration = Duration::from_secs(60);
+const REPORT_INTERVAL: Duration = Duration::from_secs(300);
 
 impl Arbiter {
     /// Wait in the queue until the stand is granted to `request`.
@@ -349,19 +349,15 @@ impl Arbiter {
                 .find(|ticket| ticket.id == id)
                 .map(|ticket| ticket.owner.clone())
                 .unwrap_or_default();
-            let key = format!(
-                "waiting as #{id} for {} with balance {}, behind {ahead} conflicting request(s) \
-                 of owners with a higher balance; {holders}",
-                describe_claims(&claims),
-                signed_duration(balance::of(&state.balances, &owner))
+            let (key, message) = waiting_report(
+                id,
+                &describe_claims(&claims),
+                ahead,
+                &holders,
+                balance::of(&state.balances, &owner),
+                wait,
             );
-            Ok(Poll::Waiting {
-                message: format!(
-                    "{key}; expected start in ~{}",
-                    format_duration(Duration::from_secs(wait))
-                ),
-                key,
-            })
+            Ok(Poll::Waiting { message, key })
         })
     }
 
@@ -403,6 +399,30 @@ impl Arbiter {
             eprintln!("hil-arbiter: firmware on {}: {flash}", label(flash));
         }
     }
+}
+
+/// What a waiting request reports, and the key that decides when it reports
+/// again: a change of its position or of who holds what it needs. The
+/// balance and the expected start change every second while it waits, so
+/// they are shown but are not part of the key.
+fn waiting_report(
+    id: u64,
+    claims: &str,
+    ahead: usize,
+    holders: &str,
+    balance_ms: i64,
+    wait_secs: u64,
+) -> (String, String) {
+    let key = format!(
+        "waiting as #{id} for {claims}, behind {ahead} conflicting request(s) of owners with a \
+         higher balance; {holders}"
+    );
+    let message = format!(
+        "{key}; balance {}, expected start in ~{}",
+        signed_duration(balance_ms),
+        format_duration(Duration::from_secs(wait_secs))
+    );
+    (key, message)
 }
 
 /// Removes the ticket of a request that stops waiting.

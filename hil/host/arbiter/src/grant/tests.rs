@@ -489,3 +489,21 @@ fn a_new_request_waits_for_live_leases_of_the_previous_schema() {
     assert!(waiter.join().unwrap());
     assert_eq!(state(&arbiter).schema, crate::state::STATE_SCHEMA);
 }
+
+#[test]
+fn a_waiting_request_reports_again_only_when_its_position_or_holders_change() {
+    let (key, message) = waiting_report(4, "board:AA", 1, "held by phy `run a`", 60_000, 90);
+    // The balance and the expected start grow every second while it waits.
+    let (same, later) = waiting_report(4, "board:AA", 1, "held by phy `run a`", 61_000, 89);
+    assert_eq!(key, same);
+    assert_ne!(message, later);
+    assert!(message.contains("balance +1m"), "{message}");
+    assert_ne!(
+        key,
+        waiting_report(4, "board:AA", 0, "held by phy `run a`", 61_000, 89).0
+    );
+    assert_ne!(
+        key,
+        waiting_report(4, "board:AA", 1, "no conflicting holder", 61_000, 0).0
+    );
+}

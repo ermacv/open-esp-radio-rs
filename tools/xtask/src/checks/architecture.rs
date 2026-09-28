@@ -3,6 +3,7 @@ use crate::{Context, Result, cargo, graph::Graph, process};
 use super::{TARGET, common::*};
 
 mod facade;
+mod pac_transactions;
 mod unsafe_policy;
 
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
@@ -21,6 +22,13 @@ pub fn run(ctx: &Context) -> Result<()> {
             classification(&package.package)?.layer,
         )?;
     }
+    let tracked = String::from_utf8(
+        process::capture(ctx.command("git").args(["ls-files", "crates/hardware"]))?.stdout,
+    )?;
+    pac_transactions::check(
+        &ctx.root,
+        &tracked.lines().map(str::to_owned).collect::<Vec<_>>(),
+    )?;
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages)?;
     unsafe_policy::check(&packages)?;

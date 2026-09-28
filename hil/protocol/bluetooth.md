@@ -96,6 +96,21 @@ before it; `dropped` counts packets lost to the bounded queue since the last
 returned one. A Host that enables Controller-to-Host flow control bounds the
 queued ACL data by the credits it grants.
 
+The `bluetooth-hci-diagnostics` image also declares `bluetooth_hci_lifecycle`.
+`BluetoothHci(Lifecycle(Restart | Retire))` resets the Controller through HCI,
+retires the drained Host end, stops the Controller on the shared radio and
+reports `Lifecycle { old_host_closed, restarted }`: `old_host_closed` when
+both directions of the retired end report the transport closed. `Restart` then
+starts the Controller again on the same storage and later requests reach the
+fresh Host end; `Retire`, or an old end that stayed open, keeps the Controller
+stopped and every later HCI request returns `TransportFailed`. A failed Reset
+returns its Command Complete, `Timeout` or `TransportFailed` and keeps the
+epoch running. Other images reject the request.
+
+Both HCI images serve `PhyTracking` for their periodic PHY tracking: the
+counters cover every tracking tick since boot, and a suspension stops the timer
+between ticks.
+
 Host workloads drive advertising, scanning, connections and ACL data through
 these requests with standard HCI. ACL timing observed this way includes the
 HIL console link, so it supports no throughput or latency claim without a

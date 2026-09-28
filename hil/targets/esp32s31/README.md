@@ -21,8 +21,12 @@ tracking failure as `reason=phy-tracking`, and serves the typed console. The `bl
 `bluetooth-dtm-*` and raw HCI scenarios: `bluetooth/hci.rs` resets the
 Controller and turns each DTM operation into LE Transmitter Test v1 (channel 0,
 37-byte PRBS9), LE Receiver Test v1 (channel 0), LE Test End or HCI Reset,
-reporting the Test End packet count, and passes raw HCI commands, events and
-ACL data between the host runner and the Controller. The `bluetooth-gatt` image serves `bluetooth-trouble-gatt`:
+reporting the Test End packet count, passes raw HCI commands, events and
+ACL data between the host runner and the Controller, and counts its periodic
+PHY tracking ticks for `PhyTracking`. The `bluetooth-hci-diagnostics` image
+(`bluetooth-hil,bluetooth-hci-lifecycle`) serves the same exchanges with the
+Controller and its HCI service in one owner that restarts or retires the
+Controller epoch on request (`bluetooth/hci/lifecycle.rs`). The `bluetooth-gatt` image serves `bluetooth-trouble-gatt`:
 `bluetooth/gatt.rs` runs the Trouble Host and the plaintext GATT application
 over the Host end of the transport. Both images use the development Controller
 identity Core 5.4, company `0xffff`, subversion 1, and a 500-ppm sleep-clock

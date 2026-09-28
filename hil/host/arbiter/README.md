@@ -7,6 +7,11 @@ journal.
 
 ## Ownership
 
+- Every lease is charged to one owner from a closed set of agents
+  (`Owner`). A checkout registers its owner once with `cargo hil owner set
+  NAME`; a request from an unregistered checkout without an explicit owner is
+  refused. `Arbiter::merge_owner` moves an old owner name's balance and
+  history to a registered one.
 - A request claims resources, each exclusively or shared: `board:<MAC>`,
   fixture keys, `air`, or `stand`, which conflicts with everything and is the
   claim of a request that names nothing. Holders whose claims do not conflict
@@ -39,6 +44,14 @@ journal.
 - The runner's fixture lock and the firmware flash command take the lease before
   their device and fixture `flock`s, which remain the final exclusion.
 
+A board can be taken out of service: under maintenance it serves only the
+owner who took it out; in quarantine it serves nobody. The runner quarantines
+a board only when no automatic reset path brings its ROM back to answering,
+so no script can make it flashable again; a person resets or power-cycles it
+and releases it with `cargo hil devices release MAC --confirm
+reset|power-cycle`. A board whose ROM answers the stand's reset is recovered
+by reflashing and never quarantined.
+
 The arbiter reports board changes but never restores board state. A board is
 identified by the USB serial number of its port, which Espressif USB
 Serial/JTAG ports set to the chip's MAC address. The runner registers the
@@ -58,8 +71,10 @@ Every change happens under `arbiter.lock`:
 | --- | --- |
 | `state.json` | Schema 3: queue tickets and holders with their claims, each with PID and kernel start time, every recently active owner's balance and the time they were last advanced. Schema 2 is read with each budget as the estimate and every balance zero; schema 1 (one whole-stand holder) is migrated once its holder and waiting processes have ended; newer requests wait until then |
 | `history.jsonl` | Completed leases: owner, work, scenarios, duration, the time charged, the owner's balance at release, the grant's reason and `released`, `yielded-to-balance`, `hard-limit`, `preempted-on-request` (with who preempted it and why) or `abandoned` (older records also `yielded`, `preempted`, `budget-exceeded`) |
-| `board.jsonl` | Flashes and startup-artifact uploads and writes, with owner, checkout and board MAC |
+| `board.jsonl` | Flashes, startup-artifact uploads and writes, automatic recoveries, quarantine releases and soaks, with owner, checkout and board MAC |
 | `devices.json` | Schema 1: board MAC to chip and name; boards have no fixed role |
+| `owners.json` | Schema 1: checkout directory to registered owner; the innermost registered directory decides |
+| `maintenance.json` | Schema 1: boards out of service, each with its owner or quarantine, reason, trigger and evidence path |
 
 Each transaction first removes tickets and holders whose process no longer
 exists; the start time prevents a recycled PID from keeping a lease alive. The

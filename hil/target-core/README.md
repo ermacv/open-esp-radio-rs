@@ -3,14 +3,15 @@
 `oer-hil-target-core` holds the HIL target logic that does not
 depend on the chip: transport workload pieces, memory-benchmark data
 conditioning, console serialization, network-boundary counters and IPv4
-policy, and the Bluetooth fixed-key Host policy, command pump and secure-GATT
+policy, the reset-retained post-mortem record, task liveness slots for the
+hang watchdog, the platform's own trace events, and the Bluetooth fixed-key Host policy, command pump and secure-GATT
 evidence. The [ESP32-S31 runtime](../targets/esp32s31/README.md) composes these
 modules with its radio, executor and console. Host tests exercise the same
 compiled code the firmware links.
 
 | Feature | Modules |
 | --- | --- |
-| none | `console`, `memory_benchmark`, `network::progress`, `traffic` |
+| none | `console`, `liveness`, `memory_benchmark`, `network::progress`, `postmortem`, `trace`, `traffic` |
 | `bluetooth` | `bluetooth::{command_pump, security}` |
 | `secure-gatt` | `bluetooth_gatt::secure` |
 | `owned-network` | `network::{embassy_ipv4, sockets}` on the owned Embassy and Xarxa fork |

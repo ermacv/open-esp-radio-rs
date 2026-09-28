@@ -163,7 +163,7 @@ abrupt RF loss on an adapter that terminates gracefully during close.
 
 ## ESP and adapter RF scenario
 
-Add the selected adapter to the private `hil/local.toml` configuration:
+Add the selected adapter to the private lab configuration:
 
 ```toml
 [bluetooth]

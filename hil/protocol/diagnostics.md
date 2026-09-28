@@ -21,6 +21,23 @@ mode; only `Complete` acknowledges disarming. Other modes must produce a new
 boot and MWDT1 reset reason. This does not inject a PHY failure or measure RF
 cessation. The separate DTM reset scenario retains its independent peer gates.
 
+## Event trace
+
+An image that links `oer-trace` keeps typed trace entries, and optionally
+snapshot slots of register windows, in reset-retained memory. `TraceControl`
+reports the trace's `TraceStatus`, starts it over with a channel mask or
+changes the mask while it runs; `GetTraceEntries` pages out up to 16 complete
+entries from a storage slot, and `GetTraceSnapshot` one slot's snapshot in
+pages of 64 words. Entries travel raw, with their event kind; the host decodes
+their words with the same event types the target records.
+
+A hang or a panic freezes the trace before the reset, as can a driver's own
+trigger. The next boot then holds the frozen trace, reported as
+`holding_previous`, until the host has paged it out and starts recording, or
+for 30 s at most; a clean boot records at once on every channel. Reading the
+trace does not change radio state or consume retained results. An image
+without a trace reports `installed: false`.
+
 ## Memory copy benchmark
 
 `ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async

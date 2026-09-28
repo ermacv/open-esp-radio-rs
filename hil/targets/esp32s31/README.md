@@ -35,8 +35,9 @@ failure closes the Controller without restarting; an unconfirmed Reset keeps
 every owner.
 
 The `wifi-ble-coex` feature adds a Bluetooth LE client to the Wi-Fi image on
-the same shared radio. After the Wi-Fi image creates the radio system and
-spawns its PHY tracking and coexistence schedule tasks,
+the same shared radio. After the Wi-Fi image starts the radio system with
+`oer_esp32s31_radio_system::start`, which spawns the coexistence schedule,
+and spawns its own PHY tracking task,
 `bluetooth/shared.rs` starts the Controller on the radio's Bluetooth
 partition and runs the radio runner, the HCI service, the Trouble Host and the
 plaintext GATT application on their own tasks; it adds no radio-system task.
@@ -388,6 +389,17 @@ responds. See [scenario semantics](../../scenarios/README.md#ap-availability)
 and the [focused capability program](../../../qualification/targets/esp32s31/wifi-ap-availability.toml).
 Fresh runs capture build sources; explicitly include reviewed untracked inputs
 with `--source-include` as described in the [host guide](../../host/README.md).
+
+## Event trace
+
+Every image links one `oer-trace` trace in RTC fast memory beside the
+post-mortem record (`runtime/src/trace.rs`): 512 entries, and two 1024-word
+snapshot slots only with the `trace-snapshots` feature. The hang watchdog and
+the panic handler freeze it before the reset; the next boot holds the frozen
+trace for the host, which pages it out through the
+[trace commands](../../protocol/diagnostics.md#event-trace). The
+`station-exit-evidence` feature also enables the station runtime's own trace
+events.
 
 ## Local dependency overrides
 

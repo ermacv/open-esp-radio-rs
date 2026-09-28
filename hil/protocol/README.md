@@ -9,7 +9,7 @@ qualification are separate contracts.
 - [Wi-Fi](wifi.md): role ownership, traffic sessions and retained results.
 - [Bluetooth](bluetooth.md): peripheral, encrypted ACL and secure GATT lifecycle.
 - [PHY](phy.md): fault injection, Bluetooth maintenance timing and delivery continuity.
-- [Platform and memory diagnostics](diagnostics.md): watchdog and stack/copy measurements.
+- [Platform and memory diagnostics](diagnostics.md): watchdog, event trace and stack/copy measurements.
 
 Source types define the accepted wire layout; these references explain its
 meaning and limits. Host scenario execution belongs to the

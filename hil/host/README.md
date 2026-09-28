@@ -377,8 +377,7 @@ erases or restores it. The startup artifact, which carries the PHY calibration
 cache, is a host file uploaded at every boot; a relative path belongs to each
 checkout, so another owner's cache never reaches a run. `cargo hil queue` lists
 the newest upload or write of every such file. The queue, history, journal and device registry live in the
-user's host cache, so every checkout of the repository shares them; the
-default owner is the checkout directory name. A checkout without the arbiter
+user's host cache, so every checkout of the repository shares them. A checkout without the arbiter
 still fails fast on the fixture locks and bypasses the queue; a granted holder
 waits for such a process to finish.
 
@@ -434,7 +433,11 @@ no progress for N ms while executors ran`. A
 reset the runner did not cause (neither USB Serial/JTAG nor JTAG) makes it
 `unexpected-reset` with the reset reason and code. Both name the last
 checkpoints the ended boot passed. The exchange and the workload's own
-failure are kept in the repetition's `post-mortem/`.
+failure are kept in the repetition's `post-mortem/`. When the image keeps an
+[event trace](../protocol/diagnostics.md#event-trace), the runner pages it
+out into `post-mortem/trace.json`, raw, and `post-mortem/trace.txt`, decoded
+oldest first, then lets the target record again; `runs why` shows the
+trace's last events.
 
 A target that does not answer within those 20 s climbs the recovery ladder:
 an EN pulse through the board's registered reset path, or an RTS pulse on its
@@ -798,7 +801,7 @@ more instrumented image is a separate experiment, not interchangeable evidence.
 
 Linux network and Bluetooth fixtures share one provisioning workflow. Preview
 the exact provider plan first; these commands do not execute any listed build,
-capability, sudo or hardware step and do not load `hil/local.toml`:
+capability, sudo or hardware step and do not load the lab configuration:
 
 ```console
 cargo hil fixture install --provider linux-net --dry-run

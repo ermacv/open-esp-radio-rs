@@ -120,7 +120,7 @@ cargo hil archive export <archive-id> --run <run-id>
 cargo hil archive verify|import <archive.tar.gz>
 cargo hil run <scenario-id>
 cargo hil run <scenario-id> --firmware-from <run-id>
-cargo hil run-all [--tag qualification]
+cargo hil run-all --tag qualification   # or --all for the whole catalog
 ```
 
 The `network-comparison` tag selects five station workloads: bidirectional UDP at 65 + 65 Mbit/s, RX-only and
@@ -169,7 +169,7 @@ Durable evidence packages are described in
 [HIL archives](../../docs/hil-archives.md). Archive commands do not access the DUT.
 
 `plan [scenario] [--tag ...]` resolves requirements from the catalog offline;
-it does not read `hil/local.toml`, inspect tools or contact hardware. `doctor`
+it does not read the lab configuration, inspect tools or contact hardware. `doctor`
 accepts the same selection and reports all independent environment checks as
 JSON, returning nonzero if any fail. With no selection it checks the whole
 catalog. It checks build/flash tools, scenario preconditions, required fixture
@@ -215,7 +215,9 @@ family's workload and acceptance criteria, never serial paths or secrets.
 projection (image, laboratory requirements, target initialization, named
 checks and Wi-Fi laboratory use); each family package owns its typed table,
 validation and execution, and the runner composes the families. Machine-local
-device, STA/AP and OpenWrt values live only in mode-0600 `hil/local.toml`.
+device, STA/AP and OpenWrt values live only in the mode-0600 lab
+configuration (`~/.config/open-esp-radio/lab.toml`, or a checkout's
+`hil/local.toml`).
 `LabConfig` is immutable. Each workload receives its own execution context:
 borrowed laboratory inputs and the selected scenario's initialization settings.
 Experiment policies are never written back to the shared laboratory object.
@@ -514,6 +516,10 @@ boundaries:
 - Each family's `workload` module owns its operations: system, IEEE 802.15.4,
   IEEE 802.11 role and network traffic, and Bluetooth LE. They report scenario
   outcomes, not product readiness.
+- `post_mortem` asks a failed repetition's target, attached without a reset,
+  for its boot evidence and trace, and classifies hangs and unexpected
+  resets; `recovery` owns the reset ladder for a target that does not answer
+  and decides whether its board is recoverable or quarantined.
 - `evidence` owns sealed run models, archive/integrity/verification and build
   provenance; `evidence::reporting` renders the bundle's HTML/JUnit and the
   rebuildable history views. `failure` classifies errors as scenario or

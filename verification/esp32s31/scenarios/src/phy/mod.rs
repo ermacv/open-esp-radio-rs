@@ -9,7 +9,6 @@ pub mod gain;
 pub mod gain_state;
 pub mod i2c;
 pub mod i2c_transport;
-pub mod research;
 pub mod rfpll;
 pub mod rx_gain;
 pub mod tracking;

@@ -19,44 +19,6 @@ means changing the manifest; production follows the pinned behaviour.
 Hashes in reviewed register evidence and reference notes record the artifact
 a fact was observed in; they are not pins.
 
-## Captured PHY research with Next
-
-The `research` scenario ([`research.rs`](scenarios/src/phy/research.rs)) exercises the current Next application using
-explicit private inputs and its built-in resource supervisor. It authenticates
-the PHY and ROM artifacts, imports PHY/ROM, deletes the source copies, analyzes functions,
-links the I2C command initializer with exact ROM companions, verifies composed
-write effects and repeated phase measurements, reports extent coverage/storage,
-reviews independently hashed table bytes and an instruction
-constant, exports provenance, then moves and restores the project. Research runs
-retain phase diagnostics; the scenario does not qualify hardware or interpret
-unresolved pointers. It independently checks the four ROM address alternatives in
-`tsf_hal_set_tbtt_rf_ctrl_disable` and the unresolved mutable-table callback in
-`phy_get_i2c_mst0_mask`, including source-free reading/export after restore. This
-callback has no reviewed binding; its unknown target cannot acquire callee effects.
-Outputs must stay in ignored storage.
-
-The scenario also checks the eleven absolute relocation entries in
-`phy_i2c.o` `.rodata` against independently established physical symbol indices
-and a captured-byte digest. It reviews that pointer layout, exports it and checks
-identical output after restore. These local code-label references do not establish
-callback ABI or new function boundaries.
-
-For the ROM `phy_get_i2c_mst0_mask` callback, the scenario checks the independently
-read global-pointer address `0x2f07fc3c` and slot `+8`. It reviews only that physical
-load path, leaving signature and semantic binding unknown, then compares the
-selected interface query and JSON export after source removal and backup/restore.
-No callback model, resolved callee or hardware assertion follows from this review.
-
-```console
-cargo xtask vendor-scenario --chip esp32s31 research --linker /usr/bin/ld.lld --limit-mode watchdog \
-  --output target/blobray-phy-research
-```
-
-Each operation's working capacity, deadline and work budget are the scenario's
-`--working-memory-mib`, `--timeout-secs` and `--max-work-units` arguments. Select kernel mode only in an environment with delegated
-cgroup memory control; watchdog is an explicit sampled-RSS policy. Run JSON files
-are the measurement authority, not this documentation.
-
 ## All PHY comparison scenarios
 
 `all` runs every native comparison scenario (`gain`, `i2c`, `channel`,
@@ -792,8 +754,7 @@ current. For CLI concepts, see [Blobray](../../tools/blobray/README.md).
 [`harness.rs`](../harness/scenarios/src/harness.rs) and [`session.rs`](../harness/scenarios/src/session.rs)
 own supervised setup operations, authenticated input capture, in-process comparison,
 exact symbol selection and the shared memory/phase/comparison builders. The I2C, transport and calibration scenarios keep their independent
-expected values and explicit peripheral assumptions. The research scenario uses
-the same runner and capture operations.
+expected values and explicit peripheral assumptions.
 
 The comparison runner exports `.blobray.probes` from the captured production ELF
 through native `inventory` and `data` operations. Every declared entry must resolve;

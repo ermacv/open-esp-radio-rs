@@ -20,8 +20,8 @@ pub use engine::{
     setup_cache, state,
 };
 pub use phy::{
-    calibration_leaves, calibration_prefix, channel, gain, gain_state, i2c, i2c_transport,
-    research, rfpll, rx_gain, tracking, tracking_graph, tx_dc,
+    calibration_leaves, calibration_prefix, channel, gain, gain_state, i2c, i2c_transport, rfpll,
+    rx_gain, tracking, tracking_graph, tx_dc,
 };
 pub use wifi::{ampdu_resort, low_power_clock, mac, retry, rx_append};
 

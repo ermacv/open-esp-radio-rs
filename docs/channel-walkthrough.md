@@ -32,8 +32,8 @@ archive and profile. Follow each claim's own
 [evidence catalog](../registers/esp32s31/evidence/vendor-radio-libraries.toml)
 and source comment. Do not treat these as one authenticated capture or silently
 apply an older review to a new binary. The
-[PHY research instructions](../verification/esp32s31/README.md#captured-phy-research-with-next)
-explain repeatable analysis with caller-supplied inputs.
+[inspection commands](../verification/esp32s31/README.md#inspecting-vendor-code)
+read the pinned vendor code behind such a claim.
 
 **Handoff:** observations and identified source context support a review. They
 are not yet authority to expose a register to production code.

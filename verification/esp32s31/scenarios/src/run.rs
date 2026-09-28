@@ -10,7 +10,7 @@ use crate::{
     harness::{Budget, Result},
     harness_edges, i2c, i2c_transport, mac, observation,
     phy::PhyOptions,
-    research, retry, rfpll, rx_append, rx_gain, session, state, tracking, tx_dc,
+    retry, rfpll, rx_append, rx_gain, session, state, tracking, tx_dc,
 };
 use clap::Subcommand;
 use oer_vendor_scenario_engine::findings::RunReport;
@@ -134,27 +134,6 @@ pub enum Scenario {
         /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
         #[arg(long, default_value_os_t = crate::artifacts::default_path("phy-sdk"))]
         phy_sdk: PathBuf,
-    },
-    /// Captured PHY research, navigation, register/data review and
-    /// source-free preservation of every retained result.
-    Research {
-        /// `blobray` executable.
-        #[arg(long)]
-        binary: PathBuf,
-        /// Pinned `libphy.a`.
-        #[arg(long, default_value_os_t = crate::artifacts::default_path("libphy"))]
-        library: PathBuf,
-        /// Pinned ROM ELF.
-        #[arg(long, default_value_os_t = crate::artifacts::default_path("rom"))]
-        rom: PathBuf,
-        /// External linker selected for image preparation.
-        #[arg(long)]
-        linker: PathBuf,
-        /// Ignored output root; each run creates a new `run-*` directory.
-        #[arg(long)]
-        output: PathBuf,
-        #[command(flatten)]
-        budget: Budget,
     },
     /// PHY I2C command memory and transport, harness call edges, calibration
     /// leaves and PBus/DCODE prefix (`--sdk`) and RFPLL (`--phy-sdk`).
@@ -1049,7 +1028,7 @@ fn all(common: Common, inputs: AllInputs, report: &dyn RunReport) -> Result<Exit
 
 impl Scenario {
     /// The inputs every comparison scenario shares.
-    fn common_mut(&mut self) -> Option<&mut Common> {
+    fn common_mut(&mut self) -> &mut Common {
         match self {
             Scenario::Gain { common, .. }
             | Scenario::Channel { common }
@@ -1061,8 +1040,7 @@ impl Scenario {
             | Scenario::Tracking { common, .. }
             | Scenario::I2c { common, .. }
             | Scenario::Bluetooth { common, .. }
-            | Scenario::All { common, .. } => Some(common),
-            Scenario::Research { .. } => None,
+            | Scenario::All { common, .. } => common,
         }
     }
 
@@ -1088,7 +1066,6 @@ impl Scenario {
             | Scenario::WifiMac { common, .. }
             | Scenario::Tracking { common, .. }
             | Scenario::I2c { common, .. } => resolve_mutants(common, None),
-            Scenario::Research { .. } => Ok(()),
         }
     }
 }
@@ -1096,9 +1073,7 @@ impl Scenario {
 /// Run `scenario`, handing each suite's findings to `report`; `verdict`
 /// names the dep-info files of the libraries that decide its verdicts.
 pub fn run(mut scenario: Scenario, report: &dyn RunReport, verdict: Vec<PathBuf>) -> ExitCode {
-    if let Some(common) = scenario.common_mut() {
-        common.verdict = verdict;
-    }
+    scenario.common_mut().verdict = verdict;
     if let Err(error) = scenario.resolve_mutants() {
         eprintln!("error: {error}");
         return ExitCode::FAILURE;
@@ -1177,28 +1152,6 @@ pub fn run(mut scenario: Scenario, report: &dyn RunReport, verdict: Vec<PathBuf>
             },
             report,
         ),
-        Scenario::Research {
-            binary,
-            library,
-            rom,
-            linker,
-            output,
-            budget,
-        } => research::exercise(&research::Options {
-            binary,
-            library,
-            rom,
-            linker,
-            output,
-            budget,
-        })
-        .map(|run| {
-            println!(
-                "authenticated PHY research, review and source-free preservation passed {}",
-                run.display()
-            );
-            ExitCode::SUCCESS
-        }),
         Scenario::I2c {
             common,
             sdk,

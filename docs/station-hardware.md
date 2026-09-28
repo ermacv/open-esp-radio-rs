@@ -30,7 +30,7 @@ cargo registers generate --manifest registers/esp32s31/publication/registers.tom
 ```
 
 Success establishes publication consistency, not correct RF behavior. To compare
-captured code/data, use [captured PHY research](../verification/esp32s31/README.md#captured-phy-research-with-next)
+pinned vendor code, use [the inspection commands](../verification/esp32s31/README.md#inspecting-vendor-code)
 and [Blobray's task map](../tools/blobray/README.md#choose-a-task). Supply your own
 ELF/archive/ROM and required source identities; retain unknowns, assumptions and
 model boundaries.

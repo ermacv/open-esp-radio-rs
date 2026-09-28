@@ -202,6 +202,18 @@ enum Check {
     },
     /// Build both final HIL application images and run their target audits.
     Images,
+    /// Build HIL image classes with their link-time audits, reporting every
+    /// class: all of them with `--all`, or each `--class`.
+    #[command(group(clap::ArgGroup::new("selection").required(true).args(["all", "classes"])))]
+    Firmware {
+        #[arg(long)]
+        all: bool,
+        #[arg(long = "class")]
+        classes: Vec<oer_hil_runner_core::image::ImageClass>,
+        /// Only `cargo check` each runtime, without code generation or audits.
+        #[arg(long)]
+        type_check: bool,
+    },
     BlobrayStandalone,
     /// Check that every vendor function production and the register model
     /// cite is registered with its reviewed, still pinned code.
@@ -376,6 +388,19 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Capabilities { changed } => checks::docs::capabilities(&ctx, &changed),
             Check::Phy { chip } => checks::phy::run(&ctx, &chip),
             Check::Images => checks::images::run(&ctx),
+            Check::Firmware {
+                all: _,
+                classes,
+                type_check,
+            } => checks::firmware::run(
+                &ctx,
+                &classes,
+                if type_check {
+                    checks::firmware::Depth::TypeCheck
+                } else {
+                    checks::firmware::Depth::Build
+                },
+            ),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
             Check::Provenance { chip } => oer_xtask::vendor_provenance::check(&ctx, &chip),
         },

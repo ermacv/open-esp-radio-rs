@@ -3,6 +3,7 @@
 pub mod architecture;
 pub mod changed;
 pub mod docs;
+pub mod firmware;
 pub mod images;
 pub mod metadata;
 pub mod network;

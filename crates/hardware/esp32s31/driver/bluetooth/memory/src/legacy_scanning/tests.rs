@@ -1,16 +1,16 @@
 use std::boxed::Box;
 
 use super::{
-    LINK_STATE_RX_CLASS_WORD, PassiveScanError, PassiveScanPool, PassiveScanStorage,
+    LINK_STATE_RX_CLASS_WORD, LegacyScanError, LegacyScanPool, LegacyScanStorage,
     SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD, SCHEDULER_ITEM_COEX_PRIORITIES_WORD,
 };
 use crate::{
-    PassiveScanCoexistencePriorities, PassiveScanPrimaryChannel, PassiveScanResetConfig,
-    PassiveScanSchedulerWindow, PassiveScanStartSelection, SchedulerItemCoexistencePriority,
+    LegacyScanCoexistencePriorities, LegacyScanPrimaryChannel, LegacyScanResetConfig,
+    LegacyScanSchedulerWindow, LegacyScanStartSelection, SchedulerItemCoexistencePriority,
     coexistence::lanes_image,
     le_phy_packet::{LeAccessAddress, LeCrcInit},
     le_rx_chain::{LeRxChain, LeRxChainModelAddress, LeRxChainStorage},
-    passive_scanning_event_image::PassiveScanRxHeadProjection,
+    legacy_scanning_event_image::LegacyScanRxHeadProjection,
     rx_memory_list::RxMemoryListClass,
     scheduler_pool::{
         SchedulerAllocationConfig, SchedulerPoolError, SchedulerPoolModelAddress,
@@ -18,12 +18,12 @@ use crate::{
     },
 };
 
-fn pool() -> PassiveScanPool<1> {
+fn pool() -> LegacyScanPool<1> {
     let storage = Box::leak(Box::new(
-        SchedulerRolePoolStorage::<PassiveScanStorage, 1>::new(),
+        SchedulerRolePoolStorage::<LegacyScanStorage, 1>::new(),
     ));
     let numbers = SchedulerAllocationConfig::new(2, 3, 0).unwrap().scanning();
-    PassiveScanPool::bind_model(
+    LegacyScanPool::bind_model(
         storage,
         SchedulerPoolModelAddress::new(0x2f00_0100).expect("test base is aligned"),
         numbers,
@@ -41,39 +41,39 @@ fn chain(class: RxMemoryListClass) -> LeRxChain<2> {
     .unwrap()
 }
 
-fn config() -> PassiveScanResetConfig {
-    PassiveScanResetConfig::le_1m_public_accept_all(
+fn config() -> LegacyScanResetConfig {
+    LegacyScanResetConfig::le_1m_public_accept_all(
         crate::LeTxPower::from_dbm(0).expect("provider level"),
     )
 }
 
-fn window() -> PassiveScanSchedulerWindow {
-    PassiveScanSchedulerWindow::from_controller_ticks(1_000, 2_000).unwrap()
+fn window() -> LegacyScanSchedulerWindow {
+    LegacyScanSchedulerWindow::from_controller_ticks(1_000, 2_000).unwrap()
 }
 
-fn reset(pool: &mut PassiveScanPool<1>) -> SchedulerRoleInstance {
+fn reset(pool: &mut LegacyScanPool<1>) -> SchedulerRoleInstance {
     let instance = pool.acquire().unwrap();
     pool.reset(&instance, &chain(RxMemoryListClass::Scanning), config())
         .unwrap();
     instance
 }
 
-fn priorities(lanes: [u8; 4]) -> PassiveScanCoexistencePriorities {
-    PassiveScanCoexistencePriorities {
+fn priorities(lanes: [u8; 4]) -> LegacyScanCoexistencePriorities {
+    LegacyScanCoexistencePriorities {
         lanes: lanes.map(|lane| SchedulerItemCoexistencePriority::new(lane).unwrap()),
     }
 }
 
 fn prepare(
-    pool: &mut PassiveScanPool<1>,
+    pool: &mut LegacyScanPool<1>,
     instance: &SchedulerRoleInstance,
-) -> super::PassiveScanEvent {
+) -> super::LegacyScanEvent {
     pool.prepare_event(
         instance,
-        PassiveScanPrimaryChannel::Channel38,
+        LegacyScanPrimaryChannel::Channel38,
         window(),
-        PassiveScanStartSelection::Requested,
-        super::PassiveScanWindowTicks::from_raw_ticks(0x5555),
+        LegacyScanStartSelection::Requested,
+        super::LegacyScanWindowTicks::from_raw_ticks(0x5555),
         priorities([4, 11, 0, 0]),
     )
     .unwrap()
@@ -87,7 +87,7 @@ fn the_reset_joins_the_scanning_chain() {
     pool.reset(&instance, &chain, config()).unwrap();
     let (graph, binding, _) = pool.shared(&instance).unwrap();
     let image = graph.link_state.image();
-    assert!(image.retains_rx_head(PassiveScanRxHeadProjection::from_bound(chain.head_link())));
+    assert!(image.retains_rx_head(LegacyScanRxHeadProjection::from_bound(chain.head_link())));
     assert_eq!(image.crc_init(), LeCrcInit::LE_PRESET);
     assert_eq!(image.access_address(), LeAccessAddress::PRIMARY_ADVERTISING);
     assert_eq!(image.window_ticks(), 0);
@@ -151,7 +151,7 @@ fn a_window_takes_the_free_head_and_finishing_returns_it() {
     let id = pool.submit(&instance, 2).unwrap();
     assert_eq!(
         pool.finish_event(&instance),
-        Err(PassiveScanError::Pool(SchedulerPoolError::InstanceBusy))
+        Err(LegacyScanError::Pool(SchedulerPoolError::InstanceBusy))
     );
     pool.retire(id).unwrap();
     pool.finish_event(&instance).unwrap();
@@ -183,17 +183,17 @@ fn a_non_scanning_chain_is_refused() {
     let instance = pool.acquire().unwrap();
     assert_eq!(
         pool.reset(&instance, &chain(RxMemoryListClass::NonScanning), config()),
-        Err(PassiveScanError::ForeignReceiveClass)
+        Err(LegacyScanError::ForeignReceiveClass)
     );
     assert_eq!(
         pool.prepare_event(
             &instance,
-            PassiveScanPrimaryChannel::Channel37,
+            LegacyScanPrimaryChannel::Channel37,
             window(),
-            PassiveScanStartSelection::Requested,
-            super::PassiveScanWindowTicks::from_raw_ticks(0),
+            LegacyScanStartSelection::Requested,
+            super::LegacyScanWindowTicks::from_raw_ticks(0),
             priorities([15; 4]),
         ),
-        Err(PassiveScanError::State)
+        Err(LegacyScanError::State)
     );
 }

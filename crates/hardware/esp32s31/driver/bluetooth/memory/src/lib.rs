@@ -36,9 +36,9 @@ pub use le_tx_power::LeTxPower;
 mod legacy_advertising;
 mod legacy_advertising_event_image;
 mod legacy_advertising_tx_packet;
+mod legacy_scanning;
+mod legacy_scanning_event_image;
 mod link_state_event;
-mod passive_scanning;
-mod passive_scanning_event_image;
 mod peripheral_connection;
 mod rx_memory_list;
 mod scheduler_context;
@@ -48,7 +48,7 @@ mod sram_link;
 
 pub use coexistence::{
     AdvertisingCoexistencePriorities, ConnectionCoexistencePriorities,
-    PassiveScanCoexistencePriorities, PeripheralConnectionCoexistenceProtection,
+    LegacyScanCoexistencePriorities, PeripheralConnectionCoexistenceProtection,
     SchedulerItemCoexistencePriority,
 };
 pub use scheduler_item::{SCHEDULER_ITEM_UNEXECUTED, SchedulerItemCompletionStatus};
@@ -129,14 +129,14 @@ pub use legacy_advertising::{
     LegacyAdvertisingPool, LegacyAdvertisingStorage,
 };
 
-pub use passive_scanning_event_image::{
-    PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanSchedulerWindow,
-    PassiveScanStartSelection, PassiveScanWindowTicks,
+pub use legacy_scanning_event_image::{
+    LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
+    LegacyScanStartSelection, LegacyScanWindowTicks,
 };
 
-pub use passive_scanning::{
-    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, PassiveScanError, PassiveScanEvent,
-    PassiveScanPool, PassiveScanStorage,
+pub use legacy_scanning::{
+    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, LegacyScanError, LegacyScanEvent, LegacyScanPool,
+    LegacyScanStorage,
 };
 
 pub use peripheral_connection::{

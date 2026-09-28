@@ -6,7 +6,7 @@ use oer_esp32s31_bluetooth_memory::{
     DirectionFindingWorkspaceModelAddress, DirectionFindingWorkspaceStorage, DtmPool, DtmStorage,
     LeRxChain, LeRxChainModelAddress, LeRxChainStorage, LegacyAdvertisingPool,
     LegacyAdvertisingStorage, LegacyConnectableAdvertisingPool,
-    LegacyConnectableAdvertisingStorage, PassiveScanPool, PassiveScanStorage,
+    LegacyConnectableAdvertisingStorage, LegacyScanPool, LegacyScanStorage,
     PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
     SchedulerAllocationConfig, SchedulerPoolModelAddress, SchedulerRolePoolStorage,
 };
@@ -52,9 +52,9 @@ pub fn model_memory() -> ModelMemory {
             numbers.advertising(1, 1).unwrap(),
         )
         .unwrap(),
-        scanners: PassiveScanPool::bind_model(
+        scanners: LegacyScanPool::bind_model(
             Box::leak(Box::new(
-                SchedulerRolePoolStorage::<PassiveScanStorage, 1>::new(),
+                SchedulerRolePoolStorage::<LegacyScanStorage, 1>::new(),
             )),
             base(0x3000),
             numbers.scanning(),

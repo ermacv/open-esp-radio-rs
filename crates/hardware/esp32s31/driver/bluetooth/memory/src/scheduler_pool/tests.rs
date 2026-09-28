@@ -27,7 +27,7 @@ struct TestBinding {
 impl sealed::Sealed for TestStorage {}
 
 impl SchedulerRoleStorage for TestStorage {
-    const KIND: SchedulerRoleKind = SchedulerRoleKind::PassiveScanning;
+    const KIND: SchedulerRoleKind = SchedulerRoleKind::LegacyScanning;
     const ITEMS: usize = 2;
     const NUMBERS: usize = 1;
     const NEW: Self = Self {

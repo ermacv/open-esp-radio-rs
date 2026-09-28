@@ -61,12 +61,12 @@ impl LeLegacyScanningCommandKind {
 
 /// Validated passive LE 1M scan timing supplied by the Host.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LeLegacyPassiveScanParameters {
+pub struct LeLegacyScanParameters {
     interval_units_625_us: u16,
     window_units_625_us: u16,
 }
 
-impl LeLegacyPassiveScanParameters {
+impl LeLegacyScanParameters {
     /// Start-to-start scan interval in 0.625 ms units.
     pub const fn interval_units_625_us(self) -> u16 {
         self.interval_units_625_us
@@ -110,7 +110,7 @@ impl LeLegacyScanningEnableCommand {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeLegacyScanningCommand {
     /// Replace passive scan parameters while the scanner is disabled.
-    SetParameters(LeLegacyPassiveScanParameters),
+    SetParameters(LeLegacyScanParameters),
     /// Start or stop passive scanning.
     SetEnable(LeLegacyScanningEnableCommand),
 }
@@ -118,7 +118,7 @@ pub enum LeLegacyScanningCommand {
 /// Configuration-only command which can complete without starting hardware.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeLegacyScanningConfigurationCommand {
-    parameters: LeLegacyPassiveScanParameters,
+    parameters: LeLegacyScanParameters,
 }
 
 impl LeLegacyScanningConfigurationCommand {
@@ -131,7 +131,7 @@ impl LeLegacyScanningConfigurationCommand {
     }
 
     /// Validated parameter value retained by this command.
-    pub const fn parameters(self) -> LeLegacyPassiveScanParameters {
+    pub const fn parameters(self) -> LeLegacyScanParameters {
         self.parameters
     }
 }
@@ -139,13 +139,13 @@ impl LeLegacyScanningConfigurationCommand {
 /// Immutable Host configuration snapshot retained from Enable until radio start.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeLegacyScanningEnableRequest {
-    parameters: LeLegacyPassiveScanParameters,
+    parameters: LeLegacyScanParameters,
     duplicate_policy: LeLegacyScanningDuplicatePolicy,
 }
 
 impl LeLegacyScanningEnableRequest {
     /// Exact accepted passive scan timing.
-    pub const fn parameters(self) -> LeLegacyPassiveScanParameters {
+    pub const fn parameters(self) -> LeLegacyScanParameters {
         self.parameters
     }
 
@@ -162,7 +162,7 @@ pub struct LeLegacyScanningParametersMissing;
 /// Reset-scoped software configuration for the passive scanner.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LeLegacyScanningConfiguration {
-    parameters: Option<LeLegacyPassiveScanParameters>,
+    parameters: Option<LeLegacyScanParameters>,
 }
 
 impl LeLegacyScanningConfiguration {
@@ -189,7 +189,7 @@ impl LeLegacyScanningConfiguration {
     }
 
     /// Current parameters.
-    pub const fn parameters(&self) -> Option<LeLegacyPassiveScanParameters> {
+    pub const fn parameters(&self) -> Option<LeLegacyScanParameters> {
         self.parameters
     }
 }
@@ -256,7 +256,7 @@ impl LeLegacyScanningCommand {
             return Err(LeLegacyScanningDecodeError::InvalidParameters { command });
         }
 
-        Ok(Self::SetParameters(LeLegacyPassiveScanParameters {
+        Ok(Self::SetParameters(LeLegacyScanParameters {
             interval_units_625_us,
             window_units_625_us,
         }))

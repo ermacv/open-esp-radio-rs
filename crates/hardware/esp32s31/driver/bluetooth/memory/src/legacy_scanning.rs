@@ -13,13 +13,13 @@
 use vcell::VolatileCell;
 
 use crate::{
-    coexistence::{LANES_MASK, PassiveScanCoexistencePriorities, lanes_image},
+    coexistence::{LANES_MASK, LegacyScanCoexistencePriorities, lanes_image},
     le_rx_chain::{LeRxChain, LeRxSource, LeRxTag},
-    passive_scanning_event_image::{
-        BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, PassiveScanLinkStateImage,
-        PassiveScanPrimaryChannel, PassiveScanResetConfig, PassiveScanRxHeadProjection,
-        PassiveScanSchedulerItemWords, PassiveScanSchedulerWindow, PassiveScanStartSelection,
-        PassiveScanWindowTicks,
+    legacy_scanning_event_image::{
+        BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, LegacyScanLinkStateImage,
+        LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanRxHeadProjection,
+        LegacyScanSchedulerItemWords, LegacyScanSchedulerWindow, LegacyScanStartSelection,
+        LegacyScanWindowTicks,
     },
     rx_memory_list::RxMemoryListClass,
     scheduler_context::SchedulerContextStorage,
@@ -74,14 +74,14 @@ impl LinkStateStorage {
         }
     }
 
-    fn install(&self, image: PassiveScanLinkStateImage) {
+    fn install(&self, image: LegacyScanLinkStateImage) {
         for (cell, word) in self.words.iter().zip(image.words()) {
             cell.set(word);
         }
     }
 
-    fn image(&self) -> PassiveScanLinkStateImage {
-        PassiveScanLinkStateImage::from_words(core::array::from_fn(|index| self.words[index].get()))
+    fn image(&self) -> LegacyScanLinkStateImage {
+        LegacyScanLinkStateImage::from_words(core::array::from_fn(|index| self.words[index].get()))
     }
 
     fn free_head(&self) -> u32 {
@@ -144,9 +144,9 @@ impl ItemStorage {
         self.words[SCHEDULER_ITEM_EVENT_CLASS_WORD].set(SCHEDULER_ITEM_EVENT_CLASS_IMAGE);
     }
 
-    fn reviewed_words(&self) -> PassiveScanSchedulerItemWords {
+    fn reviewed_words(&self) -> LegacyScanSchedulerItemWords {
         let header = self.header();
-        PassiveScanSchedulerItemWords {
+        LegacyScanSchedulerItemWords {
             word_00: header.hardware_next_word(),
             word_04: self.words[SCHEDULER_ITEM_CONTEXT_WORD].get(),
             word_14: self.words[SCHEDULER_ITEM_WORD_14].get(),
@@ -157,7 +157,7 @@ impl ItemStorage {
         }
     }
 
-    fn write_reviewed_words(&self, words: PassiveScanSchedulerItemWords) {
+    fn write_reviewed_words(&self, words: LegacyScanSchedulerItemWords) {
         let header = self.header();
         header.set_hardware_next_word(words.word_00);
         self.words[SCHEDULER_ITEM_CONTEXT_WORD].set(words.word_04);
@@ -171,7 +171,7 @@ impl ItemStorage {
 
 /// Controller-SRAM graph of one scanner instance.
 #[repr(C)]
-pub struct PassiveScanStorage {
+pub struct LegacyScanStorage {
     link_state: LinkStateStorage,
     scheduler_context: SchedulerContextStorage,
     items: [ItemStorage; ITEMS],
@@ -180,14 +180,14 @@ pub struct PassiveScanStorage {
 /// Addresses and item numbers of one instance.
 #[doc(hidden)]
 #[derive(Clone, Copy)]
-pub struct PassiveScanBinding {
+pub struct LegacyScanBinding {
     link_state: ControllerSramLinkAddress,
     scheduler_context: ControllerSramLinkAddress,
     items: [ControllerSramLinkAddress; ITEMS],
     first_number: u16,
 }
 
-impl PassiveScanBinding {
+impl LegacyScanBinding {
     fn item_at(&self, address: u32) -> Option<usize> {
         self.items
             .iter()
@@ -198,15 +198,15 @@ impl PassiveScanBinding {
 /// Preparation state of one instance.
 #[doc(hidden)]
 #[derive(Clone, Copy)]
-pub enum PassiveScanState {
+pub enum LegacyScanState {
     Empty,
     Reset { event: Option<u8> },
 }
 
-impl sealed::Sealed for PassiveScanStorage {}
+impl sealed::Sealed for LegacyScanStorage {}
 
-impl SchedulerRoleStorage for PassiveScanStorage {
-    const KIND: SchedulerRoleKind = SchedulerRoleKind::PassiveScanning;
+impl SchedulerRoleStorage for LegacyScanStorage {
+    const KIND: SchedulerRoleKind = SchedulerRoleKind::LegacyScanning;
     const ITEMS: usize = ITEMS;
     const NUMBERS: usize = ITEMS;
     const NEW: Self = Self {
@@ -214,18 +214,18 @@ impl SchedulerRoleStorage for PassiveScanStorage {
         scheduler_context: SchedulerContextStorage::new(),
         items: [const { ItemStorage::new() }; ITEMS],
     };
-    type Binding = PassiveScanBinding;
-    type State = PassiveScanState;
-    const INITIAL_STATE: PassiveScanState = PassiveScanState::Empty;
+    type Binding = LegacyScanBinding;
+    type State = LegacyScanState;
+    const INITIAL_STATE: LegacyScanState = LegacyScanState::Empty;
 
-    fn bind(base: u32, first_number: u16) -> Result<PassiveScanBinding, SchedulerPoolBindError> {
+    fn bind(base: u32, first_number: u16) -> Result<LegacyScanBinding, SchedulerPoolBindError> {
         let link = |offset: usize| {
             ControllerSramLinkAddress::new(base + offset as u32)
                 .map_err(|_| SchedulerPoolBindError::ZeroCompressedLink)
         };
         let items = core::mem::offset_of!(Self, items);
         let item = core::mem::size_of::<ItemStorage>();
-        Ok(PassiveScanBinding {
+        Ok(LegacyScanBinding {
             link_state: link(core::mem::offset_of!(Self, link_state))?,
             scheduler_context: link(core::mem::offset_of!(Self, scheduler_context))?,
             items: [link(items)?, link(items + item)?, link(items + 2 * item)?],
@@ -237,11 +237,11 @@ impl SchedulerRoleStorage for PassiveScanStorage {
         &self.items[item].words
     }
 
-    fn item_link(binding: &PassiveScanBinding, item: usize) -> ControllerSramLinkAddress {
+    fn item_link(binding: &LegacyScanBinding, item: usize) -> ControllerSramLinkAddress {
         binding.items[item]
     }
 
-    fn reinitialize(&mut self, binding: &PassiveScanBinding) -> Self::State {
+    fn reinitialize(&mut self, binding: &LegacyScanBinding) -> Self::State {
         self.link_state.clear();
         self.scheduler_context.clear();
         for (index, item) in self.items.iter().enumerate() {
@@ -254,20 +254,20 @@ impl SchedulerRoleStorage for PassiveScanStorage {
         }
         self.link_state
             .set_free_head(Some(binding.items[ITEMS - 1]));
-        PassiveScanState::Empty
+        LegacyScanState::Empty
     }
 
-    fn admits(state: &PassiveScanState, item: usize) -> bool {
-        matches!(state, PassiveScanState::Reset { event: Some(event) } if usize::from(*event) == item)
+    fn admits(state: &LegacyScanState, item: usize) -> bool {
+        matches!(state, LegacyScanState::Reset { event: Some(event) } if usize::from(*event) == item)
     }
 }
 
 /// Pool of scanner instances.
-pub type PassiveScanPool<const N: usize> = SchedulerRolePool<PassiveScanStorage, N>;
+pub type LegacyScanPool<const N: usize> = SchedulerRolePool<LegacyScanStorage, N>;
 
 /// Why a scanner operation was refused. Nothing changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PassiveScanError {
+pub enum LegacyScanError {
     Pool(SchedulerPoolError),
     /// The operation does not follow the instance's preparation state.
     State,
@@ -281,12 +281,12 @@ pub enum PassiveScanError {
 
 /// Item and raw window of one prepared scan window.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PassiveScanEvent {
+pub struct LegacyScanEvent {
     item: usize,
-    window: PassiveScanSchedulerWindow,
+    window: LegacyScanSchedulerWindow,
 }
 
-impl PassiveScanEvent {
+impl LegacyScanEvent {
     /// Item that carries the window.
     pub const fn item(&self) -> usize {
         self.item
@@ -298,31 +298,31 @@ impl PassiveScanEvent {
     }
 }
 
-impl<const N: usize> PassiveScanPool<N> {
+impl<const N: usize> LegacyScanPool<N> {
     /// Apply the restricted passive LE 1M reset and join the scanning chain.
     pub fn reset<const PACKETS: usize>(
         &mut self,
         instance: &SchedulerRoleInstance,
         chain: &LeRxChain<PACKETS>,
-        config: PassiveScanResetConfig,
-    ) -> Result<(), PassiveScanError> {
+        config: LegacyScanResetConfig,
+    ) -> Result<(), LegacyScanError> {
         if chain.class() != RxMemoryListClass::Scanning {
-            return Err(PassiveScanError::ForeignReceiveClass);
+            return Err(LegacyScanError::ForeignReceiveClass);
         }
-        let cpu = self.cpu(instance).map_err(PassiveScanError::Pool)?;
-        if !matches!(cpu.state, PassiveScanState::Empty) {
-            return Err(PassiveScanError::State);
+        let cpu = self.cpu(instance).map_err(LegacyScanError::Pool)?;
+        if !matches!(cpu.state, LegacyScanState::Empty) {
+            return Err(LegacyScanError::State);
         }
         let free_head = cpu.graph.link_state.free_head();
         cpu.graph
             .link_state
-            .install(PassiveScanLinkStateImage::restricted_passive_le_1m(
-                PassiveScanRxHeadProjection::from_bound(chain.head_link()),
+            .install(LegacyScanLinkStateImage::restricted_passive_le_1m(
+                LegacyScanRxHeadProjection::from_bound(chain.head_link()),
                 config,
             ));
         cpu.graph.link_state.words[LINK_STATE_SCHEDULER_HEAD_WORD].set(free_head);
         cpu.graph.link_state.join_receive_chain(chain.snapshot());
-        *cpu.state = PassiveScanState::Reset { event: None };
+        *cpu.state = LegacyScanState::Reset { event: None };
         Ok(())
     }
 
@@ -331,24 +331,24 @@ impl<const N: usize> PassiveScanPool<N> {
     pub fn prepare_event(
         &mut self,
         instance: &SchedulerRoleInstance,
-        channel: PassiveScanPrimaryChannel,
-        window: PassiveScanSchedulerWindow,
-        start_selection: PassiveScanStartSelection,
-        window_ticks: PassiveScanWindowTicks,
-        coexistence: PassiveScanCoexistencePriorities,
-    ) -> Result<PassiveScanEvent, PassiveScanError> {
-        let cpu = self.cpu(instance).map_err(PassiveScanError::Pool)?;
-        if !matches!(cpu.state, PassiveScanState::Reset { event: None }) {
-            return Err(PassiveScanError::State);
+        channel: LegacyScanPrimaryChannel,
+        window: LegacyScanSchedulerWindow,
+        start_selection: LegacyScanStartSelection,
+        window_ticks: LegacyScanWindowTicks,
+        coexistence: LegacyScanCoexistencePriorities,
+    ) -> Result<LegacyScanEvent, LegacyScanError> {
+        let cpu = self.cpu(instance).map_err(LegacyScanError::Pool)?;
+        if !matches!(cpu.state, LegacyScanState::Reset { event: None }) {
+            return Err(LegacyScanError::State);
         }
         let head = cpu.graph.link_state.free_head();
         if head == 0 {
-            return Err(PassiveScanError::NoFreeItem);
+            return Err(LegacyScanError::NoFreeItem);
         }
         let index = cpu
             .binding
             .item_at(head)
-            .ok_or(PassiveScanError::ForeignFreeHead)?;
+            .ok_or(LegacyScanError::ForeignFreeHead)?;
         let item = &cpu.graph.items[index];
         let next_free = item.header().hardware_next_image();
         let next_free = cpu
@@ -371,10 +371,10 @@ impl<const N: usize> PassiveScanPool<N> {
         // Detach the item from the free chain before the executor links it.
         item.header().link_hardware_next(None);
         link_state.set_free_head(next_free);
-        *cpu.state = PassiveScanState::Reset {
+        *cpu.state = LegacyScanState::Reset {
             event: Some(index as u8),
         };
-        Ok(PassiveScanEvent {
+        Ok(LegacyScanEvent {
             item: index,
             window,
         })
@@ -384,10 +384,10 @@ impl<const N: usize> PassiveScanPool<N> {
     pub fn finish_event(
         &mut self,
         instance: &SchedulerRoleInstance,
-    ) -> Result<(), PassiveScanError> {
-        let cpu = self.cpu(instance).map_err(PassiveScanError::Pool)?;
-        let PassiveScanState::Reset { event: Some(index) } = *cpu.state else {
-            return Err(PassiveScanError::State);
+    ) -> Result<(), LegacyScanError> {
+        let cpu = self.cpu(instance).map_err(LegacyScanError::Pool)?;
+        let LegacyScanState::Reset { event: Some(index) } = *cpu.state else {
+            return Err(LegacyScanError::State);
         };
         let index = usize::from(index);
         let head = cpu.graph.link_state.free_head();
@@ -401,7 +401,7 @@ impl<const N: usize> PassiveScanPool<N> {
         cpu.graph
             .link_state
             .set_free_head(Some(cpu.binding.items[index]));
-        *cpu.state = PassiveScanState::Reset { event: None };
+        *cpu.state = LegacyScanState::Reset { event: None };
         Ok(())
     }
 
@@ -410,10 +410,10 @@ impl<const N: usize> PassiveScanPool<N> {
         &self,
         instance: &SchedulerRoleInstance,
         item: usize,
-    ) -> Result<LeRxSource, PassiveScanError> {
-        let (_, binding, _) = self.shared(instance).map_err(PassiveScanError::Pool)?;
+    ) -> Result<LeRxSource, LegacyScanError> {
+        let (_, binding, _) = self.shared(instance).map_err(LegacyScanError::Pool)?;
         if item >= ITEMS {
-            return Err(PassiveScanError::Pool(SchedulerPoolError::NoSuchItem));
+            return Err(LegacyScanError::Pool(SchedulerPoolError::NoSuchItem));
         }
         let tag = LeRxTag::new(binding.first_number + item as u16)
             .expect("the allocation numbers fit twelve bits");

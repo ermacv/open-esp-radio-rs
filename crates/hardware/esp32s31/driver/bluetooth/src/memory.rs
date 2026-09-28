@@ -5,7 +5,7 @@
 pub use oer_esp32s31_bluetooth_memory::{
     BlePhyEngineBindError, BlePhyEngineBindFailure, BlePhyEngineCpuOwned, BlePhyEngineStorage,
     ControllerSramLinkAddress, ControllerSramLinkAddressError, DtmPool, LeRxChain,
-    LegacyAdvertisingPool, LegacyConnectableAdvertisingPool, PassiveScanPool,
+    LegacyAdvertisingPool, LegacyConnectableAdvertisingPool, LegacyScanPool,
     PeripheralConnectionPool, RxMemoryListClass, SchedulerAllocationConfig,
     SchedulerItemCompletionStatus, SchedulerItemId, SchedulerItemSpace, SchedulerRoleInstance,
 };

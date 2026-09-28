@@ -35,13 +35,13 @@ const SCHEDULER_SCANNER_EVENT_KIND: u32 = 1;
 
 /// Primary advertising channel observed by one passive scan window.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PassiveScanPrimaryChannel {
+pub enum LegacyScanPrimaryChannel {
     Channel37,
     Channel38,
     Channel39,
 }
 
-impl PassiveScanPrimaryChannel {
+impl LegacyScanPrimaryChannel {
     const fn frequency_image(self) -> u8 {
         match self {
             Self::Channel37 => 0,
@@ -56,12 +56,12 @@ impl PassiveScanPrimaryChannel {
 /// The integers remain opaque after construction; only the private memory
 /// codec can place them in a positional scanner item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PassiveScanSchedulerWindow {
+pub struct LegacyScanSchedulerWindow {
     start: u32,
     end: u32,
 }
 
-impl PassiveScanSchedulerWindow {
+impl LegacyScanSchedulerWindow {
     /// Bind one wrapping Controller-tick interval.
     pub const fn from_controller_ticks(start: u32, end: u32) -> Option<Self> {
         if start == end {
@@ -82,7 +82,7 @@ impl PassiveScanSchedulerWindow {
 
 /// Result of applying the scanner's earliest-start constraint.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PassiveScanStartSelection {
+pub enum LegacyScanStartSelection {
     Requested,
     EarliestAvailable,
 }
@@ -94,11 +94,11 @@ pub enum PassiveScanStartSelection {
 /// supply positional descriptor words or vendor option images.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 // CAPABILITY: bluetooth-le-privacy-1-2
-pub struct PassiveScanResetConfig {
+pub struct LegacyScanResetConfig {
     default_tx_power: LeTxPower,
 }
 
-impl PassiveScanResetConfig {
+impl LegacyScanResetConfig {
     /// Construct the restricted passive LE 1M profile.
     pub const fn le_1m_public_accept_all(default_tx_power: LeTxPower) -> Self {
         Self { default_tx_power }
@@ -117,9 +117,9 @@ impl PassiveScanResetConfig {
 /// `+0x34` for a finite window. The open scanner always schedules finite
 /// windows, so its events take that branch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PassiveScanWindowTicks(u32);
+pub struct LegacyScanWindowTicks(u32);
 
-impl PassiveScanWindowTicks {
+impl LegacyScanWindowTicks {
     /// Bind one raw window length.
     pub const fn from_raw_ticks(ticks: u32) -> Self {
         Self(ticks)
@@ -128,9 +128,9 @@ impl PassiveScanWindowTicks {
 
 /// Opaque projection of the bound scanner RX head into a link-state word.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct PassiveScanRxHeadProjection(u32);
+pub(super) struct LegacyScanRxHeadProjection(u32);
 
-impl PassiveScanRxHeadProjection {
+impl LegacyScanRxHeadProjection {
     pub(super) const fn from_bound(address: ControllerSramLinkAddress) -> Self {
         Self(address.compressed_image())
     }
@@ -145,15 +145,15 @@ impl PassiveScanRxHeadProjection {
 /// Raw words never leave the memory crate. The storage layer may only install
 /// this image after binding the real RX head of the same pinned graph.
 #[derive(Clone, Copy)]
-pub(super) struct PassiveScanLinkStateImage {
+pub(super) struct LegacyScanLinkStateImage {
     words: [u32; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
 }
 
-impl PassiveScanLinkStateImage {
+impl LegacyScanLinkStateImage {
     /// Build the exact reset result over a zero-based open-driver allocation.
     pub(super) const fn restricted_passive_le_1m(
-        rx_head: PassiveScanRxHeadProjection,
-        config: PassiveScanResetConfig,
+        rx_head: LegacyScanRxHeadProjection,
+        config: LegacyScanResetConfig,
     ) -> Self {
         let mut words = [0; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS];
 
@@ -189,7 +189,7 @@ impl PassiveScanLinkStateImage {
 
     /// Apply the restart's link-state writes for one finite window: the
     /// window length at `+0x34` and a clear bit 20 of `+0x18`.
-    pub(super) const fn with_window(mut self, window: PassiveScanWindowTicks) -> Self {
+    pub(super) const fn with_window(mut self, window: LegacyScanWindowTicks) -> Self {
         self.words[WORD_34] = window.0;
         self.words[WORD_18] &= !LINK_STATE_18_BIT_20;
         self
@@ -201,7 +201,7 @@ impl PassiveScanLinkStateImage {
     }
 
     #[cfg(test)]
-    pub(super) const fn retains_rx_head(self, head: PassiveScanRxHeadProjection) -> bool {
+    pub(super) const fn retains_rx_head(self, head: LegacyScanRxHeadProjection) -> bool {
         self.words[WORD_08] & RX_HEAD_MASK == head.0
     }
 
@@ -223,7 +223,7 @@ impl PassiveScanLinkStateImage {
 
 /// Complete scanner-item subset changed before common scheduler admission.
 #[derive(Clone, Copy)]
-pub(super) struct PassiveScanSchedulerItemWords {
+pub(super) struct LegacyScanSchedulerItemWords {
     pub(super) word_00: u32,
     pub(super) word_04: u32,
     pub(super) word_14: u32,
@@ -233,19 +233,16 @@ pub(super) struct PassiveScanSchedulerItemWords {
     pub(super) raw_end_word_48: u32,
 }
 
-impl PassiveScanSchedulerItemWords {
+impl LegacyScanSchedulerItemWords {
     pub(super) const fn prepare_first_event(
         mut self,
-        link_state: PassiveScanLinkStateImage,
-        channel: PassiveScanPrimaryChannel,
-        window: PassiveScanSchedulerWindow,
-        start_selection: PassiveScanStartSelection,
+        link_state: LegacyScanLinkStateImage,
+        channel: LegacyScanPrimaryChannel,
+        window: LegacyScanSchedulerWindow,
+        start_selection: LegacyScanStartSelection,
     ) -> Self {
         self.word_00 &= !SCHEDULER_HARDWARE_CHAIN_TIMING_MASK;
-        if matches!(
-            start_selection,
-            PassiveScanStartSelection::EarliestAvailable
-        ) {
+        if matches!(start_selection, LegacyScanStartSelection::EarliestAvailable) {
             self.word_00 |= SCHEDULER_HARDWARE_CHAIN_ADJUSTED_START;
         }
         self.word_00 |= SCHEDULER_HARDWARE_CHAIN_EVENT_READY;

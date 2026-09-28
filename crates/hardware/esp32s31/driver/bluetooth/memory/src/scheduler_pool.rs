@@ -40,7 +40,7 @@ pub enum SchedulerRoleKind {
     DirectTestMode,
     LegacyAdvertising,
     ConnectableAdvertising,
-    PassiveScanning,
+    LegacyScanning,
     PeripheralConnection,
 }
 
@@ -52,7 +52,7 @@ impl SchedulerRoleKind {
             Self::DirectTestMode => 0,
             Self::LegacyAdvertising => 1,
             Self::ConnectableAdvertising => 2,
-            Self::PassiveScanning => 3,
+            Self::LegacyScanning => 3,
             Self::PeripheralConnection => 4,
         }
     }

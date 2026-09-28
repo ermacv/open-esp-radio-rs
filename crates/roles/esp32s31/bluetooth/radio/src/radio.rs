@@ -26,9 +26,9 @@ use oer_esp32s31_bluetooth_memory::{
     LeTxPower, LegacyAdvertisingPool, LegacyAdvertisingPrimaryChannelPlan,
     LegacyConnectableAdvIndPacketInput, LegacyConnectableAdvertisingMemoryInput,
     LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
-    LegacyConnectableScanResponsePacketInput, PassiveScanPool, PassiveScanPrimaryChannel,
-    PassiveScanResetConfig, PassiveScanSchedulerWindow, PassiveScanStartSelection,
-    PassiveScanWindowTicks, PeripheralConnectionCapturedAnchorAvailability,
+    LegacyConnectableScanResponsePacketInput, LegacyScanPool, LegacyScanPrimaryChannel,
+    LegacyScanResetConfig, LegacyScanSchedulerWindow, LegacyScanStartSelection,
+    LegacyScanWindowTicks, PeripheralConnectionCapturedAnchorAvailability,
     PeripheralConnectionDataChannel, PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent,
     PeripheralConnectionIdentity, PeripheralConnectionPool, PeripheralConnectionReceiveTime,
     PeripheralConnectionReceiveWait, PeripheralConnectionRecurringEvent,
@@ -64,7 +64,7 @@ pub struct BluetoothRadioMemory<
     /// Response-capable advertising sets.
     pub connectable: LegacyConnectableAdvertisingPool<CONNECTABLE>,
     /// Passive scanners.
-    pub scanners: PassiveScanPool<SCANNERS>,
+    pub scanners: LegacyScanPool<SCANNERS>,
     /// Peripheral connections.
     pub connections: PeripheralConnectionPool<CONNECTIONS>,
     /// The Direct Test Mode instance.
@@ -748,7 +748,7 @@ impl<
         for kind in [
             SchedulerRoleKind::LegacyAdvertising,
             SchedulerRoleKind::ConnectableAdvertising,
-            SchedulerRoleKind::PassiveScanning,
+            SchedulerRoleKind::LegacyScanning,
             SchedulerRoleKind::PeripheralConnection,
             SchedulerRoleKind::DirectTestMode,
         ] {
@@ -772,7 +772,7 @@ impl<
             let _ = match id.kind() {
                 SchedulerRoleKind::LegacyAdvertising => self.memory.legacy.withhold(id),
                 SchedulerRoleKind::ConnectableAdvertising => self.memory.connectable.withhold(id),
-                SchedulerRoleKind::PassiveScanning => self.memory.scanners.withhold(id),
+                SchedulerRoleKind::LegacyScanning => self.memory.scanners.withhold(id),
                 SchedulerRoleKind::PeripheralConnection => self.memory.connections.withhold(id),
                 SchedulerRoleKind::DirectTestMode => self.memory.dtm.withhold(id),
             };
@@ -800,7 +800,7 @@ impl<
                 .find(|slot| slot.instance.index() == instance)?
                 .instance
                 .item(item),
-            SchedulerRoleKind::PassiveScanning => self
+            SchedulerRoleKind::LegacyScanning => self
                 .scanners
                 .iter()
                 .flatten()
@@ -830,7 +830,7 @@ impl<
         match id.kind() {
             SchedulerRoleKind::LegacyAdvertising => self.memory.legacy.is_listed(id),
             SchedulerRoleKind::ConnectableAdvertising => self.memory.connectable.is_listed(id),
-            SchedulerRoleKind::PassiveScanning => self.memory.scanners.is_listed(id),
+            SchedulerRoleKind::LegacyScanning => self.memory.scanners.is_listed(id),
             SchedulerRoleKind::PeripheralConnection => self.memory.connections.is_listed(id),
             SchedulerRoleKind::DirectTestMode => self.memory.dtm.is_listed(id),
         }
@@ -866,7 +866,7 @@ impl<
         match id.kind() {
             SchedulerRoleKind::LegacyAdvertising => find(&self.legacy, instance)?.event,
             SchedulerRoleKind::ConnectableAdvertising => find(&self.connectable, instance)?.event,
-            SchedulerRoleKind::PassiveScanning => find(&self.scanners, instance)?.event,
+            SchedulerRoleKind::LegacyScanning => find(&self.scanners, instance)?.event,
             SchedulerRoleKind::PeripheralConnection => {
                 self.connections
                     .iter()
@@ -888,7 +888,7 @@ impl<
             SchedulerRoleKind::ConnectableAdvertising => {
                 find_mut(&mut self.connectable, instance)?.event.as_mut()
             }
-            SchedulerRoleKind::PassiveScanning => {
+            SchedulerRoleKind::LegacyScanning => {
                 find_mut(&mut self.scanners, instance)?.event.as_mut()
             }
             SchedulerRoleKind::PeripheralConnection => self
@@ -1220,7 +1220,7 @@ impl<
         let index = free_slot(&self.scanners)?;
         let pool = &mut self.memory.scanners;
         let instance = pool.acquire().ok_or(RequestError::NoInstance)?;
-        let config = PassiveScanResetConfig::le_1m_public_accept_all(tx_power);
+        let config = LegacyScanResetConfig::le_1m_public_accept_all(tx_power);
         if pool
             .reset(&instance, &self.memory.scanning, config)
             .is_err()
@@ -1255,7 +1255,7 @@ impl<
         let item_end = self
             .clock
             .raw(anchor + u64::from(duration.min(SCAN_EVENT_MAX_MICROS)));
-        let window_ticks = PassiveScanWindowTicks::from_raw_ticks(self.clock.duration(duration));
+        let window_ticks = LegacyScanWindowTicks::from_raw_ticks(self.clock.duration(duration));
         let slot = self.scanners[index]
             .as_mut()
             .expect("the scanner is configured");
@@ -1265,9 +1265,9 @@ impl<
             .prepare_event(
                 &slot.instance,
                 scan_channel(scan.channel),
-                PassiveScanSchedulerWindow::from_controller_ticks(window.start(), item_end)
+                LegacyScanSchedulerWindow::from_controller_ticks(window.start(), item_end)
                     .expect("admission checked the window"),
-                PassiveScanStartSelection::Requested,
+                LegacyScanStartSelection::Requested,
                 window_ticks,
                 coexistence::passive_scan_priorities(self.coexistence),
             )
@@ -1743,7 +1743,7 @@ impl<
         let pool_result = match id.kind() {
             SchedulerRoleKind::LegacyAdvertising => self.memory.legacy.retire(id),
             SchedulerRoleKind::ConnectableAdvertising => self.memory.connectable.retire(id),
-            SchedulerRoleKind::PassiveScanning => self.memory.scanners.retire(id),
+            SchedulerRoleKind::LegacyScanning => self.memory.scanners.retire(id),
             SchedulerRoleKind::PeripheralConnection => self.memory.connections.retire(id),
             SchedulerRoleKind::DirectTestMode => self.memory.dtm.retire(id),
         };
@@ -1786,7 +1786,7 @@ impl<
                     );
                 }
             }
-            SchedulerRoleKind::PassiveScanning => {
+            SchedulerRoleKind::LegacyScanning => {
                 let slot =
                     find_mut(&mut self.scanners, id.instance()).expect("the scanner is configured");
                 let source = self
@@ -2001,11 +2001,11 @@ fn free_slot<Id>(slots: &[Option<Slot<Id>>]) -> Result<usize, RequestError> {
         .ok_or(RequestError::NoInstance)
 }
 
-const fn scan_channel(channel: AdvertisingChannel) -> PassiveScanPrimaryChannel {
+const fn scan_channel(channel: AdvertisingChannel) -> LegacyScanPrimaryChannel {
     match channel {
-        AdvertisingChannel::Channel37 => PassiveScanPrimaryChannel::Channel37,
-        AdvertisingChannel::Channel38 => PassiveScanPrimaryChannel::Channel38,
-        AdvertisingChannel::Channel39 => PassiveScanPrimaryChannel::Channel39,
+        AdvertisingChannel::Channel37 => LegacyScanPrimaryChannel::Channel37,
+        AdvertisingChannel::Channel38 => LegacyScanPrimaryChannel::Channel38,
+        AdvertisingChannel::Channel39 => LegacyScanPrimaryChannel::Channel39,
     }
 }
 

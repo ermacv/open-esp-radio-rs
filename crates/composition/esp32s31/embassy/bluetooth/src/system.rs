@@ -34,8 +34,8 @@ use oer_esp32s31_bluetooth_memory::{
     DirectionFindingWorkspaceBindFailure, DirectionFindingWorkspaceCpuOwned,
     DirectionFindingWorkspaceStorage, DtmPool, DtmStorage, LeRxChain, LeRxChainBindError,
     LeRxChainStorage, LegacyAdvertisingPool, LegacyAdvertisingStorage,
-    LegacyConnectableAdvertisingPool, LegacyConnectableAdvertisingStorage, PassiveScanPool,
-    PassiveScanStorage, PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
+    LegacyConnectableAdvertisingPool, LegacyConnectableAdvertisingStorage, LegacyScanPool,
+    LegacyScanStorage, PeripheralConnectionPool, PeripheralConnectionStorage, RxMemoryListClass,
     SchedulerAllocationConfig, SchedulerPoolBindError, SchedulerRolePoolStorage,
 };
 use oer_esp32s31_bluetooth_radio::{BluetoothRadio, BluetoothRadioMemory};
@@ -145,7 +145,7 @@ controller_memory!(LEGACY_POOL: SchedulerRolePoolStorage<LegacyAdvertisingStorag
 controller_memory!(CONNECTABLE_POOL:
     SchedulerRolePoolStorage<LegacyConnectableAdvertisingStorage, CONNECTABLE> =
     SchedulerRolePoolStorage::new(), ".dma.data.open_radio_bluetooth_connectable_advertising");
-controller_memory!(SCANNER_POOL: SchedulerRolePoolStorage<PassiveScanStorage, SCANNERS> =
+controller_memory!(SCANNER_POOL: SchedulerRolePoolStorage<LegacyScanStorage, SCANNERS> =
     SchedulerRolePoolStorage::new(), ".dma.data.open_radio_bluetooth_passive_scan");
 controller_memory!(CONNECTION_POOL:
     SchedulerRolePoolStorage<PeripheralConnectionStorage, CONNECTIONS> =
@@ -232,7 +232,7 @@ impl BluetoothParked {
                     .expect("within the profile"),
             )
             .map_err(pool)?,
-            scanners: PassiveScanPool::bind(claim(SCANNER_POOL.try_take())?, numbers.scanning())
+            scanners: LegacyScanPool::bind(claim(SCANNER_POOL.try_take())?, numbers.scanning())
                 .map_err(pool)?,
             connections: PeripheralConnectionPool::bind(
                 claim(CONNECTION_POOL.try_take())?,

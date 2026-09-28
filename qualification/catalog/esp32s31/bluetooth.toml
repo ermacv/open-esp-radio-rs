@@ -2702,7 +2702,7 @@ section = "bluetooth-security-privacy"
 title = "LE Privacy 1.2"
 status = "fail-closed"
 level = "composed-product"
-scope-and-limitations = "The production [scanner image](memory/src/passive_scanning_event_image.rs) fixes privacy disabled. Resolving-list hardware does not provide an RPA/IRK lifecycle."
+scope-and-limitations = "The production [scanner image](memory/src/legacy_scanning_event_image.rs) fixes privacy disabled. Resolving-list hardware does not provide an RPA/IRK lifecycle."
 
 [[items]]
 id = "bluetooth-resolving-list"

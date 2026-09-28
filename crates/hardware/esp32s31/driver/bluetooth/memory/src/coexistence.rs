@@ -28,7 +28,7 @@ pub struct AdvertisingCoexistencePriorities {
 
 /// The four lanes of a passive scan window item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PassiveScanCoexistencePriorities {
+pub struct LegacyScanCoexistencePriorities {
     pub lanes: [SchedulerItemCoexistencePriority; 4],
 }
 

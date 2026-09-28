@@ -113,7 +113,7 @@ pub use controller::le::peripheral::{
 pub use controller::le::scanning::{
     LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
     LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY, LeLegacyAdvertisingReportEvent,
-    LeLegacyAdvertisingReportEventError, LeLegacyPassiveScanParameters, LeLegacyScanningCommand,
+    LeLegacyAdvertisingReportEventError, LeLegacyScanParameters, LeLegacyScanningCommand,
     LeLegacyScanningCommandCompleteEvent, LeLegacyScanningCommandKind,
     LeLegacyScanningConfiguration, LeLegacyScanningConfigurationCommand,
     LeLegacyScanningDecodeError, LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand,

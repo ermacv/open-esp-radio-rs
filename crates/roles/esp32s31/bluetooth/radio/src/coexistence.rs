@@ -9,7 +9,7 @@
 use oer_bluetooth_radio::CoexistenceLevel;
 use oer_esp32s31_bluetooth_memory::{
     AdvertisingCoexistencePriorities, ConnectionCoexistencePriorities,
-    PassiveScanCoexistencePriorities, PeripheralConnectionCoexistenceProtection,
+    LegacyScanCoexistencePriorities, PeripheralConnectionCoexistenceProtection,
     SchedulerItemCoexistencePriority,
 };
 
@@ -139,12 +139,12 @@ pub(crate) const fn advertising_priorities(
 /// The lanes of one passive scan window.
 pub(crate) const fn passive_scan_priorities(
     profile: CoexistenceProfile,
-) -> PassiveScanCoexistencePriorities {
+) -> LegacyScanCoexistencePriorities {
     let lanes = match profile {
         CoexistenceProfile::Standalone => [STANDALONE; 4],
         CoexistenceProfile::Shared => PASSIVE_SCAN_LANES,
     };
-    PassiveScanCoexistencePriorities {
+    LegacyScanCoexistencePriorities {
         lanes: [
             lane(lanes[0]),
             lane(lanes[1]),

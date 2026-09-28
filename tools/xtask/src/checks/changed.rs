@@ -34,6 +34,9 @@ pub struct Plan {
     /// Code, register models, vendor docs or provenance facts changed: vendor
     /// citations may have changed.
     pub provenance: bool,
+    /// A production crate manifest changed: the source-only PHY graph may
+    /// have gained a package.
+    pub phy_graph: bool,
     /// Changed workspaces other than the root, which need their own target
     /// and feature profile to build.
     pub other_workspaces: BTreeSet<PathBuf>,
@@ -68,6 +71,9 @@ pub fn plan(
         }
         if name == "Cargo.toml" || name == "Cargo.lock" {
             plan.metadata = true;
+        }
+        if name == "Cargo.toml" && path.starts_with("crates") {
+            plan.phy_graph = true;
         }
         if (extension == "rs" && (path.starts_with("crates") || path.starts_with("verification")))
             || path.starts_with("registers")
@@ -234,6 +240,9 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
     if plan.docs {
         super::docs::run(ctx)?;
     }
+    if plan.phy_graph {
+        super::phy::run(ctx, "esp32s31")?;
+    }
     if plan.provenance {
         for chip in crate::chips::supported(&ctx.root)? {
             if !ctx
@@ -330,6 +339,7 @@ mod tests {
         let plan = run(&["docs/architecture.md", "crates/hal/Cargo.toml"]);
         assert!(plan.docs);
         assert!(plan.metadata);
+        assert!(plan.phy_graph);
         assert_eq!(plan.packages, BTreeSet::from(["hal".to_owned()]));
         let plan = run(&[".github/workflows/ci.yml"]);
         assert_eq!(plan, Plan::default());

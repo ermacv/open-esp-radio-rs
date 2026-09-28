@@ -22,7 +22,11 @@ impl Fixture {
         fs::create_dir_all(&run).unwrap();
         let mut counts = json!({"scenarios":scenarios.len(),"passed":0,"failed":0,"broken":0,"blocked":0,"skipped":0,"interrupted":0});
         for scenario in &scenarios {
-            let key = scenario["outcome"].as_str().unwrap();
+            // The suite counts a quarantined board as blocked.
+            let key = match scenario["outcome"].as_str().unwrap() {
+                "board-quarantined" => "blocked",
+                key => key,
+            };
             counts[key] = json!(counts[key].as_u64().unwrap() + 1);
         }
         let passed = scenarios.iter().all(|s| s["outcome"] == "passed");
@@ -92,6 +96,37 @@ fn requirement(id: &str, count: u8) -> HilRequirement {
         scenario: id.into(),
         checks: vec![],
         minimum_repetitions: count,
+    }
+}
+
+#[test]
+fn runs_with_the_stands_newest_outcomes_and_failure_kinds_load_and_do_not_qualify() {
+    let fixture = Fixture::new();
+    let mut hang = scenario("station-hang", &["failed"]);
+    hang["repetitions"][0]["failure"] = json!({"kind": "hang", "message": "task console stalled"});
+    let mut reset = scenario("station-reset", &["failed"]);
+    reset["repetitions"][0]["failure"] = json!({"kind": "unexpected-reset", "message": "Brownout"});
+    fixture.write_run(
+        "newest-vocabulary",
+        vec![
+            scenario("station-quarantined", &["board-quarantined"]),
+            hang,
+            reset,
+        ],
+    );
+    let index = fixture.load().unwrap();
+    for id in ["station-quarantined", "station-hang", "station-reset"] {
+        let decision = serde_json::to_value(
+            index.decision_for(&requirement(id, 1), &ScenarioCatalog::default()),
+        )
+        .unwrap();
+        assert_ne!(decision["status"], "satisfied", "{id}: {decision}");
+        assert!(decision["status"].is_string(), "{id}: {decision}");
+        assert_eq!(
+            decision["observations"].as_array().unwrap().len(),
+            1,
+            "{id}"
+        );
     }
 }
 

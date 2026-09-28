@@ -673,26 +673,9 @@ impl HilEvidenceIndex {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-enum RunState {
-    Running,
-    Completed,
-    Interrupted,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum Outcome {
-    Passed,
-    Failed,
-    Broken,
-    Skipped,
-    Blocked,
-    Interrupted,
-    /// The stand quarantined the board: no verdict on the code under test.
-    BoardQuarantined,
-}
+// The run vocabulary is the runner's own, from the shared schema: a variant
+// the runner learns is known here at once, never split into two copies.
+use oer_hil_schema::run::{Outcome, RunState};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
 struct RepositoryProvenance {

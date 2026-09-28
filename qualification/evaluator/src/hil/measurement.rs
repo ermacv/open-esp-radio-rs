@@ -11,36 +11,10 @@ struct Measurement {
     verdict: Option<Verdict>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum Unit {
-    Count,
-    Bytes,
-    BitsPerSecond,
-    Microseconds,
-    BasisPoints,
-}
-
-#[derive(Deserialize)]
-struct Threshold {
-    comparison: Comparison,
-    value: u64,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum Comparison {
-    AtLeast,
-    AtMost,
-    Exactly,
-}
-
-#[derive(Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-enum Verdict {
-    Passed,
-    Failed,
-}
+// The measurement vocabulary is the runner's own, from the shared schema.
+use oer_hil_schema::run::{
+    Comparison, MeasurementUnit as Unit, MeasurementVerdict as Verdict, Threshold,
+};
 
 pub(super) fn validate(values: &[serde_json::Value], outcome: Outcome) -> Result<()> {
     let mut names = BTreeSet::new();

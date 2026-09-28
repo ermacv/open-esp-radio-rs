@@ -17,6 +17,7 @@ oer-probe-codegen = { path = "../../verification/harness/codegen" }
 oer-process = { path = "../process" }
 oer-register-model = { path = "../registers/model" }
 fs2 = "0.4"
+roxmltree = "=0.20.0"
 sha2 = "0.10"
 serialport = { version = "4.8.1", default-features = false }
 oer-esp32s31-firmware = { path = "../firmware" }

@@ -126,6 +126,7 @@ fn the_registry_round_trips() {
         member: "bt_bb_v2.o".into(),
         symbol: "bt_bb_v2_init_cmplx".into(),
         code: "ab".into(),
+        decisions: vec![],
     }];
     assert_eq!(parse_registry(&render_registry(&entries)).unwrap(), entries);
 }
@@ -181,4 +182,54 @@ fn an_untagged_neutral_block_fails_only_the_chips_it_cites() {
     assert_eq!(c5_problems.len(), 1, "{c5_problems:?}");
     assert!(c5_problems[0].starts_with("a.rs:1") && c5_problems[0].contains("phy_i2c_init1"));
     assert!(uncharted_citations(&found.uncharted, &s31).is_empty());
+}
+
+#[test]
+fn decisions_cite_the_code_shaped_names_their_places_quote() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("coverage.rs"),
+        r#"Decision { reason: "the TXOP holding path, not used", places: &[
+            Place::Range { function: "mac_tx_set_txop_q", start: 0x30, end: 0x34 },
+            Place::Function("hal_mac_fill_hwtxop"),
+        ] }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.path().join("state.rs"),
+        r#"("phy/src/target_port.rs", "self.registers,"), Place::Function("mac_tx_set_txop_q")"#,
+    )
+    .unwrap();
+    std::fs::write(directory.path().join("notes.md"), r#""ignored_file_name""#).unwrap();
+    let words = decision_words(directory.path()).unwrap();
+    assert_eq!(
+        words.keys().collect::<Vec<_>>(),
+        ["hal_mac_fill_hwtxop", "mac_tx_set_txop_q"]
+    );
+    assert_eq!(
+        words["mac_tx_set_txop_q"].iter().collect::<Vec<_>>(),
+        ["coverage.rs", "state.rs"]
+    );
+}
+
+#[test]
+fn a_changed_decision_function_names_the_exclusions_to_review() {
+    let files: BTreeSet<String> = ["coverage.rs".to_owned()].into();
+    assert_eq!(
+        review_hint(Some(&files)),
+        "; re-review the exclusions in decisions/coverage.rs"
+    );
+    assert_eq!(review_hint(None), "");
+}
+
+#[test]
+fn the_registry_round_trips_decision_citations() {
+    let entries = vec![Entry {
+        artifact: "libpp".into(),
+        member: "hal_mac_tx.o".into(),
+        symbol: "mac_tx_set_txop_q".into(),
+        code: "abc".into(),
+        decisions: vec!["coverage.rs".into()],
+    }];
+    assert_eq!(parse_registry(&render_registry(&entries)).unwrap(), entries);
 }

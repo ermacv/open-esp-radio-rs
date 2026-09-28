@@ -32,6 +32,9 @@ fn register_directories(chip: &str) -> [String; 2] {
 
 /// Production sources scanned for `SOURCE:` blocks.
 const PRODUCTION: &str = "crates";
+/// The chip's reviewed verification decisions, relative to its
+/// verification directory.
+const DECISIONS: &str = "scenarios/src/decisions";
 /// Shortest identifier taken as a reference; shorter words are prose.
 const MINIMUM_NAME: usize = 4;
 
@@ -42,6 +45,9 @@ pub struct Entry {
     pub member: String,
     pub symbol: String,
     pub code: String,
+    /// The verification decision files that name the function: their
+    /// exclusions describe its code at `code`.
+    pub decisions: Vec<String>,
 }
 
 fn parse_registry(text: &str) -> Result<Vec<Entry>> {
@@ -63,11 +69,23 @@ fn parse_registry(text: &str) -> Result<Vec<Entry>> {
                 .map(str::to_owned)
                 .ok_or_else(|| format!("registry function lacks `{key}`").into())
         };
+        let decisions = value
+            .get("decisions")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| "registry decision is not a file name".into())
+            })
+            .collect::<Result<Vec<String>>>()?;
         entries.push(Entry {
             artifact: field("artifact")?,
             member: field("member")?,
             symbol: field("symbol")?,
             code: field("code")?,
+            decisions,
         });
     }
     Ok(entries)
@@ -76,7 +94,8 @@ fn parse_registry(text: &str) -> Result<Vec<Entry>> {
 fn render_registry(entries: &[Entry]) -> String {
     let mut text = String::from(
         "# Code fingerprints of the vendor functions production `SOURCE:` blocks\n\
-         # and the register model cite, as reviewed. Maintained by\n\
+         # and the register model cite, and those the verification decisions\n\
+         # exclude code of, as reviewed. Maintained by\n\
          # `cargo xtask vendor-provenance`; checked by `cargo xtask check\n\
          # provenance`.\n\
          schema = 1\n",
@@ -86,6 +105,10 @@ fn render_registry(entries: &[Entry]) -> String {
             "\n[[function]]\nartifact = \"{}\"\nmember = \"{}\"\nsymbol = \"{}\"\ncode = \"{}\"\n",
             entry.artifact, entry.member, entry.symbol, entry.code
         ));
+        if !entry.decisions.is_empty() {
+            let files: Vec<String> = entry.decisions.iter().map(|f| format!("\"{f}\"")).collect();
+            text.push_str(&format!("decisions = [{}]\n", files.join(", ")));
+        }
     }
     text
 }
@@ -124,6 +147,45 @@ fn is_code_name(word: &str) -> bool {
     word.contains('_')
         || word.chars().any(|c| c.is_ascii_digit())
         || word.chars().skip(1).any(|c| c.is_ascii_uppercase())
+}
+
+/// Code-shaped string literals of every decision file of `directory`, by
+/// name, with the files that name them: a decision's `Place` names the
+/// vendor function whose code it excludes.
+fn decision_words(directory: &Path) -> Result<BTreeMap<String, BTreeSet<String>>> {
+    let mut words: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return Ok(words);
+    };
+    for entry in entries {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let file = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("decision file name")?
+            .to_owned();
+        for literal in std::fs::read_to_string(&path)?
+            .split('"')
+            .skip(1)
+            .step_by(2)
+        {
+            if !literal.is_empty()
+                && literal
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && is_code_name(literal)
+            {
+                words
+                    .entry(literal.to_owned())
+                    .or_default()
+                    .insert(file.clone());
+            }
+        }
+    }
+    Ok(words)
 }
 
 /// The chips with a vendor verification project, which a citation may name.
@@ -306,6 +368,8 @@ struct Survey {
     references: BTreeSet<String>,
     /// Every cited identifier, whether or not it names a function.
     words: BTreeSet<String>,
+    /// Names the verification decisions cite, with the files citing them.
+    decisions: BTreeMap<String, BTreeSet<String>>,
     pinned: BTreeMap<String, (PathBuf, Vec<Function>)>,
     /// Obfuscated vendor symbols the chip's vendor documents name that no
     /// pinned artifact defines.
@@ -350,6 +414,8 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
     for directory in register_directories(chip) {
         register_words(&ctx.root.join(directory), &mut words)?;
     }
+    let decisions = decision_words(&ctx.root.join(scanned.verification(DECISIONS)))?;
+    words.extend(decisions.keys().cloned());
     let known: BTreeSet<&str> = current
         .keys()
         .map(|(_, _, name)| name.as_str())
@@ -366,12 +432,18 @@ fn survey(ctx: &Context, chip: &str) -> Result<Survey> {
     } else {
         document_symbols(ctx, chip, &pinned, &defined)?
     };
+    // Only names of pinned or registered functions are decision citations.
+    let decisions = decisions
+        .into_iter()
+        .filter(|(name, _)| known.contains(name.as_str()))
+        .collect();
     Ok(Survey {
         documents,
         registry,
         current,
         references,
         words,
+        decisions,
         pinned,
         citations,
     })
@@ -436,10 +508,27 @@ pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
                 entry.artifact, entry.member, entry.symbol
             )),
             Some(code) if *code != entry.code => problems.push(format!(
-                "{}[{}]::{} changed since its cited facts were reviewed",
-                entry.artifact, entry.member, entry.symbol
+                "{}[{}]::{} changed since its cited facts were reviewed{}",
+                entry.artifact,
+                entry.member,
+                entry.symbol,
+                review_hint(survey.decisions.get(&entry.symbol))
             )),
             Some(_) => {}
+        }
+        let citing: Vec<String> = survey
+            .decisions
+            .get(&entry.symbol)
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        if citing != entry.decisions {
+            problems.push(format!(
+                "{}::{} is registered for decisions {:?} but cited by {:?}; review them and run \
+                 `cargo xtask vendor-provenance --accept {}`",
+                entry.artifact, entry.symbol, entry.decisions, citing, entry.symbol
+            ));
         }
     }
     for (artifact, member, symbol) in survey.current.keys() {
@@ -452,6 +541,18 @@ pub fn violations(ctx: &Context, chip: &str) -> Result<Vec<String>> {
         }
     }
     Ok(problems)
+}
+
+/// What a changed function's reviewer re-reads: the exclusions of every
+/// decision file that names it.
+fn review_hint(decisions: Option<&BTreeSet<String>>) -> String {
+    match decisions {
+        Some(files) if !files.is_empty() => {
+            let files: Vec<String> = files.iter().map(|f| format!("decisions/{f}")).collect();
+            format!("; re-review the exclusions in {}", files.join(", "))
+        }
+        _ => String::new(),
+    }
 }
 
 /// The check: fails with every violation.
@@ -489,6 +590,15 @@ pub fn update(
     baseline: Option<PathBuf>,
 ) -> Result<()> {
     let survey = survey(ctx, chip)?;
+    let decisions_of = |name: &str| -> Vec<String> {
+        survey
+            .decisions
+            .get(name)
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect()
+    };
     let mut entries: BTreeSet<Entry> = if rebuild {
         BTreeSet::new()
     } else {
@@ -504,6 +614,7 @@ pub fn update(
                 member: member.clone(),
                 symbol: name.clone(),
                 code: code.clone(),
+                decisions: decisions_of(name),
             })
             .collect()
     };
@@ -532,6 +643,7 @@ pub fn update(
                         member: f.member.clone(),
                         symbol: f.name.clone(),
                         code: f.code.clone(),
+                        decisions: decisions_of(&f.name),
                     });
                 }
             }
@@ -556,6 +668,14 @@ pub fn update(
         let current = current_entries(symbol);
         if current.is_empty() {
             println!("{symbol}: no pinned definition; its registration is removed");
+        }
+        for entry in &current {
+            if !entry.decisions.is_empty() {
+                println!(
+                    "{symbol}: accepted with the exclusions of {}",
+                    entry.decisions.join(", ")
+                );
+            }
         }
         entries.extend(current);
     }

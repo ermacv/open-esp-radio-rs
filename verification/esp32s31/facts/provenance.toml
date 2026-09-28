@@ -1,5 +1,6 @@
 # Code fingerprints of the vendor functions production `SOURCE:` blocks
-# and the register model cite, as reviewed. Maintained by
+# and the register model cite, and those the verification decisions
+# exclude code of, as reviewed. Maintained by
 # `cargo xtask vendor-provenance`; checked by `cargo xtask check
 # provenance`.
 schema = 1
@@ -1521,6 +1522,7 @@ artifact = "libcoexist"
 member = "external_coex.o"
 symbol = "ic_set_extern_coex_params"
 code = "48af0ccf1a76168c6d699be4d8301d67b491ad03bd9681e85ab38a2db6b1ee5b"
+decisions = ["state.rs"]
 
 [[function]]
 artifact = "libcoexist"
@@ -1581,6 +1583,7 @@ artifact = "libcoexist"
 member = "hal_external_coexist.o"
 symbol = "hal_set_extern_pti_mode"
 code = "6d1d3e74811f513c451f0439eac7b84f8c0cfd27e19d677087feaa6a289ded6d"
+decisions = ["coverage.rs", "state.rs"]
 
 [[function]]
 artifact = "libnet80211"
@@ -1635,6 +1638,13 @@ artifact = "libnet80211"
 member = "ieee80211_crypto_ccmp.o"
 symbol = "ieee80211_ccmp_decrypt"
 code = "b1ff3f0521cf9d1eaed31429f790427e526d311684d1de83e0626b6c924f1c50"
+
+[[function]]
+artifact = "libnet80211"
+member = "ieee80211_debug.o"
+symbol = "wifi_log"
+code = "f4ca28815625952b8111a11d1513c352da0d9da74eb3c954961ded354753cd2b"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libnet80211"
@@ -1923,6 +1933,7 @@ artifact = "libnet80211"
 member = "ieee80211_supplicant.o"
 symbol = "wifi_set_rx_policy"
 code = "b270f09898a38eb62eda6f291600b82a75fe5479fdfb6930cf905e35e8fcbe8c"
+decisions = ["coverage.rs", "state.rs"]
 
 [[function]]
 artifact = "libnet80211"
@@ -1950,6 +1961,13 @@ code = "44be690963c760ba331522fdb1b38011da855989949d27f9be02869dd70e10b6"
 
 [[function]]
 artifact = "libphy"
+member = "phy_basic.o"
+symbol = "phy_chan14_mic_cfg_new"
+code = "8bd7ab16ceebb70314c3dad00f97e0b16508b7aa2ad67dfcf6e76c34ef53f0d2"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
 member = "phy_debug.o"
 symbol = "phy_i2c_check"
 code = "a94b6f8881a1510e87eff3af2924605390efcabc158986f0ce98ac76fa74a178"
@@ -1968,6 +1986,13 @@ code = "c1f074d32a32ff9d88ff9d4b164b9d8db64636db0985d550949db92152120b35"
 
 [[function]]
 artifact = "libphy"
+member = "phy_feature.o"
+symbol = "phy_set_most_tpw"
+code = "d229452f192c25785a311b47a327533d44de92a1fb8da5ccadb1faa0947458fc"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
 member = "phy_hw_freq.o"
 symbol = "phy_freq_i2c_data_write"
 code = "e1f43517e21e57a29d69b0a7bc9bdfeef6eebfac1edbfae57e84a6e0c7299ce1"
@@ -1977,6 +2002,13 @@ artifact = "libphy"
 member = "phy_i2c.o"
 symbol = "phy_get_i2c_hostid_new"
 code = "a8f886556cb6cbce00cca44c1318363bceb023def1f13bb9bf64f09268e74878"
+
+[[function]]
+artifact = "libphy"
+member = "phy_i2c.o"
+symbol = "phy_get_i2c_read_mask_new"
+code = "5449365c53276bb2a3a219851d9ac6206848612f9254bbe91f076fafa028d284"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libphy"
@@ -2127,18 +2159,55 @@ artifact = "libphy"
 member = "phy_rfpll.o"
 symbol = "phy_chip_set_chan"
 code = "03066d6e320d5d2bb571f7c4c235cfbf9b1f57e7043b4d75324e9d6cad53b943"
+decisions = ["coverage.rs", "state.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_rfpll.o"
+symbol = "phy_rfpll_cap_correct_track"
+code = "005e1944b5f7dde36a5853727f8321a20a6d06e4b91b95e65217682eb9c6192d"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_rfpll.o"
+symbol = "phy_set_channel_rfpll_freq_new"
+code = "642e3dd6c8d3dbe00bb1e5269c0dd237ba67d8c851d56df538e3df12be35182f"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libphy"
 member = "phy_rfpll.o"
 symbol = "phy_set_rf_freq_offset_new"
 code = "f01e57354d4409535b6d25c1ff47289d175ef935706882fa5abac96285862dac"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_rx_cal.o"
+symbol = "phy_bt_rx_mx_dgain"
+code = "072ce0e537fba0efab86a1cc0689e00351e62046ba88dff20fd04c5a7b68c2e4"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libphy"
 member = "phy_rx_cal.o"
 symbol = "phy_check_rx_sat"
 code = "c08a8492e58fb4dee8d2598c281648fa6fd155ce4d9ef8892d3a796c82e43a8d"
+
+[[function]]
+artifact = "libphy"
+member = "phy_rx_cal.o"
+symbol = "phy_pbus_rx_dco_cal_1step_new"
+code = "58dfdd59d88a3bae6f9787814dca0e66130fd7bc485ac18c6023b14d17f5647a"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_rx_cal.o"
+symbol = "phy_rfrx_gain_index_new"
+code = "9736b8f8397480baa3c2e6fae51bfa967e5712557e8cec889194648e716ac094"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libphy"
@@ -2155,6 +2224,13 @@ code = "cc1150a67486e4dda929100d48fce6122174a4ae758d09c4f35e1487cf79d75d"
 [[function]]
 artifact = "libphy"
 member = "phy_rx_gain.o"
+symbol = "phy_get_rxbb_dc_new"
+code = "f0d7efa9dfe5541a48416f415bc86f619fc003fa0ba3df49232a40fdd9ccb24f"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_rx_gain.o"
 symbol = "phy_rxiq_cal_init"
 code = "ca32107c01e0627d647b3439152603a0ab198021631ccf5eea582c7f8209cc5e"
 
@@ -2163,6 +2239,7 @@ artifact = "libphy"
 member = "phy_rx_gain.o"
 symbol = "phy_set_rx_gain_table"
 code = "3071cc75af53b35afc8c083870e67ecb4baa134ffcdeae27358990b18e19fcb6"
+decisions = ["coverage.rs", "state.rs"]
 
 [[function]]
 artifact = "libphy"
@@ -2173,8 +2250,36 @@ code = "82000d0ef706de3f2cf011239d156fc30a0c41e0fc07e1d7e755f2e8f143def9"
 [[function]]
 artifact = "libphy"
 member = "phy_track.o"
+symbol = "phy_cal_param_track"
+code = "e55dd2c349891eaee7f8390778e24e3eec4c70200df48b241537d42cc21014bf"
+decisions = ["coverage.rs", "state.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_track.o"
+symbol = "phy_param_track_tot"
+code = "cd0cb6a1403d504235284fcf59a9341ebba7e58f2d5fc6094295f5117c59ba17"
+decisions = ["state.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_track.o"
 symbol = "phy_release_grant_protect"
 code = "82000d0ef706de3f2cf011239d156fc30a0c41e0fc07e1d7e755f2e8f143def9"
+
+[[function]]
+artifact = "libphy"
+member = "phy_track.o"
+symbol = "phy_rfpll_cap_track_new"
+code = "6cdb6b4be0aa03819e6deec1f622866c0ac088fce908d59c6a373077ae1ad57e"
+decisions = ["coverage.rs", "state.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_track.o"
+symbol = "phy_txpwr_cal_track_new"
+code = "dfff2f565c78af6778d8ac7d378d5fdf2702fbab32cca14c66354f79925440d0"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libphy"
@@ -2205,6 +2310,21 @@ artifact = "libphy"
 member = "phy_tx_cal.o"
 symbol = "phy_txdc_cal_pwdet_init"
 code = "6c776ed44719786390bcde3b2e22e0a554fac6b134c51fa6f9d40cdba8f99f44"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_tx_cal.o"
+symbol = "phy_txdc_cal_pwdet_new"
+code = "6fe3b59b65e2884cdc3234f9a408c93e2a653d3260ee44299b14496694dd2abd"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libphy"
+member = "phy_tx_gain.o"
+symbol = "phy_bt_set_tx_gain_new"
+code = "9b7a80561fce0b804423eba1458a1681a15cb43d9840bf511eaaa8ce3a604051"
+decisions = ["state.rs"]
 
 [[function]]
 artifact = "libphy"
@@ -2217,6 +2337,13 @@ artifact = "libphy"
 member = "phy_tx_gain.o"
 symbol = "phy_set_tx_gain_mem_new"
 code = "d75a11ef71ac696d1ba38aa8a0080dfea597401c0354c8e739369a74af159628"
+
+[[function]]
+artifact = "libphy"
+member = "phy_tx_gain.o"
+symbol = "phy_wifi_set_tx_gain_new"
+code = "ea83f68c83b91b02b5015982b3db2ead1aaad0b8eb5c3070dc6923b659b0a9d8"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -2583,6 +2710,7 @@ artifact = "libpp"
 member = "hal_debug.o"
 symbol = "dbg_read_tx_ppdu"
 code = "7c7f5a50ce2ce93426faf4981fa10b0c02df1a4a3882b887b3ea4eae24183378"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -2661,6 +2789,20 @@ artifact = "libpp"
 member = "hal_debug.o"
 symbol = "print_isr_regs"
 code = "4bd3653b974f03e0c8da913df9e5558099f9afcacf0d3d7e27481ead4932127a"
+
+[[function]]
+artifact = "libpp"
+member = "hal_he_common.o"
+symbol = "dbg_hal_check_clr_mplen_bitmap"
+code = "391dc5a83ebdf5dac60ce98e3896a70313933e00b816c1544e0155830e56641b"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "hal_he_common.o"
+symbol = "dbg_hal_check_set_mplen_bitmap"
+code = "d1bb8459dc1e0e70d85ccc663cf1e139b6790a10ff38713c689d44297277f487"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -2763,6 +2905,7 @@ artifact = "libpp"
 member = "hal_mac.o"
 symbol = "hal_mac_rx_set_policy"
 code = "26ca3ce4ad3489584eea155525f0672eb03ad2a37ad3274bcdae02aeee650e50"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -2793,6 +2936,7 @@ artifact = "libpp"
 member = "hal_mac.o"
 symbol = "hal_mac_tsf_reset"
 code = "3e950e452a431480dd2474e79bad672c24eb6770c07c372d6312d2b5961d3569"
+decisions = ["coverage.rs", "state.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -2817,6 +2961,7 @@ artifact = "libpp"
 member = "hal_mac.o"
 symbol = "mac_tx_set_pti"
 code = "0eba676f4dc12d904762e858746c4783c51b51653008148ddf322f3c72c0ed25"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -2889,6 +3034,7 @@ artifact = "libpp"
 member = "hal_mac_ctl.o"
 symbol = "hal_he_get_bss_color"
 code = "56453509e5aad2e07c1ffd4d66e7291e29e997d026c5fbbeed8569080191142e"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -2985,6 +3131,7 @@ artifact = "libpp"
 member = "hal_mac_ctl.o"
 symbol = "hal_he_set_htc"
 code = "e851b73244dd4c59aa8d9252e5e0cfe9b824e082c42a914190b0fff82852a0b7"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3108,6 +3255,13 @@ code = "a12bb45ed4761f55e3194d1b01cd2520ab9fadd26291c086084ed1c66a96895a"
 
 [[function]]
 artifact = "libpp"
+member = "hal_mac_ctl.o"
+symbol = "is_use_muedca"
+code = "b08b49d1440563190ef57d0ec448809ec7e4a05bd4fcbf97b4b019def89b8a50"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
 member = "hal_mac_rx.o"
 symbol = "hal_mac_rx_get_end_info"
 code = "8020e76f51d53b7e2e9ce8fb19ddc1bd6f7db41cf080cda7182dd31d6ac2808f"
@@ -3159,6 +3313,14 @@ artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "hal_mac_clr_txq_state"
 code = "203bb51c44078c58da4705117029b2e23691e6845e18c45bbfba20e025a72ff8"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "hal_mac_tx.o"
+symbol = "hal_mac_fill_hwtxop"
+code = "364d47c529aadb337bf6e7b32363ed3df06d0f70968489dc4a6b76c6e90c83cd"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3189,6 +3351,7 @@ artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "hal_mac_tx_clr_mplen"
 code = "d4a329d252e21375afe4217e49aabd7563cd86f81e7a327fba8d063527ba58e7"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3213,6 +3376,7 @@ artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "hal_mac_tx_set_ppdu"
 code = "c07c84be62ec4d3d5fcb7541d9592328bcb66a85e2fa4feb06a026fb899bc571"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3225,6 +3389,7 @@ artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "hal_mac_txq_enable"
 code = "a5ba411d829f1fbd3778b7c8676527c6aa6b335205eb1becd77dcbb40107b308"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3243,12 +3408,14 @@ artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_get_rts_rate"
 code = "1ba8ebef3a9a9f5e77d8229fc3b0e6d5ddae3e981c861f32fb5b9bc1785abd52"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_set_hesig"
 code = "00056eb3d55c5bf8ce0ead6489b3df61b56af638cfdde7a777a7cecaddbf10cd"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3261,36 +3428,42 @@ artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_set_len"
 code = "6dd27b41efc1a15862bc27aa810ac8cc8c494fe7380501b3449992374446eafb"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_set_mplen"
 code = "8d4d8dc863e5a2621949ef976b17522bd0b0eb0756143d8a562d7b21212797bf"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_set_plcp0"
 code = "93d7fd24c6413f25ec1f340cfcc6cee9938f2bb36a1f65fe73f0f9fb72960dd4"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_set_plcp1"
 code = "5be8b9e59001a9f1383e2349312f4302031391f2aae5835582feb0a8195b315c"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_set_tb"
 code = "1b1d9962e1909bc1faa2f25edf3002532adccede6b3aee6d7211e8304582058a"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "hal_mac_tx.o"
 symbol = "mac_tx_set_txop_q"
 code = "4840548d6fbe1378cf2c5ab9e5cfdf82bf421938141679f9bf18d1e8397ac3f6"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3603,6 +3776,7 @@ artifact = "libpp"
 member = "if_hecfg.o"
 symbol = "wifi_he_get_hetb_tid_bitmap"
 code = "b9bef00760425c975e20ec9a89e8c785d68688b243899f06064caac05f7921bc"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3651,6 +3825,7 @@ artifact = "libpp"
 member = "if_hwctrl.o"
 symbol = "ic_set_mac"
 code = "e0ebb2ce22443b93423a2aa10cfc227b75cd454381a5346e6a6867b4b764f14a"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3663,6 +3838,7 @@ artifact = "libpp"
 member = "if_hwctrl.o"
 symbol = "ic_set_rx_policy_ubssid_check"
 code = "d5956bac9741d02444b4826dd0c29a4ae0cc30f864ef2c603a77e21c05944135"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3703,8 +3879,23 @@ code = "919d6f19e01b41c24cbee40f884fb3a65001b94e06b44a04fbc07e7f9064883b"
 [[function]]
 artifact = "libpp"
 member = "lmac.o"
+symbol = "lmacIsLongFrame"
+code = "538b802b5418b0d03a21bea7fadcac3f6046f679081780a09cfe08a36db7efb5"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
 symbol = "lmacProcessAckTimeout"
 code = "6beee0b6c99ff68889bfe217af500eba07c8524e0e015b27fd67c8046e7e6beb"
+decisions = ["state.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
+symbol = "lmacProcessCollision"
+code = "e1fe0dcd530f24366700ebf02bc3f79f874539ef2ca61b8e3061e87e311b3bf0"
+decisions = ["state.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3717,12 +3908,14 @@ artifact = "libpp"
 member = "lmac.o"
 symbol = "lmacProcessCtsTimeout"
 code = "ddfaf6f6e85bb683e621b8676fe5ba3a436c73aed9b234a544982981e82473df"
+decisions = ["state.rs"]
 
 [[function]]
 artifact = "libpp"
 member = "lmac.o"
 symbol = "lmacProcessLongFrameSuccess"
 code = "33695b711f364492ac4b32903b32e014ac597cd5b3492234fd6b1c1e4f05086c"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3735,6 +3928,7 @@ artifact = "libpp"
 member = "lmac.o"
 symbol = "lmacProcessShortFrameSuccess"
 code = "508ce402780910891f907f2808f52cf42b596d9e56a06dc1f71c8dc353d51e3b"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -3759,6 +3953,14 @@ artifact = "libpp"
 member = "lmac.o"
 symbol = "lmacProcessTxSuccess"
 code = "ec7260bc2880e4e3e05749a0056467c02b65b6ecd9c9561f70d8ec1332899e37"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
+member = "lmac.o"
+symbol = "lmacProcessTxopQComplete"
+code = "cbde0f1ade14f73b184be9f9bd87b265454bba5f3e5a478a8cbd33e3b561bbf4"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -4086,6 +4288,13 @@ code = "607574bbe3ecdd17527c5385d9bfb5292c9643dc31dcaafd5232cf7d5e5ff3f3"
 
 [[function]]
 artifact = "libpp"
+member = "test_hal_tx_statis.o"
+symbol = "esp_test_tx_enab_statistics"
+code = "ca28328dd377372dd255a82f015e015d136099d96b95f3edafe6e8c49166ac99"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "libpp"
 member = "trc.o"
 symbol = "he_get_min_subframe_len"
 code = "3380ee36bf75004b06d2598b38af170209d55bb0d377a2eb69f2d947aabbc3d7"
@@ -4125,6 +4334,7 @@ artifact = "libpp"
 member = "trc.o"
 symbol = "rcGetRate"
 code = "50116399291c142b29228cae4e4c01de872b2c36066fef3afcb00142b0fc9c59"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -4203,6 +4413,7 @@ artifact = "libpp"
 member = "wdev.o"
 symbol = "wDev_AppendRxBlocks"
 code = "f462be0dee1176c3ba2284c2519361aa468a02553466bbed3e457f81a77cd033"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -4249,6 +4460,69 @@ code = "c2b7dbbe69ddfd51a0117114508f4ea6e6ba41fd0386ea92217c0607eea38ff6"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "__clzsi2"
+code = "171a0a963ecea0e22231795b0b880a265e5a717796144ce01621af5ffcae727e"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "__divdi3"
+code = "f2c69054ac7d381e8f79c55a6b19949bf66e89f53ed651ef2d63bc8acab0c9b1"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "__riscv_restore_10"
+code = "728883001c689fa7f8dfcc52b7ead0d88d68528452b138735be69a7747ccee46"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "__riscv_restore_12"
+code = "44599b4cfcad1d9104be537a9d1f920c31f296fc8d80cd67f7ad8a37949a6059"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "__riscv_save_10"
+code = "1b333c99a3f67699727f422708aa5cc6da3b12ed365df9585aca760ce7531475"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "__riscv_save_12"
+code = "3d3ac1745b23794c58e76941b509a787dcf5c1f3cd3c32e8dec499bde4ea5d27"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "__udivdi3"
+code = "9dce670594e3e6df66125fea1f821504f3ddf3caa2f8cf9057bedb2f07cd9f2d"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "__umoddi3"
+code = "8f4b8226e5828ce57fbdd9954cf77c5dafdb6d82f32b78d71802603ec1bbd794"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "_cvt"
+code = "b4899d8b0c378c219ed9664a5582b1c4482f20617a8cba827ab37fad91e33d3c"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "coex_core_pti_get"
 code = "e46fcd5f6ad0c561ffdbdc1652d60482cb2605e18b2cdcbc82c5a6c7dcf8510d"
 
@@ -4291,6 +4565,27 @@ code = "e022315856d9e87fae51a405db9b24bae991b82b1a5b6b00f011ff032612e0d4"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "esp_test_tx_enab_statistics"
+code = "08a24b92c2f794f3b9ce4e5ec0aeca9c8995451d53b7cf65e5f70a0c3c7affe2"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "ets_printf"
+code = "a9b521676d8a09f26d4fc748519b0684cd1f912d88f2ac226d0688086097c004"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "ets_vprintf"
+code = "6f8b2f12affe818e859f442722725e9d4cc0cdeb7726db7e4597642c3aea7ddc"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "get_estimated_batime"
 code = "87ddb2e034b084893cb4049109d66d405403b28e7154ea0ebad462b4c4b30418"
 
@@ -4323,6 +4618,7 @@ artifact = "rom"
 member = ""
 symbol = "hal_he_get_bss_color"
 code = "8540eddbea73ff36373d4649941bf45d6c91a7bd99b585562d1eadf5b56310f8"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4359,12 +4655,14 @@ artifact = "rom"
 member = ""
 symbol = "hal_he_set_htc"
 code = "69a5f6cd284657dd992f11ac82e3e4c469fc441c97f06eb7b3fc25c9d7c0afea"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "hal_mac_clr_txq_state"
 code = "c3c8267e701f705103388e9655d3512e665d26331912b52a2bcc09c5763a218a"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4419,6 +4717,7 @@ artifact = "rom"
 member = ""
 symbol = "hal_mac_tx_clr_mplen"
 code = "a19fc4140a1aee59e11749915f1742accd63d99da5e4e2a3c8bcf275099e8c68"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4431,12 +4730,14 @@ artifact = "rom"
 member = ""
 symbol = "hal_mac_tx_set_ppdu"
 code = "f04a682c0e8c16a9434706b5901f6bf6c7bff3144c18bca6bc1f115ced59c20e"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "hal_mac_txq_enable"
 code = "404068ef3fb0b887c1456b42ce62588f3e85a1c0f41de32567d9511dfb07d56c"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4555,14 +4856,36 @@ code = "b3f2e208a3006b25e4222b3fbfa2e79d4170061b9d81aaa6fa2079bd73648705"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "is_use_muedca"
+code = "a5e2fbee1e9bd8a351df7d73afe0db39a9205027f61572cf244325b72ccda548"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "lmacEndFrameExchangeSequence"
 code = "487e2483631bbd6f68e5c4f71bcce12d277c565d5d0633aa1402c75a075083e4"
 
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "lmacIsLongFrame"
+code = "ee92b131eef7fc32f3a72e9e3736a9aab365d22d4d0e92d5e4365df9d56576a4"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "lmacProcessAckTimeout"
 code = "aa179f06ac773f7edc783176e0f0f90ab20cf3ebd3eaae0f26326d88c0eaa5c1"
+decisions = ["state.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "lmacProcessCollision"
+code = "552e02541e1878baf445bdf83202d26eae6b463e5786a39884a069cc36a8c981"
+decisions = ["state.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4575,12 +4898,14 @@ artifact = "rom"
 member = ""
 symbol = "lmacProcessCtsTimeout"
 code = "f2a05612ba9f7cf0c4b741d7c54d25bb75f2cb86cc25eb38337d3d98514a9ac8"
+decisions = ["state.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "lmacProcessLongFrameSuccess"
 code = "4319b15ed6f0da5fe2037e7f12be412a588630f49270ace57fc4577731f059fc"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4593,6 +4918,7 @@ artifact = "rom"
 member = ""
 symbol = "lmacProcessShortFrameSuccess"
 code = "eb06e0ee3d5fb73d6c2530bb90eea527f1fb33a4810afe2db5861a0e9ce1d1d6"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4611,6 +4937,7 @@ artifact = "rom"
 member = ""
 symbol = "lmacProcessTxSuccess"
 code = "76d43228921b5450a69f385c01a4932d7e8b2294b6023d891f1e77cc75a3beb3"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4635,6 +4962,7 @@ artifact = "rom"
 member = ""
 symbol = "mac_tx_set_hesig"
 code = "68f6179143ab1d2f26ead53bacd0ea27837b5de4b37a4cd2d8967eafc543af42"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4647,42 +4975,49 @@ artifact = "rom"
 member = ""
 symbol = "mac_tx_set_len"
 code = "bbb8d2da599cc7cab31a274ad2b82c7fe339d3f406266d29215feaaf44f23b57"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "mac_tx_set_mplen"
 code = "59f2d59e70ad3989971986a273f761a0da823416cece0f548aa5ef15a2099e17"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "mac_tx_set_plcp0"
 code = "c31b6dc40927375f7d14cc6427fc1f6e9982e1c17ecd0bf4ab57cce7f6571606"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "mac_tx_set_plcp1"
 code = "1de725a4f3ff680f28d981b79f78376c4b91ca2720d809abaec52781ce0cfbbf"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "mac_tx_set_pti"
 code = "34cc1cc9373fd89dd9ef970deb5fc2295f43fce34ed878b42012fde807f8fd34"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "mac_tx_set_tb"
 code = "f224f8b4b07b2d42b07ab36047f6e987e168f49608563a2ca30bc8815f486b39"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
 member = ""
 symbol = "mac_tx_set_txop_q"
 code = "b378c9ed3987451861b19f10bd500a3fc26246ac62125e84fd5649e14aca8cdc"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -4819,6 +5154,13 @@ code = "80bc7ff8941d6f0a43777fdb2c72de04a49e13ed7f3bcd98e971a2aab904cc96"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_bt_get_tx_gain"
+code = "f30e047d113bb37541744fe1f3e5ce7bf8056d8bca2f1248e643379e70ee415b"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_btbb_wifi_bb_cfg2"
 code = "ec49b87d2625222fd7cae1043e9b176ae4aa96f21cb9a43d721f3dde7937773f"
 
@@ -4845,6 +5187,14 @@ artifact = "rom"
 member = ""
 symbol = "phy_chip_i2c_writeReg"
 code = "a4924b5380085916f4389e1d18925009ddb8c4e2b83f408a63574c604a5540e8"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_code_to_temp"
+code = "6423b4c753b74165722b87240082f4803d7db70a363bb2af4bc3ef7b14d5f152"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5023,6 +5373,13 @@ code = "42d3068c62696293a0cc5148a41c09de3cf49f6a2a342a05fe086f26eb0ac037"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_gen_rx_gain_table"
+code = "b36ce40b64d61f8cccd2a1670ad6e0db2f261eb18a90a90bcb996e85005fdfbf"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_get_cca"
 code = "5df478002c3156ac1d3819553420d505fdf47ab5fa5d4f56f468d7de3df24c02"
 
@@ -5043,6 +5400,13 @@ artifact = "rom"
 member = ""
 symbol = "phy_get_fm_sar_dout"
 code = "d744b995473c1620b0079326649590301a379db68f703f79df1eff6789df3e5f"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_get_freq_mem_param"
+code = "ff7100582ce51628363d13571590491a95473ba34a3e39032d12dc1f25109431"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5079,6 +5443,13 @@ artifact = "rom"
 member = ""
 symbol = "phy_get_tone_sar_dout_"
 code = "55e8806dc99415702698d5f9f4ac57d856d44d53d188ad5374bb5b5d872708dc"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_get_tx_gain_value"
+code = "cb60c2c4cc44e6b93d590e352a08d81c2dda25a3a997b06d62164c41bf089089"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5125,6 +5496,13 @@ code = "4e9336b52ceda74d2bda280d46b2baeff0050b994766d0e50faf7513d8901201"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_index_to_txbbgain"
+code = "431b9527086569081061a0a3adf80fab290d0a24705de54016022cb5e6074c89"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_iq_corr_enable"
 code = "11eb09186b5fd1bc3f257a6b97e55714845b84dbaeb9665595afc40661c47fea"
 
@@ -5143,6 +5521,13 @@ code = "c715fc318c29b8097c9967ddc4711f62161f7197743aae2f0ad02d2d19275722"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_linear_to_db"
+code = "9c8c03cb19e978d625a59c6e4cb644ca728d2dd6942d0c7b5da7dd7d87cf623c"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_lltf_mask_en"
 code = "b6fb3c065fc215d92783306c423179e44b361b1d9e4382fcdfa3b93d7ece2938"
 
@@ -5157,6 +5542,13 @@ artifact = "rom"
 member = ""
 symbol = "phy_mac_tx_chan_offset"
 code = "5c6d4567541bb2e1b9228813625792608f31bd1bdd29eb4fd821ef75db7d5cd2"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_mhz2ieee"
+code = "454713ca71496cdcd494cfbce5c4081240a1700fcc76503fbeae0f2724f9101a"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5197,6 +5589,20 @@ code = "082007999cc8656024f20a5945ab1468c5077aba6bd39e543fa5c5a4192d283c"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_pbus_rd_addr"
+code = "7569561443a8942cbb5d35a999a17ef37fc4bffccd40f0bdf59f491ef34763b5"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_pbus_rd_shift"
+code = "fc41e1460dc5292515ab80ac14a50223ba91d6940fa165f23afe295a51393a11"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_pbus_rx_dco_cal"
 code = "1f633571f9abd71deaa9d5ed3379a10dbb18c3579b76368ad1e2fc117560f7c1"
 
@@ -5211,6 +5617,13 @@ artifact = "rom"
 member = ""
 symbol = "phy_pwdet_sar2_init"
 code = "fec66e532ee853875e47cf61f5e192807191934ab853fc504907f7a11f8effd4"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_pwdet_tone_start"
+code = "d9c78e789357ffee959d45bd6de0cee9b685ce57809c02d4af41f80e2eac4f85"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5239,8 +5652,29 @@ code = "da11d9f4b08f8f2d4fe8308dd520889b69de964cd0395ee5de50e2f844c85a60"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_restart_cal"
+code = "37acdd4b110713d7755f8ee7fc29abe8424836e6d6753cf5cd5fbda0ea49c3ef"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_rfcal_txiq"
 code = "17b7b5fe00795857fb0f44d61951cae7cbea96cbd374a1645573fc097e242926"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_rfpll_cap_init_cal"
+code = "c33da51f68269528fa1a16fddda7f3668d4c4bf29ec5261c4bd3104624ac1baf"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_rfpll_set_freq"
+code = "04b64141ad7c4665e0ff39bb6eb893f1b012e3a6907adedee3864359f6604beb"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5281,6 +5715,13 @@ code = "420370fed985d13a1b417e8ef8bac84c827bb5d8514c5676c7a670e66478dac9"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_rxdc_est_min"
+code = "0ea60e05dd893106a73a0bb50200c729b634d9a4d51e82861d5600f175249100"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_rxiq_get_mis"
 code = "4420cb567f6cb03e497179337ec57106bde49bb146859043196ae48a53cdb7ad"
 
@@ -5311,8 +5752,50 @@ code = "39753e67615232b78e478c2e610c44ed1e91cb7eda56b9b77d6548f12b7ba348"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_set_chan_freq_sw_start"
+code = "e1a073104fb3cf480e4828e5fdde5d8aab20576039ade848beeec9ee21621de7"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_set_chan_reg"
+code = "30a6fa68a6123f5f5ff184b78c4403cda696d56a0dd4737fd54cc0b6d6527236"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_set_channel_rfpll_freq"
+code = "88b6dbafa8f52e49aeef87b7e97ee875a15a3f0f16348280b9c57ccd182009ce"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_set_most_tpw"
+code = "a07b822853ef6dc6b955cefd9c23963b8022ced057c0fc7d4649b4365b673da6"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_set_pbus_mem"
 code = "55a48033d7599fd360a16a84bd1e3d6e229330550f602d87f3c11f925f11d8f2"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_set_rf_freq_offset"
+code = "4632a55d4d7f49904f57b2b737740b03eec2dac95ea8d5c58bf658c321d58bc2"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_set_rfpll_freq"
+code = "3cef7c88dbfdcc25d541afc1814b4809947391d3a0aa324a133160119612fadd"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5391,6 +5874,7 @@ artifact = "rom"
 member = ""
 symbol = "phy_tsens_dac_to_index"
 code = "460aa952475ec58806e1fab93f625d580d6dcdd4f06581700f77c35acccbbe06"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5455,6 +5939,13 @@ code = "d77d3daa2bdf1101ad365cf5d2fad4a0aee28483b9cf2bfdc6db1ea5a861a381"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_wait_rfpll_cal_end"
+code = "b2df95e46486cfddb0df45c97f23473695fd0ae8a78256b578cb6debe41739d3"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_wifi_agc_sat_gain"
 code = "79379a39970d8231c30fcc6025f8273cf969177fd680817d134b458782fac535"
 
@@ -5479,6 +5970,13 @@ code = "5f2b2f5c526751027299144888749190fcf7f64ca48e3f93349aa4ac3ae8a778"
 [[function]]
 artifact = "rom"
 member = ""
+symbol = "phy_wifi_get_tx_gain"
+code = "87e8a5a81d5d026bad0b9e1f2a782677e4e753ba3cdc29a904417901a061e412"
+decisions = ["coverage.rs"]
+
+[[function]]
+artifact = "rom"
+member = ""
 symbol = "phy_wifi_rifs_mode_en"
 code = "4eb9df53af01d6bb81e5dcba19513bff414a7562619763fbb0160ea2e4f7de86"
 
@@ -5493,6 +5991,13 @@ artifact = "rom"
 member = ""
 symbol = "phy_write_pbus_mem"
 code = "bb025145c3c28d1bf2b9d7d773fabd8d62bee31f95b86d436d3bba2e36556503"
+
+[[function]]
+artifact = "rom"
+member = ""
+symbol = "phy_write_rfpll_sdm"
+code = "0d02a883de59bdf700b58f05a9c7e52f8c3d52e7ce4db0c7fb72aa2ee90e3132"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5667,6 +6172,7 @@ artifact = "rom"
 member = ""
 symbol = "rcGetRate"
 code = "0f0855c9fee5ca804227a5925162e69e2225554f514f123e57cef7f044193153"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5787,6 +6293,7 @@ artifact = "rom"
 member = ""
 symbol = "wDev_AppendRxBlocks"
 code = "e5fc4517bbfb5f84e4d6371aa39cbf6cd97b405583d025682867a2fdd55c3ec6"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"
@@ -5823,3 +6330,4 @@ artifact = "rom"
 member = ""
 symbol = "wifi_he_get_hetb_tid_bitmap"
 code = "1179d218ab3a1124d427a87ac185d2c8b11e0c1282d278136c513f2b68486cb9"
+decisions = ["coverage.rs"]

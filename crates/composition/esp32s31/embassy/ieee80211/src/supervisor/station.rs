@@ -2075,87 +2075,174 @@ pub(crate) async fn run_connected<'state, 'security>(
             }
         },
     };
-    #[cfg(feature = "diagnostics")]
-    DIAGNOSTIC_LINK_BANDWIDTH_MHZ.store(0, Ordering::Release);
-    let outcome = stopped.exit;
-    diagnostics_event!("open-radio: DATAPATH runner stopped: {outcome:?}");
-    let group_security = match &mut material {
-        StaAttemptSecurityMaterial::Open => group_security
-            .take()
-            .expect("Open connected epoch retains its no-key group marker"),
-        StaAttemptSecurityMaterial::Personal { connected, .. } => {
-            let security = stopped
-                .quiesced
-                .services
-                .control_mut()
-                .take_wpa2_security()
-                .expect("connected WPA2 control returns its association security owner");
-            let (returned_connected, group) = security.into_parts();
-            *connected = Some(returned_connected);
-            ConnectedStaGroupSecurity::Wpa2Personal(group)
+    // The teardown moves every owner by value. Outside this poll frame,
+    // those moves do not add to the async state machine's stack budget.
+    super::outside_poll_frame(move || {
+        #[cfg(feature = "diagnostics")]
+        DIAGNOSTIC_LINK_BANDWIDTH_MHZ.store(0, Ordering::Release);
+        let outcome = stopped.exit;
+        diagnostics_event!("open-radio: DATAPATH runner stopped: {outcome:?}");
+        let group_security = match &mut material {
+            StaAttemptSecurityMaterial::Open => group_security
+                .take()
+                .expect("Open connected epoch retains its no-key group marker"),
+            StaAttemptSecurityMaterial::Personal { connected, .. } => {
+                let security = stopped
+                    .quiesced
+                    .services
+                    .control_mut()
+                    .take_wpa2_security()
+                    .expect("connected WPA2 control returns its association security owner");
+                let (returned_connected, group) = security.into_parts();
+                *connected = Some(returned_connected);
+                ConnectedStaGroupSecurity::Wpa2Personal(group)
+            }
+        };
+        let teardown = match stopped.try_teardown(group_security) {
+            Ok(teardown) => teardown,
+            Err(failure) => {
+                let message = match &failure.error {
+                    ConnectedStaTeardownFailure::Control { .. } => {
+                        "connected control teardown failed"
+                    }
+                    ConnectedStaTeardownFailure::Rx { .. } => "connected RX DMA teardown failed",
+                    ConnectedStaTeardownFailure::TxActive { .. } => "connected TX remained active",
+                };
+                diagnostics_event!("open-radio: {message}; quarantined");
+                let oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedServiceTeardownFailure {
+                    exit,
+                    interrupt,
+                    interrupt_drain,
+                    network,
+                    error,
+                } = failure;
+                return ConnectedStationRunExit::Faulted(ConnectedStationFault::DriverTeardown {
+                    _role: role,
+                    _interrupt: interrupt,
+                    _dma: dma,
+                    _tx_storage: tx_storage,
+                    _scan_table: scan_table,
+                    _interface: interface,
+                    _sta_ap_rx_batch: sta_ap_rx_batch,
+                    _initial_connected: initial_connected,
+                    #[cfg(feature = "diagnostics")]
+                    _diagnostics: diagnostics,
+                    _network: RunningStationNetwork::new(stack, network),
+                    _control_resources: control_resources,
+                    _outcome: exit,
+                    _interrupt_drain: interrupt_drain,
+                    _error: CONNECTED_DRIVER_TEARDOWN_FAULT.init(error),
+                    _material: material,
+                });
+            }
+        };
+        let network_runner = teardown.network;
+        let interrupt_epoch = teardown.interrupt;
+        let interrupt_drain = teardown.interrupt_drain;
+        let teardown = teardown.driver;
+        let (parked_rx, stopped_protocol) = teardown.parked_rx.into_parts();
+        let parked_rx = ConnectedParkedRx::from_live(parked_rx);
+        let shutdown = stopped_protocol.shutdown();
+        diagnostics_event!(
+            "open-radio: RX protocol stopped queued={} retained={} commands={} active={}",
+            shutdown.queued_frames,
+            shutdown.retained_frames,
+            shutdown.reorder_commands,
+            shutdown.active_reorders,
+        );
+        let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
+        let sequences = teardown.sequences;
+        if matches!(
+            teardown.security,
+            ConnectedStaSecurityStopReport::ModeMismatchCleared { .. }
+        ) {
+            diagnostics_event!(
+                "open-radio: connected security teardown observed unlike modes; quarantined"
+            );
+            return ConnectedStationRunExit::Faulted(
+                ConnectedStationFault::SecurityTeardownMismatch {
+                    _runtime: production_station_runtime(
+                        role,
+                        interrupt_epoch,
+                        dma,
+                        tx_storage,
+                        scan_table,
+                        frame,
+                        ethernet,
+                        ProductionStationBoardResources {
+                            access_point_airtime,
+                            interface,
+                            connected_datapath,
+                            rx_protocol_runtime,
+                            sta_ap_rx_batch,
+                            initial_connected,
+                            #[cfg(feature = "diagnostics")]
+                            diagnostics,
+                        },
+                    ),
+                    _network: RunningStationNetwork::new(stack, network_runner),
+                    _control_resources: control_resources,
+                    _outcome: outcome,
+                    _interrupt_drain: interrupt_drain,
+                    _hardware: teardown.hardware,
+                    _parked_rx: parked_rx,
+                    _tx_resources: teardown.tx_resources,
+                    _aggregate: teardown.aggregate,
+                    _control_observation: teardown.control,
+                    _security_stop: teardown.security,
+                    _sequences: sequences,
+                    _material: material,
+                },
+            );
         }
-    };
-    let teardown = match stopped.try_teardown(group_security) {
-        Ok(teardown) => teardown,
-        Err(failure) => {
-            let message = match &failure.error {
-                ConnectedStaTeardownFailure::Control { .. } => "connected control teardown failed",
-                ConnectedStaTeardownFailure::Rx { .. } => "connected RX DMA teardown failed",
-                ConnectedStaTeardownFailure::TxActive { .. } => "connected TX remained active",
-            };
-            diagnostics_event!("open-radio: {message}; quarantined");
-            let oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedServiceTeardownFailure {
-                exit,
-                interrupt,
-                interrupt_drain,
-                network,
-                error,
-            } = failure;
-            return ConnectedStationRunExit::Faulted(ConnectedStationFault::DriverTeardown {
-                _role: role,
-                _interrupt: interrupt,
-                _dma: dma,
-                _tx_storage: tx_storage,
-                _scan_table: scan_table,
-                _interface: interface,
-                _sta_ap_rx_batch: sta_ap_rx_batch,
-                _initial_connected: initial_connected,
-                #[cfg(feature = "diagnostics")]
-                _diagnostics: diagnostics,
-                _network: RunningStationNetwork::new(stack, network),
+        if let Err(failure) = tx_storage.restore_resources(teardown.tx_resources) {
+            diagnostics_event!("open-radio: connected TX return found a live owner; quarantined");
+            let (error, returned_control) = failure;
+            return ConnectedStationRunExit::Faulted(ConnectedStationFault::TxRestore {
+                _runtime: production_station_runtime(
+                    role,
+                    interrupt_epoch,
+                    dma,
+                    tx_storage,
+                    scan_table,
+                    frame,
+                    ethernet,
+                    ProductionStationBoardResources {
+                        access_point_airtime,
+                        interface,
+                        connected_datapath,
+                        rx_protocol_runtime,
+                        sta_ap_rx_batch,
+                        initial_connected,
+                        #[cfg(feature = "diagnostics")]
+                        diagnostics,
+                    },
+                ),
+                _network: RunningStationNetwork::new(stack, network_runner),
                 _control_resources: control_resources,
-                _outcome: exit,
+                _outcome: outcome,
                 _interrupt_drain: interrupt_drain,
-                _error: CONNECTED_DRIVER_TEARDOWN_FAULT.init(error),
+                _hardware: teardown.hardware,
+                _parked_rx: parked_rx,
+                _aggregate: teardown.aggregate,
+                _control_observation: teardown.control,
+                _security_stop: teardown.security,
+                _sequences: sequences,
+                _error: error,
+                _returned_control: returned_control,
                 _material: material,
             });
         }
-    };
-    let network_runner = teardown.network;
-    let interrupt_epoch = teardown.interrupt;
-    let interrupt_drain = teardown.interrupt_drain;
-    let teardown = teardown.driver;
-    let (parked_rx, stopped_protocol) = teardown.parked_rx.into_parts();
-    let parked_rx = ConnectedParkedRx::from_live(parked_rx);
-    let shutdown = stopped_protocol.shutdown();
-    diagnostics_event!(
-        "open-radio: RX protocol stopped queued={} retained={} commands={} active={}",
-        shutdown.queued_frames,
-        shutdown.retained_frames,
-        shutdown.reorder_commands,
-        shutdown.active_reorders,
-    );
-    let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
-    let sequences = teardown.sequences;
-    if matches!(
-        teardown.security,
-        ConnectedStaSecurityStopReport::ModeMismatchCleared { .. }
-    ) {
-        diagnostics_event!(
-            "open-radio: connected security teardown observed unlike modes; quarantined"
+        let disconnected: ConnectedDisconnectedEpoch = DisconnectedStaEpoch::new(
+            RunningStationNetwork::new(stack, network_runner),
+            teardown.hardware,
+            parked_rx,
+            teardown.aggregate,
+            control_resources,
         );
-        return ConnectedStationRunExit::Faulted(ConnectedStationFault::SecurityTeardownMismatch {
-            _runtime: production_station_runtime(
+        let returned = ConnectedStationReturn {
+            disconnected,
+            runtime: production_station_runtime(
                 role,
                 interrupt_epoch,
                 dma,
@@ -2163,7 +2250,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 scan_table,
                 frame,
                 ethernet,
-                ProductionStationBoardResources {
+                crate::supervisor::ProductionStationBoardResources {
                     access_point_airtime,
                     interface,
                     connected_datapath,
@@ -2174,108 +2261,29 @@ pub(crate) async fn run_connected<'state, 'security>(
                     diagnostics,
                 },
             ),
-            _network: RunningStationNetwork::new(stack, network_runner),
-            _control_resources: control_resources,
-            _outcome: outcome,
-            _interrupt_drain: interrupt_drain,
-            _hardware: teardown.hardware,
-            _parked_rx: parked_rx,
-            _tx_resources: teardown.tx_resources,
-            _aggregate: teardown.aggregate,
-            _control_observation: teardown.control,
-            _security_stop: teardown.security,
-            _sequences: sequences,
-            _material: material,
-        });
-    }
-    if let Err(failure) = tx_storage.restore_resources(teardown.tx_resources) {
-        diagnostics_event!("open-radio: connected TX return found a live owner; quarantined");
-        let (error, returned_control) = failure;
-        return ConnectedStationRunExit::Faulted(ConnectedStationFault::TxRestore {
-            _runtime: production_station_runtime(
-                role,
-                interrupt_epoch,
-                dma,
-                tx_storage,
-                scan_table,
-                frame,
-                ethernet,
-                ProductionStationBoardResources {
-                    access_point_airtime,
-                    interface,
-                    connected_datapath,
-                    rx_protocol_runtime,
-                    sta_ap_rx_batch,
-                    initial_connected,
-                    #[cfg(feature = "diagnostics")]
-                    diagnostics,
-                },
-            ),
-            _network: RunningStationNetwork::new(stack, network_runner),
-            _control_resources: control_resources,
-            _outcome: outcome,
-            _interrupt_drain: interrupt_drain,
-            _hardware: teardown.hardware,
-            _parked_rx: parked_rx,
-            _aggregate: teardown.aggregate,
-            _control_observation: teardown.control,
-            _security_stop: teardown.security,
-            _sequences: sequences,
-            _error: error,
-            _returned_control: returned_control,
-            _material: material,
-        });
-    }
-    let disconnected: ConnectedDisconnectedEpoch = DisconnectedStaEpoch::new(
-        RunningStationNetwork::new(stack, network_runner),
-        teardown.hardware,
-        parked_rx,
-        teardown.aggregate,
-        control_resources,
-    );
-    let returned = ConnectedStationReturn {
-        disconnected,
-        runtime: production_station_runtime(
-            role,
-            interrupt_epoch,
-            dma,
-            tx_storage,
-            scan_table,
-            frame,
-            ethernet,
-            crate::supervisor::ProductionStationBoardResources {
-                access_point_airtime,
-                interface,
-                connected_datapath,
-                rx_protocol_runtime,
-                sta_ap_rx_batch,
-                initial_connected,
-                #[cfg(feature = "diagnostics")]
-                diagnostics,
+            security: match material {
+                StaAttemptSecurityMaterial::Open => StaAttemptSecurity::open(sequences),
+                StaAttemptSecurityMaterial::Personal {
+                    credentials,
+                    supplicant_nonce,
+                    message4_protection,
+                    ..
+                } => StaAttemptSecurity::new(
+                    credentials,
+                    supplicant_nonce,
+                    sequences,
+                    message4_protection,
+                ),
             },
-        ),
-        security: match material {
-            StaAttemptSecurityMaterial::Open => StaAttemptSecurity::open(sequences),
-            StaAttemptSecurityMaterial::Personal {
-                credentials,
-                supplicant_nonce,
-                message4_protection,
-                ..
-            } => StaAttemptSecurity::new(
-                credentials,
-                supplicant_nonce,
-                sequences,
-                message4_protection,
-            ),
-        },
-        outcome,
-    };
-    // RF that could not wake leaves the Wi-Fi PHY client suspended; the vendor
-    // aborts on a failed `esp_phy_enable`, and the owners stay quarantined.
-    if rf_asleep {
-        return ConnectedStationRunExit::Faulted(ConnectedStationFault::RfAsleep {
-            _returned: returned,
-        });
-    }
-    ConnectedStationRunExit::Returned(returned)
+            outcome,
+        };
+        // RF that could not wake leaves the Wi-Fi PHY client suspended; the vendor
+        // aborts on a failed `esp_phy_enable`, and the owners stay quarantined.
+        if rf_asleep {
+            return ConnectedStationRunExit::Faulted(ConnectedStationFault::RfAsleep {
+                _returned: returned,
+            });
+        }
+        ConnectedStationRunExit::Returned(returned)
+    })
 }

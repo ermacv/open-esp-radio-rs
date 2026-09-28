@@ -1162,3 +1162,13 @@ async fn join_shared_radio(
         }
     }
 }
+
+/// Run a synchronous owner transfer in its own stack frame.
+///
+/// Fat LTO inlines every by-value owner move of a long async function into
+/// its one poll frame, whose stack budget the runtime audit bounds. A
+/// non-inlined call gives the transfer a frame that exists only while it runs.
+#[inline(never)]
+pub(super) fn outside_poll_frame<R>(transfer: impl FnOnce() -> R) -> R {
+    transfer()
+}

@@ -116,7 +116,7 @@ pub struct MeasurementComparison {
     pub measurement: String,
     pub unit: String,
     /// Which way the measurement's gate prefers; `None` for an ungated
-    /// figure, compared as if higher were better.
+    /// figure, whose significant differences are reported as changes.
     pub better: Option<Better>,
     pub comparison: AbComparison,
 }
@@ -187,7 +187,7 @@ pub fn compare(runs: &[(Arm, hil_runs::Run)]) -> Vec<MeasurementComparison> {
     samples(runs)
         .into_iter()
         .filter_map(|((scenario, measurement), (unit, better, a, b))| {
-            let comparison = hil_perf::compare(better.unwrap_or(Better::Higher), &a, &b)?;
+            let comparison = hil_perf::compare(better, &a, &b)?;
             Some(MeasurementComparison {
                 scenario,
                 measurement,
@@ -552,6 +552,9 @@ pub fn summary(report: &Report) -> String {
         let verdict = match c.verdict {
             hil_perf::AbVerdict::Significant { better } => {
                 format!("significant, {better:?} better")
+            }
+            hil_perf::AbVerdict::Changed { higher } => {
+                format!("significant change, {higher:?} higher (ungated)")
             }
             hil_perf::AbVerdict::WithinNoise => String::from("within noise"),
             hil_perf::AbVerdict::InsufficientRepetitions => {

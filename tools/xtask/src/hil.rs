@@ -166,6 +166,8 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         ) {
             None if record_forced => record_evidence(ctx, &receipt_path, &run_ids)?,
             None => remember_pending(ctx, &run_ids)?,
+            // A runner that created no run has said why itself.
+            Some(_) if created.is_empty() => {}
             Some(reason) => eprintln!(
                 "hil: HIL evidence not recorded: {reason}; pass {RECORD_EVIDENCE} to record it"
             ),

@@ -596,7 +596,8 @@ the integrity seal. A review can name this destination without fabricating a
 scenario or hardware observation; the record supplies no PASS or repetitions.
 
 
-`cargo hil run-all` reuses each image across its scenario group but
+`cargo hil run-all` runs the scenarios carrying each `--tag`, or the whole
+catalog only with an explicit `--all`. It reuses each image across its scenario group but
 does not fail fast. Every invocation retains an immutable evidence bundle in
 `target/hil/esp32s31/runs/<run-id>/`, including a canonical JSON suite, JUnit
 XML, a standalone HTML report and the exact application image flashed for each

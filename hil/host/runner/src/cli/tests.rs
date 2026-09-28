@@ -96,7 +96,7 @@ fn network_defaults_and_aliases_match_across_firmware_commands() {
 
     for command in [
         vec!["cargo-hil", "run", "station-udp-tx-ceiling"],
-        vec!["cargo-hil", "run-all"],
+        vec!["cargo-hil", "run-all", "--all"],
         vec!["cargo-hil", "image", "build", "performance"],
         vec!["cargo-hil", "image", "flash", "performance"],
     ] {
@@ -254,7 +254,7 @@ fn network_selection_is_explicit_and_cannot_relabel_replayed_firmware() {
             "--network",
             "owned-xarxa",
         ],
-        vec!["cargo-hil", "run-all", "--network", "owned-xarxa"],
+        vec!["cargo-hil", "run-all", "--all", "--network", "owned-xarxa"],
     ] {
         assert!(Cli::try_parse_from(args).is_ok());
     }
@@ -473,4 +473,11 @@ fn removed_network_implementations_are_rejected() {
             "{removed}"
         );
     }
+}
+
+#[test]
+fn run_all_runs_the_whole_catalog_only_when_asked() {
+    assert!(Cli::try_parse_from(["cargo-hil", "run-all"]).is_err());
+    assert!(Cli::try_parse_from(["cargo-hil", "run-all", "--tag", "wifi"]).is_ok());
+    assert!(Cli::try_parse_from(["cargo-hil", "run-all", "--all"]).is_ok());
 }

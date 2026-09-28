@@ -332,6 +332,7 @@ pub(crate) fn run() -> Result<()> {
             network,
             source_include,
             include_untracked,
+            all: _,
         } => {
             let catalog = Catalog::load(&catalog_path)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;

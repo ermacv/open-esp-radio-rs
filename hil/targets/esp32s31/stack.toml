@@ -130,6 +130,12 @@ max_bytes = 10240
 reason = "HIL protocol task retains two bounded interface-addressed session configs and one decoded command while terminal evidence lives in separate static storage; Embassy task storage is PSRAM and runtime painting independently enforces CPU-stack headroom"
 
 [[reviewed_frames]]
+function_contains = "::traffic::udp::rx::run_open_radio_udp_rx_benchmark::{closure#0}"
+source_ends_with = ["hil/targets/esp32s31/runtime/src/product_hil/traffic/udp/rx.rs", "runtime/src/product_hil/traffic/udp/rx.rs"]
+max_bytes = 8704
+reason = "UDP RX benchmark session future keeps the start snapshots of every RX telemetry counter set across its receive window; the Core0 RX cycle-telemetry image adds its phase, reorder and service snapshots (measured 8656 bytes). Its Embassy task storage is static PSRAM data"
+
+[[reviewed_frames]]
 function_contains = "::product_hil::run::{closure#0}"
 source_ends_with = ["hil/targets/esp32s31/runtime/src/product_hil.rs", "runtime/src/product_hil.rs"]
 max_bytes = 16384
@@ -144,8 +150,8 @@ reason = "connected transition future preserves the exact join and teardown owne
 [[reviewed_frames]]
 function_contains = "::supervisor::station::run_connected::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/station.rs"]
-max_bytes = 35584
-reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck including the immediate in-order dispatch branch, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
+max_bytes = 35648
+reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck including the immediate in-order dispatch branch, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack; the Core0 RX cycle-telemetry image adds its value-only phase snapshots (measured 35648 bytes)"
 
 [[reviewed_frames]]
 function_contains = "::advance_station_to_paired_frontier::{closure#0}"

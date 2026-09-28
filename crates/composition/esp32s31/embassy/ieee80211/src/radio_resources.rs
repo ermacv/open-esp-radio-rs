@@ -4,7 +4,6 @@
 //! TX arena. All of that allocation belongs to the integration root, not to a
 //! station `connected` transaction.
 
-#[cfg(feature = "tx-psram-dma-probe")]
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::resources::profile::{
@@ -253,22 +252,11 @@ static STATION_RX_PACKET_POOL: StaticCell<PacketPool<NETWORK_RX_PACKET_POOL_CAPA
 #[unsafe(link_section = ".critical.bss.open_radio_ap_rx_pool")]
 static ACCESS_POINT_RX_PACKET_POOL: StaticCell<PacketPool<NETWORK_RX_PACKET_POOL_CAPACITY>> =
     StaticCell::new();
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain production network TX backing in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_network_tx")]
-static NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> = ConstStaticCell::new(NetworkTxPool::new());
 
-#[cfg(feature = "tx-psram-dma-probe")]
 static DIRECT_PSRAM_TX_DMA_PROBE: AtomicBool = AtomicBool::new(false);
-#[cfg(feature = "tx-psram-dma-probe")]
 static DIRECT_PSRAM_TX_DMA_PREPARES: AtomicU32 = AtomicU32::new(0);
-#[cfg(feature = "tx-psram-dma-probe")]
 static DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS: AtomicU32 = AtomicU32::new(0);
-#[cfg(feature = "tx-psram-dma-probe")]
 static DIRECT_PSRAM_TX_DMA_LAST_ADDRESS: AtomicU32 = AtomicU32::new(0);
-#[cfg(feature = "tx-psram-dma-probe")]
 #[allow(
     unsafe_code,
     reason = "the diagnostic pool must occupy the cached PSRAM aperture before its explicit cache writeback"
@@ -279,7 +267,6 @@ static PSRAM_NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> =
 
 /// Select a same-image experiment where Wi-Fi A-MPDU descriptors reference
 /// PSRAM packet buffers directly. Descriptors remain in internal SRAM.
-#[cfg(feature = "tx-psram-dma-probe")]
 pub fn configure_direct_psram_tx_dma_probe(enabled: bool) {
     DIRECT_PSRAM_TX_DMA_PREPARES.store(0, Ordering::Relaxed);
     DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS.store(0, Ordering::Relaxed);
@@ -287,7 +274,6 @@ pub fn configure_direct_psram_tx_dma_probe(enabled: bool) {
     DIRECT_PSRAM_TX_DMA_PROBE.store(enabled, Ordering::Release);
 }
 
-#[cfg(feature = "tx-psram-dma-probe")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DirectPsramTxDmaProbeObservation {
     pub prepares: u32,
@@ -295,7 +281,6 @@ pub struct DirectPsramTxDmaProbeObservation {
     pub last_address: u32,
 }
 
-#[cfg(feature = "tx-psram-dma-probe")]
 pub fn direct_psram_tx_dma_probe_observation() -> DirectPsramTxDmaProbeObservation {
     DirectPsramTxDmaProbeObservation {
         prepares: DIRECT_PSRAM_TX_DMA_PREPARES.load(Ordering::Acquire),
@@ -304,7 +289,6 @@ pub fn direct_psram_tx_dma_probe_observation() -> DirectPsramTxDmaProbeObservati
     }
 }
 
-#[cfg(feature = "tx-psram-dma-probe")]
 fn prepare_psram_for_wifi_dma_read(storage: &mut [u8]) {
     let address = storage.as_ptr() as usize;
     let end = address
@@ -358,18 +342,12 @@ static TX_AMPDU_STANDBY_RETENTION: ConstStaticCell<RadioAmpduRetention> =
     ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 
 fn initialize_physical_tx() -> PhysicalTxConsumer {
+    // A/B experiment: the TX pool moves to PSRAM to free internal SRAM.
     let network_tx_resources = NETWORK_TX_RESOURCES.take();
-    #[cfg(feature = "tx-psram-dma-probe")]
-    let tx_pool = if DIRECT_PSRAM_TX_DMA_PROBE.load(Ordering::Acquire) {
-        NetworkTxPool::pin_static_with_dma_read_prepare(
-            PSRAM_NETWORK_TX_POOL.take(),
-            prepare_psram_for_wifi_dma_read,
-        )
-    } else {
-        NetworkTxPool::pin_static(NETWORK_TX_POOL.take())
-    };
-    #[cfg(not(feature = "tx-psram-dma-probe"))]
-    let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
+    let tx_pool = NetworkTxPool::pin_static_with_dma_read_prepare(
+        PSRAM_NETWORK_TX_POOL.take(),
+        prepare_psram_for_wifi_dma_read,
+    );
     network_tx_resources.split(tx_pool)
 }
 

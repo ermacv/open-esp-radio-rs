@@ -84,7 +84,7 @@ pub const ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH: usize =
 // neighbor/control transients. The RX pool covers the driver queue plus
 // protocol/socket retention without coupling those owners to DMA staging.
 pub const ESP32S31_DEFAULT_NETWORK_PACKET_POOL_CAPACITY: usize = 160;
-pub const ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY: usize = 96;
+pub const ESP32S31_DEFAULT_NETWORK_RX_PACKET_POOL_CAPACITY: usize = 64;
 const ESP32S31_PERMANENT_NETWORK_ENDPOINTS: usize = 2;
 const ESP32S31_NETWORK_TX_PIPELINE_CREDITS: usize = 1;
 // One additional credit per permanent network endpoint is reserved for the

@@ -982,6 +982,22 @@ level = "composed-product"
 scope-and-limitations = "Standalone normalized monitor capture is implemented. Raw-DMA capture, protocol-validated capture, and monitor operation concurrent with STA/AP are not published capabilities."
 
 [[items]]
+id = "wifi-interfaces-and-operating-modes-ieee-802-11s-mesh"
+section = "wifi-interfaces-and-operating-modes"
+title = "IEEE 802.11s mesh"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "No mesh station interface exists: no Mesh ID/Mesh Configuration advertisement, mesh peering (AMPE), four-address mesh data framing or HWMP path selection. Infrastructure STA and SoftAP interfaces do not form a standard mesh basic service set."
+
+[[items]]
+id = "wifi-interfaces-and-operating-modes-esp-wifi-mesh"
+section = "wifi-interfaces-and-operating-modes"
+title = "ESP-WIFI-MESH"
+status = "absent"
+level = "composed-product"
+scope-and-limitations = "Espressif's proprietary tree mesh over simultaneous STA + SoftAP links is not composed: no mesh vendor elements in beacons, parent selection, root election or tree forwarding. The vendor's mesh-only lower-MAC behavior, such as the 11-attempt retry cap gated by `g_mesh_is_started`, is therefore not modelled."
+
+[[items]]
 id = "wifi-interfaces-and-operating-modes-nan-wi-fi-aware"
 section = "wifi-interfaces-and-operating-modes"
 title = "NAN / Wi-Fi Aware"

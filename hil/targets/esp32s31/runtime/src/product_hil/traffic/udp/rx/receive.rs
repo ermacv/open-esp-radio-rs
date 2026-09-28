@@ -93,7 +93,7 @@ pub(super) async fn run(
         if now >= window.end() && task_poll_end.is_none() {
             task_poll_end = Some(task_polls.snapshot());
             #[cfg(feature = "pc-profile")]
-            crate::pc_profile::disarm();
+            crate::pc_profile::window_end();
         }
         let terminal = flows.iter().flatten().all(|flow| flow.terminal);
         if window.finished(now, terminal) {

@@ -170,7 +170,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let zero_copy_start = zero_copy::start();
         let task_poll_start = telemetry.task_polls.snapshot();
         #[cfg(feature = "pc-profile")]
-        crate::pc_profile::arm();
+        crate::pc_profile::window_begin();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let core0_rx_cycle_start = CORE0_RX_CYCLES.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
@@ -494,8 +494,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             log_open_radio_task_poll_snapshot(task_poll_end.wrapping_delta_since(task_poll_start))
                 .await;
         }
-        #[cfg(feature = "pc-profile")]
-        crate::pc_profile::report().await;
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         log_open_radio_core0_rx_cycles(
             core0_rx_cycle_start,

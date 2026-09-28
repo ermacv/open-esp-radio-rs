@@ -1,75 +1,79 @@
-//! Statistical program-counter profile of both harts during one traffic
-//! window.
+//! The ESP32-S31 sampling side of the program-counter profile.
 //!
-//! SYSTIMER alarm 1 interrupts core 0 at the highest priority every
-//! [`PERIOD_MICROS`]. Its handler records the instruction core 0 was
-//! interrupted at (`mepc`) and the interrupted code's return address, then
-//! raises FROM_CPU_INTR3, whose handler bound on core 1 records core 1's pair
-//! the same way. Samples cover interrupt handlers of lower priority, executor
-//! tasks and the idle wait alike, so the profile divides each hart's whole
-//! time, not only task polls.
+//! SYSTIMER alarm 1 interrupts core 0 at the highest priority every armed
+//! period. Its handler records the instruction core 0 was interrupted at
+//! (`mepc`) and the interrupted code's return address, then raises the
+//! profiler's FROM_CPU line, whose handler bound on core 1 records core 1's
+//! pair the same way. Samples cover interrupt handlers of lower priority,
+//! executor tasks and the idle wait alike, so the profile divides each hart's
+//! whole time, not only task polls.
 //!
-//! Only an armed window records. After it the report task sorts each hart's
-//! samples and prints run-length `pc:ra:count` records (`OPROF`/`OPROFS`);
-//! the host symbolizes them against the image ELF. The return address names
-//! the caller only while the sampled function has not yet made a call of its
-//! own; it is exact for leaf functions such as copies and checksums.
+//! The chip-neutral [`Profiler`] keeps the samples and the window state. The
+//! host arms and drains it through the console; the UDP RX workload opens and
+//! closes the measured window. The return address names the caller only
+//! while the sampled function has not yet made a call of its own; it is
+//! exact for leaf functions such as copies and checksums.
 
-use core::cell::{RefCell, UnsafeCell};
-use core::fmt::Write as _;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::cell::RefCell;
 
 use critical_section::Mutex;
-use embassy_time::Timer;
+use embassy_time::Instant;
 use esp_hal::{
     Blocking,
     interrupt::Priority,
     time::Duration,
     timer::{PeriodicTimer, systimer::Alarm},
 };
+use oer_hil_protocol::{Event, ProfileControl, RejectReason};
+use oer_hil_target_core::profile::{PageRefusal, ProfileTimer, Profiler};
 
-use crate::console::runtime_log_reliably;
-
-/// Sampling period: a prime number of microseconds, so the samples do not
-/// lock to the 1024-us TU cadence of beacons and power-save timers.
-const PERIOD_MICROS: u64 = 1999;
-/// Samples retained per hart: a 16-second window at [`PERIOD_MICROS`].
+/// Samples retained per hart: a 16-second window at a 2-ms period.
 const CAPACITY: usize = 8192;
-/// `pc:ra:count` records per printed line, within one console record.
-const RECORDS_PER_LINE: usize = 12;
-
-/// One hart's samples, `mepc << 32 | ra`.
-struct Samples(UnsafeCell<[u64; CAPACITY]>);
-
-// SAFETY: during an armed window only the sampling handler of the owning
-// hart writes, each to a slot it claimed through `CLAIMED`; the report task
-// reads only after disarming and waiting out a sampling period.
-#[allow(
-    unsafe_code,
-    reason = "sample slots are claimed atomically by one hart"
-)]
-unsafe impl Sync for Samples {}
+/// Shortest accepted period. Each sample costs two high-priority interrupts;
+/// a shorter period would measure the profiler instead of the workload.
+const MINIMUM_PERIOD_MICROS: u32 = 200;
+/// Longest accepted period, within one SYSTIMER alarm period.
+const MAXIMUM_PERIOD_MICROS: u32 = 1_000_000;
 
 #[allow(
     unsafe_code,
     reason = "the sample buffers are placed in the PSRAM tier to keep internal SRAM for the measured path"
 )]
 #[unsafe(link_section = ".psram.bss.open_radio_pc_profile")]
-static SAMPLES: [Samples; 2] = [const { Samples(UnsafeCell::new([0; CAPACITY])) }; 2];
-/// Slots each hart claimed in the current window, possibly above capacity.
-static CLAIMED: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
-static ARMED: AtomicBool = AtomicBool::new(false);
+static PROFILER: Profiler<CAPACITY> = Profiler::new();
 static TIMER: Mutex<RefCell<Option<PeriodicTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
 
-/// Start the sampling timer on this core (core 0).
-pub(crate) fn start(alarm: Alarm<'static>) {
+/// SYSTIMER alarm 1 as the profile's sampling timer.
+struct SystimerProfileTimer;
+
+impl ProfileTimer for SystimerProfileTimer {
+    fn start(&mut self, period_us: u32) {
+        critical_section::with(|cs| {
+            if let Some(timer) = TIMER.borrow_ref_mut(cs).as_mut() {
+                timer
+                    .start(Duration::from_micros(u64::from(period_us)))
+                    .expect("an accepted profile period fits the timer");
+                timer.listen();
+            }
+        });
+    }
+
+    fn stop(&mut self) {
+        critical_section::with(|cs| {
+            if let Some(timer) = TIMER.borrow_ref_mut(cs).as_mut() {
+                timer.unlisten();
+                let _ = timer.cancel();
+                timer.clear_interrupt();
+            }
+        });
+    }
+}
+
+/// Own the sampling alarm on this core (core 0); it stays idle until armed.
+pub(crate) fn init(alarm: Alarm<'static>) {
     let mut periodic = PeriodicTimer::new(alarm);
     periodic.set_interrupt_handler(sample_core0);
-    periodic
-        .start(Duration::from_micros(PERIOD_MICROS))
-        .expect("the profile period fits the timer");
-    periodic.listen();
     critical_section::with(|cs| TIMER.borrow_ref_mut(cs).replace(periodic));
 }
 
@@ -80,23 +84,52 @@ pub(crate) fn bind_core1_sampler() {
     interrupt.set_interrupt_handler(sample_core1);
 }
 
-/// Begin a profile window, discarding the previous one.
-pub(crate) fn arm() {
-    for claimed in &CLAIMED {
-        claimed.store(0, Ordering::Relaxed);
+/// Serve one host profile command.
+pub(crate) fn control(control: ProfileControl) -> Event {
+    match control {
+        ProfileControl::Arm { harts, period_us } => {
+            if !(MINIMUM_PERIOD_MICROS..=MAXIMUM_PERIOD_MICROS).contains(&period_us) {
+                return Event::Rejected(RejectReason::InvalidConfiguration);
+            }
+            SystimerProfileTimer.stop();
+            PROFILER.arm(harts, period_us);
+            SystimerProfileTimer.start(period_us);
+        }
+        ProfileControl::Disarm => {
+            PROFILER.disarm();
+            SystimerProfileTimer.stop();
+        }
+        ProfileControl::Status => {}
     }
-    ARMED.store(true, Ordering::Release);
+    Event::ProfileStatus(PROFILER.status())
 }
 
-/// End the profile window.
-pub(crate) fn disarm() {
-    ARMED.store(false, Ordering::Release);
+/// Serve one page of a closed window's samples.
+pub(crate) fn samples(hart: u8, first: u32) -> Event {
+    match PROFILER.page(usize::from(hart), first) {
+        Ok(page) => Event::ProfileSamples(page),
+        Err(PageRefusal::WindowOpen | PageRefusal::Hart) => {
+            Event::Rejected(RejectReason::InvalidState)
+        }
+    }
+}
+
+/// The workload's measured window begins.
+pub(crate) fn window_begin() {
+    PROFILER.window_begin(now_micros());
+}
+
+/// The workload's measured window ends.
+pub(crate) fn window_end() {
+    PROFILER.window_end(now_micros());
+}
+
+fn now_micros() -> u32 {
+    // The profiler measures the window with wrapping 32-bit arithmetic.
+    Instant::now().as_micros() as u32
 }
 
 fn record(hart: usize) {
-    if !ARMED.load(Ordering::Acquire) {
-        return;
-    }
     let mepc: usize;
     // SAFETY: reading a machine CSR has no side effect.
     #[allow(unsafe_code, reason = "reading a CSR requires a CSR instruction")]
@@ -106,14 +139,7 @@ fn record(hart: usize) {
     let ra = esp_hal::interrupt::interrupted_context()
         .map(|context| context.ra)
         .unwrap_or(0);
-    let index = CLAIMED[hart].fetch_add(1, Ordering::Relaxed) as usize;
-    if index < CAPACITY {
-        // SAFETY: `index` was claimed by this hart's only sampling handler.
-        #[allow(unsafe_code, reason = "a claimed slot has one writer")]
-        unsafe {
-            (*SAMPLES[hart].0.get())[index] = (mepc as u64) << 32 | ra as u64;
-        }
-    }
+    PROFILER.record(hart, mepc as u32, ra as u32);
 }
 
 #[esp_hal::handler(priority = Priority::max())]
@@ -129,7 +155,7 @@ fn sample_core0() {
         }
     });
     record(0);
-    if ARMED.load(Ordering::Relaxed) {
+    if PROFILER.samples_wanted(1) {
         crate::software_interrupt::profiler().raise();
     }
 }
@@ -143,41 +169,4 @@ fn sample_core0() {
 fn sample_core1() {
     crate::software_interrupt::profiler().reset();
     record(1);
-}
-
-/// Print the disarmed window's profile of both harts.
-pub(crate) async fn report() {
-    // A sampling handler that read `ARMED` before `disarm` may still write.
-    Timer::after_micros(4 * PERIOD_MICROS).await;
-    for hart in 0..2 {
-        let claimed = CLAIMED[hart].load(Ordering::Acquire) as usize;
-        let retained = claimed.min(CAPACITY);
-        // SAFETY: the window is disarmed and its last handler has returned.
-        #[allow(unsafe_code, reason = "the disarmed window has no writer")]
-        let samples = unsafe { &mut (&mut *SAMPLES[hart].0.get())[..retained] };
-        samples.sort_unstable();
-        runtime_log_reliably(format_args!(
-            "OPROF hart={hart} period_us={PERIOD_MICROS} samples={retained} overflow={}",
-            claimed - retained
-        ))
-        .await;
-        let mut line = heapless::String::<384>::new();
-        let mut entries = 0;
-        let mut index = 0;
-        while index < retained {
-            let sample = samples[index];
-            let run = samples[index..]
-                .iter()
-                .take_while(|&&other| other == sample)
-                .count();
-            index += run;
-            let _ = write!(line, " {:x}:{:x}:{run}", sample >> 32, sample as u32);
-            entries += 1;
-            if entries == RECORDS_PER_LINE || index == retained {
-                runtime_log_reliably(format_args!("OPROFS hart={hart}{line}")).await;
-                line.clear();
-                entries = 0;
-            }
-        }
-    }
 }

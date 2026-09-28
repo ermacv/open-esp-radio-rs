@@ -1131,13 +1131,25 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     }
                     // The program-counter profile: served by images that
                     // compile the sampler (`pc-profile`).
-                    Command::ProfileControl(_) | Command::GetProfileSamples { .. } => {
-                        publish_event_reliably(
-                            session_id,
-                            request_id,
-                            Event::Rejected(RejectReason::Unsupported),
-                        )
-                        .await;
+                    Command::ProfileControl(control) => {
+                        #[cfg(feature = "pc-profile")]
+                        let response = crate::pc_profile::control(control);
+                        #[cfg(not(feature = "pc-profile"))]
+                        let response = {
+                            let _ = control;
+                            Event::Rejected(RejectReason::Unsupported)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::GetProfileSamples { hart, first } => {
+                        #[cfg(feature = "pc-profile")]
+                        let response = crate::pc_profile::samples(hart, first);
+                        #[cfg(not(feature = "pc-profile"))]
+                        let response = {
+                            let _ = (hart, first);
+                            Event::Rejected(RejectReason::Unsupported)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::PhyAnalogImage(request) => {
                         let response = if session_id != 0 {

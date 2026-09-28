@@ -50,6 +50,7 @@ pub const fn hil_capabilities() -> Capabilities {
                     DiagnosticFeature::RxOwnership,
                     cfg!(feature = "rx-ownership-telemetry"),
                 )
+                .with(DiagnosticFeature::PcProfile, cfg!(feature = "pc-profile"))
                 .with(
                     DiagnosticFeature::StationExit,
                     cfg!(all(

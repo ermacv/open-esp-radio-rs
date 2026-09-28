@@ -376,7 +376,7 @@ extern "C" fn runtime_main() -> ! {
         let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
         hang_watchdog::start(systimer.alarm0);
         #[cfg(feature = "pc-profile")]
-        pc_profile::start(systimer.alarm1);
+        pc_profile::init(systimer.alarm1);
     }
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let watchdog_service = watchdog::init(peripherals.TIMG1);

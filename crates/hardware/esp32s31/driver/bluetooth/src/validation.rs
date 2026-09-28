@@ -34,15 +34,20 @@ pub fn capture_and_acknowledge_interrupts() {
 }
 
 /// Take the diagnostic scheduler-BUSY sample that opens the production
-/// scheduler stop sequence.
+/// scheduler stop sequence; `None` when it never settled within the
+/// production attempt budget.
 #[inline(always)]
-pub fn sample_scheduler_stop_busy() -> bool {
-    oer_esp32s31_hal::bluetooth::validation::sample_scheduler_stop_busy()
+pub fn sample_scheduler_stop_busy() -> Option<bool> {
+    oer_esp32s31_hal::bluetooth::validation::sample_scheduler_stop_busy(
+        crate::scheduler::DIAGNOSTIC_READ_BUDGET,
+    )
+    .ok()
 }
 
 /// Run the production execution modify of hardware list `index` until it
 /// leaves `Pending`: zero when command one became ready, one when hardware
-/// rejected it, `None` for an index outside `0..16`.
+/// rejected it, three when a diagnostic sample never settled, `None` for an
+/// index outside `0..16`.
 ///
 /// # Safety
 ///
@@ -59,14 +64,16 @@ pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> 
         oer_esp32s31_hal::bluetooth::validation::run_scheduler_execution_modify(
             index,
             list_deletion,
+            crate::scheduler::DIAGNOSTIC_READ_BUDGET,
         )
     }
 }
 
 /// Publish the production execution lock of `address` on hardware list
 /// `index` and observe it until it leaves `Pending`: zero retained, one
-/// current-head reconciliation, two an unsupported hardware result, `None`
-/// for an invalid index or address.
+/// current-head reconciliation, two an unsupported hardware result, three a
+/// diagnostic sample that never settled, `None` for an invalid index or
+/// address.
 ///
 /// # Safety
 ///
@@ -80,7 +87,13 @@ pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> 
 #[inline(always)]
 pub unsafe fn run_scheduler_execution_lock(address: u32, index: u8) -> Option<u32> {
     // SAFETY: forwarded unchanged from this function's `# Safety` contract.
-    unsafe { oer_esp32s31_hal::bluetooth::validation::run_scheduler_execution_lock(address, index) }
+    unsafe {
+        oer_esp32s31_hal::bluetooth::validation::run_scheduler_execution_lock(
+            address,
+            index,
+            crate::scheduler::DIAGNOSTIC_READ_BUDGET,
+        )
+    }
 }
 
 /// Execute the exact production scheduler hardware-list head clear transaction.

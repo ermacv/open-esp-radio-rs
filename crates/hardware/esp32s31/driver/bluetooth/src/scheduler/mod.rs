@@ -18,6 +18,18 @@ pub mod window;
 
 pub use config::SchedulerSoftwareConfig;
 
+use oer_esp32s31_hal::bluetooth::BluetoothDiagnosticReadBudget;
+
+/// Attempt budget of one scheduler diagnostic-pair sample.
+///
+/// The vendor repeats the pair until both reads agree; they disagree only
+/// while the multiplexed value crosses from the MAC clock domain, and one
+/// attempt takes well under a microsecond. After this many disagreeing pairs
+/// the Controller stops on a scheduler fault instead of spinning, in the
+/// interrupt handler as in the task.
+pub const DIAGNOSTIC_READ_BUDGET: BluetoothDiagnosticReadBudget =
+    BluetoothDiagnosticReadBudget::new(64).expect("a nonzero attempt budget");
+
 /// Stable task-side access to the shared interrupt owner.
 ///
 /// This is deliberately separate from hard-handler dispatch. Implementations
@@ -47,7 +59,7 @@ pub trait SchedulerRunInterruptStorage {
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use core::{ControllerTimeAcquisitionError, SchedulerInitialized};
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-pub use hardware::{SchedulerHardwareError, SchedulerStartError};
+pub use hardware::{SchedulerHardwareError, SchedulerStartError, SchedulerStopError};
 pub use timing::SchedulerTimingPolicy;
 
 pub use executor::{

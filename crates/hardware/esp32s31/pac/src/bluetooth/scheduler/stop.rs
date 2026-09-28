@@ -104,14 +104,6 @@ fn retire_head(
 }
 
 impl BluetoothTaskRegisters {
-    /// Sample scheduler BUSY once through the diagnostic pair.
-    #[doc(hidden)]
-    pub fn scheduler_stop_busy(&mut self, interrupts: &mut BluetoothInterruptRegisters) -> bool {
-        super::runtime::sample_scheduler_busy(
-            &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
-        )
-    }
-
     /// Mask both dynamic scheduler run-interrupt banks, disable the RUN event
     /// source, then fence.
     #[doc(hidden)]
@@ -148,14 +140,14 @@ impl BluetoothTaskRegisters {
         device_fence();
     }
 
-    /// Sample BUSY once; when it is clear, fence and return the stopped
-    /// receipt. Sequencing the stop request belongs to the HAL.
+    /// When the BUSY sample is clear, fence and return the stopped receipt.
+    /// Sampling BUSY and sequencing the stop request belong to the HAL.
     #[doc(hidden)]
     pub fn confirm_scheduler_stopped(
         &mut self,
-        interrupts: &mut BluetoothInterruptRegisters,
+        busy: crate::BluetoothSchedulerBusyObservation,
     ) -> Option<BluetoothSchedulerStopped> {
-        if self.scheduler_stop_busy(interrupts) {
+        if busy.is_busy() {
             return None;
         }
         device_fence();

@@ -431,6 +431,9 @@ pub enum BluetoothInterruptFault {
     PrimaryUnavailable,
     /// Source 124 classified a Controller fault from these sources.
     Primary(BluetoothPrimaryFaultSources),
+    /// Source 124's scheduler BUSY sample never settled within the
+    /// diagnostic attempt budget.
+    PrimaryDiagnosticUnsettled,
     /// Source 127 could not service its owner.
     ModemLpTimer(EspHalBluetoothModemLpTimerStorageError),
     /// Source 133 found the shared owner missing from storage.
@@ -700,6 +703,9 @@ fn dispatch(source: EspHalBluetoothInterruptSource) -> EspHalBluetoothInterruptD
                     match step.publish(dispatch.scheduler_wake) {
                         PrimaryPublishedInterruptStep::Fault(controller) => {
                             fault(BluetoothInterruptFault::Primary(controller.sources()))
+                        }
+                        PrimaryPublishedInterruptStep::DiagnosticUnsettled(_) => {
+                            fault(BluetoothInterruptFault::PrimaryDiagnosticUnsettled)
                         }
                         PrimaryPublishedInterruptStep::Scheduler {
                             scheduler: SchedulerWakePublication::WakeWorker,

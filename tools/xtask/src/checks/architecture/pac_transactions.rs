@@ -1,21 +1,16 @@
 //! Handwritten PAC operations are single transactions.
 //!
 //! A radio PAC (`crates/hardware/*/pac/src`) never polls, retries or keeps a
-//! step machine; those belong to the HAL (see the ESP32-S31 PAC README). A
-//! loop in a handwritten PAC module is therefore rejected, except a `while`
-//! that walks an index over a fixed-length table (`index < TABLE.len()` or
-//! `index != COUNT`), which writes a straight-line register sequence.
+//! step machine; those belong to the HAL, where every such loop carries an
+//! explicit budget (see the ESP32-S31 PAC README). A loop in a handwritten
+//! PAC module is therefore rejected, except a `while` that walks an index
+//! over a fixed-length table (`index < TABLE.len()` or `index != COUNT`),
+//! which writes a straight-line register sequence. There is no exception
+//! list.
 
 use std::{fs, path::Path};
 
 use crate::Result;
-
-/// Loops that are known and scheduled to move to their HAL, with the reason.
-/// An entry is removed by the change that moves the loop.
-const PENDING: &[(&str, &str)] = &[(
-    "crates/hardware/esp32s31/pac/src/bluetooth/scheduler/runtime.rs",
-    "the stable diagnostic read retries until two reads agree; Bluetooth moves the bounded retry to the HAL",
-)];
 
 /// Why `line` is not a single-transaction construct, if it is a loop.
 fn loop_violation(line: &str) -> Option<&'static str> {
@@ -57,9 +52,6 @@ fn handwritten(relative: &str) -> bool {
 pub(super) fn check(root: &Path, files: &[String]) -> Result<()> {
     let mut problems = Vec::new();
     for relative in files.iter().filter(|relative| handwritten(relative)) {
-        if PENDING.iter().any(|(path, _)| path == relative) {
-            continue;
-        }
         let text = fs::read_to_string(root.join(relative))?;
         for (number, line) in text.lines().enumerate() {
             if let Some(reason) = loop_violation(line) {

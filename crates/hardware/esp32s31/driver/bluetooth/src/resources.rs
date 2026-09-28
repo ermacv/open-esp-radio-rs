@@ -149,7 +149,10 @@ impl TaskResources {
             oer_esp32s31_hal::bluetooth::InterruptOutputAfterRoutesOwner,
         ),
     > {
-        output.try_release_idle_controller_output(&mut self.registers)
+        output.try_release_idle_controller_output(
+            &mut self.registers,
+            crate::scheduler::DIAGNOSTIC_READ_BUDGET,
+        )
     }
 }
 

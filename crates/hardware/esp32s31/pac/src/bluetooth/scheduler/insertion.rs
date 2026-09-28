@@ -327,13 +327,13 @@ impl BluetoothTaskRegisters {
         );
     }
 
-    /// Read the selected progress signal: whether execution modify must
-    /// repeat its request.
+    /// Read the selected progress signal twice: whether execution modify must
+    /// repeat its request, or `None` when the reads disagreed.
     #[doc(hidden)]
     pub fn scheduler_execution_modify_repeats(
         &mut self,
         interrupts: &mut crate::BluetoothInterruptRegisters,
-    ) -> bool {
+    ) -> Option<bool> {
         super::runtime::sample_execution_modify_repeats(
             &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
         )
@@ -350,12 +350,13 @@ impl BluetoothTaskRegisters {
         );
     }
 
-    /// Read the selected settle signal: whether execution modify settled.
+    /// Read the selected settle signal twice: whether execution modify
+    /// settled, or `None` when the reads disagreed.
     #[doc(hidden)]
     pub fn scheduler_execution_modify_settled(
         &mut self,
         interrupts: &mut crate::BluetoothInterruptRegisters,
-    ) -> bool {
+    ) -> Option<bool> {
         super::runtime::sample_execution_modify_settled(
             &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
         )

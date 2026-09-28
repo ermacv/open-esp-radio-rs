@@ -9,8 +9,8 @@ use oer_esp32s31_bluetooth::{
     scheduler::{
         SchedulerFinishedListCaptureError, SchedulerFinishedListWorkerStep, SchedulerHardwareError,
         SchedulerHardwareView, SchedulerIdleInsertion, SchedulerObservation,
-        SchedulerSoftwareConfig, SchedulerStartError, SchedulerStep, SchedulerTransactionFault,
-        SchedulerWait,
+        SchedulerSoftwareConfig, SchedulerStartError, SchedulerStep, SchedulerStopError,
+        SchedulerTransactionFault, SchedulerWait,
     },
 };
 use oer_esp32s31_bluetooth_memory::{LeRxChain, SchedulerItemSpace};
@@ -126,7 +126,7 @@ pub trait BluetoothRadioHardware {
     fn step_stop(
         &mut self,
         stop: BluetoothSchedulerStop,
-    ) -> Result<BluetoothSchedulerStopStep, BluetoothSchedulerStop>;
+    ) -> Result<BluetoothSchedulerStopStep, SchedulerStopError>;
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -282,7 +282,7 @@ mod live {
         fn step_stop(
             &mut self,
             stop: BluetoothSchedulerStop,
-        ) -> Result<BluetoothSchedulerStopStep, BluetoothSchedulerStop> {
+        ) -> Result<BluetoothSchedulerStopStep, SchedulerStopError> {
             self.task.step_scheduler_stop(self.storage, stop)
         }
     }

@@ -265,16 +265,16 @@ impl BluetoothTaskRegisters {
 }
 
 impl BluetoothInterruptRegisters {
-    /// Sample scheduler BUSY through the interrupt-owned diagnostic pair
-    /// without borrowing any task-side controller register.
+    /// Sample scheduler BUSY once through the interrupt-owned diagnostic pair
+    /// without borrowing any task-side controller register; `None` when the
+    /// two reads disagreed.
     pub fn capture_scheduler_lock_modify_interrupt(
         &mut self,
-    ) -> BluetoothSchedulerLockModifyInterruptObservation {
-        BluetoothSchedulerLockModifyInterruptObservation {
-            busy: super::runtime::sample_scheduler_busy(
-                &self.peripherals.bluetooth_scheduler_interrupt_runtime,
-            ),
-        }
+    ) -> Option<BluetoothSchedulerLockModifyInterruptObservation> {
+        super::runtime::sample_scheduler_busy(
+            &self.peripherals.bluetooth_scheduler_interrupt_runtime,
+        )
+        .map(|busy| BluetoothSchedulerLockModifyInterruptObservation { busy })
     }
 }
 

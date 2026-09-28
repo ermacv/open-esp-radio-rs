@@ -16,7 +16,7 @@ enum Operation {
 
 struct Backend {
     epoch: Option<BluetoothPrimaryInterruptEpoch>,
-    gate: BluetoothSchedulerReferenceGateObservation,
+    gate: Result<BluetoothSchedulerReferenceGateObservation, BluetoothDiagnosticUnsettled>,
     work: Option<BluetoothSchedulerWorkObservation>,
     operations: Vec<Operation>,
 }
@@ -36,7 +36,9 @@ impl Backend {
                 sources_27_or_28_pending,
                 source_3_pending,
             )),
-            gate: BluetoothSchedulerReferenceGateObservation::from_busy_for_validation(gate_busy),
+            gate: Ok(
+                BluetoothSchedulerReferenceGateObservation::from_busy_for_validation(gate_busy),
+            ),
             work: Some(
                 BluetoothSchedulerWorkObservation::from_fields_for_validation(
                     work_busy,
@@ -67,7 +69,9 @@ impl PrimaryInterruptBackend for Backend {
         self.epoch.take().expect("one primary epoch")
     }
 
-    fn capture_scheduler_reference_gate(&mut self) -> BluetoothSchedulerReferenceGateObservation {
+    fn capture_scheduler_reference_gate(
+        &mut self,
+    ) -> Result<BluetoothSchedulerReferenceGateObservation, BluetoothDiagnosticUnsettled> {
         self.operations.push(Operation::ReferenceGate);
         self.gate
     }
@@ -202,4 +206,19 @@ fn one_primary_scheduler_event_updates_the_durable_handoff() {
         PrimaryPublishedInterruptStep::NoSchedulerWork(_)
     ));
     assert!(!scheduler_wake.is_pending());
+}
+
+#[test]
+fn unsettled_reference_gate_preserves_the_reference_and_publishes_no_work() {
+    let mut backend = Backend::dynamic(false, false, true, false, false, false);
+    backend.gate = Err(BluetoothDiagnosticUnsettled);
+
+    assert!(matches!(
+        execute_primary_interrupt_step(&mut backend),
+        PrimaryInterruptStep::DiagnosticUnsettled(_)
+    ));
+    assert_eq!(
+        backend.operations,
+        [Operation::PrimaryEpoch, Operation::ReferenceGate]
+    );
 }

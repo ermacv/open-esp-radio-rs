@@ -54,7 +54,8 @@ pub use bluetooth::{
     interrupt::{
         BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
         BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
-        BluetoothSchedulerRunInterruptsPrepared, retirement::BluetoothControllerOutputReleaseError,
+        BluetoothSchedulerRunInterruptsPrepared,
+        retirement::{BluetoothControllerOutputQuiesced, BluetoothControllerOutputReleaseError},
     },
     memory_lists::{
         BluetoothControllerSramAddress, BluetoothControllerSramAddressError,

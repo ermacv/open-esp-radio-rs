@@ -17,10 +17,14 @@ pub fn capture_and_acknowledge_interrupts() {
 }
 
 /// Take the diagnostic scheduler-BUSY sample that opens the production
-/// scheduler stop sequence.
+/// scheduler stop sequence, within `budget` attempts.
 #[inline(always)]
-pub fn sample_scheduler_stop_busy() -> bool {
-    oer_esp32s31_pac::validation::sample_bluetooth_scheduler_stop_busy()
+pub fn sample_scheduler_stop_busy(
+    budget: super::BluetoothDiagnosticReadBudget,
+) -> Result<bool, super::BluetoothDiagnosticUnsettled> {
+    let mut interrupts = oer_esp32s31_pac::validation::bluetooth_interrupt_registers();
+    super::diagnostic::settle(budget, || interrupts.capture_scheduler_busy())
+        .map(|busy| busy.is_busy())
 }
 
 /// Execute the exact finite MMIO transaction recovered for
@@ -136,8 +140,9 @@ pub fn deselect_low_power_clock() {
 /// owners.
 ///
 /// Returns `None` for an index outside `0..16`, otherwise zero when command
-/// one became ready and one when hardware rejected the request. START stays
-/// published, as the vendor body leaves it to its caller.
+/// one became ready, one when hardware rejected the request and three when a
+/// diagnostic sample exhausted `budget`. START stays published, as the vendor
+/// body leaves it to its caller.
 ///
 /// # Safety
 ///
@@ -148,7 +153,11 @@ pub fn deselect_low_power_clock() {
     reason = "the validation-only API forwards the execution-modify admission contract"
 )]
 #[inline(always)]
-pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> Option<u32> {
+pub unsafe fn run_scheduler_execution_modify(
+    index: u8,
+    list_deletion: bool,
+    budget: super::BluetoothDiagnosticReadBudget,
+) -> Option<u32> {
     use oer_esp32s31_pac::BluetoothSchedulerExecutionModifyDisposition as Disposition;
     let index = oer_esp32s31_pac::BluetoothSchedulerHardwareListIndex::new(index)?;
     let (_shared, partitions) = crate::root::RadioHardware::for_validation().into_concurrent(());
@@ -161,10 +170,12 @@ pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> 
             &mut task,
             &mut interrupts,
             &mut modify,
+            budget,
         ) {
-            Disposition::Pending => {}
-            Disposition::Ready => break 0,
-            Disposition::HardwareRejected => break 1,
+            Ok(Disposition::Pending) => {}
+            Ok(Disposition::Ready) => break 0,
+            Ok(Disposition::HardwareRejected) => break 1,
+            Err(super::BluetoothDiagnosticUnsettled) => break 3,
         }
     };
     // The comparison image retains every partition it mutated.
@@ -178,7 +189,8 @@ pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> 
 ///
 /// Returns `None` for an index outside `0..16` or an address outside the
 /// controller SRAM window, otherwise the disposition: zero retained, one
-/// current-head reconciliation, two an unsupported hardware result.
+/// current-head reconciliation, two an unsupported hardware result, three a
+/// diagnostic sample that exhausted `budget`.
 ///
 /// # Safety
 ///
@@ -190,7 +202,11 @@ pub unsafe fn run_scheduler_execution_modify(index: u8, list_deletion: bool) -> 
     reason = "the validation-only API forwards the execution-lock publication contract"
 )]
 #[inline(always)]
-pub unsafe fn run_scheduler_execution_lock(address: u32, index: u8) -> Option<u32> {
+pub unsafe fn run_scheduler_execution_lock(
+    address: u32,
+    index: u8,
+    budget: super::BluetoothDiagnosticReadBudget,
+) -> Option<u32> {
     use oer_esp32s31_pac::BluetoothSchedulerExecutionLockDisposition as Disposition;
     let index = oer_esp32s31_pac::BluetoothSchedulerHardwareListIndex::new(index)?;
     let address = BluetoothControllerSramAddress::new(address).ok()?;
@@ -202,12 +218,17 @@ pub unsafe fn run_scheduler_execution_lock(address: u32, index: u8) -> Option<u3
         oer_esp32s31_pac::BluetoothSchedulerExecutionLockRequest::new(address, index),
     );
     let result = loop {
-        match super::scheduler_execution_lock::step_hardware(&mut task, &mut interrupts, &mut lock)
-        {
-            Disposition::Pending => {}
-            Disposition::ExecutionLockRetained => break 0,
-            Disposition::ReconcileCurrentHead => break 1,
-            Disposition::UnsupportedHardwareResult => break 2,
+        match super::scheduler_execution_lock::step_hardware(
+            &mut task,
+            &mut interrupts,
+            &mut lock,
+            budget,
+        ) {
+            Ok(Disposition::Pending) => {}
+            Ok(Disposition::ExecutionLockRetained) => break 0,
+            Ok(Disposition::ReconcileCurrentHead) => break 1,
+            Ok(Disposition::UnsupportedHardwareResult) => break 2,
+            Err(super::BluetoothDiagnosticUnsettled) => break 3,
         }
     };
     let _retained = (task, interrupts, timer, bank, lock);

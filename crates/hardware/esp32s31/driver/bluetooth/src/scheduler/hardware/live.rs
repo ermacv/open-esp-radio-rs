@@ -177,9 +177,14 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
             let disposition = self
                 .storage
                 .with_interrupt_registers(lock, |interrupts, lock| {
-                    controller.step_scheduler_execution_lock(interrupts, lock)
+                    controller.step_scheduler_execution_lock(
+                        interrupts,
+                        lock,
+                        super::super::DIAGNOSTIC_READ_BUDGET,
+                    )
                 })
-                .map_err(|_| SchedulerHardwareError::InterruptOwnerUnavailable)?;
+                .map_err(|_| SchedulerHardwareError::InterruptOwnerUnavailable)?
+                .map_err(|_| SchedulerHardwareError::DiagnosticUnsettled)?;
             return Ok(SchedulerObservation::ExecutionLock(disposition));
         }
         if wait == SchedulerWait::ExecutionModify {
@@ -190,18 +195,26 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
             let disposition = self
                 .storage
                 .with_interrupt_registers(modify, |interrupts, modify| {
-                    controller.step_scheduler_execution_modify(interrupts, modify)
+                    controller.step_scheduler_execution_modify(
+                        interrupts,
+                        modify,
+                        super::super::DIAGNOSTIC_READ_BUDGET,
+                    )
                 })
-                .map_err(|_| SchedulerHardwareError::InterruptOwnerUnavailable)?;
+                .map_err(|_| SchedulerHardwareError::InterruptOwnerUnavailable)?
+                .map_err(|_| SchedulerHardwareError::DiagnosticUnsettled)?;
             return Ok(SchedulerObservation::ExecutionModify(disposition));
         }
         if wait == SchedulerWait::LockModify {
             let interrupt = self
                 .storage
                 .with_interrupt_registers((), |interrupts, ()| {
-                    interrupts.capture_scheduler_lock_modify_interrupt()
+                    interrupts.capture_scheduler_lock_modify_interrupt(
+                        super::super::DIAGNOSTIC_READ_BUDGET,
+                    )
                 })
-                .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?;
+                .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?
+                .map_err(|_| SchedulerHardwareError::DiagnosticUnsettled)?;
             let task = self.controller.capture_scheduler_lock_modify_task();
             return Ok(SchedulerObservation::LockModify(
                 BluetoothSchedulerLockModifyObservation::from_split(interrupt, task),
@@ -209,8 +222,11 @@ impl<S: SchedulerRunInterruptStorage> SchedulerHardwareBackend for LiveScheduler
         }
         let busy = self
             .storage
-            .with_interrupt_registers((), |interrupts, ()| interrupts.capture_scheduler_busy())
-            .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?;
+            .with_interrupt_registers((), |interrupts, ()| {
+                interrupts.capture_scheduler_busy(super::super::DIAGNOSTIC_READ_BUDGET)
+            })
+            .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?
+            .map_err(|_| SchedulerHardwareError::DiagnosticUnsettled)?;
         Ok(match (wait, cancellation, skip) {
             (SchedulerWait::Cancellation, Some(requested), _) => {
                 SchedulerObservation::Cancellation(

@@ -224,7 +224,8 @@ impl BluetoothRadioHardware for Model {
     fn step_stop(
         &mut self,
         _stop: BluetoothSchedulerStop,
-    ) -> Result<BluetoothSchedulerStopStep, BluetoothSchedulerStop> {
+    ) -> Result<BluetoothSchedulerStopStep, oer_esp32s31_bluetooth::scheduler::SchedulerStopError>
+    {
         let mut state = self.0.borrow_mut();
         state.stops += 1;
         state.running = false;

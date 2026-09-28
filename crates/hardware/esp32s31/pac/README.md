@@ -19,8 +19,13 @@ Every handwritten PAC operation is a single transaction: it keeps no state
 between calls, has no phases, never polls and never routes. A straight-line
 multi-register sequence and the affine receipt it returns (for example a
 stopped-scheduler or rollback token) are allowed; pending/step machines,
-in-flight flags and retry loops belong to the HAL. The HAL is the only
-production crate that depends on this package.
+in-flight flags and retry loops belong to the HAL. There, every poll,
+compare or retry-until-stable loop carries an explicit time or attempt budget
+and returns a typed error the caller handles when the budget runs out; no loop
+is unbounded, even where the vendor's is. `cargo xtask check architecture`
+rejects any loop in a handwritten PAC module other than a walk over a
+fixed-length table. The HAL is the only production crate that depends on this
+package.
 
 ## Sources and generated outputs
 

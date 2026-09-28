@@ -15,7 +15,7 @@ use oer_esp32s31_bluetooth::{
     },
     scheduler::{
         SchedulerFinishedListWorkerStep, SchedulerHardwareError, SchedulerNext,
-        SchedulerStartError, SchedulerWait,
+        SchedulerStartError, SchedulerStopError, SchedulerWait,
     },
 };
 use oer_esp32s31_bluetooth_radio::{
@@ -78,7 +78,9 @@ pub enum BluetoothRuntimeFault<E> {
     Scheduler(SchedulerHardwareError),
     /// The idle scheduler did not start.
     Start(SchedulerStartError<E>),
-    /// The stop sequence could not reach the interrupt owner.
+    /// The stop sequence ended before the scheduler stopped.
+    StopSequence(SchedulerStopError),
+    /// The radio refused the stopped receipt.
     Stop,
     /// No controller-time sample could be taken to resume.
     Time(BluetoothTimeError),
@@ -670,7 +672,7 @@ impl<
                     stop = pending;
                     Timer::after(HARDWARE_RECHECK).await;
                 }
-                Err(_) => return Err(BluetoothRuntimeFault::Stop),
+                Err(error) => return Err(BluetoothRuntimeFault::StopSequence(error)),
             }
         };
         let mut sink = self.sink();

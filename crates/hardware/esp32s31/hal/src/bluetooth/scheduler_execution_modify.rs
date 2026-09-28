@@ -17,6 +17,8 @@ use oer_esp32s31_pac::{
     BluetoothSchedulerInsertionCommand, BluetoothTaskRegisters,
 };
 
+use super::diagnostic::{self, BluetoothDiagnosticReadBudget, BluetoothDiagnosticUnsettled};
+
 #[derive(Debug)]
 enum Phase {
     /// Before the request: the engines must be idle.
@@ -63,7 +65,7 @@ impl BluetoothSchedulerExecutionModify {
 trait Control {
     type Published;
 
-    fn busy(&mut self) -> bool;
+    fn busy(&mut self) -> Result<bool, BluetoothDiagnosticUnsettled>;
     /// Command-zero status 26 then, only if set, command-one status 18.
     fn engines_idle(&mut self) -> bool;
     fn select_progress(&mut self);
@@ -72,10 +74,10 @@ trait Control {
         index: BluetoothSchedulerHardwareListIndex,
         list_deletion: bool,
     ) -> Self::Published;
-    fn repeats(&mut self) -> bool;
+    fn repeats(&mut self) -> Result<bool, BluetoothDiagnosticUnsettled>;
     fn ready(&mut self) -> bool;
     fn select_settle(&mut self);
-    fn settled(&mut self) -> bool;
+    fn settled(&mut self) -> Result<bool, BluetoothDiagnosticUnsettled>;
     fn clear_start(&mut self, published: Self::Published);
     fn rejected(&mut self) -> bool;
 }
@@ -91,13 +93,13 @@ struct State<'a, P> {
 fn step<C: Control>(
     state: State<'_, C::Published>,
     hw: &mut C,
-) -> BluetoothSchedulerExecutionModifyDisposition {
+) -> Result<BluetoothSchedulerExecutionModifyDisposition, BluetoothDiagnosticUnsettled> {
     use BluetoothSchedulerExecutionModifyDisposition::{HardwareRejected, Pending, Ready};
     loop {
         match *state.phase {
             Phase::Preamble => {
-                if hw.busy() && !hw.engines_idle() {
-                    return Pending;
+                if hw.busy()? && !hw.engines_idle() {
+                    return Ok(Pending);
                 }
                 hw.select_progress();
                 *state.published = Some(hw.publish(state.index, state.list_deletion));
@@ -107,16 +109,16 @@ fn step<C: Control>(
                 if !selected {
                     hw.select_progress();
                 }
-                if hw.repeats() {
+                if hw.repeats()? {
                     *state.repeat = true;
                     *state.phase = Phase::Progress { selected: false };
-                    return Pending;
+                    return Ok(Pending);
                 }
                 *state.phase = Phase::Completion;
             }
             Phase::Completion => {
-                if hw.busy() && !hw.ready() {
-                    return Pending;
+                if hw.busy()? && !hw.ready() {
+                    return Ok(Pending);
                 }
                 *state.phase = Phase::Settle { selected: false };
             }
@@ -124,9 +126,9 @@ fn step<C: Control>(
                 if !selected {
                     hw.select_settle();
                 }
-                if !hw.settled() {
+                if !hw.settled()? {
                     *state.phase = Phase::Settle { selected: false };
-                    return Pending;
+                    return Ok(Pending);
                 }
                 if core::mem::take(state.repeat) {
                     let published = state
@@ -137,11 +139,11 @@ fn step<C: Control>(
                     *state.phase = Phase::Preamble;
                     continue;
                 }
-                return if hw.rejected() {
+                return Ok(if hw.rejected() {
                     HardwareRejected
                 } else {
                     Ready
-                };
+                });
             }
         }
     }
@@ -150,6 +152,7 @@ fn step<C: Control>(
 struct Hardware<'a> {
     task: &'a mut BluetoothTaskRegisters,
     interrupts: &'a mut BluetoothInterruptRegisters,
+    budget: BluetoothDiagnosticReadBudget,
 }
 
 #[allow(
@@ -159,8 +162,9 @@ struct Hardware<'a> {
 impl Control for Hardware<'_> {
     type Published = BluetoothSchedulerExecutionModifyPublished;
 
-    fn busy(&mut self) -> bool {
-        self.task.scheduler_stop_busy(self.interrupts)
+    fn busy(&mut self) -> Result<bool, BluetoothDiagnosticUnsettled> {
+        diagnostic::settle(self.budget, || self.interrupts.capture_scheduler_busy())
+            .map(|busy| busy.is_busy())
     }
     fn engines_idle(&mut self) -> bool {
         self.task.scheduler_stop_commands_ready()
@@ -185,9 +189,11 @@ impl Control for Hardware<'_> {
             }
         }
     }
-    fn repeats(&mut self) -> bool {
-        self.task
-            .scheduler_execution_modify_repeats(self.interrupts)
+    fn repeats(&mut self) -> Result<bool, BluetoothDiagnosticUnsettled> {
+        diagnostic::settle(self.budget, || {
+            self.task
+                .scheduler_execution_modify_repeats(self.interrupts)
+        })
     }
     fn ready(&mut self) -> bool {
         self.task.scheduler_execution_modify_ready()
@@ -196,9 +202,11 @@ impl Control for Hardware<'_> {
         self.task
             .select_scheduler_execution_modify_settle(self.interrupts);
     }
-    fn settled(&mut self) -> bool {
-        self.task
-            .scheduler_execution_modify_settled(self.interrupts)
+    fn settled(&mut self) -> Result<bool, BluetoothDiagnosticUnsettled> {
+        diagnostic::settle(self.budget, || {
+            self.task
+                .scheduler_execution_modify_settled(self.interrupts)
+        })
     }
     fn clear_start(&mut self, _published: BluetoothSchedulerExecutionModifyPublished) {
         // SAFETY: the consumed proof is the command this clear ends.
@@ -218,7 +226,8 @@ pub(crate) fn step_hardware(
     task: &mut BluetoothTaskRegisters,
     interrupts: &mut BluetoothInterruptRegisters,
     modify: &mut BluetoothSchedulerExecutionModify,
-) -> BluetoothSchedulerExecutionModifyDisposition {
+    budget: BluetoothDiagnosticReadBudget,
+) -> Result<BluetoothSchedulerExecutionModifyDisposition, BluetoothDiagnosticUnsettled> {
     step(
         State {
             index: modify.index,
@@ -227,7 +236,11 @@ pub(crate) fn step_hardware(
             repeat: &mut modify.repeat,
             published: &mut modify.published,
         },
-        &mut Hardware { task, interrupts },
+        &mut Hardware {
+            task,
+            interrupts,
+            budget,
+        },
     )
 }
 

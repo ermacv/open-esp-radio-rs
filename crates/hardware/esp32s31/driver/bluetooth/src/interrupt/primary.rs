@@ -13,8 +13,8 @@ use crate::interrupt::{
 };
 
 use oer_esp32s31_hal::bluetooth::{
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
-    InterruptRegistersOwner,
+    BluetoothDiagnosticUnsettled, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerWorkObservation, InterruptRegistersOwner,
 };
 
 use oer_esp32s31_hal::bluetooth::{
@@ -27,6 +27,10 @@ use oer_esp32s31_hal::bluetooth::{
 pub enum PrimaryInterruptStep {
     /// A reviewed baseline fault preempted ordinary scheduler work.
     Fault(PrimaryControllerFault),
+    /// The reference-gate BUSY sample never settled within
+    /// [`DIAGNOSTIC_READ_BUDGET`](crate::scheduler::DIAGNOSTIC_READ_BUDGET).
+    /// The reference is preserved and no work is published.
+    DiagnosticUnsettled(PrimaryInterruptClassification),
     /// The epoch contained no reviewed dynamic scheduler source.
     NoSchedulerWork(PrimaryNoSchedulerWork),
     /// A scheduler wake and matching BUSY observation are ready for publication.
@@ -53,6 +57,8 @@ pub struct PrimarySchedulerEvent {
 pub enum PrimaryPublishedInterruptStep {
     /// A baseline or unclassified fault published no ordinary work.
     Fault(PrimaryControllerFault),
+    /// The reference-gate BUSY sample never settled; no work was published.
+    DiagnosticUnsettled(PrimaryInterruptClassification),
     /// The epoch contained no reviewed dynamic scheduler work.
     NoSchedulerWork(PrimaryNoSchedulerWork),
     /// The scheduler handoff accepted the event.
@@ -71,6 +77,9 @@ impl PrimaryInterruptStep {
     pub fn publish(self, scheduler_wake: &SchedulerWakeCell) -> PrimaryPublishedInterruptStep {
         match self {
             Self::Fault(fault) => PrimaryPublishedInterruptStep::Fault(fault),
+            Self::DiagnosticUnsettled(classification) => {
+                PrimaryPublishedInterruptStep::DiagnosticUnsettled(classification)
+            }
             Self::NoSchedulerWork(epoch) => PrimaryPublishedInterruptStep::NoSchedulerWork(epoch),
             Self::Scheduler(event) => {
                 let scheduler = scheduler_wake.publish_from_interrupt(event.wake().class());
@@ -99,7 +108,9 @@ impl PrimarySchedulerEvent {
 
 trait PrimaryInterruptBackend {
     fn capture_primary_and_acknowledge(&mut self) -> BluetoothPrimaryInterruptEpoch;
-    fn capture_scheduler_reference_gate(&mut self) -> BluetoothSchedulerReferenceGateObservation;
+    fn capture_scheduler_reference_gate(
+        &mut self,
+    ) -> Result<BluetoothSchedulerReferenceGateObservation, BluetoothDiagnosticUnsettled>;
     fn clear_scheduler_reference(&mut self);
     fn capture_scheduler_work(&mut self) -> BluetoothSchedulerWorkObservation;
 }
@@ -109,8 +120,10 @@ impl PrimaryInterruptBackend for InterruptRegistersOwner {
         self.capture_primary_and_acknowledge()
     }
 
-    fn capture_scheduler_reference_gate(&mut self) -> BluetoothSchedulerReferenceGateObservation {
-        self.capture_scheduler_reference_gate()
+    fn capture_scheduler_reference_gate(
+        &mut self,
+    ) -> Result<BluetoothSchedulerReferenceGateObservation, BluetoothDiagnosticUnsettled> {
+        self.capture_scheduler_reference_gate(crate::scheduler::DIAGNOSTIC_READ_BUDGET)
     }
 
     fn clear_scheduler_reference(&mut self) {
@@ -133,7 +146,9 @@ fn execute_primary_interrupt_step(
         };
 
     if let Some(gate) = classification.reference_gate() {
-        let observation = backend.capture_scheduler_reference_gate();
+        let Ok(observation) = backend.capture_scheduler_reference_gate() else {
+            return PrimaryInterruptStep::DiagnosticUnsettled(classification);
+        };
         if gate.classify(observation) == SchedulerReferenceAction::ClearReferenceAndContinue {
             backend.clear_scheduler_reference();
         }
@@ -154,7 +169,9 @@ fn execute_primary_interrupt_step(
 /// Capture, acknowledge and classify one primary source-124 interrupt epoch.
 ///
 /// This function is finite. It performs at most the PAC acknowledgement
-/// transaction, one reference-gate read and one later work read. It never
+/// transaction, one reference-gate sample of at most
+/// [`DIAGNOSTIC_READ_BUDGET`](crate::scheduler::DIAGNOSTIC_READ_BUDGET)
+/// attempts and one later work read. It never
 /// invokes a callback, waits for hardware, allocates or wakes an executor.
 pub fn step_primary_interrupt(interrupts: &mut InterruptRegistersOwner) -> PrimaryInterruptStep {
     execute_primary_interrupt_step(interrupts)

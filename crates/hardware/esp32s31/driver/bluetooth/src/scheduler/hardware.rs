@@ -100,6 +100,19 @@ pub enum SchedulerHardwareError {
     ForeignItem(ControllerSramLinkAddress),
     /// The hardware head does not decode to a controller link.
     ForeignHead,
+    /// A scheduler diagnostic sample never settled within
+    /// [`DIAGNOSTIC_READ_BUDGET`](super::DIAGNOSTIC_READ_BUDGET).
+    DiagnosticUnsettled,
+}
+
+/// Why the scheduler stop sequence ended before the scheduler stopped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SchedulerStopError {
+    /// Platform storage does not hold the stable interrupt owner.
+    InterruptOwnerUnavailable,
+    /// A BUSY sample never settled within
+    /// [`DIAGNOSTIC_READ_BUDGET`](super::DIAGNOSTIC_READ_BUDGET).
+    DiagnosticUnsettled,
 }
 
 /// Why an idle scheduler was not started.

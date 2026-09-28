@@ -101,10 +101,10 @@ impl BluetoothSchedulerWorkObservation {
 /// Scheduler BUSY sampled through the diagnostic pair by a task-side
 /// transaction.
 ///
-/// Each sample publishes the scheduler-status selection and accepts the first
-/// of two equal consecutive diagnostic values. The task borrows the interrupt
-/// owner for the sample, so no interrupt-side selection can separate the
-/// selector write from its value reads.
+/// One sample publishes the scheduler-status selection and reads the complete
+/// diagnostic value twice; the observation exists only when both reads agree.
+/// The task borrows the interrupt owner for the sample, so no interrupt-side
+/// selection can separate the selector write from its value reads.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "the scheduler BUSY sample must be consumed by one controller path"]
 pub struct BluetoothSchedulerBusyObservation {
@@ -112,7 +112,7 @@ pub struct BluetoothSchedulerBusyObservation {
 }
 
 impl BluetoothSchedulerBusyObservation {
-    const fn new(busy: bool) -> Self {
+    pub(crate) const fn new(busy: bool) -> Self {
         Self { busy }
     }
 
@@ -335,7 +335,7 @@ impl BluetoothSchedulerFinishedListObservation {
 }
 
 trait BluetoothSchedulerInterruptControl {
-    fn read_scheduler_busy(&mut self) -> bool;
+    fn read_scheduler_busy(&mut self) -> Option<bool>;
     fn read_scheduler_state(&mut self) -> SchedulerStateObservation;
     fn clear_scheduler_reference(&mut self);
 }
@@ -364,25 +364,25 @@ struct DiagnosticValue {
     value_3: u8,
 }
 
-/// Select the scheduler-status signal and return its BUSY bit.
+/// Select the scheduler-status signal and return its BUSY bit, or `None`
+/// when the two reads disagree.
 ///
-/// The value crosses from the MAC clock domain, so a sample is accepted only
-/// when two consecutive complete reads are equal. Like the vendor sample, the
-/// retry is unbounded and no fence separates the selector write from the
-/// reads.
-fn execute_scheduler_status_sample(control: &mut impl BluetoothDiagnosticControl) -> bool {
+/// As in the vendor sample, no fence separates the selector write from the
+/// reads. The vendor repeats the reads until they agree; that retry, bounded,
+/// belongs to the HAL.
+fn execute_scheduler_status_sample(control: &mut impl BluetoothDiagnosticControl) -> Option<bool> {
     control.select(DiagnosticSelector::SchedulerStatus);
-    stable_diagnostic_value(control).value_0_bit_7
+    agreed_diagnostic_value(control).map(|value| value.value_0_bit_7)
 }
 
-/// Read the selected value until two consecutive complete reads are equal.
-fn stable_diagnostic_value(control: &mut impl BluetoothDiagnosticControl) -> DiagnosticValue {
-    loop {
-        let first = control.read_diagnostic_value();
-        if first == control.read_diagnostic_value() {
-            break first;
-        }
-    }
+/// Read the selected value twice and return it when both complete reads are
+/// equal. The value crosses from the MAC clock domain, so a disagreeing pair
+/// carries no sample.
+fn agreed_diagnostic_value(
+    control: &mut impl BluetoothDiagnosticControl,
+) -> Option<DiagnosticValue> {
+    let first = control.read_diagnostic_value();
+    (first == control.read_diagnostic_value()).then_some(first)
 }
 
 /// Whether execution modify must repeat its request: with the progress
@@ -441,10 +441,11 @@ impl BluetoothDiagnosticControl for HardwareDiagnosticControl<'_> {
     }
 }
 
-/// Sample scheduler BUSY through the diagnostic pair of the interrupt owner.
+/// Sample scheduler BUSY once through the diagnostic pair of the interrupt
+/// owner; `None` when the two reads disagree.
 pub(crate) fn sample_scheduler_busy(
     registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
-) -> bool {
+) -> Option<bool> {
     execute_scheduler_status_sample(&mut HardwareDiagnosticControl { registers })
 }
 
@@ -456,14 +457,13 @@ pub(crate) fn select_execution_modify_progress(
     HardwareDiagnosticControl { registers }.select(DiagnosticSelector::ExecutionModifyProgress);
 }
 
-/// Read the already selected progress signal and report whether execution
-/// modify must repeat its request.
+/// Read the already selected progress signal twice and report whether
+/// execution modify must repeat its request; `None` when the reads disagree.
 pub(crate) fn sample_execution_modify_repeats(
     registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
-) -> bool {
-    execution_modify_repeats(stable_diagnostic_value(&mut HardwareDiagnosticControl {
-        registers,
-    }))
+) -> Option<bool> {
+    agreed_diagnostic_value(&mut HardwareDiagnosticControl { registers })
+        .map(execution_modify_repeats)
 }
 
 /// Select the execution-modify settle signal.
@@ -473,14 +473,13 @@ pub(crate) fn select_execution_modify_settle(
     HardwareDiagnosticControl { registers }.select(DiagnosticSelector::ExecutionModifySettle);
 }
 
-/// Read the already selected settle signal and report whether execution
-/// modify settled.
+/// Read the already selected settle signal twice and report whether
+/// execution modify settled; `None` when the reads disagree.
 pub(crate) fn sample_execution_modify_settled(
     registers: &crate::svd::BluetoothSchedulerInterruptRuntime,
-) -> bool {
-    execution_modify_settled(stable_diagnostic_value(&mut HardwareDiagnosticControl {
-        registers,
-    }))
+) -> Option<bool> {
+    agreed_diagnostic_value(&mut HardwareDiagnosticControl { registers })
+        .map(execution_modify_settled)
 }
 
 #[derive(Clone, Copy)]
@@ -495,7 +494,7 @@ struct HardwareSchedulerInterruptControl<'a> {
 }
 
 impl BluetoothSchedulerInterruptControl for HardwareSchedulerInterruptControl<'_> {
-    fn read_scheduler_busy(&mut self) -> bool {
+    fn read_scheduler_busy(&mut self) -> Option<bool> {
         sample_scheduler_busy(self.registers)
     }
 
@@ -526,12 +525,6 @@ trait BluetoothSchedulerSoftwareListRemovalControl {
     fn read_command_1_status_18(&mut self) -> bool;
 }
 
-trait BluetoothSchedulerSoftwareListRemovalRecheckControl {
-    fn read_scheduler_busy(&mut self) -> bool;
-    fn read_command_0_status_26(&mut self) -> bool;
-    fn read_command_1_status_18(&mut self) -> bool;
-}
-
 struct HardwareSchedulerSoftwareListRemovalControl<'a> {
     registers: &'a crate::svd::BluetoothControllerCore,
 }
@@ -552,31 +545,6 @@ impl BluetoothSchedulerSoftwareListRemovalControl
     }
 }
 
-struct HardwareSchedulerSoftwareListRemovalRecheckControl<'a> {
-    scheduler: &'a crate::svd::BluetoothSchedulerInterruptRuntime,
-    controller: &'a crate::svd::BluetoothControllerCore,
-}
-
-impl BluetoothSchedulerSoftwareListRemovalRecheckControl
-    for HardwareSchedulerSoftwareListRemovalRecheckControl<'_>
-{
-    fn read_scheduler_busy(&mut self) -> bool {
-        sample_scheduler_busy(self.scheduler)
-    }
-
-    fn read_command_0_status_26(&mut self) -> bool {
-        crate::svd::field_read::observe_bluetooth_scheduler_software_list_command_0_status_26(
-            self.controller,
-        )
-    }
-
-    fn read_command_1_status_18(&mut self) -> bool {
-        crate::svd::field_read::observe_bluetooth_scheduler_software_list_command_1_status_18(
-            self.controller,
-        )
-    }
-}
-
 struct HardwareSchedulerFinishedListControl<'a> {
     registers: &'a crate::svd::BluetoothControllerCore,
 }
@@ -593,8 +561,10 @@ impl BluetoothSchedulerFinishedListControl for HardwareSchedulerFinishedListCont
 
 fn execute_reference_gate_observation(
     control: &mut impl BluetoothSchedulerInterruptControl,
-) -> BluetoothSchedulerReferenceGateObservation {
-    BluetoothSchedulerReferenceGateObservation::new(control.read_scheduler_busy())
+) -> Option<BluetoothSchedulerReferenceGateObservation> {
+    control
+        .read_scheduler_busy()
+        .map(BluetoothSchedulerReferenceGateObservation::new)
 }
 
 fn execute_clear_scheduler_reference(control: &mut impl BluetoothSchedulerInterruptControl) {
@@ -634,21 +604,6 @@ fn execute_software_list_removal_finish(
     }
 }
 
-fn execute_software_list_removal_recheck(
-    control: &mut impl BluetoothSchedulerSoftwareListRemovalRecheckControl,
-) -> BluetoothSchedulerSoftwareListRemovalDisposition {
-    if control.read_scheduler_busy() {
-        return BluetoothSchedulerSoftwareListRemovalDisposition::Pending;
-    }
-    if !control.read_command_0_status_26() {
-        return BluetoothSchedulerSoftwareListRemovalDisposition::Pending;
-    }
-    if !control.read_command_1_status_18() {
-        return BluetoothSchedulerSoftwareListRemovalDisposition::Pending;
-    }
-    BluetoothSchedulerSoftwareListRemovalDisposition::Ready
-}
-
 fn join_software_list_removal(
     head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     disposition: BluetoothSchedulerSoftwareListRemovalDisposition,
@@ -666,14 +621,16 @@ fn join_software_list_removal(
 }
 
 impl BluetoothInterruptRegisters {
-    /// Sample scheduler BUSY through the diagnostic pair for bank-one source 3.
+    /// Sample scheduler BUSY once through the diagnostic pair for bank-one
+    /// source 3.
     ///
-    /// The later work observation is intentionally a separate MMIO method:
+    /// `None` means the two diagnostic reads disagreed; the HAL owns the
+    /// bounded retry. The later work observation is intentionally a separate MMIO method:
     /// the complete source-124 handler can clear `SCHEDULER_REFERENCE` between
     /// the two samples, and it reads `SCHEDULER_STATE` instead.
     pub fn capture_scheduler_reference_gate(
         &mut self,
-    ) -> BluetoothSchedulerReferenceGateObservation {
+    ) -> Option<BluetoothSchedulerReferenceGateObservation> {
         let mut control = HardwareSchedulerInterruptControl {
             registers: &self.peripherals.bluetooth_scheduler_interrupt_runtime,
         };
@@ -704,12 +661,11 @@ impl BluetoothInterruptRegisters {
         execute_work_observation(&mut control)
     }
 
-    /// Sample scheduler BUSY through the diagnostic pair for a task-side
-    /// scheduler decision.
-    pub fn capture_scheduler_busy(&mut self) -> BluetoothSchedulerBusyObservation {
-        BluetoothSchedulerBusyObservation::new(sample_scheduler_busy(
-            &self.peripherals.bluetooth_scheduler_interrupt_runtime,
-        ))
+    /// Sample scheduler BUSY once through the diagnostic pair for a
+    /// task-side scheduler decision; `None` when the two reads disagreed.
+    pub fn capture_scheduler_busy(&mut self) -> Option<BluetoothSchedulerBusyObservation> {
+        sample_scheduler_busy(&self.peripherals.bluetooth_scheduler_interrupt_runtime)
+            .map(BluetoothSchedulerBusyObservation::new)
     }
 }
 
@@ -729,30 +685,6 @@ impl BluetoothTaskRegisters {
             registers: &self.bluetooth.bluetooth_controller_core,
         };
         join_software_list_removal(head, execute_software_list_removal_finish(&mut control))
-    }
-
-    /// Recheck the complete post-unlink scheduler return predicate directly.
-    ///
-    /// This is one finite, ordered transaction matching complete
-    /// `r_sym_bt_FCfM3hAXphsk1qERleGZ`: a fresh diagnostic BUSY sample
-    /// short-circuits both command reads, an idle observation
-    /// admits `SCHEDULER_COMMAND_0.STATUS_26`, and only a set status 26 admits
-    /// `SCHEDULER_COMMAND_1.STATUS_18`. No interrupt capture or acknowledgement
-    /// is implied by this direct task-side recheck.
-    ///
-    /// `Pending` returns the unchanged affine empty-head proof so a separately
-    /// authorized event or deadline can retry. `Ready` consumes that proof
-    /// into the exact software-list-removal result.
-    pub fn recheck_scheduler_software_list_removal(
-        &mut self,
-        interrupts: &mut BluetoothInterruptRegisters,
-        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> BluetoothSchedulerSoftwareListRemovalJoin {
-        let mut control = HardwareSchedulerSoftwareListRemovalRecheckControl {
-            scheduler: &interrupts.peripherals.bluetooth_scheduler_interrupt_runtime,
-            controller: &self.bluetooth.bluetooth_controller_core,
-        };
-        join_software_list_removal(head, execute_software_list_removal_recheck(&mut control))
     }
 }
 

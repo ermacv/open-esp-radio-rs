@@ -2,7 +2,6 @@ use super::*;
 use std::{collections::VecDeque, vec::Vec};
 
 struct Model {
-    busy: VecDeque<bool>,
     faults: VecDeque<bool>,
     head: Option<BluetoothSchedulerHardwareListIndex>,
     dynamic_enabled: bool,
@@ -16,7 +15,6 @@ struct Model {
 impl Model {
     fn idle() -> Self {
         Self {
-            busy: [false, false].into(),
             faults: [false, false].into(),
             head: None,
             dynamic_enabled: true,
@@ -30,9 +28,6 @@ impl Model {
 }
 
 impl Control for Model {
-    fn busy(&mut self) -> bool {
-        self.busy.pop_front().expect("fresh busy observation")
-    }
     fn head_present(&mut self, index: BluetoothSchedulerHardwareListIndex) -> bool {
         self.inspected.push(index);
         self.head == Some(index)
@@ -61,22 +56,34 @@ impl Control for Model {
     }
 }
 
+fn busy(busy: bool) -> BluetoothSchedulerBusyObservation {
+    BluetoothSchedulerBusyObservation::new(busy)
+}
+
+fn quiesce_then_release(
+    model: &mut Model,
+    preflight: bool,
+    after_fence: bool,
+) -> Result<(), BluetoothControllerOutputReleaseError> {
+    quiesce(model, busy(preflight))?;
+    release(model, busy(after_fence))
+}
+
 #[test]
 fn live_scheduler_and_every_published_head_reject_without_mutation() {
-    let mut busy = Model::idle();
-    busy.busy = [true].into();
+    let mut model = Model::idle();
     assert_eq!(
-        release(&mut busy),
+        quiesce(&mut model, busy(true)),
         Err(BluetoothControllerOutputReleaseError::SchedulerBusy)
     );
-    assert!(busy.inspected.is_empty());
-    assert_eq!(busy.writes, 0);
+    assert!(model.inspected.is_empty());
+    assert_eq!(model.writes, 0);
     for index in 0..16 {
         let index = BluetoothSchedulerHardwareListIndex::new(index).unwrap();
         let mut model = Model::idle();
         model.head = Some(index);
         assert_eq!(
-            release(&mut model),
+            quiesce(&mut model, busy(false)),
             Err(BluetoothControllerOutputReleaseError::PublishedHead(index))
         );
         assert_eq!(model.head, Some(index));
@@ -95,16 +102,15 @@ fn faults_and_execution_racing_the_preflight_never_acknowledge_or_release() {
             [true].into()
         };
         assert_eq!(
-            release(&mut model),
+            quiesce_then_release(&mut model, false, false),
             Err(BluetoothControllerOutputReleaseError::InterruptFault)
         );
         assert!(model.output_live && model.completion_pending);
         assert_eq!(model.writes, if after_mask { 2 } else { 0 });
     }
     let mut model = Model::idle();
-    model.busy = [false, true].into();
     assert_eq!(
-        release(&mut model),
+        quiesce_then_release(&mut model, false, true),
         Err(BluetoothControllerOutputReleaseError::SchedulerBusy)
     );
     assert!(model.output_live && model.completion_pending);
@@ -114,28 +120,25 @@ fn faults_and_execution_racing_the_preflight_never_acknowledge_or_release() {
 #[test]
 fn idle_output_release_acknowledges_only_after_disabling_new_scheduler_work() {
     let mut model = Model::idle();
-    assert_eq!(release(&mut model), Ok(()));
+    assert_eq!(quiesce(&mut model, busy(false)), Ok(()));
+    assert!(model.output_live && model.completion_pending);
+    assert!(!model.dynamic_enabled && !model.run_enabled);
+    assert_eq!(release(&mut model, busy(false)), Ok(()));
     assert_eq!(model.inspected.len(), 16);
-    assert!(
-        !model.output_live
-            && !model.completion_pending
-            && !model.dynamic_enabled
-            && !model.run_enabled
-    );
+    assert!(!model.output_live && !model.completion_pending);
     assert!(model.head.is_none());
 }
 
 #[test]
 fn maintenance_admission_preserves_live_masks_and_pending_completion() {
     let mut model = Model::idle();
-    assert_eq!(validate_idle(&mut model), Ok(()));
+    assert_eq!(validate_idle(&mut model, busy(false)), Ok(()));
     assert_eq!(model.writes, 0);
     assert!(model.output_live && model.dynamic_enabled && model.run_enabled);
     assert!(model.completion_pending);
-    // A second admission must observe fresh hardware, never reuse the first.
-    model.busy = [true].into();
+    // A second admission consumes its own fresh sample, never the first.
     assert_eq!(
-        validate_idle(&mut model),
+        validate_idle(&mut model, busy(true)),
         Err(BluetoothControllerOutputReleaseError::SchedulerBusy)
     );
     assert_eq!(model.writes, 0);

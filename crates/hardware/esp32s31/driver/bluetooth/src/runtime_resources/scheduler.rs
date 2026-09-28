@@ -20,7 +20,7 @@ use crate::{
     scheduler::{
         SchedulerAction, SchedulerFinishedListCaptureError, SchedulerHardwareError,
         SchedulerHardwareView, SchedulerIdleInsertion, SchedulerObservation,
-        SchedulerRunInterruptStorage, SchedulerStartError, SchedulerStep,
+        SchedulerRunInterruptStorage, SchedulerStartError, SchedulerStep, SchedulerStopError,
         SchedulerTransactionFault, SchedulerWait, hardware::live::LiveSchedulerBackend,
     },
 };
@@ -119,8 +119,11 @@ impl ControllerPoweredTaskRuntime<'_> {
         storage: &impl SchedulerRunInterruptStorage,
     ) -> Result<SchedulerHardwareView, SchedulerHardwareError> {
         let busy = storage
-            .with_interrupt_registers((), |interrupts, ()| interrupts.capture_scheduler_busy())
-            .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?;
+            .with_interrupt_registers((), |interrupts, ()| {
+                interrupts.capture_scheduler_busy(crate::scheduler::DIAGNOSTIC_READ_BUDGET)
+            })
+            .map_err(|()| SchedulerHardwareError::InterruptOwnerUnavailable)?
+            .map_err(|_| SchedulerHardwareError::DiagnosticUnsettled)?;
         let head = self
             .task
             .controller()
@@ -152,16 +155,24 @@ impl ControllerPoweredTaskRuntime<'_> {
     /// Advance the common scheduler stop sequence by one finite step,
     /// serialized with the interrupt owner.
     ///
-    /// Storage without the interrupt owner returns the unchanged sequence.
+    /// Storage without the interrupt owner, or a BUSY sample that never
+    /// settled, ends the sequence with its typed reason.
     pub fn step_scheduler_stop(
         &mut self,
         storage: &impl SchedulerRunInterruptStorage,
         stop: BluetoothSchedulerStop,
-    ) -> Result<BluetoothSchedulerStopStep, BluetoothSchedulerStop> {
+    ) -> Result<BluetoothSchedulerStopStep, SchedulerStopError> {
         let mut controller = self.task.controller();
-        storage.with_interrupt_registers(stop, |interrupts, stop| {
-            controller.step_scheduler_stop(interrupts, stop)
-        })
+        storage
+            .with_interrupt_registers(stop, |interrupts, stop| {
+                controller.step_scheduler_stop(
+                    interrupts,
+                    stop,
+                    crate::scheduler::DIAGNOSTIC_READ_BUDGET,
+                )
+            })
+            .map_err(|_| SchedulerStopError::InterruptOwnerUnavailable)?
+            .map_err(|_| SchedulerStopError::DiagnosticUnsettled)
     }
 
     /// Disable the BLE PHY ETM route for one Direct Test Mode event.

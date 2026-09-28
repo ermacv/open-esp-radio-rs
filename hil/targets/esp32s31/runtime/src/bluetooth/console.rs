@@ -118,6 +118,15 @@ pub(super) async fn run(
                     Event::PostMortemCheckpoints(crate::system::post_mortem_checkpoints(first))
                 }
                 Command::QueryLinkHealth => console.health(),
+                Command::TraceControl(control) => {
+                    Event::TraceStatus(crate::trace::control(control))
+                }
+                Command::GetTraceEntries { first } => {
+                    Event::TraceEntries(crate::trace::entries(first))
+                }
+                Command::GetTraceSnapshot { slot, offset } => {
+                    Event::TraceSnapshot(crate::trace::snapshot(slot, offset))
+                }
                 // Only CPU0 runs in the Bluetooth images.
                 Command::QueryInterruptStackUsage => Event::InterruptStackUsage {
                     cpu0: crate::stack_evidence::current_irq_snapshot(),

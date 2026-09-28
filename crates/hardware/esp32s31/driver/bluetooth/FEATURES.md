@@ -47,8 +47,9 @@ independent of that implemented lower handoff.
 ## Legacy advertising and scanning
 
 The canonical sections `bluetooth-legacy-advertising-scanning` and
-`bluetooth-le-roles-connections-reliability` record the portable advertising,
-scanning and connection owners and the absence of a Controller composition.
+`bluetooth-le-roles-connections-reliability` record the advertising, scanning
+and peripheral connection roles of the Controller core, the S31 radio role
+beneath them and their current limits.
 
 ## Capability advertisement
 
@@ -59,8 +60,8 @@ each bit requires a complete production Controller operation.
 ## Ownership
 
 The canonical `bluetooth-ownership` section records the PAC, HAL, Controller
-memory, engine and portable HCI/Link Layer boundaries. Shared scheduling
-machinery does not compose a role.
+memory, engine, radio role, runtime, composition and portable HCI, Link Layer
+and Controller core boundaries.
 
 ## Peripheral timing limits
 

@@ -9,7 +9,7 @@ use oer_bluetooth_radio::{
     AdvertisingChannel, AdvertisingChannels, AdvertisingEvent, AdvertisingReception,
     ConnectionAllowances, ConnectionConfiguration, ConnectionEvent, DataPduKind, EventId,
     EventResult, RadioDuration, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu,
-    RequestError, ScanWindow,
+    RequestError, ScanType, ScanWindow,
 };
 
 use crate::{LeController, LeControllerConfig, LeVersionInformation, PLANNING_SLACK};
@@ -88,7 +88,7 @@ enum Request {
     CloseConnection,
     Advertise(AdvertisingEvent),
     RemoveAdvertising,
-    ConfigureScanner,
+    ConfigureScanner(ScanType),
     Scan(ScanWindow),
     RemoveScanner,
     TestTransmit(EventId),
@@ -120,7 +120,9 @@ impl From<RadioRequest<'_>> for Request {
             RadioRequest::CloseConnection(_) => Self::CloseConnection,
             RadioRequest::Advertise(event) => Self::Advertise(event),
             RadioRequest::RemoveAdvertising(_) => Self::RemoveAdvertising,
-            RadioRequest::ConfigureScanner(_) => Self::ConfigureScanner,
+            RadioRequest::ConfigureScanner(configuration) => {
+                Self::ConfigureScanner(configuration.scan_type)
+            }
             RadioRequest::Scan(window) => Self::Scan(window),
             RadioRequest::RemoveScanner(_) => Self::RemoveScanner,
             RadioRequest::TestTransmit(test) => Self::TestTransmit(test.id),
@@ -244,7 +246,18 @@ impl Harness {
     }
 
     fn scan(&mut self, interval_units: u16, window_units: u16, filter_duplicates: bool) {
+        self.scan_as(false, interval_units, window_units, filter_duplicates);
+    }
+
+    fn scan_as(
+        &mut self,
+        active: bool,
+        interval_units: u16,
+        window_units: u16,
+        filter_duplicates: bool,
+    ) {
         let mut parameters = [0; 7];
+        parameters[0] = u8::from(active);
         parameters[1..3].copy_from_slice(&interval_units.to_le_bytes());
         parameters[3..5].copy_from_slice(&window_units.to_le_bytes());
         assert_eq!(self.command(SET_SCAN_PARAMS, &parameters), Some(SUCCESS));
@@ -252,7 +265,14 @@ impl Harness {
             self.command(SET_SCAN_ENABLE, &[1, u8::from(filter_duplicates)]),
             None
         );
-        assert_eq!(self.step(), Some(Request::ConfigureScanner));
+        assert_eq!(
+            self.step(),
+            Some(Request::ConfigureScanner(if active {
+                ScanType::Active
+            } else {
+                ScanType::Passive
+            }))
+        );
         assert_eq!(self.status_of(SET_SCAN_ENABLE), Some(SUCCESS));
     }
 }
@@ -480,6 +500,37 @@ fn passive_scanning_rotates_channels_and_reports_advertisements() {
             AdvertisingChannel::Channel37,
         ]
     );
+}
+
+#[test]
+fn only_an_active_scanner_reports_scan_responses() {
+    let mut scan_rsp = std::vec![0x04 | 0x40, 6 + 3];
+    scan_rsp.extend_from_slice(&[1, 2, 3, 4, 5, 0xc6]);
+    scan_rsp.extend_from_slice(&[2, 0x09, b'x']);
+    for active in [false, true] {
+        let mut harness = Harness::configured();
+        harness.scan_as(active, 160, 80, false);
+        let Some(Request::Scan(window)) = harness.step() else {
+            panic!("scan window");
+        };
+        harness.core.outcome(RadioOutcome::Received {
+            id: window.id,
+            pdu: ReceivedPdu {
+                pdu: &scan_rsp,
+                rssi_dbm: -30,
+                captured_at: None,
+            },
+        });
+        let reports = harness.drain();
+        if active {
+            assert_eq!(reports.len(), 1);
+            // LE Advertising Report of a SCAN_RSP from a random address.
+            assert_eq!(&reports[0][..6], &[0x3e, 15, 0x02, 1, 0x04, 0x01]);
+            assert_eq!(&reports[0][6..12], &[1, 2, 3, 4, 5, 0xc6]);
+        } else {
+            assert!(reports.is_empty());
+        }
+    }
 }
 
 #[test]

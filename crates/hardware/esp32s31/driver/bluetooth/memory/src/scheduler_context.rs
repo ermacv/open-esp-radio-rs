@@ -23,6 +23,12 @@ impl SchedulerContextStorage {
         }
     }
 
+    /// EXPERIMENT: the vendor scanner context's first two words.
+    pub(crate) fn set_leading_words(&mut self, word_0: u32, word_1: u32) {
+        self.words[0] = word_0;
+        self.words[1] = word_1;
+    }
+
     pub(crate) fn clear(&mut self) {
         self.words.fill(0);
     }

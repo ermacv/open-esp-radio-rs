@@ -1,0 +1,7 @@
+schema = 5
+id = "bluetooth-active-scanning"
+description = "LE 1M passive and active scanning of a Linux scannable advertiser: only the active scan reports the scan response the adapter sends to its SCAN_REQ"
+tags = ["bluetooth", "scanning", "air-exclusive"]
+
+[bluetooth]
+kind = "active-scanning"

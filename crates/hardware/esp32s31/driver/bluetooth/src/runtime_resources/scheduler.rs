@@ -171,6 +171,22 @@ impl ControllerPoweredTaskRuntime<'_> {
         self.task.controller().disable_ble_phy_etm_route()
     }
 
+    /// Publish the scanner start's scan-backoff state: both backoff words
+    /// start at one under the default maximum upper limit, as the pinned
+    /// `r_ble_lll_scan_start` does after it resets the scanner link state.
+    #[allow(
+        unsafe_code,
+        reason = "the scanner graph and the receive chains are published before a scanner starts"
+    )]
+    pub fn publish_scan_start(&mut self) {
+        let mut controller = self.task.controller();
+        // SAFETY: the radio role resets the pinned scanner graph before it
+        // accepts a scanner, the receive chains were published before the
+        // first RUN of this epoch, and the task endpoint serializes the
+        // scanner registers.
+        let _published = unsafe { controller.publish_scan_start() };
+    }
+
     /// Route and enable the BLE PHY ETM channel again after a test.
     pub fn restore_ble_phy_etm_route(
         &mut self,

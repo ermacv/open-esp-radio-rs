@@ -20215,7 +20215,7 @@ which the upper limit is not established.
       <registers>
         <register>
           <name>UPPER_LIMIT_MAX</name>
-          <description>Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled.</description>
+          <description>Maximum scan-backoff upper limit. Scanner start writes the Controller configuration's nine-bit upper limit, 32 in the S31 build, or 1 when backoff is disabled.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>

@@ -1,7 +1,7 @@
-//! Passive LE 1M scanner instances.
+//! Legacy LE 1M scanner instances.
 //!
-//! One instance holds the scanner link state, the scheduler context and three
-//! scheduler items. Hardware receives into the global scanning chain and tags
+//! One instance holds the scanner link state, the scheduler context, three
+//! scheduler items and the `SCAN_REQ` transmit node of an active scanner. Hardware receives into the global scanning chain and tags
 //! each packet with the number of the receiving item; the instance only names
 //! that source. The items form the vendor's private free chain: link-state
 //! `+0x64` holds the free head, and each item's hardware next link names the
@@ -15,11 +15,14 @@ use vcell::VolatileCell;
 use crate::{
     coexistence::{LANES_MASK, LegacyScanCoexistencePriorities, lanes_image},
     le_rx_chain::{LeRxChain, LeRxSource, LeRxTag},
+    le_tx_packet::{
+        BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, LeTxBufferHeaderStorage, LeTxPacketAddress,
+        LeTxPacketStorage,
+    },
     legacy_scanning_event_image::{
-        BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS, LegacyScanLinkStateImage,
-        LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanRxHeadProjection,
-        LegacyScanSchedulerItemWords, LegacyScanSchedulerWindow, LegacyScanStartSelection,
-        LegacyScanWindowTicks,
+        BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS, LegacyScanLinkStateImage, LegacyScanPrimaryChannel,
+        LegacyScanResetConfig, LegacyScanRxHeadProjection, LegacyScanSchedulerItemWords,
+        LegacyScanSchedulerWindow, LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
     },
     rx_memory_list::RxMemoryListClass,
     scheduler_context::SchedulerContextStorage,
@@ -32,10 +35,23 @@ use crate::{
 };
 
 /// Scheduler items of one scanner instance.
-pub const BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT: usize = 3;
+pub const BLUETOOTH_LEGACY_SCAN_SCHEDULER_ITEM_COUNT: usize = 3;
 
-const ITEMS: usize = BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT;
+const ITEMS: usize = BLUETOOTH_LEGACY_SCAN_SCHEDULER_ITEM_COUNT;
+/// The hardware TX link at link-state `+0x00`.
+const LINK_STATE_TX_WORD: usize = 0;
+const LINK_STATE_TX_HEAD_WORD: usize = 0x6c / 4;
+const LINK_STATE_TX_TAIL_WORD: usize = 0x74 / 4;
 const LINK_STATE_RX_CLASS_WORD: usize = 0x20 / 4;
+/// SOURCE: pinned `libble_app.a[ble_6.o]::r_sym_ble_aTsLUeVnygnblNndYYVB`
+/// (`r_ble_lll_scan_alloc_txbuf`) gives an active scanner one TX buffer
+/// whose PDU header halfword is `0x0c03`: `SCAN_REQ` with a 12-octet
+/// payload. It writes no payload; the Controller inserts ScanA and AdvA.
+const SCAN_REQUEST_HEADER: u8 = 0x03;
+const SCAN_REQUEST_PAYLOAD_BYTES: usize = 12;
+const SCAN_REQUEST_TX_PACKET_BYTES: usize =
+    BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES + SCAN_REQUEST_PAYLOAD_BYTES;
+const COMPRESSED_LINK_MASK: u32 = 0x000f_ffff;
 const LINK_STATE_SCHEDULER_HEAD_WORD: usize = 0x64 / 4;
 const LINK_STATE_RX_HEAD_WORD: usize = 0x68 / 4;
 const LINK_STATE_RX_TAIL_WORD: usize = 0x70 / 4;
@@ -58,13 +74,13 @@ const SCHEDULER_ITEM_EVENT_CLASS_IMAGE: u32 = 1;
 /// Scanner link state.
 #[repr(C, align(4))]
 struct LinkStateStorage {
-    words: [VolatileCell<u32>; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
+    words: [VolatileCell<u32>; BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS],
 }
 
 impl LinkStateStorage {
     const fn new() -> Self {
         Self {
-            words: [const { VolatileCell::new(0) }; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
+            words: [const { VolatileCell::new(0) }; BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS],
         }
     }
 
@@ -175,6 +191,8 @@ pub struct LegacyScanStorage {
     link_state: LinkStateStorage,
     scheduler_context: SchedulerContextStorage,
     items: [ItemStorage; ITEMS],
+    scan_request_header: LeTxBufferHeaderStorage,
+    scan_request_packet: LeTxPacketStorage<SCAN_REQUEST_TX_PACKET_BYTES>,
 }
 
 /// Addresses and item numbers of one instance.
@@ -184,6 +202,8 @@ pub struct LegacyScanBinding {
     link_state: ControllerSramLinkAddress,
     scheduler_context: ControllerSramLinkAddress,
     items: [ControllerSramLinkAddress; ITEMS],
+    scan_request_header: ControllerSramLinkAddress,
+    scan_request_packet: LeTxPacketAddress<SCAN_REQUEST_TX_PACKET_BYTES>,
     first_number: u16,
 }
 
@@ -213,6 +233,8 @@ impl SchedulerRoleStorage for LegacyScanStorage {
         link_state: LinkStateStorage::new(),
         scheduler_context: SchedulerContextStorage::new(),
         items: [const { ItemStorage::new() }; ITEMS],
+        scan_request_header: LeTxBufferHeaderStorage::new(),
+        scan_request_packet: LeTxPacketStorage::new(),
     };
     type Binding = LegacyScanBinding;
     type State = LegacyScanState;
@@ -229,6 +251,11 @@ impl SchedulerRoleStorage for LegacyScanStorage {
             link_state: link(core::mem::offset_of!(Self, link_state))?,
             scheduler_context: link(core::mem::offset_of!(Self, scheduler_context))?,
             items: [link(items)?, link(items + item)?, link(items + 2 * item)?],
+            scan_request_header: link(core::mem::offset_of!(Self, scan_request_header))?,
+            scan_request_packet: LeTxPacketAddress::new(
+                base + core::mem::offset_of!(Self, scan_request_packet) as u32,
+            )
+            .map_err(|_| SchedulerPoolBindError::ZeroCompressedLink)?,
             first_number,
         })
     }
@@ -254,6 +281,9 @@ impl SchedulerRoleStorage for LegacyScanStorage {
         }
         self.link_state
             .set_free_head(Some(binding.items[ITEMS - 1]));
+        self.scan_request_header
+            .initialize_bound_tx(binding.scan_request_packet);
+        self.scan_request_packet = LeTxPacketStorage::new();
         LegacyScanState::Empty
     }
 
@@ -299,7 +329,36 @@ impl LegacyScanEvent {
 }
 
 impl<const N: usize> LegacyScanPool<N> {
-    /// Apply the restricted passive LE 1M reset and join the scanning chain.
+    /// DIAGNOSTIC: the raw link-state words and the words of `item`.
+    #[doc(hidden)]
+    pub fn diagnostic_words(
+        &mut self,
+        instance: &SchedulerRoleInstance,
+        item: usize,
+        out: &mut [u32; 96],
+    ) {
+        let Ok(cpu) = self.cpu(instance) else { return };
+        for (index, word) in cpu.graph.scan_request_header.snapshot().iter().enumerate() {
+            out[64 + index] = *word;
+        }
+        let bytes = cpu.graph.scan_request_packet.model_pdu_bytes();
+        for (index, chunk) in bytes.chunks(4).enumerate().take(12) {
+            let mut word = [0; 4];
+            word[..chunk.len()].copy_from_slice(chunk);
+            out[72 + index] = u32::from_le_bytes(word);
+        }
+        for (index, word) in cpu.graph.link_state.words.iter().enumerate() {
+            out[index] = word.get();
+        }
+        if let Some(item) = cpu.graph.items.get(item) {
+            for (index, word) in item.words.iter().enumerate().take(64 - 33) {
+                out[33 + index] = word.get();
+            }
+        }
+    }
+
+    /// Apply the restricted LE 1M reset, join the scanning chain and, for an
+    /// active scanner, queue the `SCAN_REQ` transmit node.
     pub fn reset<const PACKETS: usize>(
         &mut self,
         instance: &SchedulerRoleInstance,
@@ -314,14 +373,33 @@ impl<const N: usize> LegacyScanPool<N> {
             return Err(LegacyScanError::State);
         }
         let free_head = cpu.graph.link_state.free_head();
-        cpu.graph
-            .link_state
-            .install(LegacyScanLinkStateImage::restricted_passive_le_1m(
+        cpu.graph.link_state.install(
+            LegacyScanLinkStateImage::restricted_le_1m(
                 LegacyScanRxHeadProjection::from_bound(chain.head_link()),
                 config,
-            ));
+            )
+            .started(),
+        );
         cpu.graph.link_state.words[LINK_STATE_SCHEDULER_HEAD_WORD].set(free_head);
+        // EXPERIMENT: the vendor scanner context.
+        cpu.graph.scheduler_context.set_leading_words(0x3c, 0x0004_0000);
         cpu.graph.link_state.join_receive_chain(chain.snapshot());
+        if config.scan_type() == LegacyScanType::Active {
+            // The vendor reset copies the software TX head into the
+            // hardware TX link; SCAN_REQ is then the one queued packet.
+            cpu.graph
+                .scan_request_packet
+                .prepare_pdu(SCAN_REQUEST_HEADER, &[0; SCAN_REQUEST_PAYLOAD_BYTES])
+                .expect("the allocation holds the SCAN_REQ payload");
+            let header = cpu.binding.scan_request_header;
+            let words = &cpu.graph.link_state.words;
+            words[LINK_STATE_TX_WORD].set(
+                (words[LINK_STATE_TX_WORD].get() & !COMPRESSED_LINK_MASK)
+                    | header.compressed_image(),
+            );
+            words[LINK_STATE_TX_HEAD_WORD].set(header.controller_address().address());
+            words[LINK_STATE_TX_TAIL_WORD].set(header.controller_address().address());
+        }
         *cpu.state = LegacyScanState::Reset { event: None };
         Ok(())
     }
@@ -336,6 +414,7 @@ impl<const N: usize> LegacyScanPool<N> {
         start_selection: LegacyScanStartSelection,
         window_ticks: LegacyScanWindowTicks,
         coexistence: LegacyScanCoexistencePriorities,
+        raw_sequence_lead: u32,
     ) -> Result<LegacyScanEvent, LegacyScanError> {
         let cpu = self.cpu(instance).map_err(LegacyScanError::Pool)?;
         if !matches!(cpu.state, LegacyScanState::Reset { event: None }) {
@@ -366,6 +445,15 @@ impl<const N: usize> LegacyScanPool<N> {
             window,
             start_selection,
         ));
+        // Common r_btdm_sched_calc_seq_time projection, as for every other
+        // role's item: without it the sequence has no length.
+        item.header()
+            .set_sequence(window.start(), window.end(), raw_sequence_lead);
+        // EXPERIMENT: the vendor scanner item's +0x14, +0x1c and +0x4c and link +0x48.
+        item.words[SCHEDULER_ITEM_WORD_14].set(item.words[SCHEDULER_ITEM_WORD_14].get() | 0x0030_0000);
+        item.words[0x1c / 4].set(0xefdf_7fff);
+        item.header().set_control(0x0800_0200);
+        cpu.graph.link_state.words[0x48 / 4].set(0);
         let lanes = &item.words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD];
         lanes.set((lanes.get() & !LANES_MASK) | lanes_image(&coexistence.lanes));
         // Detach the item from the free chain before the executor links it.

@@ -31,6 +31,14 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
     let result = context.with_capture(output, |capture| {
         let mut report = serde_json::Map::new();
         let probe = exercise(capture, adapter, &mut report);
+        // DIAGNOSTIC: drain the role's trace before Reset.
+        if let Ok(status) = capture.trace_control(oer_hil_protocol::TraceControl::Status) {
+            let entries = capture.trace_entries(status.entries).unwrap_or_default();
+            let _ = hil_core::durable::atomic_json(
+                &output.join("trace.json"),
+                &serde_json::json!({"status": status, "entries": entries}),
+            );
+        }
         let cleanup = oer_process::cleanup(|| hci::command(capture, hci::RESET, &[]).map(|_| ()));
         report.insert("schema".into(), 2.into());
         report.insert("passed".into(), (probe.is_ok() && cleanup.is_ok()).into());

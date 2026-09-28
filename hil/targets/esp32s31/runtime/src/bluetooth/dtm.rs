@@ -45,7 +45,7 @@ const PRBS9: u8 = 0x00;
 /// progress.
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(2);
 /// Controller events kept for [`BluetoothHciRequest::NextEvent`].
-const EVENT_QUEUE: usize = 16;
+const EVENT_QUEUE: usize = 32;
 const COMMAND_COMPLETE: u8 = 0x0e;
 const COMMAND_STATUS: u8 = 0x0f;
 
@@ -233,14 +233,21 @@ async fn tester(transport: BluetoothHostTransport) {
                 Reply::Dtm(result, received)
             }
             Request::Hci(BluetoothHciRequest::Command { opcode, parameters }) => {
+                let raw = opcode;
                 let opcode = Opcode::new(OpcodeGroup::new((opcode >> 10) as u8), opcode & 0x03ff);
-                Reply::Hci(
+                let reply = Reply::Hci(
                     match with_timeout(OPERATION_TIMEOUT, host.command(opcode, &parameters)).await {
                         Ok(Some(packet)) => BluetoothHciResponse::Completed(packet),
                         Ok(None) => BluetoothHciResponse::TransportFailed,
                         Err(_) => BluetoothHciResponse::Timeout,
                     },
-                )
+                );
+                // DIAGNOSTIC: dump the BLE MAC register windows once a scan runs.
+                if raw == 0x200c && parameters.first() == Some(&1) {
+                    embassy_time::Timer::after(embassy_time::Duration::from_millis(100)).await;
+                    dump_registers(&host);
+                }
+                reply
             }
             Request::Hci(BluetoothHciRequest::NextEvent { wait_ms }) => Reply::Hci(
                 host.next_event(Duration::from_millis(u64::from(wait_ms)))
@@ -248,6 +255,39 @@ async fn tester(transport: BluetoothHostTransport) {
             ),
         };
         REPLIES.send(reply).await;
+    }
+}
+
+/// DIAGNOSTIC: the BLE MAC register windows as vendor events 0xff.
+#[allow(unsafe_code, clippy::disallowed_methods)]
+fn dump_registers(host: &Host) {
+    const WINDOWS: [(u32, u32); 3] = [
+        (0x2010_1000, (0x2010_14c8 - 0x2010_1000) / 4),
+        (0x2010_1800, 512),
+        (0x2010_9880, 16),
+    ];
+    let mut sequence = 0u8;
+    let mut packet = Packet::new();
+    for (base, count) in WINDOWS {
+        for word in 0..count {
+            if packet.is_empty() {
+                let _ = packet.push(0xff);
+                let _ = packet.push(0);
+                let _ = packet.push(sequence);
+                sequence = sequence.wrapping_add(1);
+            }
+            // SAFETY: a diagnostic single read of the BLE MAC block.
+            let value = unsafe { core::ptr::read_volatile((base + word * 4) as *const u32) };
+            let _ = packet.extend_from_slice(&value.to_le_bytes());
+            if packet.len() >= 3 + 60 * 4 {
+                packet[1] = (packet.len() - 2) as u8;
+                host.queue(core::mem::take(&mut packet));
+            }
+        }
+    }
+    if !packet.is_empty() {
+        packet[1] = (packet.len() - 2) as u8;
+        host.queue(packet);
     }
 }
 

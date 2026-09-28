@@ -1,8 +1,9 @@
 use std::boxed::Box;
 
 use super::{
-    LINK_STATE_RX_CLASS_WORD, LegacyScanError, LegacyScanPool, LegacyScanStorage,
-    SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD, SCHEDULER_ITEM_COEX_PRIORITIES_WORD,
+    COMPRESSED_LINK_MASK, LINK_STATE_RX_CLASS_WORD, LINK_STATE_TX_HEAD_WORD,
+    LINK_STATE_TX_TAIL_WORD, LINK_STATE_TX_WORD, LegacyScanError, LegacyScanPool,
+    LegacyScanStorage, SCHEDULER_ITEM_ALLOCATION_NUMBER_WORD, SCHEDULER_ITEM_COEX_PRIORITIES_WORD,
 };
 use crate::{
     LegacyScanCoexistencePriorities, LegacyScanPrimaryChannel, LegacyScanResetConfig,
@@ -44,6 +45,7 @@ fn chain(class: RxMemoryListClass) -> LeRxChain<2> {
 fn config() -> LegacyScanResetConfig {
     LegacyScanResetConfig::le_1m_public_accept_all(
         crate::LeTxPower::from_dbm(0).expect("provider level"),
+        crate::LegacyScanType::Passive,
     )
 }
 
@@ -75,6 +77,7 @@ fn prepare(
         LegacyScanStartSelection::Requested,
         super::LegacyScanWindowTicks::from_raw_ticks(0x5555),
         priorities([4, 11, 0, 0]),
+        0x5c,
     )
     .unwrap()
 }
@@ -131,6 +134,10 @@ fn a_window_takes_the_free_head_and_finishing_returns_it() {
             binding.items[1].controller_address().address()
         );
         assert_eq!(graph.link_state.image().window_ticks(), 0x5555);
+        // The sequence starts one lead after the item and lasts its window;
+        // hardware ends an item without one at once.
+        assert_eq!(graph.items[2].header().sequence_start(), 1_000 + 0x5c);
+        assert_eq!(graph.items[2].header().sequence_duration(), 1_000);
         // The window's item carries its coexistence lanes.
         assert_eq!(
             graph.items[2].words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD].get() & 0x000f_ffff,
@@ -193,7 +200,49 @@ fn a_non_scanning_chain_is_refused() {
             LegacyScanStartSelection::Requested,
             super::LegacyScanWindowTicks::from_raw_ticks(0),
             priorities([15; 4]),
+            0x5c,
         ),
         Err(LegacyScanError::State)
     );
+}
+
+#[test]
+fn only_an_active_scanner_queues_its_scan_request() {
+    let mut passive_pool = pool();
+    let passive = reset(&mut passive_pool);
+    {
+        let (graph, _, _) = passive_pool.shared(&passive).unwrap();
+        let words = &graph.link_state.words;
+        assert_eq!(words[LINK_STATE_TX_WORD].get() & COMPRESSED_LINK_MASK, 0);
+        assert_eq!(words[LINK_STATE_TX_HEAD_WORD].get(), 0);
+    }
+
+    let mut pool = pool();
+    let active = pool.acquire().unwrap();
+    pool.reset(
+        &active,
+        &chain(RxMemoryListClass::Scanning),
+        LegacyScanResetConfig::le_1m_public_accept_all(
+            crate::LeTxPower::from_dbm(0).expect("provider level"),
+            crate::LegacyScanType::Active,
+        ),
+    )
+    .unwrap();
+    let (graph, binding, _) = pool.shared(&active).unwrap();
+    let words = &graph.link_state.words;
+    let header = binding.scan_request_header;
+    assert_eq!(
+        words[LINK_STATE_TX_WORD].get() & COMPRESSED_LINK_MASK,
+        header.compressed_image()
+    );
+    assert_eq!(
+        words[LINK_STATE_TX_HEAD_WORD].get(),
+        header.controller_address().address()
+    );
+    assert_eq!(
+        words[LINK_STATE_TX_TAIL_WORD].get(),
+        header.controller_address().address()
+    );
+    // SCAN_REQ with a 12-octet payload the Controller fills.
+    assert_eq!(graph.scan_request_packet.pdu_header(), [0x03, 12]);
 }

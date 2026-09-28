@@ -120,7 +120,10 @@ mod stack_evidence;
     feature = "bluetooth-radio"
 ))]
 mod system;
-#[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+#[cfg(any(
+    all(feature = "open-radio-hil", not(feature = "memory-benchmark")),
+    feature = "bluetooth-radio"
+))]
 mod trace;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod watchdog;
@@ -287,7 +290,10 @@ use oer_esp32s31_platform_runtime as _;
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     // The trace keeps what happened before the panic.
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    #[cfg(any(
+        all(feature = "open-radio-hil", not(feature = "memory-benchmark")),
+        feature = "bluetooth-radio"
+    ))]
     oer_trace::freeze(
         <oer_hil_target_core::trace::Panic as oer_trace::Event>::KIND,
         0,
@@ -358,7 +364,10 @@ extern "C" fn runtime_main() -> ! {
         feature = "bluetooth-radio"
     ))]
     system::postmortem::begin();
-    #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
+    #[cfg(any(
+        all(feature = "open-radio-hil", not(feature = "memory-benchmark")),
+        feature = "bluetooth-radio"
+    ))]
     trace::install();
     // The bootstrap configured PSRAM before entering this separately linked
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata

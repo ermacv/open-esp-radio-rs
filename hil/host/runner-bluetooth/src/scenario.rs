@@ -32,6 +32,8 @@ pub enum BluetoothScenario {
     /// High duty cycle directed advertising times out; low duty cycle
     /// directed advertising connects its target.
     DirectedAdvertising {},
+    /// Passive and active scanning of a Linux scannable advertiser.
+    ActiveScanning {},
     /// Automated Numeric Comparison, bonded reconnect and an explicit
     /// terminal fault.
     SecureGatt {
@@ -92,7 +94,8 @@ impl BluetoothScenario {
             Self::Dtm { .. }
             | Self::DtmPeer { .. }
             | Self::ScannableAdvertising {}
-            | Self::DirectedAdvertising {} => ImageClass::BluetoothDtm,
+            | Self::DirectedAdvertising {}
+            | Self::ActiveScanning {} => ImageClass::BluetoothDtm,
         }
     }
 
@@ -123,9 +126,10 @@ impl BluetoothScenario {
     pub fn served_by(&self, features: &FeatureCapabilities) -> bool {
         match self {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
-            Self::ScannableAdvertising {} | Self::DirectedAdvertising {} | Self::DtmPeer { .. } => {
-                features.bluetooth_hci
-            }
+            Self::ScannableAdvertising {}
+            | Self::DirectedAdvertising {}
+            | Self::ActiveScanning {}
+            | Self::DtmPeer { .. } => features.bluetooth_hci,
             Self::Dtm { .. } => features.bluetooth_dtm,
         }
     }
@@ -137,7 +141,8 @@ impl BluetoothScenario {
             Self::Gatt {}
             | Self::SecureGatt { .. }
             | Self::ScannableAdvertising {}
-            | Self::DirectedAdvertising {} => fixture::att::preflight,
+            | Self::DirectedAdvertising {}
+            | Self::ActiveScanning {} => fixture::att::preflight,
             Self::Dtm { .. } => fixture::preflight,
             Self::DtmPeer { .. } => return None,
         })
@@ -148,6 +153,7 @@ impl BluetoothScenario {
             Self::Gatt {} => workload::gatt::run(output, context),
             Self::ScannableAdvertising {} => workload::scannable::run(output, context),
             Self::DirectedAdvertising {} => workload::directed::run(output, context),
+            Self::ActiveScanning {} => workload::active_scan::run(output, context),
             Self::SecureGatt {
                 shutdown,
                 irq_sampling,

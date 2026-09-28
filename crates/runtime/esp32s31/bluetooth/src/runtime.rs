@@ -388,11 +388,15 @@ impl<
             .await
             .map_err(BluetoothRuntimeError::Time)?;
         installed.radio.observe_time(&sample);
+        let starts_scanner = matches!(request, RadioRequest::ConfigureScanner(_));
         let mut sink = self.sink();
         installed
             .radio
             .request(request, &mut sink)
             .map_err(BluetoothRuntimeError::Rejected)?;
+        if starts_scanner {
+            installed.hardware.publish_scan_start();
+        }
         self.work.signal(());
         Ok(())
     }

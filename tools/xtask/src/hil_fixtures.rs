@@ -272,7 +272,13 @@ fn local_radios() -> Vec<Fixture> {
                 name: phy,
                 key,
                 reachable: true,
-                detail: None,
+                detail: std::fs::read_to_string(entry.path().join("device/driver/module/drivers"))
+                    .ok()
+                    .or_else(|| {
+                        std::fs::read_link(entry.path().join("device/driver"))
+                            .ok()
+                            .and_then(|driver| Some(format!("driver {}", driver.file_name()?.to_string_lossy())))
+                    }),
                 interfaces: probed,
                 error: None,
             }
@@ -305,8 +311,26 @@ fn bluetooth(adapter: Option<String>) -> Option<Fixture> {
         .canonicalize()
         .ok()
         .map(|path| format!("bluetooth:{}", path.display()));
+    // The adapter's radio switch: a blocked adapter answers no HCI command.
+    let rfkill = std::fs::read_dir(&path)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .find(|entry| entry.file_name().to_string_lossy().starts_with("rfkill"))
+        .map(|entry| {
+            let blocked = |kind: &str| {
+                std::fs::read_to_string(entry.path().join(kind))
+                    .is_ok_and(|state| state.trim() == "1")
+            };
+            match (blocked("hard"), blocked("soft")) {
+                (true, _) => "radio hard-blocked",
+                (false, true) => "radio soft-blocked",
+                (false, false) => "radio unblocked",
+            }
+        });
     Some(Fixture {
         role: String::from("host Bluetooth"),
+        detail: rfkill.map(str::to_owned),
         reachable: key.is_some(),
         error: key
             .is_none()

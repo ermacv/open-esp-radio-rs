@@ -252,7 +252,7 @@ fn started_millis(manifest: &Value) -> u64 {
 /// Whether the runner that started the run in `directory` still runs. The run
 /// ID ends with the runner's PID in hexadecimal; a live process with that PID
 /// that started after the run is another process reusing it.
-fn runner_alive(directory: &Path, started_millis: u64) -> bool {
+pub(crate) fn runner_alive(directory: &Path, started_millis: u64) -> bool {
     let Some(pid) = directory
         .file_name()
         .and_then(|name| name.to_str())

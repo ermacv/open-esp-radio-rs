@@ -209,6 +209,22 @@ fn handle(mut stream: TcpStream, runs: &Path) -> Result<()> {
 fn respond(path: &str, runs: &Path) -> (&'static str, &'static str, String) {
     match path.split('?').next().unwrap_or(path) {
         "/" => ("200 OK", "text/html; charset=utf-8", PAGE.to_owned()),
+        path if path.starts_with("/runs/") => match run_report(runs, &path["/runs/".len()..]) {
+            Some(report) => ("200 OK", "text/html; charset=utf-8", report),
+            None => (
+                "404 Not Found",
+                "text/plain",
+                String::from("no such run report"),
+            ),
+        },
+        path if path.starts_with("/jobs/") => match job_log(&path["/jobs/".len()..]) {
+            Some(log) => ("200 OK", "text/plain; charset=utf-8", log),
+            None => (
+                "404 Not Found",
+                "text/plain",
+                String::from("no such job log"),
+            ),
+        },
         "/status.json" => match snapshot(runs) {
             Ok(value) => (
                 "200 OK",
@@ -223,6 +239,38 @@ fn respond(path: &str, runs: &Path) -> (&'static str, &'static str, String) {
         },
         _ => ("404 Not Found", "text/plain", String::from("not found")),
     }
+}
+
+/// Whether `id` can only name an entry of its directory: digits, letters
+/// and dashes, never a path.
+fn plain_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+/// `/runs/<id>/report.html`: the run's HTML report from the store.
+fn run_report(runs: &Path, rest: &str) -> Option<String> {
+    let id = rest.strip_suffix("/report.html")?;
+    plain_id(id)
+        .then(|| std::fs::read_to_string(runs.join(id).join("report.html")).ok())
+        .flatten()
+}
+
+/// Bytes of a job log the page shows: its end, where a failure is.
+const JOB_LOG_TAIL: usize = 256 * 1024;
+
+/// `/jobs/<id>.log`: the end of an enqueued job's log.
+fn job_log(rest: &str) -> Option<String> {
+    let id = rest.strip_suffix(".log")?;
+    if !plain_id(id) {
+        return None;
+    }
+    let log = crate::hil_jobs::Jobs::open().ok()?.read(id).ok()?.log?;
+    let bytes = std::fs::read(log).ok()?;
+    let start = bytes.len().saturating_sub(JOB_LOG_TAIL);
+    Some(String::from_utf8_lossy(&bytes[start..]).into_owned())
 }
 
 /// The stand and its newest runs.
@@ -283,6 +331,15 @@ fn newest_runs(runs: &Path, count: usize) -> Vec<Value> {
                 "progress": (run.state == hil_runs::State::Running)
                     .then(|| progress(&run.directory))
                     .flatten(),
+                // A run still marked running whose runner is gone ended
+                // without sealing its bundle.
+                "abandoned": run.state == hil_runs::State::Running
+                    && !hil_runs::runner_alive(&run.directory, run.started_millis),
+                "report": run.directory.join("report.html").is_file(),
+                "experiment_arm": std::fs::read(run.directory.join("manifest.json"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .and_then(|manifest| manifest["experiment"]["arm"].as_str().map(str::to_owned)),
             })
         })
         .collect()
@@ -349,6 +406,22 @@ mod tests {
             json!({"state": "completed", "outcome": outcome, "started_at_unix_ms": 1}).to_string(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_report_link_reaches_only_a_report_inside_the_store() {
+        let directory = tempfile::tempdir().unwrap();
+        let runs = directory.path().join("runs");
+        run(&runs, "1790000000000-1f2e", "passed");
+        std::fs::write(runs.join("1790000000000-1f2e/report.html"), "<p>report</p>").unwrap();
+        std::fs::write(directory.path().join("report.html"), "outside").unwrap();
+        assert_eq!(
+            run_report(&runs, "1790000000000-1f2e/report.html").as_deref(),
+            Some("<p>report</p>")
+        );
+        assert_eq!(run_report(&runs, "../report.html"), None);
+        assert_eq!(run_report(&runs, "1790000000000-1f2e/manifest.json"), None);
+        assert_eq!(job_log("../../etc/passwd.log"), None);
     }
 
     #[test]

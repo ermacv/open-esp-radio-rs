@@ -159,8 +159,12 @@ cargo hil flash --board esp32c5 --monitor 30s --until READY target/.../app.elf
 `dashboard` serves a page on the loopback interface (`--port` changes the
 port) that refreshes every two seconds: holders with their time held, the
 queue in service order with every owner's balance and expected starts, every board's port and last flash, the newest runs
-of the shared store and recent leases with their outcomes. It only reads the
-arbiter's state and run manifests; Ctrl+C stops it. One dashboard serves the
+of the shared store and recent leases with their outcomes. Commands appear
+without their build-input paths (the full line is the tooltip), claims name
+boards and fixtures, a running run whose runner died shows as abandoned and
+an `ab` arm is marked. A run's ID links its `report.html`, and an enqueued
+job links the end of its log. It only reads the arbiter's state, run
+manifests, reports and job logs; Ctrl+C stops it. One dashboard serves the
 host and names itself in `dashboard.json` of the arbiter directory: starting
 the same build again prints the running one's address, and another build
 stops it and takes over. A dashboard exits once another replaced it or once

@@ -31,7 +31,7 @@ h1 { font-size: 20px; margin: 0; }
 #updated { color: var(--muted); font-size: 12px; }
 #updated.stale { color: var(--bad); }
 main {
-  display: grid; gap: 16px; padding: 12px 20px 24px;
+  display: grid; gap: 16px; padding: 12px 20px 24px; align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
 }
 section {
@@ -69,6 +69,10 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 }
 .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
 .muted { color: var(--muted); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+[hidden] { display: none !important; }
+.balances { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .scenarios { display: flex; flex-wrap: wrap; gap: 4px; }
 @media (max-width: 520px) {
   header, main { padding-left: 16px; padding-right: 16px; }
@@ -82,11 +86,11 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   <span id="updated">loading…</span>
 </header>
 <main>
-  <section class="wide" id="stand-service"></section>
+  <section class="wide" id="stand-service" hidden></section>
   <section><h2>Holding now</h2><div id="holders"></div></section>
   <section><h2>Preparing</h2><div id="jobs"></div></section>
   <section><h2>Queue</h2><div id="queue"></div></section>
-  <section><h2>Balances</h2><div id="balances"></div></section>
+  <section class="wide"><h2>Balances</h2><div id="balances"></div></section>
   <section class="wide"><h2>Boards</h2><div id="devices"></div></section>
   <section class="wide"><h2>Fixtures</h2><div id="fixtures"></div></section>
   <section class="wide"><h2>Recent runs</h2><div id="runs"></div></section>
@@ -120,6 +124,39 @@ function tone(outcome) {
     default: return "muted";
   }
 }
+// Flags whose value only locates a build input; the summary drops them.
+const HIDDEN_FLAGS = new Set(["--source-snapshot", "--source-include"]);
+const HIDDEN_SWITCHES = new Set(["--include-untracked"]);
+// A command line in short form: build-input paths dropped, other paths cut
+// to their last component. The full line is the element's tooltip.
+function summary(line) {
+  const words = String(line ?? "").split(/\s+/).filter(Boolean);
+  const kept = [];
+  for (let i = 0; i < words.length; i++) {
+    if (HIDDEN_FLAGS.has(words[i])) { i++; continue; }
+    if (HIDDEN_SWITCHES.has(words[i])) continue;
+    const word = words[i];
+    kept.push(word.includes("/") && word.length > 32 ? "…/" + word.split("/").filter(Boolean).pop() : word);
+  }
+  return kept.join(" ");
+}
+const work = (line, prefix = "") =>
+  `<div class="work" title="${esc(prefix + line)}">${esc(prefix + summary(line))}</div>`;
+
+// Names for claim keys: boards by label, host fixtures by name.
+let names = [];
+function learnNames(data) {
+  names = [
+    ...(data.devices || []).filter((d) => d.mac).map((d) => ["board:" + d.mac, d.label]),
+    ...(data.fixtures || []).filter((f) => f.key).map((f) => [f.key, f.name]),
+  ];
+}
+function claims(text) {
+  let named = String(text ?? "");
+  for (const [key, name] of names) named = named.split(key).join(name);
+  return `<div class="claims" title="${esc(text)}">${esc(named)}</div>`;
+}
+
 const signed = (ms) => (ms > 0 ? "+" : ms < 0 ? "−" : "") + duration(Math.abs(ms) / 1000);
 const pill = (text) => `<span class="pill ${tone(text)}">${esc(text)}</span>`;
 
@@ -130,8 +167,8 @@ function holders(list) {
     return `<div class="item">
       <div class="row"><span class="owner">${esc(h.owner)}</span><span class="id">#${h.id}</span>
         <span class="meta">${duration(h.elapsed_secs)} held · est. ${duration(h.estimate_secs)} · balance ${signed(h.balance_ms)}</span></div>
-      <div class="work">${esc(h.work)}</div>
-      <div class="claims">${esc(h.claims)}</div>
+      ${work(h.work)}
+      ${claims(h.claims)}
       <div class="bar${share >= 100 ? " over" : ""}"><div style="width:${share}%"></div></div>
     </div>`;
   }).join("");
@@ -143,8 +180,8 @@ function queue(list) {
       <div class="row"><span class="id">${index + 1}.</span><span class="owner">${esc(q.owner)}</span>
         <span class="id">#${q.id}</span>
         <span class="meta">balance ${signed(q.balance_ms)} · starts in ~${duration(q.expected_start_secs)} · waited ${duration(q.waiting_secs)}</span></div>
-      <div class="work">${esc(q.work)}</div>
-      <div class="claims">${esc(q.claims)}${q.ahead ? ` · ${q.ahead} conflicting ahead` : ""}</div>
+      ${work(q.work)}
+      ${claims(q.claims)}${q.ahead ? `<div class="claims">${q.ahead} conflicting ahead</div>` : ""}
     </div>`).join("");
 }
 
@@ -154,8 +191,8 @@ function jobs(list) {
   const text = { "waiting-for-job": "waits for a job", "building": "building images", "waiting-for-stand": "waiting for the stand" };
   return preparing.map((j) => `<div class="item">
       <div class="row"><span class="owner">${esc(j.owner)}</span><span class="id">${esc(j.id)}</span>
-        <span class="meta">${esc(text[j.phase] ?? j.phase)}${j.after ? ` after ${esc(j.after)}` : ""} · ${duration(Date.now() / 1000 - j.enqueued_unix_millis / 1000)}</span></div>
-      <div class="work">cargo hil ${esc(j.command.join(" "))}</div>
+        <span class="meta">${esc(text[j.phase] ?? j.phase)}${j.after ? ` after ${esc(j.after)}` : ""} · ${duration(Date.now() / 1000 - j.enqueued_unix_millis / 1000)}${j.log ? ` · <a href="jobs/${encodeURIComponent(j.id)}.log">log</a>` : ""}</span></div>
+      ${work(j.command.join(" "), "cargo hil ")}
     </div>`).join("");
 }
 
@@ -166,14 +203,17 @@ function standService(maintenance) {
 
 function balances(list) {
   if (!list || !list.length) return '<p class="empty">No owner has waited or held recently.</p>';
-  const rows = list.map((b) => `<tr><td><b>${esc(b.owner)}</b></td>
-      <td class="num ${b.balance_ms >= 0 ? "ok" : "bad"}">${signed(b.balance_ms)}</td>
-      <td class="muted">${b.holding ? "holding" : ""}${b.holding && b.waiting ? ", " : ""}${b.waiting ? "waiting" : ""}</td></tr>`).join("");
-  return `<p class="muted">Held time is charged, blocked waiting is credited; the highest balance goes first. Balances halve every 2h.</p>
-    <div class="table-wrap"><table><tr><th>Owner</th><th>Balance</th><th></th></tr>${rows}</table></div>`;
+  const entries = list.map((b) => {
+    const state = [b.holding && "holding", b.waiting && "waiting"].filter(Boolean).join(", ");
+    return `<span><b>${esc(b.owner)}</b> <span class="num ${b.balance_ms >= 0 ? "ok" : "bad"}">${signed(b.balance_ms)}</span>${state ? ` <span class="muted">${state}</span>` : ""}</span>`;
+  }).join("");
+  return `<div class="balances" title="Held time is charged, blocked waiting is credited; the highest balance goes first. Balances halve every 2h.">${entries}</div>`;
 }
 
 function devices(list, maintenance) {
+  // A board never identified and not attached is a past registry entry.
+  const forgotten = list.filter((d) => !d.mac && !d.port);
+  list = list.filter((d) => d.mac || d.port);
   if (!list.length) return '<p class="empty">No boards known.</p>';
   const rows = list.map((d) => {
     const held = (maintenance || []).find((m) => m.mac === d.mac);
@@ -198,7 +238,8 @@ function devices(list, maintenance) {
       <td>${d.port ? esc(d.port) : '<span class="muted">not attached</span>'}</td>
       <td>${health}</td><td>${firmware}</td><td>${by}</td></tr>`;
   }).join("");
-  return `<div class="table-wrap"><table><tr><th>Board</th><th>Port</th><th>Health</th><th>Firmware</th><th>Flashed by</th></tr>${rows}</table></div>`;
+  return `<div class="table-wrap"><table><tr><th>Board</th><th>Port</th><th>Health</th><th>Firmware</th><th>Flashed by</th></tr>${rows}</table></div>`
+    + (forgotten.length ? `<p class="muted">${forgotten.length} unidentified board${forgotten.length > 1 ? "s" : ""} not attached.</p>` : "");
 }
 
 function fixtures(list, holding, waiting) {
@@ -213,7 +254,7 @@ function fixtures(list, holding, waiting) {
       const busy = i.cca_busy_percent;
       const cca = busy == null ? "" : ` · CCA busy <span class="${busy >= 80 ? "bad" : busy >= 50 ? "warn" : "ok"}">${busy}%</span>`;
       return `<div><span class="work">${esc(i.name)}</span> <span class="muted">${esc(i.kind ?? "")}${i.channel ? " · ch " + esc(i.channel) : ""}</span>${cca}</div>`;
-    }).join("") || '<span class="muted">no interface</span>';
+    }).join("") || (f.detail ? "" : '<span class="muted">no interface</span>');
     return `<tr><td><b>${esc(f.name)}</b><div class="claims">${esc(f.role)}</div></td>
       <td>${state}${queued ? ` <span class="muted">· ${queued} waiting</span>` : ""}</td>
       <td>${radios}</td><td class="claims">${esc(f.detail ?? "")}</td></tr>`;
@@ -225,19 +266,19 @@ function fixtures(list, holding, waiting) {
 function runs(list) {
   if (!list.length) return '<p class="empty">No runs in the shared store.</p>';
   const rows = list.map((r) => {
-    const outcome = r.outcome ?? (r.state === "running" ? "running" : r.state);
+    const outcome = r.abandoned ? "abandoned" : r.outcome ?? (r.state === "running" ? "running" : r.state);
     const scenarios = r.scenarios.map((s) =>
       `<span class="pill ${tone(s.outcome)}" title="${esc(s.outcome)}">${esc(s.id)}</span>`).join("");
     const p = r.progress;
-    const progress = !p ? "" : `<div class="claims">${p.finished}/${p.planned} scenarios · ${esc(p.step.replaceAll("-", " "))}`
+    const progress = !p || r.abandoned ? "" : `<div class="claims">${p.finished}/${p.planned} scenarios · ${esc(p.step.replaceAll("-", " "))}`
       + (p.scenario ? ` <b>${esc(p.scenario)}</b>` : "")
       + ` for ${duration(Date.now() / 1000 - p.step_since_millis / 1000)}</div>`
       + `<div class="bar"><div style="width:${p.planned ? Math.min(100, 100 * p.finished / p.planned) : 0}%"></div></div>`;
-    return `<tr><td class="num">${when(r.started_millis / 1000)}</td><td>${pill(outcome)}</td>
+    return `<tr><td class="num">${when(r.started_millis / 1000)}</td><td>${pill(outcome)}${r.experiment_arm ? ` <span class="pill muted" title="an arm of a cargo hil ab experiment">A/B arm ${esc(r.experiment_arm.toUpperCase())}</span>` : ""}</td>
       <td><div class="scenarios">${scenarios || '<span class="muted">—</span>'}</div>${progress}</td>
       <td>${esc(r.checkout ?? "")}</td>
       <td class="num">${esc(r.commit ?? "")}${r.dirty ? ' <span class="warn">dirty</span>' : ""}</td>
-      <td class="claims">${esc(r.id)}</td></tr>`;
+      <td class="claims">${r.report ? `<a href="runs/${encodeURIComponent(r.id)}/report.html">${esc(r.id)}</a>` : esc(r.id)}</td></tr>`;
   }).join("");
   return `<div class="table-wrap"><table><tr><th>Started</th><th>Outcome</th><th>Scenarios</th><th>Checkout</th><th>Commit</th><th>Run</th></tr>${rows}</table></div>`;
 }
@@ -246,7 +287,7 @@ function leases(list) {
   if (!list.length) return '<p class="empty">No leases yet.</p>';
   const rows = list.map((l) => `<tr><td class="num">${when(l.granted_unix)}</td>
       <td><b>${esc(l.owner)}</b> <span class="id">#${l.id}</span></td>
-      <td class="work">${esc(l.work)}</td>
+      <td>${work(l.work)}</td>
       <td class="num">${duration(l.released_unix - l.granted_unix)} · balance ${signed(l.balance_after_ms ?? 0)}</td>
       <td>${pill(l.outcome)}</td></tr>`).join("");
   return `<div class="table-wrap"><table><tr><th>Granted</th><th>Owner</th><th>Work</th><th>Held</th><th>Outcome</th></tr>${rows}</table></div>`;
@@ -258,10 +299,13 @@ async function refresh() {
     const response = await fetch("status.json", { cache: "no-store" });
     const data = await response.json();
     if (data.error) throw new Error(data.error);
+    learnNames(data);
     $("holders").innerHTML = holders(data.holders);
     $("queue").innerHTML = queue(data.queue);
     $("jobs").innerHTML = jobs(data.jobs);
-    $("stand-service").innerHTML = standService(data.maintenance);
+    const service = standService(data.maintenance);
+    $("stand-service").innerHTML = service;
+    $("stand-service").hidden = !service;
     $("balances").innerHTML = balances(data.balances);
     $("devices").innerHTML = devices(data.devices, data.maintenance);
     $("fixtures").innerHTML = fixtures(data.fixtures, data.holders, data.queue);

@@ -367,6 +367,7 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
 
     for _ in 0..RF_OPERATION_LIMIT {
         let PhyRfWakeAction::Execute(operation) = transition.action() else {
+            debug_clear_pbus_38_bit30();
             return Ok(());
         };
         {
@@ -538,5 +539,13 @@ mod lifecycle_tests {
                 PhyTargetPortError::HardwareEdgeTimedOut
             )
         ));
+    }
+}
+
+#[allow(unsafe_code)]
+fn debug_clear_pbus_38_bit30() {
+    for base in [0x2010_08b8usize, 0x2010_09b8, 0x2010_0ab8, 0x2010_0bb8] {
+        let word = base as *mut u32;
+        unsafe { word.write_volatile(word.read_volatile() & !(1 << 30)) };
     }
 }

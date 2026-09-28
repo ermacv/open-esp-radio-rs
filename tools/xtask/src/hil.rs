@@ -52,9 +52,10 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     use_shared_store(ctx)?;
     let (options, args) = LeaseOptions::split(args)?;
     let record_forced = args.iter().any(|arg| arg == RECORD_EVIDENCE);
+    let brief = args.iter().any(|arg| arg == BRIEF);
     let args = args
         .into_iter()
-        .filter(|arg| arg != RECORD_EVIDENCE)
+        .filter(|arg| arg != RECORD_EVIDENCE && arg != BRIEF)
         .collect::<Vec<_>>();
     let args = args.as_slice();
     match args.first().and_then(|argument| argument.to_str()) {
@@ -120,6 +121,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         },
         None => options,
     };
+    let outer_root = ctx.root.clone();
     let ctx = baseline.as_ref().map_or(ctx, |(baseline, _)| baseline);
     // The runner and its image builds are the largest writers to the build
     // disk: sweep stale caches when it runs low, and stop before it is full.
@@ -150,15 +152,50 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     // The runner names every run it creates here, so exactly this
     // invocation's runs are recorded.
     let run_receipt = tempfile::NamedTempFile::new()?;
+    let brief_log = if brief {
+        if !produces_runs(args) {
+            return Err(format!("{BRIEF} applies to run, run-all and run-plan").into());
+        }
+        let directory = ctx.root.join("target/hil/brief");
+        std::fs::create_dir_all(&directory)?;
+        Some(
+            tempfile::Builder::new()
+                .prefix("run-")
+                .suffix(".log")
+                .tempfile_in(directory)?
+                .keep()?
+                .1,
+        )
+    } else {
+        None
+    };
+    let mut command = ctx.command(&runner);
+    command
+        .args(args)
+        .envs(options.environment(ctx)?)
+        .env("OER_OBSERVER_RECEIPT", &receipt_path)
+        .env(RUN_RECEIPT_ENV, run_receipt.path());
+    if baseline.is_some() {
+        // The baseline's images compile into this checkout's warm caches.
+        command.env(
+            oer_hil_runner_core::image::BUILD_CACHE_ENV,
+            outer_root.join("target/hil/esp32s31/build-cache"),
+        );
+    }
+    if let Some(log) = &brief_log {
+        let file = std::fs::File::create(log)?;
+        command.stdout(file.try_clone()?).stderr(file);
+        eprintln!("hil: runner output goes to {}", log.display());
+    }
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
-        ctx.command(&runner)
-            .args(args)
-            .envs(options.environment(ctx)?)
-            .env("OER_OBSERVER_RECEIPT", &receipt_path)
-            .env(RUN_RECEIPT_ENV, run_receipt.path()),
+        &mut command,
         std::time::Duration::from_secs(300),
     )?;
     let status = child.wait_forwarding_cancellation()?;
+    if let Some(log) = &brief_log {
+        let run_ids = std::fs::read_to_string(run_receipt.path())?;
+        print!("{}", brief_summary(run_ids.lines(), log)?);
+    }
     if produces_runs(args) && baseline.is_some() {
         eprintln!(
             "hil: a baseline run is a reference, not evidence of this checkout: none recorded"
@@ -1354,6 +1391,52 @@ pub(crate) const HIL_TARGET: &str = "esp32s31";
 
 /// Forces recording HIL evidence after a run that would otherwise skip it.
 const RECORD_EVIDENCE: &str = "--record-evidence";
+/// Keep the runner's output in a log and print only each run's outcome, with
+/// why it did not pass.
+const BRIEF: &str = "--brief";
+
+/// Lines of `uart.log` a brief summary shows per failed repetition.
+const BRIEF_UART_LINES: usize = 5;
+
+/// One line per run of `run_ids`, with `runs why` for the ones that did not
+/// pass, then where the runner's whole output is.
+fn brief_summary<'a>(
+    run_ids: impl Iterator<Item = &'a str>,
+    log: &std::path::Path,
+) -> Result<String> {
+    Ok(brief_summary_in(
+        &crate::hil_store::shared_runs(HIL_TARGET)?,
+        run_ids,
+        log,
+    ))
+}
+
+fn brief_summary_in<'a>(
+    store: &std::path::Path,
+    run_ids: impl Iterator<Item = &'a str>,
+    log: &std::path::Path,
+) -> String {
+    let mut text = String::new();
+    let mut any = false;
+    for id in run_ids {
+        any = true;
+        match crate::hil_runs::load(&store.join(id)) {
+            Some(run) => {
+                text.push_str(&crate::hil_runs::list_line(&run));
+                text.push('\n');
+                if run.outcome != Some(oer_hil_schema::run::Outcome::Passed) {
+                    text.push_str(&crate::hil_runs::why(&run, BRIEF_UART_LINES));
+                }
+            }
+            None => text.push_str(&format!("{id}: unreadable run\n")),
+        }
+    }
+    if !any {
+        text.push_str("no run was created\n");
+    }
+    text.push_str(&format!("runner output: {}\n", log.display()));
+    text
+}
 
 /// The runner's run receipt variable; see oer-hil-runner-core.
 const RUN_RECEIPT_ENV: &str = "OER_HIL_RUN_RECEIPT";
@@ -1852,7 +1935,20 @@ enum DevicesCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::evidence_skip_reason;
+    use super::{brief_summary_in, evidence_skip_reason};
+
+    #[test]
+    fn a_brief_summary_names_each_run_and_the_full_output() {
+        let store = tempfile::tempdir().unwrap();
+        let log = std::path::Path::new("/tmp/run.log");
+        assert_eq!(
+            brief_summary_in(store.path(), std::iter::empty(), log),
+            "no run was created\nrunner output: /tmp/run.log\n"
+        );
+        let text = brief_summary_in(store.path(), ["123-x"].into_iter(), log);
+        assert!(text.starts_with("123-x: unreadable run\n"), "{text}");
+        assert!(text.ends_with("runner output: /tmp/run.log\n"), "{text}");
+    }
 
     #[test]
     fn evidence_is_recorded_only_for_clean_runs_unless_forced() {

@@ -2226,7 +2226,6 @@ version = "0.1.0"
 dependencies = [
  "bt-hci",
  "crc",
- "embassy-futures",
  "embassy-net",
  "embassy-sync 0.8.0",
  "embedded-io-async 0.7.0",

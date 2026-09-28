@@ -36,9 +36,7 @@ minimum_rx_bps = 45000000
 The family owns every executable value:
 
 - `[system]`, `[ieee802154]` and `[bluetooth]` are tagged workloads whose kind
-  implies the firmware image. A Bluetooth workload that runs with or without
-  automatic PHY maintenance selects the image through a typed field
-  (`active_maintenance`, `exercise` or `phy_maintenance`).
+  implies the firmware image.
 - `[coexistence]` runs the joint Wi-Fi/Bluetooth LE image: the Linux adapter
   connects to the GATT application, then the host offers station UDP while an
   ATT echo load runs over the Bluetooth connection for the same interval. It
@@ -204,8 +202,8 @@ capabilities the image reports.
 
 The optional top-level `transfer` field is `unchanged-functional-contract`
 (default) or `identical-image`. A whole-scenario timing, memory or RF guarantee
-requires `identical-image`; maintenance deadlines and watchdog reset windows
-are included even when no named numeric check exists. This field governs
+requires `identical-image`, including deadlines and reset windows for which
+no named numeric check exists. This field governs
 review applicability and does not alter execution. Named checks have their own
 explicit transfer contract in the evaluator. Functional checks may be reviewed
 separately while a timing guarantee remains bound to the application image.

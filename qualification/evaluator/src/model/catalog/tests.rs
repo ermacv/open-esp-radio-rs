@@ -1355,19 +1355,6 @@ fn peripheral_products_retain_lifecycle_and_security_without_other_radio_roles()
             .iter()
             .any(|g| g.axis == crate::model::Axis::Hil)
     );
-    for scenario in [
-        "bluetooth-peripheral-recovery",
-        "bluetooth-peripheral-local-disconnect",
-        "bluetooth-peripheral-local-reset",
-        "bluetooth-peripheral-rf-loss",
-        "bluetooth-peripheral-soak",
-    ] {
-        assert!(
-            product
-                .hil_requirements
-                .iter()
-                .any(|r| r.scenario == scenario),
-            "missing {scenario}"
-        );
-    }
+    // No scenario drives the peripheral role; the HIL gap records it.
+    assert!(product.hil_requirements.is_empty());
 }

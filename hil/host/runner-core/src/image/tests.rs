@@ -62,10 +62,6 @@ fn secure_gatt_never_classifies_as_plaintext_or_diagnostic_host() {
             ..features
         },
         FeatureCapabilities {
-            bluetooth_peripheral: true,
-            ..features
-        },
-        FeatureCapabilities {
             bluetooth_dtm: true,
             ..features
         },
@@ -90,13 +86,6 @@ fn trouble_gatt_has_one_host_and_rejects_diagnostic_capabilities() {
     assert!(
         classify_flashed_capabilities(&FeatureCapabilities {
             bluetooth_dtm: true,
-            ..features
-        })
-        .is_none()
-    );
-    assert!(
-        classify_flashed_capabilities(&FeatureCapabilities {
-            bluetooth_peripheral: true,
             ..features
         })
         .is_none()
@@ -211,10 +200,6 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
             ..features
         },
         FeatureCapabilities {
-            bluetooth_watchdog_reset: true,
-            ..features
-        },
-        FeatureCapabilities {
             phy_fault_injection: true,
             ..features
         },
@@ -233,7 +218,7 @@ fn system_watchdog_has_only_platform_capabilities_and_no_radio_feature() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 26);
+    assert_eq!(crate::image::ImageClass::ALL.len(), 24);
     assert!(
         crate::image::ImageClass::ALL
             .into_iter()
@@ -464,7 +449,6 @@ fn image_capability_classifier_rejects_mixed_or_non_psram_images() {
 fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
     let mut features = FeatureCapabilities {
         bluetooth_dtm: true,
-        bluetooth_peripheral: true,
         structured_evidence: true,
         psram_task_stack: true,
         ..FeatureCapabilities::default()
@@ -478,15 +462,9 @@ fn bluetooth_image_has_no_network_recipe_and_cannot_claim_wifi_capabilities() {
         classify_flashed_capabilities(&features),
         Some(ImageClass::BluetoothDtm)
     );
-    features.bluetooth_peripheral = false;
-    assert_eq!(
-        classify_flashed_capabilities(&features),
-        Some(ImageClass::BluetoothDtm)
-    );
-    features.bluetooth_dtm = false;
-    features.bluetooth_peripheral = true;
+    features.phy_fault_injection = true;
     assert_eq!(classify_flashed_capabilities(&features), None);
-    features.bluetooth_dtm = true;
+    features.phy_fault_injection = false;
     features.udp = true;
     assert_eq!(classify_flashed_capabilities(&features), None);
     assert!(
@@ -555,55 +533,6 @@ fn a_diagnostic_feature_is_an_explicit_overlay_on_the_performance_image() {
 }
 
 #[test]
-fn automatic_bluetooth_image_has_a_distinct_flashed_identity() {
-    let features = FeatureCapabilities {
-        bluetooth_dtm: true,
-        bluetooth_peripheral: true,
-        bluetooth_phy_maintenance: true,
-        structured_evidence: true,
-        psram_task_stack: true,
-        ..FeatureCapabilities::default()
-    };
-    assert_eq!(
-        classify_flashed_capabilities(&features),
-        Some(ImageClass::BluetoothPhyMaintenance)
-    );
-    let mut incomplete = features;
-    incomplete.bluetooth_dtm = false;
-    incomplete.bluetooth_peripheral = false;
-    assert_eq!(classify_flashed_capabilities(&incomplete), None);
-    assert!(!ImageClass::BluetoothPhyMaintenance.requires_driver_observation());
-    assert!(
-        ImageClass::BluetoothPhyMaintenance
-            .runtime_features()
-            .contains("bluetooth-phy-maintenance")
-    );
-}
-
-#[test]
-fn watchdog_fault_image_cannot_be_mistaken_for_automatic_maintenance() {
-    let mut features = FeatureCapabilities {
-        bluetooth_dtm: true,
-        bluetooth_peripheral: true,
-        bluetooth_watchdog_reset: true,
-        structured_evidence: true,
-        psram_task_stack: true,
-        ..FeatureCapabilities::default()
-    };
-    assert_eq!(
-        classify_flashed_capabilities(&features),
-        Some(ImageClass::BluetoothWatchdogReset)
-    );
-    features.bluetooth_phy_maintenance = true;
-    assert_eq!(classify_flashed_capabilities(&features), None);
-    assert!(
-        !ImageClass::BluetoothWatchdogReset
-            .runtime_features()
-            .contains("bluetooth-phy-maintenance")
-    );
-}
-
-#[test]
 fn firmware_builds_drop_inherited_cargo_overrides_that_change_the_image() {
     let names = [
         "CARGO_PROFILE_RELEASE_OPT_LEVEL",
@@ -639,7 +568,7 @@ fn a_console_image_classifies_as_the_class_that_declares_it() {
         }
     }
     let dtm = ImageClass::BluetoothDtm.console_capabilities().unwrap();
-    assert!(dtm.bluetooth_dtm && !dtm.bluetooth_peripheral);
+    assert!(dtm.bluetooth_dtm && dtm.bluetooth_hci);
     assert_eq!(ImageClass::Correctness.console_capabilities(), None);
 }
 

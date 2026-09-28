@@ -10,8 +10,6 @@ pub enum ImageClass {
     BluetoothDtm,
     BluetoothGatt,
     BluetoothSecureGatt,
-    BluetoothPhyMaintenance,
-    BluetoothWatchdogReset,
     BootSmoke,
     Performance,
     Correctness,
@@ -49,8 +47,6 @@ impl ImageClass {
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm
-                | Self::BluetoothPhyMaintenance
-                | Self::BluetoothWatchdogReset
         ) {
             self.runtime_features().to_owned()
         } else {
@@ -58,13 +54,11 @@ impl ImageClass {
         }
     }
 
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 24] = [
         Self::BluetoothSecureGatt,
         Self::BluetoothGatt,
         Self::SystemWatchdog,
         Self::BluetoothDtm,
-        Self::BluetoothPhyMaintenance,
-        Self::BluetoothWatchdogReset,
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
@@ -93,8 +87,6 @@ impl ImageClass {
             Self::BluetoothDtm => "bluetooth-dtm",
             Self::BluetoothGatt => "bluetooth-gatt",
             Self::BluetoothSecureGatt => "bluetooth-secure-gatt",
-            Self::BluetoothPhyMaintenance => "bluetooth-phy-maintenance",
-            Self::BluetoothWatchdogReset => "bluetooth-watchdog-reset",
             Self::BootSmoke => "boot-smoke",
             Self::Performance => "performance",
             Self::Correctness => "correctness",
@@ -150,16 +142,6 @@ impl ImageClass {
                 bluetooth_hci: true,
                 ..dtm
             },
-            Self::BluetoothPhyMaintenance => FeatureCapabilities {
-                bluetooth_peripheral: true,
-                bluetooth_phy_maintenance: true,
-                ..dtm
-            },
-            Self::BluetoothWatchdogReset => FeatureCapabilities {
-                bluetooth_peripheral: true,
-                bluetooth_watchdog_reset: true,
-                ..dtm
-            },
             _ => return None,
         })
     }
@@ -175,12 +157,6 @@ impl ImageClass {
             }
             Self::BluetoothDtm => {
                 "bluetooth-hil,phy-rx-hot-sram,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::BluetoothPhyMaintenance => {
-                "bluetooth-phy-maintenance,psram-task-stack,code-psram,profile-psram-data"
-            }
-            Self::BluetoothWatchdogReset => {
-                "bluetooth-watchdog-reset,psram-task-stack,code-psram,profile-psram-data"
             }
             Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
             Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
@@ -245,8 +221,6 @@ impl ImageClass {
             | Self::BluetoothGatt
             | Self::BluetoothSecureGatt
             | Self::BluetoothDtm
-            | Self::BluetoothPhyMaintenance
-            | Self::BluetoothWatchdogReset
             | Self::BootSmoke
             | Self::Performance
             | Self::Correctness
@@ -286,8 +260,6 @@ impl ImageClass {
                 | Self::BluetoothGatt
                 | Self::BluetoothSecureGatt
                 | Self::BluetoothDtm
-                | Self::BluetoothPhyMaintenance
-                | Self::BluetoothWatchdogReset
                 | Self::BootSmoke
                 | Self::Performance
                 | Self::WifiBleCoex

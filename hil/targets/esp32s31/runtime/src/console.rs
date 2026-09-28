@@ -1190,7 +1190,6 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     | Command::FailBluetoothGattResetRead { .. }
                     | Command::BluetoothGattResetReadGate { .. }
                     | Command::FailNextBluetoothGattBondLoad { .. }
-                    | Command::BluetoothPeripheral(_)
                     | Command::SystemWatchdogTest(_) => {
                         publish_event_reliably(
                             session_id,

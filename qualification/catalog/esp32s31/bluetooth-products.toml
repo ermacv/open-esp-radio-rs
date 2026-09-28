@@ -23,20 +23,6 @@ depends-on = [
   "portable-peripheral-connection",
 ]
 vendor-anchors = ["docs/vendor/esp32s31/bluetooth-controller-boundary.md"]
-hil-requirements = [
-  { scenario = "bluetooth-peripheral-recovery", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-local-disconnect", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-local-reset", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-rf-loss", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-soak", minimum-repetitions = 1 },
-  { scenario = "bluetooth-peripheral-retirement", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-powered-restart", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-phy-maintenance", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-active-phy-maintenance", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-acl-calibration", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-acl-backpressure", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-maintenance-backpressure", minimum-repetitions = 3 },
-]
 gaps = [
   { axis = "implementation", id = "peripheral-first-advertising-rejection-and-terminal-event-disposition-incomplete" },
   { axis = "host", id = "peripheral-virtual-time-delayed-irq-control-maintenance-collision-coverage-incomplete" },
@@ -82,15 +68,6 @@ host = "incomplete"
 async = "incomplete"
 depends-on = ["peripheral-acl"]
 vendor-anchors = ["docs/vendor/esp32s31/bluetooth-controller-boundary.md"]
-hil-requirements = [
-  { scenario = "bluetooth-peripheral-encrypted-acl", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-key-refresh", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-missing-key", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-wrong-key", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-missing-refresh-key", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-encrypted-phy-maintenance", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-active-data-mic", minimum-repetitions = 3 },
-]
 gaps = [
   { axis = "implementation", id = "encrypted-peripheral-controller-host-lifecycle-integration-incomplete" },
   { axis = "host", id = "encrypted-peripheral-key-counter-backpressure-and-retransmission-boundary-tests-missing" },

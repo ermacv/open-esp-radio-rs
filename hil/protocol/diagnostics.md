@@ -4,10 +4,7 @@
 
 `BluetoothDtmEvidence::reset_reason` classifies the current platform boot as
 software reset, MWDT1 reset or another cause. HCI Reset does not change this
-value. The `bluetooth_watchdog_reset` capability identifies the dedicated
-DTM fault-injection image; it is mutually exclusive with automatic
-`bluetooth_phy_maintenance`. Each reset scenario requires its exact mechanism.
-Archived captures retain their original wire schema and evidence layout.
+value. Archived captures retain their original wire schema and evidence layout.
 
 `GetBootStatus` returns `BootEvidence` for the boot identified by the envelope.
 `ResetReason` is a platform value shared by all images; querying it does not
@@ -64,9 +61,9 @@ response fails rather than publishing a cached measurement. Images with shared
 task/IRQ stacks report `None` for both dedicated IRQ fields.
 
 `QueryInterruptStackUsage` provides a separate short response without enlarging
-Bluetooth peripheral snapshots or the wire-frame limit. Bluetooth reports its
-CPU0 dedicated IRQ watermark and `None` for its inactive CPU1. The runner checks
-this response after peripheral commands, including physical retirement. Wi-Fi
+the wire-frame limit. Bluetooth reports its CPU0 dedicated IRQ watermark and
+`None` for its inactive CPU1. The secure GATT workload checks this response at
+its boundaries. Wi-Fi
 accepts this query under the same idle-session conditions as `QueryStackUsage`.
 
 IRQ sampling runs in thread mode with local interrupts masked during the SRAM

@@ -7,7 +7,8 @@ contract. Operational setup and commands are in the
 The `runner*` packages own the typed CLI, scenario catalog, build/flash
 orchestration and UART evidence. `linux-net/` contains only privileged fixture operations.
 [Linux Bluetooth setup](linux-bluetooth/README.md) installs the privileged helper
-for finite DTM adapter checks and peripheral ACL/recovery workloads.
+for finite DTM adapter checks and the connection and key-failure central
+operations.
 
 Separate Cargo packages bound the privilege and radio-family scopes:
 
@@ -537,10 +538,10 @@ by the runner and qualification evaluator. Shared synthetic input documents
 exercise both readers; qualification never imports execution or validation
 implementation from the runner. Tests are adjacent files within each owner.
 
-The terminal DTM maintenance workload uses `session::reboot` to arm one expected
-new boot within an explicit interval. It sends no reset command. A fresh Hello
+The watchdog, hang-watchdog and PHY fault-lifecycle workloads use
+`session::reboot` to arm one expected new boot within an explicit interval. It sends no reset command. A fresh Hello
 at sequence zero is required; prior transport/protocol failures, an early/late
 boot or an additional reboot still fail the capture. All ordinary captures keep
-their unconditional unexpected-reboot rejection. The workload separately checks
-software-reset cause and peer DTM silence, so a changed boot ID alone is not RF
-shutdown evidence.
+their unconditional unexpected-reboot rejection. Each workload separately checks
+the reset cause it expects, so a changed boot ID alone is not evidence of the
+mechanism.

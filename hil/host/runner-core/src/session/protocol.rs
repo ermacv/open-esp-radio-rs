@@ -1255,40 +1255,6 @@ impl SerialCapture {
         }
     }
 
-    pub fn bluetooth_peripheral(
-        &self,
-        operation: oer_hil_protocol::BluetoothPeripheralOperation,
-    ) -> Result<oer_hil_protocol::BluetoothPeripheralEvidence> {
-        match self
-            .send_command(
-                0,
-                Command::BluetoothPeripheral(operation),
-                Duration::from_secs(5),
-            )?
-            .body
-        {
-            Event::BluetoothPeripheral(evidence)
-                if evidence.started_address(operation).is_some()
-                    || evidence.is_snapshot(operation)
-                    || evidence.is_retired(operation)
-                    || evidence.is_restarted(operation)
-                    || evidence.is_maintained(operation)
-                    || (evidence.operation == operation && matches!((operation, evidence.result),
-                        (oer_hil_protocol::BluetoothPeripheralOperation::AclBurst, oer_hil_protocol::BluetoothPeripheralResult::AclBurstQueued)
-                        | (oer_hil_protocol::BluetoothPeripheralOperation::EncryptedAcl { .. }, oer_hil_protocol::BluetoothPeripheralResult::EncryptedAclConfigured { .. })
-                        | (oer_hil_protocol::BluetoothPeripheralOperation::AclBackpressure { .. }, oer_hil_protocol::BluetoothPeripheralResult::AclBackpressureConfigured { .. })
-                        | (oer_hil_protocol::BluetoothPeripheralOperation::HoldAclCredit { .. }, oer_hil_protocol::BluetoothPeripheralResult::AclCreditHoldConfigured { .. })
-                        | (oer_hil_protocol::BluetoothPeripheralOperation::CalibrationTraffic { .. }, oer_hil_protocol::BluetoothPeripheralResult::CalibrationTrafficConfigured { .. }))) =>
-            {
-                self.require_bluetooth_irq_stack()?;
-                Ok(evidence)
-            }
-            response => {
-                Err(format!("Bluetooth peripheral {operation:?} failed: {response:?}").into())
-            }
-        }
-    }
-
     pub fn probe_timebase(
         &self,
         request: TimebaseProbeRequest,

@@ -112,7 +112,17 @@ fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
 
 #[test]
 fn an_explicit_selection_refuses_an_unsupported_scenario_and_a_tag_skips_it() {
-    let catalog = catalog();
+    let directory = tempfile::tempdir().unwrap();
+    for (id, unsupported) in [("served", ""), ("unserved", "unsupported = 'no image'\n")] {
+        std::fs::write(
+            directory.path().join(format!("{id}.toml")),
+            format!(
+                "schema = 5\nid = '{id}'\ndescription = 'd'\ntags = ['shared']\n{unsupported}\n[bluetooth]\nkind = 'gatt'\n"
+            ),
+        )
+        .unwrap();
+    }
+    let catalog = Catalog::load(directory.path()).unwrap();
     let unsupported = catalog
         .all()
         .iter()

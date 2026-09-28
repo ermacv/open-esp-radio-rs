@@ -43,15 +43,12 @@ fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
     let catalog = catalog();
     let dtm = ImageClass::BluetoothDtm.console_capabilities().unwrap();
     check_flashed_capabilities(catalog.get("bluetooth-dtm-bidirectional").unwrap(), &dtm).unwrap();
-    let connection = catalog
-        .get("bluetooth-peripheral-local-disconnect")
-        .unwrap();
-    assert!(check_flashed_capabilities(connection, &dtm).is_err());
-    // An image that runs the peripheral role serves no raw HCI exchanges.
-    let peripheral = FeatureCapabilities {
-        bluetooth_peripheral: true,
+    let scannable = catalog.get("bluetooth-scannable-advertising").unwrap();
+    check_flashed_capabilities(scannable, &dtm).unwrap();
+    // The advertising workloads drive the Controller over raw HCI.
+    let without_hci = FeatureCapabilities {
         bluetooth_hci: false,
         ..dtm
     };
-    check_flashed_capabilities(connection, &peripheral).unwrap();
+    assert!(check_flashed_capabilities(scannable, &without_hci).is_err());
 }

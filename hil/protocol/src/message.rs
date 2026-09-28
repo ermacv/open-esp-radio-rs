@@ -4,7 +4,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 192;
+pub const PROTOCOL_VERSION: u16 = 193;
 /// Maximum number of independently accounted transport flows in one network
 /// interface session.
 ///
@@ -98,14 +98,6 @@ pub struct FeatureCapabilities {
     /// Plaintext Trouble GATT application with observation-only HIL control.
     #[serde(default)]
     pub bluetooth_gatt: bool,
-    /// Bounded connectable advertising and peripheral execution observations.
-    pub bluetooth_peripheral: bool,
-    /// Automatic production PHY maintenance with explicit diagnostic budgets.
-    #[serde(default)]
-    pub bluetooth_phy_maintenance: bool,
-    /// Diagnostic MWDT reset during DTM; not automatic PHY deadline enforcement.
-    #[serde(default)]
-    pub bluetooth_watchdog_reset: bool,
     /// Independent SoC deadline diagnostic; requires no radio protocol.
     #[serde(default)]
     pub system_watchdog: bool,
@@ -531,7 +523,6 @@ pub enum Command {
     PhyFault(crate::PhyFaultCommand),
     /// Suspend, resume or report the shared PHY's periodic tracking timer.
     PhyTracking(crate::PhyTrackingCommand),
-    BluetoothPeripheral(crate::BluetoothPeripheralOperation),
     BluetoothDtm(crate::BluetoothDtmOperation),
     /// Raw HCI exchange with the Controller of a `bluetooth_hci` image.
     BluetoothHci(crate::BluetoothHciRequest),
@@ -1136,7 +1127,6 @@ pub enum Event {
     TraceSnapshot(Option<crate::TraceSnapshotPage>),
     PhyFault(crate::PhyFaultEvidence),
     PhyTracking(crate::PhyTrackingEvidence),
-    BluetoothPeripheral(crate::BluetoothPeripheralEvidence),
     BluetoothDtm(crate::BluetoothDtmEvidence),
     BluetoothHci(crate::BluetoothHciResponse),
     /// AP-epoch modelled service accounting, emitted before the correlated stop.

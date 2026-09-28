@@ -10,8 +10,7 @@ description = "Chip-independent HIL target logic shared by the firmware runtime 
 
 [features]
 default = []
-bluetooth = ["dep:bt-hci", "dep:embassy-futures", "dep:embedded-io-async"]
-secure-gatt = ["bluetooth", "dep:gatt-application", "dep:trouble-host"]
+secure-gatt = ["dep:bt-hci", "dep:embedded-io-async", "dep:gatt-application", "dep:trouble-host"]
 # The owned Xarxa stack, as in the HIL runtime that selects this crate's
 # `embassy_net` alias.
 owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned"]
@@ -23,7 +22,6 @@ heapless = "0.9.3"
 oer-hil-protocol = { path = "../protocol", features = ["async-io"] }
 oer-trace = { path = "../../crates/trace" }
 bt-hci = { version = "=0.10.1", optional = true }
-embassy-futures = { version = "0.1.2", optional = true }
 embedded-io-async = { version = "0.7.0", optional = true }
 gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../examples/bluetooth-gatt", optional = true, features = ["secure"] }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }

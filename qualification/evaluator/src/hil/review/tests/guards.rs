@@ -525,13 +525,10 @@ fn resolution_requires_the_same_experiment_and_preserves_original_failure() {
 }
 
 #[test]
-fn deadline_and_watchdog_whole_results_require_identical_images() {
+fn identical_image_whole_results_are_image_sensitive() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let catalog = ScenarioCatalog::load(&root, Path::new("hil/scenarios")).unwrap();
-    for scenario in [
-        "bluetooth-dtm-maintenance-deadline",
-        "bluetooth-phy-watchdog",
-    ] {
+    for scenario in ["bluetooth-trouble-gatt", "access-point-rx"] {
         assert!(contract::image_sensitive(
             &HilRequirement {
                 scenario: scenario.into(),

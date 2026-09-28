@@ -10,8 +10,6 @@
 #[cfg(feature = "owned-network")]
 extern crate embassy_net_owned as embassy_net;
 
-#[cfg(feature = "bluetooth")]
-pub mod bluetooth;
 #[cfg(feature = "secure-gatt")]
 pub mod bluetooth_gatt;
 pub mod console;

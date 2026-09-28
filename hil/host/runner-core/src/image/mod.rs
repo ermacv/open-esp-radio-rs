@@ -83,46 +83,17 @@ pub fn classify_flashed_capabilities(
         };
         return (*features == expected).then_some(ImageClass::SystemWatchdog);
     }
-    if features.bluetooth_dtm
-        || features.bluetooth_peripheral
-        || features.bluetooth_phy_maintenance
-        || features.bluetooth_watchdog_reset
-    {
-        if features.bluetooth_phy_maintenance && features.bluetooth_watchdog_reset {
-            return None;
-        }
-        // Only the radio-contract image serves raw HCI exchanges.
-        if features.bluetooth_hci
-            && (features.bluetooth_peripheral
-                || features.bluetooth_phy_maintenance
-                || features.bluetooth_watchdog_reset)
-        {
-            return None;
-        }
+    if features.bluetooth_dtm {
         let expected = FeatureCapabilities {
             bluetooth_dtm: true,
-            // The radio-contract image serves DTM without a peripheral role.
-            bluetooth_peripheral: features.bluetooth_peripheral,
-            bluetooth_phy_maintenance: features.bluetooth_phy_maintenance,
-            bluetooth_watchdog_reset: features.bluetooth_watchdog_reset,
             bluetooth_hci: features.bluetooth_hci,
-            phy_fault_injection: features.phy_fault_injection,
             // Sealed older Bluetooth images retain their original placement.
             phy_rx_hot_sram: features.phy_rx_hot_sram,
             structured_evidence: true,
             psram_task_stack: true,
             ..FeatureCapabilities::default()
         };
-        if features.phy_fault_injection && !features.bluetooth_watchdog_reset {
-            return None;
-        }
-        return (*features == expected).then_some(if features.bluetooth_phy_maintenance {
-            ImageClass::BluetoothPhyMaintenance
-        } else if features.bluetooth_watchdog_reset {
-            ImageClass::BluetoothWatchdogReset
-        } else {
-            ImageClass::BluetoothDtm
-        });
+        return (*features == expected).then_some(ImageClass::BluetoothDtm);
     }
     if features.phy_fault_injection {
         return None;
@@ -1165,8 +1136,6 @@ fn audit_radio_observers<'a>(
             | ImageClass::BluetoothGatt
             | ImageClass::BluetoothSecureGatt
             | ImageClass::BluetoothDtm
-            | ImageClass::BluetoothPhyMaintenance
-            | ImageClass::BluetoothWatchdogReset
             | ImageClass::BootSmoke
             | ImageClass::DiagnosticMemoryBenchmark
     ) {

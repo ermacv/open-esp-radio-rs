@@ -69,111 +69,20 @@ Secure and plaintext capabilities are mutually exclusive. Both snapshots carry
 common traffic observations, which alone never establish security. Notification
 counters mean Host queue acceptance; the independent peer must receive the value.
 
-## Peripheral lifecycle
+## Direct Test Mode and raw HCI
 
-`BluetoothPeripheral::StartAdvertising` requests a bounded diagnostic
-`ADV_IND` on channel 37 through production HCI and selects peer Reset, verified
-peer rfkill, target Host Disconnect or target HCI Reset as the cycle
-termination. Its hold is
-bounded to 0..5000 ms. `Snapshot` returns boot-lifetime
-advertising/peripheral RUN and disconnection counts, retries, the first terminal
-reason, and separately decoded Host-side Connection Complete, Connection
-Update Complete and Disconnection Complete counts. A separate counter records
-Channel Map Update instants applied by the Link Layer. The connection-update counter accepts
-only the recovery profile's 120-ms interval, zero latency and 2-second
-supervision timeout while the sole connection is live. Successful target
-Disconnect Command Status and Reset Command Complete responses have separate
-counters. It also reports each
-nonempty Controller-to-Host ACL fragment, each
-credit returned by the target Host, each deliberately held first-fragment
-credit, each fully reassembled echo accepted back from the target Host, and ACL
-profile or queue faults. A distinct Host-to-Controller completion count proves
-that each queued echo reached Link Layer acknowledgement. The peripheral workload declares one 27-byte Host ACL
-buffer, enables Controller-to-Host flow control and uses two distinct,
-sequenced deterministic 251-byte packets around a live Channel Map Update. Each packet requires
-ten legacy fragments. Invalid,
-out-of-order or profile-mismatched lifecycle events increment
-`host_event_faults`; the last decoded disconnection reason is retained. These
-are software publication observations; a correlated peer observation is
-required to establish RF delivery. The start response includes the public address.
-HCI rejection stages are Reset (0), base event mask (1), LE event mask (2),
-Host Buffer Size (3), Controller-to-Host flow control (4), address read (5),
-parameters (6), data (7) and enable (8).
+The `bluetooth-dtm` image declares `bluetooth_dtm` and `bluetooth_hci` and
+runs the production Controller behind an in-image HCI Host.
+`BluetoothDtm(operation)` runs one fixed LE 1M, channel 0, 37-byte PRBS9
+Receiver Test, Transmitter Test, Test End or Reset and returns
+`BluetoothDtmEvidence` with the boot's reset reason and the counted packets.
 
-`Retire` ends an admitted peripheral probe: the target completes HCI Reset with
-its Host event pump running, waits for live runner handoff, then retires timer,
-IRQ and HCI ownership. It extracts the shared primary/NRT register owner,
-checks scheduler inactivity, empty hardware heads and absence of primary faults,
-and releases Controller output before joining the exact platform reservation.
-The last PHY client then closes RF, powers down temperature, resets Bluetooth
-and restores retained clocks and the shared power baseline into a cold owner.
-`Retired` requires `radio_cold` and separate closed-channel probes for Host
-commands, Controller events and Host ACL credits. Every field must be true,
-with no terminal fault, saturation or Host event/ACL fault. An incomplete
-transition produces no successful retirement response. Old HCI and static ISR
-storage remain closed/reserved in this terminal mode. The HIL console stays available for capability and link-health
-queries; further radio operations are rejected.
-
-`Restart` uses the same physical shutdown sequence, then reinitializes the
-actual returned radio and original storage without resetting the board.
-`Restarted` requires a positive cycle count, Reset through the new Host and
-closed-command/event/ACL-credit probes through the old Host.
-
-`Maintain` instead joins the idle task and retired timer with the unrouted IRQ
-bank for shared-PHY tracking. HCI and the powered epoch remain intact.
-`Maintained` requires a positive cycle count, a due completed tracking request,
-no tracking inhibition and Reset through the same Host after resumption.
-Calibration flags report the actual common/Bluetooth work selected by tracking;
-they are not forced true. A not-due window cannot satisfy this diagnostic.
-Both lifecycle operations use the same zero-fault gates as `Retired`; another
-advertising start reinitializes the bounded Host settings after Reset.
-
-The Bluetooth image advertises `bluetooth_peripheral` for this interface.
-DTM is rejected once the peripheral probe starts. Another advertising start is
-accepted only after the previous connection has reported idle restoration;
-that restart omits HCI Reset. The diagnostic detail includes the cumulative
-closed-connection count and last disconnect reason (including `0x3e` for
-failed establishment). The host ends the probe with a
-board reset; after 30 seconds the target reports lease expiry and resets the
-whole board. A USB failure during the probe also resets the board. Neither
-path reports logical HCI quiescence. The default connection timing policy
-still lacks a local clock bound, so recurrence stops at that explicit limit.
-
-## Encrypted ACL diagnostic
-
-`BluetoothPeripheral::EncryptedAcl` selects the fixed-key diagnostic Host before
-advertising in a fresh boot. It is exclusive with the calibration-traffic and
-ACL-backpressure Hosts. `BluetoothEncryptionEvidence` reports key requests,
-successful HCI key replies (including negative and deliberately wrong-key replies),
-Encryption Change, Key Refresh Complete events and faults. It never carries
-key bytes. The public `BLUETOOTH_TEST_*` and `BLUETOOTH_REFRESH_*` constants identify fixture material,
-not a pairing or bond-storage policy. Runner and firmware must match
-[`PROTOCOL_VERSION`](src/message.rs). The body bound is defined by
-[`MAX_POSTCARD_BYTES`](src/framing.rs), including the largest combined
-peripheral evidence record and worst-case integer encoding.
-
-The diagnostic Host accepts the initial identity once per connection, then the
-distinct refresh identity only after initial Encryption Change. During the
-pending refresh it rejects application data and requires the refresh event,
-not another initial Encryption Change. Disconnect clears this phase before
-reconnection; counters remain cumulative for the current boot.
-
-The optional `failure` field selects `missing-key` or `wrong-key` for the first
-initial LTK request, or `missing-refresh-key` for the first replacement LTK
-request after successful initial encryption. Missing keys use the standard HCI
-negative reply; `wrong-key` supplies a fixed public key differing by one bit.
-The refresh injection survives the initial valid reply and requires termination
-with PIN or Key Missing, without successful Key Refresh Complete. After disconnect,
-subsequent connections receive the correct key. The Controller and its RF/CCM
-path are unchanged. Expected injections have separate counters; malformed
-requests, failed HCI replies, unexpected encryption success and application
-data before encryption still invalidate the scenario.
-
-`active-data-mic` instead arms the diagnostic `rx-fault-injection` feature.
-The initial key and encryption handshake remain valid. Exactly one active
-encrypted data PDU has the final MIC bit flipped in its copied RX input before
-the production authenticator; control, plaintext and empty packets do not
-consume the request. `mic_injections` records actual corruption and
-`mic_injection_armed` identifies a pending request. Disconnect disarms it;
-counters remain cumulative so recovery must prove that no further injection
-occurred. The stimulus is after RF reception, not a malformed over-air packet.
+`BluetoothHci(Command { opcode, parameters })` sends one HCI command with at
+most `BLUETOOTH_HCI_PARAMETER_BYTES` parameter octets and returns its Command
+Complete or Command Status packet (`Completed`), `Timeout` or
+`TransportFailed`. Other events that arrive meanwhile are queued.
+`BluetoothHci(NextEvent { wait_ms })` returns the oldest queued event, or the
+next one within `wait_ms` (`Event { packet, dropped }`), or `NoEvent`;
+`dropped` counts events lost to the bounded queue since the last returned one.
+Host workloads drive advertising, scanning and connections through these two
+requests with standard HCI.

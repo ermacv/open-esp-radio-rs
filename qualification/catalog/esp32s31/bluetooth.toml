@@ -141,11 +141,6 @@ vendor-anchors = [
 depends-on = [
   "controller-initialization",
 ]
-hil-requirements = [
-  { scenario = "bluetooth-peripheral-active-phy-maintenance", minimum-repetitions = 3 },
-  { scenario = "bluetooth-peripheral-acl-calibration", minimum-repetitions = 3 },
-  { scenario = "bluetooth-dtm-maintenance-deadline", minimum-repetitions = 3 },
-]
 gaps = [
   { axis = "implementation", id = "active-role-phy-maintenance-qualified-bounds-and-encrypted-recovery-incomplete" },
   { axis = "vendor", id = "registered-client-tracking-and-baseband-composed-trace-missing" },

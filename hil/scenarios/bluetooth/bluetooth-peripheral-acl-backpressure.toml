@@ -1,9 +1,0 @@
-schema = 5
-id = "bluetooth-peripheral-acl-backpressure"
-description = "Host holds one RX ACL credit through supervision expiry while reading HCI events, then drains the old handle and reconnects without Reset"
-repetitions = 3
-tags = ["bluetooth", "peripheral", "acl", "backpressure", "lifecycle"]
-unsupported = "The Bluetooth DTM image does not run the LE peripheral role."
-
-[bluetooth]
-kind = "acl-backpressure"

@@ -79,6 +79,15 @@ fn clean(name: &str, aliases: &Aliases) -> String {
     // LLVM numbers local clones (`.123`, `.llvm.456`) per build; the
     // numbering is not part of the code, so clones share a name and are
     // compared as a sorted set of bodies.
+    // The demangler shows an unrecognized suffix as `name (.123)`.
+    while let Some(stem) = name.strip_suffix(')')
+        && let Some((stem, suffix)) = stem.rsplit_once(" (.")
+        && suffix.split('.').all(|part| {
+            part == "llvm" || (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        })
+    {
+        name.truncate(stem.len());
+    }
     while let Some((stem, number)) = name.rsplit_once('.')
         && !number.is_empty()
         && number.bytes().all(|b| b.is_ascii_digit())
@@ -299,8 +308,20 @@ fn normalize(text: &str, image: &Image) -> BTreeMap<String, Vec<Vec<String>>> {
             pending.insert(args[0].clone(), ((high << 12) as u64) & 0xffff_ffff);
             format!("lui {} <pair>", args[0])
         } else {
-            if op == "mv" && args.len() == 2 && pending.contains_key(&args[1]) {
+            // `addi rd,rs,0` prints as `mv rd,rs`: one instruction, one form.
+            let op = if op == "mv" && args.len() == 2 && pending.contains_key(&args[1]) {
                 args = vec![args[0].clone(), args[1].clone(), "0".into()];
+                "addi"
+            } else {
+                op
+            };
+            // An indirect jump with a zero offset prints as `jalr rs`; the
+            // offset of the same call differs with placement.
+            if matches!(op, "jalr" | "jr" | "c.jalr" | "c.jr")
+                && args.len() == 1
+                && !args[0].contains('(')
+            {
+                args = vec![format!("0({})", args[0])];
             }
             let memory = args.last().and_then(|last| {
                 let (offset, base) = last.strip_suffix(')')?.split_once('(')?;
@@ -600,6 +621,12 @@ mod tests {
         );
         assert_eq!(clean("inner.llvm.98765.12", &none), "inner");
         assert_eq!(clean("v1.2::name", &none), "v1.2::name");
+        assert_eq!(clean("log::LOGGER (.4696)", &none), "log::LOGGER");
+        assert_eq!(
+            clean("descriptor_head (.llvm.12)", &none),
+            "descriptor_head"
+        );
+        assert_eq!(clean("f (.cold)", &none), "f (.cold)");
     }
 
     #[test]
@@ -631,6 +658,47 @@ mod tests {
         assert_eq!(body[1], "addi s2,s2 WAKER+0x0");
         assert_eq!(body[2], "addi a1,s2 WAKER+0x4");
         assert_eq!(body[4], "addi a2,s2,0x8", "a loaded value is no address");
+    }
+
+    #[test]
+    fn placement_dependent_spellings_of_one_instruction_normalize_alike() {
+        let symbols = vec![
+            Symbol {
+                address: 0x4000_0000,
+                size: 0x40,
+                name: "f".into(),
+            },
+            Symbol {
+                address: 0x4080_0000,
+                size: 0x10,
+                name: "callee".into(),
+            },
+            Symbol {
+                address: 0x4090_0000,
+                size: 0x10,
+                name: "DATA".into(),
+            },
+        ];
+        let image = Image {
+            starts: symbols.iter().map(|s| s.address).collect(),
+            symbols,
+            sections: Sections(Vec::new()),
+        };
+        let listing = "\
+40000000 <f>:
+40000000: auipc ra, 0x800
+40000004: jalr ra
+40000008: auipc ra, 0x800
+4000000c: jalr -0x8(ra)
+40000010: lui a0, 0x40900
+40000014: mv a1, a0
+40000018: lui a0, 0x40900
+4000001c: addi a1, a0, 0x0
+";
+        let body = &normalize(listing, &image)["f"][0];
+        assert_eq!(body[1], "jalr  callee+0x0");
+        assert_eq!(body[3], "jalr  callee+0x0");
+        assert_eq!(body[5], body[7]);
     }
 
     #[test]

@@ -22,11 +22,17 @@ runner, not `WifiControl`, retains the stopped MAC owner, DMA arenas and IRQ
 route while it is spawned. Internal crates do not depend on the `oer` facade;
 the facade reexports their application-facing contracts.
 
+`RadioConfig::from_efuse(watchdog, initial_channel)` takes the station and
+access-point addresses from the chip's eFuse and fails with `EfuseMacError`
+when one is not a unicast address; `RadioConfig::new` takes them explicitly.
+The watchdog budgets and the initial channel are always the caller's.
+
 This crate reexports every input of `new`, `RadioConfig` and `WatchdogConfig`
 and of the shared radio they join: `RadioHardware`, `ConcurrentPartitions`,
 `WifiPartition`, `SharedRadio`, `EspHalRadioPlatform`, `EspHalRadioClocks`,
 `EspHalWifiPlatform`, `RtsLengthThreshold`, `DeadlineWatchdog`,
-`DeadlineBudget` and the `await_stack_boundary!` poll boundary. The PHY
+`DeadlineBudget`, `EfuseMacError` and the `await_stack_boundary!` poll
+boundary. The PHY
 calibration identity and an optional retained calibration cache are inputs of
 the shared radio, not of Wi-Fi. Board startup and the executor remain
 application-owned.

@@ -1,6 +1,6 @@
 # ESP32-S31 Wi-Fi capability entry point
 
-The canonical source inventory for the ESP32-S31 Wi-Fi driver now lives in
+The canonical source inventory for the ESP32-S31 Wi-Fi driver lives in
 [the Wi-Fi/PHY catalog](../../../../../qualification/catalog/esp32s31/wifi-phy.toml).
 It records source status, composition level, exact scope and limitations, and
 package and document links independently of qualification readiness.
@@ -18,10 +18,10 @@ evaluator and its configured evidence inputs:
 cargo qualification catalog render --manifest qualification/targets/esp32s31/wifi-sta.toml --out target/qualification/catalog/wifi-sta
 ```
 
-The ignored output separates `domain-inventory.md`,
-`capability-catalog.md`, `program-inventory.md`, and
-`migration-map.md`. The catalog is the tracked source; generated Markdown is
-never a readiness authority.
+The static render writes `domain-inventory.md`, `capability-catalog.md`,
+`project-status.md` and `migration-map.md` into the ignored output directory.
+The catalog is the tracked source; generated Markdown is never a readiness
+authority.
 
 Architecture navigation: [whole-radio map](../FEATURES.md),
 [STA composition](../../../../roles/esp32s31/ieee80211/sta/README.md), [AP engine](../../../../roles/esp32s31/ieee80211/ap/src/engine.rs),

@@ -33,8 +33,7 @@ Success establishes publication consistency, not correct RF behavior. To compare
 captured code/data, use [captured PHY research](../verification/esp32s31/README.md#captured-phy-research-with-next)
 and [Blobray's task map](../tools/blobray/README.md#choose-a-task). Supply your own
 ELF/archive/ROM and required source identities; retain unknowns, assumptions and
-model boundaries. The legacy project command grammar on reference pages is not
-available through current `cargo blobray`.
+model boundaries.
 
 ## Build an application
 

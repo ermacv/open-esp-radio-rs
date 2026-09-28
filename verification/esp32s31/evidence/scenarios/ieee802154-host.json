@@ -41,15 +41,15 @@
   "sources": [
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "11464d4da66f746861d441d6b4d005ca7a77b85cc514347261f9e0b337c8ca06"
+      "sha256": "cd876a67d36ef8880470dd02ea14ecfdbac0b857e03209f091006711f0095bbe"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "9f19a796395871f9655c2ce0f0351f0800c343cc4b96df2e3f81114a0f9e37c8"
+      "sha256": "1ab4d6c37748a5ec9c490cecb9c16102f30074a6b0915a3b7ed30c01264aad25"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "18a0df5bcb5ffe2b4215e47e31d397b1d4ec74d6105d16946aa8df7f5e6019a7"
+      "sha256": "57831d418e48fce177f3fd801400651fdeca975c35e6c0ce575defdf5e33c436"
     },
     {
       "path": "crates/hardware/ieee80211/pac",
@@ -61,11 +61,15 @@
     },
     {
       "path": "crates/hardware/ieee802154/engine",
-      "sha256": "60adbeb765f8a078da12ac8829c259bfd00a99e5795593f123aee72134801f1d"
+      "sha256": "ea7eb8a3b9baa5635de1289f54ff86f8d418c2402ab410493fb7efd84aed9ed2"
     },
     {
       "path": "crates/hardware/ieee802154/pac",
       "sha256": "85617b03c0d6264a88314914568e67cc7ff6a386f590f283eecc0a324b9b5322"
+    },
+    {
+      "path": "crates/hardware/ieee802154/trace",
+      "sha256": "c272ca0748029f3ff34600121e8e477dce20038a328caf8ec9563c1edd6253ff"
     },
     {
       "path": "crates/hardware/radio/analog",
@@ -84,8 +88,12 @@
       "sha256": "6cec47b0f58e7fe7cd6851a6a1f822e7b2833911690cd6268f79605ded8a622d"
     },
     {
+      "path": "crates/trace",
+      "sha256": "825e20fb338b6e999ad36861ca9b133443ecdf78fe767f0d1bdfce65829b6398"
+    },
+    {
       "path": "verification/esp32s31/host/ieee802154",
-      "sha256": "cfcd85ab566a436ab102351397fa45a338ea7f7d9aa243cf84b8648f38724d09"
+      "sha256": "385aa05d97bd00c55fa99cc2a99baf1a460cd7bfbdc1e3bb0631d28ffcb57302"
     },
     {
       "path": "verification/schema",

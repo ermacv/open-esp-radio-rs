@@ -22,6 +22,8 @@ impl<T> Deref for Decoded<'_, T> {
 }
 pub(crate) struct Json<'a> {
     source: &'a dyn ByteSource,
+    /// The source's length, fixed for its lifetime.
+    len: u64,
     cache: [u8; WORK_BLOCK],
     base: u64,
     count: usize,
@@ -30,25 +32,48 @@ impl<'a> Json<'a> {
     pub fn new(source: &'a dyn ByteSource) -> Self {
         Self {
             source,
+            len: source.len(),
             cache: [0; WORK_BLOCK],
             base: 0,
             count: 0,
         }
     }
-    fn byte(&mut self, offset: u64, control: &mut dyn RunControl) -> Result<u8> {
-        if offset >= self.source.len() {
+    /// Bring `offset` into the cached window; returns its index there.
+    fn load(&mut self, offset: u64, control: &mut dyn RunControl) -> Result<usize> {
+        if offset >= self.len {
             return Err(integrity("unexpected end of JSON"));
         }
         if offset < self.base || offset >= self.base + self.count as u64 {
             self.base = offset;
-            self.count = (self.source.len() - offset).min(WORK_BLOCK as u64) as usize;
+            self.count = (self.len - offset).min(WORK_BLOCK as u64) as usize;
             self.source
                 .read_at(offset, &mut self.cache[..self.count], control)?;
         }
-        Ok(self.cache[(offset - self.base) as usize])
+        Ok((offset - self.base) as usize)
+    }
+    fn byte(&mut self, offset: u64, control: &mut dyn RunControl) -> Result<u8> {
+        let index = self.load(offset, control)?;
+        Ok(self.cache[index])
+    }
+    /// The offset of the first byte at or after `offset` that `stop` selects,
+    /// scanning whole cached windows; the end of the source is an error.
+    fn find(
+        &mut self,
+        mut offset: u64,
+        stop: impl Fn(u8) -> bool,
+        control: &mut dyn RunControl,
+    ) -> Result<(u64, u8)> {
+        loop {
+            let index = self.load(offset, control)?;
+            let window = &self.cache[index..self.count];
+            match window.iter().position(|b| stop(*b)) {
+                Some(i) => return Ok((offset + i as u64, window[i])),
+                None => offset += window.len() as u64,
+            }
+        }
     }
     fn whitespace(&mut self, mut offset: u64, control: &mut dyn RunControl) -> Result<u64> {
-        while offset < self.source.len()
+        while offset < self.len
             && matches!(self.byte(offset, control)?, b' ' | b'\n' | b'\r' | b'\t')
         {
             offset += 1;
@@ -58,16 +83,16 @@ impl<'a> Json<'a> {
     fn string_end(&mut self, mut offset: u64, control: &mut dyn RunControl) -> Result<u64> {
         offset += 1;
         loop {
-            match self.byte(offset, control)? {
-                b'"' => return Ok(offset + 1),
+            let (at, byte) = self.find(offset, |b| b == b'"' || b == b'\\' || b < 32, control)?;
+            match byte {
+                b'"' => return Ok(at + 1),
                 b'\\' => {
-                    offset += 1;
-                    self.byte(offset, control)?;
+                    // The escaped byte must exist; it is never a terminator.
+                    self.byte(at + 1, control)?;
+                    offset = at + 2;
                 }
-                b if b < 32 => return Err(integrity("control character in JSON string")),
-                _ => (),
+                _ => return Err(integrity("control character in JSON string")),
             }
-            offset += 1;
         }
     }
     fn node(&mut self, start: u64, control: &mut dyn RunControl) -> Result<Node> {
@@ -81,7 +106,12 @@ impl<'a> Json<'a> {
             let mut stack = [0u8; 128];
             let mut depth = 0;
             loop {
-                let byte = self.byte(end, control)?;
+                let (at, byte) = self.find(
+                    end,
+                    |b| matches!(b, b'"' | b'[' | b'{' | b']' | b'}'),
+                    control,
+                )?;
+                end = at;
                 if byte == b'"' {
                     end = self.string_end(end, control)?;
                     continue;
@@ -109,7 +139,7 @@ impl<'a> Json<'a> {
                 end += 1;
             }
         } else {
-            while end < self.source.len()
+            while end < self.len
                 && !matches!(
                     self.byte(end, control)?,
                     b',' | b']' | b'}' | b' ' | b'\n' | b'\r' | b'\t'
@@ -133,7 +163,7 @@ impl<'a> Json<'a> {
     }
     pub fn root(&mut self, control: &mut dyn RunControl) -> Result<Node> {
         let root = self.node(0, control)?;
-        if self.whitespace(root.end, control)? != self.source.len() {
+        if self.whitespace(root.end, control)? != self.len {
             return Err(integrity("trailing JSON data"));
         }
         Ok(root)
@@ -263,4 +293,52 @@ pub(crate) struct Array {
     position: u64,
     end: u64,
     first: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A document whose escapes, strings and nested containers straddle the
+    /// scanner's window boundaries.
+    fn straddling() -> Vec<u8> {
+        let mut json = b"{\"pad\":\"".to_vec();
+        json.resize(WORK_BLOCK - 1, b'x');
+        json.extend_from_slice(b"\\\"\",\"list\":[[\"a]\\\\\",{\"k\":\"}\"}],");
+        json.resize(2 * WORK_BLOCK + 3, b' ');
+        json.extend_from_slice(b"1],\"n\":-2}");
+        json
+    }
+
+    #[test]
+    fn window_scanning_finds_the_same_value_ends() {
+        let bytes = straddling();
+        let source: &[u8] = &bytes;
+        let mut json = Json::new(&source);
+        let root = json.root(&mut || Ok(())).unwrap();
+        assert_eq!((root.start, root.end), (0, bytes.len() as u64));
+        let [pad, list, n] = json
+            .fields(root, ["pad", "list", "n"], &mut || Ok(()))
+            .unwrap();
+        assert_eq!(pad.end, WORK_BLOCK as u64 + 2);
+        assert_eq!(bytes[list.end as usize - 1], b']');
+        assert_eq!(&bytes[n.start as usize..n.end as usize], b"-2");
+        let mut array = json.array(list).unwrap();
+        let mut kinds = vec![];
+        while let Some(item) = json.next(&mut array, &mut || Ok(())).unwrap() {
+            kinds.push(item.kind);
+        }
+        assert_eq!(kinds, [b'[', b'1']);
+    }
+
+    #[test]
+    fn unterminated_strings_and_control_characters_are_rejected() {
+        for document in [&b"\"abc"[..], b"\"a\\", b"\"a\nb\""] {
+            let source: &[u8] = document;
+            assert_eq!(
+                Json::new(&source).root(&mut || Ok(())).err().unwrap().code,
+                ErrorCode::Integrity
+            );
+        }
+    }
 }

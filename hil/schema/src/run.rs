@@ -69,6 +69,10 @@ pub enum FailureKind {
     ImageBuild,
     ImageFlash,
     Infrastructure,
+    /// The target's hang watchdog found a stalled executor and reset it.
+    Hang,
+    /// The target reset for a reason the runner did not cause.
+    UnexpectedReset,
 }
 
 impl FailureKind {
@@ -79,6 +83,8 @@ impl FailureKind {
             Self::ImageBuild => "image-build",
             Self::ImageFlash => "image-flash",
             Self::Infrastructure => "infrastructure",
+            Self::Hang => "hang",
+            Self::UnexpectedReset => "unexpected-reset",
         }
     }
 }

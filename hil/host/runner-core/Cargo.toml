@@ -20,6 +20,7 @@ mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }
 oer-process = { path = "../../../tools/process" }
 oer-hil-fixture = { path = "../fixture" }
 oer-hil-fixture-install = { path = "../fixture-install" }
+addr2line = { version = "=0.27.1", default-features = false, features = ["loader", "rustc-demangle"] }
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
 oer-esp32s31-firmware = { path = "../../../tools/firmware" }
 oer-chip-profile = { path = "../../../tools/chip-profile" }

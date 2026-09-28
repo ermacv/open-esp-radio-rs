@@ -11,6 +11,7 @@ dependencies = [
  "gimli 0.34.0",
  "memmap2",
  "object 0.40.0",
+ "rustc-demangle",
  "typed-arena",
 ]
 
@@ -3007,6 +3008,7 @@ dependencies = [
 name = "oer-hil-runner-core"
 version = "0.1.0"
 dependencies = [
+ "addr2line",
  "clap",
  "flate2",
  "fs2",

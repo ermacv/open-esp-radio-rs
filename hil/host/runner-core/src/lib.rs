@@ -18,6 +18,7 @@ pub mod fixture;
 pub mod image;
 pub mod lab;
 pub mod output;
+pub mod post_mortem;
 mod repository;
 pub mod scenario;
 pub mod session;

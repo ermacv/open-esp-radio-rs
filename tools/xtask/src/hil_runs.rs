@@ -477,6 +477,10 @@ pub fn why(run: &Run, tail_lines: usize) -> String {
                     "image build or flash"
                 }
                 (Some((FailureKind::Scenario, _)), true) => "scenario failure",
+                (Some((FailureKind::Hang, _)), true) => "the target hung; its watchdog reset it",
+                (Some((FailureKind::UnexpectedReset, _)), true) => {
+                    "the target reset for a reason the runner did not cause"
+                }
                 (None, true) => "no recorded failure",
             };
             text.push_str(&format!(

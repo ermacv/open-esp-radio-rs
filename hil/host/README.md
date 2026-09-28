@@ -340,6 +340,18 @@ directory and the end of `uart.log`. `compare` and `history` use per-scenario
 means of numeric measurements over repetitions. These views never decide
 qualification.
 
+When a repetition fails, the runner attaches to the target without resetting
+it and asks for its boot evidence, waiting up to 20 s for the target's hang
+watchdog to reset a stalled image. A post-mortem hang makes the failure
+`hang`: which executor stalled, where each hart was, named from the run's
+archived `runtime.elf` (function, the function it was inlined into, and the
+source line), and the code the stalled hart kept running; a core 1 stall seen
+together with a core 0 stall is reported as depending on core 0's timers. A
+reset the runner did not cause (neither USB Serial/JTAG nor JTAG) makes it
+`unexpected-reset` with the reset reason and code. Both name the last
+checkpoints the ended boot passed. The exchange and the workload's own
+failure are kept in the repetition's `post-mortem/`.
+
 ### Operational commands without a rebuild
 
 `cargo hil` builds this xtask from the caller's working tree before every

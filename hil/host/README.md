@@ -438,7 +438,9 @@ idle in its executor. A step that brings it back is journaled as a recovery, `ha
 the port had vanished or the ROM waited for a download. When the ROM answers
 a reset, booting from flash or waiting for a download, but the firmware does
 not, the failure names a firmware or host fault: the stand can reflash the
-board, so it goes on serving. Only a board whose ROM stays silent after every
+board, so it goes on serving. The run then records its remaining repetitions of that
+image class as `blocked` without touching the board, so a broken image frees
+the lease within about a minute instead of repeating the wait. Only a board whose ROM stays silent after every
 reset path the stand has (EN, then RTS), which no script can bring back to a
 state where firmware can be loaded, is quarantined; frequent recoveries are
 shown as its health, never a quarantine. A cancelled run judges no board. On a

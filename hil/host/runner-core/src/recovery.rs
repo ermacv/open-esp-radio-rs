@@ -209,6 +209,27 @@ fn judges_board(cancelled: bool) -> bool {
 /// remaining repetitions then record the quarantine without touching it.
 static QUARANTINED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Image classes whose firmware did not answer after its ROM booted it,
+/// earlier in this process: the run's remaining repetitions of them cannot
+/// pass, so they are recorded without holding the board.
+static SILENT_IMAGES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Record that `image`'s firmware did not answer after a boot.
+pub fn mark_image_silent(image: &str) {
+    if let Ok(mut images) = SILENT_IMAGES.lock()
+        && !images.iter().any(|known| known == image)
+    {
+        images.push(image.to_owned());
+    }
+}
+
+/// Whether `image`'s firmware did not answer after a boot in this process.
+pub fn image_silent(image: &str) -> bool {
+    SILENT_IMAGES
+        .lock()
+        .is_ok_and(|images| images.iter().any(|known| known == image))
+}
+
 /// Whether this process quarantined its device under test.
 pub fn device_quarantined() -> bool {
     QUARANTINED.load(std::sync::atomic::Ordering::Relaxed)
@@ -304,6 +325,15 @@ mod tests {
             "rst:0x1 (POWERON),boot:0x4 (DOWNLOAD(USB/UART0))"
         ));
         assert!(!rom_answers("garbled output"));
+    }
+
+    #[test]
+    fn an_image_that_did_not_answer_after_a_boot_is_remembered() {
+        assert!(!image_silent("test-silent-image"));
+        mark_image_silent("test-silent-image");
+        mark_image_silent("test-silent-image");
+        assert!(image_silent("test-silent-image"));
+        assert!(!image_silent("test-other-image"));
     }
 
     #[test]

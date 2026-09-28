@@ -85,6 +85,9 @@ pub(crate) fn execute_workload(
     if let Some(hil_core::recovery::Recovery::Recovered { finding, .. }) = &recovery {
         post_mortem = Some((**finding).clone());
     }
+    if let Some(hil_core::recovery::Recovery::BootedSilent { .. }) = &recovery {
+        hil_core::recovery::mark_image_silent(selected.image().id());
+    }
     let mut evidence = ExecutionEvidence {
         quarantined: recovery
             .as_ref()

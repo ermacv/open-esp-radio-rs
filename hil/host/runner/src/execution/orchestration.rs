@@ -868,6 +868,26 @@ fn run_scenario_repetition(
             Vec::new(),
         );
     }
+    if hil_core::recovery::image_silent(selected.image().id()) {
+        return finalize_repetition(
+            repetition,
+            artifacts,
+            output,
+            started_unix_millis,
+            started,
+            cleanup,
+            Outcome::Blocked,
+            Some(Failure::new(
+                FailureKind::Precondition,
+                format!(
+                    "the {} image did not answer after booting earlier in this run; the \
+                     repetition did not touch the board",
+                    selected.image().id()
+                ),
+            )),
+            Vec::new(),
+        );
+    }
     let (outcome, failure, measurements) = match fixture::preflight::check(lab, selected)
         .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, &plan, output))
         .and_then(|fixture| {

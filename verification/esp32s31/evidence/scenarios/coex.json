@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "59140a0c85c9fa710db587dc4a4e6e2d458ed4c58be019eb72b5e024f74abdf3"
+    "input-2": "2655fe4b51cd739939fc72f547b0cfc94931d0a65eb4adf33b822e34182ef53f"
   },
   "sources": [
     {
@@ -118,6 +118,10 @@
       "sha256": "570b175afb18b3be40205df4a9b7b4cef2316c8b2ba4a8e7e4fba92dadddcee1"
     },
     {
+      "path": "crates/protocols/ieee80211/trace/Cargo.toml",
+      "sha256": "c22294a8499f135c4c15d007fd89ba89308bd0d9334eda2e2a89b71bdb866339"
+    },
+    {
       "path": "crates/protocols/ieee802154/Cargo.toml",
       "sha256": "af459704e90d6a19ef191e27556e8b3d5b90f4959a501bd79458eb7d74f043e7"
     },
@@ -127,11 +131,11 @@
     },
     {
       "path": "crates/roles/esp32s31/ieee80211/sta/Cargo.toml",
-      "sha256": "0fed22748e8bbc10e49e543d646ebf2b9a4b75fe4e3b3a7a4600983f480707dd"
+      "sha256": "566c82d7f0e47c0b9574d7f02ee6dc43e678af1ef7338c0975914f830ab72e45"
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/Cargo.toml",
-      "sha256": "17d3718e898afa1200a6654934f6652fc07d8de9d34687277882bf74e2172e40"
+      "sha256": "e341a8a5c1440dce0e305618ff26f8329d96e091b2a49d6cd43dd233c5dc2841"
     },
     {
       "path": "crates/runtime/esp32s31/phy/Cargo.toml",
@@ -155,7 +159,7 @@
     },
     {
       "path": "target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/build/oer-esp32s31-probe-radio-elf-1500303fb773a5e7/out/probe_catalog.rs",
-      "sha256": "c702bfbb7666735a9491bf9b2e272ee48a2d061cf61d21a4068fa989ce1c29a8"
+      "sha256": "628e8655ef1968a342714a12a31dc7ae06d300f9394313fdff7058999cb50eed"
     },
     {
       "path": "tools/blobray/Cargo.lock",
@@ -971,11 +975,11 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "87c947e12fe74507c2548bde0698b4f54c3a2cb56862df65cf618a64066eba0e"
+      "sha256": "01b0e562a1b0ba22337f832b898df9e4bf8903f03aabe78e9abc3d5c845de030"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
-      "sha256": "3596a24f1be70340c7b434d1948d2577673261dba663360f1fc390c3affba8a2"
+      "sha256": "d1b4405649073d70c53b2f7693a25a9c284f47448b1359f9daf8aa7b51fcf889"
     },
     {
       "path": "verification/esp32s31/probes/radio/elf/Cargo.toml",
@@ -995,11 +999,11 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library/Cargo.toml",
-      "sha256": "fb01939600e8855a8961d21da10005b6ab0d3ded45d2f8fd2afa51ac3823bedf"
+      "sha256": "56f63c2e1f6b9e1cb2f4af8abc6b6b8cfeadf827765bf04685e94aba2f2e9881"
     },
     {
       "path": "verification/esp32s31/probes/radio/library/src/lib.rs",
-      "sha256": "5b4d989103acf6c54e0640e601acc99349f71020812aee7b65b2c3c824e96cc5"
+      "sha256": "1bb07b9fb1d6b01b9d549f9d6a764228076e3b23efca35c89502e810cf7cc85e"
     },
     {
       "path": "verification/esp32s31/scenarios/Cargo.toml",
@@ -1059,11 +1063,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/lib.rs",
-      "sha256": "d35e404279d6e1fabbbaf916985d84362082d221a4c50a3e0fee26ffc0092e5c"
+      "sha256": "1bdfdf04a2fc3354b88917b8d5b621531aa0941365e53771c0f45b391c3a738f"
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "de726bef813b71755e56db75f1048e7363bffcff683ff079fec97ade95a9bec8"
+      "sha256": "6cb938249d85a6135ff393d396cf6b5b472e29df7db06afa9673eafdab42e864"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1126,12 +1130,16 @@
       "sha256": "99486bfb85b8211bc8e9aaf2f69d7f0ec737a2ca6e97a8ad5520321d420959b2"
     },
     {
+      "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
+      "sha256": "ed57dade1907cddd86a814d2be2d24ae81c7a35c1d491e0f7e3e68ee48f465d6"
+    },
+    {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
-      "sha256": "a0b245995058f177db08c6c89204e94444f9ac641d94108726ccc93c0c0b369f"
+      "sha256": "1cb50382276791913ea2c31084e49a09d0a42da0b2fe947def4245ec85181095"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mod.rs",
-      "sha256": "4a275f262c2c37d885346872e3616f3f6d54f60387a2f5c41ea98aa036e46b6e"
+      "sha256": "dca9edbd31bbbd7c066c39f82c87931ce78f6a8b6fd494e62737ff26f6fdfd49"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/retry.rs",
@@ -1267,7 +1275,7 @@
     }
   ],
   "dependence": {
-    "read-data": "d7072f5bb4a80d87c700890aa0536af55c99de2435b18c130db5d2e7b50a005b",
+    "read-data": "2c4a40a3d83d534912959fc069a87003c1b47e1d776a1c95dde6d92e45ca0f51",
     "fallback": null
   },
   "entries": [

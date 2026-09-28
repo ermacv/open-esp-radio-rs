@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "4b7720b22e47a1d30d797e00bde98456470c3c11209f008a1d67d8b378536850",
+    "input-2": "59bc886b3836dc979b76eeebebf7d9f644e24d10e69d3f25b3b2ab39c7de845e",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
     "input-4": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "input-5": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
@@ -48,7 +48,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth.rs",
-      "sha256": "7a7a5261c12e15145d14a39ad11832c2e08d4cb69b1d029ff1315738cc774ca0"
+      "sha256": "802f0e34f9c567e243493a00e0217668b6fe6b7db189362c4d5755acb3c9ca6d"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
@@ -976,11 +976,11 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "87c947e12fe74507c2548bde0698b4f54c3a2cb56862df65cf618a64066eba0e"
+      "sha256": "01b0e562a1b0ba22337f832b898df9e4bf8903f03aabe78e9abc3d5c845de030"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
-      "sha256": "3596a24f1be70340c7b434d1948d2577673261dba663360f1fc390c3affba8a2"
+      "sha256": "d1b4405649073d70c53b2f7693a25a9c284f47448b1359f9daf8aa7b51fcf889"
     },
     {
       "path": "verification/esp32s31/probes/bluetooth/elf/Cargo.toml",
@@ -1064,11 +1064,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/lib.rs",
-      "sha256": "d35e404279d6e1fabbbaf916985d84362082d221a4c50a3e0fee26ffc0092e5c"
+      "sha256": "1bdfdf04a2fc3354b88917b8d5b621531aa0941365e53771c0f45b391c3a738f"
     },
     {
       "path": "verification/esp32s31/scenarios/src/main.rs",
-      "sha256": "de726bef813b71755e56db75f1048e7363bffcff683ff079fec97ade95a9bec8"
+      "sha256": "6cb938249d85a6135ff393d396cf6b5b472e29df7db06afa9673eafdab42e864"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/calibration_leaves.rs",
@@ -1131,12 +1131,16 @@
       "sha256": "99486bfb85b8211bc8e9aaf2f69d7f0ec737a2ca6e97a8ad5520321d420959b2"
     },
     {
+      "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
+      "sha256": "ed57dade1907cddd86a814d2be2d24ae81c7a35c1d491e0f7e3e68ee48f465d6"
+    },
+    {
       "path": "verification/esp32s31/scenarios/src/wifi/mac.rs",
-      "sha256": "a0b245995058f177db08c6c89204e94444f9ac641d94108726ccc93c0c0b369f"
+      "sha256": "1cb50382276791913ea2c31084e49a09d0a42da0b2fe947def4245ec85181095"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/mod.rs",
-      "sha256": "4a275f262c2c37d885346872e3616f3f6d54f60387a2f5c41ea98aa036e46b6e"
+      "sha256": "dca9edbd31bbbd7c066c39f82c87931ce78f6a8b6fd494e62737ff26f6fdfd49"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/retry.rs",
@@ -3298,7 +3302,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/bluetooth.rs",
-      "line": 1506
+      "line": 1508
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",

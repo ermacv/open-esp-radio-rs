@@ -1151,6 +1151,14 @@ fn runs(
                 if observers > 0 {
                     println!("deleted {observers} observer builds no kept run names");
                 }
+                let objects = collect_objects(ctx);
+                if objects.objects > 0 {
+                    println!(
+                        "deleted {} firmware objects no run links to ({} MiB)",
+                        objects.objects,
+                        objects.bytes >> 20
+                    );
+                }
             }
             println!(
                 "{} {removed} of {} runs, {} MiB held only by them; {} kept{}",
@@ -1389,6 +1397,35 @@ fn devices(
     Ok(std::process::ExitCode::SUCCESS)
 }
 
+/// Delete the firmware objects no run links to from this checkout's object
+/// store and those of the other registered checkouts; a checkout that
+/// cannot be collected is reported and skipped.
+fn collect_objects(ctx: &Context) -> oer_hil_runner_core::evidence::build::CollectedObjects {
+    let mut checkouts = vec![ctx.root.clone()];
+    if let Ok(arbiter) = oer_hil_arbiter::Arbiter::open()
+        && let Ok(registered) = arbiter.registered_checkouts()
+    {
+        checkouts.extend(registered);
+    }
+    checkouts.sort();
+    checkouts.dedup();
+    let mut total = oer_hil_runner_core::evidence::build::CollectedObjects::default();
+    for checkout in checkouts {
+        let target = checkout.join("target/hil").join(HIL_TARGET);
+        match oer_hil_runner_core::evidence::build::collect_objects(&target) {
+            Ok(collected) => {
+                total.objects += collected.objects;
+                total.bytes += collected.bytes;
+            }
+            Err(error) => eprintln!(
+                "hil: cannot collect the firmware objects of {}: {error}",
+                checkout.display()
+            ),
+        }
+    }
+    total
+}
+
 /// Rule of the automatic pruning, which `cargo hil runs prune` defaults to.
 const PRUNE_DAYS: u64 = 30;
 const PRUNE_KEEP_FAILED: usize = 5;
@@ -1430,6 +1467,14 @@ fn prune_automatically(ctx: &Context) -> Result<()> {
         freed += hil_runs::exclusive_bytes(&run.directory);
         std::fs::remove_dir_all(&run.directory)?;
         removed += 1;
+    }
+    let objects = collect_objects(ctx);
+    if objects.objects > 0 {
+        eprintln!(
+            "hil: deleted {} firmware objects no run links to ({} MiB)",
+            objects.objects,
+            objects.bytes >> 20
+        );
     }
     if removed > 0 {
         hil_runs::collect_observers(&runs)?;

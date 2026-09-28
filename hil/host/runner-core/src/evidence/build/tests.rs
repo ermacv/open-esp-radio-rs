@@ -88,3 +88,51 @@ fn source_stability_check_rejects_a_post_capture_change() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn collection_deletes_only_objects_no_archive_links_to() {
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("target");
+    let source = directory.path().join("source");
+    fs::create_dir_all(&source).unwrap();
+    for name in ["kept", "dropped"] {
+        fs::write(source.join(name), name).unwrap();
+        archive_content_addressed(
+            &source.join(name),
+            &directory.path().join("run").join(name),
+            &target,
+        )
+        .unwrap();
+    }
+    // The run that archived `dropped` is pruned.
+    let dropped = directory.path().join("run/dropped");
+    fs::remove_file(&dropped).unwrap();
+    let prefix = target.join("objects/sha256/00");
+    fs::create_dir_all(&prefix).unwrap();
+    fs::write(prefix.join(".firmware-artifact.tmp-1-0"), "partial").unwrap();
+
+    let collected = collect_objects(&target).unwrap();
+    assert_eq!(collected.objects, 1);
+    assert_eq!(collected.bytes, ("dropped".len() + "partial".len()) as u64);
+    assert!(!prefix.join(".firmware-artifact.tmp-1-0").exists());
+    assert_eq!(
+        fs::read(directory.path().join("run/kept")).unwrap(),
+        b"kept"
+    );
+    // The kept object is reused by a later identical archive.
+    archive_content_addressed(
+        &source.join("kept"),
+        &directory.path().join("again/kept"),
+        &target,
+    )
+    .unwrap();
+    assert_eq!(
+        collect_objects(&target).unwrap(),
+        CollectedObjects::default()
+    );
+    // An empty store collects nothing.
+    assert_eq!(
+        collect_objects(&directory.path().join("none")).unwrap(),
+        CollectedObjects::default()
+    );
+}

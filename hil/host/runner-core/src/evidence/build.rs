@@ -223,6 +223,8 @@ pub(super) fn archive_content_addressed(
     }
     let size_bytes = source_metadata.len();
     let sha256 = sha256_file(source)?;
+    // Collection deletes objects only while no archive uses the store.
+    let _store = ObjectStoreLock::shared(target_directory)?;
     let object = target_directory
         .join("objects/sha256")
         .join(&sha256[..2])
@@ -248,6 +250,84 @@ pub(super) fn archive_content_addressed(
     make_read_only(destination)?;
     File::open(destination_parent)?.sync_all()?;
     Ok(ArchivedFile { size_bytes, sha256 })
+}
+
+/// The lock that orders archiving into a checkout's object store before its
+/// collection: archives hold it shared, collection exclusively.
+struct ObjectStoreLock(File);
+
+impl ObjectStoreLock {
+    fn open(target_directory: &Path) -> Result<File> {
+        let objects = target_directory.join("objects");
+        fs::create_dir_all(&objects)?;
+        Ok(OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(objects.join("lock"))?)
+    }
+
+    fn shared(target_directory: &Path) -> Result<Self> {
+        let file = Self::open(target_directory)?;
+        fs2::FileExt::lock_shared(&file)?;
+        Ok(Self(file))
+    }
+
+    fn exclusive(target_directory: &Path) -> Result<Self> {
+        let file = Self::open(target_directory)?;
+        fs2::FileExt::lock_exclusive(&file)?;
+        Ok(Self(file))
+    }
+}
+
+impl Drop for ObjectStoreLock {
+    fn drop(&mut self) {
+        let _ = fs2::FileExt::unlock(&self.0);
+    }
+}
+
+/// What [`collect_objects`] deleted.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CollectedObjects {
+    pub objects: usize,
+    pub bytes: u64,
+}
+
+/// Delete the objects of the store below `target_directory` that no file
+/// links to any more, and temporary files an interrupted archive left.
+///
+/// Every archived subject is a hard link to its object, or a copy when
+/// linking failed, so an object with a single link serves no run: it only
+/// saves a later identical archive a copy. Collection holds the store's lock
+/// exclusively, so no archive reuses an object while it is deleted.
+pub fn collect_objects(target_directory: &Path) -> Result<CollectedObjects> {
+    use std::os::unix::fs::MetadataExt as _;
+    let root = target_directory.join("objects/sha256");
+    let mut collected = CollectedObjects::default();
+    if !root.is_dir() {
+        return Ok(collected);
+    }
+    let _store = ObjectStoreLock::exclusive(target_directory)?;
+    for prefix in fs::read_dir(&root)? {
+        let prefix = prefix?;
+        if !prefix.file_type()?.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(prefix.path())? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            let temporary = entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".firmware-artifact.tmp-");
+            if metadata.is_file() && (metadata.nlink() == 1 || temporary) {
+                fs::remove_file(entry.path())?;
+                collected.objects += usize::from(!temporary);
+                collected.bytes += metadata.len();
+            }
+        }
+    }
+    Ok(collected)
 }
 
 fn make_read_only(path: &Path) -> Result<()> {

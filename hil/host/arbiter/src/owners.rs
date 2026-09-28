@@ -146,6 +146,16 @@ impl Arbiter {
         })
     }
 
+    /// The registered checkouts that still exist.
+    pub fn registered_checkouts(&self) -> crate::Result<Vec<PathBuf>> {
+        Ok(self
+            .registry()?
+            .checkouts
+            .into_keys()
+            .filter(|checkout| checkout.is_dir())
+            .collect())
+    }
+
     /// The owner registered for the checkout containing `directory`, the
     /// innermost one when checkouts nest.
     pub fn checkout_owner(&self, directory: &Path) -> crate::Result<Option<Owner>> {

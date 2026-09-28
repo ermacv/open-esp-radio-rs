@@ -99,8 +99,10 @@ object store and reproducibility reports stay with the checkout.
 Subjects are ordinary files. A local content-addressed store permits hard-link
 deduplication; copying is the fallback when linking is unavailable. Copying a
 sealed run produces a self-contained bundle. Firmware binaries and generated
-reports remain outside tracked source. Automatic CAS garbage collection is
-not provided.
+reports remain outside tracked source. Pruning deletes the objects no file
+links to any more, in this checkout and every registered one (see
+[find and compare runs](../hil/host/runs.md#find-and-compare-runs)); an object
+copied rather than linked into a run is not needed by it.
 
 ## Reproducing a hardware observation
 

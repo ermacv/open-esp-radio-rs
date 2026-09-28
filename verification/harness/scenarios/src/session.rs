@@ -1244,6 +1244,9 @@ impl Session {
             unprojected: Default::default(),
         };
         let functions = self.image_functions()?;
+        // The (vendor, production) addresses of every claim: a compared pair
+        // is matched by address, so an unnamed ROM function is claimed too.
+        let mut claimed = std::collections::BTreeSet::new();
         let entries = list
             .iter()
             .map(|(source, symbol, production)| {
@@ -1272,6 +1275,7 @@ impl Session {
                     other => return Err(invalid(format!("unknown vendor source {other}"))),
                 };
                 let address = self.probes.entry(production)?;
+                claimed.insert((vendor, address));
                 self.claim(
                     suite,
                     Claimed {
@@ -1289,10 +1293,6 @@ impl Session {
             .collect::<Result<Vec<_>>>()?;
         // Every pair a case compares is a claim; a pair no claim names has
         // its coverage and verdicts dropped from the evidence.
-        let claimed: std::collections::BTreeSet<(&str, &str)> = entries
-            .iter()
-            .map(|entry| (entry.symbol.as_str(), entry.production.as_str()))
-            .collect();
         let names: BTreeMap<u32, &str> = functions
             .iter()
             .flat_map(|(name, addresses)| addresses.iter().map(|a| (*a, name.as_str())))
@@ -1319,10 +1319,8 @@ impl Session {
             // Comparisons whose production side is no probe entry prepare
             // state, such as ROM copies on both sides.
             .filter(|pair| probes.contains_key(&pair.production))
+            .filter(|pair| !claimed.contains(&(pair.vendor, pair.production)))
             .map(|pair| (name(&names, pair.vendor), name(&probes, pair.production)))
-            .filter(|(vendor, production)| {
-                !claimed.contains(&(vendor.as_str(), production.as_str()))
-            })
             .collect();
         for (vendor, production) in &unclaimed {
             println!("{suite} compared pair {vendor} -> {production} has no claim");

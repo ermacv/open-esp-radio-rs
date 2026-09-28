@@ -121,7 +121,7 @@ const ANSWERED: &[(&str, u32)] = &[
     ("rcUpdateTxDoneAmpdu2", 0),
     ("trc_isTxAmpduOperational", 1),
     ("trc_tid_isTxAmpduOperational", 1),
-    ("lmacMSDUAged", 0),
+    (AGED, 0),
     ("lmacRecycleMPDU", 0),
     ("lmacDiscardAgedMSDU", 0),
     ("esp_test_tx_count_retry", 0),
@@ -151,6 +151,9 @@ const BAR_GAP: &str = "the vendor sends a BlockAckReq (ppFillAMPDUBar, ppReSendB
     recipient's window advances only by its own timeout (known gap, reviewed with the Wi-Fi \
     owner)";
 
+/// The vendor aging check, executed after `lmacInit` in the aging cases.
+const AGED: &str = "lmacMSDUAged";
+
 /// One completion: the aggregate's MPDUs, the BlockAck the peer sent, the
 /// production retry policy for a single missing MPDU, whether the station
 /// has a BlockAckReq pending for the TID, and the expected verdict with its
@@ -164,9 +167,30 @@ struct Completion {
     bitmap: u64,
     retain_single: bool,
     bar_pending: bool,
-    /// A reviewed difference: its reason and the MPDU whose Retry bit
-    /// differs.
-    difference: Option<(&'static str, u16)>,
+    /// Production's aggregate publication limit; the vendor's MPDU
+    /// publication and short counters in each transmit descriptor.
+    attempt_limit: u8,
+    vendor_attempts: u8,
+    /// How the vendor's own `lmacMSDUAged` sees the MPDUs, after `lmacInit`
+    /// installed its lifetimes; answered as never aged when absent.
+    aging: Option<Aging>,
+    /// An expected difference: its reason, the MPDU whose Retry bit
+    /// differs and whether the vendor side has the bit.
+    difference: Option<Difference>,
+}
+
+#[derive(Clone, Copy)]
+struct Difference {
+    reason: &'static str,
+    mpdu: u16,
+    vendor_retry: bool,
+}
+
+/// Elapsed time since the MPDUs were queued, against the vendor lifetime.
+#[derive(Clone, Copy)]
+enum Aging {
+    Fresh,
+    Expired,
 }
 
 const fn completion(
@@ -184,9 +208,29 @@ const fn completion(
         bitmap,
         retain_single: true,
         bar_pending: false,
+        attempt_limit: PRODUCTION_ATTEMPT_LIMIT,
+        vendor_attempts: 0,
+        aging: None,
         difference: None,
     }
 }
+
+/// The station's aggregate publication limit: its unicast attempt limit.
+const PRODUCTION_ATTEMPT_LIMIT: u8 = 4;
+/// Transmit descriptor bytes: the MPDU publication and short counters, and
+/// the enqueue timestamp `lmacMSDUAged` measures from.
+const DESCRIPTOR_PUBLICATIONS: usize = 5;
+const DESCRIPTOR_SHORT: usize = 6;
+const DESCRIPTOR_ENQUEUED: usize = 0x18;
+const ENQUEUED_US: u32 = 0x0100_0000;
+/// Beyond the vendor lifetime by more than its own 1024-microsecond margin.
+const EXPIRED_MARGIN_US: u32 = 4096;
+/// Pending decisions: whether production bounds a retained aggregate by a
+/// publication count or, as the vendor, by the MSDU lifetime.
+const PENDING_BOUND: &str = "unclassified, pending decision: the vendor retries a missing MPDU \
+    inside the aggregate until its MSDU lifetime expires, without an attempt count; production \
+    ends the aggregate after its publication limit and hands the MPDU to the ordinary retry \
+    owner";
 
 const COMPLETIONS: &[Completion] = &[
     completion("all-acknowledged", 4, 100, 100, 0b1111),
@@ -201,17 +245,54 @@ const COMPLETIONS: &[Completion] = &[
     completion("single-missing-he", 4, 100, 100, 0b1011),
     Completion {
         retain_single: false,
-        difference: Some((HT_SINGLE, 2)),
+        difference: Some(Difference {
+            reason: HT_SINGLE,
+            mpdu: 2,
+            vendor_retry: true,
+        }),
         ..completion("single-missing-ht", 4, 100, 100, 0b1011)
     },
     // The peer advanced SSN past the first MPDU, already delivered.
     Completion {
-        difference: Some((PREDECESSOR, 0)),
+        difference: Some(Difference {
+            reason: PREDECESSOR,
+            mpdu: 0,
+            vendor_retry: true,
+        }),
         ..completion("predecessor", 4, 100, 101, 0b0101)
     },
     Completion {
         bar_pending: true,
         ..completion("bar-pending", 4, 100, 100, 0b0101)
+    },
+    // The vendor keeps retrying whatever its MPDU counters say.
+    Completion {
+        vendor_attempts: u8::MAX,
+        ..completion("vendor-counters-exhausted", 4, 100, 100, 0b0101)
+    },
+    // Production at its publication limit ends the aggregate.
+    Completion {
+        attempt_limit: 1,
+        difference: Some(Difference {
+            reason: PENDING_BOUND,
+            mpdu: 1,
+            vendor_retry: true,
+        }),
+        ..completion("attempt-limit", 4, 100, 100, 0b0101)
+    },
+    // The vendor's own aging keeps a fresh MPDU and discards an expired one.
+    Completion {
+        aging: Some(Aging::Fresh),
+        ..completion("lifetime-fresh", 4, 100, 100, 0b0101)
+    },
+    Completion {
+        aging: Some(Aging::Expired),
+        difference: Some(Difference {
+            reason: PENDING_BOUND,
+            mpdu: 1,
+            vendor_retry: false,
+        }),
+        ..completion("lifetime-expired", 4, 100, 100, 0b0101)
     },
 ];
 
@@ -256,8 +337,47 @@ fn word(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
-/// Where the production probe keeps each MPDU, from its layout entry.
-fn layout(ctx: &mut Mac) -> Result<Vec<u32>> {
+/// `lmacConfMib`, which `lmacInit` fills: the MSDU lifetimes `lmacMSDUAged`
+/// reads, in units of 1024 microseconds, of an aggregate member (word 0)
+/// and of an ordinary MPDU (word 2).
+const CONF: &str = "lmacConfMib";
+const CONF_LIFETIMES_BYTES: u32 = 12;
+const LIFETIME_AGGREGATE: usize = 0;
+const LIFETIME_ORDINARY: usize = 8;
+const LIFETIME_UNIT_SHIFT: u32 = 10;
+
+/// The aggregate and ordinary MSDU lifetimes, in microseconds, that the
+/// vendor's `lmacInit` installs.
+fn vendor_lifetimes(ctx: &mut Mac) -> Result<(u32, u32)> {
+    let image = ctx.image_symbols()?;
+    let address = ctx.symbol_address(&image, CONF)?;
+    let init =
+        crate::retry::lmac_init(ctx, &image, vec![selection(address, CONF_LIFETIMES_BYTES)])?;
+    let mut row = case("lmac-init-lifetimes", init, None, SessionReset::Cold, false);
+    row.relation = None;
+    row.stack_fill = Some(LEAF_FILLS[0]);
+    let vendor = ctx.vendor.clone();
+    let records = ctx
+        .submit(
+            "lmac-init-lifetimes",
+            &crate::session::request(&vendor, None, None, vec![row], RESORT_EVENTS),
+            None,
+        )?
+        .records
+        .clone();
+    let conf = crate::evidence::output(&records, 0, false);
+    let at = |offset: usize| -> Result<u32> {
+        let bytes = conf
+            .get(offset..offset + 4)
+            .ok_or_else(|| invalid("lmacInit left no MSDU lifetimes"))?;
+        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) << LIFETIME_UNIT_SHIFT)
+    };
+    Ok((at(LIFETIME_AGGREGATE)?, at(LIFETIME_ORDINARY)?))
+}
+
+/// The production layout entry, which also serves as the production side of
+/// a setup phase: it claims and returns every pool slot.
+fn layout_invocation(ctx: &Mac) -> Result<blobray_domain::Invocation> {
     let mut production = ctx.session.probes.invoke(
         LAYOUT_PROBE,
         vec![("output", Arg::Word(Some(i64::from(LAYOUT_OUTPUT))))],
@@ -268,6 +388,12 @@ fn layout(ctx: &mut Mac) -> Result<Vec<u32>> {
         .memory
         .push(known(LAYOUT_OUTPUT, SLOTS as u32 * 4, &[0; SLOTS * 4])?);
     production.arguments.resize(8, Some(0));
+    Ok(production)
+}
+
+/// Where the production probe keeps each MPDU, from its layout entry.
+fn layout(ctx: &mut Mac) -> Result<Vec<u32>> {
+    let production = layout_invocation(ctx)?;
     let memcpy = u32::try_from(
         crate::harness::symbol(
             &ctx.session.inventory,
@@ -309,7 +435,12 @@ fn layout(ctx: &mut Mac) -> Result<Vec<u32>> {
 }
 
 /// The compared case of `completion`.
-fn case_row(ctx: &mut Mac, frames: &[u32], completion: Completion) -> Result<ExecutionCase> {
+fn case_rows(
+    ctx: &mut Mac,
+    frames: &[u32],
+    lifetime: u32,
+    completion: Completion,
+) -> Result<Vec<ExecutionCase>> {
     let image = ctx.image_symbols()?;
     let symbol = |name: &str| ctx.symbol_address(&image, name);
     let count = completion.count;
@@ -389,11 +520,11 @@ fn case_row(ctx: &mut Mac, frames: &[u32], completion: Completion) -> Result<Exe
         };
         word(descriptor, DMA_NEXT, next_dma);
         let flags = DESCRIPTOR_AMPDU | if index == 0 { DESCRIPTOR_FIRST } else { 0 };
-        word(
-            &mut descriptors[index * DESCRIPTOR_BYTES as usize..],
-            0,
-            flags,
-        );
+        let descriptor = &mut descriptors[index * DESCRIPTOR_BYTES as usize..];
+        word(descriptor, 0, flags);
+        descriptor[DESCRIPTOR_PUBLICATIONS] = completion.vendor_attempts;
+        descriptor[DESCRIPTOR_SHORT] = completion.vendor_attempts;
+        word(descriptor, DESCRIPTOR_ENQUEUED, ENQUEUED_US);
         let buffer = &mut frames_vendor[index * BUFFER_BYTES..(index + 1) * BUFFER_BYTES];
         let sequence = u32::from(completion.first_sequence.wrapping_add(index as u16) & 0xff);
         let metadata = (MPDU_BYTES + FCS_BYTES) as u32 | sequence << METADATA_SEQUENCE_SHIFT;
@@ -427,7 +558,22 @@ fn case_row(ctx: &mut Mac, frames: &[u32], completion: Completion) -> Result<Exe
         crate::mac::call_boundary(&image, "GetAccess"),
         ARENA_ACCESS,
     ));
+    if let Some(aging) = completion.aging {
+        let elapsed = match aging {
+            Aging::Fresh => 0,
+            Aging::Expired => lifetime + EXPIRED_MARGIN_US,
+        };
+        vendor.calls.push(answered(
+            "hal_now",
+            symbol("hal_now")?,
+            crate::mac::call_boundary(&image, "hal_now"),
+            ENQUEUED_US + elapsed,
+        ));
+    }
     for (name, value) in ANSWERED {
+        if *name == AGED && completion.aging.is_some() {
+            continue;
+        }
         vendor.calls.push(answered(
             name,
             symbol(name)?,
@@ -461,7 +607,10 @@ fn case_row(ctx: &mut Mac, frames: &[u32], completion: Completion) -> Result<Exe
                 Arg::Word(Some(i64::from((completion.bitmap >> 32) as u32))),
             ),
             ("received", Arg::Word(Some(1))),
-            ("attempt_limit", Arg::Word(Some(4))),
+            (
+                "attempt_limit",
+                Arg::Word(Some(i64::from(completion.attempt_limit))),
+            ),
             (
                 "retain_single",
                 Arg::Word(Some(i64::from(completion.retain_single))),
@@ -480,11 +629,31 @@ fn case_row(ctx: &mut Mac, frames: &[u32], completion: Completion) -> Result<Exe
             &vec![0; (OUTPUT_WORDS * 4) as usize],
         )?,
     ]);
+    // The aging cases start from the vendor's own lmacInit, which installs
+    // the lifetimes `lmacMSDUAged` reads.
+    let mut rows = vec![];
+    if completion.aging.is_some() {
+        let init = crate::retry::lmac_init(ctx, &image, vec![])?;
+        let noop = layout_invocation(ctx)?;
+        let mut setup = crate::harness::setup(
+            format!("ampdu-resort-{}-init", completion.label),
+            init,
+            noop,
+            SessionReset::Cold,
+        );
+        setup.stack_fill = Some(LEAF_FILLS[0]);
+        rows.push(setup);
+    }
+    let reset = if rows.is_empty() {
+        SessionReset::Cold
+    } else {
+        SessionReset::Warm
+    };
     let mut row = case(
         format!("ampdu-resort-{}", completion.label),
         vendor,
         Some(production),
-        SessionReset::Cold,
+        reset,
         false,
     );
     let relation = row.relation.as_mut().expect("a compared case");
@@ -506,7 +675,8 @@ fn case_row(ctx: &mut Mac, frames: &[u32], completion: Completion) -> Result<Exe
         })
         .collect();
     row.stack_fill = Some(LEAF_FILLS[0]);
-    Ok(row)
+    rows.push(row);
+    Ok(rows)
 }
 
 /// Compare every completion: each matches, or differs for its reviewed
@@ -514,10 +684,13 @@ fn case_row(ctx: &mut Mac, frames: &[u32], completion: Completion) -> Result<Exe
 /// BlockAckReq exactly when the station has one pending.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
     let frames = layout(ctx)?;
+    let (aggregate, ordinary) = vendor_lifetimes(ctx)?;
+    println!("vendor MSDU lifetimes: aggregate {aggregate} us, ordinary {ordinary} us");
     let image = ctx.image_symbols()?;
     let request_bar = ctx.symbol_address(&image, "ppReSendBar")?;
     for completion in COMPLETIONS {
-        let row = case_row(ctx, &frames, *completion)?;
+        let rows = case_rows(ctx, &frames, aggregate, *completion)?;
+        let compared = rows.len() as u32 - 1;
         let label = format!("ampdu-resort-{}", completion.label);
         let expected = match completion.difference {
             Some(_) => ComparisonVerdict::Diff,
@@ -527,43 +700,46 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
         let records = ctx
             .submit(
                 &label,
-                &crate::session::request(
-                    &vendor,
-                    Some(&production),
-                    None,
-                    vec![row],
-                    RESORT_EVENTS,
-                ),
+                &crate::session::request(&vendor, Some(&production), None, rows, RESORT_EVENTS),
                 Some(expected),
             )?
             .records
             .clone();
-        let status = crate::i2c::returned_low(&records, 0, true);
+        let status = crate::i2c::returned_low(&records, compared, true);
         if status != Some(0) {
             return Err(invalid(format!("{label}: production reported {status:?}")));
         }
-        if let Some((reason, mpdu)) = completion.difference {
+        if let Some(difference) = completion.difference {
             let at = records.iter().find_map(|record| match record {
                 blobray_domain::ExecutionEvidence::Comparison { result, .. } => {
                     result.difference.clone()
                 }
                 _ => None,
             });
+            let (with, without) = (FRAME_CONTROL[1] | RETRY, FRAME_CONTROL[1]);
+            let (vendor_byte, replacement_byte) = if difference.vendor_retry {
+                (with, without)
+            } else {
+                (without, with)
+            };
             let expected_at = blobray_domain::ComparisonDifference::Memory {
-                pair: mpdu,
+                pair: difference.mpdu,
                 offset: RETRY_BYTE,
-                vendor: FRAME_CONTROL[1] | RETRY,
-                replacement: FRAME_CONTROL[1],
+                vendor: vendor_byte,
+                replacement: replacement_byte,
             };
             if at.as_ref() != Some(&expected_at) {
                 return Err(invalid(format!(
-                    "{label}: differs at {at:x?}, not at MPDU {mpdu}'s Retry bit: {reason}"
+                    "{label}: differs at {at:x?}, not at MPDU {}'s Retry bit: {}",
+                    difference.mpdu, difference.reason
                 )));
             }
         }
-        let sent_bar = crate::evidence::events(&records, 0, false).iter().any(|event| {
-            matches!(event, blobray_domain::ExecutionEvent::ModeledCall { target, .. } if *target == request_bar)
-        });
+        let sent_bar = crate::evidence::events(&records, compared, false)
+            .iter()
+            .any(|event| {
+                matches!(event, blobray_domain::ExecutionEvent::ModeledCall { target, .. } if *target == request_bar)
+            });
         if sent_bar != completion.bar_pending {
             return Err(invalid(format!(
                 "{label}: the vendor BlockAckReq was {}sent: {BAR_GAP}",

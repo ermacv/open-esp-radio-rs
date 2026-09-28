@@ -546,14 +546,17 @@ fn init_invocation(
     Ok(init)
 }
 
-/// The retry limits and RTS threshold the vendor's `lmacInit` installs.
-fn vendor_limits(ctx: &mut Mac) -> Result<Limits> {
-    let image = ctx.image_symbols()?;
+/// The vendor's `lmacInit` over zeroed session queue contexts, observing
+/// `observe`.
+pub(crate) fn lmac_init(
+    ctx: &Mac,
+    image: &std::collections::BTreeMap<String, u32>,
+    observe: Vec<blobray_domain::MemorySelection>,
+) -> Result<blobray_domain::Invocation> {
     let queues = vec![0u8; (QUEUE_BYTES * QUEUE_COUNT) as usize];
-    let address = ctx.symbol_address(&image, CONF)? + CONF_LIMITS;
-    let init = init_invocation(
+    init_invocation(
         ctx,
-        &image,
+        image,
         vec![region(
             QUEUES,
             queues.len() as u32,
@@ -561,8 +564,15 @@ fn vendor_limits(ctx: &mut Mac) -> Result<Limits> {
             None,
             RegionLifetime::Session,
         )?],
-        vec![selection(address, CONF_LIMITS_BYTES)],
-    )?;
+        observe,
+    )
+}
+
+/// The retry limits and RTS threshold the vendor's `lmacInit` installs.
+fn vendor_limits(ctx: &mut Mac) -> Result<Limits> {
+    let image = ctx.image_symbols()?;
+    let address = ctx.symbol_address(&image, CONF)? + CONF_LIMITS;
+    let init = lmac_init(ctx, &image, vec![selection(address, CONF_LIMITS_BYTES)])?;
     let mut row = case("lmac-init", init, None, SessionReset::Cold, false);
     row.relation = None;
     row.stack_fill = Some(LEAF_FILLS[0]);

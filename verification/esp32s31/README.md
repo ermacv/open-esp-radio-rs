@@ -498,10 +498,18 @@ production hands a single missing HT MPDU to its ordinary retry owner. One
 known gap is checked: the vendor sends a BlockAckReq after a resort whose
 station has one pending for the TID, and production sends none.
 
-The comparison does not cover the vendor's aged-MSDU discard, the HE
-one-member conversion (`ppHEAMPDU2Normal`), or the all-acknowledged shortcut
-of a terminated aggregate; the aggregate attempt limit belongs to the retry
-leaves, not to the resort. Production writes zero in the metadata bits the
+The retry bound is compared too. The vendor keeps a missing MPDU in the
+aggregate whatever its descriptor counters say (MATCH with them exhausted);
+its only bound is the MSDU lifetime, which cases check by executing its own
+`lmacMSDUAged` after `lmacInit` installed the lifetimes, reported by the run:
+a fresh MPDU is kept (MATCH), an expired one discarded. Production instead
+ends the aggregate at its publication limit. The expired and the limit cases
+must DIFF at the first missing MPDU; they stay unclassified until the Wi-Fi
+owner decides which bound production takes.
+
+The comparison does not cover the HE one-member conversion
+(`ppHEAMPDU2Normal`) or the all-acknowledged shortcut of a terminated
+aggregate. Production writes zero in the metadata bits the
 vendor fills with the sequence number's low byte: the vendor writer of that
 byte and whether hardware reads it are not established, so it stays an
 unexplained difference.

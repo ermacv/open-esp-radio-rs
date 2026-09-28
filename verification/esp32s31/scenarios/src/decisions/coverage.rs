@@ -1161,4 +1161,13 @@ pub const DECISIONS: &[Decision] = &[
             },
         ],
     },
+    Decision {
+        reason: "`rcReachRetryLimit` asserting on a missing transmit descriptor or schedule \
+            record: production's retry owners take both as typed values",
+        places: &[Place::Range {
+            function: "rcReachRetryLimit",
+            start: 0xa,
+            end: 0x46,
+        }],
+    },
 ];

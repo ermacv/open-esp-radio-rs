@@ -4456,6 +4456,7 @@ artifact = "libpp"
 member = "trc.o"
 symbol = "rcReachRetryLimit"
 code = "254743107a43aee1c82293cb8b66f2f3454c4dbacdb6da4ded1efe800b7d6642"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "libpp"
@@ -6364,6 +6365,7 @@ artifact = "rom"
 member = ""
 symbol = "rcReachRetryLimit"
 code = "10feb35d6b156527c94250d5109ecd6858eee8543a4415af14698a747c1e17f4"
+decisions = ["coverage.rs"]
 
 [[function]]
 artifact = "rom"

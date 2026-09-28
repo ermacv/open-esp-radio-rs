@@ -37,7 +37,7 @@ pub use request::{
     AccessAddress, AdvertisingConfiguration, AdvertisingEvent, AdvertisingReception,
     AdvertisingSetId, CoexistenceLevel, ConnectionAllowances, ConnectionConfiguration,
     ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit, EventId, RadioRequest,
-    RadioTiming, RequestError, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive,
-    TestTransmit, TxPower,
+    RadioTiming, RequestError, ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy,
+    TestReceive, TestTransmit, TxPower,
 };
 pub use time::{RadioDuration, RadioInstant, RadioWindow, WindowError};

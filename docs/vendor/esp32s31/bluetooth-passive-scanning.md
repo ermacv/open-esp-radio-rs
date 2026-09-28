@@ -90,9 +90,11 @@ The branch that chooses the `UPPER_LIMIT_MAX` value is reduced without guessing 
 hardware field. The start body reads byte `+0x50` of the controller options,
 `esp_bt_controller_config_t::ble.dis_scan_backoff`; the public
 `ble_user_cfg.h` fixes `NIMBLE_DISABLE_SCAN_BACKOFF` to zero. A zero predicate
-publishes the configured upper limit, whose default
-`UC_BT_CTRL_LE_SCAN_BACKOFF_UPPERLIMITMAX` is 256 (`0x100`), while disabling the
-backoff publishes `1`. The three words therefore carry the Core Specification
+publishes the configured upper limit, while disabling the backoff publishes
+`1`. The ESP-IDF S31 glue has no `scan_backoff_upperlimitmax` option; the
+vendor reference on the stand read `0x20` from `UPPER_LIMIT_MAX` during an
+active scan, so the S31 build's configuration carries 32 rather than the 256
+default of other chips' `ble_user_cfg.h`. The three words therefore carry the Core Specification
 scan-backoff state (Vol 6, Part B, 4.4.3.2): the maximum upper limit in
 `UPPER_LIMIT_MAX` and the initial upper limit and backoff count of one in
 `BACKOFF_STATE_0` and `BACKOFF_STATE_1`. The vendor's internal test command

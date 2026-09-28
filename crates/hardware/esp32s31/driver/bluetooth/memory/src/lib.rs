@@ -131,11 +131,11 @@ pub use legacy_advertising::{
 
 pub use legacy_scanning_event_image::{
     LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
-    LegacyScanStartSelection, LegacyScanWindowTicks,
+    LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
 };
 
 pub use legacy_scanning::{
-    BLUETOOTH_PASSIVE_SCAN_SCHEDULER_ITEM_COUNT, LegacyScanError, LegacyScanEvent,
+    BLUETOOTH_LEGACY_SCAN_SCHEDULER_ITEM_COUNT, LegacyScanError, LegacyScanEvent,
     LegacyScanEventTiming, LegacyScanPool, LegacyScanStorage,
 };
 

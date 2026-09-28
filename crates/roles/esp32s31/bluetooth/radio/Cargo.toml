@@ -17,6 +17,8 @@ test-support = [
 
 [dependencies]
 oer-bluetooth-radio = { path = "../../../../protocols/bluetooth/le/radio" }
+oer-bluetooth-trace = { path = "../../../../protocols/bluetooth/trace" }
+oer-trace = { path = "../../../../trace" }
 oer-esp32s31-bluetooth = { path = "../../../../hardware/esp32s31/driver/bluetooth" }
 oer-esp32s31-bluetooth-memory = { path = "../../../../hardware/esp32s31/driver/bluetooth/memory" }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal" }

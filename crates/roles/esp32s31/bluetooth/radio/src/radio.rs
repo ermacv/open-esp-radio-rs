@@ -8,9 +8,10 @@ use oer_bluetooth_radio::{
     AdvertisingSetId, ConnectionAllowances, ConnectionConfiguration, ConnectionEvent,
     ConnectionEventTiming, ConnectionId, DataPduKind, EventId, EventResult, RadioDuration,
     RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError,
-    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit,
-    TxPower,
+    ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport,
+    TestTransmit, TxPower,
 };
+use oer_bluetooth_trace::{ScanEventTrace, ScanWindowTrace, ScanWindowVerdict};
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
     scheduler::{
@@ -28,7 +29,7 @@ use oer_esp32s31_bluetooth_memory::{
     LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
     LegacyConnectableScanResponsePacketInput, LegacyScanEventTiming, LegacyScanPool,
     LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
-    LegacyScanStartSelection, LegacyScanWindowTicks,
+    LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
     PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
     PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
@@ -1221,7 +1222,11 @@ impl<
         let index = free_slot(&self.scanners)?;
         let pool = &mut self.memory.scanners;
         let instance = pool.acquire().ok_or(RequestError::NoInstance)?;
-        let config = LegacyScanResetConfig::le_1m_public_accept_all(tx_power);
+        let scan_type = match configuration.scan_type {
+            ScanType::Passive => LegacyScanType::Passive,
+            ScanType::Active => LegacyScanType::Active,
+        };
+        let config = LegacyScanResetConfig::le_1m_public_accept_all(tx_power, scan_type);
         if pool
             .reset(&instance, &self.memory.scanning, config)
             .is_err()
@@ -1238,18 +1243,55 @@ impl<
     }
 
     fn scan(&mut self, scan: ScanWindow) -> Result<(), RequestError> {
-        let index = find_id(&self.scanners, scan.scanner).ok_or(RequestError::Unknown)?;
+        let result = self.submit_scan(scan);
+        // DIAGNOSTIC: only the first windows.
+        static SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        if SEEN.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 64 {
+            oer_trace::emit(&ScanWindowTrace {
+                verdict: match result {
+                    Ok(()) => ScanWindowVerdict::Submitted,
+                    Err((verdict, _)) => verdict,
+                },
+                channel: scan.channel.index(),
+                // DIAGNOSTIC: the anchor's distance ahead of now, in microseconds.
+                duration_micros: scan.window.start().as_micros().wrapping_sub(self.clock.now)
+                    as u32,
+            });
+        }
+        if SEEN.load(core::sync::atomic::Ordering::Relaxed) <= 2 {
+            // DIAGNOSTIC: the raw controller time at submission.
+            oer_trace::emit(&ScanWindowTrace {
+                verdict: ScanWindowVerdict::Busy,
+                channel: 0xcc,
+                duration_micros: self.clock.raw(self.clock.now),
+            });
+        }
+        result.map_err(|(_, error)| error)
+    }
+
+    fn submit_scan(&mut self, scan: ScanWindow) -> Result<(), (ScanWindowVerdict, RequestError)> {
+        let index = find_id(&self.scanners, scan.scanner)
+            .ok_or((ScanWindowVerdict::Unprepared, RequestError::Unknown))?;
         if self.scanners[index]
             .as_ref()
             .is_some_and(|slot| slot.event.is_some())
         {
-            return Err(RequestError::Busy);
+            return Err((ScanWindowVerdict::Busy, RequestError::Busy));
         }
         let anchor = scan.window.start().as_micros();
         let duration = scan.window.duration().as_micros();
-        let window = self.reserve(anchor, duration)?;
-        self.free(window)?;
-        self.check_capacity(1)?;
+        let unreserved = |error| {
+            let verdict = match error {
+                RequestError::TooLate => ScanWindowVerdict::TooLate,
+                RequestError::Overlap => ScanWindowVerdict::Overlap,
+                _ => ScanWindowVerdict::TooFar,
+            };
+            (verdict, error)
+        };
+        let window = self.reserve(anchor, duration).map_err(unreserved)?;
+        self.free(window).map_err(unreserved)?;
+        self.check_capacity(1)
+            .map_err(|error| (ScanWindowVerdict::NoCapacity, error))?;
         // The pinned scan restart (`r_sym_ble_M0sTWGzdUqAUyXoK849F`) ends
         // the item at most 32768 microseconds after the anchor and records
         // the whole window length in the link state.
@@ -1277,8 +1319,9 @@ impl<
                 },
                 LegacyScanStartSelection::Requested,
                 coexistence::passive_scan_priorities(self.coexistence),
+                self.policy.sequence_lead_raw_delta(),
             )
-            .map_err(|_| RequestError::Unsupported)?;
+            .map_err(|_| (ScanWindowVerdict::Unprepared, RequestError::Unsupported))?;
         let id = self
             .memory
             .scanners
@@ -1748,9 +1791,62 @@ impl<
         sink: &mut impl BluetoothRadioSink,
     ) {
         let pool_result = match id.kind() {
-            SchedulerRoleKind::LegacyAdvertising => self.memory.legacy.retire(id),
-            SchedulerRoleKind::ConnectableAdvertising => self.memory.connectable.retire(id),
-            SchedulerRoleKind::LegacyScanning => self.memory.scanners.retire(id),
+            SchedulerRoleKind::LegacyAdvertising => {
+                // DIAGNOSTIC: the completion status of an advertising item.
+                static ADV: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if ADV.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 64 {
+                    oer_trace::emit(&ScanWindowTrace {
+                        verdict: ScanWindowVerdict::Busy,
+                        channel: 0xad,
+                        duration_micros: match status {
+                            None => 0xffff_ffff,
+                            Some(SchedulerItemCompletionStatus::Zero) => 0,
+                            Some(SchedulerItemCompletionStatus::NonZero(value)) => value.get(),
+                        },
+                    });
+                }
+                self.memory.legacy.retire(id)
+            }
+            SchedulerRoleKind::ConnectableAdvertising => {
+                // DIAGNOSTIC: the completion status of an advertising item.
+                static CADV: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if CADV.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 64 {
+                    oer_trace::emit(&ScanWindowTrace {
+                        verdict: ScanWindowVerdict::Busy,
+                        channel: 0xca,
+                        duration_micros: match status {
+                            None => 0xffff_ffff,
+                            Some(SchedulerItemCompletionStatus::Zero) => 0,
+                            Some(SchedulerItemCompletionStatus::NonZero(value)) => value.get(),
+                        },
+                    });
+                }
+                self.memory.connectable.retire(id)
+            }
+            SchedulerRoleKind::LegacyScanning => {
+                // DIAGNOSTIC: the completion status of a scanner item.
+                static SETTLED: core::sync::atomic::AtomicU32 =
+                    core::sync::atomic::AtomicU32::new(0);
+                if SETTLED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 64 {
+                    let raw = match status {
+                        None => 0xffff_ffff,
+                        Some(SchedulerItemCompletionStatus::Zero) => 0,
+                        Some(SchedulerItemCompletionStatus::NonZero(value)) => value.get(),
+                    };
+                    oer_trace::emit(&ScanEventTrace {
+                        source: status.is_some(),
+                        fault: false,
+                        received: 0xffff,
+                        discarded: raw as u16,
+                    });
+                    oer_trace::emit(&ScanWindowTrace {
+                        verdict: ScanWindowVerdict::Busy,
+                        channel: 0xee,
+                        duration_micros: raw,
+                    });
+                }
+                self.memory.scanners.retire(id)
+            }
             SchedulerRoleKind::PeripheralConnection => self.memory.connections.retire(id),
             SchedulerRoleKind::DirectTestMode => self.memory.dtm.retire(id),
         };
@@ -1800,17 +1896,56 @@ impl<
                     .memory
                     .scanners
                     .receive_source(&slot.instance, usize::from(event.item));
+                // DIAGNOSTIC: dump the first completed scanner graph.
+                static DUMPED: core::sync::atomic::AtomicBool =
+                    core::sync::atomic::AtomicBool::new(false);
+                static COMPLETED: core::sync::atomic::AtomicU32 =
+                    core::sync::atomic::AtomicU32::new(0);
+                if COMPLETED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 100
+                    && !DUMPED.swap(true, core::sync::atomic::Ordering::Relaxed)
+                {
+                    let mut words = [0u32; 96];
+                    self.memory.scanners.diagnostic_words(
+                        &slot.instance,
+                        usize::from(event.item),
+                        &mut words,
+                    );
+                    for (index, pair) in words.chunks(2).enumerate() {
+                        oer_trace::emit(&ScanWindowTrace {
+                            verdict: ScanWindowVerdict::Busy,
+                            channel: 0x80 + index as u8,
+                            duration_micros: pair[0],
+                        });
+                        oer_trace::emit(&ScanWindowTrace {
+                            verdict: ScanWindowVerdict::Busy,
+                            channel: 0x80 + index as u8,
+                            duration_micros: pair[1],
+                        });
+                    }
+                }
                 let _ = self.memory.scanners.finish_event(&slot.instance);
                 slot.event = None;
-                if let Ok(source) = source {
-                    drain_chain(
+                let counts = match source {
+                    Ok(source) => drain_chain(
                         &mut self.memory.scanning,
                         source,
                         &self.clock,
                         event.id,
                         sink,
                         &mut self.faulted,
-                    );
+                    ),
+                    Err(_) => ScanEventTrace {
+                        source: false,
+                        fault: false,
+                        received: 0,
+                        discarded: 0,
+                    },
+                };
+                // DIAGNOSTIC: only the first events.
+                static ENDED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                let ended = ENDED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                if (80..144).contains(&ended) {
+                    oer_trace::emit(&counts);
                 }
             }
             SchedulerRoleKind::PeripheralConnection => {
@@ -1934,25 +2069,41 @@ fn drain_chain<const PACKETS: usize>(
     id: EventId,
     sink: &mut impl BluetoothRadioSink,
     faulted: &mut bool,
-) {
+) -> ScanEventTrace {
+    let mut counts = ScanEventTrace {
+        source: true,
+        fault: false,
+        received: 0,
+        discarded: 0,
+    };
     loop {
         match chain.take(source) {
-            Ok(Some(LeRxOutcome::Received(pdu))) => sink.outcome(RadioOutcome::Received {
-                id,
-                pdu: ReceivedPdu {
-                    pdu: pdu.as_bytes(),
-                    rssi_dbm: pdu.rssi_dbm(),
-                    captured_at: Some(
-                        clock.packet_start(pdu.captured_time().wrapping_controller_ticks()),
-                    ),
-                },
-            }),
-            Ok(Some(LeRxOutcome::Discarded)) => {}
-            Ok(None) => return,
+            Ok(Some(LeRxOutcome::Received(pdu))) => {
+                counts.received = counts.received.saturating_add(1);
+                // DIAGNOSTIC: count SCAN_RSP PDUs in the discarded field.
+                if pdu.as_bytes().first().is_some_and(|header| header & 0x0f == 4) {
+                    counts.discarded = counts.discarded.saturating_add(1);
+                }
+                sink.outcome(RadioOutcome::Received {
+                    id,
+                    pdu: ReceivedPdu {
+                        pdu: pdu.as_bytes(),
+                        rssi_dbm: pdu.rssi_dbm(),
+                        captured_at: Some(
+                            clock.packet_start(pdu.captured_time().wrapping_controller_ticks()),
+                        ),
+                    },
+                });
+            }
+            Ok(Some(LeRxOutcome::Discarded)) => {
+                counts.discarded = counts.discarded.saturating_add(1);
+            }
+            Ok(None) => return counts,
             Err(_) => {
                 *faulted = true;
                 sink.outcome(RadioOutcome::Fault(RadioFault::MemoryInconsistency));
-                return;
+                counts.fault = true;
+                return counts;
             }
         }
     }

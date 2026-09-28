@@ -18,6 +18,7 @@ fn each_workload_selects_its_image() {
         ),
         ("kind = 'scannable-advertising'", ImageClass::BluetoothDtm),
         ("kind = 'directed-advertising'", ImageClass::BluetoothDtm),
+        ("kind = 'active-scanning'", ImageClass::BluetoothDtm),
         (
             "kind = 'dtm-peer'\nminimum_packets = 100",
             ImageClass::BluetoothDtm,

@@ -9,7 +9,7 @@ use crate::{
     sram_link::ControllerSramLinkAddress,
 };
 
-pub(super) const BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS: usize = 0x84 / 4;
+pub(super) const BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS: usize = 0x84 / 4;
 const RX_HEAD_MASK: u32 = 0x000f_ffff;
 const LINK_STATE_18_BIT_20: u32 = 1 << 20;
 const LINK_STATE_18_BIT_31: u32 = 1 << 31;
@@ -97,16 +97,36 @@ pub enum LegacyScanStartSelection {
 // CAPABILITY: bluetooth-le-privacy-1-2
 pub struct LegacyScanResetConfig {
     default_tx_power: LeTxPower,
+    scan_type: LegacyScanType,
+}
+
+/// Whether the scanner requests scan responses.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacyScanType {
+    /// Only listen.
+    Passive,
+    /// Answer scannable advertising with `SCAN_REQ`.
+    Active,
 }
 
 impl LegacyScanResetConfig {
-    /// Construct the restricted passive LE 1M profile.
-    pub const fn le_1m_public_accept_all(default_tx_power: LeTxPower) -> Self {
-        Self { default_tx_power }
+    /// Construct the restricted LE 1M profile of `scan_type`.
+    pub const fn le_1m_public_accept_all(
+        default_tx_power: LeTxPower,
+        scan_type: LegacyScanType,
+    ) -> Self {
+        Self {
+            default_tx_power,
+            scan_type,
+        }
     }
 
     pub(super) const fn default_tx_power(self) -> LeTxPower {
         self.default_tx_power
+    }
+
+    pub(super) const fn scan_type(self) -> LegacyScanType {
+        self.scan_type
     }
 }
 
@@ -147,16 +167,16 @@ impl LegacyScanRxHeadProjection {
 /// this image after binding the real RX head of the same pinned graph.
 #[derive(Clone, Copy)]
 pub(super) struct LegacyScanLinkStateImage {
-    words: [u32; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS],
+    words: [u32; BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS],
 }
 
 impl LegacyScanLinkStateImage {
     /// Build the exact reset result over a zero-based open-driver allocation.
-    pub(super) const fn restricted_passive_le_1m(
+    pub(super) const fn restricted_le_1m(
         rx_head: LegacyScanRxHeadProjection,
         config: LegacyScanResetConfig,
     ) -> Self {
-        let mut words = [0; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS];
+        let mut words = [0; BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS];
 
         // All masks and positional images remain private to this SRAM codec.
         words[WORD_00] = 0x1ff0_0000;
@@ -180,11 +200,11 @@ impl LegacyScanLinkStateImage {
         Self { words }
     }
 
-    pub(super) const fn words(self) -> [u32; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS] {
+    pub(super) const fn words(self) -> [u32; BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS] {
         self.words
     }
 
-    pub(super) const fn from_words(words: [u32; BLUETOOTH_PASSIVE_SCAN_LINK_STATE_WORDS]) -> Self {
+    pub(super) const fn from_words(words: [u32; BLUETOOTH_LEGACY_SCAN_LINK_STATE_WORDS]) -> Self {
         Self { words }
     }
 

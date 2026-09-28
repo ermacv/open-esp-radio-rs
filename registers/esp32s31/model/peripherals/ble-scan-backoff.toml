@@ -14,7 +14,7 @@ baseAddress = 0x20101970
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "UPPER_LIMIT_MAX"
-description = "Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled."
+description = "Maximum scan-backoff upper limit. Scanner start writes the Controller configuration's nine-bit upper limit, 32 in the S31 build, or 1 when backoff is disabled."
 addressOffset = 0x0
 size = 32
 access = "write-only"

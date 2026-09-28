@@ -47535,7 +47535,7 @@ pub mod ble_scan_backoff {
         backoff_state_1: BackoffState1,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled."]
+        #[doc = "0x00 - Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the Controller configuration's nine-bit upper limit, 32 in the S31 build, or 1 when backoff is disabled."]
         #[inline(always)]
         pub const fn upper_limit_max(&self) -> &UpperLimitMax {
             &self.upper_limit_max
@@ -47551,10 +47551,10 @@ pub mod ble_scan_backoff {
             &self.backoff_state_1
         }
     }
-    #[doc = "UPPER_LIMIT_MAX (w) register accessor: Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`upper_limit_max::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@upper_limit_max`] module"]
+    #[doc = "UPPER_LIMIT_MAX (w) register accessor: Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the Controller configuration's nine-bit upper limit, 32 in the S31 build, or 1 when backoff is disabled.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`upper_limit_max::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@upper_limit_max`] module"]
     #[doc(alias = "UPPER_LIMIT_MAX")]
     pub type UpperLimitMax = crate::Reg<upper_limit_max::UpperLimitMaxSpec>;
-    #[doc = "Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled."]
+    #[doc = "Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the Controller configuration's nine-bit upper limit, 32 in the S31 build, or 1 when backoff is disabled."]
     pub mod upper_limit_max {
         #[doc = "Register `UPPER_LIMIT_MAX` writer"]
         pub type W = crate::W<UpperLimitMaxSpec>;
@@ -47567,7 +47567,7 @@ pub mod ble_scan_backoff {
                 ValueW::new(self, 0)
             }
         }
-        #[doc = "Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the controller option scan_backoff_upperlimitmax masked to nine bits, default 256, or 1 when backoff is disabled.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`upper_limit_max::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Project-assigned name. Maximum scan-backoff upper limit. Scanner start writes the Controller configuration's nine-bit upper limit, 32 in the S31 build, or 1 when backoff is disabled.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`upper_limit_max::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct UpperLimitMaxSpec;
         impl crate::RegisterSpec for UpperLimitMaxSpec {
             type Ux = u32;
@@ -61399,7 +61399,7 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0x00000100` to `BLE_SCAN_BACKOFF`.`UPPER_LIMIT_MAX`.
+    /// Publish the SVD-qualified image `0x00000020` to `BLE_SCAN_BACKOFF`.`UPPER_LIMIT_MAX`.
     #[inline]
     pub fn publish_bluetooth_scan_standard_upper_limit_max(registers: &crate::BleScanBackoff) {
         // SAFETY: generator validation proves that the target is a
@@ -61408,7 +61408,7 @@ pub mod fixed_register_image {
         unsafe {
             registers
                 .upper_limit_max()
-                .write_with_zero(|writer| writer.bits(0x00000100));
+                .write_with_zero(|writer| writer.bits(0x00000020));
         }
     }
 

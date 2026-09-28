@@ -363,7 +363,7 @@ pub(super) fn check_markdown(ctx: &Context, initial: &[PathBuf]) -> Result<LinkS
         for text in parsed.code_spans.iter().chain(&parsed.shell_blocks) {
             if super::cli::TOOLS
                 .iter()
-                .any(|tool| text.contains(&format!("cargo {tool}")))
+                .any(|(tool, _)| text.contains(&format!("cargo {tool}")))
             {
                 commands.push((document.clone(), text.clone()));
             }

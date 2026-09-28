@@ -56,9 +56,12 @@ fn check_commands(ctx: &Context, texts: &[(String, String)]) -> Result<usize> {
     // Through the aliases of `.cargo/config.toml`, as the documents run them;
     // each builds its tool first. The running xtask is no source: a check
     // that also builds may replace its executable.
-    for tool in cli::TOOLS {
-        let output = process::capture(ctx.cargo().args([tool, REQUEST]))?;
-        nodes.extend(serde_json::from_slice::<Vec<CommandNode>>(&output.stdout)?);
+    for (tool, source) in cli::TOOLS {
+        let tree = match source {
+            cli::TreeSource::Alias => process::capture(ctx.cargo().args([tool, REQUEST]))?.stdout,
+            cli::TreeSource::File(path) => fs::read(ctx.root.join(path))?,
+        };
+        nodes.extend(serde_json::from_slice::<Vec<CommandNode>>(&tree)?);
     }
     let trees = cli::Trees::new(nodes);
     let mut checked = 0;

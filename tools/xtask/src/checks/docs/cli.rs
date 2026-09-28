@@ -7,8 +7,30 @@ use std::collections::BTreeMap;
 
 use oer_command_tree::CommandNode;
 
-/// The tools whose commands the documentation shows.
-pub(super) const TOOLS: [&str; 5] = ["xtask", "hil", "qualification", "memory", "registers"];
+/// The Cargo aliases whose commands the documentation shows, and where
+/// each tool's command tree comes from.
+pub(super) const TOOLS: [(&str, TreeSource); 6] = [
+    ("xtask", TreeSource::Alias),
+    ("hil", TreeSource::Alias),
+    ("qualification", TreeSource::Alias),
+    ("memory", TreeSource::Alias),
+    ("registers", TreeSource::Alias),
+    // Blobray is a separate, standalone workspace; its tests keep this file
+    // equal to its live tree, so the check need not build it.
+    (
+        "blobray",
+        TreeSource::File("tools/blobray/next/command-tree.json"),
+    ),
+];
+
+/// Where the check reads a tool's command tree.
+#[derive(Clone, Copy)]
+pub(super) enum TreeSource {
+    /// `cargo <alias> __command-tree`, which builds the tool first.
+    Alias,
+    /// A committed file, relative to the repository root.
+    File(&'static str),
+}
 
 /// Commands that hand their arguments to another tree: `cargo xtask hil`
 /// runs `cargo hil`.
@@ -122,7 +144,7 @@ pub(super) fn invocations(text: &str) -> Vec<Vec<String>> {
         let mut index = 0;
         while index + 1 < tokens.len() {
             let tool = clean(tokens[index + 1]);
-            if clean(tokens[index]) != "cargo" || !TOOLS.contains(&tool.as_str()) {
+            if clean(tokens[index]) != "cargo" || !TOOLS.iter().any(|(name, _)| *name == tool) {
                 index += 1;
                 continue;
             }

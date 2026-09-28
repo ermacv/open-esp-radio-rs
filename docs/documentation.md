@@ -109,10 +109,12 @@ meaning of evidence or inventing a replacement proof.
 Use the repository's pinned toolchain for examples and API documentation.
 `cargo xtask check docs` checks owned local Markdown links, checks that every
 repository path named in inline code (such as `crates/memory/`) still exists,
-checks every `cargo xtask`, `cargo hil`, `cargo qualification`, `cargo memory`
-and `cargo registers` command in inline code and shell code blocks against the
-command tree the tool prints for `__command-tree` (each subcommand exists, each
-long flag is accepted by its command or an ancestor), and checks/renders static
+checks every `cargo xtask`, `cargo hil`, `cargo qualification`, `cargo memory`,
+`cargo registers` and `cargo blobray` command in inline code and shell code
+blocks against the command tree the tool prints for `__command-tree` (each
+subcommand exists, each long flag is accepted by its command or an ancestor;
+Blobray's tree is the committed `tools/blobray/next/command-tree.json`, which
+its tests keep current), and checks/renders static
 qualification catalogs and programs. It does not build API documentation. Name
 a moved or removed path or command correctly in the same change; a path with a
 placeholder (`verification/<chip>/`) is not checked, and a command is checked

@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "7caf03308528693aca7f17dd3238830bad05c31d2f4d78e6a4b338fea6514a5a",
+    "input-2": "3ac418c2ed68834033162bbe32351e83dc39d237b1039d19e3e847688e74fbfb",
     "input-3": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
   },
   "sources": [
@@ -324,11 +324,11 @@
     },
     {
       "path": "tools/blobray/crates/application/src/dependence.rs",
-      "sha256": "7514cb2b2613524f32d48f7fdad11b7ce879f5c33f49cee6487d08f671b395ad"
+      "sha256": "fb28b5cfa22d1446a4b8a3034af8b7bc3ee328bf2759fc1871bd8f11669ddd67"
     },
     {
       "path": "tools/blobray/crates/application/src/devices.rs",
-      "sha256": "e6e6f8b302988452b29e07670e10f48e3c7787f1d79cda704de42544c9ee257a"
+      "sha256": "04dde604e48d44fe7ab02bf6e6d21433529713af052f7e3b2c28a3e4d148b18d"
     },
     {
       "path": "tools/blobray/crates/application/src/effect_contracts.rs",
@@ -360,7 +360,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/execution_memory.rs",
-      "sha256": "e3e3052cd77de4bb2782c025471c661721dde7db38af85db737a7aa1c6492f2d"
+      "sha256": "e5bdc498a70fe04473593676be46d6940f5d344e569348fdf303908bdeaacca4"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_observation.rs",
@@ -372,7 +372,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/execution_steps.rs",
-      "sha256": "ab440fedfde75563793b59a8a763af11b4510029bab596080f3fe0ae848d4ef0"
+      "sha256": "dda3eccbc9bc451af99b9955ab3dabb90b33dd9a9bb39565afd5571bdf18edfd"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_tables.rs",
@@ -620,7 +620,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/effect_contract.rs",
-      "sha256": "f6d738541d7e4b9195986cee822ba90b77ca32f4d61728b6ee685806fd05eac2"
+      "sha256": "7b3b31558786b8ea03b6e7fe50617c1676015c39ff67fc7451c05733bca8cba0"
     },
     {
       "path": "tools/blobray/crates/domain/src/execution.rs",
@@ -676,7 +676,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/memory.rs",
-      "sha256": "5463be90ad874992a6adf40e1aa42a6032ac1a2b1c1af446d4a2fa335cfb203d"
+      "sha256": "87d53c02d7841273df9bd20e43d11126788eb81e86b25095783d124273c4230c"
     },
     {
       "path": "tools/blobray/crates/domain/src/navigation.rs",
@@ -1220,7 +1220,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/observation.rs",
-      "sha256": "016b84a5ed422f71367cd81b412763b6172c9a74e87188a779dbfe3332ca228d"
+      "sha256": "b15a3bcc9ba8acbb23725179618029a79e35664533e391fe03bf6cba9aeccd8e"
     },
     {
       "path": "verification/harness/scenarios/src/phy/contracts.rs",

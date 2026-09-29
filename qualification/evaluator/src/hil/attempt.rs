@@ -112,7 +112,21 @@ pub(super) fn load(
             .map(|f| (f.path.clone(), f.size_bytes))
             .collect::<Vec<_>>();
         if expected != inventory {
-            return Err("HIL attempt does not match its complete material inventory".into());
+            let listed = |from: &[(PathBuf, u64)], other: &[(PathBuf, u64)]| {
+                from.iter()
+                    .filter(|entry| !other.contains(entry))
+                    .take(5)
+                    .map(|(path, size)| format!("{} ({size} B)", path.display()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(format!(
+                "HIL attempt {} does not match its complete material inventory; on disk but not sealed: [{}]; sealed but not on disk: [{}]",
+                run.display(),
+                listed(&expected, &inventory),
+                listed(&inventory, &expected),
+            )
+            .into());
         }
         for file in &files {
             require_regular_components(run, &file.path, false)?;

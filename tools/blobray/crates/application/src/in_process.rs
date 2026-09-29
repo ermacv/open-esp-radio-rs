@@ -40,6 +40,46 @@ impl Executable {
     }
 }
 
+/// Checkpoints between wall-clock deadline checks.
+const DEADLINE_INTERVAL: u32 = 4096;
+
+/// Work-unit and wall-clock limits of one in-process operation.
+pub struct Limits {
+    units: u64,
+    limit: u64,
+    deadline: std::time::Instant,
+    checks: u32,
+}
+impl Limits {
+    pub fn new(max_work_units: u64, timeout: std::time::Duration) -> Self {
+        Self {
+            units: 0,
+            limit: max_work_units,
+            deadline: std::time::Instant::now() + timeout,
+            checks: 0,
+        }
+    }
+}
+impl RunControl for Limits {
+    fn checkpoint(&mut self, units: u64) -> Result<()> {
+        self.units = self.units.saturating_add(units);
+        if self.units > self.limit {
+            return Err(Error::new(
+                ErrorCode::ResourceLimited,
+                "work budget exhausted",
+            ));
+        }
+        self.checks += 1;
+        if self.checks == DEADLINE_INTERVAL {
+            self.checks = 0;
+            if std::time::Instant::now() > self.deadline {
+                return Err(Error::new(ErrorCode::ResourceLimited, "deadline exceeded"));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The executable among `executables` whose content is `id`.
 pub(crate) fn find<'e>(executables: &'e [Executable], id: &ArtifactId) -> Result<&'e Executable> {
     executables

@@ -129,86 +129,130 @@ impl<'m> FunctionEngine<'m> {
         payload: &ArtifactId,
         control: &mut dyn RunControl,
     ) -> Result<FunctionManifest> {
-        let mut position = RunPosition {
-            phase: RunPhase::AnalyzeFunction,
-            input: request.source.input(),
-            member: match request.selector.object().location {
-                ObjectLocation::Standalone => None,
-                ObjectLocation::ArchiveMember { ordinal } => Some(ordinal),
-            },
-            ..Default::default()
+        let mut records = Records {
+            file: self.disk.temporary(&self.stage.join("staging"))?,
         };
-        position.artifact(payload);
-        control.set_position(position);
-        control.checkpoint(0)?;
-        object.with_function(request, control, |view, control| {
-            let recipe = FunctionRecipe {
+        let (view, summary) = research_function(
+            object,
+            references,
+            request,
+            payload,
+            self.decoder,
+            self.memory,
+            control,
+            &mut records,
+        )?;
+        let recipe = FunctionRecipe {
+            abi: view.abi,
+            address_space: view.address_space,
+            schema: FUNCTION_SCHEMA,
+            policy: FUNCTION_POLICY,
+            decoder: self.decoder.identity().into(),
+            semantics: Some(self.decoder.semantic_identity().into()),
+            project: self.project.id().clone(),
+            revision: request.revision.clone().ok_or_else(|| {
+                Error::new(ErrorCode::InvalidRequest, "function revision not frozen")
+            })?,
+            source: request.source.clone(),
+            selector: request.selector.clone(),
+            payload: payload.clone(),
+            section: view.section,
+            extent: view.extent,
+            user_extent: view.user_extent,
+        };
+        let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
+        let records = staging.retain_temporary(records.file, control)?;
+        Ok(FunctionManifest {
+            schema: FUNCTION_SCHEMA,
+            recipe,
+            records,
+            coverage: summary.coverage,
+            instructions: summary.instructions,
+            blocks: summary.blocks,
+            edges: summary.edges,
+            references: summary.references,
+            gaps: summary.gaps,
+            semantics: Some(summary.semantics),
+        })
+    }
+}
+
+/// Where one researched function lies in its object.
+pub(crate) struct ResearchedView {
+    pub abi: RiscvAbi,
+    pub address_space: CodeAddressSpace,
+    pub section: u32,
+    pub extent: CodeRange,
+    pub user_extent: bool,
+}
+
+/// Research the function `request` selects in the prepared `object` into
+/// `sink`. `references` keeps each section's prepared relocations for the
+/// object's other functions.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn research_function<'m>(
+    object: &mut blobray_artifacts::PreparedObject<'_, '_>,
+    references: &mut AdmittedVec<'m, (u32, blobray_analysis::PreparedReferences<'m>)>,
+    request: &FunctionRequest,
+    payload: &ArtifactId,
+    decoder: &dyn FunctionSemantics,
+    memory: &'m WorkingMemory,
+    control: &mut dyn RunControl,
+    sink: &mut dyn FunctionSink,
+) -> Result<(ResearchedView, blobray_analysis::AnalysisSummary)> {
+    let mut position = RunPosition {
+        phase: RunPhase::AnalyzeFunction,
+        input: request.source.input(),
+        member: match request.selector.object().location {
+            ObjectLocation::Standalone => None,
+            ObjectLocation::ArchiveMember { ordinal } => Some(ordinal),
+        },
+        ..Default::default()
+    };
+    position.artifact(payload);
+    control.set_position(position);
+    control.checkpoint(0)?;
+    object.with_function(request, control, |view, control| {
+        let index = if let Some(index) = references
+            .iter()
+            .position(|(section, _)| *section == view.section)
+        {
+            index
+        } else {
+            let prepared = blobray_analysis::PreparedReferences::new(
+                view.relocations,
+                view.section,
+                decoder,
+                memory,
+                control,
+            )?;
+            references.push((view.section, prepared), control.position())?;
+            references.len() - 1
+        };
+        let summary = blobray_analysis::research(
+            blobray_analysis::FunctionInput {
+                image: view.image,
+                section: view.section,
+                extent: view.extent,
+                bytes: view.code,
+                relocations: &references[index].1,
+                data_ranges: view.data_ranges,
+            },
+            decoder,
+            memory,
+            control,
+            sink,
+            None,
+        )?;
+        Ok((
+            ResearchedView {
                 abi: view.abi,
                 address_space: view.address_space,
-                schema: FUNCTION_SCHEMA,
-                policy: FUNCTION_POLICY,
-                decoder: self.decoder.identity().into(),
-                semantics: Some(self.decoder.semantic_identity().into()),
-                project: self.project.id().clone(),
-                revision: request.revision.clone().ok_or_else(|| {
-                    Error::new(ErrorCode::InvalidRequest, "function revision not frozen")
-                })?,
-                source: request.source.clone(),
-                selector: request.selector.clone(),
-                payload: payload.clone(),
                 section: view.section,
                 extent: view.extent,
                 user_extent: view.user_extent,
-            };
-            let mut records = Records {
-                file: self.disk.temporary(&self.stage.join("staging"))?,
-            };
-            let index = if let Some(index) = references
-                .iter()
-                .position(|(section, _)| *section == view.section)
-            {
-                index
-            } else {
-                let prepared = blobray_analysis::PreparedReferences::new(
-                    view.relocations,
-                    view.section,
-                    self.decoder,
-                    self.memory,
-                    control,
-                )?;
-                references.push((view.section, prepared), control.position())?;
-                references.len() - 1
-            };
-            let summary = blobray_analysis::research(
-                blobray_analysis::FunctionInput {
-                    image: view.image,
-                    section: view.section,
-                    extent: view.extent,
-                    bytes: view.code,
-                    relocations: &references[index].1,
-                    data_ranges: view.data_ranges,
-                },
-                self.decoder,
-                self.memory,
-                control,
-                &mut records,
-                None,
-            )?;
-            let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
-            let records = staging.retain_temporary(records.file, control)?;
-            let manifest = FunctionManifest {
-                schema: FUNCTION_SCHEMA,
-                recipe,
-                records,
-                coverage: summary.coverage,
-                instructions: summary.instructions,
-                blocks: summary.blocks,
-                edges: summary.edges,
-                references: summary.references,
-                gaps: summary.gaps,
-                semantics: Some(summary.semantics),
-            };
-            Ok(manifest)
-        })
-    }
+            },
+            summary,
+        ))
+    })
 }

@@ -98,6 +98,33 @@ Interprocedural provenance may reference analyses outside that bundle; IDs do no
 include their payloads implicitly. Use project backup/restore to preserve the full
 research closure in the supported format.
 
+## Library register accesses
+
+`register-accesses` analyzes every function of the given libraries in its own
+process and reports the memory addresses they access. It keeps no project:
+inputs are read once and identified by content, and nothing is retained.
+
+```console
+blobray --format json register-accesses --input libphy=/path/to/libphy.a --range 0x20000000:0x9c00
+```
+
+Each `--input ROLE=PATH` is an archive or ELF; a function names its input by
+position. Every STT_FUNC symbol of a nonempty executable section of every
+object is analyzed. Each `--range START:LENGTH` selects resolved addresses that
+overlap it; without a range every numeric address is reported, and unresolved
+addresses are reported either way. `--working-memory-mib`, `--timeout-secs`
+and `--max-work-units` bound the analysis cooperatively.
+
+The JSON document streams `{"schema":1,"inputs":[...],"records":[...],"summary":{...}}`.
+`inputs` lists each input's role and SHA-256. A record is an `observation` (the
+function, the record ordinal and exact original fact, the address or null, its
+alternative index and a read-selection or write-replacement mask), a `blocked`
+function whose analysis stopped (for example an unknown extent), or a `gap`
+naming code no function was selected from: an unsupported object, a thin
+archive member, a malformed container or an ELF diagnostic. The summary counts
+analyzed, partial and blocked functions, gaps and observations. `cargo xtask
+register-inventory` compares these accesses with the register model.
+
 ## Saved register research
 
 `blobray registers --project PROJECT --request query.json [--output result.json]`
@@ -108,8 +135,7 @@ reads saved research through the same supervised API as other navigation command
   "scope": {
     "revision": "<revision-id>",
     "publications": [],
-    "analyses": ["<analysis-id>"],
-    "knowledge": null
+    "analyses": ["<analysis-id>"]
   },
   "ranges": [{"start": 131072, "length": 256}]
 }

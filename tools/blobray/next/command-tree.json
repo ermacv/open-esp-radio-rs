@@ -15,6 +15,7 @@
       "storage-usage",
       "data",
       "audit-targets",
+      "register-accesses",
       "export-payload",
       "backup",
       "restore",
@@ -213,6 +214,21 @@
     "path": [
       "blobray",
       "audit-targets"
+    ],
+    "subcommands": []
+  },
+  {
+    "flags": [
+      "--input",
+      "--range",
+      "--working-memory-mib",
+      "--timeout-secs",
+      "--max-work-units"
+    ],
+    "forwards": false,
+    "path": [
+      "blobray",
+      "register-accesses"
     ],
     "subcommands": []
   },

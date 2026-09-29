@@ -111,6 +111,18 @@ enum Command {
         #[command(flatten)]
         limits: ResourceOptions,
     },
+    /// Analyze every function of captured libraries in this process and report
+    /// the memory addresses they access, with blocked functions and gaps.
+    RegisterAccesses {
+        /// Repeat ROLE=PATH; a function names its input by position.
+        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
+        inputs: Vec<OsString>,
+        /// START:LENGTH candidate interval; without one, every numeric address.
+        #[arg(long = "range", value_parser = parse_range)]
+        ranges: Vec<blobray_domain::ImageRegion>,
+        #[command(flatten)]
+        limits: InProcessOptions,
+    },
     /// Export exact preserved bytes using a digest from the evidence catalog.
     ExportPayload {
         #[arg(long)]
@@ -400,6 +412,33 @@ struct ResourceOptions {
     cgroup_root: Option<PathBuf>,
 }
 
+/// Cooperative limits of an operation that runs in this process.
+#[derive(clap::Args)]
+struct InProcessOptions {
+    #[arg(long, default_value_t = DEFAULT_WORKING_BYTES / MIB)]
+    working_memory_mib: u64,
+    #[arg(long, default_value_t = blobray_domain::DEFAULT_TIMEOUT_MS / 1000)]
+    timeout_secs: u64,
+    #[arg(long, default_value_t = blobray_domain::DEFAULT_WORK_UNITS)]
+    max_work_units: u64,
+}
+
+impl InProcessOptions {
+    fn memory(&self) -> Result<blobray_domain::WorkingMemory> {
+        blobray_domain::WorkingMemory::new(
+            self.working_memory_mib
+                .checked_mul(MIB)
+                .ok_or_else(|| invalid("working memory limit overflow"))?,
+        )
+    }
+    fn control(&self) -> app::in_process::Limits {
+        app::in_process::Limits::new(
+            self.max_work_units,
+            std::time::Duration::from_secs(self.timeout_secs),
+        )
+    }
+}
+
 impl ResourceOptions {
     fn application(&self) -> Result<app::Application> {
         app::Application::with_temporary_storage(
@@ -524,6 +563,13 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 limits,
                 format,
             );
+        }
+        Command::RegisterAccesses {
+            inputs,
+            ranges,
+            limits,
+        } => {
+            return register_accesses(inputs, ranges, limits, format);
         }
         Command::ExportPayload {
             project,
@@ -1739,6 +1785,109 @@ fn internal(args: &[OsString]) -> Result<()> {
     let file = std::fs::File::create(stage.join("worker-report.json"))
         .map_err(blobray_domain::storage_io)?;
     app::write_control_message(file, &report)
+}
+
+fn parse_range(text: &str) -> std::result::Result<blobray_domain::ImageRegion, String> {
+    let (start, length) = text.split_once(':').ok_or("expected START:LENGTH")?;
+    let parse = |v: &str| {
+        if let Some(hex) = v.strip_prefix("0x") {
+            u64::from_str_radix(hex, 16)
+        } else {
+            v.parse::<u64>()
+        }
+        .map_err(|e| e.to_string())
+    };
+    Ok(blobray_domain::ImageRegion {
+        start: u32::try_from(parse(start)?).map_err(|e| e.to_string())?,
+        length: parse(length)?,
+    })
+}
+
+/// Analyze the libraries `inputs` name in this process and print their
+/// register accesses, streaming the JSON records as they are found.
+fn register_accesses(
+    inputs: Vec<OsString>,
+    ranges: Vec<blobray_domain::ImageRegion>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    use std::io::Write;
+    let inputs = inputs
+        .into_iter()
+        .map(parse_input)
+        .collect::<Result<Vec<_>>>()?;
+    let executables = inputs
+        .iter()
+        .map(|input| {
+            std::fs::read(&input.path)
+                .map(app::in_process::Executable::new)
+                .map_err(io_error)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
+    let json = matches!(format, Format::Json);
+    if json {
+        let described: Vec<_> = inputs
+            .iter()
+            .zip(&executables)
+            .map(
+                |(input, executable)| blobray_next_host::wire::RegisterAccessInput {
+                    role: input.role.clone(),
+                    sha256: executable.id().clone(),
+                },
+            )
+            .collect();
+        write!(
+            out,
+            "{{\"schema\":{},\"inputs\":{},\"records\":[",
+            blobray_next_host::wire::REGISTER_ACCESSES_SCHEMA,
+            serde_json::to_string(&described).map_err(|e| invalid(&e.to_string()))?
+        )
+        .map_err(io_error)?;
+    }
+    let mut first = true;
+    let summary = app::library::register_accesses(
+        &executables,
+        &ranges,
+        &blobray_backend_riscv::RiscvDecoder,
+        &memory,
+        &mut control,
+        &mut |record, _| {
+            if json {
+                if !first {
+                    out.write_all(b",").map_err(io_error)?;
+                }
+                first = false;
+                serde_json::to_writer(&mut out, record).map_err(|e| invalid(&e.to_string()))?;
+            }
+            Ok(())
+        },
+    )?;
+    if json {
+        write!(
+            out,
+            "],\"summary\":{}}}",
+            serde_json::to_string(&summary).map_err(|e| invalid(&e.to_string()))?
+        )
+        .map_err(io_error)?;
+        writeln!(out).map_err(io_error)?;
+    } else {
+        writeln!(
+            out,
+            "{} functions ({} partial, {} blocked), {} gaps, {} observations ({} unresolved)",
+            summary.functions,
+            summary.partial_functions,
+            summary.blocked_functions,
+            summary.gaps,
+            summary.observations,
+            summary.unresolved_addresses
+        )
+        .map_err(io_error)?;
+    }
+    out.flush().map_err(io_error)?;
+    Ok(ExitCode::SUCCESS)
 }
 
 fn parse_address(text: &str) -> std::result::Result<u32, String> {

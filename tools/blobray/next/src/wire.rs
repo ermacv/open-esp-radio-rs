@@ -49,6 +49,28 @@ pub struct ExportDocument<S = QuerySummary, P = std::path::PathBuf> {
     pub output: P,
 }
 
+/// Schema of the `register-accesses` document
+/// (`{"schema":1,"inputs":[...],"records":[...],"summary":{...}}`).
+pub const REGISTER_ACCESSES_SCHEMA: u32 = 1;
+
+/// One analyzed input of a `register-accesses` document, by position.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegisterAccessInput {
+    pub role: String,
+    pub sha256: blobray_domain::ArtifactId,
+}
+
+/// Every register access of the analyzed inputs; see `REGISTER_ACCESSES_SCHEMA`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegisterAccessDocument {
+    pub schema: u32,
+    pub inputs: Vec<RegisterAccessInput>,
+    pub records: Vec<blobray_domain::RegisterAccess>,
+    pub summary: blobray_domain::RegisterAccessSummary,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InventorySnapshot {

@@ -228,7 +228,7 @@
     },
     {
       "path": "tools/blobray/Cargo.lock",
-      "sha256": "5420163fdaed4a9ad795deb07ef8bfbf43b8cb3b2c170f97a2b212fa2111458d"
+      "sha256": "3f910283eea8365d01715030a47b60f2b40a7388cb380dd08b97f14379fe5772"
     },
     {
       "path": "tools/blobray/crates/analysis/Cargo.toml",

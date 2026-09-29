@@ -44,12 +44,21 @@ revision = "20260528"
 asset = "esp-rom-elfs-20260528.tar.gz"
 sha256 = "caa463d3cbef2430a5a35847c1d9f2f152403b17a802050927ff60c8da54fe46"
 
-# ESP-IDF sources: the IEEE 802.15.4 driver's translation units and every
-# header the host stand compiles, and the `esp_phy` component whose calls the
-# vendor PHY path makes (enable, tracking and modem retention). Fetched file
-# by file, so `target/vendor/esp-idf/<revision>/` mirrors the checkout's layout.
+# ESP-IDF sources the IEEE 802.15.4 host stand compiles: the driver's
+# translation units and every header they include. Fetched file by file, so
+# `target/vendor/esp-idf/<revision>/` mirrors the checkout's layout.
 [[source]]
 id = "esp-idf"
+kind = "git"
+repository = "https://github.com/espressif/esp-idf"
+revision = "4d59230ddff16327812782151ef0afef202dc6d7"
+
+# ESP-IDF's `esp_phy` component at the same revision, read for the vendor PHY
+# path (enable, tracking and modem retention) and compiled by no stand; kept
+# apart from the stand's sources. Its prebuilt library submodule is
+# `esp-phy-lib`.
+[[source]]
+id = "esp-idf-phy"
 kind = "git"
 repository = "https://github.com/espressif/esp-idf"
 revision = "4d59230ddff16327812782151ef0afef202dc6d7"
@@ -214,134 +223,134 @@ path = "components/esp_hal_ieee802154/include/hal/ieee802154_periph.h"
 sha256 = "603e619ed574592ec6196ea68b4af35c1afa15ebd08050691c7f63d67a0896e0"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/CMakeLists.txt"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/CMakeLists.txt"
+source = "esp-idf-phy"
 path = "components/esp_phy/CMakeLists.txt"
 sha256 = "6e6ab2e042d1c4bc3662613f5d87c3bca67455f47bdff8ad6c9b2bebd311cb97"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/Kconfig"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/Kconfig"
+source = "esp-idf-phy"
 path = "components/esp_phy/Kconfig"
 sha256 = "9e0bc9cafe445778c19e065e9b64be1689f81992dca4391d690a9fa633e4c632"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/esp32s31/include/btbb_retention_reg.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/esp32s31/include/btbb_retention_reg.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/esp32s31/include/btbb_retention_reg.h"
 sha256 = "8acdbdff2393e3d4dc15f1a6aedd240afeb95010e50446c9d596a878fc8af7f3"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/esp32s31/include/phy_init_data.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/esp32s31/include/phy_init_data.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/esp32s31/include/phy_init_data.h"
 sha256 = "3e29f7a23b2069a94bd2fef798068103ecaaaa0ec514a32ff769b12b8d1e59dc"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/esp32s31/include/phy_init_deps.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/esp32s31/include/phy_init_deps.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/esp32s31/include/phy_init_deps.h"
 sha256 = "77191114c56a6657c7779d195ddc5657e7496531cc34faf4454345e2ad03caea"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/esp32s31/phy_init_data.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/esp32s31/phy_init_data.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/esp32s31/phy_init_data.c"
 sha256 = "0781df6354080084c220893715670df50a6753c6e4f434541342f349d7a728d6"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/include/esp_phy.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/include/esp_phy.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/include/esp_phy.h"
 sha256 = "fe37b3a34e67a52405f146d358e57f51b91303233ab3676889ec94854daef682"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/include/esp_phy_cert_test.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/include/esp_phy_cert_test.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/include/esp_phy_cert_test.h"
 sha256 = "48f54fd74ce39f3283eab1c7b447e763dd0cfa74e8c2060fc809f3d9dc507a92"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/include/esp_phy_init.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/include/esp_phy_init.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/include/esp_phy_init.h"
 sha256 = "700bf7b3865705b6d858e63a55fd5a880ebf298f700927cd642bee7536e4dc58"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/include/esp_private/btbb.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/include/esp_private/btbb.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/include/esp_private/btbb.h"
 sha256 = "659a94ca15d9e7d5531f34c755476523d285bc2cbc0a378b58505e67facea289"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/include/esp_private/phy.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/include/esp_private/phy.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/include/esp_private/phy.h"
 sha256 = "6cd2bded3218cd80c485677358aaba351f56d53d915be87f77faa5dcf6d025cb"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/include/esp_private/phy_debug.h"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/include/esp_private/phy_debug.h"
+source = "esp-idf-phy"
 path = "components/esp_phy/include/esp_private/phy_debug.h"
 sha256 = "c7c2c3321442c7c52495203627b1c64fc0ec9bb2a8851fd11f8f5b50f312659a"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/linker.lf"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/linker.lf"
+source = "esp-idf-phy"
 path = "components/esp_phy/linker.lf"
 sha256 = "dc4a1a3a4f3cdd8a08a81bfb4dd27532630e2db35dc67436868d4ad2eab17844"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/linker_esp32hxx.lf"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/linker_esp32hxx.lf"
+source = "esp-idf-phy"
 path = "components/esp_phy/linker_esp32hxx.lf"
 sha256 = "169ef95f95c5dbc88f1510e3319d32e1464ad2d850fdbe5b745b7439f56b228b"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/btbb_init.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/btbb_init.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/btbb_init.c"
 sha256 = "51f669948ed02e84531dc7edbbe1ddc9e46920c2ad5021700d4464aab5981ba3"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/lib_printf.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/lib_printf.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/lib_printf.c"
 sha256 = "fa4eb8e14b6eb3291bf88c4244ed973bdf73fa41450d2c15292ef37eb7882d6c"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/phy_callback.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/phy_callback.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/phy_callback.c"
 sha256 = "7089e9e90e26280f8b231d2c3f277e4ef1be08622c5db031852498b917b52a17"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/phy_common.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/phy_common.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/phy_common.c"
 sha256 = "2f1dcac537a5bde79b36a996ff4b905c90bfd980ccf41950dfa4b879918260d9"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/phy_debug.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/phy_debug.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/phy_debug.c"
 sha256 = "83651abab887932065a8cd822c94321c5eb1a3d255f833122bf844f54b7f2c38"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/phy_init.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/phy_init.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/phy_init.c"
 sha256 = "b6eacbe5dbfab6f4993adccb036a0416faf3a92b3abc6ef8aad6b65fb1c2e28f"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/phy_init_esp32hxx.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/phy_init_esp32hxx.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/phy_init_esp32hxx.c"
 sha256 = "8bae409632b72a1c43454f52defeb50064e08ebbef0465922843a688dacbd1be"
 
 [[artifact]]
-id = "esp-idf/components/esp_phy/src/phy_override.c"
-source = "esp-idf"
+id = "esp-idf-phy/components/esp_phy/src/phy_override.c"
+source = "esp-idf-phy"
 path = "components/esp_phy/src/phy_override.c"
 sha256 = "ef37d67374e7b1112efdee321ce09886f2cfeef1be1c817baec247d9c41a8b66"
 

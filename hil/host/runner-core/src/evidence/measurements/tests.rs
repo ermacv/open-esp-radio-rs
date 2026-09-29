@@ -217,3 +217,35 @@ fn semantic_checks_record_only_explicit_observations() {
         1
     );
 }
+
+#[test]
+fn aggregate_fill_projects_one_measurement_set_per_association() {
+    use oer_hil_protocol::WifiApAggregateFill;
+    let fill = |association_id, aggregates, subframes| {
+        Event::WifiApAggregateFill(WifiApAggregateFill {
+            generation: 4,
+            association_id,
+            aggregates,
+            subframes,
+            maximum_subframes: 32,
+            histogram: [1, 2, 3, 4, aggregates - 10],
+        })
+    };
+    let events = [
+        Envelope::new(7, 3, 0, 9, fill(1, 100, 2_900)),
+        Envelope::new(7, 3, 0, 10, fill(2, 60, 1_700)),
+    ];
+    let observations = protocol::observations("boot-001", &events, 100);
+    let value = |name: &str| {
+        observations
+            .iter()
+            .find(|observation| observation.name.ends_with(name))
+            .map(|observation| observation.value)
+    };
+    assert_eq!(value("ap.aggregate-fill.aid-1.aggregates"), Some(100));
+    assert_eq!(value("ap.aggregate-fill.aid-1.subframes"), Some(2_900));
+    assert_eq!(value("ap.aggregate-fill.aid-2.subframes"), Some(1_700));
+    assert_eq!(value("ap.aggregate-fill.aid-2.maximum-subframes"), Some(32));
+    assert_eq!(value("ap.aggregate-fill.aid-2.histogram-32"), Some(50));
+    assert_eq!(value("ap.aggregate-fill.aid-1.histogram-2-7"), Some(2));
+}

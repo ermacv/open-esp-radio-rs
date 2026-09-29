@@ -1,3 +1,47 @@
+/// How full the network A-MPDUs started to one association were.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AccessPointAggregateFill {
+    /// Association ID these counters belong to; zero while none was started.
+    pub association_id: u16,
+    pub aggregates: u32,
+    /// Sum of the subframes of every started A-MPDU.
+    pub subframes: u32,
+    pub maximum_subframes: u8,
+    /// A-MPDUs of 1, 2..=7, 8..=15, 16..=31 and 32 or more subframes.
+    pub histogram: [u32; 5],
+}
+
+impl AccessPointAggregateFill {
+    fn record(&mut self, association_id: u16, subframes: u8) {
+        self.association_id = association_id;
+        self.aggregates = self.aggregates.saturating_add(1);
+        self.subframes = self.subframes.saturating_add(u32::from(subframes));
+        self.maximum_subframes = self.maximum_subframes.max(subframes);
+        let bucket = match subframes {
+            0..=1 => 0,
+            2..=7 => 1,
+            8..=15 => 2,
+            16..=31 => 3,
+            _ => 4,
+        };
+        self.histogram[bucket] = self.histogram[bucket].saturating_add(1);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn aggregate_fill_buckets_every_subframe_count_and_keeps_the_maximum() {
+    let mut fill = AccessPointAggregateFill::default();
+    for subframes in [1, 2, 7, 8, 15, 16, 31, 32] {
+        fill.record(3, subframes);
+    }
+    assert_eq!(fill.association_id, 3);
+    assert_eq!(fill.aggregates, 8);
+    assert_eq!(fill.subframes, 1 + 2 + 7 + 8 + 15 + 16 + 31 + 32);
+    assert_eq!(fill.maximum_subframes, 32);
+    assert_eq!(fill.histogram, [1, 2, 2, 2, 1]);
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AccessPointControlObservation {
     pub missed_beacon_intervals: u32,
@@ -61,6 +105,9 @@ pub struct AccessPointControlObservation {
     pub tx_ht_aggregates: u32,
     /// Network A-MPDU transactions started specifically at HT40 MCS7.
     pub tx_ht40_mcs7_aggregates: u32,
+    /// Fill of the network A-MPDUs started to each association, indexed by
+    /// association ID minus one.
+    pub tx_aggregate_fill: [AccessPointAggregateFill; AP_MAX_CLIENTS],
     pub protected_data_frames: u32,
     pub protected_data_unauthorized: u32,
     pub protected_data_foreign: u32,

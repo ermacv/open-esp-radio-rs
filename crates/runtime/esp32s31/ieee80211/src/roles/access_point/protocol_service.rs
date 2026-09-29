@@ -1719,8 +1719,14 @@ where
     }
 
     #[cfg(any(feature = "diagnostics", test))]
-    fn observe_ht_aggregate(&mut self, rate: HtRate) {
+    fn observe_ht_aggregate(&mut self, rate: HtRate, association_id: u16, subframes: usize) {
         observe_access_point!(self, observation, {
+            if let Some(fill) = usize::from(association_id)
+                .checked_sub(1)
+                .and_then(|index| observation.tx_aggregate_fill.get_mut(index))
+            {
+                fill.record(association_id, u8::try_from(subframes).unwrap_or(u8::MAX));
+            }
             observation.tx_ht_aggregates = observation.tx_ht_aggregates.saturating_add(1);
             if rate.channel_width == HtChannelWidth::Mhz40 && rate.mcs == HtMcs::Mcs7 {
                 observation.tx_ht40_mcs7_aggregates =

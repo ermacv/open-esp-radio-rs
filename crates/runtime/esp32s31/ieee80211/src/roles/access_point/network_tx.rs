@@ -694,7 +694,11 @@ where
                     .saturating_add(ordinary.publication_timeout_micros());
                 self.aggregate_phase = Some(AggregateServicePhase::Published(deadline_micros));
                 #[cfg(any(feature = "diagnostics", test))]
-                control.observe_ht_aggregate(policy.rate());
+                control.observe_ht_aggregate(
+                    policy.rate(),
+                    admission.association().association_id(),
+                    admitted,
+                );
                 self.last_started_frames = admitted;
                 self.prepare_ready_standby(aggregate, control, network)?;
                 return Ok(WifiTxProgress::Pending);
@@ -851,8 +855,13 @@ where
                 program_micros: finished.saturating_sub(started),
             });
             observer.observe(AggregateTxObservation::StandbyPublished);
-            control.observe_ht_aggregate(_batch.policy.rate());
         }
+        #[cfg(any(feature = "diagnostics", test))]
+        control.observe_ht_aggregate(
+            _batch.policy.rate(),
+            _batch.admission.association().association_id(),
+            _batch.admitted,
+        );
         self.prepare_ready_standby(aggregate, control, network)?;
         Ok(WifiTxProgress::Pending)
     }

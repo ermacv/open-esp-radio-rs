@@ -322,7 +322,44 @@ static AP_PROTECTED_DATA_RADIO_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_PROTOCOL_REJECTED: AtomicU32 = AtomicU32::new(0);
 
 #[cfg(feature = "station-exit-evidence")]
+static AP_TX_AGGREGATE_FILL: embassy_sync::blocking_mutex::Mutex<
+    embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex,
+    core::cell::Cell<Option<oer_esp32s31_ieee80211_system::AccessPointAggregateFills>>,
+> = embassy_sync::blocking_mutex::Mutex::new(core::cell::Cell::new(None));
+
+/// Publish one fill record per association that received an A-MPDU in this
+/// AP epoch, before the correlated stop completion.
+async fn report_access_point_aggregate_fill(request_id: u32, generation: u32) {
+    #[cfg(feature = "station-exit-evidence")]
+    for fill in AP_TX_AGGREGATE_FILL
+        .lock(core::cell::Cell::get)
+        .into_iter()
+        .flatten()
+    {
+        if fill.aggregates == 0 {
+            continue;
+        }
+        crate::console::publish_event_reliably(
+            0,
+            request_id,
+            oer_hil_protocol::Event::WifiApAggregateFill(oer_hil_protocol::WifiApAggregateFill {
+                generation,
+                association_id: fill.association_id,
+                aggregates: fill.aggregates,
+                subframes: fill.subframes,
+                maximum_subframes: fill.maximum_subframes,
+                histogram: fill.histogram,
+            }),
+        )
+        .await;
+    }
+    #[cfg(not(feature = "station-exit-evidence"))]
+    let _ = (request_id, generation);
+}
+
+#[cfg(feature = "station-exit-evidence")]
 fn observe_access_point(observation: AccessPointObservation) {
+    AP_TX_AGGREGATE_FILL.lock(|fill| fill.set(Some(observation.tx_aggregate_fill)));
     AP_CHANNEL.store(u32::from(observation.channel), Ordering::Release);
     AP_BANDWIDTH_MHZ.store(u32::from(observation.bandwidth_mhz), Ordering::Release);
     AP_BEACONS.store(observation.beacons_transmitted, Ordering::Release);
@@ -2119,6 +2156,7 @@ async fn stop_station_access_point_role<P: oer::wifi::WifiSupervisorPort>(
                 ))
                 .await;
             set_wifi_role(WifiRole::Idle);
+            report_access_point_aggregate_fill(request_id, generation).await;
             complete_station_access_point_stop(
                 request_id,
                 WifiStationAccessPointStopEvidence {
@@ -2204,6 +2242,7 @@ async fn wifi_role_task(
                         .await;
                         set_wifi_role(WifiRole::Idle);
                         ap_scheduler::report(request_id).await;
+                        report_access_point_aggregate_fill(request_id, generation).await;
                         complete_access_point_stop(
                             request_id,
                             access_point_evidence(generation, channel, bandwidth_mhz),

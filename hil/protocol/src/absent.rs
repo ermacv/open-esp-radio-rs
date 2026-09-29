@@ -52,6 +52,7 @@ mod wifi {
     pub type WifiAccessPointRequest = Absent;
     pub type WifiAirtimePeerEvidence = Absent;
     pub type WifiAirtimeReport = Absent;
+    pub type WifiApAggregateFill = Absent;
     pub type WifiMonitorCaptureRequest = Absent;
     pub type WifiMonitorEvidence = Absent;
     pub type WifiMonitorFrameChunk = Absent;

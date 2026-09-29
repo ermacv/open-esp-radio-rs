@@ -213,6 +213,27 @@ pub(super) fn observations(
                     );
                 }
             }
+            Event::WifiApAggregateFill(value) => {
+                let prefix = format!("ap.aggregate-fill.aid-{}", value.association_id);
+                for (name, count) in [
+                    ("aggregates", value.aggregates),
+                    ("subframes", value.subframes),
+                    ("maximum-subframes", u32::from(value.maximum_subframes)),
+                    ("histogram-1", value.histogram[0]),
+                    ("histogram-2-7", value.histogram[1]),
+                    ("histogram-8-15", value.histogram[2]),
+                    ("histogram-16-31", value.histogram[3]),
+                    ("histogram-32", value.histogram[4]),
+                ] {
+                    add(
+                        &mut records,
+                        &request,
+                        &format!("{prefix}.{name}"),
+                        count.into(),
+                        Unit::Count,
+                    );
+                }
+            }
             Event::WifiMonitorStopped(value) | Event::WifiMonitorCaptureCompleted(value) => {
                 add(
                     &mut records,

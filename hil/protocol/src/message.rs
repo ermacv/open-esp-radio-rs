@@ -5,7 +5,7 @@ use crate::absent::stand_ins::*;
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u16 = 196;
+pub const PROTOCOL_VERSION: u16 = 197;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -536,6 +536,9 @@ pub enum Event {
     WifiAirtimePeer(crate::WifiAirtimePeerEvidence),
     /// Completeness of the preceding bounded peer records for this AP epoch.
     WifiAirtimeReport(crate::WifiAirtimeReport),
+    /// Per-association A-MPDU fill of one AP epoch, emitted before the
+    /// correlated stop.
+    WifiApAggregateFill(WifiApAggregateFill),
     Hello(Capabilities),
     /// The radio and shared Wi-Fi owner are ready in the role-neutral idle
     /// state. The request ID correlates this edge with [`Command::Initialize`].

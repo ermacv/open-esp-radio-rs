@@ -192,6 +192,7 @@ pub(super) fn publish_access_point_observation(
         rx_ht_mcs32_width_mismatches: control.rx_ht_mcs32_width_mismatches,
         tx_ht_aggregates: control.tx_ht_aggregates,
         tx_ht40_mcs7_aggregates: control.tx_ht40_mcs7_aggregates,
+        tx_aggregate_fill: control.tx_aggregate_fill,
         data_frames_transmitted: mac.data_frames_transmitted,
         ht_duplicate_tx_requests: mac.ht_duplicate_tx_requests,
         ht_duplicate_tx_selection: mac.ht_duplicate_tx_selection,

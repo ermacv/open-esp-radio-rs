@@ -418,6 +418,22 @@ pub struct WifiMacRxHardwareEvidence {
     pub rx_tx_panic: u32,
 }
 
+/// Fill of the network A-MPDUs one access point started to one association,
+/// reported after the AP stops, one record per association that received
+/// any. The AP diagnostics observer records it; an observer-free image sends
+/// none.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiApAggregateFill {
+    pub generation: u32,
+    pub association_id: u16,
+    pub aggregates: u32,
+    /// Sum of the subframes of every started A-MPDU.
+    pub subframes: u32,
+    pub maximum_subframes: u8,
+    /// A-MPDUs of 1, 2..=7, 8..=15, 16..=31 and 32 or more subframes.
+    pub histogram: [u32; 5],
+}
+
 /// Bounded evidence retained for one access-point ownership epoch.
 ///
 /// These counters describe MAC/runtime work only. IP services and host-side

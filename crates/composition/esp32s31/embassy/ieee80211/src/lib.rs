@@ -442,6 +442,14 @@ pub struct DiagnosticObservers {
     pub access_point: fn(AccessPointObservation),
 }
 
+#[cfg(all(feature = "diagnostics", target_arch = "riscv32"))]
+pub use oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointAggregateFill;
+
+/// Per-association A-MPDU fill of one AP epoch, indexed by association ID
+/// minus one.
+#[cfg(all(feature = "diagnostics", target_arch = "riscv32"))]
+pub type AccessPointAggregateFills = [AccessPointAggregateFill; oer_ieee80211_ap::AP_MAX_CLIENTS];
+
 /// Value-only terminal AP epoch evidence emitted after TX, RX and IRQ have
 /// quiesced but before their typed owners return to role-neutral Wi-Fi.
 #[cfg(feature = "diagnostics")]
@@ -528,6 +536,9 @@ pub struct AccessPointObservation {
     pub rx_ht_mcs32_width_mismatches: u32,
     pub tx_ht_aggregates: u32,
     pub tx_ht40_mcs7_aggregates: u32,
+    /// Fill of the network A-MPDUs started to each association, indexed by
+    /// association ID minus one.
+    pub tx_aggregate_fill: AccessPointAggregateFills,
     pub data_frames_transmitted: u32,
     pub ht_duplicate_tx_requests: u32,
     pub ht_duplicate_tx_selection: oer_esp32s31_ieee80211_mac::tx::HtDuplicateTxSelection,

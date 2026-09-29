@@ -10,6 +10,8 @@ struct Host {
     cleaning: Arc<AtomicUsize>,
     cleanup_release: Arc<AtomicBool>,
     fail: AtomicBool,
+    /// Removed with the host, so no test leaves a runtime directory behind.
+    runtime: tempfile::TempDir,
 }
 impl Host {
     fn new() -> Arc<Self> {
@@ -21,6 +23,7 @@ impl Host {
             cleaning: Arc::new(AtomicUsize::new(0)),
             cleanup_release: Arc::new(AtomicBool::new(true)),
             fail: AtomicBool::new(false),
+            runtime: tempfile::tempdir().unwrap(),
         })
     }
 }
@@ -85,9 +88,9 @@ impl Drop for Worker {
 }
 impl OperationHost for Host {
     fn temporary_root(&self, requested: Option<&Path>) -> Result<PathBuf> {
-        let root = requested.map(Path::to_owned).unwrap_or_else(|| {
-            std::env::temp_dir().join(format!("blobray-test-runtime-{}", std::process::id()))
-        });
+        let root = requested
+            .map(Path::to_owned)
+            .unwrap_or_else(|| self.runtime.path().to_owned());
         std::fs::create_dir_all(&root).map_err(storage_io)?;
         Ok(root)
     }

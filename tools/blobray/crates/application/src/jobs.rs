@@ -1776,6 +1776,8 @@ mod tests {
         release: Arc<AtomicBool>,
         reaped: Arc<AtomicBool>,
         omit_accounting: bool,
+        /// Removed with the host, so no test leaves a runtime directory behind.
+        runtime: tempfile::TempDir,
     }
     struct Worker {
         release: Arc<AtomicBool>,
@@ -1827,9 +1829,9 @@ mod tests {
     }
     impl OperationHost for Host {
         fn temporary_root(&self, requested: Option<&Path>) -> Result<PathBuf> {
-            let root = requested.map(Path::to_owned).unwrap_or_else(|| {
-                std::env::temp_dir().join(format!("blobray-test-runtime-{}", std::process::id()))
-            });
+            let root = requested
+                .map(Path::to_owned)
+                .unwrap_or_else(|| self.runtime.path().to_owned());
             std::fs::create_dir_all(&root).map_err(storage_io)?;
             Ok(root)
         }
@@ -1909,6 +1911,7 @@ mod tests {
             omit_accounting: false,
             release: release.clone(),
             reaped: reaped.clone(),
+            runtime: tempfile::tempdir().unwrap(),
         }));
         (temp, app, release, reaped)
     }
@@ -2082,6 +2085,7 @@ mod tests {
             release: release.clone(),
             reaped,
             omit_accounting: true,
+            runtime: tempfile::tempdir().unwrap(),
         });
         release.store(true, Ordering::SeqCst);
         let record = start(&app, temp.path(), 5000).unwrap().wait();

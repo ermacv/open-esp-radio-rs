@@ -164,3 +164,29 @@ fn a_tx_owner_carries_the_time_it_entered_the_radio_queue() {
     let queued = radio.try_receive_tx().unwrap();
     assert!((before..=after).contains(&queued.queued_at_micros()));
 }
+
+#[test]
+fn tx_counters_report_the_peak_held_credits_and_refusals() {
+    let general = allocator::<3>();
+    let rx = allocator::<1>();
+    let resources = Box::leak(Box::new(OwnedEndpointResources::<NoopRawMutex, 1, 2>::new()));
+    let (mut device, radio) = resources.split(NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1], rx);
+    radio.link_controller().set_link_up(true);
+    let counters = radio.tx_counters();
+
+    device.transmit(frame(general, 1)).unwrap();
+    let retained = radio.try_receive_tx().unwrap();
+    device.transmit(frame(general, 2)).unwrap();
+    // Queued and radio-retained owners share the budget, so a third waits.
+    assert!(device.transmit(frame(general, 3)).is_err());
+    let full = counters.counters();
+    assert_eq!((full.outstanding, full.peak_outstanding, full.refused, full.capacity), (2, 2, 1, 2));
+
+    // Releasing owners keeps the peak until a new interval starts there.
+    drop(retained);
+    drop(radio.try_receive_tx().unwrap());
+    assert_eq!(counters.counters().outstanding, 0);
+    assert_eq!(counters.counters().peak_outstanding, 2);
+    counters.restart_peak();
+    assert_eq!(counters.counters().peak_outstanding, 0);
+}

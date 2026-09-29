@@ -29,6 +29,7 @@ pub use external_rx::{
     ExternalRxAdmission, ExternalRxCounters, ExternalRxOrigin, ExternalRxRefusal,
 };
 use tx_budget::TxCredit;
+pub use tx_budget::TxCreditCounters;
 use tx_queue::TxQueue;
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, NetworkInterfaceId, RxEnqueueError};
@@ -479,6 +480,31 @@ impl<M: RawMutex> OwnedNetworkTxFrame<'_, M> {
     }
 }
 
+/// Copyable read-only view of one endpoint's TX admission accounting.
+pub struct OwnedTxCounters<'resources, M: RawMutex, const TX_QUEUE_DEPTH: usize> {
+    tx: &'resources TxQueue<M, TX_QUEUE_DEPTH>,
+}
+
+impl<M: RawMutex, const TX_QUEUE_DEPTH: usize> Clone for OwnedTxCounters<'_, M, TX_QUEUE_DEPTH> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const TX_QUEUE_DEPTH: usize> Copy for OwnedTxCounters<'_, M, TX_QUEUE_DEPTH> {}
+
+impl<M: RawMutex, const TX_QUEUE_DEPTH: usize> OwnedTxCounters<'_, M, TX_QUEUE_DEPTH> {
+    /// Current admission snapshot.
+    pub fn counters(&self) -> TxCreditCounters {
+        self.tx.credit_counters()
+    }
+
+    /// Start a new peak interval at the current occupancy.
+    pub fn restart_peak(&self) {
+        self.tx.restart_credit_peak()
+    }
+}
+
 /// Link-state capability which can coexist with packet publication handles.
 pub struct OwnedLinkController<'resources, M: RawMutex> {
     interface: NetworkInterfaceId,
@@ -548,6 +574,11 @@ impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH:
     /// Permanent logical interface represented by this endpoint.
     pub const fn interface(&self) -> NetworkInterfaceId {
         self.interface
+    }
+
+    /// Read-only TX admission accounting, shareable with diagnostics.
+    pub const fn tx_counters(&self) -> OwnedTxCounters<'resources, M, TX_QUEUE_DEPTH> {
+        OwnedTxCounters { tx: self.tx }
     }
 
     /// RX-only publication capability for the physical datapath.

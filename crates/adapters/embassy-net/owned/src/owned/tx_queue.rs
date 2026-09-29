@@ -14,7 +14,7 @@ use oer_network_interface::TransportFlow;
 
 use super::{
     QueuedPacket,
-    tx_budget::{TxBudget, TxCredit},
+    tx_budget::{TxBudget, TxCredit, TxCreditCounters},
 };
 
 struct State<const N: usize> {
@@ -56,6 +56,14 @@ impl<M: RawMutex, const N: usize> TxQueue<M, N> {
 
     pub(super) fn is_full(&self) -> bool {
         self.budget.is_full()
+    }
+
+    pub(super) fn credit_counters(&self) -> TxCreditCounters {
+        self.budget.counters()
+    }
+
+    pub(super) fn restart_credit_peak(&self) {
+        self.budget.restart_peak()
     }
 
     pub(super) fn push(&self, packet: QueuedPacket) -> Result<(), QueuedPacket> {

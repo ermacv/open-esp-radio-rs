@@ -9,7 +9,22 @@ use embassy_sync::{
 
 struct State {
     outstanding: usize,
+    peak_outstanding: usize,
+    refused: u32,
     sender: WakerRegistration,
+}
+
+/// Snapshot of one endpoint's software TX admission.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TxCreditCounters {
+    /// Credits held now by queued and radio-retained owners.
+    pub outstanding: usize,
+    /// Highest `outstanding` since the last peak restart.
+    pub peak_outstanding: usize,
+    /// Transmissions refused because every credit was held.
+    pub refused: u32,
+    /// Credits the endpoint has in total.
+    pub capacity: usize,
 }
 
 pub(super) struct TxBudget<M: RawMutex> {
@@ -23,6 +38,8 @@ impl<M: RawMutex> TxBudget<M> {
             capacity,
             state: Mutex::new(RefCell::new(State {
                 outstanding: 0,
+                peak_outstanding: 0,
+                refused: 0,
                 sender: WakerRegistration::new(),
             })),
         }
@@ -42,10 +59,32 @@ impl<M: RawMutex> TxBudget<M> {
         self.state.lock(|state| {
             let mut state = state.borrow_mut();
             if state.outstanding == self.capacity {
+                state.refused = state.refused.wrapping_add(1);
                 return false;
             }
             state.outstanding += 1;
+            state.peak_outstanding = state.peak_outstanding.max(state.outstanding);
             true
+        })
+    }
+
+    pub(super) fn counters(&self) -> TxCreditCounters {
+        self.state.lock(|state| {
+            let state = state.borrow();
+            TxCreditCounters {
+                outstanding: state.outstanding,
+                peak_outstanding: state.peak_outstanding,
+                refused: state.refused,
+                capacity: self.capacity,
+            }
+        })
+    }
+
+    /// Start a new peak interval at the current occupancy.
+    pub(super) fn restart_peak(&self) {
+        self.state.lock(|state| {
+            let mut state = state.borrow_mut();
+            state.peak_outstanding = state.outstanding;
         })
     }
 

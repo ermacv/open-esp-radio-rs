@@ -19,7 +19,7 @@ mod owned;
 pub use owned::{
     ExternalRxAdmission, ExternalRxCounters, ExternalRxOrigin, ExternalRxRefusal,
     OwnedEndpointResources, OwnedLinkController, OwnedNetworkDevice, OwnedNetworkRunner,
-    OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxFrameSource,
+    OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxCounters, OwnedTxFrameSource, TxCreditCounters,
 };
 
 impl<M: RawMutex> oer_ieee80211_datapath::SoftwareTxFrame for OwnedNetworkTxFrame<'_, M> {

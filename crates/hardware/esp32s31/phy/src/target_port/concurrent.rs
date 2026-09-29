@@ -823,7 +823,14 @@ pub fn diag_frequency_report(
         let _ = write!(out, " {:08x}", lease.phy_register_image(index).unwrap_or(0));
     }
     let _ = out.write_str("\n");
-    let (mut registers, _) = lease.phy_hal_with_attachment();
+    let (mut registers, phy) = lease.phy_hal_with_attachment();
+    if let Ok(state) = phy.phy_state() {
+        let [initial, middle, outer] = state.diag_xtal_duty();
+        let _ = write!(
+            out,
+            "diag38 xtal duty initial {initial:02x} middle(2440) {middle:02x} outer(2480) {outer:02x}\n"
+        );
+    }
     for entry in [25_u8, 27, 62] {
         let mut words = [0_u32; 3];
         for (word_index, word) in words.iter_mut().enumerate() {

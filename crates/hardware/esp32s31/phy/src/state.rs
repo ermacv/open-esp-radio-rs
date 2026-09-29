@@ -1752,6 +1752,11 @@ impl PhyState {
         )
     }
 
+    /// DIAGNOSTIC #38 (not for merge): initial, 2440 MHz and 2480 MHz duty.
+    pub(crate) const fn diag_xtal_duty(&self) -> [u8; 3] {
+        self.common.xtal_duty
+    }
+
     pub const fn xtal_duty_parameters(&self) -> XtalDutyCalibrationParameters {
         XtalDutyCalibrationParameters {
             restore_duty: self.common.xtal_duty[1],

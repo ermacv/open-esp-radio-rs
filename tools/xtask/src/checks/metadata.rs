@@ -149,3 +149,23 @@ pub fn run(context: &Context) -> Result<usize> {
     );
     Ok(workspaces.len())
 }
+
+#[cfg(test)]
+mod workflow_tests {
+    /// The repository keeps Cargo offline, so a CI runner without a Cargo
+    /// cache must turn the network back on in every workflow.
+    #[test]
+    fn every_workflow_lets_cargo_download() {
+        let workflows =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows");
+        for entry in std::fs::read_dir(&workflows).unwrap() {
+            let path = entry.unwrap().path();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                text.contains("CARGO_NET_OFFLINE: 'false'"),
+                "{} runs Cargo offline",
+                path.display()
+            );
+        }
+    }
+}

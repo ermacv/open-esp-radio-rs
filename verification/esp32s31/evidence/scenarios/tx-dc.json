@@ -6,17 +6,17 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "928a8b2d58019eea5e321a3520820e280974f0485ca389a718bd6097faa6d70d",
+    "input-2": "1fee12285dfdf66c0586908d07838990bc05efa0e029bf3d7e39fcb4209ea92c",
     "input-3": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
   "sources": [
     {
       "path": "crates/adapters/embassy-net/owned/Cargo.toml",
-      "sha256": "9174ad85d6578c68561328bb1053a11548f25f8f1e00ff8de4d6336fd44bea7f"
+      "sha256": "80d4d4f950f39edb59f305c509e31fd53ef237885eb407d4342470581835bb72"
     },
     {
       "path": "crates/adapters/esp-hal/esp32s31/radio/Cargo.toml",
-      "sha256": "cb00b858f46f64610fc7b557caf1d9f7057dec3c32c212cad7176b3bcc7a1469"
+      "sha256": "993778feb99c92358a1b4f00cd358e3bddf1bfcfda286c984d6f998c2a680941"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/Cargo.toml",
@@ -92,11 +92,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "59e51b5fd8a23395b74501fce2d1fdc8a986ee668beebdb8af8765b07d6ee83d"
+      "sha256": "dd7d5912219d730f4fba3430aaf4aa3b0682112d505770bff17267048c961f54"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "sha256": "93f284d2145cb651d6c4adfb38703ddd1bb592c1b8e8115b3282b8eaf6b70371"
+      "sha256": "3d7033a7520be6dac04d8e9341e75d5a48457dfe581e8e9a0216966baa7d9680"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/syscon.rs",
@@ -232,7 +232,7 @@
     },
     {
       "path": "crates/runtime/esp32s31/ieee80211/Cargo.toml",
-      "sha256": "01a014d5ebfee4ea71b9dfc0dd6e6c7de7779b88239c7bad15a9b6e93833a8c6"
+      "sha256": "9abbc70acd14cb78e2320e30dad66508d7f1cfd141a238922c3f5ef95dc441c1"
     },
     {
       "path": "crates/runtime/esp32s31/phy/Cargo.toml",
@@ -256,7 +256,7 @@
     },
     {
       "path": "tools/blobray/Cargo.lock",
-      "sha256": "a9851c4ee08e90853ef8f68da2b3e34502972f11f5e98c03fc97a641ca3e1c3c"
+      "sha256": "1d7d73f2de08c12b56122cf7c017dc2cb1eeaf09660ad9a814a7748971b0aebc"
     },
     {
       "path": "tools/blobray/crates/analysis/Cargo.toml",
@@ -280,11 +280,11 @@
     },
     {
       "path": "tools/blobray/crates/analysis/src/navigation.rs",
-      "sha256": "00c5a930da7fd26d3bdfbf8d1684fa77c2e99a09fa6a16b8c13e7480aae989ba"
+      "sha256": "9df4f4f6b765d4b4360f5b86081fc14b59d572ef92349761225f88f9b470608c"
     },
     {
       "path": "tools/blobray/crates/analysis/src/paths.rs",
-      "sha256": "79b0efc145dbb8eca256335828326ffb3a99c241d04e5b909094b7b8f4f8d265"
+      "sha256": "434338bce5955bc0ae87aa946e36162b761bf9bf1d546c32b46dabdc22efa295"
     },
     {
       "path": "tools/blobray/crates/analysis/src/pointers.rs",
@@ -296,15 +296,15 @@
     },
     {
       "path": "tools/blobray/crates/analysis/src/registers.rs",
-      "sha256": "99d3c1563a235b316808bf4b8eafec0cd282420c5d70e9e27f3de8543bef7694"
+      "sha256": "44a656a8d70c122f8ec398b31fc2bf83b52d25bf3c5ba998457d2c54faab4238"
     },
     {
       "path": "tools/blobray/crates/analysis/src/trace/expressions.rs",
-      "sha256": "4ac10e47d633200e76821adc3e0fc67767da99307de9eefe9308a1da72dc0915"
+      "sha256": "6d2bd07c9a67c228aac5b6a740651a454fa1da6f4c212da4c24d3d9b21ed9a0d"
     },
     {
       "path": "tools/blobray/crates/analysis/src/trace/index.rs",
-      "sha256": "698acceac16d1b40ee0b9f13411b39b3b670e9aa572ac945ebbf8eb4d066aad0"
+      "sha256": "6363edc7b0458edca88f2b7d01bfbaf2dea8343f91bfced527f32610e1c3450c"
     },
     {
       "path": "tools/blobray/crates/analysis/src/trace/mod.rs",
@@ -316,23 +316,23 @@
     },
     {
       "path": "tools/blobray/crates/analysis/src/values.rs",
-      "sha256": "98c2be29f3a5782c7f47293b5cbc330244bc72b56b26524808f0bfc1cda562a8"
+      "sha256": "3c52f90f4e39bba3a18c0597dc58ff43a0406c8085d483f80da91828f82c0776"
     },
     {
       "path": "tools/blobray/crates/application/Cargo.toml",
-      "sha256": "88537f5c4f52a7b4a5ae89db000fb91509a5b05d2889d157c936a45a7cc2465a"
+      "sha256": "32486698758fa85e167a48ebdb3dbc634046377aad812a9f0a136ac551900ec6"
     },
     {
       "path": "tools/blobray/crates/application/src/audit.rs",
       "sha256": "7bdf5d6cb601c5d3fb9584b68797d123a63906c2b1a6d421e53a95e0cfaeac78"
     },
     {
-      "path": "tools/blobray/crates/application/src/call_pairs.rs",
-      "sha256": "4dc680428e298384cf986d72c53ffb71890b5c0af529d1d497b894de04fefc01"
+      "path": "tools/blobray/crates/application/src/automatic.rs",
+      "sha256": "341ffbb6a25c78b6fc95d957afce603779c2ad0a72473d2e7df7837dd92c0c21"
     },
     {
       "path": "tools/blobray/crates/application/src/code_coverage.rs",
-      "sha256": "d0a499bb7b842699d376c7862e69dd675dbcfed9ac8a2dcf70e41e5b8956cee5"
+      "sha256": "ed6e6166b83cd2de643fcc3f56e5190a2c83feeaa454348d0aa01bfffe1d495f"
     },
     {
       "path": "tools/blobray/crates/application/src/command_bank.rs",
@@ -348,7 +348,7 @@
     },
     {
       "path": "tools/blobray/crates/application/src/data.rs",
-      "sha256": "23e312784039c92dc624bc8a1a10ff0357a12e11bc32a158f93727fadd5b31c1"
+      "sha256": "44ef757552db8498b486a5ba9baadcb2faa8c302be39fc638b611171b0a27001"
     },
     {
       "path": "tools/blobray/crates/application/src/dependence.rs",
@@ -359,52 +359,32 @@
       "sha256": "04dde604e48d44fe7ab02bf6e6d21433529713af052f7e3b2c28a3e4d148b18d"
     },
     {
-      "path": "tools/blobray/crates/application/src/effect_contracts.rs",
-      "sha256": "7bbb1fe39f7eb1b25910e47fb8e47603cc81fe2882f0e155e2a4e0b88eb7466e"
-    },
-    {
       "path": "tools/blobray/crates/application/src/execution.rs",
-      "sha256": "db5213e4f7c8744d46ccd3a4877472899e458fd3e423c57112d6f750d1c8a953"
+      "sha256": "1494365bf5f54a362f685acb46ec8009c2da969c4ed5182383e87e0a50e33a3f"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_calls.rs",
-      "sha256": "ab829b4b60cc00e3068be74a4b74a4bd694efd009345d0aec9bcd0d2f4a34155"
+      "sha256": "2c7b5b9f0fd4049d23df446f19d8b7fb1728f3dab9356f22bbb1cdbead75b4fc"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_capture.rs",
-      "sha256": "f0782ba9749dbfec3c11817eb31a600142e1c8d311a4c31d09c3f63379d66704"
+      "sha256": "15e81423bb1a56fe7037495bc0c4ce269db20f865e85a4c1274fa43542dae9b3"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_coverage.rs",
       "sha256": "6b42434d068d3c1e737d83a4992457494cba87d40f87e314d331b32a81b29100"
     },
     {
-      "path": "tools/blobray/crates/application/src/execution_goals.rs",
-      "sha256": "b608227452dcc06f930d2f9d1e97dbbb1dbb9c2859fc009f8f17b9f32e651b78"
-    },
-    {
-      "path": "tools/blobray/crates/application/src/execution_interfaces.rs",
-      "sha256": "b627ae7259295e30b12f9aed3bc06b1d0e5fa2b0790735981fb1229d65d85101"
-    },
-    {
       "path": "tools/blobray/crates/application/src/execution_memory.rs",
-      "sha256": "e5bdc498a70fe04473593676be46d6940f5d344e569348fdf303908bdeaacca4"
+      "sha256": "57630e9e66c778d01473ffd67fe7d68635b41d127be2d69dc1046eb8011ca75b"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_observation.rs",
-      "sha256": "4890e8c35bb39d7a59e9e366a49d2905bb23166dbde50db965126f3d2f5bc03a"
-    },
-    {
-      "path": "tools/blobray/crates/application/src/execution_services.rs",
-      "sha256": "6eff5262156677de126ebb3ee45e1a432b08d5691cd3d8c011a06123654fc1fe"
+      "sha256": "c68113beff57defd3df3d7b351b4f8a8534abb3e12a39e012e7bd0bdf25166c1"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_steps.rs",
       "sha256": "dda3eccbc9bc451af99b9955ab3dabb90b33dd9a9bb39565afd5571bdf18edfd"
-    },
-    {
-      "path": "tools/blobray/crates/application/src/execution_tables.rs",
-      "sha256": "f6c3e03797f2260b58bae3d4a47dc3d666490ca38b95a4d50dd1c15362e61c86"
     },
     {
       "path": "tools/blobray/crates/application/src/execution_timeline.rs",
@@ -415,36 +395,24 @@
       "sha256": "d2cc61900b8fda5a992d97b8fbf23990c4e5f65fcf280a55d1e82f5c4f5c27eb"
     },
     {
-      "path": "tools/blobray/crates/application/src/fifo_services.rs",
-      "sha256": "a787369fba4e204df26317ddc4173d2f5e9bf68372fa06b9993157829a70985d"
-    },
-    {
       "path": "tools/blobray/crates/application/src/functions.rs",
-      "sha256": "4a853a5bf9cad8e267f348cc699f7e07cff47f80ac1aeeedb466e9d75dabb635"
+      "sha256": "17842a732219aa9ea15548f2fa045307ca1d3a523444a1f41be93054c204c383"
     },
     {
       "path": "tools/blobray/crates/application/src/in_process.rs",
-      "sha256": "0d6a5910b07f9d182064fbd90debe7018b8a0c8807a2fed8f2eebba8ac48598a"
+      "sha256": "164d62716bb4c32149681cf0f08275ed24c86c1d7e66c3f9e4ae0431331861c2"
     },
     {
       "path": "tools/blobray/crates/application/src/investigations.rs",
-      "sha256": "6e15faa5aa709ba3f60c478cc97275181de449717ea1b06e64abbedf7e180744"
+      "sha256": "b1cb88442fe9a41d9f8c2bbdafc496b7184f6f00ddd65e85feae2636d28dfd0f"
     },
     {
       "path": "tools/blobray/crates/application/src/jobs.rs",
-      "sha256": "b2e2a0662278e70b1303a37b5d540c64590f8743d30df8bccd9bb96e4e1e680e"
-    },
-    {
-      "path": "tools/blobray/crates/application/src/knowledge.rs",
-      "sha256": "e3c10b8f97fb9b78b639108aad1a10bb0de3bf19f26b3c8e270b2a1479cc46ee"
-    },
-    {
-      "path": "tools/blobray/crates/application/src/layout_projections.rs",
-      "sha256": "763eba10eb0b3cb3a4add83ddc2e52091f0b531fca01d35503fa41181c65ba23"
+      "sha256": "0f94d83b40c2eb5fd6bae25ab0a581816ea0df3a92ee16556e2160501954a053"
     },
     {
       "path": "tools/blobray/crates/application/src/lib.rs",
-      "sha256": "c9e0d9692820762f01b5eed3cb36afa664c7dabc599bee2ae386f1e2add8094d"
+      "sha256": "ee988f05926874752bb10d6c02d1eb0442da1d66b6817472e985ed37ff77fdc8"
     },
     {
       "path": "tools/blobray/crates/application/src/link_selection.rs",
@@ -472,19 +440,19 @@
     },
     {
       "path": "tools/blobray/crates/application/src/navigation/accesses.rs",
-      "sha256": "f1d639d107e76a27210ebdb5112d562ddec2b449dd065cf7c8dcc5a5252e1007"
+      "sha256": "78287e6dfaab2fc257a1ef34231f417035e9dce7c18fce061de1c94a5c269468"
     },
     {
       "path": "tools/blobray/crates/application/src/navigation/calls.rs",
-      "sha256": "f4ac3081f6d44cf857f5a6c501548eee1426ce140685a9f3552f118931db1e91"
+      "sha256": "f32cdf6a928cf8713a83c6e31d538462c604031e607e6ba8eeb4f65f3d5713a9"
     },
     {
       "path": "tools/blobray/crates/application/src/navigation.rs",
-      "sha256": "c9bb1d02a0917119d7ff088840afe6833b36687888a8c91237aa2d8488dad511"
+      "sha256": "cc41f0a15dc4b6cece5febaca3b7cd7214a95bad1c7c2ba314103ed82bcb09f7"
     },
     {
       "path": "tools/blobray/crates/application/src/occurrence.rs",
-      "sha256": "7eaacf2a553b46943e2872a266120c13fc2c061bd0a7141b39fcb6770e6651f3"
+      "sha256": "c1580136c3f98f68faee613469a554dc89cd0daaa1b28a2b0312b18d8ff6c6fa"
     },
     {
       "path": "tools/blobray/crates/application/src/planning.rs",
@@ -492,15 +460,15 @@
     },
     {
       "path": "tools/blobray/crates/application/src/protocol.rs",
-      "sha256": "f0cddb78a5c129ad077dbb5523ea9ffe4ed73dab2cc3094fc67724a804999489"
+      "sha256": "aa161270037a34de5d663115c5a9d8cbd8a8b38185085e8662c58b9064fbd2fb"
     },
     {
       "path": "tools/blobray/crates/application/src/query.rs",
-      "sha256": "e8c432ecc0f8a4ef93c25bf3353dc9ecce86c9455ed8543469334bb145d8d558"
+      "sha256": "f3699b97f10a728e88ccf61aeedd8b925c1890776902d9fa9f805fa629f35893"
     },
     {
       "path": "tools/blobray/crates/application/src/query_stream.rs",
-      "sha256": "a768b1fb229880dab593449f4b0552e3d25446ff530a5944c93c5be6a438ed4c"
+      "sha256": "c195d6973bc858281b37e2a235c56063887e2c1b25927824b87fc748f8c712c8"
     },
     {
       "path": "tools/blobray/crates/application/src/read.rs",
@@ -511,24 +479,12 @@
       "sha256": "f356937d2936dc2572a6047df349de4c8fb1b32457864f89d955bd180d0f1bdf"
     },
     {
-      "path": "tools/blobray/crates/application/src/registers/index.rs",
-      "sha256": "ee38cba98e84a4923727cfa48b74fdb625f43bb8d0b913507451118c219c2a33"
-    },
-    {
       "path": "tools/blobray/crates/application/src/registers.rs",
-      "sha256": "5fb2a67655b5664b9e1f3b96688e56d1cdbae99f7f4ba76678f014981e9e3530"
+      "sha256": "f599550bc655726d159d7d824f3a9b4cc2c553156d2e8ed79682dd026ff6bff0"
     },
     {
       "path": "tools/blobray/crates/application/src/resources.rs",
       "sha256": "5f4c1e71f69fb44401162fccc86e720e05448725c4b5eb965aafed227132dc0b"
-    },
-    {
-      "path": "tools/blobray/crates/application/src/runtime_tables.rs",
-      "sha256": "c0a5ae6346999555328ae8df69f7c0a7e3b57d70dd07d38221dcd8e60b66e21b"
-    },
-    {
-      "path": "tools/blobray/crates/application/src/scenarios.rs",
-      "sha256": "c84d8472f6a9f36c2eeb16ce0ed5602c9326e109be65cad8fb4d1f5a5f4fe36d"
     },
     {
       "path": "tools/blobray/crates/application/src/selection.rs",
@@ -539,12 +495,8 @@
       "sha256": "9769fc60f6eca7a3dbb44d45e9148195d9623a1409db499e699b9db38f66d703"
     },
     {
-      "path": "tools/blobray/crates/application/src/semantic_ir/provenance.rs",
-      "sha256": "ebae213ceff503d9ad33d3f15a8e0adf7011042f148918e17255bb047d9820de"
-    },
-    {
       "path": "tools/blobray/crates/application/src/semantic_ir.rs",
-      "sha256": "fdaa56c81782f7b1a33509a79a445b15f6db5125410388f52c6790a1098fc61c"
+      "sha256": "557ecfa3c4bc676377ad61006ae67f9bf99a4a6be4a28f73b13911a4574a180e"
     },
     {
       "path": "tools/blobray/crates/application/src/temporary.rs",
@@ -572,7 +524,7 @@
     },
     {
       "path": "tools/blobray/crates/artifacts/src/function.rs",
-      "sha256": "6ae3dcb42650605484c4e0b4ab6b9d315130873464322ae54522adbd12c946eb"
+      "sha256": "ea6ec9a49687fbde3f5c57c0358cb12ebd56e43e1a12342cd9b81252c20949dc"
     },
     {
       "path": "tools/blobray/crates/artifacts/src/image.rs",
@@ -604,27 +556,23 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/access.rs",
-      "sha256": "2b6cfd9247d68b285d72defe81561c720d8687b8f0b4bf5eb0a96d222cec582c"
+      "sha256": "086988ba292e2d145b8b5f02ae1dd0ebe248d14b6e928c233ca5e79cc436e505"
     },
     {
       "path": "tools/blobray/crates/domain/src/assessment.rs",
-      "sha256": "ff0dc0a8d121a81cb73f3d898b8665e16c4579b653d2f620c8ab30333ed32664"
+      "sha256": "5258c12636e859b5a57fbdad516480484257974d3244b6fa77d69329554d5949"
     },
     {
       "path": "tools/blobray/crates/domain/src/audit.rs",
       "sha256": "f02ac30065ebbaade6ad014c971c49c94df11ffec404566b18a10838995e2fab"
     },
     {
-      "path": "tools/blobray/crates/domain/src/call_contract.rs",
-      "sha256": "7cf178f57d6e096585318bedee2941c518621c7c0348c8ff8fe3704047f0795b"
-    },
-    {
-      "path": "tools/blobray/crates/domain/src/call_correspondence.rs",
-      "sha256": "3b7cd01afd1a37502e08d5d3dccd0f2a3f44ff81b17eba1460441b5333666882"
+      "path": "tools/blobray/crates/domain/src/call_boundary.rs",
+      "sha256": "0b285ed6b85509ab7ee537c04e0be5f67320fcb01540334e0b74896c212f8712"
     },
     {
       "path": "tools/blobray/crates/domain/src/call_observation.rs",
-      "sha256": "529c2dbb7bc4e349f48fae87872b64cc01f006e48642403207ba41763ed040b5"
+      "sha256": "688213633b8d0d9e10666ee6b75614dc1c047342454d740088f8efd05687b4e6"
     },
     {
       "path": "tools/blobray/crates/domain/src/code_coverage.rs",
@@ -636,11 +584,11 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/comparison.rs",
-      "sha256": "0b4ab19fd697df64e9d2b565e2cee3828672ff855a46b2647c3775b3477d106e"
+      "sha256": "9328f24dc19f78ffa262668bb34112db2a9da9c6d77f9dcb4ea4ec30dd193e40"
     },
     {
       "path": "tools/blobray/crates/domain/src/data.rs",
-      "sha256": "44e2505f7e289fdaafb01e3b5523b542ccb504a943ad47f99e465eef0374ec13"
+      "sha256": "799eec5e6839fcf2ca0b3a5d81a2f591cd5a66fb19315e681a9fde57c164ecca"
     },
     {
       "path": "tools/blobray/crates/domain/src/device.rs",
@@ -648,59 +596,43 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/effect_contract.rs",
-      "sha256": "7b082842547f5e8650d93c8c3746c8c5cfbe51f17631f01be1305ed3f5c8fd3e"
+      "sha256": "53c6c3ace4d8201695a1fcee2b6e2ec9dafacc9ffafb815ac50997e65b3401c8"
     },
     {
       "path": "tools/blobray/crates/domain/src/execution.rs",
-      "sha256": "54d84f622159a08a1e9d96e2d02ffecb52c56eb494c135ccd93251cca5363f44"
+      "sha256": "1fe0a63b03b3f428ec62d7eb5f36efc386b737157bbe2eb75f83557e93c69b6c"
     },
     {
       "path": "tools/blobray/crates/domain/src/external_call.rs",
-      "sha256": "ed09401d972baf1c774865c0de471b220caf5a9f9d8fc3f7c20c113e4ed787f8"
-    },
-    {
-      "path": "tools/blobray/crates/domain/src/fifo_service.rs",
-      "sha256": "226d7afa950ac784390e1a5754887a9231bc105e5668377b8213c4f8be15fb1a"
+      "sha256": "d59e0c76960f718da1e75be5194abdd7ab5aa69ee8a020cae7d1a08902979878"
     },
     {
       "path": "tools/blobray/crates/domain/src/function.rs",
-      "sha256": "1865c0895d6635edd581d6e726cc276d2a14e6869de2c97258552c375cd02f4d"
-    },
-    {
-      "path": "tools/blobray/crates/domain/src/function_contract.rs",
-      "sha256": "bbbb1149dcc408832baa90991a3c543d3de98038adceab8c85fa422ad90fc1df"
+      "sha256": "19e5dee1e458f1c9d6ac84fcb0b1618e776adaf637bedbd1247a091d327c970f"
     },
     {
       "path": "tools/blobray/crates/domain/src/image.rs",
       "sha256": "5f541060da955fc9f25f29e332f67134a0ced2fdab7771a38f501815f64c25f3"
     },
     {
-      "path": "tools/blobray/crates/domain/src/interfaces.rs",
-      "sha256": "c4b0fc2ba8627ccbc8a72b6f451610e35ae70a1e1380dd900443acdf4bd5954c"
-    },
-    {
       "path": "tools/blobray/crates/domain/src/investigation.rs",
-      "sha256": "bfd225e1b4d064f6f67cf55aeaec7b1801bac494db079acbc5841588d5318c72"
+      "sha256": "3cfa139beea6baf68ad2a44dfb8cdaef033acd48904390836c149ff192236d82"
     },
     {
       "path": "tools/blobray/crates/domain/src/jobs.rs",
       "sha256": "6f088b51846d353d86b80e02edf79bd44e53d92457ad368323c0f980be1912a8"
     },
     {
-      "path": "tools/blobray/crates/domain/src/knowledge.rs",
-      "sha256": "7a47c31d04f67fd30dd5c9a0cb7af5d6ae521813395dfe4b5c81b0e71dba53b0"
-    },
-    {
       "path": "tools/blobray/crates/domain/src/layout_projection.rs",
-      "sha256": "70c3897ad52ab4f338c2e159e25a99c81d94900b880605c246ea9c09238eb2bb"
+      "sha256": "e1b10d65000895fdc13062e61955c909f82af0c5f846420a1a04fb6fc5c7d0fe"
     },
     {
       "path": "tools/blobray/crates/domain/src/lib.rs",
-      "sha256": "55435af93ce0778e47f33522899abe642a3a43dab3b3fe6bc2fd6162fb64892b"
+      "sha256": "28bc19bd458b5d8f332e1570e5c1b4c5addb4f781bf17dc0cf49e81555869b55"
     },
     {
       "path": "tools/blobray/crates/domain/src/measurements.rs",
-      "sha256": "96b00e5271e804c612b21126226239303c42c89583f7d75da49f952208e06f11"
+      "sha256": "c650cb3312bfbd5751d3ff533dcb770ed88b81c8c169c06c8a502e477daf22fa"
     },
     {
       "path": "tools/blobray/crates/domain/src/memory.rs",
@@ -708,31 +640,27 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/navigation.rs",
-      "sha256": "9564d8cd1d98be1727925878c80af210cfb490471eb88be13f021beafe843e8f"
+      "sha256": "6a1c47d8de26ab89dae2c56b23b1d57dc5f54e739b7af605fcfb808c8d568cfb"
+    },
+    {
+      "path": "tools/blobray/crates/domain/src/occurrence.rs",
+      "sha256": "9c7546aa230d55d4eff7917f21140b8c8dff4858aee43335f5ef0b5097d42d4e"
     },
     {
       "path": "tools/blobray/crates/domain/src/record_memory.rs",
-      "sha256": "fe9530a6c239adf22e7ff5058763caf3337780fdea78e5740014be4bacfef959"
+      "sha256": "88ac823f2d51889dd0d3c2bb55e33f562b7781a23d6a54806826b7807f17f57e"
     },
     {
       "path": "tools/blobray/crates/domain/src/registers.rs",
-      "sha256": "c8abf4c70da45ede66cec24b2a7a7da0dd89ee2cc53c786479a236468d373ac4"
+      "sha256": "a2d87b1db0d6640e9057d0a2fb17927e077642dc83daf3b03f101e18e777f01f"
     },
     {
       "path": "tools/blobray/crates/domain/src/reports.rs",
-      "sha256": "7b370b78ddd001cd145af4d56bcb7fb49877dbdee033952ebf8a433fde9215a9"
+      "sha256": "9e78d48586058e60f42fa10eb02a497a00caf33de3fee95418c68071f9b12d17"
     },
     {
       "path": "tools/blobray/crates/domain/src/resources.rs",
       "sha256": "d8fc2b71cb3d1dffcf9da2729d871b15be74fd8985764e9b2daeba2b2778f3e2"
-    },
-    {
-      "path": "tools/blobray/crates/domain/src/runtime_interface.rs",
-      "sha256": "3ea8de110afdbad48c10799fe55bb2db654329e6a83cf8d09632df14a3a17551"
-    },
-    {
-      "path": "tools/blobray/crates/domain/src/scenarios.rs",
-      "sha256": "1a85e2970158b7850f7e89eb90ac8e5dd3304e013977ce98175c4530c062df8d"
     },
     {
       "path": "tools/blobray/crates/domain/src/selection.rs",
@@ -740,7 +668,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/semantic_ir.rs",
-      "sha256": "72f4da09d1974cfd734ee12837296ae591ff4e63293625809011c0264dfcd5f9"
+      "sha256": "6a111f405dd4d8ebe4734b383e895dd1cfe5eae22e534203648229b96ea36dad"
     },
     {
       "path": "tools/blobray/crates/domain/src/semantics.rs",
@@ -756,7 +684,7 @@
     },
     {
       "path": "tools/blobray/crates/domain/src/timeline.rs",
-      "sha256": "50ebf309c2b97105938842bf4a25558c2e61ad522812b1b36834642ec11766d0"
+      "sha256": "9f97ae3a20c0a24b4d625882f7cd930733c32e705c5dd04a261726066688da6d"
     },
     {
       "path": "tools/blobray/crates/domain/src/trace.rs",
@@ -767,32 +695,12 @@
       "sha256": "f2224717ff8a3ffba0d6c3334c651b028d20e4439aba3597de7d7e37efb2068c"
     },
     {
-      "path": "tools/blobray/crates/knowledge/Cargo.toml",
-      "sha256": "9cd1f42d384d624a33afd3bee3ececbbf440270fa7fe768544f0ddcb631af4a1"
-    },
-    {
-      "path": "tools/blobray/crates/knowledge/src/calls.rs",
-      "sha256": "6388d76d2b6984e6f822d703539afd713ef7f6dd02ded0095cd795ec4208fb2c"
-    },
-    {
-      "path": "tools/blobray/crates/knowledge/src/functions.rs",
-      "sha256": "29e516deed815e7873f3654be1ae97f259101c64c7544c0347a0a312a8485fd2"
-    },
-    {
-      "path": "tools/blobray/crates/knowledge/src/interfaces.rs",
-      "sha256": "db5cda09dadfa56019308a53f142899528cb9b4c1243562f8884ead1cebb929e"
-    },
-    {
-      "path": "tools/blobray/crates/knowledge/src/lib.rs",
-      "sha256": "7e5f6b5adb447bcc864662c03897b4ccf181f786d4eef9d1ffb2b93f570f71cd"
-    },
-    {
       "path": "tools/blobray/crates/riscv/Cargo.toml",
       "sha256": "989f09075ed7550b579118562ccff9107e8c31e8c9a6a7543dda3588c6ca007e"
     },
     {
       "path": "tools/blobray/crates/riscv/src/execution.rs",
-      "sha256": "d6e544d69518ede044e91a7421937879f043f7d73d9e7f81e52f041860f188c5"
+      "sha256": "2cba1f9cecc16928dac45a7a832b5128b8776b64b95b79c36ac35b12b234fd35"
     },
     {
       "path": "tools/blobray/crates/riscv/src/extensions.rs",
@@ -808,63 +716,11 @@
     },
     {
       "path": "tools/blobray/crates/store/Cargo.toml",
-      "sha256": "c704c03c0ddf8dd49ef6aecf6f3827261c76354036b33b7423bf3aab66813be0"
+      "sha256": "e32e9770cdab1e7403e99704c9d0cd3ec28095a6f6b99ad15161feafb0ca0154"
     },
     {
       "path": "tools/blobray/crates/store/src/capture.rs",
       "sha256": "7e0a01d34d95f9f05b26007d1da50e37a4058bc298430f125c9ad9068585387b"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_call_pairs.rs",
-      "sha256": "d8e0de92c839cf9d89743fe3e12da35a5de71982c2b9f53ab3d613955974d928"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_calls.rs",
-      "sha256": "bb78a9921e1fe0319aa994dff7a807a6131d74ad1335861cd0672ef50e01044e"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_capture.rs",
-      "sha256": "17d48fad9eee876c0a00ac37fcad0b00f4878d847c4c435f3b4abfbaa603bb9a"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_effects.rs",
-      "sha256": "5f7d2dcc5bd0dac2a7cc7be215110588cfd7c96b47bbf32848ffcba5be0adfe6"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_models.rs",
-      "sha256": "af08ead5096768f8c3352cda4d87ac907d63cf01408fe8e0d6cca9c25645575f"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_observation.rs",
-      "sha256": "9c1ae88543e34ab76d9dc2dc9eaa2c56a9e9133e62beb49961c638b3fdb3a9d9"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_projections.rs",
-      "sha256": "09aa3746726a493a0c57e1c615e8e543fd560e509d76e348b259464e6827f6a7"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_records.rs",
-      "sha256": "1d820b6b3ae91f70cd8468a719badf8078ccdd33bccce1aac11400e5a18d2df5"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_requests.rs",
-      "sha256": "77c4801f60116e6f2d59d75f444e73bd2146397c5116fd7dd4c0b9738a497267"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_services.rs",
-      "sha256": "911ef84d5e59dc83dd0c1ab3cd56f38ddd64696965d9a56759a694b439d3f15a"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_tables.rs",
-      "sha256": "17a99dbe9a7d9e1040db4f2fe8e2c404cef3e2a9198c7005011b145da3562c31"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/execution_timeline.rs",
-      "sha256": "36686d9647e01ed09c124fd7749a6cba1e63dcbf89d72490f46bbc35cb38fe11"
-    },
-    {
-      "path": "tools/blobray/crates/store/src/executions.rs",
-      "sha256": "ee1eab2394d12e53a5e31fa3f81ee66595a19e09b453341e361efaa8bc6e1d0e"
     },
     {
       "path": "tools/blobray/crates/store/src/functions.rs",
@@ -876,23 +732,19 @@
     },
     {
       "path": "tools/blobray/crates/store/src/investigations.rs",
-      "sha256": "ab43c8b91d787cb4de8fbeba7e965973e197c17f8cc450f9ff2896b9ea6a79fd"
+      "sha256": "da522566ce7b0cfe6974a118812ce5b735fe18064ab02e282167e0e45c514e00"
     },
     {
       "path": "tools/blobray/crates/store/src/jobs.rs",
-      "sha256": "c2c0f13b8aed3050e380eef0794059478ef77f07c18fdfd0864ae22e55e80ca3"
+      "sha256": "2b9bb00878573754933ddedad58593fbd847a9ec6846cd6eb6d29c4c64e4793d"
     },
     {
       "path": "tools/blobray/crates/store/src/json_ranges.rs",
       "sha256": "f5ac2d5af57791e6e38a1995a81772f36cdacfbca46efb3806c4cec1e3a091ed"
     },
     {
-      "path": "tools/blobray/crates/store/src/knowledge.rs",
-      "sha256": "e2a3b237248b7a5e227195a391b940f7d9b42de3c81a65e4f6c078fbe660a463"
-    },
-    {
       "path": "tools/blobray/crates/store/src/lib.rs",
-      "sha256": "e46f3a477db5017950ed146719cf5567fcf21d41ee5a7f54065dea5ffe81879e"
+      "sha256": "5007cd91e043748ae651d3f8cb57cbac0cf5a0c81ecc87facc49a24d32d0c9fd"
     },
     {
       "path": "tools/blobray/crates/store/src/metered.rs",
@@ -904,15 +756,15 @@
     },
     {
       "path": "tools/blobray/crates/store/src/query.rs",
-      "sha256": "dcff05484efea3f85b492e24b7b388c98fc0173430e549d3e193127b32770b51"
+      "sha256": "e7da57c438cc566edeb9e353f15ecdf50ee14e8ac237a7ded2990abc49f8a4d1"
     },
     {
       "path": "tools/blobray/crates/store/src/records.rs",
-      "sha256": "0776f6cd03fcf199d49b3735674f15717f221bae0ee556d8285b524e2e42372b"
+      "sha256": "28f9203b3ab7ebf40397b8f9be2d936be0d6f4d956197b841f03625fe2556ccf"
     },
     {
       "path": "tools/blobray/crates/store/src/semantic_ir.rs",
-      "sha256": "56b6a016ccdc3ef2f1de7fd7cde5ee4e8b2b5331732f683dbf0d483f464c6adf"
+      "sha256": "05733254f44a2b164e64837a3df6cb3af041805afa17cf3661095522b7ecc66f"
     },
     {
       "path": "tools/blobray/crates/store/src/source.rs",
@@ -928,7 +780,7 @@
     },
     {
       "path": "tools/blobray/crates/store/src/usage.rs",
-      "sha256": "0426224e15cc470a3f73c4118d3d9d386d175ace5c3d923f6b21c138811b06f1"
+      "sha256": "66827352d45cd08119bc3a90c19788de7c923be599175eff144149e927b99162"
     },
     {
       "path": "tools/blobray/crates/verification/Cargo.toml",
@@ -936,15 +788,43 @@
     },
     {
       "path": "tools/blobray/crates/verification/src/effects.rs",
-      "sha256": "afb8b7e5c96e5cdfb79dec5b4e114e35c72a27a287b9b82bee7fd807a7fc4cd8"
+      "sha256": "5cb12ee79e671df6ab380c3adb55587d57cef4af29b0d6ecefc40c032af77757"
     },
     {
       "path": "tools/blobray/crates/verification/src/lib.rs",
-      "sha256": "434725991b447fc55c0f4f0042ce4d0992ef641308764b10c3f2033c14f1d67d"
+      "sha256": "e23951701645e877121db732f5b9c7a5494520f48d32ed1a5e1eee9971c36e49"
     },
     {
       "path": "tools/blobray/crates/verification/src/projection.rs",
-      "sha256": "366feaea043a17a47c6b3a0f3258b3ec62ec60e76ee8ead27a63fbe3aa543d4a"
+      "sha256": "c5de3ac153390b72ab4a8e69d155f5c7618e449d875b1625c12b3f60eb1cf830"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/records/calls.rs",
+      "sha256": "e59c5a941172f341a7e50b3748a7dd8c9903d81a70ff4d46884bc1937cc64afd"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/records/capture.rs",
+      "sha256": "a37c5eb1418c937f87456f3d2ed25e10289bf21db902a17bc607dc4691b5df9e"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/records/effects.rs",
+      "sha256": "68e18ee1ef02cc0962161db1b84b3606f6e64b9d13eca1cbb56908dea4279e00"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/records/mod.rs",
+      "sha256": "79193b1efd2371f259747e2fb88a54cff4c55e02ff26a687707d63bc1ebe13e3"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/records/models.rs",
+      "sha256": "af08ead5096768f8c3352cda4d87ac907d63cf01408fe8e0d6cca9c25645575f"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/records/observation.rs",
+      "sha256": "a7901764c5c36b32eb9a3f8d703cd3de5358c84d200e4fe15f92ead1c0480d7b"
+    },
+    {
+      "path": "tools/blobray/crates/verification/src/records/timeline.rs",
+      "sha256": "bd152d0766c5527867499e722c36a8870f635531954776e8db2b3cb9511f7719"
     },
     {
       "path": "tools/blobray/next/Cargo.toml",
@@ -1000,11 +880,11 @@
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
-      "sha256": "67e727a47a691401659882b7ae5b187dcb70980ad4bac811d6a09e8ea71654e4"
+      "sha256": "c04677be9bfc982f2ab8054ecddfd34e9ec116c9b485979c85fe193f61f59be1"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.toml",
-      "sha256": "714668876a4e73e591de50938379af6fcaa95651ccc81e2d0ca40bd81d4afc89"
+      "sha256": "c3e9cfad94360c3c706520cbcf57ddaf6f6845e1417ef669429dfecfac51658b"
     },
     {
       "path": "verification/esp32s31/probes/radio/elf/Cargo.toml",
@@ -1024,7 +904,7 @@
     },
     {
       "path": "verification/esp32s31/probes/radio/library/Cargo.toml",
-      "sha256": "603377efc476b2ea350643142310611c50abea534b1d3a57c096b6ec6f9ef872"
+      "sha256": "2f62f5ae3d1e77e2cca5ac3ff600f8fdb015cdeda969e58cd806b827bed3151b"
     },
     {
       "path": "verification/esp32s31/probes/radio/library/src/production_trace.rs",
@@ -1096,7 +976,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/channel.rs",
-      "sha256": "489d069b3edd15553d1f80e917b83e7da3c0a85c91d2b3affa7b22d54ceefa42"
+      "sha256": "ef26f40c7d8dfc6bec036f1df796482efffd440ffd53711d2af5bec7e4f566d0"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/committed.rs",
@@ -1112,11 +992,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/i2c.rs",
-      "sha256": "7d5c2a9a08b7d8987d5787596dd2648a6b2c91d2ee812e7f5c8bfc04f4144e33"
+      "sha256": "ca886569a9e52554c74b95a1d19bf9a09974ed91c260923fcc92b166a40c0319"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/i2c_transport.rs",
-      "sha256": "55fbcd459083b2342febb5bff2891f543bf9848e8b3a29589a25167f8fef8d84"
+      "sha256": "da35038a0ec181ccf3a5a76e82d9e49a7fc64cf35c5242ec4ab0b70e5fc4360c"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/mod.rs",
@@ -1128,11 +1008,11 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/rx_gain.rs",
-      "sha256": "84d71f0b1249408cda14edcd7ab8c9a6afa41f1d1478d011787d384bedc9f8f5"
+      "sha256": "6682765ed8870e01871c4f638a3c07748f70eb9921d97dbc9bd49f2862d057f5"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/tracking.rs",
-      "sha256": "98d2541723e440e92a3e56de57eb87b3678ad3a51defb8950b909b319507eaf0"
+      "sha256": "c82ca7d32968f6b0316b52e44c5a7330b85e8d2aede924d85b72facc22b90b56"
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/tracking_graph.rs",
@@ -1140,7 +1020,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/phy/tx_dc.rs",
-      "sha256": "99486bfb85b8211bc8e9aaf2f69d7f0ec737a2ca6e97a8ad5520321d420959b2"
+      "sha256": "1f1f0f918c3366d21dec6a60312c1c1bf9a07528f45499f2cd8b7a5c7bfce080"
     },
     {
       "path": "verification/esp32s31/scenarios/src/run.rs",
@@ -1148,7 +1028,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
-      "sha256": "9643bae17485563362331097408183dd1e323bf9fb564bcab12d2cba7ceb60c4"
+      "sha256": "de77d5e578c8c320460d293401967bd37f07b0a8f139aea6846028d58c7d3547"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/low_power_clock.rs",
@@ -1168,7 +1048,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/rx_append.rs",
-      "sha256": "f24b5be2ed33231d2ed53f42655fce6e9ef357bea32052b534ed42bf990214ae"
+      "sha256": "135282d38df5655d6392d9acd7475e8f81fd86d2c6ed44c73d8ce77347ed7ef9"
     },
     {
       "path": "verification/harness/codegen",
@@ -1216,15 +1096,15 @@
     },
     {
       "path": "verification/harness/scenarios/src/discovery.rs",
-      "sha256": "17716e3f4663f2b227f384a474c20d845e2cfea2a344ae7159cae950d9564822"
+      "sha256": "916a826de875cc58d9d0220e6de1e0fced63768a407f3e8a27e8eeaf36703a83"
     },
     {
       "path": "verification/harness/scenarios/src/evidence.rs",
-      "sha256": "279ec2f88cc5dae12138104421eeac6a8cde1646d8bbb7670bfe7b4d2fb12f83"
+      "sha256": "23ff0635003f7b6256fd69ba8b9b4045efb2b729d00c293f79eeac83738f4049"
     },
     {
       "path": "verification/harness/scenarios/src/failure.rs",
-      "sha256": "36eca0ee9c813e427a0ffb0ce82c40dd92eca25a3aeb48b8cdbc03696a8d4799"
+      "sha256": "d13458cd5a1e6833c071298c8b329832e40a9fc2fa57b1aadd99d655a69227cc"
     },
     {
       "path": "verification/harness/scenarios/src/findings.rs",
@@ -1232,11 +1112,11 @@
     },
     {
       "path": "verification/harness/scenarios/src/harness.rs",
-      "sha256": "943560ef60558e213df035b01df026bdcc2185f6cdb3090334137fa591cbd1cb"
+      "sha256": "dc22c745e2998fe55d2a6b5cbb009c05ed4bd9360b10e0fe3a93072c2f9087b4"
     },
     {
       "path": "verification/harness/scenarios/src/leaf.rs",
-      "sha256": "9dfaf1fc1dbe4bf755c04f12d6dc9772d98fb515ef97f274a9513b3ed2acd8f1"
+      "sha256": "dc68846211cbc4c9f34cc84c0ce2d27cc241d98c7dc1f5a7947d4dab65b2d162"
     },
     {
       "path": "verification/harness/scenarios/src/lib.rs",
@@ -1260,7 +1140,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/phy/mod.rs",
-      "sha256": "9682dbefc4b116f795e4163861637b94c7f18fe6571318616f621cf6e01e7c0f"
+      "sha256": "e94a4056228ec47415b3285f12005bb8247d937129af8fa210f01d9e8596de05"
     },
     {
       "path": "verification/harness/scenarios/src/registers.rs",
@@ -1268,11 +1148,11 @@
     },
     {
       "path": "verification/harness/scenarios/src/rule_use.rs",
-      "sha256": "23717ce7ca3c1b5299586c20b524ea8a00c055cae52468aa056af790e038ef04"
+      "sha256": "578c43f3b80d1d437ff7cec57977ba55dcc248672ddb6831086345ed791a7381"
     },
     {
       "path": "verification/harness/scenarios/src/session.rs",
-      "sha256": "8e1b06f107ca2634162584e2e05d899d9690310206d08f3473d5f72d6c3a4e9a"
+      "sha256": "89f1a78fb97db55687ea77ff06b628839f99031b5b1200568bafe5ae0529316c"
     },
     {
       "path": "verification/harness/scenarios/src/setup_cache.rs",
@@ -1284,7 +1164,7 @@
     },
     {
       "path": "verification/harness/scenarios/src/state.rs",
-      "sha256": "2a772487ce2e8a8ccf9ad0077ef37e604d2b515511c54ff018a52fad7674f6eb"
+      "sha256": "e9cddd9fb12ad0042c6377f25ecbcb863048cb7ca752a710858ece6a458f9d97"
     },
     {
       "path": "verification/schema",
@@ -1426,11 +1306,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 58813
+      "line": 58827
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 59882
+      "line": 59892
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/ownership.rs",
@@ -1632,123 +1512,111 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 9562
+      "line": 9564
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 9830
+      "line": 9832
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 14839
+      "line": 14837
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60459
+      "line": 60481
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60489
+      "line": 60511
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60715
+      "line": 60737
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60727
+      "line": 60749
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60728
+      "line": 60750
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60739
+      "line": 60761
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60751
+      "line": 60773
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 60752
+      "line": 60774
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 64825
+      "line": 64875
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 65347
+      "line": 65405
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 65359
+      "line": 65417
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 65418
+      "line": 65490
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 65419
+      "line": 65491
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 65550
+      "line": 65622
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 65551
+      "line": 65623
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 66219
+      "line": 66289
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 66226
+      "line": 66296
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 66234
+      "line": 66304
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 66238
+      "line": 66308
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 66245
+      "line": 66315
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 66249
+      "line": 66319
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 70772
+      "line": 70804
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 70775
+      "line": 70807
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 70782
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 70785
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 70792
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 70796
+      "line": 70814
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -1756,27 +1624,19 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 70823
+      "line": 70824
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72685
+      "line": 70828
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72691
+      "line": 70849
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72698
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72704
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72711
+      "line": 70855
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -1784,7 +1644,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72726
+      "line": 72723
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -1792,55 +1652,59 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72739
+      "line": 72736
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72745
+      "line": 72743
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72769
+      "line": 72749
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72773
+      "line": 72758
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72780
+      "line": 72762
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72784
+      "line": 72771
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72791
+      "line": 72777
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72795
+      "line": 72801
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72815
+      "line": 72805
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72822
+      "line": 72812
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72830
+      "line": 72816
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72837
+      "line": 72823
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72848
+      "line": 72827
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 72847
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -1848,15 +1712,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72865
+      "line": 72862
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72871
+      "line": 72869
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72879
+      "line": 72880
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -1864,27 +1728,27 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72894
+      "line": 72897
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72901
+      "line": 72903
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72909
+      "line": 72911
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72916
+      "line": 72918
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72924
+      "line": 72926
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 72931
+      "line": 72933
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -1896,31 +1760,31 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73040
+      "line": 72956
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73047
+      "line": 72963
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73058
+      "line": 72973
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73065
+      "line": 72980
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73076
+      "line": 73072
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73083
+      "line": 73079
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73094
+      "line": 73090
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -1928,123 +1792,123 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73637
+      "line": 73108
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 73652
+      "line": 73115
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 74438
+      "line": 73126
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 74444
+      "line": 73129
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "line": 74450
+      "line": 73669
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 73684
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 74470
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 74476
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
+      "line": 74482
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 2490
+      "line": 2513
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 3157
+      "line": 3192
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 3262
+      "line": 3297
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 3626
+      "line": 3661
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 3632
+      "line": 3667
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 3638
+      "line": 3673
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 6375
+      "line": 6410
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 6381
+      "line": 6416
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 6387
+      "line": 6422
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 6399
+      "line": 6434
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7494
+      "line": 7529
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7500
+      "line": 7535
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7508
+      "line": 7543
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7514
+      "line": 7549
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7520
+      "line": 7555
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7536
+      "line": 7571
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7544
+      "line": 7579
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7552
+      "line": 7587
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7566
+      "line": 7601
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7574
+      "line": 7609
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7583
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7595
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7606
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7614
-    },
-    {
-      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7622
+      "line": 7618
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
@@ -2052,31 +1916,47 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7636
+      "line": 7641
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7678
+      "line": 7649
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7687
+      "line": 7657
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7699
+      "line": 7665
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 7711
+      "line": 7671
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 8010
+      "line": 7713
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
-      "line": 8495
+      "line": 7722
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 7734
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 7746
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 8045
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/generated.rs",
+      "line": 8530
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/modem/syscon.rs",

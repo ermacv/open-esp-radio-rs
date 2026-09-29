@@ -141,7 +141,7 @@ struct Queue {
 
 /// Builds or type-checks every selected class, up to `jobs` at once, and
 /// reports the outcomes in catalog order. Each class compiles in its own
-/// target directory. A full build takes the selected [`SEEDS`] first; as
+/// target directory. A full build takes the selected `SEEDS` first; as
 /// each finishes, the classes of its family start from a copy-on-write copy
 /// of its compiled units, so a dependency is compiled once per family
 /// instead of once per class.

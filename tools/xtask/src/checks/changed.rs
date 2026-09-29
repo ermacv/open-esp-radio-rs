@@ -114,7 +114,11 @@ pub fn plan(
             "rust-toolchain",
         ]
         .iter()
-        .any(|prefix| path.starts_with(prefix));
+        .any(|prefix| path.starts_with(prefix))
+            // Host code under `hil/host` never reaches an image; the image
+            // build and audit code does.
+            && (!path.starts_with("hil/host")
+                || path.starts_with("hil/host/runner-core/src/image"));
         if image_input && path.extension().is_none_or(|extension| extension != "md") {
             plan.firmware = true;
         }
@@ -350,6 +354,9 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
         // Build and audit the images the change can alter, in the host's
         // build slots: a stack or placement regression fails here rather
         // than on main.
+        if changed.iter().any(|path| path == Path::new("Cargo.lock")) {
+            oer_hil_runner_core::image::ensure_vendor_dependencies_absent(&ctx.root)?;
+        }
         let affected = super::firmware::affected(&changed)?;
         if !affected.is_empty() {
             println!(
@@ -504,6 +511,8 @@ mod tests {
             assert!(run(&[path]).firmware, "{path}");
         }
         assert!(!run(&["docs/guide.md"]).firmware);
+        assert!(!run(&["hil/host/runner/src/main.rs"]).firmware);
+        assert!(run(&["hil/host/runner-core/src/image/mod.rs"]).firmware);
     }
 
     #[test]

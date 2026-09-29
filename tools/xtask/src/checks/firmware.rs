@@ -65,20 +65,48 @@ fn seed_of(class: ImageClass) -> ImageClass {
 }
 
 /// Inputs outside the compiled sources that every image build or its audits
-/// read: Cargo's configuration and locks, the stack and memory policies, and
-/// the build and audit tooling. A change to one affects every class.
-const SHARED_INPUTS: [&str; 10] = [
+/// read: Cargo's configuration, the root and firmware workspace manifests and
+/// locks, the stack and memory policies, and the build and audit tooling. A
+/// change to one affects every class. The sources, manifests, build scripts
+/// and linker scripts of the compiled packages are in each build's
+/// `source-inputs.json` instead, and the root `Cargo.lock` only locks host
+/// packages; `check changed` audits it for vendor packages directly.
+const SHARED_INPUTS: [&str; 12] = [
     ".cargo/",
-    "Cargo.lock",
     "rust-toolchain",
+    "Cargo.toml",
+    "hil/targets/esp32s31/Cargo.toml",
     "hil/targets/esp32s31/Cargo.lock",
     "hil/targets/esp32s31/stack.toml",
     "hil/targets/esp32s31/memory/",
-    "platform/esp32s31/",
+    "platform/esp32s31/Cargo.toml",
+    "platform/esp32s31/Cargo.lock",
     "tools/memory-report/",
     "tools/firmware/",
     "hil/host/runner-core/src/image/",
 ];
+
+/// Whether `path` below a shared input builds nothing: prose, and test
+/// modules and directories.
+fn builds_nothing(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|extension| extension == "md")
+        || path.file_name().is_some_and(|name| name == "tests.rs")
+        || path.components().any(|component| {
+            matches!(
+                component.as_os_str().to_str(),
+                Some("tests" | "testdata" | "fixtures")
+            )
+        })
+}
+
+/// Whether a change of `path` affects every class.
+fn is_shared_input(path: &std::path::Path) -> bool {
+    !builds_nothing(path)
+        && SHARED_INPUTS.iter().any(|input| {
+            path.starts_with(input.trim_end_matches('/'))
+                || (!input.ends_with('/') && path.to_string_lossy().starts_with(input))
+        })
+}
 
 /// The classes whose image a change of `changed` (repository-relative
 /// paths) can alter or whose audits it can change: those whose last build in
@@ -92,11 +120,7 @@ pub fn affected(changed: &[PathBuf]) -> Result<Vec<ImageClass>> {
 }
 
 fn affected_in(builds: &std::path::Path, changed: &[PathBuf]) -> Vec<ImageClass> {
-    let shared = changed.iter().any(|path| {
-        SHARED_INPUTS
-            .iter()
-            .any(|input| path.starts_with(input) || path.to_string_lossy().starts_with(input))
-    });
+    let shared = changed.iter().any(|path| is_shared_input(path));
     ImageClass::ALL
         .into_iter()
         .filter(|class| {
@@ -437,6 +461,24 @@ mod tests {
             ImageClass::ALL.len()
         );
         assert!(!changed(&["crates/wifi/src/lib.rs"]).contains(&bluetooth));
+        for unshared in [
+            "Cargo.lock",
+            "platform/esp32s31/README.md",
+            "hil/host/runner-core/src/image/tests.rs",
+            "tools/firmware/tests/pack.rs",
+            "hil/host/runner/src/main.rs",
+        ] {
+            assert!(changed(&[unshared]).is_empty(), "{unshared}");
+        }
+        for shared in [
+            "Cargo.toml",
+            "rust-toolchain.toml",
+            ".cargo/config.toml",
+            "platform/esp32s31/Cargo.lock",
+            "hil/host/runner-core/src/image/mod.rs",
+        ] {
+            assert_eq!(changed(&[shared]).len(), ImageClass::ALL.len(), "{shared}");
+        }
         std::fs::remove_dir_all(builds.path().join("snapshot-builds/abc").join(format!(
             "{}-{}",
             bluetooth.id(),

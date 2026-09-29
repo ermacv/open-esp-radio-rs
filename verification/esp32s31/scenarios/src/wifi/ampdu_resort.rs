@@ -1107,19 +1107,20 @@ struct Timeout {
     /// Whether the vendor's rate record limit bounds it besides the short
     /// retry limit.
     record_bounded: bool,
-    /// Where the vendor ends a long (RTS-protected) aggregate at its limit.
-    long_end: (&'static str, Option<u32>),
+    /// Where the vendor ends an RTS-protected aggregate at its limit.
+    protected_end: (&'static str, Option<u32>),
+    /// Production's decision at the limit of an RTS-protected aggregate.
+    protected_decision: u32,
+    /// Whether the timeout occurs without RTS protection: a CTS timeout
+    /// answers an RTS, so the vendor's every RTS decision marks the
+    /// descriptor with [`DESCRIPTOR_RTS`] before it.
+    unprotected: bool,
 }
 
 /// How the vendor ends an aggregate at its limit: the frame exchange ends
 /// without a retry (third argument zero) and the aggregate is recycled,
 /// which production's Finish matches.
 const END_EXCHANGE: (&str, Option<u32>) = ("lmacEndFrameExchangeSequence", Some(0));
-/// Known gap: an RTS-protected aggregate whose protection never succeeded.
-const RETRY_FAIL_GAP: &str = "when an RTS-protected A-MPDU exhausts the short retry limit \
-    without a CTS, the vendor's lmacEndRetryAMPDUFail keeps the aggregate and sends a \
-    BlockAckReq starting at its head (ppFillAMPDUBar, ppReSendBar), whose BlockAck then drives \
-    the ordinary resort; production ends the aggregate (known gap)";
 
 const TIMEOUTS: [Timeout; 2] = [
     Timeout {
@@ -1128,17 +1129,25 @@ const TIMEOUTS: [Timeout; 2] = [
         status: 5,
         continuing: STEP_RETAIN,
         record_bounded: true,
-        long_end: END_EXCHANGE,
+        protected_end: END_EXCHANGE,
+        protected_decision: STEP_FINISH,
+        unprotected: true,
     },
     // A protection failure sent no MPDU: neither side sets the Retry bit.
-    // Both kinds end at the vendor's limits.
+    // At the short retry limit the vendor's lmacEndRetryAMPDUFail keeps the
+    // aggregate and requests its BlockAck from the head (ppFillAMPDUBar,
+    // ppReSendBar); production requests it too. Whether the aggregate is
+    // longer than the RTS threshold only selects the retry-limit byte
+    // lmacProcessShortRetryFail records, not this continuation.
     Timeout {
         label: "cts-timeout",
         leaf: "lmacProcessCtsTimeout",
         status: 2,
         continuing: STEP_REPUBLISH,
         record_bounded: false,
-        long_end: ("lmacEndRetryAMPDUFail", None),
+        protected_end: ("lmacEndRetryAMPDUFail", None),
+        protected_decision: STEP_REQUEST_BLOCK_ACK,
+        unprotected: false,
     },
 ];
 /// The production entries of a timeout sequence.
@@ -1157,13 +1166,15 @@ const PATCH: u32 = 0x3fff_ad00;
 const ARENA_RECORD: u32 = 0x3fff_ae00;
 /// An HT MCS 0 long-guard-interval aggregate, the frames' rate.
 const HT_MCS0: u32 = 0x10;
-/// Transmit-descriptor flag that makes the acknowledgement timeout a long
-/// frame's failure.
-const DESCRIPTOR_LONG: u32 = 0x100;
+/// Transmit-descriptor flag of an RTS-protected frame: lmacTxFrame and
+/// ppCheckTxRTS set it with every RTS decision, and the limits of an
+/// aggregate carrying it end in lmacEndRetryAMPDUFail.
+const DESCRIPTOR_RTS: u32 = 0x100;
 /// Decisions the production step reports.
 const STEP_RETAIN: u32 = 1;
 const STEP_FINISH: u32 = 2;
 const STEP_REPUBLISH: u32 = 3;
+const STEP_REQUEST_BLOCK_ACK: u32 = 6;
 /// The step's answer once the aggregate left the sequence.
 const STEP_NONE: u32 = 9;
 /// The publication-limit byte of a rate schedule record.
@@ -1397,7 +1408,17 @@ pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
         } else {
             short_limit
         });
-        for flags in [0, DESCRIPTOR_LONG] {
+        let protections: &[u32] = if timeout.unprotected {
+            &[0, DESCRIPTOR_RTS]
+        } else {
+            &[DESCRIPTOR_RTS]
+        };
+        for &flags in protections {
+            let final_decision = if flags == DESCRIPTOR_RTS {
+                timeout.protected_decision
+            } else {
+                STEP_FINISH
+            };
             let phases = vendor_attempts;
             let rows = timeout_rows(ctx, &frames, lifetime, timeout, flags, phases)?;
             let first = rows.len() - phases;
@@ -1419,7 +1440,7 @@ pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
                 let vendor_continues = phase + 1 < vendor_attempts;
                 let retried = continuation == Some(("lmacEndFrameExchangeSequence", Some(1)));
                 let production_continues = decision == Some(timeout.continuing);
-                if decision == Some(STEP_FINISH) {
+                if decision == Some(final_decision) {
                     production_attempts = Some(phase + 1);
                 }
                 let production_valid = match production_attempts {
@@ -1433,20 +1454,15 @@ pub fn exercise_timeouts(ctx: &mut Mac) -> Result<()> {
                     )));
                 }
             }
-            let expected_end = if flags == DESCRIPTOR_LONG {
-                timeout.long_end
+            let expected_end = if flags == DESCRIPTOR_RTS {
+                timeout.protected_end
             } else {
                 END_EXCHANGE
             };
             let end = reached(&records, (first + phases - 1) as u32, &targets);
             if end != Some(expected_end) {
                 return Err(invalid(format!(
-                    "{label}: the vendor ended at {end:?}, expected {expected_end:?}{}",
-                    if expected_end == END_EXCHANGE {
-                        String::new()
-                    } else {
-                        format!(": {RETRY_FAIL_GAP}")
-                    }
+                    "{label}: the vendor ended at {end:?}, expected {expected_end:?}"
                 )));
             }
             if production_attempts != Some(vendor_attempts) {

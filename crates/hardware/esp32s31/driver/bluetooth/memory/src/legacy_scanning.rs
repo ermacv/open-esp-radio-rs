@@ -463,6 +463,11 @@ impl<const N: usize> LegacyScanPool<N> {
         // role's item: hardware ends an item without a sequence at once.
         item.header()
             .set_sequence(window.start(), window.end(), raw_sequence_lead);
+        // EXPERIMENT: the vendor's active scanner item clears +0x08 bit 23.
+        if cpu.graph.link_state.words[0].get() & 0x000f_ffff != 0 {
+            let word = &item.words[SCHEDULER_ITEM_LINK_STATE_WORD];
+            word.set(word.get() & !(1 << 23));
+        }
         let lanes = &item.words[SCHEDULER_ITEM_COEX_PRIORITIES_WORD];
         lanes.set((lanes.get() & !LANES_MASK) | lanes_image(&coexistence.lanes));
         // Detach the item from the free chain before the executor links it.

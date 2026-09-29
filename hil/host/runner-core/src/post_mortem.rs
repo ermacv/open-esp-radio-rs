@@ -12,8 +12,8 @@ use std::{path::Path, time::Duration};
 
 use oer_hil_protocol::base::{BootEvidence, Checkpoint, Fault, HangFault, ResetReason};
 
-use crate::session::SerialCapture;
 use oer_hil_evidence::run::{Failure, FailureKind};
+use oer_hil_link::SerialCapture;
 
 /// How long a target may take to answer after a failure: a hang is reset by
 /// its watchdog about seven seconds after it starts.

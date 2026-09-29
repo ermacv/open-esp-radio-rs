@@ -3,7 +3,7 @@ use crate::Result;
 use oer_hil_protocol::network::TransportEvidence;
 
 pub(super) fn record_rx_silence(
-    recorder: &hil_core::measurements::Recorder,
+    recorder: &oer_hil_link::measurements::Recorder,
     limit_ms: Option<u32>,
     evidence: TransportEvidence,
 ) {
@@ -75,7 +75,7 @@ mod tests {
             elapsed_micros: 100_000,
             transport_errors: 0,
         };
-        let recorder = hil_core::measurements::Recorder::default();
+        let recorder = oer_hil_link::measurements::Recorder::default();
         record_rx_silence(&recorder, Some(50), evidence);
         assert!(recorder.snapshot().is_empty());
         evidence.rx_maximum_silence_micros = Some(50_001);

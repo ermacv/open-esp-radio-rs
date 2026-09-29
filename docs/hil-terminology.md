@@ -103,7 +103,7 @@ table; the verdict depends on no stand operation.
 | Stand | Who holds which board, fixture and air; recovery and quarantine | `oer-hil-arbiter`, `oer-hil-runner-core` (`lab`, `recovery`) and `cargo hil` |
 | Fixtures | Preparation and restoration of host equipment; privileged installation | `oer-hil-fixture`, `oer-hil-fixture-install` and each family's fixture module |
 | Image builder | Which bytes an image class produces and from which sources, and the firmware and build records it hands to evidence | `oer-hil-image` (`frozen` builds from a source snapshot, `record` writes the records and implements the recipe verification checks them against) and `tools/firmware` |
-| Execution | How a workload drives the DUT, peers and fixtures and records observations | `oer-hil-runner`, `oer-hil-runner-core` (`session`, `context`) and the `oer-hil-runner-<family>` packages |
+| Execution | How a workload drives the DUT, peers and fixtures and records observations | `oer-hil-runner`, `oer-hil-link` (the capture, protocol exchange and measurements, through its `Dut` port), `oer-hil-runner-core` (`context`) and the `oer-hil-runner-<family>` packages |
 | Verdict | Which checks pass for a scenario's observations | `oer-hil-image-class` (the image a scenario needs and the keys it must serve), the scenario model and campaign plan in `oer-hil-scenario` and each family's workloads |
 | Evidence | How a run is written, sealed and verified | `oer-hil-evidence`, `oer-hil-source-snapshot` (the sources a run and its images were built from), `oer-hil-durable` and `oer-hil-schema` |
 | Qualification | Whether sealed evidence establishes readiness | `oer-qualification` |

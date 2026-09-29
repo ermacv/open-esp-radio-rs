@@ -10,7 +10,8 @@ use crate::{
     Result,
     fixture::bluetooth::{att, discovery::Discovery, model::PeerAddress},
 };
-use hil_core::{context::Context, session::SerialCapture};
+use hil_core::context::Context;
+use oer_hil_link::SerialCapture;
 use std::{
     path::Path,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},

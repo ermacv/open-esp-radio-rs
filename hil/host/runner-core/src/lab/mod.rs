@@ -1,4 +1,5 @@
 pub mod config;
+mod dut;
 mod error;
 pub use error::Error;
 pub mod lock;

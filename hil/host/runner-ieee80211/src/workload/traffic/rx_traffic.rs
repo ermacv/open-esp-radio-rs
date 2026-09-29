@@ -24,7 +24,8 @@ use crate::{
     workload::traffic::paced_udp::Config as PacedUdpConfig,
     workload::traffic::paced_udp::send as send_paced_udp,
 };
-use hil_core::{lab::config::StationFixtureConfig, session::await_udp_rx_ready};
+use hil_core::lab::config::StationFixtureConfig;
+use oer_hil_link::await_udp_rx_ready;
 use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
 
 const DEFAULT_PORT: u16 = 4_323;
@@ -866,7 +867,7 @@ impl Config {
 }
 
 fn record_rates(
-    recorder: &hil_core::measurements::Recorder,
+    recorder: &oer_hil_link::measurements::Recorder,
     target_kbps: u64,
     host_bps: u64,
     minimum_bps: u64,

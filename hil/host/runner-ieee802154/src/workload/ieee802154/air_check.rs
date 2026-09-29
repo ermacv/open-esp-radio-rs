@@ -11,7 +11,8 @@
 //! before it opens and ends at its end or with its first frame. No peer
 //! observes the air.
 
-use hil_core::{context::Context, session::SerialCapture};
+use hil_core::context::Context;
+use oer_hil_link::SerialCapture;
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{

@@ -17,7 +17,7 @@ use oer_hil_protocol::{
 use serde::Serialize;
 
 use crate::Result;
-use hil_core::session::SerialCapture;
+use oer_hil_link::SerialCapture;
 
 const IMAGE_KEYS_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);

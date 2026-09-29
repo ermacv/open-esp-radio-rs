@@ -2,7 +2,7 @@
 
 use super::{ActiveBurst, Burst};
 use crate::Result;
-use hil_core::{transport::events::EventPoll, transport::events::deadline_after};
+use oer_hil_link::transport::events::{EventPoll, deadline_after};
 use rustix::net::{RecvFlags, recvfrom};
 use std::{
     fs, io,
@@ -63,7 +63,7 @@ impl Receiver {
         let stop = Arc::new(Mutex::new(None));
         let worker_stop = Arc::clone(&stop);
         let deadline = deadline_after(maximum_wait);
-        let drops_before = hil_core::transport::udp::kernel_drops(&socket)?;
+        let drops_before = oer_hil_link::transport::udp::kernel_drops(&socket)?;
         let (progress_tx, progress) = std::sync::mpsc::sync_channel(1);
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(0);
         let worker = thread::spawn(move || {
@@ -265,7 +265,7 @@ fn collect(
         .as_ref()
         .map_or(0, |active| active.seen_sequences.len() as u64);
     let bursts: Vec<_> = active.into_iter().map(ActiveBurst::finish).collect();
-    let kernel_drops = match hil_core::transport::udp::kernel_drops(&socket) {
+    let kernel_drops = match oer_hil_link::transport::udp::kernel_drops(&socket) {
         Ok(after) => after
             .zip(drops_before)
             .map(|(after, before)| after.wrapping_sub(before)),

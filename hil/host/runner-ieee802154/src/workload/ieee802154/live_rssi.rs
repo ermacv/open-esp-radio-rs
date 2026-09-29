@@ -15,7 +15,8 @@
 
 use std::{fs, path::Path};
 
-use hil_core::{context::Context, session::SerialCapture};
+use hil_core::context::Context;
+use oer_hil_link::SerialCapture;
 use oer_hil_protocol::{
     ieee802154::Ieee802154SessionConfig, ieee802154::Ieee802154SessionMaintenancePolicy,
     ieee802154::Ieee802154SessionReceiveEvidence, ieee802154::ieee802154_frame_crc32c,

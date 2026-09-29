@@ -14,7 +14,7 @@ use oer_hil_protocol::{
 };
 
 use crate::{Result, fixture::controlled_ap::ControlledAp};
-use hil_core::session::SerialCapture;
+use oer_hil_link::SerialCapture;
 use oer_hil_scenario::link::PhyExpectation;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);

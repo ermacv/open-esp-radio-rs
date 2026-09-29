@@ -66,7 +66,7 @@ fn both_reverse_probes_finish_before_collectors_start() {
             // Receiver::start creates its output directory synchronously. No
             // collector may own either socket during either readiness probe.
             assert!(!output.exists());
-            hil_core::transport::udp::confirm_reverse_flow(socket, Duration::from_secs(2))?;
+            oer_hil_link::transport::udp::confirm_reverse_flow(socket, Duration::from_secs(2))?;
             ready_interfaces.push(interface);
             Ok(())
         },

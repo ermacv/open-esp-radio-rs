@@ -301,7 +301,7 @@ mod tests {
             ("hil/host/image/src/lib.rs", ""),
             ("hil/host/image/src/tests.rs", ""),
             ("hil/host/runner-core/Cargo.toml", ""),
-            ("hil/host/runner-core/src/session.rs", ""),
+            ("hil/host/runner-core/src/context.rs", ""),
             ("tools/firmware/Cargo.toml", ""),
             ("tools/firmware/src/lib.rs", ""),
             ("tools/firmware/src/flash/tests.rs", ""),

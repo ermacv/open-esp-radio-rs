@@ -1,6 +1,6 @@
 //! Raw HCI commands to the Controller of the `bluetooth_hci` image.
 use crate::Result;
-use hil_core::session::SerialCapture;
+use oer_hil_link::SerialCapture;
 use oer_hil_protocol::{bluetooth::BluetoothHciRequest, bluetooth::BluetoothHciResponse};
 use std::time::Duration;
 

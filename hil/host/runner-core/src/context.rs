@@ -1,11 +1,8 @@
 //! Immutable laboratory inputs and initialization policy for one workload.
 
+use crate::Result;
 use crate::lab::config::LabConfig;
-use crate::{
-    Result,
-    measurements::Recorder,
-    session::{SerialCapture, Target},
-};
+use oer_hil_link::{SerialCapture, Target, measurements::Recorder};
 use oer_hil_scenario::Settings;
 use std::path::Path;
 
@@ -39,7 +36,8 @@ impl<'a> Context<'a> {
     /// The laboratory and initialization settings a target session uses.
     pub fn target(&self) -> Target<'a> {
         Target {
-            lab: self.lab,
+            dut: self.lab,
+            station: &self.lab.station,
             settings: self.settings,
         }
     }
@@ -53,8 +51,7 @@ impl<'a> Context<'a> {
             .strip_prefix(self.output)
             .map_err(|_| "capture output is outside its repetition")?;
         let recorder = self.measurements.capture(relative)?;
-        let capture =
-            SerialCapture::start_with_reset(&self.lab.dut.serial, output)?.record_into(recorder);
+        let capture = SerialCapture::start_with_reset(self.lab, output)?.record_into(recorder);
         Ok(match self.profile {
             Some(profile) => capture.profiled(profile)?,
             None => capture,
@@ -71,3 +68,6 @@ impl<'a> Context<'a> {
         capture.finish_with(result)
     }
 }
+
+#[cfg(test)]
+mod tests;

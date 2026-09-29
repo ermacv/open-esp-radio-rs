@@ -10,9 +10,10 @@ description = "Shared HIL runner core: laboratory, session, context and measurem
 
 [features]
 # Test helpers for the runner's cross-package end-to-end tests.
-test-support = ["oer-hil-scenario/test-support"]
+test-support = ["oer-hil-scenario/test-support", "oer-hil-link/test-support"]
 
 [dependencies]
+oer-hil-link = { path = "../link" }
 oer-hil-evidence = { path = "../evidence" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
@@ -45,6 +46,7 @@ toml = "1.1"
 zeroize = "1.8.1"
 
 [dev-dependencies]
+oer-hil-link = { path = "../link", features = ["test-support"] }
 oer-hil-evidence = { path = "../evidence", features = ["test-support"] }
 oer-hil-scenario = { path = "../scenario", features = ["test-support"] }
 oer-hil-source-snapshot = { path = "../source-snapshot", features = ["test-support"] }

@@ -15,7 +15,8 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | Package | Binaries | Role |
 | --- | --- | --- |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, UART session, workload context and measurements |
+| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, the workload context and failure classification; implements the link's `Dut` and `StationNetwork` ports |
+| `link/` (`oer-hil-link`) | none | The host/target link: one UART capture and its protocol exchange, readiness, reboots and validation, the host traffic transports and measurements; reaches the board only through its `Dut` and `StationNetwork` ports |
 | `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
 | `evidence/` (`oer-hil-evidence`) | none | Sealed run evidence: the run writer and its seal, build provenance and the content-addressed object store, verification of a recorded run against the image builder's recipe, reports, and the experiment and laboratory records a run keeps |
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
@@ -499,9 +500,12 @@ The host packages follow the roles of the
   `controlled_ap` selects between them and `prepared` owns a scenario's AP
   lifetime. The runner binary runs every family's fixture preconditions
   before a scenario.
-- `session` owns one UART capture and its protocol/readiness/validation
-  state; it needs only the laboratory and the scenario's target settings.
-  `measurements` projects decoded messages into measurements.
+- `oer-hil-link` owns one UART capture and its protocol/readiness/validation
+  state, the host traffic transports and `measurements`, which projects
+  decoded messages into measurements. A session's `Target` holds the board
+  as a `Dut` (console, application reset, startup artifact, journal of the
+  changes the link makes), the `StationNetwork` a station target joins and
+  the scenario's target settings; `lab` implements both ports.
 - `context` gives one workload repetition its laboratory, target settings,
   capture lifecycle and measurements; workloads that control the AP receive
   the prepared fixture explicitly.
@@ -516,8 +520,8 @@ The host packages follow the roles of the
 
 Dependencies form a directed acyclic graph that Cargo enforces: the binary
 depends on the family packages and the image builder, each family on
-`runner-core`, and `runner-core` on the scenario, evidence and image-class
-packages, never the reverse. The image builder depends on evidence, never the
+`runner-core`, and `runner-core` on the link, scenario, evidence and
+image-class packages, never the reverse. The image builder depends on evidence, never the
 reverse, and nothing but the binary and `xtask` depends on the builder. Inside `runner-core`, the context depends on session and laboratory
 owners, never the reverse. The `test-support` features of `runner-core`,
 `oer-hil-scenario`, `oer-hil-evidence` and `oer-hil-source-snapshot` expose

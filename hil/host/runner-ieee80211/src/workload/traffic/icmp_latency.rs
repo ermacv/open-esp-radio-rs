@@ -18,8 +18,8 @@ use std::{
 };
 
 use crate::Result;
-use hil_core::session::await_network_ready;
 use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
+use oer_hil_link::await_network_ready;
 
 const DEFAULT_COUNT: u16 = 100;
 const DEFAULT_INTERVAL: Duration = Duration::from_millis(20);

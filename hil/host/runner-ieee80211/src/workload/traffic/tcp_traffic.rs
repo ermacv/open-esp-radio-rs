@@ -15,7 +15,7 @@ use crate::{
     workload::traffic::paced_tcp::exchange, workload::traffic::paced_tcp::receive,
     workload::traffic::paced_tcp::send,
 };
-use hil_core::{session::SessionEvidence, session::await_tcp_ready};
+use oer_hil_link::{SessionEvidence, await_tcp_ready};
 
 const DEFAULT_PORT: u16 = 4_325;
 const DEFAULT_DURATION: Duration = Duration::from_secs(12);

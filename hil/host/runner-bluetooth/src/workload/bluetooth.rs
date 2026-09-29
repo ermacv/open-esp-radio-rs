@@ -9,7 +9,8 @@ pub mod scannable;
 pub mod secure_gatt;
 
 use crate::{Result, fixture::bluetooth};
-use hil_core::{context::Context, session::SerialCapture};
+use hil_core::context::Context;
+use oer_hil_link::SerialCapture;
 use oer_hil_protocol::{
     bluetooth::BluetoothDtmOperation as Operation, bluetooth::BluetoothDtmResult,
 };

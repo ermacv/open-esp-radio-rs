@@ -183,7 +183,7 @@ fn kernel_overflow_invalidates_delivery_as_an_infrastructure_failure() {
     let output = tempfile::tempdir().unwrap();
     let (socket, sender) = pair();
     rustix::net::sockopt::set_socket_recv_buffer_size(&socket, 4096).unwrap();
-    let before = hil_core::transport::udp::kernel_drops(&socket).unwrap();
+    let before = oer_hil_link::transport::udp::kernel_drops(&socket).unwrap();
     // Deliberately suspend collection across a burst. This exercises the real
     // kernel failure boundary independently of the radio and serial protocol.
     for sequence in 0_u32..256 {
@@ -224,7 +224,7 @@ fn kernel_overflow_invalidates_delivery_as_an_infrastructure_failure() {
 fn pause_trigger_requires_measured_unique_datagrams() {
     let output = tempfile::tempdir().unwrap();
     let (socket, sender) = pair();
-    hil_core::transport::udp::configure_qualification_receive_buffer(&socket).unwrap();
+    oer_hil_link::transport::udp::configure_qualification_receive_buffer(&socket).unwrap();
     let receiver = Receiver::start(
         &socket,
         Ipv4Addr::LOCALHOST,

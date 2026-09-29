@@ -1,5 +1,6 @@
 //! Real PHY owner checkpoints, independently terminated by the SoC service.
-use crate::{Result, context::Context, session::SerialCapture};
+use crate::{Result, context::Context};
+use oer_hil_link::SerialCapture;
 use oer_hil_protocol::{
     base::ResetReason, phy::PhyFaultCommand as Control, phy::PhyFaultMode as Mode,
     phy::PhyFaultPhase as Phase,

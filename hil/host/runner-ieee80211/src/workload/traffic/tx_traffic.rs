@@ -35,9 +35,9 @@ use crate::{
     workload::traffic::bidirectional::task_polls_from_log,
     workload::traffic::host_network::BenchmarkIpv4Route,
 };
-use hil_core::{
-    lab::config::StationFixtureConfig,
-    session::await_udp_tx_ready,
+use hil_core::lab::config::StationFixtureConfig;
+use oer_hil_link::{
+    await_udp_tx_ready,
     transport::udp::{configure_qualification_receive_buffer, confirm_reverse_flow},
 };
 use oer_hil_scenario::link::PhyExpectation;
@@ -276,7 +276,7 @@ pub fn run(
     let receiver = Receiver::start(
         &socket,
         options.device,
-        timeout + hil_core::session::SESSION_START_TIMEOUT,
+        timeout + oer_hil_link::SESSION_START_TIMEOUT,
         output,
         "station",
     )?;
@@ -766,7 +766,7 @@ struct TxPerformanceReport<'a> {
     bursts: &'a [Burst],
     host_floor_kbps: u64,
     device_floor_kbps: u64,
-    structured: hil_core::session::SessionEvidence,
+    structured: oer_hil_link::SessionEvidence,
     host_receive_buffer_bytes: usize,
     link_report: &'a str,
     pre_workload_channel_utilization: Option<ChannelUtilization>,
@@ -1061,7 +1061,7 @@ struct TxReport<'a> {
     device_floor_kbps: u64,
     device_samples: usize,
     ampdu: AmpduEvidence,
-    structured: hil_core::session::SessionEvidence,
+    structured: oer_hil_link::SessionEvidence,
     host_receive_buffer_bytes: usize,
     require_exact_delivery: bool,
     link_report: &'a str,

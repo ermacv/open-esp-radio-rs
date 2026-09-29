@@ -10,8 +10,8 @@
 //! path, so it calibrates fully and publishes the new retained calibration.
 use crate::registers::{Register, Space};
 use crate::{Result, repository_root, vendor};
+use oer_hil_link::{SerialCapture, Target};
 use oer_hil_runner_core::lab::config::LabConfig;
-use oer_hil_runner_core::session::{SerialCapture, Target};
 use oer_hil_scenario::Settings;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -355,7 +355,7 @@ fn production_boot(
 ) -> Result<(String, String)> {
     let mut lab = lab.clone();
     lab.dut.startup_artifact = Some(artifact.to_owned());
-    let capture = SerialCapture::start_with_reset(&lab.dut.serial, output)?;
+    let capture = SerialCapture::start_with_reset(&lab, output)?;
     let result = (|| {
         // The IEEE 802.15.4 session replaces the image's own initialization:
         // it is admitted only before it, and publishes no startup artifact.
@@ -364,7 +364,8 @@ fn production_boot(
             None
         } else {
             let (_, status) = capture.prepare_startup(Target {
-                lab: &lab,
+                dut: &lab,
+                station: &lab.station,
                 settings: Settings::default(),
             })?;
             status

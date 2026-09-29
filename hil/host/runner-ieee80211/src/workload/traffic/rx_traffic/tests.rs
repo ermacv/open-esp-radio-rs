@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn reported_rates_preserve_the_existing_host_and_target_gate_resolutions() {
-    let recorder = hil_core::measurements::Recorder::default();
+    let recorder = oer_hil_link::measurements::Recorder::default();
     record_rates(&recorder, 1, 1_998, 1_999);
     let values = recorder.snapshot();
     let target = values

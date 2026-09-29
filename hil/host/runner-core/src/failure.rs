@@ -7,7 +7,7 @@ pub fn classify(error: &(dyn std::error::Error + 'static)) -> Failure {
     let mut cause = Some(error);
     let mut kind = FailureKind::Scenario;
     while let Some(error) = cause {
-        if error.is::<crate::session::error::LinkError>()
+        if error.is::<oer_hil_link::error::LinkError>()
             || error.is::<crate::fixture::Error>()
             || error.is::<std::io::Error>()
             || error.is::<serialport::Error>()

@@ -432,7 +432,7 @@ fn ap_rate_gate_checks_combined_bidirectional_throughput() {
         minimum_combined_bps: Some(32_000_000),
         ..RateFloors::default()
     };
-    let measurements = hil_core::measurements::Recorder::default();
+    let measurements = oer_hil_link::measurements::Recorder::default();
     assert!(validate_rate_criteria(&report, criteria, &measurements).is_ok());
     criteria.minimum_combined_bps = Some(32_000_001);
     assert!(validate_rate_criteria(&report, criteria, &measurements).is_err());
@@ -498,7 +498,7 @@ fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
             &[flow(0, 100, 100), flow(1, 10, 5_003_241)],
             Direction::Tx,
             &criteria,
-            &hil_core::measurements::Recorder::default(),
+            &oer_hil_link::measurements::Recorder::default(),
         )
         .is_ok()
     );
@@ -507,7 +507,7 @@ fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
             &[flow(0, 100, 100), flow(1, 7, 5_003_241)],
             Direction::Tx,
             &criteria,
-            &hil_core::measurements::Recorder::default(),
+            &oer_hil_link::measurements::Recorder::default(),
         )
         .unwrap_err()
         .to_string()
@@ -518,7 +518,7 @@ fn sparse_secondary_tx_requires_enough_packets_and_bounded_interarrival() {
             &[flow(0, 100, 100), flow(1, 10, 5_500_001)],
             Direction::Tx,
             &criteria,
-            &hil_core::measurements::Recorder::default(),
+            &oer_hil_link::measurements::Recorder::default(),
         )
         .unwrap_err()
         .to_string()
@@ -712,7 +712,7 @@ fn multi_client_fairness_records_the_slowest_flow_and_the_skew_it_checks() {
         minimum_secondary_tx_datagrams: None,
         maximum_secondary_tx_interarrival_ms: None,
     };
-    let measurements = hil_core::measurements::Recorder::default();
+    let measurements = oer_hil_link::measurements::Recorder::default();
     // 51 against 60 Mbit/s: exactly 15 % skew passes.
     assert!(
         validate_multi_client_fairness(

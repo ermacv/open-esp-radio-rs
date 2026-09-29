@@ -15,7 +15,7 @@ use crate::{
         model::{Adapter, PeerAddress},
     },
 };
-use hil_core::session::SerialCapture;
+use oer_hil_link::SerialCapture;
 use oer_hil_protocol::bluetooth::BluetoothGattEvidence as Evidence;
 use std::{
     path::{Path, PathBuf},

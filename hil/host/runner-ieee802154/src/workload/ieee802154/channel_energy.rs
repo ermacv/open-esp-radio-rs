@@ -18,7 +18,8 @@
 
 use std::{fs, path::Path, time::Duration};
 
-use hil_core::{context::Context, session::SerialCapture};
+use hil_core::context::Context;
+use oer_hil_link::SerialCapture;
 use oer_hil_protocol::{
     ieee802154::Ieee802154AirCcaOutcome, ieee802154::Ieee802154AirEnergyOutcome,
     ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionAssessRequest,

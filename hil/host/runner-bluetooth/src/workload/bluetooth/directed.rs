@@ -10,7 +10,8 @@ use crate::{
     Result,
     fixture::bluetooth::{att, model::PeerAddress},
 };
-use hil_core::{context::Context, session::SerialCapture};
+use hil_core::context::Context;
+use oer_hil_link::SerialCapture;
 use std::{path::Path, time::Duration};
 
 const LE_CONNECTION_COMPLETE: u8 = 0x01;

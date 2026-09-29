@@ -29,9 +29,8 @@ use crate::{
     workload::traffic::paced_udp::send_on as send_udp_on, workload::traffic::tx_traffic::Burst,
     workload::traffic::tx_traffic::Receiver,
 };
-use hil_core::{
-    session::SerialCapture, session::probe_udp_rx_ready_via,
-    transport::udp::configure_qualification_receive_buffer,
+use oer_hil_link::{
+    SerialCapture, probe_udp_rx_ready_via, transport::udp::configure_qualification_receive_buffer,
 };
 
 struct MultiClientHostFlow {
@@ -159,7 +158,7 @@ pub(super) fn qualify_multi_client_udp(
 
     if target_transmits(direction) {
         for flow in &flows {
-            hil_core::session::prepare_udp_reverse_flow(
+            oer_hil_link::prepare_udp_reverse_flow(
                 capture,
                 oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
                 &flow.socket,
@@ -178,7 +177,7 @@ pub(super) fn qualify_multi_client_udp(
                 Receiver::start(
                     &flow.socket,
                     flow.traffic_target,
-                    config.timeout + duration + hil_core::session::SESSION_START_TIMEOUT,
+                    config.timeout + duration + oer_hil_link::SESSION_START_TIMEOUT,
                     output,
                     &format!("flow-{}", flow.flow_id),
                 )?,
@@ -352,7 +351,7 @@ impl MultiClientObservation {
         self,
         output: &Path,
         criteria: &MultiClientCriteria,
-        measurements: &hil_core::measurements::Recorder,
+        measurements: &oer_hil_link::measurements::Recorder,
     ) -> Result<TrafficReport> {
         // Preserve delivery even when terminal evidence or a later gate fails.
         // Raw per-flow host observations must not depend on qualification.
@@ -572,7 +571,7 @@ pub(super) fn validate_multi_client_fairness(
     flows: &[MultiClientFlowReport; SESSION_FLOW_CAPACITY],
     direction: Direction,
     criteria: &MultiClientCriteria,
-    measurements: &hil_core::measurements::Recorder,
+    measurements: &oer_hil_link::measurements::Recorder,
 ) -> Result<()> {
     use oer_hil_evidence::run::{Comparison, Measurement, MeasurementUnit};
     let validate = |label: &str, rates: [u64; SESSION_FLOW_CAPACITY]| -> Result<()> {

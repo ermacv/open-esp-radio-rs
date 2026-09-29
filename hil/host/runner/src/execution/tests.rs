@@ -27,7 +27,7 @@ fn io_failure_is_broken_but_a_scenario_assertion_is_failed() {
 fn operation_context_preserves_the_infrastructure_classification() {
     let source: Box<dyn std::error::Error + Send + Sync> =
         std::io::Error::from(std::io::ErrorKind::BrokenPipe).into();
-    let error = hil_core::error::context("session configuration", source);
+    let error = oer_hil_link::error::context("session configuration", source);
     let failure = classify(&*error);
     assert_eq!(failure.kind, FailureKind::Infrastructure);
     assert!(failure.message.starts_with("session configuration:"));
@@ -35,7 +35,7 @@ fn operation_context_preserves_the_infrastructure_classification() {
 
 #[test]
 fn fixture_setup_failure_is_broken_even_through_operation_context() {
-    let error = hil_core::error::context(
+    let error = oer_hil_link::error::context(
         "prepare AP client",
         hil_core::fixture::Error::new("OpenWrt radio does not match the laboratory configuration")
             .into(),

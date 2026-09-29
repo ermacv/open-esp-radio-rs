@@ -18,7 +18,7 @@ use crate::{
     workload::ieee80211::control::stop_station,
     workload::ieee80211::station_access_point::wait_for_endpoints,
 };
-use hil_core::session::{SerialCapture, probe_udp_rx_ready_via};
+use oer_hil_link::{SerialCapture, probe_udp_rx_ready_via};
 use oer_hil_scenario::link::PhyExpectation;
 
 const TARGET_RX_PORT: u16 = 4_323;

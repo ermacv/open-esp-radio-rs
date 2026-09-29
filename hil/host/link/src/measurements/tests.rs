@@ -1,5 +1,5 @@
 use super::*;
-use crate::session::Received;
+use crate::Received;
 use oer_hil_protocol::Envelope;
 
 /// A device event as the host receives it.
@@ -10,7 +10,7 @@ fn event<M: oer_hil_protocol::Message>(
     request_id: u32,
     body: M,
 ) -> Received {
-    crate::session::test_support::received(Envelope::new(
+    crate::test_support::received(Envelope::new(
         boot_id,
         message_sequence,
         session_id,

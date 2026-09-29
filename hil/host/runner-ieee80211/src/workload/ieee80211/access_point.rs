@@ -17,10 +17,8 @@ use crate::{
     workload::ieee80211::control::report_stack, workload::ieee80211::control::require_transition,
     workload::ieee80211::control::start_station, workload::ieee80211::control::stop_station,
 };
-use hil_core::{
-    lab::config::StationFixtureConfig,
-    session::{SerialCapture, SessionEvidence},
-};
+use hil_core::lab::config::StationFixtureConfig;
+use oer_hil_link::{SerialCapture, SessionEvidence};
 use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
 
 mod clients;
@@ -461,7 +459,7 @@ fn qualify(
                 ));
             }
             return Err(with_cleanup_errors(
-                hil_core::error::with_message(
+                oer_hil_link::error::with_message(
                     data_error,
                     data_result.err().expect("failed traffic"),
                 ),
@@ -773,7 +771,7 @@ fn session_report(direction: Direction, evidence: &SessionEvidence) -> SessionRe
 fn validate_rate_criteria(
     report: &SessionReport,
     criteria: RateFloors,
-    measurements: &hil_core::measurements::Recorder,
+    measurements: &oer_hil_link::measurements::Recorder,
 ) -> Result<()> {
     if report.elapsed_micros == 0 {
         return Err("AP transport reported zero elapsed time".into());
@@ -893,7 +891,7 @@ fn with_cleanup_errors(
     if let Some(error) = restart {
         message.push_str(&format!("; station restore failed: {error}"));
     }
-    hil_core::error::with_message(message, primary)
+    oer_hil_link::error::with_message(message, primary)
 }
 
 fn stop_access_point(

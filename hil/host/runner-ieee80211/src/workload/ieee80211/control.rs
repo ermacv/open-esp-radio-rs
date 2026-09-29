@@ -11,7 +11,7 @@ use oer_hil_protocol::{
 };
 
 use crate::{Result, scenario::LinkExpectation};
-use hil_core::session::{SerialCapture, StationConnectionObservation};
+use oer_hil_link::{SerialCapture, StationConnectionObservation};
 use oer_hil_scenario::link::PhyExpectation;
 
 /// One Wi-Fi role ownership transition.

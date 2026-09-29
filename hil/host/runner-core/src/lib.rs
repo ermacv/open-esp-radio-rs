@@ -6,18 +6,14 @@
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 pub mod context;
-pub mod error;
 pub mod failure;
 pub mod fixture;
 pub mod lab;
-pub mod measurements;
 pub mod output;
 pub mod post_mortem;
 pub mod profile;
 pub mod recovery;
 mod repository;
-pub mod session;
-pub mod transport;
 pub mod usb_events;
 pub mod workload;
 

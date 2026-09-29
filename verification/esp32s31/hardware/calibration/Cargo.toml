@@ -8,6 +8,7 @@ publish = false
 description = "Hardware cross-check of the vendor and production ESP32-S31 PHY calibration on one board"
 
 [dependencies]
+oer-hil-link = { path = "../../../../hil/host/link" }
 oer-esp32s31-firmware = { path = "../../../../tools/firmware", features = ["device"] }
 oer-esp32s31-hil-calibration-artifact = { path = "../../../../hil/targets/esp32s31/calibration-artifact" }
 oer-esp32s31-phy = { path = "../../../../crates/hardware/esp32s31/phy", features = ["validation-probes"] }

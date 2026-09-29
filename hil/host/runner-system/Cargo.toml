@@ -9,6 +9,7 @@ publish = false
 description = "System HIL workloads: boot, timebase, watchdog and memory benchmarks"
 
 [dependencies]
+oer-hil-link = { path = "../link" }
 oer-hil-scenario = { path = "../scenario" }
 oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }

@@ -1,4 +1,11 @@
-//! Shared UART capture and end-to-end readiness probes for traffic HIL cells.
+//! The host/target link of a HIL run: one UART capture of the board under
+//! test and its protocol exchange, readiness, reboots and validation, the
+//! host-side traffic transports, and the projection of decoded messages into
+//! measurements.
+//!
+//! The link reaches the board only through the [`Dut`] and [`StationNetwork`]
+//! ports the stand implements; it depends on no stand, board or image builder
+//! code.
 
 use std::{
     fs,
@@ -43,10 +50,9 @@ use oer_hil_protocol::{
 };
 use zeroize::Zeroizing;
 
-use crate::Result;
 mod airtime;
 mod target;
-pub use target::Target;
+pub use target::{ApplicationReset, Dut, DutEvent, StationNetwork, Target};
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
 mod received;
@@ -398,7 +404,6 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
         .extend_from_slice(chunk);
 }
 
-use oer_hil_board::reset::reset_usb_serial_jtag;
 mod capture;
 #[cfg(any(test, feature = "test-support"))]
 pub use capture::test_support;
@@ -420,3 +425,8 @@ pub use readiness::{
 use validation::validate_stack_usage;
 
 pub mod startup_artifact;
+
+pub mod measurements;
+pub mod transport;
+
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

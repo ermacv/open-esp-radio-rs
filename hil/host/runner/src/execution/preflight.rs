@@ -5,9 +5,10 @@ use std::{path::Path, time::Duration};
 use oer_hil_scenario::ScenarioFamily as _;
 
 use crate::{Result, fixture, scenario::Scenario};
-use hil_core::{lab::config::LabConfig, session::SerialCapture};
+use hil_core::lab::config::LabConfig;
 use oer_hil_evidence::run::Failure;
 use oer_hil_image_class::{DeviceImageKeys, ImageClass};
+use oer_hil_link::SerialCapture;
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     fixture::preflight::scenario_precondition(lab, selected).or_else(|| {
@@ -90,7 +91,7 @@ pub(crate) fn validate_flashed_image(
 /// Reset the device and ask its image for its image keys, capturing the
 /// console into `directory`.
 fn image_keys_of(lab: &LabConfig, directory: &Path) -> Result<DeviceImageKeys> {
-    let capture = SerialCapture::start_with_reset(&lab.dut.serial, directory)?;
+    let capture = SerialCapture::start_with_reset(lab, directory)?;
     let image_keys = capture.request_image_keys(Duration::from_secs(10));
     capture.finish_with(image_keys)
 }

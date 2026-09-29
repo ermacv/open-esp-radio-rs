@@ -1,5 +1,5 @@
 use super::*;
-use crate::session::test_support::received;
+use crate::test_support::received;
 
 /// `body` as the host receives it.
 fn message<M: oer_hil_protocol::Message>(body: M) -> Received {

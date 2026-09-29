@@ -16,7 +16,7 @@ use crate::{
     Result, workload::ieee80211::control::scan, workload::ieee80211::control::start_station,
     workload::ieee80211::control::stop_station,
 };
-use hil_core::session::{MonitorCaptureEvidence, SerialCapture};
+use oer_hil_link::{MonitorCaptureEvidence, SerialCapture};
 use oer_hil_scenario::link::PhyExpectation;
 
 pub struct Config {

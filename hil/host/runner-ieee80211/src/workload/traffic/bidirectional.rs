@@ -35,9 +35,10 @@ use crate::{
     workload::traffic::paced_udp::send as send_paced_udp, workload::traffic::tx_traffic::Burst,
     workload::traffic::tx_traffic::Receiver, workload::traffic::tx_traffic::describe_bursts,
 };
-use hil_core::{
-    lab::config::StationFixtureConfig, session::SessionEvidence, session::await_udp_rx_ready,
-    transport::udp::configure_qualification_receive_buffer, transport::udp::confirm_reverse_flow,
+use hil_core::lab::config::StationFixtureConfig;
+use oer_hil_link::{
+    SessionEvidence, await_udp_rx_ready,
+    transport::udp::{configure_qualification_receive_buffer, confirm_reverse_flow},
 };
 use oer_hil_scenario::link::HtGuardIntervalExpectation;
 
@@ -258,7 +259,7 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
     let receiver = Receiver::start(
         &tx_sink,
         options.address,
-        options.duration + Duration::from_secs(5) + hil_core::session::SESSION_START_TIMEOUT,
+        options.duration + Duration::from_secs(5) + oer_hil_link::SESSION_START_TIMEOUT,
         output,
         "station",
     )?;

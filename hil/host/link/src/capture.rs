@@ -26,8 +26,9 @@ impl SerialCapture {
 
     /// Own the output before opening and resetting the target, so even setup
     /// failures and early returns leave a capture and a structured diagnosis.
-    pub fn start_with_reset(port: &Path, output: &Path) -> Result<Self> {
-        let port = port.to_owned();
+    pub fn start_with_reset(dut: &dyn Dut, output: &Path) -> Result<Self> {
+        let port = dut.console().to_owned();
+        let reset = dut.application_reset();
         Self::start_transport(output, move || {
             let mut serial = open_serial_after_busy_release(&port).map_err(|error| {
                 LinkError::transport(format!(
@@ -35,7 +36,7 @@ impl SerialCapture {
                     port.display()
                 ))
             })?;
-            reset_usb_serial_jtag(&mut serial).map_err(|error| {
+            reset(&mut serial).map_err(|error| {
                 LinkError::transport(format!("serial target reset failed: {error}"))
             })?;
             nonblocking_serial(serial)

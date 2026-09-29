@@ -20,7 +20,7 @@ use crate::{
     workload::traffic::paced_tcp::receive as receive_tcp,
     workload::traffic::paced_tcp::send as send_tcp,
 };
-use hil_core::{session::SerialCapture, session::SessionEvidence};
+use oer_hil_link::{SerialCapture, SessionEvidence};
 
 #[derive(Clone, Copy)]
 pub(super) struct TcpWorkload {
@@ -34,7 +34,7 @@ pub(super) struct TcpWorkload {
 pub(super) fn qualify_tcp(
     capture: &SerialCapture,
     config: &Config,
-    measurements: &hil_core::measurements::Recorder,
+    measurements: &oer_hil_link::measurements::Recorder,
     target: Ipv4Addr,
     workload: TcpWorkload,
     floors: RateFloors,

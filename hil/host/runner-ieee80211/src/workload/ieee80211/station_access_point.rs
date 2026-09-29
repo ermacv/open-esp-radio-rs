@@ -32,8 +32,8 @@ use crate::{
     workload::traffic::tx_traffic::Burst,
     workload::traffic::tx_traffic::Receiver,
 };
-use hil_core::{
-    session::SerialCapture, session::SessionEvidence, session::probe_udp_rx_ready_via,
+use oer_hil_link::{
+    SerialCapture, SessionEvidence, probe_udp_rx_ready_via,
     transport::udp::configure_qualification_receive_buffer,
 };
 
@@ -201,7 +201,7 @@ fn qualify(
         config.duration + config.timeout,
         output,
         |interface, socket| {
-            hil_core::session::prepare_udp_reverse_flow(capture, interface, socket, config.timeout)
+            oer_hil_link::prepare_udp_reverse_flow(capture, interface, socket, config.timeout)
         },
     )?;
     let target_duration = config.duration;
@@ -392,7 +392,7 @@ fn start_session(
     flow: &HostFlow,
     config: Config,
     duration: Duration,
-) -> Result<hil_core::session::SessionHandle> {
+) -> Result<oer_hil_link::SessionHandle> {
     let network_interface = if flow.port == STATION_HOST_PORT {
         WifiNetworkInterface::Station
     } else {

@@ -33,7 +33,7 @@ fn event<M: oer_hil_protocol::Message>(
     ))
 }
 
-use crate::session::{
+use crate::{
     ProtocolHealth, SessionEvidence, beacon_loss_count_in, command_response_matches,
     session_ready_covers, validate_stack_usage, validation::validate_rx_zero_copy,
 };

@@ -21,8 +21,8 @@ use crate::{
     workload::traffic::paced_udp::send as send_udp, workload::traffic::tx_traffic::Burst,
     workload::traffic::tx_traffic::Receiver,
 };
-use hil_core::{
-    session::SerialCapture, session::SessionEvidence, session::probe_udp_rx_ready_via,
+use oer_hil_link::{
+    SerialCapture, SessionEvidence, probe_udp_rx_ready_via,
     transport::udp::configure_qualification_receive_buffer,
 };
 
@@ -85,7 +85,7 @@ pub(super) fn qualify_udp(
         let socket = UdpSocket::bind(SocketAddrV4::new(bind_address, UDP_HOST_PORT))?;
         configure_qualification_receive_buffer(&socket)?;
         socket.connect(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT))?;
-        hil_core::session::prepare_udp_reverse_flow(
+        oer_hil_link::prepare_udp_reverse_flow(
             capture,
             oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
             &socket,
@@ -102,7 +102,7 @@ pub(super) fn qualify_udp(
             Receiver::start(
                 socket,
                 traffic_target,
-                config.timeout + duration + hil_core::session::SESSION_START_TIMEOUT,
+                config.timeout + duration + oer_hil_link::SESSION_START_TIMEOUT,
                 output,
                 "primary",
             )
@@ -161,10 +161,10 @@ pub(super) fn qualify_udp(
             )
         })
         .transpose();
-    let host_tx =
-        host_tx.map_err(|error| hil_core::error::context("AP UDP host sender failed", error))?;
-    let host_rx =
-        host_rx.map_err(|error| hil_core::error::context("AP UDP host receiver failed", error))?;
+    let host_tx = host_tx
+        .map_err(|error| oer_hil_link::error::context("AP UDP host sender failed", error))?;
+    let host_rx = host_rx
+        .map_err(|error| oer_hil_link::error::context("AP UDP host receiver failed", error))?;
     let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;
     acknowledgement?;
     let mut report = session_report(direction, &structured);

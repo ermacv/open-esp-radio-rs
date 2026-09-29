@@ -104,11 +104,7 @@ impl Recorder {
 }
 
 impl CaptureRecorder {
-    pub fn record(
-        &self,
-        messages: &[crate::session::Received],
-        received_bytes: u64,
-    ) -> Vec<Measurement> {
+    pub fn record(&self, messages: &[crate::Received], received_bytes: u64) -> Vec<Measurement> {
         let observations = protocol::observations(&self.prefix, messages, received_bytes);
         self.recorder.record(observations.iter().cloned());
         observations

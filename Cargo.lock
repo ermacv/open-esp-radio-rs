@@ -2883,6 +2883,7 @@ dependencies = [
  "oer-esp32s31-hil-calibration-artifact",
  "oer-esp32s31-phy",
  "oer-hil-board",
+ "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-hil-scenario",
@@ -3093,6 +3094,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-link"
+version = "0.1.0"
+dependencies = [
+ "mio",
+ "oer-hil-durable",
+ "oer-hil-evidence",
+ "oer-hil-fixture",
+ "oer-hil-image-class",
+ "oer-hil-protocol",
+ "oer-hil-scenario",
+ "oer-process",
+ "postcard",
+ "postcard-schema",
+ "rustix",
+ "serde",
+ "serde_json",
+ "serialport",
+ "zeroize",
+]
+
+[[package]]
 name = "oer-hil-protocol"
 version = "0.1.0"
 dependencies = [
@@ -3121,6 +3143,7 @@ dependencies = [
  "oer-hil-fixture-install",
  "oer-hil-image",
  "oer-hil-image-class",
+ "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-runner-bluetooth",
  "oer-hil-runner-core",
@@ -3152,6 +3175,7 @@ dependencies = [
  "oer-hil-evidence",
  "oer-hil-fixture",
  "oer-hil-image-class",
+ "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-hil-scenario",
@@ -3182,6 +3206,7 @@ dependencies = [
  "oer-hil-fixture-install",
  "oer-hil-image-class",
  "oer-hil-image-keys",
+ "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-scenario",
  "oer-hil-schema",
@@ -3213,6 +3238,7 @@ dependencies = [
  "oer-hil-evidence",
  "oer-hil-fixture",
  "oer-hil-image-class",
+ "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-hil-scenario",
@@ -3230,6 +3256,7 @@ name = "oer-hil-runner-ieee802154"
 version = "0.1.0"
 dependencies = [
  "oer-hil-image-class",
+ "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-hil-scenario",
@@ -3245,6 +3272,7 @@ version = "0.1.0"
 dependencies = [
  "oer-hil-durable",
  "oer-hil-image-class",
+ "oer-hil-link",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-hil-scenario",

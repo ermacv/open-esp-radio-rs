@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::Result;
-use hil_core::session::SerialCapture;
+use oer_hil_link::SerialCapture;
 use oer_hil_protocol::{
     phy::StartupArtifactDisposition, phy::StartupArtifactStatus, wifi::StationAttemptFailureReason,
     wifi::StationEpochEvidence, wifi::StationLifecycleEvent,
@@ -56,7 +56,7 @@ pub fn run(
         let result = capture.finish_with(result);
         let boot_log = boot_output.join("uart.log");
         result.map_err(|error| {
-            hil_core::error::context(
+            oer_hil_link::error::context(
                 format!(
                     "station cold boot {boot}/{} failed; UART evidence: {}",
                     options.boots,

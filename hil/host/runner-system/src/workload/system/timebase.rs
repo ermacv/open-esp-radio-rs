@@ -11,7 +11,7 @@ use oer_hil_protocol::{system::TimebaseProbeEvidence, system::TimebaseProbeReque
 use serde::Serialize;
 
 use crate::Result;
-use hil_core::session::SerialCapture;
+use oer_hil_link::SerialCapture;
 
 const COMMAND_SLACK: Duration = Duration::from_secs(5);
 

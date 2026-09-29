@@ -52,7 +52,7 @@ fn missing_terminal_evidence_preserves_each_hosts_delivery() {
         .evaluate(
             output.path(),
             &criteria(),
-            &hil_core::measurements::Recorder::default(),
+            &oer_hil_link::measurements::Recorder::default(),
         )
         .err()
         .expect("qualification must fail");
@@ -95,7 +95,7 @@ fn failed_per_peer_rate_gate_preserves_complete_raw_evidence() {
         .evaluate(
             output.path(),
             &criteria,
-            &hil_core::measurements::Recorder::default(),
+            &oer_hil_link::measurements::Recorder::default(),
         )
         .err()
         .expect("qualification must fail");
@@ -144,7 +144,7 @@ fn failed_sender_keeps_successful_receiver_observations() {
             .evaluate(
                 output.path(),
                 &criteria(),
-                &hil_core::measurements::Recorder::default(),
+                &oer_hil_link::measurements::Recorder::default(),
             )
             .is_err()
     );
@@ -177,7 +177,7 @@ fn unmet_offer_preserves_delivery_and_reports_the_invalid_load_condition() {
                 minimum_host_offer_percent: Some(95),
                 ..criteria()
             },
-            &hil_core::measurements::Recorder::default(),
+            &oer_hil_link::measurements::Recorder::default(),
         )
         .err()
         .unwrap();

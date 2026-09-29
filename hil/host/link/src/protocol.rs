@@ -154,7 +154,7 @@ impl SerialCapture {
         target: Target<'_>,
     ) -> Result<(DeviceImageKeys, Option<StartupArtifactStatus>)> {
         let capabilities = self.request_image_keys(PROTOCOL_READY_TIMEOUT)?;
-        let artifact_path = target.lab.dut.startup_artifact.as_deref();
+        let artifact_path = target.dut.startup_artifact();
         if artifact_path.is_some() && !capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
         {
             return Err("firmware does not support a host-owned startup artifact".into());
@@ -165,16 +165,13 @@ impl SerialCapture {
         let artifact_event_start = self.protocol_event_count();
         if capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
             && let Some(path) = artifact_path
-            && let Some(bytes) = crate::session::startup_artifact::load_if_present(path)?
+            && let Some(bytes) = crate::startup_artifact::load_if_present(path)?
         {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
-            crate::lab::lock::record_board(
-                &target.lab.dut.serial,
-                oer_hil_arbiter::BoardEventKind::StartupArtifactUploaded {
-                    path: path.display().to_string(),
-                    sha256: oer_hil_durable::sha256_bytes(&bytes),
-                },
-            );
+            target.dut.journal(DutEvent::StartupArtifactUploaded {
+                path: path.display().to_string(),
+                sha256: oer_hil_durable::sha256_bytes(&bytes),
+            });
         }
         if capabilities.has::<oer_hil_protocol::wifi::RuntimeInitialization>() {
             self.initialize(target, PROTOCOL_READY_TIMEOUT)?;
@@ -197,15 +194,12 @@ impl SerialCapture {
                 )
                 .into());
             }
-            crate::session::startup_artifact::persist_atomically(path, &bytes)?;
-            crate::lab::lock::record_board(
-                &target.lab.dut.serial,
-                oer_hil_arbiter::BoardEventKind::StartupArtifactWritten {
-                    path: path.display().to_string(),
-                    sha256: oer_hil_durable::sha256_bytes(&bytes),
-                    disposition: format!("{:?}", status.disposition),
-                },
-            );
+            crate::startup_artifact::persist_atomically(path, &bytes)?;
+            target.dut.journal(DutEvent::StartupArtifactWritten {
+                path: path.display().to_string(),
+                sha256: oer_hil_durable::sha256_bytes(&bytes),
+                disposition: format!("{:?}", status.disposition),
+            });
             eprintln!(
                 "startup_artifact={} disposition={:?} bytes={} initialization_elapsed_us={}",
                 path.display(),
@@ -236,7 +230,7 @@ impl SerialCapture {
     }
 
     fn upload_startup_artifact(&self, bytes: &[u8], timeout: Duration) -> Result<()> {
-        for chunk in crate::session::startup_artifact::chunks(bytes)? {
+        for chunk in crate::startup_artifact::chunks(bytes)? {
             match self.call(
                 0,
                 oer_hil_protocol::phy::UploadStartupArtifact(chunk),
@@ -254,7 +248,7 @@ impl SerialCapture {
     fn wait_for_startup_artifact_after(&self, start: usize, timeout: Duration) -> Result<Vec<u8>> {
         let deadline = crate::transport::events::deadline_after(timeout);
         let mut cursor = start;
-        let mut assembler = crate::session::startup_artifact::Assembler::new();
+        let mut assembler = crate::startup_artifact::Assembler::new();
         loop {
             let chunk = self
                 .wait_for_startup_artifact_chunk(&mut cursor, deadline)?
@@ -286,7 +280,7 @@ impl SerialCapture {
             oer_hil_protocol::wifi::Initialize(
                 oer_hil_protocol::wifi::InitializationConfiguration {
                     ap_scheduler: target.settings.ap_scheduler,
-                    ipv4: target.lab.station.ipv4(),
+                    ipv4: target.station.ipv4(),
                     data_plane: target.settings.data_plane,
                     rx_checksum: target.settings.rx_checksum,
                     tx_udp_checksum: target.settings.tx_udp_checksum,
@@ -1712,7 +1706,7 @@ impl SerialCapture {
 
     pub fn request_station_start(&self, target: Target<'_>) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
-            oer_hil_protocol::wifi::StartStation(target.lab.station.protocol_credentials()?),
+            oer_hil_protocol::wifi::StartStation(target.station.credentials()?),
             "station start",
         )
     }

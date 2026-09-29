@@ -1,6 +1,6 @@
 use super::test_support::*;
 use super::*;
-use crate::session::error::ErrorKind;
+use crate::error::ErrorKind;
 use std::{
     io,
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
@@ -221,79 +221,6 @@ fn observation_discovers_a_running_boot_without_initializing_or_clearing_results
             .unwrap()
             .contains("base/link-health")
     );
-}
-
-#[cfg(unix)]
-#[test]
-fn signal_cancellation_harness() {
-    let Ok(signal) = std::env::var("OER_HIL_CAPTURE_TEST_SIGNAL") else {
-        return;
-    };
-    let signal = rustix::process::Signal::from_named_raw(signal.parse().unwrap()).unwrap();
-    let _signals = oer_process::install_signal_handlers().unwrap();
-    let output = Output::new();
-    let cleanup = crate::fixture::cleanup::Scope::new(&output.0);
-    let (capture, input) = capture(&output, false);
-    activate(&capture, &input);
-    let sender = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(50));
-        // This isolated test process installed the handler above.
-        rustix::process::kill_process(rustix::process::getpid(), signal).unwrap();
-    });
-    let started = Instant::now();
-    let error = capture
-        .wait_for_message_after(0, Duration::from_secs(60), |_| false)
-        .unwrap_err();
-    sender.join().unwrap();
-    assert!(oer_process::is_cancelled(&*error));
-    assert!(started.elapsed() < Duration::from_secs(2));
-    drop(capture);
-    crate::fixture::cleanup::record("restore after cancellation", || {
-        oer_process::check_cancelled()?;
-        fs::write(output.0.join("restored"), b"yes")?;
-        Ok(())
-    });
-    let records = cleanup.finish().unwrap();
-    assert_eq!(records.len(), 1);
-    assert!(records[0].failure.is_none());
-    assert!(oer_process::check_cancelled().is_err());
-    let lab = crate::lab::config::LabConfig::for_test();
-    let context = crate::context::Context::new(&lab, Default::default(), &output.0);
-    let next = output.0.join("must-not-reset");
-    let error = context
-        .capture(&next)
-        .err()
-        .expect("cancel before opening another boot");
-    assert!(oer_process::is_cancelled(&*error));
-    assert!(!next.exists());
-    assert_eq!(
-        fs::read(output.0.join("uart.bin")).unwrap(),
-        frame(hello(7, 0))
-    );
-    let protocol = fs::read_to_string(output.0.join("protocol.jsonl")).unwrap();
-    assert!(protocol.lines().any(|line| {
-        let record: serde_json::Value = serde_json::from_str(line).unwrap();
-        record["cancelled"] == true
-    }));
-}
-
-#[cfg(unix)]
-#[test]
-fn signals_cancel_protocol_wait_and_preserve_partial_capture() {
-    for signal in [rustix::process::Signal::INT, rustix::process::Signal::TERM] {
-        let status = oer_process::owned::Child::spawn(
-            std::process::Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "session::capture::tests::signal_cancellation_harness",
-                ])
-                .env("OER_HIL_CAPTURE_TEST_SIGNAL", signal.as_raw().to_string()),
-        )
-        .unwrap()
-        .wait_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
-        assert!(status.success());
-    }
 }
 
 fn failure(capture: &SerialCapture, kind: ErrorKind) -> String {
@@ -794,7 +721,7 @@ fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
             ))))
             .unwrap();
     });
-    let ready = crate::session::probe_udp_rx_ready(
+    let ready = crate::probe_udp_rx_ready(
         &capture,
         Ipv4Addr::LOCALHOST,
         rx_port,
@@ -857,10 +784,7 @@ fn target_session_failure_does_not_turn_into_an_evidence_timeout() {
         .wait_for_session(session, Duration::from_secs(3))
         .unwrap_err();
     assert_eq!(error.to_string(), "target session 9 failed: Network");
-    assert_eq!(
-        crate::failure::classify(&*error).kind,
-        oer_hil_evidence::run::FailureKind::Scenario
-    );
+    assert!(!is_link_failure(&*error));
 }
 
 #[test]
@@ -1120,10 +1044,7 @@ fn finalization_failure_keeps_the_primary_cause_and_both_messages() {
         .unwrap_err();
     assert!(error.to_string().starts_with("scenario criterion failed;"));
     assert!(error.to_string().contains("end of stream"));
-    assert_eq!(
-        crate::failure::classify(&*error).kind,
-        oer_hil_evidence::run::FailureKind::Scenario
-    );
+    assert!(!is_link_failure(&*error));
     let records = fs::read_to_string(output.0.join("protocol.jsonl")).unwrap();
     assert!(records.contains("end of stream"));
 }
@@ -1234,10 +1155,7 @@ fn replay_before_acknowledgement(changed: bool) {
     if changed {
         let error = result.unwrap_err();
         assert!(error.to_string().contains("changed the retained result"));
-        assert_eq!(
-            crate::failure::classify(&*error).kind,
-            oer_hil_evidence::run::FailureKind::Infrastructure
-        );
+        assert!(is_link_failure(&*error));
     } else {
         result.unwrap();
     }
@@ -1518,7 +1436,7 @@ fn a_boot_whose_hello_the_link_lost_begins_with_its_capability_answer() {
     assert_eq!(health.boot_id, Some(9));
     assert_eq!(
         health.solicited_hello,
-        Some(crate::session::SolicitedHello {
+        Some(crate::SolicitedHello {
             message_sequence: 1
         })
     );
@@ -1555,4 +1473,17 @@ fn an_answer_late_in_a_boot_begins_no_boot() {
     });
     assert!(capture.request_image_keys(Duration::from_secs(1)).is_err());
     target.join().unwrap();
+}
+
+/// Whether a link failure caused `error`: what the runner classifies as an
+/// infrastructure failure of the link.
+fn is_link_failure(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut cause = Some(error);
+    while let Some(error) = cause {
+        if error.is::<crate::error::LinkError>() {
+            return true;
+        }
+        cause = error.source();
+    }
+    false
 }

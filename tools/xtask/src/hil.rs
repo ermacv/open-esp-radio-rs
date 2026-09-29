@@ -2,7 +2,12 @@
 use crate::{Context, Result};
 use oer_hil_schema::{artifacts, compile::compile};
 use sha2::{Digest, Sha256};
-use std::{ffi::OsString, fs, process::Command};
+use std::{
+    ffi::OsString,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
     let compilation = compile(&ctx.root)?;
@@ -89,7 +94,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("runs") => return runs(ctx, &options, &args[1..]),
         Some("evidence") => return crate::hil_evidence::command(ctx, &args[1..]),
         Some("perf") => return perf(ctx, &options, &args[1..]),
-        Some("profile") => return profile(&args[1..]),
+        Some("profile") => return profile(ctx, &args[1..]),
         Some("wait") if args.get(1).is_some_and(|arg| arg == "--service") => {
             return wait_for_service(&args[2..]);
         }
@@ -1778,9 +1783,21 @@ struct ProfileCli {
     top: usize,
 }
 
+/// Where `cargo hil profile` keeps the report of the profile at `relative`
+/// (its directory below the scenario) of `run`'s `scenario`: under this
+/// checkout's target directory, never inside the sealed run bundle.
+fn profile_report_path(root: &Path, run: &str, scenario: &str, relative: &Path) -> PathBuf {
+    root.join("target/hil/profiles")
+        .join(run)
+        .join(scenario)
+        .join(relative)
+        .join("profile.txt")
+}
+
 /// Report every `profile.json` a run's repetitions left, symbolized against
-/// the run's own image, and write each report beside it as `profile.txt`.
-fn profile(args: &[OsString]) -> Result<std::process::ExitCode> {
+/// the run's own image, and keep each report under this checkout's
+/// `target/hil/profiles/`.
+fn profile(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     use clap::Parser as _;
     let cli = ProfileCli::try_parse_from(args)?;
     let run = crate::hil_store::shared_runs(HIL_TARGET)?.join(&cli.run);
@@ -1832,16 +1849,19 @@ fn profile(args: &[OsString]) -> Result<std::process::ExitCode> {
                 continue;
             }
             let report = oer_hil_runner_core::profile::report(&path, elf.as_deref(), cli.top)?;
-            println!(
-                "== {id} {}",
-                path.parent()
-                    .unwrap_or(&path)
-                    .strip_prefix(&scenario)
-                    .unwrap_or(&path)
-                    .display()
-            );
+            let relative = path
+                .parent()
+                .unwrap_or(&path)
+                .strip_prefix(&scenario)
+                .unwrap_or(Path::new(""));
+            println!("== {id} {}", relative.display());
             print!("{report}");
-            fs::write(path.with_file_name("profile.txt"), &report)?;
+            // The run bundle is sealed: a derived report written into it
+            // would fail its integrity inventory.
+            let destination = profile_report_path(&ctx.root, &cli.run, &id, relative);
+            fs::create_dir_all(destination.parent().ok_or("profile report has no parent")?)?;
+            fs::write(&destination, &report)?;
+            eprintln!("hil: report {}", destination.display());
             found += 1;
         }
     }
@@ -2033,6 +2053,17 @@ enum DevicesCommand {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_profile_report_stays_outside_the_sealed_run() {
+        let root = Path::new("/checkout");
+        let report = profile_report_path(root, "run-1", "udp", Path::new("repetition-001"));
+        assert_eq!(
+            report,
+            Path::new("/checkout/target/hil/profiles/run-1/udp/repetition-001/profile.txt")
+        );
+        assert!(!report.starts_with(root.join("target/hil/esp32s31/runs")));
+    }
+
     #[test]
     fn evidence_is_noted_as_pending_only_for_clean_runs() {
         assert_eq!(evidence_skip_reason(false, &[false]), None);

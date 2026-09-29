@@ -156,8 +156,9 @@ cargo hil profile <run-id> --scenario S --repetition 1 --top 20
 `profile` symbolizes each `profile.json` against the run's own
 `firmware/<image>/runtime.elf`, prints each hart's most sampled functions
 (the outermost frame of the inline chain), their most frequent inlined frame
-and the callers the return addresses name, and writes the report beside it as
-`profile.txt`. A return address names the caller only while the sampled
+and the callers the return addresses name, and writes the report to this
+checkout's `target/hil/profiles/<run>/<scenario>/<repetition>/profile.txt`;
+it never writes into the sealed run bundle. A return address names the caller only while the sampled
 function has not called another, so callers are exact for leaf functions.
 
 ## Code layout seeds

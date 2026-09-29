@@ -1,4 +1,4 @@
-//! USB-Serial/JTAG reset boundary: drain the old boot while reset is asserted.
+//! USB-Serial/JTAG reset boundary: drain the old boot before the reset edge.
 use std::{path::Path, thread, time::Duration};
 
 /// Line rate and read timeout of a board console the stand opens.
@@ -108,15 +108,18 @@ fn sequence<E>(
     mut settle: impl FnMut(),
 ) -> Result<(), E> {
     // espflash's USB-Serial/JTAG reset sequence, with old-boot input drained
-    // after the chip has stopped transmitting and before the new boot can speak.
+    // just before the reset. The chip restarts on RTS's rising edge, not on
+    // its release: it boots while RTS is still asserted, and an esp32c5
+    // application has sent its hello before the release, so input drained
+    // after the edge would discard the new boot's first words.
     settle();
     apply(Step::Dtr(false))?;
-    settle();
-    apply(Step::Rts(true))?;
-    apply(Step::Dtr(false))?;
-    apply(Step::Rts(true))?;
     settle();
     apply(Step::ClearInput)?;
+    apply(Step::Rts(true))?;
+    apply(Step::Dtr(false))?;
+    apply(Step::Rts(true))?;
+    settle();
     apply(Step::Rts(false))
 }
 

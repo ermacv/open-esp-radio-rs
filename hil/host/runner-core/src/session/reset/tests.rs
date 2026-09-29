@@ -1,25 +1,23 @@
 use super::*;
 use std::cell::RefCell;
 
-#[test]
-fn events_emitted_during_reset_setup_do_not_become_the_new_boot() {
-    struct Port {
-        reset: bool,
-        input: Vec<&'static str>,
-    }
-    let port = RefCell::new(Port {
-        reset: false,
-        input: vec!["previous event"],
-    });
+/// A port whose chip restarts on RTS's rising edge and speaks at once, as
+/// the esp32c5 and esp32s31 USB Serial/JTAG do.
+struct Port {
+    rts: bool,
+    input: Vec<&'static str>,
+}
+
+fn reset(port: &RefCell<Port>) {
     sequence(
         |step| {
             let mut port = port.borrow_mut();
             match step {
-                Step::Rts(reset) => {
-                    if port.reset && !reset {
-                        port.input.push("new Hello");
+                Step::Rts(level) => {
+                    if level && !port.rts {
+                        port.input.push("new boot");
                     }
-                    port.reset = reset;
+                    port.rts = level;
                 }
                 Step::ClearInput => port.input.clear(),
                 Step::Dtr(_) => {}
@@ -28,23 +26,32 @@ fn events_emitted_during_reset_setup_do_not_become_the_new_boot() {
         },
         || {
             let mut port = port.borrow_mut();
-            if !port.reset {
-                port.input.push("late ServiceReady");
+            if !port.rts {
+                port.input.push("old event");
             }
         },
     )
     .unwrap();
-    assert_eq!(port.into_inner().input, ["new Hello"]);
 }
 
 #[test]
-fn failed_input_drain_does_not_release_an_ambiguous_boot() {
-    let mut released = false;
+fn the_new_boot_keeps_what_it_sends_before_the_release() {
+    let port = RefCell::new(Port {
+        rts: false,
+        input: vec!["previous event"],
+    });
+    reset(&port);
+    assert_eq!(port.into_inner().input, ["new boot"]);
+}
+
+#[test]
+fn failed_input_drain_does_not_reset_into_an_ambiguous_boot() {
+    let mut asserted = false;
     let result = sequence(
         |step| match step {
             Step::ClearInput => Err("drain failed"),
-            Step::Rts(false) => {
-                released = true;
+            Step::Rts(true) => {
+                asserted = true;
                 Ok(())
             }
             _ => Ok(()),
@@ -52,5 +59,5 @@ fn failed_input_drain_does_not_release_an_ambiguous_boot() {
         || {},
     );
     assert_eq!(result, Err("drain failed"));
-    assert!(!released);
+    assert!(!asserted);
 }

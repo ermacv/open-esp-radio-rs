@@ -409,6 +409,11 @@ impl<const ALLOCATION_BYTES: usize> LeTxPacketStorage<ALLOCATION_BYTES> {
         self.bytes[start + payload_length - 6..start + payload_length].fill(0);
     }
 
+    #[cfg(test)]
+    pub(super) fn pdu_header(&self) -> [u8; 2] {
+        [self.bytes[PDU_HEADER_BYTE], self.bytes[PDU_LENGTH_BYTE]]
+    }
+
     /// Borrow the semantic Link Layer PDU installed by the enclosing owner.
     pub fn prepared_pdu(&self, length: LeTxPacketPreparedLength<ALLOCATION_BYTES>) -> &[u8] {
         &self.bytes[CONTROLLER_METADATA_BYTES..][..length.pdu_bytes()]

@@ -1,13 +1,15 @@
-//! Legacy passive scanning.
+//! Legacy passive and active scanning.
 //!
-//! Enable configures the backend's scanner and then listens once per scan
+//! Enable configures the backend's scanner, which an active scanner makes
+//! answer scannable advertising with `SCAN_REQ`, and then listens once per scan
 //! interval for up to one scan window, rotating the primary channels 37, 38
 //! and 39. A window yields to every other reservation: it starts after the
 //! busy ones and ends before the next one, and a window shorter than
 //! [`MINIMUM_SCAN_WINDOW`] is not scheduled. Received advertising PDUs become
 //! LE Advertising Reports, passed through the duplicate filter when the Host
 //! asked for it. Disable cancels the window in progress, waits for it to end
-//! and removes the scanner before it completes.
+//! and removes the scanner before it completes. An active scanner also reports
+//! the scan responses it receives.
 
 use bt_hci::param::{AddrKind, BdAddr, Error as HciError, LeAdvEventKind, Status};
 use oer_bluetooth_hci::{
@@ -22,7 +24,7 @@ use oer_bluetooth_ll::{
 };
 use oer_bluetooth_radio::{
     AdvertisingChannel, EventId, RadioDuration, RadioInstant, RadioOutcome, RadioRequest,
-    RadioTiming, RadioWindow, ScanWindow, ScannerConfiguration, ScannerId, TxPower,
+    RadioTiming, RadioWindow, ScanType, ScanWindow, ScannerConfiguration, ScannerId, TxPower,
 };
 
 use crate::arbiter::{Proposal, place};
@@ -49,9 +51,10 @@ struct Outstanding {
     reservation: RadioWindow,
 }
 
-// CAPABILITY: bluetooth-legacy-passive-scanning
+// CAPABILITY: bluetooth-legacy-passive-scanning, bluetooth-active-scanning
 pub(crate) struct Scanner {
     phase: Phase,
+    scan_type: ScanType,
     interval: RadioDuration,
     window: RadioDuration,
     filter_duplicates: bool,
@@ -66,6 +69,7 @@ impl Scanner {
     pub(crate) const fn new() -> Self {
         Self {
             phase: Phase::Idle,
+            scan_type: ScanType::Passive,
             interval: RadioDuration::from_micros(0),
             window: RadioDuration::from_micros(0),
             filter_duplicates: false,
@@ -83,6 +87,11 @@ impl Scanner {
 
     pub(crate) fn enable(&mut self, request: LeLegacyScanningEnableRequest) {
         let parameters = request.parameters();
+        self.scan_type = if parameters.is_active() {
+            ScanType::Active
+        } else {
+            ScanType::Passive
+        };
         self.interval =
             RadioDuration::from_micros(u32::from(parameters.interval_units_625_us()) * 625);
         self.window = RadioDuration::from_micros(u32::from(parameters.window_units_625_us()) * 625);
@@ -110,6 +119,7 @@ impl Scanner {
                 *sent = true;
                 Some(RadioRequest::ConfigureScanner(ScannerConfiguration {
                     scanner: SCANNER,
+                    scan_type: self.scan_type,
                     tx_power: TxPower::from_dbm(0),
                 }))
             }
@@ -268,9 +278,14 @@ impl Scanner {
                         LeAdvEventKind::AdvNonconnInd
                     }
                     LegacyAdvertisingReportKind::ScannableUndirected => LeAdvEventKind::AdvScanInd,
-                    // A passive scanner without a filter policy for directed
-                    // advertising reports neither directed PDUs nor scan
-                    // responses it never asked for.
+                    // Only an active scanner asked for scan responses.
+                    LegacyAdvertisingReportKind::ScanResponse
+                        if self.scan_type == ScanType::Active =>
+                    {
+                        LeAdvEventKind::ScanRsp
+                    }
+                    // Without a filter policy for directed advertising the
+                    // scanner reports no directed PDUs.
                     LegacyAdvertisingReportKind::ConnectableDirected
                     | LegacyAdvertisingReportKind::ScanResponse => return None,
                 };

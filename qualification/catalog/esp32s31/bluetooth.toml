@@ -2300,7 +2300,7 @@ section = "bluetooth-le-phy-rf-dtm"
 title = "LE 1M PHY"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "The [radio role](../../../../roles/esp32s31/bluetooth/radio/src/radio.rs) runs Direct Test Mode, legacy advertising, passive scanning and the peripheral connection on LE 1M in the production [Bluetooth composition](../../../../composition/esp32s31/embassy/bluetooth/src/lib.rs)."
+scope-and-limitations = "The [radio role](../../../../roles/esp32s31/bluetooth/radio/src/radio.rs) runs Direct Test Mode, legacy advertising, passive and active scanning and the peripheral connection on LE 1M in the production [Bluetooth composition](../../../../composition/esp32s31/embassy/bluetooth/src/lib.rs)."
 
 [[items]]
 id = "bluetooth-le-2m-phy"
@@ -2440,9 +2440,9 @@ scope-and-limitations = "The [scanning role](../../../../protocols/bluetooth/le/
 id = "bluetooth-active-scanning"
 section = "bluetooth-legacy-advertising-scanning"
 title = "Active scanning"
-status = "absent"
+status = "implemented"
 level = "composed-product"
-scope-and-limitations = "No `SCAN_REQ` producer and complete request/response scanning lifecycle exists."
+scope-and-limitations = "With scan type 1 the [scanning role](../../../../protocols/bluetooth/le/controller/src/scanning.rs) runs the passive scanner's windows over an [active scanner graph](../../../../hardware/esp32s31/driver/bluetooth/memory/src/legacy_scanning.rs): its items carry the active kind and its link state names one `SCAN_REQ` buffer, so hardware requests the scan response of scannable advertising and SCAN_RSP PDUs become LE Advertising Reports. Scan-response backoff is the hardware's under the S31 upper limit of 32. The own address is public, the filter policy accepts all, and the scanner requests the passive coexistence lanes."
 
 [[items]]
 id = "bluetooth-extended-secondary-channel-scanning"

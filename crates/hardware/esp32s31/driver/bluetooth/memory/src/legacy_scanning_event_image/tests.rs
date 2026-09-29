@@ -17,9 +17,10 @@ fn restricted_profile_retains_only_semantic_dynamic_inputs() {
     );
     let config = LegacyScanResetConfig::le_1m_public_accept_all(
         crate::LeTxPower::from_dbm(0).expect("provider level"),
+        crate::LegacyScanType::Passive,
     );
 
-    let image = LegacyScanLinkStateImage::restricted_passive_le_1m(head, config);
+    let image = LegacyScanLinkStateImage::restricted_le_1m(head, config);
 
     assert!(image.retains_rx_head(head));
     assert_eq!(image.crc_init(), LeCrcInit::LE_PRESET);
@@ -39,9 +40,9 @@ fn head() -> LegacyScanRxHeadProjection {
 fn an_event_records_the_window_and_copies_the_reset_power() {
     for dbm in [-24, 9, 21] {
         let power = crate::LeTxPower::from_dbm(dbm).expect("provider level");
-        let image = LegacyScanLinkStateImage::restricted_passive_le_1m(
+        let image = LegacyScanLinkStateImage::restricted_le_1m(
             head(),
-            LegacyScanResetConfig::le_1m_public_accept_all(power),
+            LegacyScanResetConfig::le_1m_public_accept_all(power, crate::LegacyScanType::Passive),
         )
         .with_window(LegacyScanWindowTicks::from_raw_ticks(20_000));
         assert_eq!(image.window_ticks(), 20_000);

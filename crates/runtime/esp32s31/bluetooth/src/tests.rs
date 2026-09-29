@@ -11,7 +11,8 @@ use oer_bluetooth_radio::{
     AdvertisingChannel, AdvertisingChannels, AdvertisingConfiguration, AdvertisingEvent,
     AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel, EventId, EventResult,
     RadioDuration, RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioWindow, ReceivedPdu,
-    RequestError, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TxPower,
+    RequestError, ScanType, ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive,
+    TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -318,6 +319,7 @@ fn an_accepted_scanner_publishes_the_scan_start_once() {
     let scanner = || {
         RadioRequest::ConfigureScanner(ScannerConfiguration {
             scanner: ScannerId::new(0),
+            scan_type: ScanType::Active,
             tx_power: TxPower::from_dbm(0),
         })
     };

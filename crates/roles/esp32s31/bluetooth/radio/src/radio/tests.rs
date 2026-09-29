@@ -7,8 +7,8 @@ use oer_bluetooth_radio::{
     AdvertisingEvent, AdvertisingPdu, AdvertisingReception, AdvertisingSetId, CoexistenceLevel,
     ConnectionConfiguration, ConnectionEvent, ConnectionEventTiming, ConnectionId, CrcInit,
     DataChannel, DataPdu, DataPduKind, EventId, EventResult, RadioDuration, RadioInstant,
-    RadioOutcome, RadioRequest, RadioWindow, RequestError, ScanWindow, ScannerConfiguration,
-    ScannerId, TestChannel, TestPhy, TestReceive, TestReport, TxPower,
+    RadioOutcome, RadioRequest, RadioWindow, RequestError, ScanType, ScanWindow,
+    ScannerConfiguration, ScannerId, TestChannel, TestPhy, TestReceive, TestReport, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerTimeSample,
@@ -198,6 +198,7 @@ fn reservations_are_admitted_in_time_and_apart() {
     radio
         .request(
             RadioRequest::ConfigureScanner(ScannerConfiguration {
+                scan_type: ScanType::Passive,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(0),
             }),
@@ -788,6 +789,7 @@ fn a_power_below_the_provider_table_is_refused_before_any_instance() {
     assert_eq!(
         radio.request(
             RadioRequest::ConfigureScanner(ScannerConfiguration {
+                scan_type: ScanType::Passive,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(-25),
             }),
@@ -799,6 +801,7 @@ fn a_power_below_the_provider_table_is_refused_before_any_instance() {
     radio
         .request(
             RadioRequest::ConfigureScanner(ScannerConfiguration {
+                scan_type: ScanType::Passive,
                 scanner: ScannerId::new(0),
                 tx_power: TxPower::from_dbm(-24),
             }),

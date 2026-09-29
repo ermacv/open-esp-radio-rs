@@ -8,8 +8,8 @@ use oer_bluetooth_radio::{
     AdvertisingSetId, ConnectionAllowances, ConnectionConfiguration, ConnectionEvent,
     ConnectionEventTiming, ConnectionId, DataPduKind, EventId, EventResult, RadioDuration,
     RadioFault, RadioInstant, RadioOutcome, RadioRequest, RadioTiming, ReceivedPdu, RequestError,
-    ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport, TestTransmit,
-    TxPower,
+    ScanType, ScanWindow, ScannerConfiguration, ScannerId, TestPhy, TestReceive, TestReport,
+    TestTransmit, TxPower,
 };
 use oer_esp32s31_bluetooth::{
     ControllerSchedulerEpoch, ControllerTimeSample,
@@ -28,7 +28,7 @@ use oer_esp32s31_bluetooth_memory::{
     LegacyConnectableAdvertisingOwnAddress, LegacyConnectableAdvertisingPool,
     LegacyConnectableScanResponsePacketInput, LegacyScanEventTiming, LegacyScanPool,
     LegacyScanPrimaryChannel, LegacyScanResetConfig, LegacyScanSchedulerWindow,
-    LegacyScanStartSelection, LegacyScanWindowTicks,
+    LegacyScanStartSelection, LegacyScanType, LegacyScanWindowTicks,
     PeripheralConnectionCapturedAnchorAvailability, PeripheralConnectionDataChannel,
     PeripheralConnectionEventSpan, PeripheralConnectionFirstEvent, PeripheralConnectionIdentity,
     PeripheralConnectionPool, PeripheralConnectionReceiveTime, PeripheralConnectionReceiveWait,
@@ -1221,7 +1221,11 @@ impl<
         let index = free_slot(&self.scanners)?;
         let pool = &mut self.memory.scanners;
         let instance = pool.acquire().ok_or(RequestError::NoInstance)?;
-        let config = LegacyScanResetConfig::le_1m_public_accept_all(tx_power);
+        let scan_type = match configuration.scan_type {
+            ScanType::Passive => LegacyScanType::Passive,
+            ScanType::Active => LegacyScanType::Active,
+        };
+        let config = LegacyScanResetConfig::le_1m_public_accept_all(tx_power, scan_type);
         if pool
             .reset(&instance, &self.memory.scanning, config)
             .is_err()

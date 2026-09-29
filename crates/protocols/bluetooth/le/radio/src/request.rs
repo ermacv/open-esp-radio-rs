@@ -159,11 +159,22 @@ impl AdvertisingEvent {
 pub struct ScannerConfiguration {
     /// The scanner.
     pub scanner: ScannerId,
+    /// Whether the scanner requests scan responses.
+    pub scan_type: ScanType,
     /// Transmit power retained by the scanner profile.
     pub tx_power: TxPower,
 }
 
-/// One passive scan window.
+/// How a scanner treats scannable advertising.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScanType {
+    /// Only listen.
+    Passive,
+    /// Send `SCAN_REQ` to scannable advertisers and receive their `SCAN_RSP`.
+    Active,
+}
+
+/// One scan window.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScanWindow {
     /// Correlation.

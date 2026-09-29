@@ -59,14 +59,20 @@ impl LeLegacyScanningCommandKind {
     }
 }
 
-/// Validated passive LE 1M scan timing supplied by the Host.
+/// Validated LE 1M scan type and timing supplied by the Host.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeLegacyScanParameters {
+    active: bool,
     interval_units_625_us: u16,
     window_units_625_us: u16,
 }
 
 impl LeLegacyScanParameters {
+    /// Whether the scanner sends scan requests.
+    pub const fn is_active(self) -> bool {
+        self.active
+    }
+
     /// Start-to-start scan interval in 0.625 ms units.
     pub const fn interval_units_625_us(self) -> u16 {
         self.interval_units_625_us
@@ -240,8 +246,7 @@ impl LeLegacyScanningCommand {
             scanning_filter_policy,
         } = parameters;
 
-        if le_scan_kind != LeScanKind::Passive
-            || own_addr_kind != AddrKind::PUBLIC
+        if own_addr_kind != AddrKind::PUBLIC
             || scanning_filter_policy != ScanningFilterPolicy::BasicUnfiltered
         {
             return Err(LeLegacyScanningDecodeError::UnsupportedFeature { command });
@@ -257,6 +262,7 @@ impl LeLegacyScanningCommand {
         }
 
         Ok(Self::SetParameters(LeLegacyScanParameters {
+            active: le_scan_kind == LeScanKind::Active,
             interval_units_625_us,
             window_units_625_us,
         }))

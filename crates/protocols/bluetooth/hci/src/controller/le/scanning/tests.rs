@@ -69,14 +69,18 @@ fn standard_enable_retains_duplicate_policy() {
 
 #[test]
 fn unsupported_profiles_and_invalid_timing_fail_closed() {
+    let Ok(LeLegacyScanningCommand::SetParameters(active)) = decode(&LeSetScanParams::new(
+        LeScanKind::Active,
+        Duration::from_u16(0x20),
+        Duration::from_u16(0x10),
+        AddrKind::PUBLIC,
+        ScanningFilterPolicy::BasicUnfiltered,
+    )) else {
+        panic!("active scanning parameters decode");
+    };
+    assert!(active.is_active());
+
     for command in [
-        LeSetScanParams::new(
-            LeScanKind::Active,
-            Duration::from_u16(0x20),
-            Duration::from_u16(0x10),
-            AddrKind::PUBLIC,
-            ScanningFilterPolicy::BasicUnfiltered,
-        ),
         LeSetScanParams::new(
             LeScanKind::Passive,
             Duration::from_u16(0x20),

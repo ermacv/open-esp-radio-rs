@@ -1,10 +1,10 @@
 # ESP32-S31 legacy passive scanning contracts
 
-This reference covers receive-only legacy LE 1M primary-channel scanning and
-the hardware observations needed for HCI LE Advertising Reports. Portable LL
-policy, register transactions and private controller-SRAM encoding have
-separate owners. Active scanning, extended advertising and connection
-initiation require distinct contracts.
+This reference covers legacy LE 1M primary-channel scanning, passive and
+active, and the hardware observations needed for HCI LE Advertising Reports.
+Portable LL policy, register transactions and private controller-SRAM
+encoding have separate owners. Extended advertising and connection initiation
+require distinct contracts.
 
 ## Pinned identity evidence
 
@@ -149,16 +149,29 @@ a driver requirement. What remains to prove is the final selector-one RX-link
 image produced by the global RX-link update, not the allocator's software
 bookkeeping.
 
-Passive scanning also has no TX-buffer prerequisite.  Complete current
-`r_ble_ll_scan_set_scan_params` validates the first HCI payload octet as zero
-or one and stores it in the selected PHY configuration byte at `+0x04`.
-The pinned `r_ble_lll_scan_alloc_txbuf` reads that same byte through the
-scanner's selected-PHY pointer and returns success immediately when it is
-zero.  Zero is the portable passive scan type, as independently documented by
-the pinned
+Complete current `r_ble_ll_scan_set_scan_params` validates the first HCI
+payload octet as zero or one and stores it in the selected PHY configuration
+byte at `+0x04`. Zero is the portable passive scan type, as independently
+documented by the pinned
 [`esp-nimble` controller source](https://github.com/espressif/esp-nimble/blob/916be244a9c646bc16fd65507478cf3fe717d8ed/nimble/controller/src/ble_ll_scan.c).
-The first vertical slice therefore needs an RX chain only; scan-request PDU
-construction remains deferred with active scanning.
+The scan type selects two things in the scanner allocator
+`r_ble_lll_scan_alloc_memory`:
+
+- Every scheduler item carries a kind in `+0x08` bits 23:20 beside its
+  link-state pointer: `0xc` for a passive scanner and `0x4` for an active one.
+  Hardware sends `SCAN_REQ` only from an active item; an active link state
+  under a passive item receives advertising but never transmits.
+- `r_ble_lll_scan_alloc_txbuf` returns at once for a passive scanner. For an
+  active one it allocates one TX buffer, writes only the `SCAN_REQ` header
+  (type 3, length 12) and stores the buffer in link state `+0x6c` and `+0x74`;
+  the reset then publishes its compressed address in link state `+0x00`
+  bits 19:0. Hardware fills ScanA from the own-address registers and AdvA from
+  the received advertisement.
+
+A passive scanner therefore needs an RX chain only. The open active scanner
+applies the same kind and binding at reset. It still requests the passive
+coexistence lanes below: the vendor's lanes for an active scanner, which also
+transmits, have not been read.
 
 ## Proven receive graph and recycle transaction
 

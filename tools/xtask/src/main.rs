@@ -243,6 +243,9 @@ enum Check {
         /// Only `cargo check` each runtime, without code generation or audits.
         #[arg(long)]
         type_check: bool,
+        /// Classes built at once; defaults to a fifth of the cores, 1 to 4.
+        #[arg(long)]
+        jobs: Option<usize>,
     },
     BlobrayStandalone,
     /// Check that every vendor function production and the register model
@@ -431,6 +434,7 @@ fn run() -> Result<std::process::ExitCode> {
                 all: _,
                 classes,
                 type_check,
+                jobs,
             } => checks::firmware::run(
                 &ctx,
                 &classes,
@@ -439,6 +443,7 @@ fn run() -> Result<std::process::ExitCode> {
                 } else {
                     checks::firmware::Depth::Build
                 },
+                jobs.unwrap_or_else(checks::firmware::default_jobs),
             ),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
             Check::Provenance { chip } => oer_xtask::vendor_provenance::check(&ctx, &chip),

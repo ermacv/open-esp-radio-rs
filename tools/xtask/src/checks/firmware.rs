@@ -36,44 +36,85 @@ pub fn classes(selected: &[ImageClass]) -> Vec<ImageClass> {
 
 /// Build (or type-check) each class one after the other in its shared
 /// compile cache, then print one line per class.
-pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth) -> Result<()> {
+/// Classes built at once when `--jobs` is not given: each fat-LTO release
+/// build uses every core only part of the time, and three fit in memory.
+pub fn default_jobs() -> usize {
+    std::thread::available_parallelism().map_or(1, |cores| (cores.get() / 5).clamp(1, 4))
+}
+
+/// Builds or type-checks every selected class, up to `jobs` at once. Each
+/// class has its own target directory and lock, so they build independently;
+/// outcomes are reported in catalog order.
+pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) -> Result<()> {
     let network = Integration::OwnedXarxa;
     let classes = classes(selected);
-    let mut outcomes = Vec::with_capacity(classes.len());
-    for (index, class) in classes.iter().copied().enumerate() {
-        println!(
-            "check firmware: [{}/{}] {} {}",
-            index + 1,
-            classes.len(),
-            match depth {
-                Depth::Build => "building",
-                Depth::TypeCheck => "type-checking",
-            },
-            class.id()
-        );
-        let started = Instant::now();
-        let result = match depth {
-            Depth::Build => oer_hil_runner_core::image::build(
-                &ctx.root,
-                class,
-                network,
-                None,
-                &Default::default(),
-            )
-            .map(|_| ()),
-            Depth::TypeCheck => oer_hil_runner_core::image::check(&ctx.root, class, network),
-        };
-        outcomes.push(Outcome {
-            class,
-            elapsed: started.elapsed(),
-            failure: result.err().map(|error| error.to_string()),
-        });
-    }
+    let jobs = jobs.clamp(1, classes.len().max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let outcomes = std::sync::Mutex::new(Vec::with_capacity(classes.len()));
+    std::thread::scope(|scope| {
+        for _ in 0..jobs {
+            scope.spawn(|| {
+                loop {
+                    let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(&class) = classes.get(index) else {
+                        break;
+                    };
+                    println!(
+                        "check firmware: [{}/{}] {} {}",
+                        index + 1,
+                        classes.len(),
+                        match depth {
+                            Depth::Build => "building",
+                            Depth::TypeCheck => "type-checking",
+                        },
+                        class.id()
+                    );
+                    let started = Instant::now();
+                    let result = match depth {
+                        Depth::Build => oer_hil_runner_core::image::build(
+                            &ctx.root,
+                            class,
+                            network,
+                            None,
+                            &Default::default(),
+                        )
+                        .map(|_| ()),
+                        Depth::TypeCheck => {
+                            oer_hil_runner_core::image::check(&ctx.root, class, network)
+                        }
+                    };
+                    let outcome = Outcome {
+                        class,
+                        elapsed: started.elapsed(),
+                        failure: result.err().map(|error| error.to_string()),
+                    };
+                    println!(
+                        "check firmware: {} {} ({}s)",
+                        class.id(),
+                        if outcome.failure.is_some() {
+                            "failed"
+                        } else {
+                            "passed"
+                        },
+                        outcome.elapsed.as_secs()
+                    );
+                    outcomes
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push((index, outcome));
+                }
+            });
+        }
+    });
+    let mut outcomes = outcomes
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    outcomes.sort_by_key(|(index, _)| *index);
+    let outcomes: Vec<Outcome> = outcomes.into_iter().map(|(_, outcome)| outcome).collect();
     print!("{}", summary(&outcomes));
     verdict(&outcomes)
 }
 
-/// One line per class, then the totals.
 pub fn summary(outcomes: &[Outcome]) -> String {
     let mut text = String::new();
     for outcome in outcomes {

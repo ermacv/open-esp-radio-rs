@@ -363,6 +363,9 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
     let tx_cap = crate::channel::retained_tx_cap_value(channel, channel_parameters.tx_capacitance);
     let register_parameters = state.register_init_parameters();
     let frequency_control = state.channel_frequency_control();
+    let bluetooth_tx_gain = crate::calibration::bluetooth::calculate_bluetooth_tx_gain(
+        state.bluetooth_tx_gain_parameters(),
+    );
     let mut transition = crate::lifecycle::PhyRfWakeTransition::new();
 
     for _ in 0..RF_OPERATION_LIMIT {
@@ -497,6 +500,9 @@ pub(super) async fn execute_rf_wake_with_hal<D: PhyAsyncDelay>(
                         registers,
                         u32::from(cbw),
                     );
+                }
+                PhyRfWakeOperation::RestoreBluetoothTxGain => {
+                    crate::hardware::publish_bluetooth_tx_gain_memory(registers, bluetooth_tx_gain);
                 }
                 PhyRfWakeOperation::EnableAgc => {
                     oer_esp32s31_hal::phy::agc::set_enabled(registers, true);

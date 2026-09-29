@@ -15,12 +15,20 @@ use crate::analog::i2c::{PhyI2cAddress, analog_registers};
 /// and completion contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRfWakeOperation {
-    SetBasebandMode { mode: u8 },
-    ForceTxRxOff { enabled: bool },
-    SetHardwareFrequencyControl { enabled: bool },
+    SetBasebandMode {
+        mode: u8,
+    },
+    ForceTxRxOff {
+        enabled: bool,
+    },
+    SetHardwareFrequencyControl {
+        enabled: bool,
+    },
     ResetI2cMaster,
     OpenFrontendBasebandClocks,
-    SetBbpllCalibration { enabled: bool },
+    SetBbpllCalibration {
+        enabled: bool,
+    },
     ConfigureBiasRegisters,
     PowerTemperatureSensor,
     ReadXtalFrequency,
@@ -44,19 +52,29 @@ pub enum PhyRfWakeOperation {
     RestoreChannelRegisters,
     RestoreTxCapacitance,
     RestoreBasebandChannelWidth,
+    /// Republish the Bluetooth and IEEE 802.15.4 TX gain bank from the
+    /// retained calibration (`phy_bt_set_tx_gain_new`).
+    RestoreBluetoothTxGain,
     EnableAgc,
     WaitFrequencyReady,
     ResetClockGenerator,
 }
 
-/// Exact target-visible operation order of current S31 retained wake.
+/// Target-visible operation order of current S31 retained wake.
 ///
 /// The two vendor-private retained flags are represented by the terminal
 /// owner transition rather than synthetic hardware actions. The conditional
 /// `phy_wifi_enable_set(0)` tail is unreachable for this transition because
 /// [`crate::RegisteredPhyRfClosed`] proves that the protocol-client set is
 /// empty.
-pub const PHY_RF_WAKE_OPERATIONS: [PhyRfWakeOperation; 36] = [
+///
+/// One step is not in the vendor wake: the Bluetooth and IEEE 802.15.4 TX
+/// gain bank does not survive between registration and a later wake on this
+/// PHY, and nothing else republishes it (Wi-Fi rewrites its own bank on
+/// every channel selection). Without it, IEEE 802.15.4 transmitted about
+/// 12 dB above the requested power. The bank is republished from the
+/// retained calibration while TX/RX stay forced off, before AGC resumes.
+pub const PHY_RF_WAKE_OPERATIONS: [PhyRfWakeOperation; 37] = [
     PhyRfWakeOperation::SetBasebandMode { mode: 2 },
     PhyRfWakeOperation::ForceTxRxOff { enabled: true },
     PhyRfWakeOperation::SetHardwareFrequencyControl { enabled: false },
@@ -86,6 +104,7 @@ pub const PHY_RF_WAKE_OPERATIONS: [PhyRfWakeOperation; 36] = [
     PhyRfWakeOperation::RestoreChannelRegisters,
     PhyRfWakeOperation::RestoreTxCapacitance,
     PhyRfWakeOperation::RestoreBasebandChannelWidth,
+    PhyRfWakeOperation::RestoreBluetoothTxGain,
     PhyRfWakeOperation::EnableAgc,
     PhyRfWakeOperation::WaitFrequencyReady,
     PhyRfWakeOperation::ResetClockGenerator,
@@ -225,6 +244,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn retained_wake_republishes_the_bluetooth_gain_bank_while_txrx_is_forced_off() {
+        let position = |operation| {
+            PHY_RF_WAKE_OPERATIONS
+                .iter()
+                .position(|candidate| *candidate == operation)
+                .unwrap()
+        };
+        let restore = position(PhyRfWakeOperation::RestoreBluetoothTxGain);
+        assert_eq!(
+            PHY_RF_WAKE_OPERATIONS
+                .iter()
+                .filter(|operation| **operation == PhyRfWakeOperation::RestoreBluetoothTxGain)
+                .count(),
+            1
+        );
+        assert!(position(PhyRfWakeOperation::ForceTxRxOff { enabled: true }) < restore);
+        assert!(restore < position(PhyRfWakeOperation::ForceTxRxOff { enabled: false }));
+        assert!(restore < position(PhyRfWakeOperation::EnableAgc));
+    }
+
+    #[test]
     fn retained_wake_parent_has_a_safe_envelope_and_terminal_completion() {
         let mut transition = PhyRfWakeTransition::new();
         let mut trace = std::vec::Vec::new();
@@ -234,7 +274,7 @@ mod tests {
                 .advance(PhyRfWakeCompletion::executed(operation))
                 .unwrap();
         }
-        assert_eq!(trace.len(), 36);
+        assert_eq!(trace.len(), 37);
         assert_eq!(
             &trace[..3],
             &[
@@ -244,7 +284,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            &trace[32..],
+            &trace[33..],
             &[
                 PhyRfWakeOperation::SetHardwareFrequencyControl { enabled: true },
                 PhyRfWakeOperation::SetBbpllCalibration { enabled: false },

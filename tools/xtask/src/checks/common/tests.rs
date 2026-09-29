@@ -523,3 +523,46 @@ fn a_verdict_never_depends_on_a_report() {
     assert!(evidence_edge_allowed(verdict, verdict));
     assert!(evidence_edge_allowed(None, report));
 }
+
+#[test]
+fn a_chip_package_compiles_for_its_own_chip_target() {
+    let repository = architecture_repository("dependencies", "contract");
+    set_classification(
+        repository.path(),
+        "libraries/policy",
+        "service",
+        "chip",
+        Some("esp32x9"),
+    );
+    let platform = repository.path().join("platform/esp32x9");
+    fs::create_dir_all(&platform).unwrap();
+    fs::write(
+        platform.join("chip.toml"),
+        "schema = 1\nid = \"esp32x9\"\nrust-target = \"riscv32imac-unknown-none-elf\"\n\
+         boot = \"esp-idf-bootloader\"\nespflash-chip = \"esp32x9\"\nrevisions = [\"rev0\"]\n",
+    )
+    .unwrap();
+    let context = Context::new(repository.path()).unwrap();
+    let packages = production_packages(&context).unwrap();
+    let configurations = architecture_configurations(
+        repository.path(),
+        &packages,
+        "riscv32imafc-unknown-none-elf",
+    )
+    .unwrap();
+    let target = |package: &str| {
+        configurations
+            .iter()
+            .filter(|configuration| configuration.package == package)
+            .map(|configuration| configuration.target.as_str())
+            .collect::<BTreeSet<_>>()
+    };
+    assert_eq!(
+        target("policy"),
+        BTreeSet::from(["riscv32imac-unknown-none-elf"])
+    );
+    assert_eq!(
+        target("target-library"),
+        BTreeSet::from(["riscv32imafc-unknown-none-elf"])
+    );
+}

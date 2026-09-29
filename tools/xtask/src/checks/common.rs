@@ -499,17 +499,25 @@ pub fn maximal_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
     })
 }
 
+/// Every package's compilation profiles, each for its own chip's Rust target:
+/// a chip package builds for the target its chip profile names, and a
+/// portable or host package for `target`.
 pub fn architecture_configurations(
+    root: &Path,
     packages: &[ProductionPackage],
     target: &str,
 ) -> Result<Vec<CargoConfiguration>> {
     let mut configurations = Vec::new();
     for item in packages {
+        let target = match classification(&item.package)?.platform {
+            Platform::Chip(chip) => oer_chip_profile::Profile::load(root, chip)?.rust_target,
+            Platform::Portable | Platform::Host => target.to_owned(),
+        };
         for features in compilation_profiles(&item.package)? {
             configurations.push(CargoConfiguration {
                 manifest: item.manifest.clone(),
                 package: item.package.name.to_string(),
-                target: target.into(),
+                target: target.clone(),
                 features,
             });
         }

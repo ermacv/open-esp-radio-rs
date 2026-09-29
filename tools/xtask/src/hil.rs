@@ -98,7 +98,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
         Some("wait") if args.get(1).is_some_and(|arg| arg == "--service") => {
             return wait_for_service(&args[2..]);
         }
-        Some("wait") => return wait(&args[1..]),
+        Some("wait") => return wait(ctx, &args[1..]),
         Some("ab") => return ab(ctx, &options.owner(ctx)?, args),
         Some("bisect") => return crate::hil_bisect::run(ctx, &options.owner(ctx)?, &args[1..]),
         _ => {}
@@ -224,7 +224,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
                     .collect::<Vec<_>>(),
             )?;
         }
-        let created = runs_dirty(&run_ids)?;
+        let created = runs_dirty(&stores, &run_ids);
         if std::env::var_os(oer_hil_runner_core::experiment::EXPERIMENT_ENV).is_some() {
             eprintln!("hil: an A/B experiment run is diagnostic: no evidence recorded");
         } else {
@@ -690,7 +690,7 @@ fn ab(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process::Exi
 /// `cargo hil wait ID`: block until the job or run ID names ends, and exit
 /// with its outcome. A job is waited for through its record, a run by
 /// following its bundle.
-fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
+fn wait(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     let [id] = args else {
         return Err("usage: cargo hil wait JOB|RUN, or cargo hil wait --service [BOARD...]".into());
     };
@@ -698,9 +698,13 @@ fn wait(args: &[OsString]) -> Result<std::process::ExitCode> {
     if crate::hil_jobs::Jobs::open()?.read(text).is_ok() {
         return crate::hil_jobs::wait_command(args);
     }
-    let store = crate::hil_store::shared_runs(HIL_TARGET)?;
-    let run = crate::hil_runs::load(&store.join(text))
-        .ok_or_else(|| format!("{text} is neither a job nor a run in {}", store.display()))?;
+    // A run lies in the store of the chip it ran on.
+    let stores = oer_chip_profile::supported(&ctx.root)?
+        .iter()
+        .map(|chip| crate::hil_store::shared_runs(chip))
+        .collect::<Result<Vec<_>>>()?;
+    let run = crate::hil_runs::find_in(&stores, text)
+        .ok_or_else(|| format!("{text} is neither a job nor a run of any chip"))?;
     Ok(std::process::ExitCode::from(crate::hil_runs::wait(
         &run.directory,
     )?))
@@ -1885,20 +1889,21 @@ fn forward_run_receipt(run_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Whether each of `run_ids` was built from a dirty tree; a run whose
-/// manifest cannot be read counts as dirty.
-fn runs_dirty(run_ids: &[String]) -> Result<Vec<bool>> {
-    let store = crate::hil_store::shared_runs(HIL_TARGET)?;
-    Ok(run_ids
+/// Whether each of `run_ids` was built from a dirty tree. A run lies in the
+/// store of the chip it ran on; one whose manifest no store holds counts as
+/// dirty.
+fn runs_dirty(stores: &[PathBuf], run_ids: &[String]) -> Vec<bool> {
+    run_ids
         .iter()
         .map(|id| {
-            std::fs::read(store.join(id).join("manifest.json"))
-                .ok()
+            stores
+                .iter()
+                .find_map(|store| std::fs::read(store.join(id).join("manifest.json")).ok())
                 .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
                 .and_then(|manifest| manifest["repository"]["dirty"].as_bool())
                 .unwrap_or(true)
         })
-        .collect())
+        .collect()
 }
 
 /// Why a finished invocation records no evidence: it created no run, a run
@@ -2402,9 +2407,27 @@ enum DevicesCommand {
 #[cfg(test)]
 mod tests {
     use super::{
-        OsString, Path, PathBuf, checkout_of_common_dir, has_flag, source_options,
+        OsString, Path, PathBuf, checkout_of_common_dir, has_flag, runs_dirty, source_options,
         with_source_snapshot,
     };
+
+    #[test]
+    fn a_run_is_found_clean_in_the_store_of_the_chip_it_ran_on() {
+        let esp32s31 = tempfile::tempdir().unwrap();
+        let esp32c5 = tempfile::tempdir().unwrap();
+        for (store, id, dirty) in [(&esp32s31, "a", true), (&esp32c5, "b", false)] {
+            let run = store.path().join(id);
+            std::fs::create_dir(&run).unwrap();
+            std::fs::write(
+                run.join("manifest.json"),
+                format!(r#"{{"repository":{{"dirty":{dirty}}}}}"#),
+            )
+            .unwrap();
+        }
+        let stores = [esp32s31.path().to_owned(), esp32c5.path().to_owned()];
+        let ids = ["a", "b", "missing"].map(String::from);
+        assert_eq!(runs_dirty(&stores, &ids), [true, false, true]);
+    }
 
     #[test]
     fn an_enqueued_run_builds_from_its_snapshot_instead_of_its_source_options() {

@@ -157,6 +157,27 @@ pub struct Candidate {
     pub reason: String,
 }
 
+/// The files that queued or running HIL jobs were fixed with.
+fn held_by_jobs() -> Result<Vec<PathBuf>> {
+    Ok(crate::hil_jobs::Jobs::open()?
+        .unfinished()
+        .into_iter()
+        .flat_map(|job| job.fixed)
+        .collect())
+}
+
+/// `found` without the candidates that hold or lie inside a `held` path.
+fn unheld(found: Vec<Candidate>, held: &[PathBuf]) -> Vec<Candidate> {
+    found
+        .into_iter()
+        .filter(|candidate| {
+            !held
+                .iter()
+                .any(|path| path.starts_with(&candidate.path) || candidate.path.starts_with(path))
+        })
+        .collect()
+}
+
 fn age(path: &Path, now: SystemTime) -> Option<Duration> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
     now.duration_since(modified).ok()
@@ -438,15 +459,16 @@ pub fn automatically(root: &Path) -> Result<()> {
     let Some(policy) = automatic_policy(space, recent) else {
         return Ok(());
     };
+    let held = held_by_jobs()?;
     let mut removed = 0;
     for checkout in checkouts(root) {
-        for candidate in candidates(&checkout, policy, now) {
+        for candidate in unheld(candidates(&checkout, policy, now), &held) {
             if fs::remove_dir_all(&candidate.path).is_ok() {
                 removed += 1;
             }
         }
     }
-    for candidate in host_candidates(policy, now) {
+    for candidate in unheld(host_candidates(policy, now), &held) {
         if fs::remove_dir_all(&candidate.path).is_ok() {
             removed += 1;
         }
@@ -469,9 +491,10 @@ pub fn automatically(root: &Path) -> Result<()> {
 /// that were (or would be) freed.
 pub fn run(roots: &[PathBuf], policy: Policy, apply: bool) -> Result<u64> {
     let now = SystemTime::now();
+    let held = held_by_jobs()?;
     let mut total = 0;
     for root in roots {
-        let found = candidates(root, policy, now);
+        let found = unheld(candidates(root, policy, now), &held);
         let mut bytes = 0;
         for candidate in &found {
             let length = size(&candidate.path);
@@ -494,7 +517,7 @@ pub fn run(roots: &[PathBuf], policy: Policy, apply: bool) -> Result<u64> {
         );
         total += bytes;
     }
-    let found = host_candidates(policy, now);
+    let found = unheld(host_candidates(policy, now), &held);
     let mut bytes = 0;
     for candidate in &found {
         bytes += size(&candidate.path);
@@ -571,6 +594,30 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, checkout.join("target"));
         assert!(found[0].reason.starts_with("checkout idle for 8 days"));
+    }
+
+    #[test]
+    fn files_a_queued_job_was_fixed_with_are_kept_with_what_holds_them() {
+        let candidate = |path: &str| Candidate {
+            path: PathBuf::from(path),
+            reason: String::from("idle"),
+        };
+        let held = [PathBuf::from("/c/target/hil/jobs/xtask/ab/oer-xtask")];
+        assert_eq!(
+            unheld(
+                vec![
+                    candidate("/c/target"),
+                    candidate("/c/target/hil/jobs/xtask/ab/oer-xtask"),
+                    candidate("/c/target/debug/incremental/x"),
+                    candidate("/d/target"),
+                ],
+                &held,
+            ),
+            [
+                candidate("/c/target/debug/incremental/x"),
+                candidate("/d/target")
+            ]
+        );
     }
 
     #[test]

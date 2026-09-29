@@ -76,7 +76,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "2cd5e480da83939616e79084e27130a8c1760f8236a5ea7065ebced6b8586806"
+      "sha256": "59e51b5fd8a23395b74501fce2d1fdc8a986ee668beebdb8af8765b07d6ee83d"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
@@ -924,7 +924,7 @@
     },
     {
       "path": "verification/esp32s31/artifacts.toml",
-      "sha256": "0dc3d164a25b023e478625e5d97f21e62c4be47869982bae094849a2beb934d4"
+      "sha256": "f1c0f78095d9943f859b5c264cdaa3ea4bacd6ffe7b8eb0c4d735f31ba46fce6"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",

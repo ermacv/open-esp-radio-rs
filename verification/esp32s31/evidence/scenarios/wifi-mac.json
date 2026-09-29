@@ -1003,7 +1003,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "2cd5e480da83939616e79084e27130a8c1760f8236a5ea7065ebced6b8586806"
+      "sha256": "59e51b5fd8a23395b74501fce2d1fdc8a986ee668beebdb8af8765b07d6ee83d"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
@@ -4107,7 +4107,7 @@
     },
     {
       "path": "verification/esp32s31/artifacts.toml",
-      "sha256": "0dc3d164a25b023e478625e5d97f21e62c4be47869982bae094849a2beb934d4"
+      "sha256": "f1c0f78095d9943f859b5c264cdaa3ea4bacd6ffe7b8eb0c4d735f31ba46fce6"
     },
     {
       "path": "verification/esp32s31/probes/Cargo.lock",
@@ -4435,7 +4435,7 @@
     "fallback": "read data object _RNvNtCsbxRtKtcQ7s2_24oer_esp32s31_probe_radio12ampdu_resort8METADATA has no declaration file",
     "coverage-decisions": {
       "path": "verification/esp32s31/decisions/coverage.toml",
-      "sha256": "d609f967f41259c32bc77007fb9cd8ed83c1176a53bfbf3d1ff316c7a0f44332"
+      "sha256": "5f703fd6d770ddc2b7c63640cfa6f2e87d29baa447faa0659f346b27eb0efd7f"
     }
   },
   "entries": [
@@ -5519,8 +5519,8 @@
           "total": 50
         },
         "open": 0,
-        "excluded": 20,
-        "untriaged": 55
+        "excluded": 37,
+        "untriaged": 38
       },
       "observation": {
         "executed": 36,
@@ -5553,8 +5553,8 @@
           "total": 50
         },
         "open": 0,
-        "excluded": 20,
-        "untriaged": 29
+        "excluded": 35,
+        "untriaged": 14
       },
       "observation": {
         "executed": 33,
@@ -6877,81 +6877,6 @@
       "function": "ppResortTxAMPDU",
       "offset": 1434,
       "kind": "taken"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 8,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 10,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 18,
-      "kind": "taken"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 18,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 22,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 24,
-      "kind": "taken"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 24,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 28,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 30,
-      "kind": "taken"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 30,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 34,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 44,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 54,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 60,
-      "kind": "block"
-    },
-    {
-      "function": "rcGetDCMMaxRate",
-      "offset": 72,
-      "kind": "block"
     },
     {
       "function": "rcGetRate",

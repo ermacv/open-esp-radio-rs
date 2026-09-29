@@ -50,6 +50,7 @@ pub use bluetooth::{
         },
         time::BluetoothControllerLatchedTime,
     },
+    device_table::BluetoothDeviceTablePublished,
     direction_finding::BluetoothDirectionFindingDisabledBaselinePrepared,
     interrupt::{
         BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
@@ -125,12 +126,13 @@ pub use ieee802154::mac::{Ieee802154PolledRegisterLease, Ieee802154RegisterLease
 pub use oer_ieee80211_pac::MacInterface;
 
 pub use generated::{
-    CoexTimerClientValue, CoexTimerClockDividerMinusOne, CoexTimerClockSource, CoexTimerPtiValue,
-    CoexTimerTickInput, MacAssociationId, MacExtraSoftApRxBlockAckEntryIndex, MacHeBssColor,
-    MacHeDefaultPacketExtensionDuration, MacHePacketPaddingDuration, MacItwtClearIndex,
-    MacKeyEntryIndex, MacMinimumMpduStartSpacing, MacPti, MacRxBlockAckEntryIndex,
-    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow, MacTxPtiCount,
-    MacTxQueueIndex, ModemLowPowerClockDivider, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
+    BluetoothDeviceTableEntryCount, CoexTimerClientValue, CoexTimerClockDividerMinusOne,
+    CoexTimerClockSource, CoexTimerPtiValue, CoexTimerTickInput, MacAssociationId,
+    MacExtraSoftApRxBlockAckEntryIndex, MacHeBssColor, MacHeDefaultPacketExtensionDuration,
+    MacHePacketPaddingDuration, MacItwtClearIndex, MacKeyEntryIndex, MacMinimumMpduStartSpacing,
+    MacPti, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid,
+    MacRxBlockAckWindow, MacTxPtiCount, MacTxQueueIndex, ModemLowPowerClockDivider,
+    PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
 };
 
 pub use ieee802154::mac::{

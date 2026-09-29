@@ -658,6 +658,29 @@ impl PhyTxPowerTrackingState {
     }
 }
 
+/// Number of entries of the Controller-SRAM device table, published in the low byte of DEVICE_TABLE_CONTROL.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothDeviceTableEntryCount(u32);
+
+impl BluetoothDeviceTableEntryCount {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// One four-bit external coexistence priority or grant field image.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ExternalCoexNibble(u32);
@@ -3115,6 +3138,18 @@ pub(crate) fn publish_transmit_gain_data_2(
     crate::svd::full_register_write::publish_transmit_gain_data_2(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `publish_bluetooth_device_table_entry_count` masked transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_device_table_entry_count(
+    registers: &crate::svd::BtmacBlePhyInit,
+    value: BluetoothDeviceTableEntryCount,
+) {
+    crate::svd::masked_register_modify::publish_bluetooth_device_table_entry_count(
+        registers,
+        value.get(),
+    );
+}
+
 /// Typed bridge for the reviewed `set_ftm_enabled_from_vendor_argument` masked transaction.
 #[inline]
 pub(crate) fn set_ftm_enabled_from_vendor_argument(
@@ -3418,10 +3453,10 @@ pub(crate) fn enable_ble_phy_init_control_0400(registers: &crate::svd::BtmacBleP
     crate::svd::field_or_modify::enable_ble_phy_init_control_0400(registers);
 }
 
-/// Typed bridge for the reviewed `set_ble_phy_init_branch_control_0470_bit_18` fixed field-OR transaction.
+/// Typed bridge for the reviewed `set_ble_phy_device_table_control_bit_18` fixed field-OR transaction.
 #[inline]
-pub(crate) fn set_ble_phy_init_branch_control_0470_bit_18(registers: &crate::svd::BtmacBlePhyInit) {
-    crate::svd::field_or_modify::set_ble_phy_init_branch_control_0470_bit_18(registers);
+pub(crate) fn set_ble_phy_device_table_control_bit_18(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::set_ble_phy_device_table_control_bit_18(registers);
 }
 
 /// Typed bridge for the reviewed `enable_ble_scheduler_run_event_source` fixed field-OR transaction.

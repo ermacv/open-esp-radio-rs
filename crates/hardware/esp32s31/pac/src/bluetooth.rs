@@ -6,6 +6,8 @@ mod connection_control;
 
 pub(crate) mod controller;
 
+pub(crate) mod device_table;
+
 pub(crate) mod direction_finding;
 
 pub(crate) mod interrupt;

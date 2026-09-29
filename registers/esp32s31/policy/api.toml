@@ -124,7 +124,6 @@ member = "bluetooth"
 description = "Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle."
 peripherals = [
     "BLE_CONTROLLER_ADDRESS_SLOTS",
-    "BLE_HW_POSITIONAL_WORD_1874",
     "BLE_HW_ACCELERATOR",
     "BLE_HW_CTE_RING_CONTROL",
     "BLE_HW_RESOLVING_LIST",
@@ -314,6 +313,13 @@ name = "Delay117"
 value = 117
 description = "Literal ten-bit TXRX_SWITCH_DELAY image written by ieee802154_txon_delay_set."
 sources = ["BLOB_LIBBTBB_IEEE802154_TXON_DELAY_SET"]
+
+[[bounded-domains]]
+name = "BluetoothDeviceTableEntryCount"
+description = "Number of entries of the Controller-SRAM device table, published in the low byte of DEVICE_TABLE_CONTROL."
+min = 0
+max = 255
+sources = ["BLOB_LIBBLE_DEVICE_TABLE"]
 
 [[bounded-domains]]
 name = "ExternalCoexNibble"
@@ -1546,6 +1552,13 @@ peripheral = "COEX_HW_TIMER"
 register = "SECONDARY_TARGET%s"
 fields = ["SECONDARY_TICK_IMAGE"]
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
+
+[[zero-based-field-writes]]
+name = "publish_bluetooth_device_table_first_entry"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "DEVICE_TABLE_FIRST_ENTRY"
+fields = ["COMPRESSED_ADDRESS"]
+sources = ["BLOB_LIBBLE_DEVICE_TABLE"]
 
 [[zero-based-field-writes]]
 name = "bluetooth_scheduler_finished_list_report"
@@ -3109,6 +3122,17 @@ register = "TX_GAIN_COMPENSATION_AUX"
 sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
 
 [[masked-register-modifies]]
+name = "publish_bluetooth_device_table_entry_count"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "DEVICE_TABLE_CONTROL"
+domain = "BluetoothDeviceTableEntryCount"
+preserve-mask = 0xffffff00
+input-mask = 0x000000ff
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["BLOB_LIBBLE_DEVICE_TABLE"]
+
+[[masked-register-modifies]]
 name = "set_ftm_enabled_from_vendor_argument"
 peripheral = "PHY_AGC_ORACLE"
 register = "FTM_CONTROL"
@@ -3736,9 +3760,9 @@ exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[field-or-modifies]]
-name = "set_ble_phy_init_branch_control_0470_bit_18"
+name = "set_ble_phy_device_table_control_bit_18"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_BRANCH_CONTROL_0470"
+register = "DEVICE_TABLE_CONTROL"
 fields = [{ field = "SET_BY_PHY_INIT_BRANCH_BIT_18", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"

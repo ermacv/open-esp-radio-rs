@@ -18364,17 +18364,44 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_BRANCH_CONTROL_0470</name>
-          <description>Project-assigned name. One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown.</description>
+          <name>DEVICE_TABLE_CONTROL</name>
+          <description>Project-assigned name. Device-table control word. Every device-table change rewrites the entry count in the low byte; one complete BLE PHY initialization branch sets bit 18. Both writers preserve the other bits, whose meaning remains unknown.</description>
           <addressOffset>0x470</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
+              <name>ENTRY_COUNT</name>
+              <description>Project-assigned name. Number of entries of the Controller-SRAM device table the filter accept list and the resolving list share, valid or not; hardware walks this many entries.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
               <name>SET_BY_PHY_INIT_BRANCH_BIT_18</name>
               <description>Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven.</description>
               <bitOffset>18</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>DEVICE_TABLE_FIRST_ENTRY</name>
+          <description>Project-assigned name. Compressed word address of the first device-table entry. Every device-table change writes it completely with zero in bits 20..31.</description>
+          <addressOffset>0x474</addressOffset>
+          <size>0x20</size>
+          <access>write-only</access>
+          <fields>
+            <field>
+              <name>COMPRESSED_ADDRESS</name>
+              <description>Project-assigned name. Controller-SRAM byte address of the first entry shifted right by two, in the twenty-bit compressed link encoding.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -21338,31 +21365,6 @@ random-address use of slot one; slot two remains intentionally unnamed.
                   <maximum>65535</maximum>
                 </range>
               </writeConstraint>
-            </field>
-          </fields>
-        </register>
-      </registers>
-    </peripheral>
-    <peripheral>
-      <name>BLE_HW_POSITIONAL_WORD_1874</name>
-      <description>Narrow positional owner for one word at 0x20101874 written by six complete
-ble_hw.c paths. Neither the destination's hardware action nor the dynamic
-value's inner meaning is claimed.
-</description>
-      <baseAddress>0x20101874</baseAddress>
-      <registers>
-        <register>
-          <name>VALUE</name>
-          <description>Project-assigned name. Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31.</description>
-          <addressOffset>0x0</addressOffset>
-          <size>0x20</size>
-          <access>write-only</access>
-          <fields>
-            <field>
-              <name>DYNAMIC_LOW_20_OPAQUE</name>
-              <description>Opaque: meaning not established. Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established.</description>
-              <bitOffset>0</bitOffset>
-              <bitWidth>20</bitWidth>
             </field>
           </fields>
         </register>

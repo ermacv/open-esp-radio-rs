@@ -40195,15 +40195,16 @@ pub mod btmac_ble_phy_init {
         init_high_half_0458: InitHighHalf0458,
         init_value_045c: InitValue045c,
         _reserved9: [u8; 0x10],
-        init_branch_control_0470: InitBranchControl0470,
-        _reserved10: [u8; 0x2c],
+        device_table_control: DeviceTableControl,
+        device_table_first_entry: DeviceTableFirstEntry,
+        _reserved11: [u8; 0x28],
         init_dynamic_image_04a0: InitDynamicImage04a0,
         init_bytes_04a4: InitBytes04a4,
         init_bytes_04a8: InitBytes04a8,
         connection_abort_control: ConnectionAbortControl,
-        _reserved14: [u8; 0x90],
+        _reserved15: [u8; 0x90],
         init_value_0540: InitValue0540,
-        _reserved15: [u8; 0x08],
+        _reserved16: [u8; 0x08],
         init_low_5_054c: InitLow5_054c,
         init_bytes_0550: InitBytes0550,
         init_bytes_0554: InitBytes0554,
@@ -40256,10 +40257,15 @@ pub mod btmac_ble_phy_init {
         pub const fn init_value_045c(&self) -> &InitValue045c {
             &self.init_value_045c
         }
-        #[doc = "0x470 - Project-assigned name. One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown."]
+        #[doc = "0x470 - Project-assigned name. Device-table control word. Every device-table change rewrites the entry count in the low byte; one complete BLE PHY initialization branch sets bit 18. Both writers preserve the other bits, whose meaning remains unknown."]
         #[inline(always)]
-        pub const fn init_branch_control_0470(&self) -> &InitBranchControl0470 {
-            &self.init_branch_control_0470
+        pub const fn device_table_control(&self) -> &DeviceTableControl {
+            &self.device_table_control
+        }
+        #[doc = "0x474 - Project-assigned name. Compressed word address of the first device-table entry. Every device-table change writes it completely with zero in bits 20..31."]
+        #[inline(always)]
+        pub const fn device_table_first_entry(&self) -> &DeviceTableFirstEntry {
+            &self.device_table_first_entry
         }
         #[doc = "0x4a0 - Project-assigned name. BLE PHY initialization writes a runtime-derived complete image formed from a linked global address. The destination's hardware meaning remains unknown."]
         #[inline(always)]
@@ -40735,21 +40741,29 @@ pub mod btmac_ble_phy_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_BRANCH_CONTROL_0470 (rw) register accessor: Project-assigned name. One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_branch_control_0470::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_branch_control_0470::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_branch_control_0470`] module"]
-    #[doc(alias = "INIT_BRANCH_CONTROL_0470")]
-    pub type InitBranchControl0470 =
-        crate::Reg<init_branch_control_0470::InitBranchControl0470Spec>;
-    #[doc = "Project-assigned name. One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown."]
-    pub mod init_branch_control_0470 {
-        #[doc = "Register `INIT_BRANCH_CONTROL_0470` reader"]
-        pub type R = crate::R<InitBranchControl0470Spec>;
-        #[doc = "Register `INIT_BRANCH_CONTROL_0470` writer"]
-        pub type W = crate::W<InitBranchControl0470Spec>;
+    #[doc = "DEVICE_TABLE_CONTROL (rw) register accessor: Project-assigned name. Device-table control word. Every device-table change rewrites the entry count in the low byte; one complete BLE PHY initialization branch sets bit 18. Both writers preserve the other bits, whose meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`device_table_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`device_table_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@device_table_control`] module"]
+    #[doc(alias = "DEVICE_TABLE_CONTROL")]
+    pub type DeviceTableControl = crate::Reg<device_table_control::DeviceTableControlSpec>;
+    #[doc = "Project-assigned name. Device-table control word. Every device-table change rewrites the entry count in the low byte; one complete BLE PHY initialization branch sets bit 18. Both writers preserve the other bits, whose meaning remains unknown."]
+    pub mod device_table_control {
+        #[doc = "Register `DEVICE_TABLE_CONTROL` reader"]
+        pub type R = crate::R<DeviceTableControlSpec>;
+        #[doc = "Register `DEVICE_TABLE_CONTROL` writer"]
+        pub type W = crate::W<DeviceTableControlSpec>;
+        #[doc = "Field `ENTRY_COUNT` reader - Project-assigned name. Number of entries of the Controller-SRAM device table the filter accept list and the resolving list share, valid or not; hardware walks this many entries."]
+        pub type EntryCountR = crate::FieldReader;
+        #[doc = "Field `ENTRY_COUNT` writer - Project-assigned name. Number of entries of the Controller-SRAM device table the filter accept list and the resolving list share, valid or not; hardware walks this many entries."]
+        pub type EntryCountW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
         #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` reader - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
         pub type SetByPhyInitBranchBit18R = crate::BitReader;
         #[doc = "Field `SET_BY_PHY_INIT_BRANCH_BIT_18` writer - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
         pub type SetByPhyInitBranchBit18W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 0:7 - Project-assigned name. Number of entries of the Controller-SRAM device table the filter accept list and the resolving list share, valid or not; hardware walks this many entries."]
+            #[inline(always)]
+            pub fn entry_count(&self) -> EntryCountR {
+                EntryCountR::new((self.bits & 0xff) as u8)
+            }
             #[doc = "Bit 18 - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
             pub fn set_by_phy_init_branch_bit_18(&self) -> SetByPhyInitBranchBit18R {
@@ -40757,23 +40771,57 @@ pub mod btmac_ble_phy_init {
             }
         }
         impl W {
+            #[doc = "Bits 0:7 - Project-assigned name. Number of entries of the Controller-SRAM device table the filter accept list and the resolving list share, valid or not; hardware walks this many entries."]
+            #[inline(always)]
+            pub fn entry_count(&mut self) -> EntryCountW<'_, DeviceTableControlSpec> {
+                EntryCountW::new(self, 0)
+            }
             #[doc = "Bit 18 - Project-assigned name. The complete BLE PHY initialization body's selected branch sets this positional bit. No independent enable, allowlist, or directed-advertising hardware meaning is proven."]
             #[inline(always)]
             pub fn set_by_phy_init_branch_bit_18(
                 &mut self,
-            ) -> SetByPhyInitBranchBit18W<'_, InitBranchControl0470Spec> {
+            ) -> SetByPhyInitBranchBit18W<'_, DeviceTableControlSpec> {
                 SetByPhyInitBranchBit18W::new(self, 18)
             }
         }
-        #[doc = "Project-assigned name. One complete BLE PHY initialization branch sets bit 18 through a fresh-read RMW. The alternate branch leaves the word unchanged; every other bit and the branch condition's hardware meaning remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_branch_control_0470::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_branch_control_0470::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitBranchControl0470Spec;
-        impl crate::RegisterSpec for InitBranchControl0470Spec {
+        #[doc = "Project-assigned name. Device-table control word. Every device-table change rewrites the entry count in the low byte; one complete BLE PHY initialization branch sets bit 18. Both writers preserve the other bits, whose meaning remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`device_table_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`device_table_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DeviceTableControlSpec;
+        impl crate::RegisterSpec for DeviceTableControlSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_branch_control_0470::R`](R) reader structure"]
-        impl crate::Readable for InitBranchControl0470Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_branch_control_0470::W`](W) writer structure"]
-        impl crate::Writable for InitBranchControl0470Spec {
+        #[doc = "`read()` method returns [`device_table_control::R`](R) reader structure"]
+        impl crate::Readable for DeviceTableControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`device_table_control::W`](W) writer structure"]
+        impl crate::Writable for DeviceTableControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DEVICE_TABLE_FIRST_ENTRY (w) register accessor: Project-assigned name. Compressed word address of the first device-table entry. Every device-table change writes it completely with zero in bits 20..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`device_table_first_entry::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@device_table_first_entry`] module"]
+    #[doc(alias = "DEVICE_TABLE_FIRST_ENTRY")]
+    pub type DeviceTableFirstEntry =
+        crate::Reg<device_table_first_entry::DeviceTableFirstEntrySpec>;
+    #[doc = "Project-assigned name. Compressed word address of the first device-table entry. Every device-table change writes it completely with zero in bits 20..31."]
+    pub mod device_table_first_entry {
+        #[doc = "Register `DEVICE_TABLE_FIRST_ENTRY` writer"]
+        pub type W = crate::W<DeviceTableFirstEntrySpec>;
+        #[doc = "Field `COMPRESSED_ADDRESS` writer - Project-assigned name. Controller-SRAM byte address of the first entry shifted right by two, in the twenty-bit compressed link encoding."]
+        pub type CompressedAddressW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
+        impl W {
+            #[doc = "Bits 0:19 - Project-assigned name. Controller-SRAM byte address of the first entry shifted right by two, in the twenty-bit compressed link encoding."]
+            #[inline(always)]
+            pub fn compressed_address(
+                &mut self,
+            ) -> CompressedAddressW<'_, DeviceTableFirstEntrySpec> {
+                CompressedAddressW::new(self, 0)
+            }
+        }
+        #[doc = "Project-assigned name. Compressed word address of the first device-table entry. Every device-table change writes it completely with zero in bits 20..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`device_table_first_entry::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DeviceTableFirstEntrySpec;
+        impl crate::RegisterSpec for DeviceTableFirstEntrySpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`device_table_first_entry::W`](W) writer structure"]
+        impl crate::Writable for DeviceTableFirstEntrySpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -47385,55 +47433,6 @@ pub mod ble_controller_address_slots {
         }
         #[doc = "`write(|w| ..)` method takes [`slot_high::W`](W) writer structure"]
         impl crate::Writable for SlotHighSpec {
-            type Safety = crate::Unsafe;
-        }
-    }
-}
-#[doc = "Narrow positional owner for one word at 0x20101874 written by six complete ble_hw.c paths. Neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
-pub type BleHwPositionalWord1874 =
-    crate::Periph<ble_hw_positional_word_1874::RegisterBlock, 0x2010_1874>;
-impl core::fmt::Debug for BleHwPositionalWord1874 {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BleHwPositionalWord1874").finish()
-    }
-}
-#[doc = "Narrow positional owner for one word at 0x20101874 written by six complete ble_hw.c paths. Neither the destination's hardware action nor the dynamic value's inner meaning is claimed."]
-pub mod ble_hw_positional_word_1874 {
-    #[repr(C)]
-    #[doc = "Register block"]
-    pub struct RegisterBlock {
-        value: Value,
-    }
-    impl RegisterBlock {
-        #[doc = "0x00 - Project-assigned name. Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31."]
-        #[inline(always)]
-        pub const fn value(&self) -> &Value {
-            &self.value
-        }
-    }
-    #[doc = "VALUE (w) register accessor: Project-assigned name. Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value`] module"]
-    #[doc(alias = "VALUE")]
-    pub type Value = crate::Reg<value::ValueSpec>;
-    #[doc = "Project-assigned name. Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31."]
-    pub mod value {
-        #[doc = "Register `VALUE` writer"]
-        pub type W = crate::W<ValueSpec>;
-        #[doc = "Field `DYNAMIC_LOW_20_OPAQUE` writer - Opaque: meaning not established. Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established."]
-        pub type DynamicLow20OpaqueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        impl W {
-            #[doc = "Bits 0:19 - Opaque: meaning not established. Dynamic low-twenty-bit image. Complete writes clear bits 20..31; no pointer, index, queue or event semantic is established."]
-            #[inline(always)]
-            pub fn dynamic_low_20_opaque(&mut self) -> DynamicLow20OpaqueW<'_, ValueSpec> {
-                DynamicLow20OpaqueW::new(self, 0)
-            }
-        }
-        #[doc = "Project-assigned name. Observed complete publications contain a dynamic value in bits 0..19 and zero in bits 20..31.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct ValueSpec;
-        impl crate::RegisterSpec for ValueSpec {
-            type Ux = u32;
-        }
-        #[doc = "`write(|w| ..)` method takes [`value::W`](W) writer structure"]
-        impl crate::Writable for ValueSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -58752,8 +58751,6 @@ pub struct Peripherals {
     pub ble_hw_positional_word_891c: BleHwPositionalWord891c,
     #[doc = "BLE_CONTROLLER_ADDRESS_SLOTS"]
     pub ble_controller_address_slots: BleControllerAddressSlots,
-    #[doc = "BLE_HW_POSITIONAL_WORD_1874"]
-    pub ble_hw_positional_word_1874: BleHwPositionalWord1874,
     #[doc = "BLE_SYNC_PUBLICATION"]
     pub ble_sync_publication: BleSyncPublication,
     #[doc = "BLE_SCAN_BACKOFF"]
@@ -58907,7 +58904,6 @@ impl Peripherals {
             ble_hw_positional_word_1ff0: unsafe { BleHwPositionalWord1ff0::steal() },
             ble_hw_positional_word_891c: unsafe { BleHwPositionalWord891c::steal() },
             ble_controller_address_slots: unsafe { BleControllerAddressSlots::steal() },
-            ble_hw_positional_word_1874: unsafe { BleHwPositionalWord1874::steal() },
             ble_sync_publication: unsafe { BleSyncPublication::steal() },
             ble_scan_backoff: unsafe { BleScanBackoff::steal() },
             ble_hw_accelerator: unsafe { BleHwAccelerator::steal() },
@@ -59550,7 +59546,6 @@ pub mod peripheral_ownership {
     /// Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle.
     pub struct BluetoothControllerPeripherals {
         pub ble_controller_address_slots: crate::BleControllerAddressSlots,
-        pub ble_hw_positional_word_1874: crate::BleHwPositionalWord1874,
         pub ble_hw_accelerator: crate::BleHwAccelerator,
         pub ble_hw_cte_ring_control: crate::BleHwCteRingControl,
         pub ble_hw_resolving_list: crate::BleHwResolvingList,
@@ -59719,7 +59714,6 @@ pub mod peripheral_ownership {
             ble_hw_positional_word_1ff0,
             ble_hw_positional_word_891c,
             ble_controller_address_slots,
-            ble_hw_positional_word_1874,
             ble_sync_publication,
             ble_scan_backoff,
             ble_hw_accelerator,
@@ -59835,7 +59829,6 @@ pub mod peripheral_ownership {
             },
             bluetooth: BluetoothControllerPeripherals {
                 ble_controller_address_slots,
-                ble_hw_positional_word_1874,
                 ble_hw_accelerator,
                 ble_hw_cte_ring_control,
                 ble_hw_resolving_list,
@@ -63577,6 +63570,22 @@ pub mod zero_based_field_write {
         }
     }
 
+    /// Write `COMPRESSED_ADDRESS` in `BTMAC_BLE_PHY_INIT`.`DEVICE_TABLE_FIRST_ENTRY` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_bluetooth_device_table_first_entry(
+        registers: &crate::BtmacBlePhyInit,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .device_table_first_entry()
+                .write_with_zero(|writer| writer.compressed_address().set(value));
+        }
+    }
+
     /// Write `FINISHED_LIST_MASK` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_FINISHED_LIST_REPORT` while publishing zero to every other register bit.
     #[inline]
     pub fn bluetooth_scheduler_finished_list_report(
@@ -65376,6 +65385,20 @@ pub mod zero_register_write {
 /// Safe, SVD-declared masked read-modify-write transactions.
 pub mod masked_register_modify {
 
+    /// Preserve mask 0xffffff00, accept input mask 0x000000ff, and set 0x00000000 in BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL.
+    #[inline]
+    pub fn publish_bluetooth_device_table_entry_count(
+        registers: &crate::BtmacBlePhyInit,
+        input: u32,
+    ) {
+        registers.device_table_control().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffffff00) | (input & 0x000000ff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
     /// Preserve mask 0xfffffffe, accept input mask 0x00000001, and set 0x00000000 in PHY_AGC_ORACLE.FTM_CONTROL.
     #[inline]
     pub fn set_ftm_enabled_from_vendor_argument(registers: &crate::PhyAgcOracle, input: u32) {
@@ -65853,19 +65876,17 @@ pub mod field_or_modify {
         });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields `[SET_BY_PHY_INIT_BRANCH_BIT_18]` while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL fields `[SET_BY_PHY_INIT_BRANCH_BIT_18]` while preserving the fresh register observation.
     #[inline]
-    pub fn set_ble_phy_init_branch_control_0470_bit_18(registers: &crate::BtmacBlePhyInit) {
-        registers
-            .init_branch_control_0470()
-            .modify(|reader, writer| {
-                let input = 0x00000001_u32;
-                // SAFETY: generator validation proves every logical input projection
-                // fits its named SVD field; no whole-register image crosses this API.
-                writer
-                    .set_by_phy_init_branch_bit_18()
-                    .bit(reader.set_by_phy_init_branch_bit_18().bit() || (input & 0x00000001) != 0)
-            });
+    pub fn set_ble_phy_device_table_control_bit_18(registers: &crate::BtmacBlePhyInit) {
+        registers.device_table_control().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .set_by_phy_init_branch_bit_18()
+                .bit(reader.set_by_phy_init_branch_bit_18().bit() || (input & 0x00000001) != 0)
+        });
     }
 
     /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields `[SCHEDULER_RUN]` while preserving the fresh register observation.

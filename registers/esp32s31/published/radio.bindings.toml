@@ -5181,12 +5181,19 @@ access = "read-write"
 address = 537925744
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470"
+identity = "BTMAC_BLE_PHY_INIT.DEVICE_TABLE_CONTROL"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_branch_control_0470"
+register-method = "device_table_control"
+
+[[registers.fields]]
+svd-name = "ENTRY_COUNT"
+method = "entry_count"
+bit-offset = 0
+bit-width = 8
+access = "read-write"
 
 [[registers.fields]]
 svd-name = "SET_BY_PHY_INIT_BRANCH_BIT_18"
@@ -5199,16 +5206,16 @@ access = "read-write"
 address = 537925748
 width = 32
 access = "write-only"
-identity = "BLE_HW_POSITIONAL_WORD_1874.VALUE"
-peripheral = "BLE_HW_POSITIONAL_WORD_1874"
-peripheral-type = "BleHwPositionalWord1874"
-peripheral-module = "ble_hw_positional_word_1874"
+identity = "BTMAC_BLE_PHY_INIT.DEVICE_TABLE_FIRST_ENTRY"
+peripheral = "BTMAC_BLE_PHY_INIT"
+peripheral-type = "BtmacBlePhyInit"
+peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "value"
+register-method = "device_table_first_entry"
 
 [[registers.fields]]
-svd-name = "DYNAMIC_LOW_20_OPAQUE"
-method = "dynamic_low_20_opaque"
+svd-name = "COMPRESSED_ADDRESS"
+method = "compressed_address"
 bit-offset = 0
 bit-width = 20
 access = "write-only"

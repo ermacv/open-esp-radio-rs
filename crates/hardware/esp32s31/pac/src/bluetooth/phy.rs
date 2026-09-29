@@ -367,7 +367,7 @@ impl BluetoothTaskRegisters {
         crate::generated::publish_ble_phy_init_low_5_054c(btmac);
 
         if inputs.set_branch_control_0470_bit_18 {
-            crate::generated::set_ble_phy_init_branch_control_0470_bit_18(btmac);
+            crate::generated::set_ble_phy_device_table_control_bit_18(btmac);
         }
         crate::svd::fixed_register_image::publish_ble_positional_word_891c_image_40(
             &bluetooth.ble_hw_positional_word_891c,

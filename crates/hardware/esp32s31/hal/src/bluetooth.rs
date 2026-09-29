@@ -55,7 +55,8 @@ pub use shutdown::{BluetoothControllerReset, BluetoothShutdownError, BluetoothSh
 pub use oer_esp32s31_pac::{
     BlePhyEtmRouteDisabled, BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
     BluetoothControllerOutputReleaseError, BluetoothControllerSramAddress,
-    BluetoothControllerSramAddressError, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
+    BluetoothControllerSramAddressError, BluetoothControllerTimeScale,
+    BluetoothDeviceTableEntryCount, BluetoothDeviceTablePublished, BluetoothHalInitPeriod,
     BluetoothHalInitScale, BluetoothLowPowerClockObservation,
     BluetoothLowPowerRuntimeControlObservation, BluetoothMemoryListPointerImage,
     BluetoothMemoryListSelector, BluetoothMemoryListSlot, BluetoothModemLpTimerCompareDisposition,
@@ -1521,6 +1522,30 @@ impl ControllerHal<'_> {
         // SAFETY: forwarded unchanged from this function's `# Safety` contract,
         // which states the PAC transaction's prerequisites.
         unsafe { self.registers.publish_scan_start() }
+    }
+
+    /// Publish the device table hardware filters advertising against: its
+    /// entry count, then the address of its first entry.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain `count` initialized, pinned entries from
+    /// `first_entry` and an exclusive powered controller epoch, and must
+    /// serialize this publication with every role that filters against the
+    /// table.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains table lifetime and controller-lifecycle prerequisites"
+    )]
+    pub unsafe fn publish_device_table(
+        &mut self,
+        first_entry: BluetoothControllerSramAddress,
+        count: BluetoothDeviceTableEntryCount,
+    ) -> BluetoothDeviceTablePublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
+        unsafe { self.registers.publish_device_table(first_entry, count) }
     }
 
     /// Disable the BLE PHY ETM route for one Direct Test Mode event without

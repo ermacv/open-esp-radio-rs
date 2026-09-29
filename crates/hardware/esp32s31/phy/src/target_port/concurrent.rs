@@ -807,6 +807,44 @@ pub fn diag_republish_bluetooth_tx_gain(lease: &mut SharedRadioLease<'_, Concurr
     true
 }
 
+/// DIAGNOSTIC #38 (not for merge): write RF frequency-memory records 25, 27
+/// and 62 (2425/2427/2462 MHz) and the frequency-channel partition registers
+/// (image indices 0..=4: FREQUENCY_CONTROL, FREQUENCY_MEMORY_READ_CONTROL,
+/// FREQUENCY_PARAMETER_1_STATUS, I2C_NUMBER_CONTROL,
+/// FREQUENCY_MEMORY_READ_RESULT). Word 0 of a record is
+/// cap[7:0] | cap_high_i2c << 8 | sdm_low_i2c << 16, word 1 the three upper
+/// SDM bytes (lower-middle, upper-middle, most significant).
+pub fn diag_frequency_report(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    out: &mut impl core::fmt::Write,
+) {
+    let _ = out.write_str("diag38 freq regs");
+    for index in 0..=4 {
+        let _ = write!(out, " {:08x}", lease.phy_register_image(index).unwrap_or(0));
+    }
+    let _ = out.write_str("\n");
+    let (mut registers, _) = lease.phy_hal_with_attachment();
+    for entry in [25_u8, 27, 62] {
+        let mut words = [0_u32; 3];
+        for (word_index, word) in words.iter_mut().enumerate() {
+            let (address, mode) =
+                crate::analog::frequency::diag_rf_record_word_address(entry, word_index as u8);
+            *word = oer_esp32s31_hal::phy::frequency::read_memory(&mut registers, address, mode);
+        }
+        let cap = (words[0] & 0xff) | (((words[0] >> 14) & 1) << 8);
+        let _ = write!(
+            out,
+            "diag38 freq mem {} ({} MHz) {:06x} {:06x} {:06x} cap {:03x}\n",
+            entry,
+            2400 + u32::from(entry),
+            words[0],
+            words[1],
+            words[2],
+            cap,
+        );
+    }
+}
+
 /// DIAGNOSTIC #38 (not for merge): write the tracking and BT/15.4 gain
 /// inputs of the registered state.
 pub fn diag_tracking_report(

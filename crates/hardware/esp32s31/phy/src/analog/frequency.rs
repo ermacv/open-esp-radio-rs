@@ -44,6 +44,20 @@ const PHY_FREQUENCY_MEMORY_WORD_STRIDE: u16 = 3;
 const PHY_FREQUENCY_MEMORY_MODE: u8 = 7;
 const CAP_INTERPOLATION_DIVISOR: i32 = 64;
 
+/// DIAGNOSTIC #38 (not for merge): frequency-memory address and read mode of
+/// word `word_index` of RF record `entry_index`.
+pub(crate) const fn diag_rf_record_word_address(entry_index: u8, word_index: u8) -> (u16, u8) {
+    (
+        phy_get_freq_mem_addr(
+            PHY_RF_FREQUENCY_MEMORY_BASE as u32,
+            PHY_FREQUENCY_MEMORY_ENTRY_STRIDE as u32,
+            entry_index as u32,
+            word_index as u32 * PHY_FREQUENCY_MEMORY_WORD_STRIDE as u32,
+        ),
+        PHY_RF_FREQUENCY_MEMORY_READ_MODE,
+    )
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyFrequencyTableParameters {
     /// Explicit replacement for `phy_param[0x4f]`.

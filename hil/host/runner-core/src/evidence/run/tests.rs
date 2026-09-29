@@ -695,6 +695,11 @@ fn provenance_records_the_network_implementation_and_its_feature() {
             network,
             None,
             &crate::image::FeatureDelta::default(),
+            (
+                "esp32s31",
+                crate::image::TARGET,
+                oer_chip_profile::Boot::Staged,
+            ),
         ),
         "00".repeat(32),
         vec![],
@@ -724,16 +729,20 @@ fn test_artifacts(
     lock: &Path,
 ) -> crate::image::Artifacts {
     crate::image::Artifacts {
+        chip: String::from("esp32s31"),
+        rust_target: String::from(crate::image::TARGET),
         layout_seed: None,
         features: crate::image::FeatureDelta::default(),
         network: crate::image::Integration::OwnedXarxa,
         output: application.parent().unwrap().to_path_buf(),
         runtime_elf: runtime_elf.to_path_buf(),
-        runtime_bin: runtime_bin.to_path_buf(),
-        bootstrap_elf: bootstrap_elf.to_path_buf(),
         effective_embedded_lock: lock.to_path_buf(),
-        effective_bootstrap_lock: lock.to_path_buf(),
         application_image: application.to_path_buf(),
+        boot: crate::image::BootArtifacts::Staged {
+            runtime_bin: runtime_bin.to_path_buf(),
+            bootstrap_elf: bootstrap_elf.to_path_buf(),
+            effective_bootstrap_lock: lock.to_path_buf(),
+        },
         source_inputs: None,
         environment: crate::evidence::build::BuildEnvironment::synthetic(),
     }

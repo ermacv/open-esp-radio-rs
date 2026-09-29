@@ -169,6 +169,12 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .env(oer_hil_arbiter::control::OPENOCD_ENV, program)
             .env(oer_hil_arbiter::control::OPENOCD_SCRIPTS_ENV, scripts);
     }
+    // An ESP-IDF application is flashed with its chip's catalog bootloader,
+    // which only this wrapper builds; the runner asks it back.
+    command.env(
+        oer_hil_runner_core::image::XTASK_ENV,
+        std::env::current_exe()?,
+    );
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         &mut command,
         std::time::Duration::from_secs(300),
@@ -180,13 +186,22 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         forward_run_receipt(&run_ids)?;
-        let store = crate::hil_store::shared_runs(HIL_TARGET)?;
+        // A run lies in the store of the chip it ran on.
+        let stores = oer_chip_profile::supported(&ctx.root)?
+            .iter()
+            .map(|chip| crate::hil_store::shared_runs(chip))
+            .collect::<Result<Vec<_>>>()?;
         if let Some(job) = job.as_mut() {
             job.finish(
                 &run_ids,
                 &run_ids
                     .iter()
-                    .map(|id| crate::hil_runs::load(&store.join(id)).and_then(|run| run.outcome))
+                    .map(|id| {
+                        stores
+                            .iter()
+                            .find_map(|store| crate::hil_runs::load(&store.join(id)))
+                            .and_then(|run| run.outcome)
+                    })
                     .collect::<Vec<_>>(),
             )?;
         }
@@ -1185,6 +1200,12 @@ fn firmware(
         FirmwareCli::Build { image } => {
             crate::firmware_catalog::build(ctx, &image)?;
         }
+        FirmwareCli::Bootloader { chip } => {
+            println!(
+                "{}",
+                crate::firmware_catalog::bootloader_build(ctx, &chip)?.display()
+            );
+        }
         FirmwareCli::Flash {
             image,
             board,
@@ -1924,6 +1945,9 @@ enum FirmwareCli {
     List,
     /// Build an image against the pinned ESP-IDF.
     Build { image: String },
+    /// Build a chip's project bootloader and print its ESP-IDF build
+    /// directory; the runner asks for it to flash an ESP-IDF application.
+    Bootloader { chip: String },
     /// Build an image, then flash it to a board under a lease of that
     /// board and journal it.
     Flash {

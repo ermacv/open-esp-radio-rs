@@ -1,0 +1,9 @@
+schema = 5
+id = "esp32c5-boot-smoke"
+description = "ESP-IDF bootloader, esp-hal initialization, the esp-rtos scheduler and one Embassy timer wake on the esp32c5"
+transfer = "identical-image"
+tags = ["smoke"]
+targets = ["esp32c5"]
+
+[system]
+kind = "boot-smoke"

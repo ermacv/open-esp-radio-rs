@@ -34,10 +34,15 @@ fn build_inputs(root: &Path) -> Artifacts {
         network: Integration::OwnedXarxa,
         output: root.join("build"),
         runtime_elf: root.join("build/runtime.elf"),
-        runtime_bin: root.join("build/runtime.bin"),
-        bootstrap_elf: root.join("build/bootstrap.elf"),
+
         effective_embedded_lock: root.join("hil/targets/esp32s31/Cargo.lock"),
-        effective_bootstrap_lock: root.join("platform/esp32s31/Cargo.lock"),
+        boot: hil_core::image::BootArtifacts::Staged {
+            runtime_bin: root.join("build/runtime.bin"),
+            bootstrap_elf: root.join("build/bootstrap.elf"),
+            effective_bootstrap_lock: root.join("platform/esp32s31/Cargo.lock"),
+        },
+        chip: String::from("esp32s31"),
+        rust_target: String::from(hil_core::image::TARGET),
         application_image: root.join("build/application.bin"),
         source_inputs: None,
         environment: hil_core::evidence::build::BuildEnvironment::synthetic(),

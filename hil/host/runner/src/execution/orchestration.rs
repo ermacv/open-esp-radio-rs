@@ -277,16 +277,40 @@ pub(crate) fn select_target(selected: &[&Scenario], requested: Option<&str>) -> 
         .ok_or_else(|| "the selected scenarios share no target chip; run them separately".into())
 }
 
-/// Refuse a chip the runner cannot build and flash images for yet.
-pub(crate) fn require_image_pipeline(chip: &str) -> Result<()> {
+/// Refuse a chip the runner cannot build and flash the selected images for:
+/// besides the staged esp32s31, a chip the ESP-IDF bootloader starts whose
+/// profile names its flash layout and whose HIL target builds every
+/// selected image class.
+pub(crate) fn require_image_pipeline(
+    root: &Path,
+    chip: &str,
+    selected: &[&Scenario],
+) -> Result<()> {
     if chip == hil_core::lab::config::DEFAULT_TARGET {
         return Ok(());
     }
-    Err(format!(
-        "the runner builds and flashes HIL images only for {} so far; {chip} needs its HIL target (hil/targets/{chip}) and image pipeline",
-        hil_core::lab::config::DEFAULT_TARGET
-    )
-    .into())
+    let profile = hil_core::image::chip_profile(chip)?;
+    if profile.boot != hil_core::evidence::run::Boot::EspIdfBootloader
+        || profile.flash.is_none()
+        || !root.join("hil/targets").join(chip).is_dir()
+    {
+        return Err(format!(
+            "the runner builds and flashes HIL images for {} and ESP-IDF bootloader chips with a              flash layout and a HIL target; {chip} has no such pipeline",
+            hil_core::lab::config::DEFAULT_TARGET
+        )
+        .into());
+    }
+    for scenario in selected {
+        if !hil_core::image::esp_idf::serves(root, chip, scenario.image())? {
+            return Err(format!(
+                "hil/targets/{chip} builds no `{}` image, which `{}` needs",
+                scenario.image().id(),
+                scenario.id()
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 /// Tag of scenarios that measure the radio environment and transmit without

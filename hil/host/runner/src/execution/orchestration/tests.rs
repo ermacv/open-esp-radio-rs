@@ -519,6 +519,11 @@ fn a_run_takes_the_chip_its_scenarios_share_and_refuses_others() {
         "no shared chip"
     );
     assert!(select_target(&[first], Some("esp32c5")).is_err());
-    assert!(require_image_pipeline("esp32s31").is_ok());
-    assert!(require_image_pipeline("esp32c5").is_err());
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    assert!(require_image_pipeline(&root, "esp32s31", &[first]).is_ok());
+    // The esp32c5's target builds the boot-smoke image only.
+    let error = require_image_pipeline(&root, "esp32c5", &[&esp32c5])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("builds no"), "{error}");
 }

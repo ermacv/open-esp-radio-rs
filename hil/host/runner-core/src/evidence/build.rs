@@ -190,6 +190,7 @@ pub(super) struct BuildProvenance {
     pub(super) reproducibility: BuildReproducibility,
 }
 
+#[derive(Clone)]
 pub(super) struct ArchivedFile {
     pub(super) size_bytes: u64,
     pub(super) sha256: String,
@@ -584,6 +585,8 @@ pub(super) fn create_provenance(
         crate::image::Integration,
         crate::image::LayoutSeed,
         &crate::image::FeatureDelta,
+        // The chip, its Rust target and how it boots.
+        (&str, &str, oer_chip_profile::Boot),
     ),
     build_id: String,
     sources: Vec<SourceMaterial>,
@@ -591,21 +594,42 @@ pub(super) fn create_provenance(
     effective_locks: Vec<BuildFileMaterial>,
     environment: BuildEnvironment,
 ) -> Result<BuildProvenance> {
-    let (image, network, layout_seed, features) = selection;
-    let mut files = [
-        ("workspace-lock", "Cargo.lock"),
-        ("embedded-workspace", "hil/targets/esp32s31/Cargo.toml"),
-        ("stack-policy", "hil/targets/esp32s31/stack.toml"),
-        // The HIL stack policy extends the production one.
-        ("stack-policy-base", "platform/esp32s31/stack.toml"),
-        (
-            "partition-table",
-            "platform/esp32s31/partitions/applications.csv",
-        ),
-    ]
-    .into_iter()
-    .map(|(name, path)| build_file_material(root, name, Path::new(path)))
-    .collect::<Result<Vec<_>>>()?;
+    let (image, network, layout_seed, features, (chip, rust_target, boot)) = selection;
+    let files = match boot {
+        oer_chip_profile::Boot::Staged => vec![
+            ("workspace-lock", String::from("Cargo.lock")),
+            (
+                "embedded-workspace",
+                String::from("hil/targets/esp32s31/Cargo.toml"),
+            ),
+            (
+                "stack-policy",
+                String::from("hil/targets/esp32s31/stack.toml"),
+            ),
+            // The HIL stack policy extends the production one.
+            (
+                "stack-policy-base",
+                String::from("platform/esp32s31/stack.toml"),
+            ),
+            (
+                "partition-table",
+                String::from("platform/esp32s31/partitions/applications.csv"),
+            ),
+        ],
+        // The chip profile fixes the flash layout the image is written with.
+        oer_chip_profile::Boot::EspIdfBootloader => vec![
+            ("workspace-lock", String::from("Cargo.lock")),
+            (
+                "embedded-workspace",
+                format!("hil/targets/{chip}/Cargo.toml"),
+            ),
+            ("chip-profile", format!("platform/{chip}/chip.toml")),
+        ],
+    };
+    let mut files = files
+        .into_iter()
+        .map(|(name, path)| build_file_material(root, name, Path::new(&path)))
+        .collect::<Result<Vec<_>>>()?;
     files.extend(effective_locks);
     files.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(BuildProvenance {
@@ -614,10 +638,16 @@ pub(super) fn create_provenance(
         build_type: String::from("open-esp-radio-hil-firmware/v1"),
         parameters: BuildParameters {
             image,
-            network: Some(network.id().to_owned()),
+            // An ESP-IDF application has no network integration.
+            network: (boot == oer_chip_profile::Boot::Staged).then(|| network.id().to_owned()),
             runtime_profile: image.runtime_profile().to_owned(),
-            target: crate::image::TARGET.to_owned(),
-            runtime_features: features.apply(&image.build_features(network)),
+            target: rust_target.to_owned(),
+            runtime_features: match boot {
+                oer_chip_profile::Boot::Staged => features.apply(&image.build_features(network)),
+                oer_chip_profile::Boot::EspIdfBootloader => {
+                    features.apply(image.runtime_features())
+                }
+            },
             layout_seed,
             features: features.clone(),
         },

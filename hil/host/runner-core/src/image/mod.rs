@@ -21,6 +21,8 @@ pub use oer_esp32s31_firmware::network::Integration;
 mod features;
 pub use features::FeatureDelta;
 mod class;
+pub mod esp_idf;
+pub use esp_idf::XTASK_ENV;
 pub mod snapshot;
 pub mod source_inputs;
 pub mod stack;
@@ -351,13 +353,21 @@ struct ArtifactReport<'a> {
     network: &'a str,
     profile: &'a str,
     runtime_elf: String,
-    runtime_bin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_bin: Option<String>,
     runtime_stack_report: String,
     placement_report: String,
-    bootstrap_elf: String,
-    bootstrap_stack_report: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bootstrap_elf: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bootstrap_stack_report: Option<String>,
     effective_embedded_lock: String,
-    effective_bootstrap_lock: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effective_bootstrap_lock: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bootloader: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partition_table: Option<String>,
     application_image: String,
     application_sha256: String,
     stack_frame_audit: &'a str,
@@ -373,6 +383,11 @@ pub fn print_artifacts(
     artifacts: &Artifacts,
     flashed: bool,
 ) -> Result<()> {
+    let staged = artifacts.staged();
+    let esp_idf = match &artifacts.boot {
+        BootArtifacts::EspIdf(boot) => Some(boot),
+        BootArtifacts::Staged { .. } => None,
+    };
     let report = ArtifactReport {
         schema: ARTIFACT_REPORT_SCHEMA,
         image_class: class.id(),
@@ -380,21 +395,25 @@ pub fn print_artifacts(
         network: artifacts.network.id(),
         profile: class.runtime_profile(),
         runtime_elf: artifacts.runtime_elf.display().to_string(),
-        runtime_bin: artifacts.runtime_bin.display().to_string(),
+        runtime_bin: staged.map(|(runtime_bin, ..)| runtime_bin.display().to_string()),
         runtime_stack_report: artifacts
             .output
             .join("runtime-stack.txt")
             .display()
             .to_string(),
         placement_report: artifacts.output.join("placement.txt").display().to_string(),
-        bootstrap_elf: artifacts.bootstrap_elf.display().to_string(),
-        bootstrap_stack_report: artifacts
-            .output
-            .join("bootstrap-stack.txt")
-            .display()
-            .to_string(),
+        bootstrap_elf: staged.map(|(_, bootstrap_elf, _)| bootstrap_elf.display().to_string()),
+        bootstrap_stack_report: staged.map(|_| {
+            artifacts
+                .output
+                .join("bootstrap-stack.txt")
+                .display()
+                .to_string()
+        }),
         effective_embedded_lock: artifacts.effective_embedded_lock.display().to_string(),
-        effective_bootstrap_lock: artifacts.effective_bootstrap_lock.display().to_string(),
+        effective_bootstrap_lock: staged.map(|(.., lock)| lock.display().to_string()),
+        bootloader: esp_idf.map(|boot| boot.bootloader.display().to_string()),
+        partition_table: esp_idf.map(|boot| boot.partition_table.display().to_string()),
         application_image: artifacts.application_image.display().to_string(),
         application_sha256: sha256_file(&artifacts.application_image)?,
         stack_frame_audit: "PASS",
@@ -415,14 +434,16 @@ fn sha256_file(path: &Path) -> Result<String> {
 
 #[derive(Clone)]
 pub struct Artifacts {
+    /// The chip the image runs on and its Rust target triple.
+    pub chip: String,
+    pub rust_target: String,
     pub network: Integration,
     pub output: PathBuf,
     pub runtime_elf: PathBuf,
-    pub runtime_bin: PathBuf,
-    pub bootstrap_elf: PathBuf,
     pub effective_embedded_lock: PathBuf,
-    pub effective_bootstrap_lock: PathBuf,
     pub application_image: PathBuf,
+    /// What the chip's boot flow adds to the application.
+    pub boot: BootArtifacts,
     /// `source-inputs.json`: the repository files the image was built from.
     pub source_inputs: Option<PathBuf>,
     /// Host tools that produced this build, recorded in its provenance.
@@ -432,6 +453,50 @@ pub struct Artifacts {
     pub layout_seed: Option<NonZeroU32>,
     /// Runtime features added to or removed from the class's own.
     pub features: FeatureDelta,
+}
+
+/// The profile of `chip` in the repository this runner was built from.
+pub fn chip_profile(chip: &str) -> Result<oer_chip_profile::Profile> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    oer_chip_profile::Profile::load(&root, chip).map_err(|error| error.to_string().into())
+}
+
+/// The files an image's boot flow writes or needs besides the application.
+#[derive(Clone, Debug)]
+pub enum BootArtifacts {
+    /// The ROM loads the platform bootstrap, which stages the packed runtime.
+    Staged {
+        runtime_bin: PathBuf,
+        bootstrap_elf: PathBuf,
+        effective_bootstrap_lock: PathBuf,
+    },
+    /// The chip's catalog ESP-IDF bootloader loads the application from its
+    /// partition.
+    EspIdf(EspIdfBoot),
+}
+
+/// An ESP-IDF application's bootloader, partition table and flash layout.
+#[derive(Clone, Debug)]
+pub struct EspIdfBoot {
+    /// The chip as `espflash` names it.
+    pub espflash_chip: String,
+    pub bootloader: PathBuf,
+    pub partition_table: PathBuf,
+    pub flash: oer_chip_profile::FlashLayout,
+}
+
+impl Artifacts {
+    /// The staged boot files, for code that exists only for staged images.
+    pub fn staged(&self) -> Option<(&Path, &Path, &Path)> {
+        match &self.boot {
+            BootArtifacts::Staged {
+                runtime_bin,
+                bootstrap_elf,
+                effective_bootstrap_lock,
+            } => Some((runtime_bin, bootstrap_elf, effective_bootstrap_lock)),
+            BootArtifacts::EspIdf(_) => None,
+        }
+    }
 }
 
 /// The seed of a runtime image's link order: `None` keeps the linker's
@@ -774,14 +839,18 @@ fn build_resolved(
     eprintln!("stack_frame_audit=PASS");
     eprintln!("autonomous_source_graph=PASS");
     Ok(Artifacts {
+        chip: String::from("esp32s31"),
+        rust_target: String::from(TARGET),
         network,
         output,
         runtime_elf,
-        runtime_bin,
-        bootstrap_elf,
         effective_embedded_lock,
-        effective_bootstrap_lock,
         application_image,
+        boot: BootArtifacts::Staged {
+            runtime_bin,
+            bootstrap_elf,
+            effective_bootstrap_lock,
+        },
         source_inputs: Some(source_inputs),
         environment: crate::evidence::build::BuildEnvironment::capture(),
         layout_seed,

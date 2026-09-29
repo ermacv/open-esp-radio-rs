@@ -4,7 +4,7 @@ use std::{fs, path::Path, process::Command};
 
 use crate::{
     Result,
-    image::{Artifacts, program_from_env, run_command},
+    image::{Artifacts, BootArtifacts, program_from_env, run_command},
 };
 
 use oer_esp32s31_firmware::flash::{
@@ -13,13 +13,95 @@ use oer_esp32s31_firmware::flash::{
 };
 
 pub fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
-    flash_application(
-        root,
-        &artifacts.application_image,
-        Some(&artifacts.bootstrap_elf),
-        &artifacts.output,
-        port,
-    )
+    match &artifacts.boot {
+        BootArtifacts::Staged { bootstrap_elf, .. } => flash_application(
+            root,
+            &artifacts.application_image,
+            Some(bootstrap_elf),
+            &artifacts.output,
+            port,
+        ),
+        BootArtifacts::EspIdf(boot) => flash_esp_idf_application(
+            &boot.espflash_chip,
+            boot.flash,
+            [
+                &boot.bootloader,
+                &boot.partition_table,
+                &artifacts.application_image,
+            ],
+            &artifacts.output,
+            port,
+        ),
+    }
+}
+
+/// Write an ESP-IDF application with its bootloader and partition table at
+/// the chip profile's offsets, then start it; `work` receives the written
+/// flash image.
+///
+/// The three regions are merged into one image from the bootloader's offset,
+/// the gaps erased (`0xff`), and written by one `espflash write-bin` that
+/// resets the chip through its USB Serial/JTAG. That write ends in the ROM
+/// bootloader, since the stub's own reset can leave an esp32c5 in download
+/// mode; a power-on reset through the board's EN path starts the application
+/// (see [`crate::session::reset::power_on_reset`]), an RTS reset one without.
+pub fn flash_esp_idf_application(
+    espflash_chip: &str,
+    flash: oer_chip_profile::FlashLayout,
+    [bootloader, partition_table, application]: [&Path; 3],
+    work: &Path,
+    port: &Path,
+) -> Result<()> {
+    let image = merged_image(
+        flash,
+        [
+            &fs::read(bootloader)?,
+            &fs::read(partition_table)?,
+            &fs::read(application)?,
+        ],
+    )?;
+    fs::create_dir_all(work)?;
+    let merged = work.join("flash-image.bin");
+    fs::write(&merged, image)?;
+    let mut write = Command::new(program_from_env("ESPFLASH", "espflash"));
+    write
+        .args(["write-bin", "--non-interactive", "--chip", espflash_chip])
+        .args(["--before", "usb-reset", "--after", "no-reset", "--port"])
+        .arg(port)
+        .arg(format!("{:#x}", flash.bootloader))
+        .arg(&merged);
+    run_command(&mut write, "write the HIL image")?;
+    if !crate::session::reset::power_on_reset(port)? {
+        drop(crate::session::reset::reset_into_application(port)?);
+    }
+    Ok(())
+}
+
+/// The flash contents from the bootloader's offset to the application's end:
+/// each region at its offset, erased flash (`0xff`) between them.
+fn merged_image(
+    flash: oer_chip_profile::FlashLayout,
+    [bootloader, partition_table, application]: [&[u8]; 3],
+) -> Result<Vec<u8>> {
+    let regions = [
+        (flash.bootloader, bootloader, "bootloader"),
+        (flash.partition_table, partition_table, "partition table"),
+        (flash.application, application, "application"),
+    ];
+    let start = flash.bootloader as usize;
+    let end = flash.application as usize + application.len();
+    let mut image = vec![0xff; end - start];
+    for (index, (offset, data, name)) in regions.iter().enumerate() {
+        let from = *offset as usize - start;
+        let limit = regions
+            .get(index + 1)
+            .map_or(end, |(next, ..)| *next as usize);
+        if *offset as usize + data.len() > limit {
+            return Err(format!("the {name} overlaps the next flash region").into());
+        }
+        image[from..from + data.len()].copy_from_slice(data);
+    }
+    Ok(image)
 }
 
 pub fn flash_archived(
@@ -29,6 +111,7 @@ pub fn flash_archived(
 ) -> Result<()> {
     flash_replayed(
         root,
+        &firmware.target,
         &firmware.application_path,
         &firmware.run_id,
         firmware.image,
@@ -38,11 +121,36 @@ pub fn flash_archived(
 
 pub fn flash_replayed(
     root: &Path,
+    chip: &str,
     application: &Path,
     run_id: &str,
     image: crate::image::ImageClass,
     port: &Path,
 ) -> Result<()> {
+    let profile = crate::image::chip_profile(chip)?;
+    if profile.boot == oer_chip_profile::Boot::EspIdfBootloader {
+        // A replay imports the bootloader and partition table beside the
+        // application.
+        let flash = profile
+            .flash
+            .ok_or_else(|| format!("platform/{chip}/chip.toml names no flash layout"))?;
+        return flash_esp_idf_application(
+            &profile.espflash_chip,
+            flash,
+            [
+                &application.with_file_name("bootloader.bin"),
+                &application.with_file_name("partition-table.bin"),
+                application,
+            ],
+            &root
+                .join("target/hil")
+                .join(chip)
+                .join("replay")
+                .join(run_id)
+                .join(image.id()),
+            port,
+        );
+    }
     let output = root
         .join("target/hil/esp32s31/replay")
         .join(run_id)
@@ -127,4 +235,26 @@ pub fn flash_application(
     });
     oer_esp32s31_firmware::flash::write_segments(port, &segments, AfterFlash::HardReset)
         .map_err(|error| format!("flash the HIL image through {}: {error}", port.display()).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_merged_image_places_each_region_at_its_offset_over_erased_flash() {
+        let flash = oer_chip_profile::FlashLayout {
+            bootloader: 0x2000,
+            partition_table: 0x8000,
+            application: 0x10000,
+        };
+        let image = merged_image(flash, [&[1, 2], &[3], &[4, 5, 6]]).unwrap();
+        assert_eq!(image.len(), 0x10000 - 0x2000 + 3);
+        assert_eq!(&image[..3], &[1, 2, 0xff]);
+        assert_eq!(image[0x6000], 3);
+        assert_eq!(&image[0xe000..], &[4, 5, 6]);
+        assert!(image[0x6001..0xe000].iter().all(|byte| *byte == 0xff));
+        let oversized = vec![0; 0x7000];
+        assert!(merged_image(flash, [&oversized, &[3], &[4]]).is_err());
+    }
 }

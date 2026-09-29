@@ -11,17 +11,13 @@ The only image so far is `boot-smoke`: it reports `OPEN_RADIO_HIL hal=INIT`
 after esp-hal initialization, `OPEN_RADIO_HIL embassy=START` once the
 scheduler runs, and `OPEN_RADIO_HIL boot-smoke=PASS timer=PASS` after one
 timer wake, on the USB Serial/JTAG console. It does not speak the HIL wire
-protocol, and the runner does not build or run esp32c5 images yet; build and
-flash it by hand:
+protocol. The runner builds it for the `esp32c5-boot-smoke` scenario, flashes
+it with the catalog bootloader and partition table at the offsets of the chip
+profile's `[flash]` table, and archives all three with the runtime ELF:
 
 ```console
-cd hil/targets/esp32c5
-cargo build --release --features boot-smoke
-cd ../../..
-cargo hil flash --board esp32c5 --image hil-esp32c5-boot-smoke --monitor 20s \
-    --until boot-smoke=PASS \
-    hil/targets/esp32c5/target/riscv32imac-unknown-none-elf/release/oer-hil-esp32c5-runtime
+cargo hil run esp32c5-boot-smoke
 ```
 
-Flashing replaces the board's peer firmware; a run that needs the peer
+A run of it replaces the board's peer firmware; a run that needs the peer
 reflashes its catalog image first.

@@ -228,8 +228,8 @@ pub(crate) fn run() -> Result<()> {
                 }),
             };
             let lab = lab::config::LabConfig::load(&lab_path)?.for_target(&target)?;
-            orchestration::require_image_pipeline(&target)?;
             let selected = selected.iter().collect::<Vec<_>>();
+            orchestration::require_image_pipeline(&root, &target, &selected)?;
             let required = requirements(&selected);
             hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             let invocation = orchestration::Invocation {

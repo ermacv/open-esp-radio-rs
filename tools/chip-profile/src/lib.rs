@@ -45,6 +45,21 @@ pub struct Profile {
     pub espflash_chip: String,
     /// Silicon revisions the repository's models and pins describe.
     pub revisions: Vec<String>,
+    /// Where an ESP-IDF bootloader chip's HIL images lie in flash; the
+    /// runner writes and replays them there.
+    #[serde(default)]
+    pub flash: Option<FlashLayout>,
+}
+
+/// Flash offsets of an ESP-IDF application image: the chip's second-stage
+/// bootloader, the partition table and the partition that holds the
+/// application.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct FlashLayout {
+    pub bootloader: u32,
+    pub partition_table: u32,
+    pub application: u32,
 }
 
 impl Profile {
@@ -124,6 +139,9 @@ mod tests {
         assert!(chips.iter().any(|chip| chip.id == "esp32s31"));
         let esp32c5 = Profile::load(&root, "esp32c5").unwrap();
         assert_eq!(esp32c5.boot, Boot::EspIdfBootloader);
+        let flash = esp32c5.flash.unwrap();
+        assert!(flash.bootloader < flash.partition_table);
+        assert!(flash.partition_table < flash.application);
         assert_eq!(
             esp32c5.directory(&root, "verification"),
             root.join("verification/esp32c5")

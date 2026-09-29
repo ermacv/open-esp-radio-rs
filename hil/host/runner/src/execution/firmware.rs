@@ -242,6 +242,7 @@ fn prepare_replayed_image(
     let failure = import_and_flash_replay(archived, session, |application| {
         device::flash_replayed(
             root,
+            &archived.target,
             application,
             &run_id,
             archived.image,

@@ -215,6 +215,18 @@ pub fn bootloader(ctx: &Context, chip: &str) -> Result<(PathBuf, String)> {
     Ok((path, sha256))
 }
 
+/// The ESP-IDF build directory of `chip`'s project bootloader, built first:
+/// its `flasher_args.json` names the bootloader, the partition table and the
+/// application's offset.
+pub fn bootloader_build(ctx: &Context, chip: &str) -> Result<PathBuf> {
+    let (bootloader, _) = bootloader(ctx, chip)?;
+    Ok(bootloader
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("the bootloader lies outside an ESP-IDF build directory")?
+        .to_owned())
+}
+
 /// The files `idf.py flash` writes, by address, from the build's
 /// `flasher_args.json`.
 fn flash_files(build: &Path) -> Result<Vec<(String, PathBuf)>> {

@@ -9,3 +9,11 @@ rust-target = "riscv32imac-unknown-none-elf"
 boot = "esp-idf-bootloader"
 espflash-chip = "esp32c5"
 revisions = ["rev100"]
+
+# Where the HIL images lie: the ESP-IDF bootloader at the chip's boot offset,
+# the partition table and the factory application, as the catalog bootloader
+# build's flasher_args.json places them.
+[flash]
+bootloader = 0x2000
+partition-table = 0x8000
+application = 0x10000

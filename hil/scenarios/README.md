@@ -65,7 +65,11 @@ A scenario runs on the esp32s31 unless its header names its chips:
 the chip every selected scenario names, the esp32s31 first, or the one
 `cargo hil run --target CHIP` asks for, and uses that chip's device under
 test from the lab configuration. The runner builds and flashes HIL images for
-the esp32s31 only so far and refuses another chip with that reason. A default
+the esp32s31 and for a chip the ESP-IDF bootloader starts whose
+`platform/<chip>/chip.toml` names its flash layout and whose
+`hil/targets/<chip>` runtime declares the image class's features (the
+esp32c5 builds `boot-smoke`, which `esp32c5-boot-smoke` runs); it refuses any
+other chip or class before building. A default
 `targets` is not written into scenario documents, so it changes no digest.
 
 ## Stand claims

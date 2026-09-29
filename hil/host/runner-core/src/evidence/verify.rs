@@ -36,6 +36,8 @@ pub struct VerificationCompletion {
 #[derive(Debug, Serialize)]
 pub struct ArchivedFirmware {
     pub run_id: String,
+    /// The chip the source run's image was built for.
+    pub target: String,
     pub image: crate::image::ImageClass,
     pub application_path: PathBuf,
     pub application_sha256: String,
@@ -88,6 +90,7 @@ pub fn archived_firmware(
         .transpose()?;
     Ok(ArchivedFirmware {
         run_id: run_id.to_owned(),
+        target: manifest.target.clone(),
         image,
         application_path: run_directory.join(&artifact.application_path),
         application_sha256: artifact.application_sha256.clone(),
@@ -407,6 +410,20 @@ fn validate_firmware(run_directory: &Path, manifest: &RunManifest) -> Result<()>
     Ok(())
 }
 
+/// The Rust target a build of `artifact` must name: the staged images'
+/// triple, or the triple of the chip profile of the run's target.
+fn expected_rust_target(
+    manifest: &RunManifest,
+    artifact: &super::run::FirmwareArtifact,
+) -> Result<String> {
+    Ok(match artifact.boot {
+        super::run::Boot::Staged => crate::image::TARGET.to_owned(),
+        super::run::Boot::EspIdfBootloader => {
+            crate::image::chip_profile(&manifest.target)?.rust_target
+        }
+    })
+}
+
 fn validate_optional_firmware_file(
     run_directory: &Path,
     paths: &mut BTreeSet<PathBuf>,
@@ -454,7 +471,7 @@ fn validate_build_provenance(
                     Some(network) => artifact.image.build_features(network.parse()?),
                     None => artifact.image.runtime_features().to_owned(),
                 })
-        || provenance.parameters.target != crate::image::TARGET
+        || provenance.parameters.target != expected_rust_target(manifest, artifact)?
         // The manifest's seed is the one the build record says the image
         // was linked with, so a run cannot claim another layout.
         || provenance.parameters.layout_seed != artifact.layout_seed

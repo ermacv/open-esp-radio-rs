@@ -1521,7 +1521,7 @@ impl PreparedTxSchedulerTimingSnapshot {
 /// remain exact monotonic observations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AggregateTxCounterSnapshot {
-    pub station_terminal: oer_hil_protocol::StationTxTerminalEvidence,
+    pub station_terminal: oer_hil_protocol::network::StationTxTerminalEvidence,
     pub secondary_socket: crate::tx_progress::Snapshot,
     pub secondary_claim: crate::tx_progress::Snapshot,
     pub ap_udp_claimed: u32,

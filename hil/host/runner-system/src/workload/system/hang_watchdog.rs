@@ -3,7 +3,10 @@
 //! naming the stall, and the chip resets.
 use crate::Result;
 use hil_core::context::Context;
-use oer_hil_protocol::{Fault, HangFault, HangTarget, ResetReason, TaskSlot};
+use oer_hil_protocol::{
+    base::{Fault, HangFault, ResetReason, TaskSlot},
+    system::HangTarget,
+};
 use std::{path::Path, time::Duration};
 
 const TARGETS: [HangTarget; 3] = [
@@ -46,14 +49,16 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
                 );
             }
             // The trace froze at the hang and waits, untouched, for the host.
-            let trace = capture.trace_control(oer_hil_protocol::TraceControl::Status)?;
+            let trace = capture.trace_control(oer_hil_protocol::telemetry::TraceControl::Status)?;
             let hang_kind = <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND.raw();
             if !trace.holding_previous || trace.trigger.map(|(kind, _)| kind) != Some(hang_kind) {
                 return Err(format!("the trace did not freeze at the hang: {trace:?}").into());
             }
             let entries = capture.trace_entries(trace.entries)?;
             let restarted =
-                capture.trace_control(oer_hil_protocol::TraceControl::Start { mask: u64::MAX })?;
+                capture.trace_control(oer_hil_protocol::telemetry::TraceControl::Start {
+                    mask: u64::MAX,
+                })?;
             if !restarted.running || restarted.holding_previous {
                 return Err(format!("the trace did not restart: {restarted:?}").into());
             }
@@ -98,7 +103,7 @@ fn scope(target: HangTarget) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_hil_protocol::{HartState, TaskStall};
+    use oer_hil_protocol::base::{HartState, TaskStall};
 
     fn hang(stalled_executors: u8, stalled_task: Option<TaskSlot>) -> HangFault {
         let hart = HartState {

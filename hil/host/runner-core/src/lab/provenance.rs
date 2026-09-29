@@ -4,7 +4,7 @@ use crate::durable::unix_millis;
 use oer_process::CommandExt as _;
 use std::{collections::BTreeMap, fs, net::Ipv4Addr, path::Path, process::Command};
 
-use oer_hil_protocol::{NetworkIpv4Configuration, WifiChannelWidth};
+use oer_hil_protocol::{wifi::NetworkIpv4Configuration, wifi::WifiChannelWidth};
 use serde::{Deserialize, Serialize};
 
 use crate::{

@@ -375,9 +375,9 @@ fn station_udp_traffic(
 
 fn station_tcp(workload: &StationTcp, output: &Path, context: &Context<'_>) -> Result<()> {
     let direction = match workload.offer.direction() {
-        Direction::Rx => oer_hil_protocol::Direction::Rx,
-        Direction::Tx => oer_hil_protocol::Direction::Tx,
-        Direction::Bidirectional => oer_hil_protocol::Direction::Bidirectional,
+        Direction::Rx => oer_hil_protocol::network::Direction::Rx,
+        Direction::Tx => oer_hil_protocol::network::Direction::Tx,
+        Direction::Bidirectional => oer_hil_protocol::network::Direction::Bidirectional,
     };
     let defaults = traffic::tcp_traffic::Config::for_direction(direction);
     traffic::tcp_traffic::run(

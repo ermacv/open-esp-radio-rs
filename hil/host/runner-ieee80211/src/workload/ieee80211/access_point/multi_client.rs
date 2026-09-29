@@ -10,8 +10,9 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    Completion, FlowConfig, FlowTransportEvidence, Ipv4Endpoint, SESSION_FLOW_CAPACITY,
-    SessionConfig, SessionFlowConfig, SessionLinkRequirements, Transport,
+    network::Completion, network::FlowConfig, network::FlowTransportEvidence,
+    network::Ipv4Endpoint, network::SESSION_FLOW_CAPACITY, network::SessionConfig,
+    network::SessionFlowConfig, network::SessionLinkRequirements, network::Transport,
 };
 
 use crate::scenario::{Direction, access_point::MultiClientCriteria};
@@ -147,7 +148,7 @@ pub(super) fn qualify_multi_client_udp(
         for flow in &flows {
             probe_udp_rx_ready_via(
                 capture,
-                oer_hil_protocol::WifiNetworkInterface::AccessPoint,
+                oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
                 target,
                 (flow.traffic_target != target).then_some(flow.traffic_target),
                 UDP_RX_PORT,
@@ -160,7 +161,7 @@ pub(super) fn qualify_multi_client_udp(
         for flow in &flows {
             hil_core::session::prepare_udp_reverse_flow(
                 capture,
-                oer_hil_protocol::WifiNetworkInterface::AccessPoint,
+                oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
                 &flow.socket,
                 config.timeout,
             )?;
@@ -196,7 +197,7 @@ pub(super) fn qualify_multi_client_udp(
         None
     };
     let session = capture.start_session(SessionConfig {
-        network_interface: oer_hil_protocol::WifiNetworkInterface::AccessPoint,
+        network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
         transport: Transport::Udp,
         direction: protocol_direction(direction),
         completion: Completion::DurationMillis(u32::try_from(duration.as_millis())?),

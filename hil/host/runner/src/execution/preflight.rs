@@ -3,12 +3,14 @@
 use std::{path::Path, time::Duration};
 
 use hil_core::scenario::ScenarioFamily as _;
-use oer_hil_protocol::FeatureCapabilities;
 
 use crate::{Result, fixture, scenario::Scenario};
 use hil_core::{
-    evidence::run::Failure, image, image::ImageClass, lab::config::LabConfig,
-    session::SerialCapture,
+    evidence::run::Failure,
+    image,
+    image::ImageClass,
+    lab::config::LabConfig,
+    session::{DeviceCapabilities, SerialCapture},
 };
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
@@ -30,7 +32,7 @@ pub(crate) fn validate_flashed_image(
     let preflight = output.join("image-preflight");
     let error = match capabilities_of(lab, &preflight) {
         Ok(capabilities) => {
-            return check_flashed_capabilities(lab.target(), selected, &capabilities.features);
+            return check_flashed_capabilities(lab.target(), selected, &capabilities);
         }
         Err(error) => error,
     };
@@ -71,7 +73,7 @@ pub(crate) fn validate_flashed_image(
                 "hil: {:?} cleared the boot loop",
                 escalation.steps.last().map(|step| step.step)
             );
-            check_flashed_capabilities(lab.target(), selected, &capabilities.features)
+            check_flashed_capabilities(lab.target(), selected, &capabilities)
         }
         None => Err(format!(
             "{error}; the bootloader reset in a loop ({}) and {} did not clear it: the board is \
@@ -91,28 +93,23 @@ pub(crate) fn validate_flashed_image(
 
 /// Reset the device and ask its image for its capabilities, capturing the
 /// console into `directory`.
-fn capabilities_of(lab: &LabConfig, directory: &Path) -> Result<oer_hil_protocol::Capabilities> {
+fn capabilities_of(lab: &LabConfig, directory: &Path) -> Result<DeviceCapabilities> {
     let capture = SerialCapture::start_with_reset(&lab.device.serial, directory)?;
     let capabilities = capture.request_capabilities(Duration::from_secs(10));
     capture.finish_with(capabilities)
 }
 
-/// Accept a flashed image only when it is the scenario's class and declares
+/// Accept a flashed image only when it is the scenario's class and reports
 /// every role the scenario drives.
 fn check_flashed_capabilities(
     chip: &str,
     selected: &Scenario,
-    features: &FeatureCapabilities,
+    capabilities: &DeviceCapabilities,
 ) -> Result<()> {
     let expected = selected.image();
-    // An ESP-IDF application's classes differ from the staged images'.
-    let observed = match image::chip_profile(chip)?.boot {
-        hil_core::evidence::run::Boot::EspIdfBootloader => {
-            image::esp_idf::classify_flashed_capabilities(features)
-        }
-        hil_core::evidence::run::Boot::Staged => image::classify_flashed_capabilities(features),
-    }
-    .ok_or("flashed image advertises mutually exclusive diagnostic capabilities")?;
+    let observed = image::classify_flashed(chip, capabilities).ok_or_else(|| {
+        format!("the flashed image reports capabilities no {chip} image class builds")
+    })?;
     if observed != expected {
         return Err(format!(
             "scenario requires `{}` image but flashed target advertises `{}` capabilities",
@@ -121,7 +118,7 @@ fn check_flashed_capabilities(
         )
         .into());
     }
-    if !selected.family.served_by(features) {
+    if !selected.family.served_by(capabilities) {
         return Err(format!(
             "flashed `{}` image does not declare a role scenario `{}` drives",
             observed.id(),

@@ -92,12 +92,12 @@ impl ProfileRequest {
     pub const PERIOD_US: std::ops::RangeInclusive<u32> = 100..=100_000;
 
     /// The protocol's arming command.
-    pub fn control(self) -> oer_hil_protocol::ProfileControl {
-        oer_hil_protocol::ProfileControl::Arm {
+    pub fn control(self) -> oer_hil_protocol::telemetry::ProfileControl {
+        oer_hil_protocol::telemetry::ProfileControl::Arm {
             harts: match self.harts {
-                ProfileHarts::Both => oer_hil_protocol::ProfileHarts::Both,
-                ProfileHarts::Core0 => oer_hil_protocol::ProfileHarts::Core0,
-                ProfileHarts::Core1 => oer_hil_protocol::ProfileHarts::Core1,
+                ProfileHarts::Both => oer_hil_protocol::telemetry::ProfileHarts::Both,
+                ProfileHarts::Core0 => oer_hil_protocol::telemetry::ProfileHarts::Core0,
+                ProfileHarts::Core1 => oer_hil_protocol::telemetry::ProfileHarts::Core1,
             },
             period_us: self.period_us,
         }
@@ -239,10 +239,10 @@ pub trait ScenarioFamily: Clone + Debug + Eq + Serialize + DeserializeOwned {
 
     fn plan(&self) -> Plan;
 
-    /// Whether an image of the planned class that declares `features` can
+    /// Whether an image of the planned class that reports `capabilities` can
     /// run this scenario. The class alone suffices unless the family names
     /// a role the class's image may omit.
-    fn served_by(&self, _features: &oer_hil_protocol::FeatureCapabilities) -> bool {
+    fn served_by(&self, _capabilities: &crate::session::DeviceCapabilities) -> bool {
         true
     }
 }

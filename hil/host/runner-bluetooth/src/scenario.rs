@@ -4,13 +4,14 @@
 
 use std::path::Path;
 
+use hil_core::session::DeviceCapabilities;
 use hil_core::{
     context::Context,
     image::ImageClass,
     lab::requirements::Requirements,
     scenario::{Plan, bounded},
 };
-use oer_hil_protocol::FeatureCapabilities;
+use oer_hil_protocol::bluetooth;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -117,16 +118,16 @@ impl BluetoothScenario {
         }
     }
 
-    /// Whether an image of [`Self::image`] declaring `features` runs this
+    /// Whether an image of [`Self::image`] reporting `capabilities` runs this
     /// workload: the advertising workloads drive the image's Controller over
     /// raw HCI.
-    pub fn served_by(&self, features: &FeatureCapabilities) -> bool {
+    pub fn served_by(&self, capabilities: &DeviceCapabilities) -> bool {
         match self {
             Self::Gatt {} | Self::SecureGatt { .. } => true,
             Self::ScannableAdvertising {} | Self::DirectedAdvertising {} | Self::DtmPeer { .. } => {
-                features.bluetooth_hci
+                capabilities.has::<bluetooth::Hci>()
             }
-            Self::Dtm { .. } => features.bluetooth_dtm,
+            Self::Dtm { .. } => capabilities.has::<bluetooth::Dtm>(),
         }
     }
 

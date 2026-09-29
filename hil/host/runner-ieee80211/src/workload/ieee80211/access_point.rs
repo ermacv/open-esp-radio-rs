@@ -3,7 +3,9 @@
 use hil_core::context::Context;
 use std::{fs, path::Path, time::Duration};
 
-use oer_hil_protocol::{Direction as ProtocolDirection, WifiAccessPointSecurity, WifiRole};
+use oer_hil_protocol::{
+    network::Direction as ProtocolDirection, wifi::WifiAccessPointSecurity, wifi::WifiRole,
+};
 
 use crate::scenario::{
     AccessPointClients, AccessPointTraffic, Direction, LinkExpectation, RateFloors,
@@ -42,7 +44,7 @@ use multi_client::qualify_multi_client_udp;
 #[cfg(test)]
 use multi_client::validate_multi_client_fairness;
 #[cfg(test)]
-use oer_hil_protocol::Ipv4Endpoint;
+use oer_hil_protocol::network::Ipv4Endpoint;
 #[cfg(test)]
 use report::MultiClientFlowReport;
 use report::{
@@ -159,7 +161,9 @@ fn qualify(
     cycles: &mut Vec<CycleReport>,
 ) -> Result<()> {
     let capabilities = capture.prepare_station(context.target(), config.timeout)?;
-    if !capabilities.features.wifi_role_control || !capabilities.features.wifi_access_point {
+    if !capabilities.has::<oer_hil_protocol::wifi::RoleControl>()
+        || !capabilities.has::<oer_hil_protocol::wifi::AccessPoint>()
+    {
         return Err("firmware does not advertise AP role control".into());
     }
     report_stack(capture, config.timeout, "ap-initial-station-connected")?;
@@ -508,7 +512,7 @@ fn validate_access_point_observation(
     cycle: u8,
     security: WifiAccessPointSecurity,
     minimum_clients: u8,
-    stopped: &oer_hil_protocol::WifiAccessPointEvidence,
+    stopped: &oer_hil_protocol::wifi::WifiAccessPointEvidence,
 ) -> Result<()> {
     let unacknowledged_disconnects = stopped
         .disassociations_published
@@ -589,7 +593,7 @@ fn tx_failures_reconciled(total: u8, probe_ack_timeouts: u8, disconnects: u32) -
 
 fn validate_rx_hardware_health(
     cycle: u8,
-    evidence: &oer_hil_protocol::WifiAccessPointEvidence,
+    evidence: &oer_hil_protocol::wifi::WifiAccessPointEvidence,
 ) -> Result<()> {
     if evidence.rx_hardware.buffer_full != 0 || evidence.rx_hardware.fifo_overflow != 0 {
         return Err(format!(
@@ -604,7 +608,7 @@ fn validate_rx_hardware_health(
 fn validate_mcs_evidence(
     traffic: &AccessPointTraffic,
     expected_link: Option<LinkExpectation>,
-    evidence: &oer_hil_protocol::WifiAccessPointEvidence,
+    evidence: &oer_hil_protocol::wifi::WifiAccessPointEvidence,
 ) -> Result<()> {
     let Some(LinkExpectation {
         phy,
@@ -896,10 +900,10 @@ fn stop_access_point(
     timeout: Duration,
     generation: u32,
     context: &Context<'_>,
-) -> Result<oer_hil_protocol::WifiAccessPointEvidence> {
+) -> Result<oer_hil_protocol::wifi::WifiAccessPointEvidence> {
     let handle = capture.request_access_point_stop()?;
     let evidence = capture.wait_access_point_stop(handle, timeout)?;
-    if context.settings.ap_scheduler != oer_hil_protocol::WifiApScheduler::Disabled {
+    if context.settings.ap_scheduler != oer_hil_protocol::wifi::WifiApScheduler::Disabled {
         capture.require_access_point_airtime(handle)?;
     }
     if evidence.generation != generation

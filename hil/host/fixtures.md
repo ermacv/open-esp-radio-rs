@@ -83,7 +83,7 @@ fails; `access-point-report.json` retains completed boots/cycles and the boot
 error. Multi-client UDP additionally writes `delivery-progress.json` before
 applying gates, including partial host sends, target evidence and worker errors.
 
-Host UDP collectors finish from the correlated `Finished` transport count.
+Host UDP collectors finish from the correlated `network::Finished` transport count.
 Complete delivery returns immediately. If packets remain undelivered, a two-second
 delivery deadline bounds collection after that event; reaching it records
 `delivery-deadline`, never proof of a drained radio. Each `*-reception.json`
@@ -262,7 +262,7 @@ The Linux helper owns only `wlan0`. While it does, a per-boot
 managing any `wlan0` netdev, including each one the helper recreates;
 cleanup removes it and returns `wlan0` to managed mode.
 
-AP scenarios wait for the matching `WifiAccessPointStarted` event and validate
+AP scenarios wait for the matching `wifi::AccessPointStarted` event and validate
 the successful `Idle` to `AccessPoint` transition before starting either external
 client. Sending the start command is not readiness: the target completes the
 request after activating AP RX interrupts, publishing the first beacon and

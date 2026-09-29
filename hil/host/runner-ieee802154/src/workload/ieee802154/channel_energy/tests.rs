@@ -72,7 +72,7 @@ fn busy_assessments_must_exceed_the_baseline_and_be_the_majority() {
 #[test]
 fn an_incomplete_assessment_is_refused() {
     let done = Ieee802154SessionAssessment {
-        result: oer_hil_protocol::Ieee802154SessionResult::Done,
+        result: oer_hil_protocol::ieee802154::Ieee802154SessionResult::Done,
         energy: Ieee802154AirEnergyOutcome::Energy(-60),
         cca: Ieee802154AirCcaOutcome::Busy,
     };
@@ -93,7 +93,7 @@ fn an_incomplete_assessment_is_refused() {
             ..done
         },
         Ieee802154SessionAssessment {
-            result: oer_hil_protocol::Ieee802154SessionResult::EventTimeout,
+            result: oer_hil_protocol::ieee802154::Ieee802154SessionResult::EventTimeout,
             ..done
         },
     ] {

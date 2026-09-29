@@ -7,7 +7,7 @@
 use std::{fs, path::Path};
 
 use hil_core::session::SerialCapture;
-use oer_hil_protocol::{PhyTrackingCommand, PhyTrackingEvidence};
+use oer_hil_protocol::{phy::PhyTrackingCommand, phy::PhyTrackingEvidence};
 use serde::Serialize;
 
 use crate::Result;

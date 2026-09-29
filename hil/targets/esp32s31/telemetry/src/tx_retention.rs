@@ -1,7 +1,7 @@
 //! AP-epoch loss counters; traffic-window resets must not erase them.
 use core::sync::atomic::{AtomicU32, Ordering};
 use oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::NetworkTxRetentionDropReason;
-use oer_hil_protocol::WifiTxRetentionEvidence;
+use oer_hil_protocol::wifi::WifiTxRetentionEvidence;
 
 pub struct TxRetentionCounters {
     active: AtomicU32,

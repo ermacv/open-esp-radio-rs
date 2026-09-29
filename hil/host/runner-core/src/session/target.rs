@@ -1,8 +1,8 @@
 //! Laboratory inputs and per-scenario initialization the target protocol needs.
 
 use oer_hil_protocol::{
-    WifiDataPlanePlacement, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiTxBufferPolicy,
-    WifiTxUdpChecksumPolicy,
+    wifi::WifiDataPlanePlacement, wifi::WifiRxChecksumPolicy, wifi::WifiRxContinuationPolicy,
+    wifi::WifiTxBufferPolicy, wifi::WifiTxUdpChecksumPolicy,
 };
 
 use crate::lab::config::LabConfig;
@@ -17,7 +17,7 @@ pub struct Target<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Settings {
-    pub ap_scheduler: oer_hil_protocol::WifiApScheduler,
+    pub ap_scheduler: oer_hil_protocol::wifi::WifiApScheduler,
     pub data_plane: WifiDataPlanePlacement,
     pub rx_checksum: WifiRxChecksumPolicy,
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,

@@ -7,7 +7,7 @@ pub use oer_hil_fixture::bluetooth::model;
 pub mod secure_gatt;
 
 use model::{Adapter, Check, DtmProfile, DtmVersion};
-use oer_hil_protocol::BluetoothPeripheralTermination;
+use oer_hil_protocol::bluetooth::BluetoothPeripheralTermination;
 use std::{
     fs,
     path::Path,
@@ -292,10 +292,10 @@ pub fn security_failure_in(
     output: &Path,
     adapter: Adapter,
     peer: model::PeerAddress,
-    failure: oer_hil_protocol::BluetoothSecurityFailure,
+    failure: oer_hil_protocol::bluetooth::BluetoothSecurityFailure,
     read_version_before_disconnect: bool,
 ) -> crate::Result<model::security_failure::Report> {
-    use oer_hil_protocol::BluetoothSecurityFailure as Failure;
+    use oer_hil_protocol::bluetooth::BluetoothSecurityFailure as Failure;
     fs::create_dir_all(output)?;
     let mut command = Command::new("sudo");
     command

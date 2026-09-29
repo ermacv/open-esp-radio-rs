@@ -1205,8 +1205,9 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
  "embassy-time",
- "embedded-io-async 0.7.0",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-rtos",
@@ -1226,6 +1227,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "heapless 0.9.3",
  "postcard",
+ "postcard-schema",
  "serde",
  "zeroize",
 ]
@@ -1235,8 +1237,11 @@ name = "oer-hil-target-core"
 version = "0.1.0"
 dependencies = [
  "crc",
+ "embassy-futures",
  "embassy-sync 0.8.0",
+ "embedded-io-async 0.7.0",
  "heapless 0.9.3",
+ "log",
  "oer-hil-protocol",
  "oer-trace",
 ]
@@ -1289,6 +1294,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6764c3b5dd454e283a30e6dfe78e9b31096d9e32036b5d1eaac7a6119ccb9a24"
 dependencies = [
  "cobs",
+ "serde",
+]
+
+[[package]]
+name = "postcard-derive"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0232bd009a197ceec9cc881ba46f727fcd8060a2d8d6a9dde7a69030a6fe2bb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "postcard-schema"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9475666d89f42231a0a57da32d5f6ca7f9b5cd4c335ea1fe8f3278215b7a21ff"
+dependencies = [
+ "heapless 0.9.3",
+ "postcard-derive",
  "serde",
 ]
 

@@ -3,7 +3,8 @@
 use std::{net::Ipv4Addr, time::Duration};
 
 use oer_hil_protocol::{
-    Completion, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements, Transport,
+    network::Completion, network::FlowConfig, network::SessionConfig, network::SessionFlowConfig,
+    network::SessionLinkRequirements, network::Transport,
 };
 
 use crate::scenario::{Direction, RateFloors};
@@ -48,7 +49,7 @@ pub(super) fn qualify_tcp(
     let protocol_direction = protocol_direction(direction);
     let duration_millis = u32::try_from(duration.as_millis())?;
     let session = capture.start_session(SessionConfig {
-        network_interface: oer_hil_protocol::WifiNetworkInterface::AccessPoint,
+        network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
         transport: Transport::Tcp,
         direction: protocol_direction,
         completion: Completion::DurationMillis(duration_millis),

@@ -5,9 +5,14 @@ use gatt_application::security::{
     comparison::{Challenge, NumericComparison},
     gatt::Observation,
 };
+use oer_hil_protocol::base::RejectReason;
+use oer_hil_protocol::bluetooth::{
+    ConfirmGatt, FailGattResetRead, FailNextGattBondLoad, GattDecisionRecorded, GattResetReadGate,
+    RestartGatt, SecureGattState,
+};
 use oer_hil_protocol::{
-    BluetoothGattShutdown, BluetoothNumericChallenge, BluetoothSecureGattEvidence, Command, Event,
-    RejectReason,
+    bluetooth::BluetoothGattShutdown, bluetooth::BluetoothNumericChallenge,
+    bluetooth::BluetoothSecureGattEvidence,
 };
 
 pub struct State {
@@ -50,7 +55,7 @@ impl State {
         failure: &gatt_application::security::gatt::RunError<C, S>,
     ) {
         use gatt_application::security::gatt::RunError;
-        use oer_hil_protocol::BluetoothGattApplicationFailure as F;
+        use oer_hil_protocol::bluetooth::BluetoothGattApplicationFailure as F;
         use trouble_host::{BleHostError, Error};
         let failure = match failure {
             RunError::Host(BleHostError::Controller(_)) => F::Controller,
@@ -107,98 +112,130 @@ impl State {
         e.traffic.value = 0;
         self.evidence.set(e);
     }
-    pub fn command(&self, command: Command) -> Event {
-        let mut result = match command {
-            Command::FailBluetoothGattResetRead { epoch }
-                if epoch == self.evidence.get().epoch
-                    && !self.evidence.get().application_stopped
-                    && self.evidence.get().restarting
-                    && self.reset_gate.fail_read() =>
-            {
-                Event::BluetoothSecureGatt(self.evidence.get())
-            }
-            Command::BluetoothGattResetReadGate { epoch, release }
-                if epoch == self.evidence.get().epoch
-                    && !self.evidence.get().application_stopped =>
-            {
-                let e = self.evidence.get();
-                let accepted = if release {
-                    e.restarting && self.reset_gate.release()
-                } else {
-                    !e.restarting
-                        && e.traffic.advertising
-                        && !e.traffic.connected
-                        && !e.bond_load_fault_armed
-                        && e.bond_load_failures == 0
-                        && self.reset_gate.arm()
-                };
-                if accepted {
-                    Event::BluetoothSecureGatt(e)
-                } else {
-                    Event::Rejected(RejectReason::InvalidState)
-                }
-            }
-            Command::FailNextBluetoothGattBondLoad { epoch }
-                if epoch == self.evidence.get().epoch
-                    && self.evidence.get().traffic.connected
-                    && self.evidence.get().bonds_stored == 1
-                    && !self.evidence.get().application_stopped
-                    && !self.evidence.get().restarting
-                    && !self.evidence.get().bond_load_fault_armed
-                    && !matches!(
-                        self.reset_gate.phase(),
-                        oer_hil_protocol::BluetoothGattResetReadGate::Armed
-                    )
-                    && self.evidence.get().bond_load_failures == 0 =>
-            {
-                let mut e = self.evidence.get();
-                e.bond_load_fault_armed = true;
-                self.evidence.set(e);
-                Event::BluetoothSecureGatt(e)
-            }
-            Command::RestartBluetoothGatt { epoch }
-                if epoch == self.evidence.get().epoch
-                    && !self.evidence.get().application_stopped
-                    && !self.evidence.get().restarting
-                    && !self.evidence.get().bond_load_fault_armed =>
-            {
-                let mut e = self.evidence.get();
-                e.restarting = true;
-                self.evidence.set(e);
-                self.restart.signal(());
-                Event::BluetoothSecureGatt(e)
-            }
-            Command::QueryBluetoothSecureGatt => {
-                let mut value = self.evidence.get();
-                value.comparison = self
-                    .comparison
-                    .pending()
-                    .map(|c| BluetoothNumericChallenge {
-                        id: c.id,
-                        number: c.number,
-                    });
-                Event::BluetoothSecureGatt(value)
-            }
-            Command::ConfirmBluetoothGatt(decision)
-                if !self.evidence.get().application_stopped && !self.evidence.get().restarting =>
-            {
-                match self.comparison.respond(
-                    Challenge {
-                        id: decision.challenge.id,
-                        number: decision.challenge.number,
-                    },
-                    decision.accept,
-                ) {
-                    Ok(()) => Event::BluetoothGattDecisionRecorded(decision),
-                    Err(_) => Event::Rejected(RejectReason::InvalidState),
-                }
-            }
-            _ => Event::Rejected(RejectReason::InvalidState),
-        };
-        if let Event::BluetoothSecureGatt(e) = &mut result {
-            e.reset_read_gate = self.reset_gate.phase();
+    /// The evidence as a reply, stamped with the reset reader gate's phase.
+    fn reply(&self, mut evidence: BluetoothSecureGattEvidence) -> SecureGattState {
+        evidence.reset_read_gate = self.reset_gate.phase();
+        SecureGattState(evidence)
+    }
+
+    /// Fail the reached shutdown reader of epoch `request.epoch`.
+    pub fn fail_reset_read(
+        &self,
+        request: FailGattResetRead,
+    ) -> Result<SecureGattState, RejectReason> {
+        let e = self.evidence.get();
+        if request.epoch == e.epoch
+            && !e.application_stopped
+            && e.restarting
+            && self.reset_gate.fail_read()
+        {
+            Ok(self.reply(self.evidence.get()))
+        } else {
+            Err(RejectReason::InvalidState)
         }
-        result
+    }
+
+    /// Arm the shutdown reader gate before a restart, or release it during
+    /// one.
+    pub fn reset_read_gate(
+        &self,
+        request: GattResetReadGate,
+    ) -> Result<SecureGattState, RejectReason> {
+        let e = self.evidence.get();
+        if request.epoch != e.epoch || e.application_stopped {
+            return Err(RejectReason::InvalidState);
+        }
+        let accepted = if request.release {
+            e.restarting && self.reset_gate.release()
+        } else {
+            !e.restarting
+                && e.traffic.advertising
+                && !e.traffic.connected
+                && !e.bond_load_fault_armed
+                && e.bond_load_failures == 0
+                && self.reset_gate.arm()
+        };
+        if accepted {
+            Ok(self.reply(e))
+        } else {
+            Err(RejectReason::InvalidState)
+        }
+    }
+
+    /// Fail the next real bond-store load after this connection ends.
+    pub fn fail_next_bond_load(
+        &self,
+        request: FailNextGattBondLoad,
+    ) -> Result<SecureGattState, RejectReason> {
+        let mut e = self.evidence.get();
+        if request.epoch != e.epoch
+            || !e.traffic.connected
+            || e.bonds_stored != 1
+            || e.application_stopped
+            || e.restarting
+            || e.bond_load_fault_armed
+            || matches!(
+                self.reset_gate.phase(),
+                oer_hil_protocol::bluetooth::BluetoothGattResetReadGate::Armed
+            )
+            || e.bond_load_failures != 0
+        {
+            return Err(RejectReason::InvalidState);
+        }
+        e.bond_load_fault_armed = true;
+        self.evidence.set(e);
+        Ok(self.reply(e))
+    }
+
+    /// Restart the application's Controller epoch, keeping the RAM bonds.
+    pub fn restart_application(
+        &self,
+        request: RestartGatt,
+    ) -> Result<SecureGattState, RejectReason> {
+        let mut e = self.evidence.get();
+        if request.epoch != e.epoch
+            || e.application_stopped
+            || e.restarting
+            || e.bond_load_fault_armed
+        {
+            return Err(RejectReason::InvalidState);
+        }
+        e.restarting = true;
+        self.evidence.set(e);
+        self.restart.signal(());
+        Ok(self.reply(e))
+    }
+
+    /// The evidence, with the numeric comparison awaiting a decision.
+    pub fn snapshot(&self) -> SecureGattState {
+        let mut value = self.evidence.get();
+        value.comparison = self
+            .comparison
+            .pending()
+            .map(|c| BluetoothNumericChallenge {
+                id: c.id,
+                number: c.number,
+            });
+        self.reply(value)
+    }
+
+    /// Queue the user's decision on the pending numeric comparison.
+    pub fn confirm(&self, request: ConfirmGatt) -> Result<GattDecisionRecorded, RejectReason> {
+        let e = self.evidence.get();
+        if e.application_stopped || e.restarting {
+            return Err(RejectReason::InvalidState);
+        }
+        let decision = request.0;
+        self.comparison
+            .respond(
+                Challenge {
+                    id: decision.challenge.id,
+                    number: decision.challenge.number,
+                },
+                decision.accept,
+            )
+            .map(|()| GattDecisionRecorded(decision))
+            .map_err(|_| RejectReason::InvalidState)
     }
     pub fn observe(&self, event: Observation) {
         let mut e = self.evidence.get();

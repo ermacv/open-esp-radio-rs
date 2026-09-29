@@ -19,10 +19,11 @@ mod peer {
         event::Event,
         param::{ConnHandle, EncryptionEnabledLevel, Status},
     };
-    use oer_hil_protocol::BluetoothSecurityFailure as Failure;
+    use oer_hil_protocol::bluetooth::BluetoothSecurityFailure as Failure;
     use oer_hil_protocol::{
-        BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK, BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV,
-        BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
+        bluetooth::BLUETOOTH_REFRESH_EDIV, bluetooth::BLUETOOTH_REFRESH_LTK,
+        bluetooth::BLUETOOTH_REFRESH_RAND, bluetooth::BLUETOOTH_TEST_EDIV,
+        bluetooth::BLUETOOTH_TEST_LTK, bluetooth::BLUETOOTH_TEST_RAND,
     };
     use std::time::{Duration, Instant};
 
@@ -67,7 +68,7 @@ mod peer {
                     ))?;
                 }
                 Action::SendData => {
-                    let payload = oer_hil_protocol::bluetooth_peripheral_acl_payload();
+                    let payload = oer_hil_protocol::bluetooth::bluetooth_peripheral_acl_payload();
                     user.send_acl(&AclPacket::new(
                         handle,
                         AclPacketBoundary::FirstNonFlushable,

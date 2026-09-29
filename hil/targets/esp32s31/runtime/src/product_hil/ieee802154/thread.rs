@@ -23,10 +23,11 @@ use oer_esp32s31_ieee802154_openthread::{
 use oer_esp32s31_ieee802154_system::IEEE802154_EVENT_CAPACITY;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
-    Event as HilEvent, IEEE802154_THREAD_RECORDED_DATAGRAMS, Ieee802154SessionResult,
-    Ieee802154ThreadDatagram, Ieee802154ThreadPayload, Ieee802154ThreadReceiveEvidence,
-    Ieee802154ThreadRole, Ieee802154ThreadSendRequest, Ieee802154ThreadStartRequest,
-    Ieee802154ThreadState,
+    ieee802154::IEEE802154_THREAD_RECORDED_DATAGRAMS, ieee802154::Ieee802154SessionResult,
+    ieee802154::Ieee802154ThreadDatagram, ieee802154::Ieee802154ThreadPayload,
+    ieee802154::Ieee802154ThreadReceiveEvidence, ieee802154::Ieee802154ThreadRole,
+    ieee802154::Ieee802154ThreadSendRequest, ieee802154::Ieee802154ThreadStartRequest,
+    ieee802154::Ieee802154ThreadState,
 };
 use oer_ieee802154::{RadioCommand, RequestId};
 use openthread::{
@@ -170,7 +171,12 @@ async fn serve(ot: &OpenThread<'_>, socket: &UdpSocket<'_>) -> u32 {
                     rloc16: ot.rloc16(),
                     mesh_local_eid: mesh_local_eid(ot),
                 };
-                publish_event_reliably(0, request_id, HilEvent::Ieee802154ThreadState(state)).await;
+                publish_event_reliably(
+                    0,
+                    request_id,
+                    oer_hil_protocol::ieee802154::ThreadState(state),
+                )
+                .await;
             }
             Ieee802154ThreadCommand::Send {
                 request_id,
@@ -186,13 +192,18 @@ async fn serve(ot: &OpenThread<'_>, socket: &UdpSocket<'_>) -> u32 {
                     Ok(()) => Ieee802154SessionResult::Done,
                     Err(_) => Ieee802154SessionResult::CommandRejected,
                 };
-                publish_event_reliably(0, request_id, HilEvent::Ieee802154ThreadSent(result)).await;
+                publish_event_reliably(
+                    0,
+                    request_id,
+                    oer_hil_protocol::ieee802154::ThreadSent(result),
+                )
+                .await;
             }
             Ieee802154ThreadCommand::Collect { request_id } => {
                 publish_event_reliably(
                     0,
                     request_id,
-                    HilEvent::Ieee802154ThreadReceived(received.take()),
+                    oer_hil_protocol::ieee802154::ThreadReceived(received.take()),
                 )
                 .await;
             }
@@ -239,7 +250,7 @@ pub(in crate::product_hil) async fn run_thread(
     request_id: u32,
     request: Ieee802154ThreadStartRequest,
 ) {
-    let started = |result| HilEvent::Ieee802154ThreadStarted(result);
+    let started = |result| oer_hil_protocol::ieee802154::ThreadStarted(result);
     let Some((mut client, parked)) = Client::claim(spawner, platform) else {
         publish_event_reliably(
             0,
@@ -312,5 +323,10 @@ pub(in crate::product_hil) async fn run_thread(
         Some(_parked) => Ieee802154SessionResult::Done,
         None => Ieee802154SessionResult::StopFailed,
     };
-    publish_event_reliably(0, stop_request, HilEvent::Ieee802154ThreadStopped(result)).await;
+    publish_event_reliably(
+        0,
+        stop_request,
+        oer_hil_protocol::ieee802154::ThreadStopped(result),
+    )
+    .await;
 }

@@ -36,7 +36,7 @@ use esp_hal::{
     time::Duration,
     timer::{PeriodicTimer, systimer::Alarm},
 };
-use oer_hil_protocol::{HangFault, HartState, TaskSlot};
+use oer_hil_protocol::base::{HangFault, HartState, TaskSlot};
 use oer_hil_target_core::liveness::TaskLiveness;
 
 /// Tasks with work waiting for them.

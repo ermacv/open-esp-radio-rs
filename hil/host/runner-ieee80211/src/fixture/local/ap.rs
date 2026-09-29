@@ -208,7 +208,7 @@ fn profile(
     use std::fmt::Write as _;
     let (ssid, passphrase) = station.credentials();
     let (start, end, mask) = dhcp_range(config.address, config.prefix_length)?;
-    if let oer_hil_protocol::NetworkIpv4Configuration::Static {
+    if let oer_hil_protocol::wifi::NetworkIpv4Configuration::Static {
         address,
         prefix_length,
         gateway,

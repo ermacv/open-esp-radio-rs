@@ -1,17 +1,24 @@
 use core::fmt;
 
 use crc::{CRC_32_ISCSI, Crc};
+use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use crate::{Envelope, EvidenceRecord, PROTOCOL_VERSION, WireBody};
+use crate::{Envelope, Key, Message, WireKind};
 
 // Covers the maximum peripheral snapshot, including full-width maintenance
 // timeline edges. The framing tests exercise maximal values, not typical runs.
 pub const MAX_POSTCARD_BYTES: usize = 560;
 pub const WIRE_MAGIC: [u8; 4] = *b"ORHL";
-pub const FRAMING_VERSION: u8 = 1;
-pub const WIRE_HEADER_BYTES: usize = 34;
+/// The header layout. A payload's own type is identified by the header's
+/// [`Key`], so the framing version changes only with the header itself.
+pub const FRAMING_VERSION: u8 = 2;
+/// magic 4, framing 1, kind 1, boot 8, sequence 4, session 8, request 4,
+/// key 8, payload length 2.
+pub const WIRE_HEADER_BYTES: usize = 40;
+const KEY_RANGE: core::ops::Range<usize> = 30..38;
+const LENGTH_RANGE: core::ops::Range<usize> = 38..40;
 const CHECKSUM_BYTES: usize = size_of::<u32>();
 const MAX_RAW_FRAME_BYTES: usize = WIRE_HEADER_BYTES + MAX_POSTCARD_BYTES + CHECKSUM_BYTES;
 const MAX_COBS_FRAME_BYTES: usize = cobs::max_encoding_length(MAX_RAW_FRAME_BYTES);
@@ -19,31 +26,8 @@ pub const MAX_WIRE_FRAME_BYTES: usize = 2 + MAX_COBS_FRAME_BYTES + 1;
 
 const CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
-/// Computes the digest carried by [`crate::Finished`] for an ordered evidence
-/// set.
-///
-/// The digest covers the canonical postcard representation, including the
-/// slice length. Both the target and host use this helper so missing, reordered
-/// or mismatched evidence cannot satisfy a `Finished` event. Session identity
-/// is checked separately from the surrounding [`crate::Envelope`].
-pub fn evidence_crc32c(evidence: &[EvidenceRecord]) -> Result<u32, EncodeError> {
-    let mut encoded = [0_u8; MAX_POSTCARD_BYTES];
-    let payload = postcard::to_slice(evidence, &mut encoded).map_err(|_| EncodeError::Serialize)?;
-    Ok(CRC32C.checksum(payload))
-}
-
-/// Computes the transfer-integrity digest of one opaque startup artifact.
-///
-/// This checksum is not an identity or qualification hash. It only prevents
-/// a receiver from accepting an incomplete or internally inconsistent UART
-/// transfer.
-pub fn startup_artifact_crc32c(bytes: &[u8]) -> u32 {
-    CRC32C.checksum(bytes)
-}
-
-/// Digest of one IEEE 802.15.4 MAC frame reported by a session, so both the
-/// target and the host identify frame bytes without carrying them.
-pub fn ieee802154_frame_crc32c(bytes: &[u8]) -> u32 {
+/// The CRC-32C every frame and every module digest uses.
+pub(crate) fn crc32c(bytes: &[u8]) -> u32 {
     CRC32C.checksum(bytes)
 }
 
@@ -69,13 +53,12 @@ pub enum DecodeError {
     Magic,
     FramingVersion,
     MessageKind,
-    ProtocolVersion,
     PayloadLength,
     Checksum,
-    /// An intact frame of this protocol version whose body this build cannot
-    /// decode: a command of a radio family the image leaves out. The header
-    /// names the request, so the receiver can reject it.
-    UndecodableBody(RequestIdentity),
+    /// An intact frame whose key names this type but whose payload does not
+    /// decode as it: a defect of the sender, since equal keys mean equal
+    /// schemas.
+    Payload,
 }
 
 /// The identity a frame's header gives its request.
@@ -96,19 +79,18 @@ impl fmt::Display for DecodeError {
             Self::Magic => formatter.write_str("invalid HIL wire magic"),
             Self::FramingVersion => formatter.write_str("unsupported HIL framing version"),
             Self::MessageKind => formatter.write_str("HIL frame has the wrong message direction"),
-            Self::ProtocolVersion => formatter.write_str("unsupported HIL protocol version"),
             Self::PayloadLength => {
                 formatter.write_str("HIL frame payload length does not match its header")
             }
             Self::Checksum => formatter.write_str("HIL frame checksum mismatch"),
-            Self::UndecodableBody(_) => formatter.write_str(
-                "HIL frame body is not decodable by this build: a command of a radio family it leaves out",
-            ),
+            Self::Payload => {
+                formatter.write_str("HIL frame payload does not decode as the type its key names")
+            }
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Schema)]
 pub struct DecodeCounters {
     pub frames: u32,
     pub cobs_errors: u32,
@@ -116,7 +98,6 @@ pub struct DecodeCounters {
     pub header_errors: u32,
     pub framing_version_errors: u32,
     pub message_kind_errors: u32,
-    pub protocol_version_errors: u32,
     pub payload_length_errors: u32,
     pub checksum_errors: u32,
     pub deserialize_errors: u32,
@@ -146,25 +127,56 @@ impl FrameEncoder {
     ///
     /// A leading delimiter discards any preceding ROM or text output. The
     /// trailing delimiter terminates this frame for an incremental decoder.
-    pub fn encode<T>(&mut self, message: &Envelope<T>) -> Result<&[u8], EncodeError>
-    where
-        T: Serialize + WireBody,
-    {
+    pub fn encode<M: Message>(&mut self, message: &Envelope<M>) -> Result<&[u8], EncodeError> {
         let payload_length = postcard::to_slice(
             &message.body,
             &mut self.raw[WIRE_HEADER_BYTES..WIRE_HEADER_BYTES + MAX_POSTCARD_BYTES],
         )
         .map_err(|_| EncodeError::Serialize)?
         .len();
+        let header = Header {
+            kind: M::WIRE_KIND,
+            key: M::KEY,
+            boot_id: message.boot_id,
+            message_sequence: message.message_sequence,
+            session_id: message.session_id,
+            request_id: message.request_id,
+        };
+        self.frame(&header, payload_length)
+    }
+
+    /// Frames `message`, serialized earlier by its producer, for boot
+    /// `boot_id`.
+    pub fn encode_outbound(
+        &mut self,
+        boot_id: u64,
+        message: &Outbound,
+    ) -> Result<&[u8], EncodeError> {
+        let payload_length = message.payload.len();
+        self.raw[WIRE_HEADER_BYTES..WIRE_HEADER_BYTES + payload_length]
+            .copy_from_slice(&message.payload);
+        let header = Header {
+            kind: message.kind,
+            key: message.key,
+            boot_id,
+            message_sequence: message.message_sequence,
+            session_id: message.session_id,
+            request_id: message.request_id,
+        };
+        self.frame(&header, payload_length)
+    }
+
+    /// Completes the frame whose payload `raw` already holds.
+    fn frame(&mut self, header: &Header, payload_length: usize) -> Result<&[u8], EncodeError> {
         self.raw[..4].copy_from_slice(&WIRE_MAGIC);
         self.raw[4] = FRAMING_VERSION;
-        self.raw[5] = T::WIRE_KIND as u8;
-        self.raw[6..8].copy_from_slice(&message.protocol_version.to_le_bytes());
-        self.raw[8..16].copy_from_slice(&message.boot_id.to_le_bytes());
-        self.raw[16..20].copy_from_slice(&message.message_sequence.to_le_bytes());
-        self.raw[20..28].copy_from_slice(&message.session_id.to_le_bytes());
-        self.raw[28..32].copy_from_slice(&message.request_id.to_le_bytes());
-        self.raw[32..34].copy_from_slice(
+        self.raw[5] = header.kind as u8;
+        self.raw[6..14].copy_from_slice(&header.boot_id.to_le_bytes());
+        self.raw[14..18].copy_from_slice(&header.message_sequence.to_le_bytes());
+        self.raw[18..26].copy_from_slice(&header.session_id.to_le_bytes());
+        self.raw[26..30].copy_from_slice(&header.request_id.to_le_bytes());
+        self.raw[KEY_RANGE].copy_from_slice(&header.key.0);
+        self.raw[LENGTH_RANGE].copy_from_slice(
             &u16::try_from(payload_length)
                 .map_err(|_| EncodeError::Serialize)?
                 .to_le_bytes(),
@@ -185,6 +197,65 @@ impl FrameEncoder {
         );
         self.wire[2 + encoded_length] = 0;
         Ok(&self.wire[..encoded_length + 3])
+    }
+}
+
+struct Header {
+    kind: WireKind,
+    key: Key,
+    boot_id: u64,
+    message_sequence: u32,
+    session_id: u64,
+    request_id: u32,
+}
+
+/// One message its producer serialized, waiting for the sender's single
+/// [`FrameEncoder`], which adds the boot and completes the frame. A queue of
+/// these carries messages of every type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Outbound {
+    pub kind: WireKind,
+    pub key: Key,
+    pub message_sequence: u32,
+    pub session_id: u64,
+    pub request_id: u32,
+    pub payload: heapless::Vec<u8, MAX_POSTCARD_BYTES>,
+}
+
+impl Outbound {
+    pub fn new<M: Message>(
+        message_sequence: u32,
+        session_id: u64,
+        request_id: u32,
+        body: &M,
+    ) -> Result<Self, EncodeError> {
+        let mut payload = heapless::Vec::new();
+        payload
+            .resize_default(MAX_POSTCARD_BYTES)
+            .expect("the buffer holds its capacity");
+        let length = postcard::to_slice(body, &mut payload)
+            .map_err(|_| EncodeError::Serialize)?
+            .len();
+        payload.truncate(length);
+        Ok(Self {
+            kind: M::WIRE_KIND,
+            key: M::KEY,
+            message_sequence,
+            session_id,
+            request_id,
+            payload,
+        })
+    }
+
+    /// Whether this is message `M`.
+    pub fn is<M: Message>(&self) -> bool {
+        self.key == M::KEY
+    }
+}
+
+impl Drop for Outbound {
+    fn drop(&mut self) {
+        self.payload.zeroize();
     }
 }
 
@@ -223,7 +294,6 @@ impl FrameDecoder {
                 header_errors: 0,
                 framing_version_errors: 0,
                 message_kind_errors: 0,
-                protocol_version_errors: 0,
                 payload_length_errors: 0,
                 checksum_errors: 0,
                 deserialize_errors: 0,
@@ -236,16 +306,22 @@ impl FrameDecoder {
         self.counters
     }
 
+    /// Counts a frame whose payload did not decode as the type its key
+    /// names; the receiver decodes payloads, so it reports them.
+    pub fn count_payload_error(&mut self) {
+        self.counters.deserialize_errors = self.counters.deserialize_errors.saturating_add(1);
+    }
+
     /// Feeds arbitrary serial chunks and calls `receive` for every complete
-    /// frame. Empty delimiters are ignored, so senders may prefix every frame
-    /// with a delimiter to recover from unframed boot output.
-    pub fn feed<T>(
+    /// frame of direction `kind`. Empty delimiters are ignored, so senders may
+    /// prefix every frame with a delimiter to recover from unframed boot
+    /// output.
+    pub fn feed(
         &mut self,
+        kind: WireKind,
         bytes: &[u8],
-        mut receive: impl FnMut(Result<Envelope<T>, DecodeError>),
-    ) where
-        T: for<'de> Deserialize<'de> + WireBody,
-    {
+        mut receive: impl FnMut(Result<Frame<'_>, DecodeError>),
+    ) {
         for &byte in bytes {
             if byte == 0 {
                 if self.discard_until_delimiter {
@@ -264,11 +340,14 @@ impl FrameDecoder {
                     // decoder armed for a body.
                     continue;
                 }
-                let result = self.decode();
-                self.encoded[..self.length].zeroize();
+                let length = self.length;
                 self.inside_frame = false;
                 self.length = 0;
-                receive(result);
+                match self.decode(kind, length) {
+                    Ok(frame) => receive(Ok(frame)),
+                    Err(error) => receive(Err(error)),
+                }
+                self.encoded[..length].zeroize();
                 continue;
             }
 
@@ -287,15 +366,11 @@ impl FrameDecoder {
         }
     }
 
-    fn decode<T>(&mut self) -> Result<Envelope<T>, DecodeError>
-    where
-        T: for<'de> Deserialize<'de> + WireBody,
-    {
-        let decoded_length =
-            cobs::decode_in_place(&mut self.encoded[..self.length]).map_err(|_| {
-                self.counters.cobs_errors = self.counters.cobs_errors.saturating_add(1);
-                DecodeError::Cobs
-            })?;
+    fn decode(&mut self, kind: WireKind, length: usize) -> Result<Frame<'_>, DecodeError> {
+        let decoded_length = cobs::decode_in_place(&mut self.encoded[..length]).map_err(|_| {
+            self.counters.cobs_errors = self.counters.cobs_errors.saturating_add(1);
+            DecodeError::Cobs
+        })?;
         if decoded_length < WIRE_HEADER_BYTES + CHECKSUM_BYTES {
             self.counters.too_short = self.counters.too_short.saturating_add(1);
             return Err(DecodeError::TooShort);
@@ -309,17 +384,15 @@ impl FrameDecoder {
                 self.counters.framing_version_errors.saturating_add(1);
             return Err(DecodeError::FramingVersion);
         }
-        if self.encoded[5] != T::WIRE_KIND as u8 {
+        if self.encoded[5] != kind as u8 {
             self.counters.message_kind_errors = self.counters.message_kind_errors.saturating_add(1);
             return Err(DecodeError::MessageKind);
         }
-        let protocol_version = u16::from_le_bytes([self.encoded[6], self.encoded[7]]);
-        if protocol_version != PROTOCOL_VERSION {
-            self.counters.protocol_version_errors =
-                self.counters.protocol_version_errors.saturating_add(1);
-            return Err(DecodeError::ProtocolVersion);
-        }
-        let payload_length = usize::from(u16::from_le_bytes([self.encoded[32], self.encoded[33]]));
+        let payload_length = usize::from(u16::from_le_bytes(
+            self.encoded[LENGTH_RANGE]
+                .try_into()
+                .expect("header range is fixed"),
+        ));
         let protected_length = WIRE_HEADER_BYTES + payload_length;
         if protected_length + CHECKSUM_BYTES != decoded_length {
             self.counters.payload_length_errors =
@@ -335,44 +408,55 @@ impl FrameDecoder {
             self.counters.checksum_errors = self.counters.checksum_errors.saturating_add(1);
             return Err(DecodeError::Checksum);
         }
-        let identity = RequestIdentity {
-            boot_id: u64::from_le_bytes(
-                self.encoded[8..16]
-                    .try_into()
-                    .expect("header range is fixed"),
-            ),
-            session_id: u64::from_le_bytes(
-                self.encoded[20..28]
-                    .try_into()
-                    .expect("header range is fixed"),
-            ),
-            request_id: u32::from_le_bytes(
-                self.encoded[28..32]
-                    .try_into()
-                    .expect("header range is fixed"),
-            ),
-        };
-        // The checksum and the protocol version passed, so the body is what a
-        // build of this version sent: a body this build cannot decode belongs
-        // to a family it leaves out.
-        let body = postcard::from_bytes(&self.encoded[WIRE_HEADER_BYTES..protected_length])
-            .map_err(|_| {
-                self.counters.deserialize_errors =
-                    self.counters.deserialize_errors.saturating_add(1);
-                DecodeError::UndecodableBody(identity)
-            })?;
         self.counters.frames = self.counters.frames.saturating_add(1);
-        Ok(Envelope {
-            protocol_version,
-            boot_id: identity.boot_id,
-            message_sequence: u32::from_le_bytes(
-                self.encoded[16..20]
-                    .try_into()
-                    .expect("header range is fixed"),
-            ),
-            session_id: identity.session_id,
-            request_id: identity.request_id,
-            body,
+        let field = |range: core::ops::Range<usize>| &self.encoded[range];
+        let u64_at = |at: usize| u64::from_le_bytes(field(at..at + 8).try_into().unwrap());
+        let u32_at = |at: usize| u32::from_le_bytes(field(at..at + 4).try_into().unwrap());
+        Ok(Frame {
+            boot_id: u64_at(6),
+            message_sequence: u32_at(14),
+            session_id: u64_at(18),
+            request_id: u32_at(26),
+            key: Key(field(KEY_RANGE).try_into().unwrap()),
+            payload: &self.encoded[WIRE_HEADER_BYTES..protected_length],
+        })
+    }
+}
+
+/// One intact frame: its header and its still encoded payload. The key
+/// names the payload's type; the receiver decodes the types it serves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Frame<'a> {
+    pub boot_id: u64,
+    pub message_sequence: u32,
+    pub session_id: u64,
+    pub request_id: u32,
+    pub key: Key,
+    pub payload: &'a [u8],
+}
+
+impl Frame<'_> {
+    /// The request identity the header gives this frame.
+    pub const fn identity(&self) -> RequestIdentity {
+        RequestIdentity {
+            boot_id: self.boot_id,
+            session_id: self.session_id,
+            request_id: self.request_id,
+        }
+    }
+
+    /// This frame as message `M`: `None` when its key names another type.
+    pub fn decode<M: Message>(&self) -> Option<Result<Envelope<M>, DecodeError>> {
+        (self.key == M::KEY).then(|| {
+            postcard::from_bytes(self.payload)
+                .map(|body| Envelope {
+                    boot_id: self.boot_id,
+                    message_sequence: self.message_sequence,
+                    session_id: self.session_id,
+                    request_id: self.request_id,
+                    body,
+                })
+                .map_err(|_| DecodeError::Payload)
         })
     }
 }

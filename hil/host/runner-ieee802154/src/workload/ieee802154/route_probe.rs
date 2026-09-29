@@ -18,8 +18,9 @@ use std::{fs, path::Path, time::Duration};
 
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
-    Ieee802154ObservedEventState, Ieee802154RouteProbeEntry, Ieee802154RouteProbeEvidence,
-    Ieee802154RouteProbeRequest, Ieee802154RouteProbeStop, Ieee802154SameBitOutcome,
+    ieee802154::Ieee802154ObservedEventState, ieee802154::Ieee802154RouteProbeEntry,
+    ieee802154::Ieee802154RouteProbeEvidence, ieee802154::Ieee802154RouteProbeRequest,
+    ieee802154::Ieee802154RouteProbeStop, ieee802154::Ieee802154SameBitOutcome,
 };
 use serde::Serialize;
 
@@ -176,7 +177,7 @@ fn probe(
     request: Ieee802154RouteProbeRequest,
 ) -> Result<Ieee802154RouteProbeEvidence> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_route_probe {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::RouteProbe>() {
         return Err("firmware does not advertise the IEEE 802.15.4 route probe".into());
     }
     capture.probe_ieee802154_route(request, COMMAND_TIMEOUT)

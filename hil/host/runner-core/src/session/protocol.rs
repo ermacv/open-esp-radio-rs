@@ -1,9 +1,17 @@
+use oer_hil_protocol::base::RejectReason;
+use oer_hil_protocol::base::{
+    CapabilityPage, GetBootStatus, GetCapabilities, GetHello, GetLinkHealth,
+    GetPostMortemCheckpoints, Hello, PostMortemCheckpoints, Rejected,
+};
+use oer_hil_protocol::system::{WatchdogArmed, WatchdogTest};
+use oer_hil_protocol::{Endpoint, Message};
+
 use super::*;
 
 #[derive(serde::Serialize)]
 pub struct Observation {
     boot_id: u64,
-    capabilities: Capabilities,
+    capabilities: DeviceCapabilities,
     operation: OperationStatus,
     /// None means the current target state cannot safely snapshot the stacks.
     stack: Option<StackUsage>,
@@ -28,16 +36,20 @@ impl SerialCapture {
         })
     }
 
-    pub fn discover(&self, timeout: Duration) -> Result<Capabilities> {
-        let response = self.exchange(0, 0, Command::GetCapabilities, timeout)?;
-        match response.body {
-            Event::Hello(capabilities) if response.boot_id != 0 => Ok(capabilities),
-            Event::Rejected(reason) => Err(format!("device rejected read-only discovery: {reason:?}; firmware must support boot discovery").into()),
-            _ => Err("device returned an invalid boot discovery response".into()),
-        }
+    /// The capabilities of whatever boot runs, found without knowing it.
+    pub fn discover(&self, timeout: Duration) -> Result<DeviceCapabilities> {
+        let reply = self.exchange(0, 0, GetHello, timeout)?;
+        let Some(hello) = reply.decode::<Hello>().filter(|_| reply.boot_id != 0) else {
+            return Err(format!(
+                "device answered read-only discovery with {}; firmware must support boot discovery",
+                reply.path()
+            )
+            .into());
+        };
+        self.capabilities_of(reply.boot_id, hello, timeout)
     }
 
-    /// Ask a boot whose Hello the link lost for its capabilities.
+    /// Ask a boot whose Hello the link lost for it again.
     ///
     /// The USB Serial/JTAG can drop the first bytes of a frame, so the
     /// boot's unsolicited Hello never decodes while the boot runs and
@@ -46,7 +58,7 @@ impl SerialCapture {
     /// boot with the answer, and only while the answer is among the boot's
     /// first messages; the capture then records the solicited Hello.
     /// Otherwise the missing Hello stands as the failure.
-    fn solicit_lost_hello(&self, timeout: Duration) -> Result<Capabilities> {
+    fn solicit_lost_hello(&self, timeout: Duration) -> Result<DeviceCapabilities> {
         const MISSING: &str = "device did not publish a HIL protocol hello";
         {
             let booted = console_shows_boot(
@@ -68,7 +80,7 @@ impl SerialCapture {
             }
             state.health.accept_solicited_hello = true;
         }
-        let answer = self.exchange(0, 0, Command::GetCapabilities, timeout);
+        let answer = self.exchange(0, 0, GetHello, timeout);
         let solicited = {
             let mut state = self
                 .protocol
@@ -78,52 +90,59 @@ impl SerialCapture {
             state.health.accept_solicited_hello = false;
             state.health.solicited_hello
         };
-        let answer = answer
-            .map_err(|error| format!("{MISSING}, nor answered a capability request: {error}"))?;
-        match (answer.body, solicited) {
-            (Event::Hello(capabilities), Some(solicited)) => {
+        let answer =
+            answer.map_err(|error| format!("{MISSING}, nor answered a hello request: {error}"))?;
+        match (answer.decode::<Hello>(), solicited) {
+            (Some(hello), Some(solicited)) => {
                 eprintln!(
-                    "hil: the link lost the boot's hello; its capability answer at target message \
-                     {} began the boot",
+                    "hil: the link lost the boot's hello; its answer to the hello request at \
+                     target message {} began the boot",
                     solicited.message_sequence
                 );
-                Ok(capabilities)
+                self.capabilities_of(answer.boot_id, hello, timeout)
             }
-            _ => Err(format!("{MISSING}, and its capability answer began no fresh boot").into()),
+            _ => Err(format!("{MISSING}, and its hello answer began no fresh boot").into()),
         }
+    }
+
+    /// The capability set `hello` of boot `boot_id` announces, page by page.
+    fn capabilities_of(
+        &self,
+        boot_id: u64,
+        hello: Hello,
+        timeout: Duration,
+    ) -> Result<DeviceCapabilities> {
+        let mut pages = Vec::new();
+        let mut first = 0_u16;
+        while first < hello.keys {
+            let page: CapabilityPage =
+                self.request_to(boot_id, 0, GetCapabilities { first }, timeout)?;
+            if page.first != first || page.keys.is_empty() {
+                return Err(format!("invalid capability page {first}").into());
+            }
+            first += page.keys.len() as u16;
+            pages.push(page);
+        }
+        Ok(DeviceCapabilities::assemble(hello, &pages)?)
     }
 
     pub fn inspect_stack_usage(&self, timeout: Duration) -> Result<Option<StackUsage>> {
-        match self
-            .send_command(0, Command::QueryStackUsage, timeout)?
-            .body
-        {
-            Event::StackUsage(stack) => Ok(Some(stack)),
-            Event::Rejected(oer_hil_protocol::RejectReason::InvalidState) => Ok(None),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected stack observation: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid stack observation".into()),
+        match self.call(0, oer_hil_protocol::system::GetStacks, timeout)? {
+            Ok(oer_hil_protocol::system::Stacks(stack)) => Ok(Some(stack)),
+            Err(oer_hil_protocol::base::RejectReason::InvalidState) => Ok(None),
+            Err(reason) => Err(format!("device rejected stack observation: {reason:?}").into()),
         }
     }
 
-    /// Performs one typed host-to-target round trip and returns the current
-    /// image capabilities.
-    pub fn request_capabilities(&self, timeout: Duration) -> Result<Capabilities> {
-        let hello = self.wait_for_protocol_after(0, timeout, |message| {
-            matches!(message.body, Event::Hello(_))
-        })?;
-        if hello.is_none() {
+    /// The current image's capabilities, from its boot's Hello.
+    pub fn request_capabilities(&self, timeout: Duration) -> Result<DeviceCapabilities> {
+        let Some(hello) =
+            self.wait_for_message_after(0, timeout, |message| message.is::<Hello>())?
+        else {
             return self.solicit_lost_hello(timeout);
-        }
-        let response = self.send_command(0, Command::GetCapabilities, timeout)?;
-        match response.body {
-            Event::Hello(capabilities) => Ok(capabilities),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected HIL capability request: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid HIL capability response".into()),
-        }
+        };
+        let announced = hello.decode::<Hello>().ok_or("undecodable hello")?;
+        self.capabilities_of(hello.boot_id, announced, timeout)
     }
 
     /// Establishes the typed link and provisions this boot from host-owned
@@ -132,17 +151,18 @@ impl SerialCapture {
     fn prepare_protocol(
         &self,
         target: Target<'_>,
-    ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
+    ) -> Result<(DeviceCapabilities, Option<StartupArtifactStatus>)> {
         let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
         let artifact_path = target.lab.device.startup_artifact.as_deref();
-        if artifact_path.is_some() && !capabilities.features.startup_artifact {
+        if artifact_path.is_some() && !capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
+        {
             return Err("firmware does not support a host-owned startup artifact".into());
         }
-        if !capabilities.features.data_plane_placement {
+        if !capabilities.has::<oer_hil_protocol::network::DataPlanePlacement>() {
             return Err("firmware does not support explicit data-plane placement".into());
         }
         let artifact_event_start = self.protocol_event_count();
-        if capabilities.features.startup_artifact
+        if capabilities.has::<oer_hil_protocol::phy::StartupArtifact>()
             && let Some(path) = artifact_path
             && let Some(bytes) = crate::session::startup_artifact::load_if_present(path)?
         {
@@ -155,10 +175,11 @@ impl SerialCapture {
                 },
             );
         }
-        if capabilities.features.runtime_initialization {
+        if capabilities.has::<oer_hil_protocol::wifi::RuntimeInitialization>() {
             self.initialize(target, PROTOCOL_READY_TIMEOUT)?;
         }
-        let startup_artifact_status = if capabilities.features.startup_artifact
+        let startup_artifact_status = if capabilities
+            .has::<oer_hil_protocol::phy::StartupArtifact>()
             && let Some(path) = artifact_path
         {
             let status = self.wait_for_startup_artifact_status_after(
@@ -203,28 +224,27 @@ impl SerialCapture {
         start: usize,
         timeout: Duration,
     ) -> Result<StartupArtifactStatus> {
-        let event = self
-            .wait_for_protocol_after(start, timeout, |message| {
-                matches!(&message.body, Event::StartupArtifactReady(_))
-            })?
+        let (_, oer_hil_protocol::phy::StartupArtifactReady(status)) = self
+            .wait_for_after(
+                start,
+                timeout,
+                |_, _: &oer_hil_protocol::phy::StartupArtifactReady| true,
+            )?
             .ok_or("device did not report startup artifact initialization status")?;
-        match event.body {
-            Event::StartupArtifactReady(status) => Ok(status),
-            _ => unreachable!("startup artifact status predicate accepted only status events"),
-        }
+        Ok(status)
     }
 
     fn upload_startup_artifact(&self, bytes: &[u8], timeout: Duration) -> Result<()> {
         for chunk in crate::session::startup_artifact::chunks(bytes)? {
-            match self
-                .send_command(0, Command::UploadStartupArtifact(chunk), timeout)?
-                .body
-            {
-                Event::Accepted => {}
-                Event::Rejected(reason) => {
+            match self.call(
+                0,
+                oer_hil_protocol::phy::UploadStartupArtifact(chunk),
+                timeout,
+            )? {
+                Ok(oer_hil_protocol::base::Accepted) => {}
+                Err(reason) => {
                     return Err(format!("device rejected HIL startup artifact: {reason:?}").into());
                 }
-                _ => return Err("device returned an invalid startup artifact response".into()),
             }
         }
         Ok(())
@@ -250,49 +270,41 @@ impl SerialCapture {
         deadline: Instant,
     ) -> Result<Option<StartupArtifactChunk>> {
         Ok(self
-            .wait_for_protocol_cursor(
+            .wait_for_cursor(
                 cursor,
                 deadline.saturating_duration_since(Instant::now()),
-                |message| matches!(message.body, Event::StartupArtifact(_)),
+                |_, _: &oer_hil_protocol::phy::StartupArtifactPart| true,
             )?
-            .map(|message| match message.body {
-                Event::StartupArtifact(chunk) => chunk,
-                _ => unreachable!("artifact predicate accepted only artifact chunks"),
-            }))
+            .map(|(_, oer_hil_protocol::phy::StartupArtifactPart(chunk))| chunk))
     }
 
     fn initialize(&self, target: Target<'_>, timeout: Duration) -> Result<()> {
         let first_event = self.protocol_event_count();
-        let response = self.send_command(
+        let (reply, outcome) = self.call_current(
             0,
-            Command::Initialize(oer_hil_protocol::InitializationConfiguration {
-                ap_scheduler: target.settings.ap_scheduler,
-                ipv4: target.lab.station.ipv4(),
-                data_plane: target.settings.data_plane,
-                rx_checksum: target.settings.rx_checksum,
-                tx_udp_checksum: target.settings.tx_udp_checksum,
-                tx_buffer: target.settings.tx_buffer,
-                rx_continuation: target.settings.rx_continuation,
-                l1_cache_counters: target.settings.l1_cache_counters,
-            }),
+            oer_hil_protocol::wifi::Initialize(
+                oer_hil_protocol::wifi::InitializationConfiguration {
+                    ap_scheduler: target.settings.ap_scheduler,
+                    ipv4: target.lab.station.ipv4(),
+                    data_plane: target.settings.data_plane,
+                    rx_checksum: target.settings.rx_checksum,
+                    tx_udp_checksum: target.settings.tx_udp_checksum,
+                    tx_buffer: target.settings.tx_buffer,
+                    rx_continuation: target.settings.rx_continuation,
+                    l1_cache_counters: target.settings.l1_cache_counters,
+                },
+            ),
             timeout,
         )?;
-        let request_id = response.request_id;
-        match response.body {
-            Event::Initialized => return Ok(()),
-            Event::Accepted
-            | Event::State(StateChange {
-                current: SessionState::Idle,
-                ..
-            }) => {}
-            Event::Rejected(reason) => {
-                return Err(format!("device rejected HIL initialization: {reason:?}").into());
-            }
-            _ => return Err("device returned an invalid initialization response".into()),
+        if let Err(reason) = outcome {
+            return Err(format!("device rejected HIL initialization: {reason:?}").into());
         }
-        self.wait_for_protocol_after(first_event, timeout, |message| {
-            message.request_id == request_id && matches!(message.body, Event::Initialized)
-        })?
+        let request_id = reply.request_id;
+        self.wait_for_after(
+            first_event,
+            timeout,
+            |message, _: &oer_hil_protocol::wifi::Initialized| message.request_id == request_id,
+        )?
         .ok_or_else(|| "device did not complete role-neutral initialization".into())
         .map(|_| ())
     }
@@ -302,7 +314,7 @@ impl SerialCapture {
     pub fn prepare_startup(
         &self,
         target: Target<'_>,
-    ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
+    ) -> Result<(DeviceCapabilities, Option<StartupArtifactStatus>)> {
         self.prepare_protocol(target)
     }
 
@@ -311,13 +323,17 @@ impl SerialCapture {
     pub fn begin_station_attempt(
         &self,
         target: Target<'_>,
-    ) -> Result<(Capabilities, WifiCommandHandle)> {
+    ) -> Result<(DeviceCapabilities, WifiCommandHandle)> {
         let (capabilities, _) = self.prepare_protocol(target)?;
         let handle = self.request_station_start(target)?;
         Ok((capabilities, handle))
     }
 
-    pub fn prepare_station(&self, target: Target<'_>, timeout: Duration) -> Result<Capabilities> {
+    pub fn prepare_station(
+        &self,
+        target: Target<'_>,
+        timeout: Duration,
+    ) -> Result<DeviceCapabilities> {
         self.prepare_station_with_startup_artifact_status(target, timeout)
             .map(|(capabilities, _)| capabilities)
     }
@@ -326,7 +342,7 @@ impl SerialCapture {
         &self,
         target: Target<'_>,
         timeout: Duration,
-    ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
+    ) -> Result<(DeviceCapabilities, Option<StartupArtifactStatus>)> {
         let (capabilities, startup_artifact_status) = self.prepare_protocol(target)?;
         let lifecycle_cursor = self.station_lifecycle_cursor();
         let handle = self.request_station_start(target)?;
@@ -338,73 +354,132 @@ impl SerialCapture {
     /// Read a window of the target's radio-PHY register image.
     pub fn read_phy_register_image(
         &self,
-        request: oer_hil_protocol::PhyRegisterImageRequest,
+        request: oer_hil_protocol::phy::PhyRegisterImageRequest,
         timeout: Duration,
-    ) -> Result<oer_hil_protocol::PhyRegisterImageWords> {
-        match self
-            .send_command(0, Command::PhyRegisterImage(request), timeout)?
-            .body
-        {
-            Event::PhyRegisterImage(words) => Ok(words),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected a register image read: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid register image response".into()),
+    ) -> Result<oer_hil_protocol::phy::PhyRegisterImageWords> {
+        match self.call(
+            0,
+            oer_hil_protocol::phy::ReadRegisterImage(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::phy::RegisterImageWords(words)) => Ok(words),
+            Err(reason) => Err(format!("device rejected a register image read: {reason:?}").into()),
         }
     }
 
     /// Read a window of the target's analog image.
     pub fn read_phy_analog_image(
         &self,
-        request: oer_hil_protocol::PhyRegisterImageRequest,
+        request: oer_hil_protocol::phy::PhyRegisterImageRequest,
         timeout: Duration,
-    ) -> Result<oer_hil_protocol::PhyAnalogImageBytes> {
-        match self
-            .send_command(0, Command::PhyAnalogImage(request), timeout)?
-            .body
-        {
-            Event::PhyAnalogImage(bytes) => Ok(bytes),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected an analog image read: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid analog image response".into()),
+    ) -> Result<oer_hil_protocol::phy::PhyAnalogImageBytes> {
+        match self.call(0, oer_hil_protocol::phy::ReadAnalogImage(request), timeout)? {
+            Ok(oer_hil_protocol::phy::AnalogImageBytes(bytes)) => Ok(bytes),
+            Err(reason) => Err(format!("device rejected an analog image read: {reason:?}").into()),
         }
     }
 
     pub fn query_operation_status(&self, timeout: Duration) -> Result<OperationStatus> {
-        match self.send_command(0, Command::GetStatus, timeout)?.body {
-            Event::OperationStatus(status) => Ok(status),
-            Event::Rejected(reason) => {
+        match self.call(0, oer_hil_protocol::network::GetStatus, timeout)? {
+            Ok(oer_hil_protocol::network::Status(status)) => Ok(status),
+            Err(reason) => {
                 Err(format!("device rejected operation-status query: {reason:?}").into())
             }
-            _ => Err("device returned an invalid operation-status response".into()),
         }
     }
 
-    fn send_command(
+    /// Sends `body` to the current boot and returns its response, or the
+    /// reason the device refused it.
+    pub fn call<E: Endpoint>(
         &self,
         session_id: u64,
-        body: Command,
+        body: E,
         timeout: Duration,
-    ) -> Result<Envelope<Event>> {
-        self.check_link()?;
+    ) -> Result<std::result::Result<E::Response, RejectReason>> {
         let boot_id = self
             .latest_boot_id()
-            .ok_or("HIL protocol hello disappeared before command")?;
-        self.exchange(boot_id, session_id, body, timeout)
+            .ok_or("HIL protocol hello disappeared before request")?;
+        self.call_to(boot_id, session_id, body, timeout)
     }
 
-    fn exchange(
+    /// Sends `body` to boot `boot_id`; see [`Self::call`].
+    fn call_to<E: Endpoint>(
         &self,
         boot_id: u64,
         session_id: u64,
-        body: Command,
+        body: E,
         timeout: Duration,
-    ) -> Result<Envelope<Event>> {
+    ) -> Result<std::result::Result<E::Response, RejectReason>> {
+        Ok(self.call_identified(boot_id, session_id, body, timeout)?.1)
+    }
+
+    /// [`Self::call`], with the reply's header: its request identifier is
+    /// the one the device's later messages about this request carry.
+    fn call_current<E: Endpoint>(
+        &self,
+        session_id: u64,
+        body: E,
+        timeout: Duration,
+    ) -> Result<(Received, std::result::Result<E::Response, RejectReason>)> {
+        let boot_id = self
+            .latest_boot_id()
+            .ok_or("HIL protocol hello disappeared before request")?;
+        self.call_identified(boot_id, session_id, body, timeout)
+    }
+
+    /// [`Self::call_to`], with the reply's header.
+    fn call_identified<E: Endpoint>(
+        &self,
+        boot_id: u64,
+        session_id: u64,
+        body: E,
+        timeout: Duration,
+    ) -> Result<(Received, std::result::Result<E::Response, RejectReason>)> {
+        let reply = self.exchange(boot_id, session_id, body, timeout)?;
+        if let Some(response) = reply.decode::<E::Response>() {
+            return Ok((reply, Ok(response)));
+        }
+        match reply.decode::<Rejected>() {
+            Some(Rejected(reason)) => Ok((reply, Err(reason))),
+            None => Err(format!("device answered {} with {}", E::PATH, reply.path()).into()),
+        }
+    }
+
+    /// Sends `body` to the current boot and returns its response; a refusal
+    /// is an error.
+    pub fn request<E: Endpoint>(
+        &self,
+        session_id: u64,
+        body: E,
+        timeout: Duration,
+    ) -> Result<E::Response> {
+        self.call(session_id, body, timeout)?
+            .map_err(|reason| format!("device rejected {}: {reason:?}", E::PATH).into())
+    }
+
+    fn request_to<E: Endpoint>(
+        &self,
+        boot_id: u64,
+        session_id: u64,
+        body: E,
+        timeout: Duration,
+    ) -> Result<E::Response> {
+        self.call_to(boot_id, session_id, body, timeout)?
+            .map_err(|reason| format!("device rejected {}: {reason:?}", E::PATH).into())
+    }
+
+    /// Sends `body` to boot `boot_id` (0: whichever boot runs) and returns
+    /// the device's reply to it.
+    fn exchange<E: Endpoint>(
+        &self,
+        boot_id: u64,
+        session_id: u64,
+        body: E,
+        timeout: Duration,
+    ) -> Result<Received> {
         self.check_link()?;
         let request_id = self.next_host_sequence.fetch_add(1, Ordering::Relaxed);
         let event_count = self.protocol_event_count();
-        let kind = super::command_kind(&body);
         let command = Envelope::new(boot_id, request_id, session_id, request_id, body);
         let mut encoder = FrameEncoder::new();
         let frame = encoder
@@ -423,10 +498,12 @@ impl SerialCapture {
             .push(super::SentCommand {
                 request_id,
                 session_id,
-                kind,
+                path: E::PATH,
                 host_sent_unix_micros: super::host_unix_micros(),
             });
-        self.wait_for_protocol_after(event_count, timeout, |message| {
+        // Other messages about this request, such as the evidence a replay
+        // publishes before its terminal response, are not its reply.
+        self.wait_for_message_after(event_count, timeout, |message| {
             command_response_matches(
                 message,
                 if boot_id == 0 {
@@ -436,31 +513,23 @@ impl SerialCapture {
                 },
                 session_id,
                 request_id,
-            )
+            ) && (message.is::<E::Response>() || message.is::<Rejected>())
         })?
-        .ok_or_else(|| "device did not answer HIL command".into())
+        .ok_or_else(|| format!("device did not answer {}", E::PATH).into())
     }
 
-    fn expect_accepted(
+    fn expect_accepted<E: Endpoint<Response = oer_hil_protocol::base::Accepted>>(
         &self,
         session_id: u64,
-        command: Command,
+        body: E,
         operation: &str,
-        expected_state: SessionState,
     ) -> Result<()> {
-        let response = self
-            .send_command(session_id, command, PROTOCOL_READY_TIMEOUT)
+        self.call(session_id, body, PROTOCOL_READY_TIMEOUT)
             .map_err(|error| {
                 crate::error::context(format!("session {operation} command failed"), error)
-            })?;
-        match response.body {
-            Event::Accepted => Ok(()),
-            Event::State(StateChange { current, .. }) if current == expected_state => Ok(()),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected session {operation}: {reason:?}").into())
-            }
-            _ => Err(format!("device returned an invalid session {operation} response").into()),
-        }
+            })?
+            .map(|_| ())
+            .map_err(|reason| format!("device rejected session {operation}: {reason:?}").into())
     }
 
     pub fn start_session(&self, config: SessionConfig) -> Result<SessionHandle> {
@@ -472,13 +541,16 @@ impl SerialCapture {
     /// both UDP payload directions can be correlated to this lifecycle stage.
     pub fn start_identified_udp_session(
         &self,
-        build: impl FnOnce(oer_hil_protocol::UdpSessionPayloadIdentity) -> SessionConfig,
-    ) -> Result<(SessionHandle, oer_hil_protocol::UdpSessionPayloadIdentity)> {
+        build: impl FnOnce(oer_hil_protocol::network::UdpSessionPayloadIdentity) -> SessionConfig,
+    ) -> Result<(
+        SessionHandle,
+        oer_hil_protocol::network::UdpSessionPayloadIdentity,
+    )> {
         let boot_id = self
             .latest_boot_id()
             .ok_or("device omitted the current boot identity")?;
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
-        let identity = oer_hil_protocol::UdpSessionPayloadIdentity::new(
+        let identity = oer_hil_protocol::network::UdpSessionPayloadIdentity::new(
             boot_id.rotate_left(32).wrapping_add(session_id),
         );
         let session = self.start_session_with_id(session_id, build(identity))?;
@@ -501,31 +573,24 @@ impl SerialCapture {
         };
         self.expect_accepted(
             session_id,
-            Command::Configure(config),
+            oer_hil_protocol::network::Configure(config),
             "configuration",
-            SessionState::Configured,
         )?;
-        self.expect_accepted(session_id, Command::Arm, "arm", SessionState::Armed)?;
-        self.expect_accepted(session_id, Command::Start, "start", SessionState::Running)?;
+        self.expect_accepted(session_id, oer_hil_protocol::network::Arm, "arm")?;
+        self.expect_accepted(session_id, oer_hil_protocol::network::Start, "start")?;
         let expected_directions: &[Direction] = match direction {
             Direction::Rx => &[Direction::Rx],
             Direction::Tx => &[Direction::Tx],
             Direction::Bidirectional => &[Direction::Rx, Direction::Tx],
         };
         for expected in expected_directions {
-            self.wait_for_session_event(handle, PROTOCOL_READY_TIMEOUT, |message| {
-                message.session_id == session_id
-                    && matches!(
-                        message.body,
-                        Event::SessionReady(reported)
-                            if session_ready_covers(
-                                direction,
-                                reported,
-                                *expected,
-                                link_requirements,
-                            )
-                    )
-            })?
+            self.wait_for_session_event(
+                handle,
+                PROTOCOL_READY_TIMEOUT,
+                |_, reported: &oer_hil_protocol::network::SessionReady| {
+                    session_ready_covers(direction, *reported, *expected, link_requirements)
+                },
+            )?
             .ok_or_else(|| {
                 format!(
                     "device did not publish {expected:?} data-plane readiness for session \
@@ -537,24 +602,45 @@ impl SerialCapture {
         Ok(handle)
     }
 
-    fn wait_for_session_event(
+    /// The first `M` of `session` that `accept` takes; the session's failure
+    /// ends the wait as an error.
+    fn wait_for_session_event<M: Message>(
         &self,
         session: SessionHandle,
         timeout: Duration,
-        predicate: impl Fn(&Envelope<Event>) -> bool,
-    ) -> Result<Option<Envelope<Event>>> {
-        let event = self.wait_for_protocol_after(session.first_event, timeout, |message| {
+        accept: impl Fn(&Received, &M) -> bool,
+    ) -> Result<Option<(Received, M)>> {
+        let found = self.wait_for_message_after(session.first_event, timeout, |message| {
             message.session_id == session.session_id
-                && (predicate(message) || matches!(message.body, Event::Failed(_)))
+                && (message
+                    .decode::<M>()
+                    .is_some_and(|body| accept(message, &body))
+                    || message.is::<oer_hil_protocol::network::Failed>())
         })?;
-        if let Some(Envelope {
-            body: Event::Failed(reason),
-            ..
-        }) = event
-        {
+        let Some(message) = found else {
+            return Ok(None);
+        };
+        if let Some(oer_hil_protocol::network::Failed(reason)) = message.decode() {
             return Err(format!("target session {} failed: {reason:?}", session.session_id).into());
         }
-        Ok(event)
+        let body = message.decode::<M>().expect("the accepted message decodes");
+        Ok(Some((message, body)))
+    }
+
+    /// The first evidence record of `session` that `pick` takes.
+    fn session_evidence<T>(
+        &self,
+        session: SessionHandle,
+        timeout: Duration,
+        pick: impl Fn(EvidenceRecord) -> Option<T>,
+    ) -> Result<Option<T>> {
+        Ok(self
+            .wait_for_session_event(
+                session,
+                timeout,
+                |_, oer_hil_protocol::network::Evidence(record)| pick(*record).is_some(),
+            )?
+            .and_then(|(_, oer_hil_protocol::network::Evidence(record))| pick(record)))
     }
 
     pub fn wait_for_udp_rx_started(
@@ -562,14 +648,13 @@ impl SerialCapture {
         session: SessionHandle,
         timeout: Duration,
     ) -> Result<u64> {
-        let event = self
-            .wait_for_session_event(session, timeout, |message| {
-                matches!(message.body, Event::UdpRxStarted { datagrams: 256 })
-            })?
+        let (_, oer_hil_protocol::network::UdpRxStarted { datagrams }) = self
+            .wait_for_session_event(
+                session,
+                timeout,
+                |_, oer_hil_protocol::network::UdpRxStarted { datagrams }| *datagrams == 256,
+            )?
             .ok_or("device did not confirm UDP delivery before maintenance")?;
-        let Event::UdpRxStarted { datagrams } = event.body else {
-            unreachable!()
-        };
         Ok(datagrams)
     }
 
@@ -579,42 +664,27 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<SessionEvidence> {
         let deadline = crate::transport::events::deadline_after(timeout);
-        let evidence = self
-            .wait_for_session_event(
-                session,
-                deadline.saturating_duration_since(Instant::now()),
-                |message| {
-                    message.session_id == session.session_id
-                        && matches!(message.body, Event::Evidence(EvidenceRecord::Transport(_)))
-                },
-            )?
+        let remaining = || deadline.saturating_duration_since(Instant::now());
+        let transport = self
+            .session_evidence(session, remaining(), |record| match record {
+                EvidenceRecord::Transport(transport) => Some(transport),
+                _ => None,
+            })?
             .ok_or("device did not publish structured session evidence")?;
-        let transport = match evidence.body {
-            Event::Evidence(EvidenceRecord::Transport(transport)) => transport,
-            _ => unreachable!("session evidence predicate accepted only transport evidence"),
-        };
         let mut flow_transport = [None; SESSION_FLOW_CAPACITY];
         for (index, flow_id) in session.flow_ids.into_iter().enumerate() {
             let Some(flow_id) = flow_id else {
                 continue;
             };
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            let flow_evidence = self
-                .wait_for_session_event(session, remaining, |message| {
-                    message.session_id == session.session_id
-                        && matches!(
-                            message.body,
-                            Event::Evidence(EvidenceRecord::FlowTransport(flow))
-                                if flow.flow_id == flow_id
-                        )
+            flow_transport[index] = Some(
+                self.session_evidence(session, remaining(), |record| match record {
+                    EvidenceRecord::FlowTransport(flow) if flow.flow_id == flow_id => Some(flow),
+                    _ => None,
                 })?
                 .ok_or_else(|| {
                     format!("device did not publish transport evidence for flow {flow_id}")
-                })?;
-            flow_transport[index] = Some(match flow_evidence.body {
-                Event::Evidence(EvidenceRecord::FlowTransport(flow)) => flow,
-                _ => unreachable!("flow predicate accepted only flow transport evidence"),
-            });
+                })?,
+            );
         }
         let flow_total = TransportEvidence::from_flows(flow_transport);
         if flow_total != transport {
@@ -623,20 +693,12 @@ impl SerialCapture {
             )
             .into());
         }
-        let link_evidence = self
-            .wait_for_session_event(
-                session,
-                deadline.saturating_duration_since(Instant::now()),
-                |message| {
-                    message.session_id == session.session_id
-                        && matches!(message.body, Event::Evidence(EvidenceRecord::Link(_)))
-                },
-            )?
+        let link = self
+            .session_evidence(session, remaining(), |record| match record {
+                EvidenceRecord::Link(link) => Some(link),
+                _ => None,
+            })?
             .ok_or("device did not publish structured protocol-link evidence")?;
-        let link = match link_evidence.body {
-            Event::Evidence(EvidenceRecord::Link(link)) => link,
-            _ => unreachable!("link evidence predicate accepted only link evidence"),
-        };
         if link.rx_cobs_errors != 0
             || link.rx_checksum_errors != 0
             || link.rx_decode_errors != 0
@@ -648,83 +710,43 @@ impl SerialCapture {
             ))
             .into());
         }
-        let stack_evidence = self
+        let stack = self
+            .session_evidence(session, remaining(), |record| match record {
+                EvidenceRecord::Stack(stack) => Some(stack),
+                _ => None,
+            })?
+            .ok_or("device did not publish structured stack evidence")?;
+        validate_stack_usage(stack)?;
+        let (_, finished) = self
             .wait_for_session_event(
                 session,
-                deadline.saturating_duration_since(Instant::now()),
-                |message| {
-                    message.session_id == session.session_id
-                        && matches!(message.body, Event::Evidence(EvidenceRecord::Stack(_)))
-                },
+                remaining(),
+                |_, _: &oer_hil_protocol::network::Finished| true,
             )?
-            .ok_or("device did not publish structured stack evidence")?;
-        let stack = match stack_evidence.body {
-            Event::Evidence(EvidenceRecord::Stack(stack)) => stack,
-            _ => unreachable!("stack evidence predicate accepted only stack evidence"),
-        };
-        validate_stack_usage(stack)?;
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let finished = self
-            .wait_for_session_event(session, remaining, |message| {
-                message.session_id == session.session_id
-                    && matches!(message.body, Event::Finished(_))
-            })?
             .ok_or("device did not finish the structured HIL session")?;
-        let finished = match finished.body {
-            Event::Finished(finished) => finished,
-            _ => unreachable!("session completion predicate accepted only Finished"),
-        };
-        let radio = self
-            .wait_for_session_event(session, Duration::ZERO, |message| {
-                message.session_id == session.session_id
-                    && matches!(message.body, Event::Evidence(EvidenceRecord::Radio(_)))
-            })?
-            .map(|event| match event.body {
-                Event::Evidence(EvidenceRecord::Radio(radio)) => radio,
-                _ => unreachable!("radio predicate accepted only radio evidence"),
-            });
-        let tx_timing = self
-            .wait_for_session_event(session, Duration::ZERO, |message| {
-                message.session_id == session.session_id
-                    && matches!(
-                        message.body,
-                        Event::Evidence(EvidenceRecord::TxAggregateTiming(_))
-                    )
-            })?
-            .map(|event| match event.body {
-                Event::Evidence(EvidenceRecord::TxAggregateTiming(timing)) => timing,
-                _ => unreachable!("TX timing predicate accepted only aggregate timing evidence"),
-            });
-        let rx_delivery = self
-            .wait_for_session_event(session, Duration::ZERO, |message| {
-                message.session_id == session.session_id
-                    && matches!(message.body, Event::Evidence(EvidenceRecord::RxDelivery(_)))
-            })?
-            .map(|event| match event.body {
-                Event::Evidence(EvidenceRecord::RxDelivery(delivery)) => delivery,
-                _ => unreachable!("RX delivery predicate accepted only delivery evidence"),
-            });
-        let network_scheduler = self
-            .wait_for_session_event(session, Duration::ZERO, |message| {
-                message.session_id == session.session_id
-                    && matches!(
-                        message.body,
-                        Event::Evidence(EvidenceRecord::NetworkScheduler(_))
-                    )
-            })?
-            .map(|event| match event.body {
-                Event::Evidence(EvidenceRecord::NetworkScheduler(evidence)) => evidence,
-                _ => unreachable!("scheduler predicate accepted only scheduler evidence"),
-            });
-        let rx_zero_copy = self
-            .wait_for_session_event(session, Duration::ZERO, |message| {
-                message.session_id == session.session_id
-                    && matches!(message.body, Event::Evidence(EvidenceRecord::RxZeroCopy(_)))
-            })?
-            .map(|event| match event.body {
-                Event::Evidence(EvidenceRecord::RxZeroCopy(evidence)) => evidence,
-                _ => unreachable!("zero-copy predicate accepted only zero-copy evidence"),
-            });
+        let radio = self.session_evidence(session, Duration::ZERO, |record| match record {
+            EvidenceRecord::Radio(radio) => Some(radio),
+            _ => None,
+        })?;
+        let tx_timing = self.session_evidence(session, Duration::ZERO, |record| match record {
+            EvidenceRecord::TxAggregateTiming(timing) => Some(timing),
+            _ => None,
+        })?;
+        let rx_delivery =
+            self.session_evidence(session, Duration::ZERO, |record| match record {
+                EvidenceRecord::RxDelivery(delivery) => Some(delivery),
+                _ => None,
+            })?;
+        let network_scheduler =
+            self.session_evidence(session, Duration::ZERO, |record| match record {
+                EvidenceRecord::NetworkScheduler(evidence) => Some(evidence),
+                _ => None,
+            })?;
+        let rx_zero_copy =
+            self.session_evidence(session, Duration::ZERO, |record| match record {
+                EvidenceRecord::RxZeroCopy(evidence) => Some(evidence),
+                _ => None,
+            })?;
         if let Some(zero_copy) = rx_zero_copy {
             super::validation::validate_rx_zero_copy(zero_copy)?;
         }
@@ -798,12 +820,11 @@ impl SerialCapture {
     pub fn acknowledge_session(&self, session: SessionHandle) -> Result<()> {
         let original = self.wait_for_session(session, Duration::ZERO)?;
         let first_event = self.protocol_event_count();
-        let response = self.send_command(
+        if let Err(reason) = self.call(
             session.session_id,
-            Command::ReplayResult,
+            oer_hil_protocol::network::ReplayResult,
             PROTOCOL_READY_TIMEOUT,
-        )?;
-        if let Event::Rejected(reason) = response.body {
+        )? {
             return Err(LinkError::protocol(format!(
                 "target cannot replay completed session {}: {reason:?}",
                 session.session_id
@@ -826,25 +847,23 @@ impl SerialCapture {
         }
         self.expect_accepted(
             session.session_id,
-            Command::AcknowledgeResult,
+            oer_hil_protocol::network::AcknowledgeResult,
             "acknowledgement",
-            SessionState::Idle,
         )
     }
 
     pub fn request_station_epoch_cycle(&self) -> Result<StationEpochHandle> {
         let first_event = self.protocol_event_count();
-        let response = self.send_command(0, Command::CycleStationEpoch, PROTOCOL_READY_TIMEOUT)?;
-        match response.body {
-            Event::Accepted => Ok(StationEpochHandle {
-                request_id: response.request_id,
-                first_event,
-            }),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected station epoch cycle: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid station epoch cycle response".into()),
-        }
+        let (reply, outcome) = self.call_current(
+            0,
+            oer_hil_protocol::wifi::CycleStationEpoch,
+            PROTOCOL_READY_TIMEOUT,
+        )?;
+        outcome.map_err(|reason| format!("device rejected station epoch cycle: {reason:?}"))?;
+        Ok(StationEpochHandle {
+            request_id: reply.request_id,
+            first_event,
+        })
     }
 
     pub fn observed_station_epoch_completion(
@@ -861,106 +880,94 @@ impl SerialCapture {
             .get(handle.first_event..)
             .unwrap_or_default()
             .iter()
+            .filter(|message| message.request_id == handle.request_id)
             .find_map(|message| {
-                if message.request_id != handle.request_id {
-                    return None;
-                }
-                match message.body {
-                    Event::StationEpochCompleted(evidence) => Some(evidence),
-                    _ => None,
-                }
+                message
+                    .decode()
+                    .map(|oer_hil_protocol::wifi::StationEpochCompleted(evidence)| evidence)
             })
     }
 
-    fn request_wifi_command(&self, command: Command, operation: &str) -> Result<WifiCommandHandle> {
+    fn request_wifi_command<E: Endpoint<Response = oer_hil_protocol::base::Accepted>>(
+        &self,
+        command: E,
+        operation: &str,
+    ) -> Result<WifiCommandHandle> {
         let first_event = self.protocol_event_count();
-        let response = self.send_command(0, command, PROTOCOL_READY_TIMEOUT)?;
-        match response.body {
-            Event::Accepted => {
-                let state = self
-                    .protocol
-                    .state
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let accepted_offset = state.messages[first_event..]
-                    .iter()
-                    .position(|message| {
-                        message.boot_id == response.boot_id
-                            && message.session_id == 0
-                            && message.request_id == response.request_id
-                            && message.message_sequence == response.message_sequence
-                    })
-                    .ok_or("accepted Wi-Fi command disappeared from the capture")?;
-                Ok(WifiCommandHandle {
-                    boot_id: response.boot_id,
-                    request_id: response.request_id,
-                    first_event: first_event + accepted_offset + 1,
-                })
-            }
-            Event::Rejected(reason) => {
-                Err(format!("device rejected {operation}: {reason:?}").into())
-            }
-            _ => Err(format!("device returned an invalid {operation} response").into()),
-        }
+        let (reply, outcome) = self.call_current(0, command, PROTOCOL_READY_TIMEOUT)?;
+        outcome.map_err(|reason| format!("device rejected {operation}: {reason:?}"))?;
+        let state = self
+            .protocol
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let accepted_offset = state.messages[first_event..]
+            .iter()
+            .position(|message| {
+                message.boot_id == reply.boot_id
+                    && message.session_id == 0
+                    && message.request_id == reply.request_id
+                    && message.message_sequence == reply.message_sequence
+            })
+            .ok_or("accepted Wi-Fi command disappeared from the capture")?;
+        Ok(WifiCommandHandle {
+            boot_id: reply.boot_id,
+            request_id: reply.request_id,
+            first_event: first_event + accepted_offset + 1,
+        })
     }
 
     pub fn request_station_stop(&self) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::StopStation, "station stop")
+        self.request_wifi_command(oer_hil_protocol::wifi::StopStation, "station stop")
     }
 
     pub fn request_radio_restart(&self) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::RestartRadio, "idle radio restart")
+        self.request_wifi_command(oer_hil_protocol::wifi::RestartRadio, "idle radio restart")
     }
 
     pub fn query_stack_usage(&self, timeout: Duration) -> Result<StackUsage> {
-        let response = self.send_command(0, Command::QueryStackUsage, timeout)?;
-        match response.body {
-            Event::StackUsage(usage) => {
+        match self.call(0, oer_hil_protocol::system::GetStacks, timeout)? {
+            Ok(oer_hil_protocol::system::Stacks(usage)) => {
                 validate_stack_usage(usage)?;
                 Ok(usage)
             }
-            Event::Rejected(reason) => {
-                Err(format!("device rejected stack-usage query: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid stack-usage response".into()),
+            Err(reason) => Err(format!("device rejected stack-usage query: {reason:?}").into()),
         }
     }
 
     pub fn query_link_health(&self, timeout: Duration) -> Result<LinkHealth> {
-        let response = self.send_command(0, Command::QueryLinkHealth, timeout)?;
-        match response.body {
-            Event::LinkHealth(health) => Ok(health),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected link-health query: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid link-health response".into()),
-        }
+        self.request(0, GetLinkHealth, timeout)
     }
 
     pub fn probe_memory_benchmark(
         &self,
-        request: oer_hil_protocol::MemoryBenchmarkRequest,
+        request: oer_hil_protocol::system::MemoryBenchmarkRequest,
         timeout: Duration,
-    ) -> Result<oer_hil_protocol::MemoryBenchmarkEvidence> {
-        let response = self.send_command(0, Command::ProbeMemoryBenchmark(request), timeout)?;
-        match response.body {
-            Event::MemoryBenchmarkCompleted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected memory benchmark: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid memory-benchmark response".into()),
+    ) -> Result<oer_hil_protocol::system::MemoryBenchmarkEvidence> {
+        match self.call(
+            0,
+            oer_hil_protocol::system::RunMemoryBenchmark(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::system::MemoryBenchmarkCompleted(evidence)) => Ok(evidence),
+            Err(reason) => Err(format!("device rejected memory benchmark: {reason:?}").into()),
         }
     }
 
     pub fn bluetooth_dtm(
         &self,
-        operation: oer_hil_protocol::BluetoothDtmOperation,
-    ) -> Result<oer_hil_protocol::BluetoothDtmEvidence> {
-        match self
-            .send_command(0, Command::BluetoothDtm(operation), Duration::from_secs(5))?
-            .body
-        {
-            Event::BluetoothDtm(evidence) if evidence.completed(operation) => Ok(evidence),
+        operation: oer_hil_protocol::bluetooth::BluetoothDtmOperation,
+    ) -> Result<oer_hil_protocol::bluetooth::BluetoothDtmEvidence> {
+        match self.call(
+            0,
+            oer_hil_protocol::bluetooth::RunDtm(operation),
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::DtmResult(evidence))
+                if evidence.completed(operation) =>
+            {
+                Ok(evidence)
+            }
             response => Err(format!("Bluetooth {operation:?} failed: {response:?}").into()),
         }
     }
@@ -968,30 +975,27 @@ impl SerialCapture {
     /// One raw HCI exchange with the Controller of a `bluetooth_hci` image.
     pub fn bluetooth_hci(
         &self,
-        request: oer_hil_protocol::BluetoothHciRequest,
-    ) -> Result<oer_hil_protocol::BluetoothHciResponse> {
+        request: oer_hil_protocol::bluetooth::BluetoothHciRequest,
+    ) -> Result<oer_hil_protocol::bluetooth::BluetoothHciResponse> {
         let wait = match &request {
-            oer_hil_protocol::BluetoothHciRequest::NextEvent { wait_ms } => {
+            oer_hil_protocol::bluetooth::BluetoothHciRequest::NextEvent { wait_ms } => {
                 Duration::from_millis(u64::from(*wait_ms))
             }
-            oer_hil_protocol::BluetoothHciRequest::Command { .. } => Duration::ZERO,
+            oer_hil_protocol::bluetooth::BluetoothHciRequest::Command { .. } => Duration::ZERO,
         };
-        match self
-            .send_command(
-                0,
-                Command::BluetoothHci(request),
-                Duration::from_secs(5) + wait,
-            )?
-            .body
-        {
-            Event::BluetoothHci(response) => Ok(response),
+        match self.call(
+            0,
+            oer_hil_protocol::bluetooth::ExchangeHci(request),
+            Duration::from_secs(5) + wait,
+        )? {
+            Ok(oer_hil_protocol::bluetooth::HciResponse(response)) => Ok(response),
             response => Err(format!("Bluetooth HCI exchange rejected: {response:?}").into()),
         }
     }
 
     /// The standalone GATT image's observation, accepted only with its
     /// single-core Bluetooth IRQ stack evidence.
-    pub fn bluetooth_gatt(&self) -> Result<oer_hil_protocol::BluetoothGattEvidence> {
+    pub fn bluetooth_gatt(&self) -> Result<oer_hil_protocol::bluetooth::BluetoothGattEvidence> {
         let evidence = self.bluetooth_gatt_observation()?;
         self.require_bluetooth_irq_stack()?;
         Ok(evidence)
@@ -1000,17 +1004,22 @@ impl SerialCapture {
     /// The GATT application's observation without an image-specific stack
     /// policy; the joint Wi-Fi/Bluetooth image reports its stacks through the
     /// Wi-Fi evidence instead.
-    pub fn bluetooth_gatt_observation(&self) -> Result<oer_hil_protocol::BluetoothGattEvidence> {
-        match self
-            .send_command(0, Command::QueryBluetoothGatt, Duration::from_secs(2))?
-            .body
-        {
-            Event::BluetoothGatt(evidence) => Ok(evidence),
+    pub fn bluetooth_gatt_observation(
+        &self,
+    ) -> Result<oer_hil_protocol::bluetooth::BluetoothGattEvidence> {
+        match self.call(
+            0,
+            oer_hil_protocol::bluetooth::GetGatt,
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::GattState(evidence)) => Ok(evidence),
             response => Err(format!("invalid GATT observation: {response:?}").into()),
         }
     }
 
-    pub fn bluetooth_secure_gatt(&self) -> Result<oer_hil_protocol::BluetoothSecureGattEvidence> {
+    pub fn bluetooth_secure_gatt(
+        &self,
+    ) -> Result<oer_hil_protocol::bluetooth::BluetoothSecureGattEvidence> {
         let evidence = self.bluetooth_secure_gatt_snapshot()?;
         self.require_bluetooth_irq_stack()?;
         Ok(evidence)
@@ -1020,12 +1029,13 @@ impl SerialCapture {
     /// callers selecting this path must explicitly own their sampling policy.
     pub fn bluetooth_secure_gatt_snapshot(
         &self,
-    ) -> Result<oer_hil_protocol::BluetoothSecureGattEvidence> {
-        match self
-            .send_command(0, Command::QueryBluetoothSecureGatt, Duration::from_secs(2))?
-            .body
-        {
-            Event::BluetoothSecureGatt(evidence) => Ok(evidence),
+    ) -> Result<oer_hil_protocol::bluetooth::BluetoothSecureGattEvidence> {
+        match self.call(
+            0,
+            oer_hil_protocol::bluetooth::GetSecureGatt,
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::SecureGattState(evidence)) => Ok(evidence),
             response => Err(format!("invalid secure GATT observation: {response:?}").into()),
         }
     }
@@ -1034,16 +1044,17 @@ impl SerialCapture {
         if boot == 0 {
             return Err("secure GATT restart requires the observed boot identity".into());
         }
-        match self
-            .exchange(
-                boot,
-                0,
-                Command::RestartBluetoothGatt { epoch },
-                Duration::from_secs(2),
-            )?
-            .body
-        {
-            Event::BluetoothSecureGatt(e) if e.epoch == epoch && e.restarting => Ok(()),
+        match self.call_to(
+            boot,
+            0,
+            oer_hil_protocol::bluetooth::RestartGatt { epoch },
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::SecureGattState(e))
+                if e.epoch == epoch && e.restarting =>
+            {
+                Ok(())
+            }
             response => Err(format!("secure GATT restart rejected: {response:?}").into()),
         }
     }
@@ -1052,16 +1063,13 @@ impl SerialCapture {
         if boot == 0 {
             return Err("bond load fault requires observed boot identity".into());
         }
-        match self
-            .exchange(
-                boot,
-                0,
-                Command::FailNextBluetoothGattBondLoad { epoch },
-                Duration::from_secs(2),
-            )?
-            .body
-        {
-            Event::BluetoothSecureGatt(e)
+        match self.call_to(
+            boot,
+            0,
+            oer_hil_protocol::bluetooth::FailNextGattBondLoad { epoch },
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::SecureGattState(e))
                 if e.epoch == epoch && e.bond_load_fault_armed && e.bond_load_failures == 0 =>
             {
                 Ok(())
@@ -1076,7 +1084,7 @@ impl SerialCapture {
         epoch: u32,
         release: bool,
     ) -> Result<()> {
-        use oer_hil_protocol::BluetoothGattResetReadGate as Phase;
+        use oer_hil_protocol::bluetooth::BluetoothGattResetReadGate as Phase;
         if boot == 0 {
             return Err("Reset gate requires observed boot identity".into());
         }
@@ -1085,16 +1093,15 @@ impl SerialCapture {
         } else {
             Phase::Armed
         };
-        match self
-            .exchange(
-                boot,
-                0,
-                Command::BluetoothGattResetReadGate { epoch, release },
-                Duration::from_secs(2),
-            )?
-            .body
-        {
-            Event::BluetoothSecureGatt(e) if e.epoch == epoch && e.reset_read_gate == expected => {
+        match self.call_to(
+            boot,
+            0,
+            oer_hil_protocol::bluetooth::GattResetReadGate { epoch, release },
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::SecureGattState(e))
+                if e.epoch == epoch && e.reset_read_gate == expected =>
+            {
                 Ok(())
             }
             response => Err(format!("Reset reader gate rejected: {response:?}").into()),
@@ -1102,16 +1109,13 @@ impl SerialCapture {
     }
 
     pub fn require_bluetooth_gatt_restart_rejected(&self, boot: u64, epoch: u32) -> Result<()> {
-        match self
-            .exchange(
-                boot,
-                0,
-                Command::RestartBluetoothGatt { epoch },
-                Duration::from_secs(2),
-            )?
-            .body
-        {
-            Event::Rejected(oer_hil_protocol::RejectReason::InvalidState) => Ok(()),
+        match self.call_to(
+            boot,
+            0,
+            oer_hil_protocol::bluetooth::RestartGatt { epoch },
+            Duration::from_secs(2),
+        )? {
+            Err(oer_hil_protocol::base::RejectReason::InvalidState) => Ok(()),
             response => Err(format!(
                 "terminal GATT epoch accepted restart or lost identity: {response:?}"
             )
@@ -1123,19 +1127,16 @@ impl SerialCapture {
         if boot == 0 {
             return Err("Reset read fault requires observed boot identity".into());
         }
-        match self
-            .exchange(
-                boot,
-                0,
-                Command::FailBluetoothGattResetRead { epoch },
-                Duration::from_secs(2),
-            )?
-            .body
-        {
-            Event::BluetoothSecureGatt(e)
+        match self.call_to(
+            boot,
+            0,
+            oer_hil_protocol::bluetooth::FailGattResetRead { epoch },
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::SecureGattState(e))
                 if e.epoch == epoch
                     && e.reset_read_gate
-                        == oer_hil_protocol::BluetoothGattResetReadGate::FailureRequested =>
+                        == oer_hil_protocol::bluetooth::BluetoothGattResetReadGate::FailureRequested =>
             {
                 Ok(())
             }
@@ -1146,58 +1147,48 @@ impl SerialCapture {
     pub fn confirm_bluetooth_gatt(
         &self,
         boot: u64,
-        decision: oer_hil_protocol::BluetoothNumericDecision,
+        decision: oer_hil_protocol::bluetooth::BluetoothNumericDecision,
     ) -> Result<()> {
         if boot == 0 {
             return Err("Numeric Comparison requires the displayed boot identity".into());
         }
-        match self
-            .exchange(
-                boot,
-                0,
-                Command::ConfirmBluetoothGatt(decision),
-                Duration::from_secs(2),
-            )?
-            .body
-        {
-            Event::BluetoothGattDecisionRecorded(recorded) if recorded == decision => Ok(()),
+        match self.call_to(
+            boot,
+            0,
+            oer_hil_protocol::bluetooth::ConfirmGatt(decision),
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::bluetooth::GattDecisionRecorded(recorded))
+                if recorded == decision =>
+            {
+                Ok(())
+            }
             response => Err(format!("Numeric Comparison decision rejected: {response:?}").into()),
         }
     }
 
-    pub fn boot_status(&self) -> Result<oer_hil_protocol::BootEvidence> {
-        match self
-            .send_command(0, Command::GetBootStatus, Duration::from_secs(5))?
-            .body
-        {
-            Event::BootStatus(evidence) => Ok(evidence),
-            response => Err(format!("invalid boot status: {response:?}").into()),
-        }
+    pub fn boot_status(&self) -> Result<oer_hil_protocol::base::BootEvidence> {
+        self.request(0, GetBootStatus, Duration::from_secs(5))
     }
 
     /// The previous boot's post-mortem checkpoints, oldest first: `count`
     /// of them, as its boot evidence reports, fetched page by page.
-    pub fn post_mortem_checkpoints(&self, count: u8) -> Result<Vec<oer_hil_protocol::Checkpoint>> {
+    pub fn post_mortem_checkpoints(
+        &self,
+        count: u8,
+    ) -> Result<Vec<oer_hil_protocol::base::Checkpoint>> {
         let mut checkpoints = Vec::with_capacity(usize::from(count));
         while checkpoints.len() < usize::from(count) {
             let first = checkpoints.len() as u8;
-            match self
-                .send_command(
-                    0,
-                    Command::GetPostMortemCheckpoints { first },
-                    Duration::from_secs(5),
-                )?
-                .body
-            {
-                Event::PostMortemCheckpoints(page)
-                    if page.first == first && !page.checkpoints.is_empty() =>
-                {
-                    checkpoints.extend(page.checkpoints);
-                }
-                response => {
-                    return Err(format!("invalid post-mortem page {first}: {response:?}").into());
-                }
+            let page: PostMortemCheckpoints = self.request(
+                0,
+                GetPostMortemCheckpoints { first },
+                Duration::from_secs(5),
+            )?;
+            if page.first != first || page.checkpoints.is_empty() {
+                return Err(format!("invalid post-mortem page {first}: {page:?}").into());
             }
+            checkpoints.extend(page.checkpoints);
         }
         checkpoints.truncate(usize::from(count));
         Ok(checkpoints)
@@ -1206,19 +1197,14 @@ impl SerialCapture {
     /// Arm the program-counter profile once the boot's hello arrived; the
     /// capture drains it into `profile.json` when it finishes.
     pub fn profiled(mut self, profile: crate::scenario::ProfileRequest) -> Result<Self> {
-        self.wait_for_protocol_after(0, PROTOCOL_READY_TIMEOUT, |message| {
-            matches!(message.body, Event::Hello(_))
-        })?
-        .ok_or("device did not publish a HIL protocol hello before the profile")?;
-        match self
-            .send_command(
-                0,
-                Command::ProfileControl(profile.control()),
-                Duration::from_secs(5),
-            )?
-            .body
-        {
-            Event::ProfileStatus(status) if status.armed => {}
+        self.wait_for_message_after(0, PROTOCOL_READY_TIMEOUT, |message| message.is::<Hello>())?
+            .ok_or("device did not publish a HIL protocol hello before the profile")?;
+        match self.call(
+            0,
+            oer_hil_protocol::telemetry::ControlProfile(profile.control()),
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::telemetry::ProfileState(status)) if status.armed => {}
             response => {
                 return Err(format!("the image did not arm the profile: {response:?}").into());
             }
@@ -1230,15 +1216,14 @@ impl SerialCapture {
     /// The closed window's status and each hart's raw `(pc, ra)` samples;
     /// the profile is disarmed afterwards.
     pub(crate) fn drain_profile(&self) -> Result<DrainedProfile> {
-        let status = match self
-            .send_command(
-                0,
-                Command::ProfileControl(oer_hil_protocol::ProfileControl::Status),
-                Duration::from_secs(5),
-            )?
-            .body
-        {
-            Event::ProfileStatus(status) => status,
+        let status = match self.call(
+            0,
+            oer_hil_protocol::telemetry::ControlProfile(
+                oer_hil_protocol::telemetry::ProfileControl::Status,
+            ),
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::telemetry::ProfileState(status)) => status,
             response => return Err(format!("profile status rejected: {response:?}").into()),
         };
         let mut samples = [Vec::new(), Vec::new()];
@@ -1246,18 +1231,15 @@ impl SerialCapture {
             for (hart, pairs) in samples.iter_mut().enumerate() {
                 while (pairs.len() as u32) < status.samples[hart] {
                     let first = pairs.len() as u32;
-                    match self
-                        .send_command(
-                            0,
-                            Command::GetProfileSamples {
-                                hart: hart as u8,
-                                first,
-                            },
-                            Duration::from_secs(5),
-                        )?
-                        .body
-                    {
-                        Event::ProfileSamples(page)
+                    match self.call(
+                        0,
+                        oer_hil_protocol::telemetry::GetProfileSamples {
+                            hart: hart as u8,
+                            first,
+                        },
+                        Duration::from_secs(5),
+                    )? {
+                        Ok(oer_hil_protocol::telemetry::ProfileSamples(page))
                             if page.first == first && !page.samples.is_empty() =>
                         {
                             pairs.extend(page.samples);
@@ -1272,9 +1254,11 @@ impl SerialCapture {
                 }
             }
         }
-        let _ = self.send_command(
+        let _ = self.call(
             0,
-            Command::ProfileControl(oer_hil_protocol::ProfileControl::Disarm),
+            oer_hil_protocol::telemetry::ControlProfile(
+                oer_hil_protocol::telemetry::ProfileControl::Disarm,
+            ),
             Duration::from_secs(5),
         );
         Ok((status, samples))
@@ -1283,31 +1267,34 @@ impl SerialCapture {
     /// Report, start or re-mask the target's event trace.
     pub fn trace_control(
         &self,
-        control: oer_hil_protocol::TraceControl,
-    ) -> Result<oer_hil_protocol::TraceStatus> {
-        match self
-            .send_command(0, Command::TraceControl(control), Duration::from_secs(5))?
-            .body
-        {
-            Event::TraceStatus(status) => Ok(status),
+        control: oer_hil_protocol::telemetry::TraceControl,
+    ) -> Result<oer_hil_protocol::telemetry::TraceStatus> {
+        match self.call(
+            0,
+            oer_hil_protocol::telemetry::ControlTrace(control),
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::telemetry::TraceState(status)) => Ok(status),
             response => Err(format!("trace control {control:?} rejected: {response:?}").into()),
         }
     }
 
     /// Every complete trace entry in storage, in storage order.
-    pub fn trace_entries(&self, slots: u16) -> Result<Vec<oer_hil_protocol::TraceEntry>> {
+    pub fn trace_entries(
+        &self,
+        slots: u16,
+    ) -> Result<Vec<oer_hil_protocol::telemetry::TraceEntry>> {
         let mut entries = Vec::new();
         let mut first = 0;
         while first < slots {
-            match self
-                .send_command(
-                    0,
-                    Command::GetTraceEntries { first },
-                    Duration::from_secs(5),
-                )?
-                .body
-            {
-                Event::TraceEntries(page) if page.first == first && page.next > first => {
+            match self.call(
+                0,
+                oer_hil_protocol::telemetry::GetTraceEntries { first },
+                Duration::from_secs(5),
+            )? {
+                Ok(oer_hil_protocol::telemetry::TraceEntriesPage(page))
+                    if page.first == first && page.next > first =>
+                {
                     entries.extend(page.entries);
                     first = page.next;
                 }
@@ -1324,21 +1311,20 @@ impl SerialCapture {
     pub fn trace_snapshot(
         &self,
         slot: u8,
-    ) -> Result<Option<(oer_hil_protocol::TraceSnapshotPage, Vec<u32>)>> {
+    ) -> Result<Option<(oer_hil_protocol::telemetry::TraceSnapshotPage, Vec<u32>)>> {
         let mut words = Vec::new();
         let mut header = None;
         loop {
             let offset = u16::try_from(words.len())?;
-            match self
-                .send_command(
-                    0,
-                    Command::GetTraceSnapshot { slot, offset },
-                    Duration::from_secs(5),
-                )?
-                .body
-            {
-                Event::TraceSnapshot(None) => return Ok(None),
-                Event::TraceSnapshot(Some(page)) if page.offset == offset => {
+            match self.call(
+                0,
+                oer_hil_protocol::telemetry::GetTraceSnapshot { slot, offset },
+                Duration::from_secs(5),
+            )? {
+                Ok(oer_hil_protocol::telemetry::TraceSnapshot(None)) => return Ok(None),
+                Ok(oer_hil_protocol::telemetry::TraceSnapshot(Some(page)))
+                    if page.offset == offset =>
+                {
                     let done = page.words.is_empty()
                         || words.len() + page.words.len() >= usize::from(page.len);
                     words.extend(page.words.iter().copied());
@@ -1355,35 +1341,38 @@ impl SerialCapture {
     }
 
     /// Stall `target`'s executor; the target's hang watchdog then resets it.
-    pub fn inject_hang(&self, target: oer_hil_protocol::HangTarget) -> Result<()> {
-        match self
-            .send_command(0, Command::InjectHang(target), Duration::from_secs(5))?
-            .body
-        {
-            Event::HangInjected(observed) if observed == target => Ok(()),
+    pub fn inject_hang(&self, target: oer_hil_protocol::system::HangTarget) -> Result<()> {
+        match self.call(
+            0,
+            oer_hil_protocol::system::InjectHang(target),
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::system::HangInjected(observed)) if observed == target => Ok(()),
             response => Err(format!("hang injection {target:?} rejected: {response:?}").into()),
         }
     }
 
-    pub fn system_watchdog_test(&self, mode: oer_hil_protocol::WatchdogTestMode) -> Result<()> {
-        match self
-            .send_command(0, Command::SystemWatchdogTest(mode), Duration::from_secs(5))?
-            .body
-        {
-            Event::SystemWatchdogTest(observed) if observed == mode => Ok(()),
-            response => Err(format!("watchdog {mode:?} rejected: {response:?}").into()),
+    pub fn system_watchdog_test(
+        &self,
+        mode: oer_hil_protocol::system::WatchdogTestMode,
+    ) -> Result<()> {
+        let WatchdogArmed(armed) = self.request(0, WatchdogTest(mode), Duration::from_secs(5))?;
+        if armed != mode {
+            return Err(format!("watchdog {mode:?} armed as {armed:?}").into());
         }
+        Ok(())
     }
 
     pub fn phy_fault(
         &self,
-        command: oer_hil_protocol::PhyFaultCommand,
-    ) -> Result<oer_hil_protocol::PhyFaultEvidence> {
-        match self
-            .send_command(0, Command::PhyFault(command), Duration::from_secs(2))?
-            .body
-        {
-            Event::PhyFault(evidence) => Ok(evidence),
+        command: oer_hil_protocol::phy::PhyFaultCommand,
+    ) -> Result<oer_hil_protocol::phy::PhyFaultEvidence> {
+        match self.call(
+            0,
+            oer_hil_protocol::phy::ControlFault(command),
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::phy::FaultState(evidence)) => Ok(evidence),
             response => Err(format!("PHY fault control {command:?} rejected: {response:?}").into()),
         }
     }
@@ -1391,13 +1380,14 @@ impl SerialCapture {
     /// Suspend, resume or report the shared PHY's periodic tracking timer.
     pub fn phy_tracking(
         &self,
-        command: oer_hil_protocol::PhyTrackingCommand,
-    ) -> Result<oer_hil_protocol::PhyTrackingEvidence> {
-        match self
-            .send_command(0, Command::PhyTracking(command), Duration::from_secs(2))?
-            .body
-        {
-            Event::PhyTracking(evidence) => Ok(evidence),
+        command: oer_hil_protocol::phy::PhyTrackingCommand,
+    ) -> Result<oer_hil_protocol::phy::PhyTrackingEvidence> {
+        match self.call(
+            0,
+            oer_hil_protocol::phy::ControlTracking(command),
+            Duration::from_secs(2),
+        )? {
+            Ok(oer_hil_protocol::phy::TrackingState(evidence)) => Ok(evidence),
             response => {
                 Err(format!("PHY tracking control {command:?} rejected: {response:?}").into())
             }
@@ -1405,10 +1395,12 @@ impl SerialCapture {
     }
 
     pub fn require_bluetooth_irq_stack(&self) -> Result<()> {
-        let response =
-            self.send_command(0, Command::QueryInterruptStackUsage, Duration::from_secs(5))?;
-        match response.body {
-            Event::InterruptStackUsage { cpu0, cpu1 } => {
+        match self.call(
+            0,
+            oer_hil_protocol::system::GetInterruptStacks,
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::system::InterruptStacks { cpu0, cpu1 }) => {
                 super::validation::validate_bluetooth_irq_stack(cpu0, cpu1)
             }
             response => Err(format!(
@@ -1423,13 +1415,9 @@ impl SerialCapture {
         request: TimebaseProbeRequest,
         timeout: Duration,
     ) -> Result<TimebaseProbeEvidence> {
-        let response = self.send_command(0, Command::ProbeTimebase(request), timeout)?;
-        match response.body {
-            Event::TimebaseProbeCompleted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected timebase probe: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid timebase-probe response".into()),
+        match self.call(0, oer_hil_protocol::system::ProbeTimebase(request), timeout)? {
+            Ok(oer_hil_protocol::system::TimebaseProbed(evidence)) => Ok(evidence),
+            Err(reason) => Err(format!("device rejected timebase probe: {reason:?}").into()),
         }
     }
 
@@ -1438,16 +1426,17 @@ impl SerialCapture {
         request: Ieee802154EventStatusProbeRequest,
         timeout: Duration,
     ) -> Result<Ieee802154EventStatusProbeEvidence> {
-        // `send_command` admits only an envelope from this boot, session and
+        // `call` admits only a reply from this boot, session and
         // request ID; this match then admits only the probe's typed event.
-        let response =
-            self.send_command(0, Command::ProbeIeee802154EventStatus(request), timeout)?;
-        match response.body {
-            Event::Ieee802154EventStatusProbeCompleted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::ProbeEventStatus(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::EventStatusProbed(evidence)) => Ok(evidence),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 EVENT_STATUS probe: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 EVENT_STATUS probe response".into()),
         }
     }
 
@@ -1456,13 +1445,15 @@ impl SerialCapture {
         request: Ieee802154EdEventProbeRequest,
         timeout: Duration,
     ) -> Result<Ieee802154EdEventProbeEvidence> {
-        let response = self.send_command(0, Command::ProbeIeee802154EdEvent(request), timeout)?;
-        match response.body {
-            Event::Ieee802154EdEventProbeCompleted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::ProbeEdEvent(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::EdEventProbed(evidence)) => Ok(evidence),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 ED event probe: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 ED event probe response".into()),
         }
     }
 
@@ -1471,15 +1462,15 @@ impl SerialCapture {
         request: Ieee802154RouteProbeRequest,
         timeout: Duration,
     ) -> Result<Ieee802154RouteProbeEvidence> {
-        match self
-            .send_command(0, Command::ProbeIeee802154Route(request), timeout)?
-            .body
-        {
-            Event::Ieee802154RouteProbeCompleted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::ProbeRoute(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::RouteProbed(evidence)) => Ok(evidence),
+            Err(reason) => {
                 Err(format!("device rejected the IEEE 802.15.4 route probe: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 route probe response".into()),
         }
     }
 
@@ -1488,13 +1479,15 @@ impl SerialCapture {
         request: Ieee802154AirCheckRequest,
         timeout: Duration,
     ) -> Result<Ieee802154AirCheckEvidence> {
-        let response = self.send_command(0, Command::RunIeee802154AirCheck(request), timeout)?;
-        match response.body {
-            Event::Ieee802154AirCheckCompleted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::RunAirCheck(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::AirCheckCompleted(evidence)) => Ok(evidence),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 air check: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 air check response".into()),
         }
     }
 
@@ -1503,15 +1496,15 @@ impl SerialCapture {
         config: Ieee802154SessionConfig,
         timeout: Duration,
     ) -> Result<Ieee802154SessionResult> {
-        match self
-            .send_command(0, Command::StartIeee802154Session(config), timeout)?
-            .body
-        {
-            Event::Ieee802154SessionStarted(result) => Ok(result),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::StartSession(config),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::SessionStarted(result)) => Ok(result),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 session start: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 session start response".into()),
         }
     }
 
@@ -1520,51 +1513,55 @@ impl SerialCapture {
         request: Ieee802154SessionTransmitRequest,
         timeout: Duration,
     ) -> Result<Ieee802154SessionTransmitEvidence> {
-        match self
-            .send_command(0, Command::TransmitIeee802154Session(request), timeout)?
-            .body
-        {
-            Event::Ieee802154SessionTransmitted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::TransmitSession(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::SessionTransmitted(evidence)) => Ok(evidence),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 session transmit: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 session transmit response".into()),
         }
     }
 
-    fn ieee802154_session_accepted(&self, command: Command, what: &str) -> Result<()> {
-        match self.send_command(0, command, Duration::from_secs(5))?.body {
-            Event::Accepted => Ok(()),
-            Event::Rejected(reason) => {
+    fn ieee802154_session_accepted<E: Endpoint<Response = oer_hil_protocol::base::Accepted>>(
+        &self,
+        command: E,
+        what: &str,
+    ) -> Result<()> {
+        match self.call(0, command, Duration::from_secs(5))? {
+            Ok(oer_hil_protocol::base::Accepted) => Ok(()),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 session {what}: {reason:?}").into())
             }
-            _ => Err(
-                format!("device returned an invalid IEEE 802.15.4 session {what} response").into(),
-            ),
         }
     }
 
     pub fn receive_ieee802154_session(&self) -> Result<()> {
-        self.ieee802154_session_accepted(Command::ReceiveIeee802154Session, "receive")
+        self.ieee802154_session_accepted(oer_hil_protocol::ieee802154::ReceiveSession, "receive")
     }
 
     pub fn set_ieee802154_session_pending(
         &self,
         request: Ieee802154SessionPendingRequest,
     ) -> Result<()> {
-        self.ieee802154_session_accepted(Command::SetIeee802154SessionPending(request), "pending")
+        self.ieee802154_session_accepted(
+            oer_hil_protocol::ieee802154::SetSessionPending(request),
+            "pending",
+        )
     }
 
     pub fn collect_ieee802154_session(&self) -> Result<Ieee802154SessionReceiveEvidence> {
-        match self
-            .send_command(0, Command::CollectIeee802154Session, Duration::from_secs(5))?
-            .body
-        {
-            Event::Ieee802154SessionReceived(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::CollectSession,
+            Duration::from_secs(5),
+        )? {
+            Ok(oer_hil_protocol::ieee802154::SessionReceived(evidence)) => Ok(evidence),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 session collect: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 session collect response".into()),
         }
     }
 
@@ -1572,15 +1569,11 @@ impl SerialCapture {
         &self,
         timeout: Duration,
     ) -> Result<Ieee802154SessionPhyMaintenance> {
-        match self
-            .send_command(0, Command::MaintainIeee802154SessionPhy, timeout)?
-            .body
-        {
-            Event::Ieee802154SessionPhyMaintained(outcome) => Ok(outcome),
-            Event::Rejected(reason) => {
+        match self.call(0, oer_hil_protocol::ieee802154::MaintainSessionPhy, timeout)? {
+            Ok(oer_hil_protocol::ieee802154::SessionPhyMaintained(outcome)) => Ok(outcome),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 PHY maintenance: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 PHY maintenance response".into()),
         }
     }
 
@@ -1591,28 +1584,24 @@ impl SerialCapture {
         request: Ieee802154ThreadStartRequest,
         timeout: Duration,
     ) -> Result<Ieee802154SessionResult> {
-        match self
-            .send_command(0, Command::StartIeee802154Thread(request), timeout)?
-            .body
-        {
-            Event::Ieee802154ThreadStarted(result) => Ok(result),
-            Event::Rejected(reason) => {
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::StartThread(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::ThreadStarted(result)) => Ok(result),
+            Err(reason) => {
                 Err(format!("device rejected the Thread session start: {reason:?}").into())
             }
-            _ => Err("device returned an invalid Thread session start response".into()),
         }
     }
 
     pub fn query_ieee802154_thread(&self, timeout: Duration) -> Result<Ieee802154ThreadState> {
-        match self
-            .send_command(0, Command::QueryIeee802154Thread, timeout)?
-            .body
-        {
-            Event::Ieee802154ThreadState(state) => Ok(state),
-            Event::Rejected(reason) => {
+        match self.call(0, oer_hil_protocol::ieee802154::GetThread, timeout)? {
+            Ok(oer_hil_protocol::ieee802154::ThreadState(state)) => Ok(state),
+            Err(reason) => {
                 Err(format!("device rejected the Thread state query: {reason:?}").into())
             }
-            _ => Err("device returned an invalid Thread state".into()),
         }
     }
 
@@ -1621,15 +1610,13 @@ impl SerialCapture {
         request: Ieee802154ThreadSendRequest,
         timeout: Duration,
     ) -> Result<Ieee802154SessionResult> {
-        match self
-            .send_command(0, Command::SendIeee802154Thread(request), timeout)?
-            .body
-        {
-            Event::Ieee802154ThreadSent(result) => Ok(result),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected the Thread datagram: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid Thread send response".into()),
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::SendThread(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::ThreadSent(result)) => Ok(result),
+            Err(reason) => Err(format!("device rejected the Thread datagram: {reason:?}").into()),
         }
     }
 
@@ -1637,28 +1624,18 @@ impl SerialCapture {
         &self,
         timeout: Duration,
     ) -> Result<Ieee802154ThreadReceiveEvidence> {
-        match self
-            .send_command(0, Command::CollectIeee802154Thread, timeout)?
-            .body
-        {
-            Event::Ieee802154ThreadReceived(evidence) => Ok(evidence),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected the Thread collection: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid Thread collection".into()),
+        match self.call(0, oer_hil_protocol::ieee802154::CollectThread, timeout)? {
+            Ok(oer_hil_protocol::ieee802154::ThreadReceived(evidence)) => Ok(evidence),
+            Err(reason) => Err(format!("device rejected the Thread collection: {reason:?}").into()),
         }
     }
 
     pub fn stop_ieee802154_thread(&self, timeout: Duration) -> Result<Ieee802154SessionResult> {
-        match self
-            .send_command(0, Command::StopIeee802154Thread, timeout)?
-            .body
-        {
-            Event::Ieee802154ThreadStopped(result) => Ok(result),
-            Event::Rejected(reason) => {
+        match self.call(0, oer_hil_protocol::ieee802154::StopThread, timeout)? {
+            Ok(oer_hil_protocol::ieee802154::ThreadStopped(result)) => Ok(result),
+            Err(reason) => {
                 Err(format!("device rejected the Thread session stop: {reason:?}").into())
             }
-            _ => Err("device returned an invalid Thread session stop response".into()),
         }
     }
 
@@ -1668,16 +1645,16 @@ impl SerialCapture {
         &self,
         timeout: Duration,
     ) -> Result<Ieee802154SessionRestartEvidence> {
-        match self
-            .send_command(0, Command::RestartIeee802154SessionRadio, timeout)?
-            .body
-        {
-            Event::Ieee802154SessionRadioRestarted(evidence) => Ok(evidence),
-            Event::Rejected(reason) => Err(format!(
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::RestartSessionRadio,
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::SessionRadioRestarted(evidence)) => Ok(evidence),
+            Err(reason) => Err(format!(
                 "device rejected the IEEE 802.15.4 session radio restart: {reason:?}"
             )
             .into()),
-            _ => Err("device returned an invalid IEEE 802.15.4 session radio restart".into()),
         }
     }
 
@@ -1687,16 +1664,16 @@ impl SerialCapture {
         &self,
         timeout: Duration,
     ) -> Result<Ieee802154SessionRecentRssi> {
-        match self
-            .send_command(0, Command::ReadIeee802154SessionRecentRssi, timeout)?
-            .body
-        {
-            Event::Ieee802154SessionRecentRssi(evidence) => Ok(evidence),
-            Event::Rejected(reason) => Err(format!(
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::ReadSessionRecentRssi,
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::SessionRecentRssi(evidence)) => Ok(evidence),
+            Err(reason) => Err(format!(
                 "device rejected the IEEE 802.15.4 session RSSI read: {reason:?}"
             )
             .into()),
-            _ => Err("device returned an invalid IEEE 802.15.4 session RSSI read".into()),
         }
     }
 
@@ -1707,16 +1684,16 @@ impl SerialCapture {
         request: Ieee802154SessionAssessRequest,
         timeout: Duration,
     ) -> Result<Ieee802154SessionAssessment> {
-        match self
-            .send_command(0, Command::AssessIeee802154SessionChannel(request), timeout)?
-            .body
-        {
-            Event::Ieee802154SessionAssessed(assessment) => Ok(assessment),
-            Event::Rejected(reason) => Err(format!(
+        match self.call(
+            0,
+            oer_hil_protocol::ieee802154::AssessSessionChannel(request),
+            timeout,
+        )? {
+            Ok(oer_hil_protocol::ieee802154::SessionAssessed(assessment)) => Ok(assessment),
+            Err(reason) => Err(format!(
                 "device rejected the IEEE 802.15.4 channel assessment: {reason:?}"
             )
             .into()),
-            _ => Err("device returned an invalid IEEE 802.15.4 channel assessment".into()),
         }
     }
 
@@ -1724,102 +1701,107 @@ impl SerialCapture {
         &self,
         timeout: Duration,
     ) -> Result<Ieee802154SessionStopEvidence> {
-        match self
-            .send_command(0, Command::StopIeee802154Session, timeout)?
-            .body
-        {
-            Event::Ieee802154SessionStopped(result) => Ok(result),
-            Event::Rejected(reason) => {
+        match self.call(0, oer_hil_protocol::ieee802154::StopSession, timeout)? {
+            Ok(oer_hil_protocol::ieee802154::SessionStopped(result)) => Ok(result),
+            Err(reason) => {
                 Err(format!("device rejected IEEE 802.15.4 session stop: {reason:?}").into())
             }
-            _ => Err("device returned an invalid IEEE 802.15.4 session stop response".into()),
         }
     }
 
     pub fn request_station_start(&self, target: Target<'_>) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
-            Command::StartStation(target.lab.station.protocol_credentials()?),
+            oer_hil_protocol::wifi::StartStation(target.lab.station.protocol_credentials()?),
             "station start",
         )
     }
 
     pub fn request_wifi_scan(&self, request: WifiScanRequest) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::ScanWifi(request), "standalone Wi-Fi scan")
+        self.request_wifi_command(
+            oer_hil_protocol::wifi::Scan(request),
+            "standalone Wi-Fi scan",
+        )
     }
 
     pub fn request_monitor_start(&self, request: WifiMonitorRequest) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::StartMonitor(request), "monitor start")
+        self.request_wifi_command(
+            oer_hil_protocol::wifi::StartMonitor(request),
+            "monitor start",
+        )
     }
 
     pub fn request_monitor_stop(&self) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::StopMonitor, "monitor stop")
+        self.request_wifi_command(oer_hil_protocol::wifi::StopMonitor, "monitor stop")
     }
 
     pub fn request_access_point_start(
         &self,
-        request: oer_hil_protocol::WifiAccessPointRequest,
+        request: oer_hil_protocol::wifi::WifiAccessPointRequest,
     ) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::StartAccessPoint(request), "access-point start")
+        self.request_wifi_command(
+            oer_hil_protocol::wifi::StartAccessPoint(request),
+            "access-point start",
+        )
     }
 
     pub fn request_access_point_stop(&self) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::StopAccessPoint, "access-point stop")
+        self.request_wifi_command(oer_hil_protocol::wifi::StopAccessPoint, "access-point stop")
     }
 
     pub fn request_station_access_point_start(
         &self,
-        request: oer_hil_protocol::WifiStationAccessPointRequest,
+        request: oer_hil_protocol::wifi::WifiStationAccessPointRequest,
     ) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
-            Command::StartStationAccessPoint(request),
+            oer_hil_protocol::wifi::StartStationAccessPoint(request),
             "station-access-point start",
         )
     }
 
     pub fn request_station_access_point_stop(&self) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::StopStationAccessPoint, "station-access-point stop")
+        self.request_wifi_command(
+            oer_hil_protocol::wifi::StopStationAccessPoint,
+            "station-access-point stop",
+        )
     }
 
     pub fn request_monitor_capture(
         &self,
         request: WifiMonitorCaptureRequest,
     ) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::CaptureMonitor(request), "finite monitor capture")
+        self.request_wifi_command(
+            oer_hil_protocol::wifi::CaptureMonitor(request),
+            "finite monitor capture",
+        )
     }
 
-    fn wait_for_wifi_event(
+    /// The `M` that completes the Wi-Fi operation of `handle`; the
+    /// operation's failure is an error.
+    fn wait_for_wifi_event<M: Message>(
         &self,
         handle: WifiCommandHandle,
         timeout: Duration,
-        predicate: impl Fn(&Envelope<Event>) -> bool,
-    ) -> Result<Option<Envelope<Event>>> {
-        let event = self.wait_for_protocol_after(handle.first_event, timeout, |message| {
-            message.boot_id == handle.boot_id
-                && message.session_id == 0
-                && message.request_id == handle.request_id
-                && (predicate(message)
-                    || matches!(message.body, Event::WifiRoleFailed(_) | Event::Failed(_)))
-        })?;
-        if let Some(message) = &event {
-            match message.body {
-                Event::WifiRoleFailed(reason) => {
-                    return Err(format!(
-                        "Wi-Fi operation {} failed: {reason:?}",
-                        handle.request_id
-                    )
-                    .into());
-                }
-                Event::Failed(reason) => {
-                    return Err(format!(
-                        "target operation {} failed: {reason:?}",
-                        handle.request_id
-                    )
-                    .into());
-                }
-                _ => {}
-            }
+        missing: &str,
+    ) -> Result<M> {
+        let message = self
+            .wait_for_message_after(handle.first_event, timeout, |message| {
+                message.boot_id == handle.boot_id
+                    && message.session_id == 0
+                    && message.request_id == handle.request_id
+                    && (message.is::<M>()
+                        || message.is::<oer_hil_protocol::wifi::RoleFailed>()
+                        || message.is::<oer_hil_protocol::network::Failed>())
+            })?
+            .ok_or_else(|| missing.to_owned())?;
+        if let Some(oer_hil_protocol::wifi::RoleFailed(reason)) = message.decode() {
+            return Err(format!("Wi-Fi operation {} failed: {reason:?}", handle.request_id).into());
         }
-        Ok(event)
+        if let Some(oer_hil_protocol::network::Failed(reason)) = message.decode() {
+            return Err(
+                format!("target operation {} failed: {reason:?}", handle.request_id).into(),
+            );
+        }
+        Ok(message.decode::<M>().expect("the accepted message decodes"))
     }
 
     pub fn wait_wifi_role_transition(
@@ -1827,22 +1809,12 @@ impl SerialCapture {
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<WifiRoleTransitionEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(
-                        message.body,
-                        Event::WifiRoleTransitioned(_) | Event::WifiRoleFailed(_)
-                    )
-            })?
-            .ok_or("device did not complete the Wi-Fi role transition")?;
-        match event.body {
-            Event::WifiRoleTransitioned(evidence) => Ok(evidence),
-            Event::WifiRoleFailed(failure) => {
-                Err(format!("Wi-Fi role transition failed: {failure:?}").into())
-            }
-            _ => unreachable!("role-transition predicate accepted only terminal role events"),
-        }
+        let oer_hil_protocol::wifi::RoleTransitioned(evidence) = self.wait_for_wifi_event(
+            handle,
+            timeout,
+            "device did not complete the Wi-Fi role transition",
+        )?;
+        Ok(evidence)
     }
 
     pub fn wait_wifi_radio_restart(
@@ -1850,22 +1822,12 @@ impl SerialCapture {
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<WifiRadioRestartEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(
-                        message.body,
-                        Event::WifiRadioRestarted(_) | Event::WifiRoleFailed(_)
-                    )
-            })?
-            .ok_or("device did not complete the idle radio restart")?;
-        match event.body {
-            Event::WifiRadioRestarted(evidence) => Ok(evidence),
-            Event::WifiRoleFailed(failure) => {
-                Err(format!("idle radio restart failed: {failure:?}").into())
-            }
-            _ => unreachable!("radio-restart predicate accepted only terminal restart events"),
-        }
+        let oer_hil_protocol::wifi::RadioRestarted(evidence) = self.wait_for_wifi_event(
+            handle,
+            timeout,
+            "device did not complete the idle radio restart",
+        )?;
+        Ok(evidence)
     }
 
     pub fn wait_wifi_scan(
@@ -1873,16 +1835,12 @@ impl SerialCapture {
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<WifiScanEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(message.body, Event::WifiScanCompleted(_))
-            })?
-            .ok_or("device did not complete the standalone Wi-Fi scan")?;
-        match event.body {
-            Event::WifiScanCompleted(evidence) => Ok(evidence),
-            _ => unreachable!("scan predicate accepted only its completion event"),
-        }
+        let oer_hil_protocol::wifi::ScanCompleted(evidence) = self.wait_for_wifi_event(
+            handle,
+            timeout,
+            "device did not complete the standalone Wi-Fi scan",
+        )?;
+        Ok(evidence)
     }
 
     pub fn wait_monitor_start(
@@ -1890,16 +1848,9 @@ impl SerialCapture {
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<WifiRoleTransitionEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(message.body, Event::WifiMonitorStarted(_))
-            })?
-            .ok_or("device did not complete monitor start")?;
-        match event.body {
-            Event::WifiMonitorStarted(evidence) => Ok(evidence),
-            _ => unreachable!("monitor-start predicate accepted only its completion event"),
-        }
+        let oer_hil_protocol::wifi::MonitorStarted(evidence) =
+            self.wait_for_wifi_event(handle, timeout, "device did not complete monitor start")?;
+        Ok(evidence)
     }
 
     pub fn wait_access_point_start(
@@ -1907,68 +1858,39 @@ impl SerialCapture {
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<WifiRoleTransitionEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(
-                        message.body,
-                        Event::WifiAccessPointStarted(_) | Event::WifiRoleFailed(_)
-                    )
-            })?
-            .ok_or("device did not complete the access-point start")?;
-        match event.body {
-            Event::WifiAccessPointStarted(evidence) => Ok(evidence),
-            Event::WifiRoleFailed(failure) => {
-                Err(format!("access-point start failed: {failure:?}").into())
-            }
-            _ => unreachable!("AP-start predicate accepted only terminal AP events"),
-        }
+        let oer_hil_protocol::wifi::AccessPointStarted(evidence) = self.wait_for_wifi_event(
+            handle,
+            timeout,
+            "device did not complete the access-point start",
+        )?;
+        Ok(evidence)
     }
 
     pub fn wait_access_point_stop(
         &self,
         handle: WifiCommandHandle,
         timeout: Duration,
-    ) -> Result<oer_hil_protocol::WifiAccessPointEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(
-                        message.body,
-                        Event::WifiAccessPointStopped(_) | Event::WifiRoleFailed(_)
-                    )
-            })?
-            .ok_or("device did not complete the access-point stop")?;
-        match event.body {
-            Event::WifiAccessPointStopped(evidence) => Ok(evidence),
-            Event::WifiRoleFailed(failure) => {
-                Err(format!("access-point stop failed: {failure:?}").into())
-            }
-            _ => unreachable!("AP-stop predicate accepted only terminal AP events"),
-        }
+    ) -> Result<oer_hil_protocol::wifi::WifiAccessPointEvidence> {
+        let oer_hil_protocol::wifi::AccessPointStopped(evidence) = self.wait_for_wifi_event(
+            handle,
+            timeout,
+            "device did not complete the access-point stop",
+        )?;
+        Ok(evidence)
     }
 
     pub fn wait_station_access_point_stop(
         &self,
         handle: WifiCommandHandle,
         timeout: Duration,
-    ) -> Result<oer_hil_protocol::WifiStationAccessPointStopEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(
-                        message.body,
-                        Event::WifiStationAccessPointStopped(_) | Event::WifiRoleFailed(_)
-                    )
-            })?
-            .ok_or("device did not complete the station-access-point stop")?;
-        match event.body {
-            Event::WifiStationAccessPointStopped(evidence) => Ok(evidence),
-            Event::WifiRoleFailed(failure) => {
-                Err(format!("station-access-point stop failed: {failure:?}").into())
-            }
-            _ => unreachable!("paired-stop predicate accepted only terminal paired events"),
-        }
+    ) -> Result<oer_hil_protocol::wifi::WifiStationAccessPointStopEvidence> {
+        let oer_hil_protocol::wifi::StationAccessPointStopped(evidence) = self
+            .wait_for_wifi_event(
+                handle,
+                timeout,
+                "device did not complete the station-access-point stop",
+            )?;
+        Ok(evidence)
     }
 
     pub fn wait_monitor_stop(
@@ -1976,16 +1898,9 @@ impl SerialCapture {
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<WifiMonitorEvidence> {
-        let event = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(message.body, Event::WifiMonitorStopped(_))
-            })?
-            .ok_or("device did not complete monitor stop")?;
-        match event.body {
-            Event::WifiMonitorStopped(evidence) => Ok(evidence),
-            _ => unreachable!("monitor-stop predicate accepted only its completion event"),
-        }
+        let oer_hil_protocol::wifi::MonitorStopped(evidence) =
+            self.wait_for_wifi_event(handle, timeout, "device did not complete monitor stop")?;
+        Ok(evidence)
     }
 
     pub fn wait_monitor_capture(
@@ -1993,16 +1908,11 @@ impl SerialCapture {
         handle: WifiCommandHandle,
         timeout: Duration,
     ) -> Result<MonitorCaptureEvidence> {
-        let completion = self
-            .wait_for_wifi_event(handle, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(message.body, Event::WifiMonitorCaptureCompleted(_))
-            })?
-            .ok_or("device did not complete finite monitor capture")?;
-        let summary = match completion.body {
-            Event::WifiMonitorCaptureCompleted(evidence) => evidence,
-            _ => unreachable!("capture predicate accepted only terminal capture evidence"),
-        };
+        let oer_hil_protocol::wifi::MonitorCaptureCompleted(summary) = self.wait_for_wifi_event(
+            handle,
+            timeout,
+            "device did not complete finite monitor capture",
+        )?;
         let state = self
             .protocol
             .state
@@ -2013,14 +1923,11 @@ impl SerialCapture {
             .get(handle.first_event..)
             .unwrap_or_default()
             .iter()
+            .filter(|message| message.request_id == handle.request_id)
             .filter_map(|message| {
-                if message.request_id != handle.request_id {
-                    return None;
-                }
-                match &message.body {
-                    Event::WifiMonitorFrame(chunk) => Some(chunk.clone()),
-                    _ => None,
-                }
+                message
+                    .decode()
+                    .map(|oer_hil_protocol::wifi::MonitorFrame(chunk)| chunk)
             })
             .collect();
         Ok(MonitorCaptureEvidence { chunks, summary })
@@ -2096,16 +2003,19 @@ impl SerialCapture {
         let boot_id = self
             .latest_boot_id()
             .ok_or("device omitted the current boot identity")?;
-        let event = self.wait_for_protocol_after(first_event, timeout, |message| {
-            message.boot_id == boot_id
-                && message.session_id == 0
-                && message.request_id == 0
-                && matches!(message.body, Event::NetworkReady(info) if info.network_interface == interface)
-        })?.ok_or("new station stage did not publish a fresh network endpoint")?;
-        match event.body {
-            Event::NetworkReady(info) => Ok(Ipv4Addr::from(info.address)),
-            _ => unreachable!("network predicate accepted only a network endpoint"),
-        }
+        let (_, oer_hil_protocol::network::Ready(info)) = self
+            .wait_for_after(
+                first_event,
+                timeout,
+                |message, oer_hil_protocol::network::Ready(info)| {
+                    message.boot_id == boot_id
+                        && message.session_id == 0
+                        && message.request_id == 0
+                        && info.network_interface == interface
+                },
+            )?
+            .ok_or("new station stage did not publish a fresh network endpoint")?;
+        Ok(Ipv4Addr::from(info.address))
     }
 
     /// Cursor for reliable unsolicited station lifecycle events.
@@ -2132,16 +2042,14 @@ impl SerialCapture {
             .latest_boot_id()
             .ok_or("device did not publish a current HIL boot identity")?;
         Ok(self
-            .wait_for_protocol_cursor(cursor, timeout, |message| {
-                message.boot_id == boot_id
-                    && message.session_id == 0
-                    && message.request_id == 0
-                    && matches!(message.body, Event::StationLifecycle(_))
-            })?
-            .map(|message| match message.body {
-                Event::StationLifecycle(event) => event,
-                _ => unreachable!("lifecycle predicate accepted only lifecycle events"),
-            }))
+            .wait_for_cursor(
+                cursor,
+                timeout,
+                |message, _: &oer_hil_protocol::wifi::StationLifecycle| {
+                    message.boot_id == boot_id && message.session_id == 0 && message.request_id == 0
+                },
+            )?
+            .map(|(_, oer_hil_protocol::wifi::StationLifecycle(event))| event))
     }
 
     pub fn latest_boot_id(&self) -> Option<u64> {
@@ -2167,10 +2075,10 @@ impl SerialCapture {
         messages
             .iter()
             .rev()
-            .find_map(|message| match message.body {
-                Event::NetworkReady(network)
-                    if message.boot_id == boot_id
-                        && network.network_interface == network_interface =>
+            .filter(|message| message.boot_id == boot_id)
+            .find_map(|message| match message.decode() {
+                Some(oer_hil_protocol::network::Ready(network))
+                    if network.network_interface == network_interface =>
                 {
                     Some(Ipv4Addr::from(network.address))
                 }
@@ -2232,16 +2140,18 @@ impl SerialCapture {
         let Some(boot_id) = latest_boot_id_in(messages) else {
             return false;
         };
-        messages.iter().any(|message| match message.body {
-            Event::ServiceReady(service) => {
-                message.boot_id == boot_id
-                    && service.network_interface == network_interface
-                    && service.transport == transport
-                    && service.direction == direction
-                    && service.local_port == port
-            }
-            _ => false,
-        })
+        messages
+            .iter()
+            .filter(|message| message.boot_id == boot_id)
+            .any(|message| match message.decode() {
+                Some(oer_hil_protocol::network::ServiceReady(service)) => {
+                    service.network_interface == network_interface
+                        && service.transport == transport
+                        && service.direction == direction
+                        && service.local_port == port
+                }
+                None => false,
+            })
     }
 
     pub(super) fn protocol_event_count(&self) -> usize {
@@ -2262,22 +2172,56 @@ impl SerialCapture {
             .check()
     }
 
-    pub(super) fn wait_for_protocol_after(
+    /// The first `M` from message `start` on that `accept` takes, with its
+    /// header, waiting up to `timeout`.
+    pub(super) fn wait_for_after<M: Message>(
         &self,
         start: usize,
         timeout: Duration,
-        predicate: impl Fn(&Envelope<Event>) -> bool,
-    ) -> Result<Option<Envelope<Event>>> {
+        accept: impl Fn(&Received, &M) -> bool,
+    ) -> Result<Option<(Received, M)>> {
         let mut cursor = start;
-        self.wait_for_protocol_cursor(&mut cursor, timeout, predicate)
+        self.wait_for_cursor(&mut cursor, timeout, accept)
     }
 
-    fn wait_for_protocol_cursor(
+    /// [`Self::wait_for_after`] from `cursor`, which it advances past what
+    /// it read.
+    fn wait_for_cursor<M: Message>(
         &self,
         cursor: &mut usize,
         timeout: Duration,
-        predicate: impl Fn(&Envelope<Event>) -> bool,
-    ) -> Result<Option<Envelope<Event>>> {
+        accept: impl Fn(&Received, &M) -> bool,
+    ) -> Result<Option<(Received, M)>> {
+        Ok(self
+            .wait_for_message_cursor(cursor, timeout, |message| {
+                message
+                    .decode::<M>()
+                    .is_some_and(|body| accept(message, &body))
+            })?
+            .map(|message| {
+                let body = message.decode::<M>().expect("the accepted message decodes");
+                (message, body)
+            }))
+    }
+
+    /// The first message from message `start` on that `predicate` accepts,
+    /// waiting up to `timeout`.
+    pub(super) fn wait_for_message_after(
+        &self,
+        start: usize,
+        timeout: Duration,
+        predicate: impl Fn(&Received) -> bool,
+    ) -> Result<Option<Received>> {
+        let mut cursor = start;
+        self.wait_for_message_cursor(&mut cursor, timeout, predicate)
+    }
+
+    fn wait_for_message_cursor(
+        &self,
+        cursor: &mut usize,
+        timeout: Duration,
+        predicate: impl Fn(&Received) -> bool,
+    ) -> Result<Option<Received>> {
         let deadline = crate::transport::events::deadline_after(timeout);
         let mut state = self
             .protocol
@@ -2313,14 +2257,15 @@ impl SerialCapture {
     }
 }
 
-fn latest_boot_id_in(messages: &[Envelope<Event>]) -> Option<u64> {
-    messages
-        .iter()
-        .rev()
-        .find_map(|message| matches!(message.body, Event::Hello(_)).then_some(message.boot_id))
+fn latest_boot_id_in(messages: &[Received]) -> Option<u64> {
+    messages.iter().rev().find_map(|message| {
+        message
+            .is::<oer_hil_protocol::base::Hello>()
+            .then_some(message.boot_id)
+    })
 }
 
-pub(super) fn beacon_loss_count_in(messages: &[Envelope<Event>]) -> usize {
+pub(super) fn beacon_loss_count_in(messages: &[Received]) -> usize {
     let Some(boot_id) = latest_boot_id_in(messages) else {
         return 0;
     };
@@ -2329,11 +2274,13 @@ pub(super) fn beacon_loss_count_in(messages: &[Envelope<Event>]) -> usize {
         .filter(|message| {
             message.boot_id == boot_id
                 && matches!(
-                    message.body,
-                    Event::StationLifecycle(StationLifecycleEvent::Disconnected {
-                        reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
-                        ..
-                    })
+                    message.decode(),
+                    Some(oer_hil_protocol::wifi::StationLifecycle(
+                        StationLifecycleEvent::Disconnected {
+                            reason: oer_hil_protocol::wifi::StationDisconnectReason::BeaconLoss,
+                            ..
+                        }
+                    ))
                 )
         })
         .count()
@@ -2345,7 +2292,6 @@ pub(super) fn decode_counters_are_clean(counters: DecodeCounters) -> bool {
         && counters.header_errors == 0
         && counters.framing_version_errors == 0
         && counters.message_kind_errors == 0
-        && counters.protocol_version_errors == 0
         && counters.payload_length_errors == 0
         && counters.checksum_errors == 0
         && counters.deserialize_errors == 0
@@ -2367,10 +2313,7 @@ pub(super) fn validate_target_link_health(health: LinkHealth) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn station_unchanged_since_in(
-    messages: &[Envelope<Event>],
-    first_event: usize,
-) -> Result<()> {
+pub(super) fn station_unchanged_since_in(messages: &[Received], first_event: usize) -> Result<()> {
     let subsequent = messages
         .get(first_event..)
         .ok_or("station lifecycle cursor exceeds captured events")?;
@@ -2381,16 +2324,13 @@ pub(super) fn station_unchanged_since_in(
         if message.boot_id != boot_id {
             return Err("device rebooted during station pause workload".into());
         }
-        match &message.body {
-            // GetCapabilities replies use Hello too. Only a solicited reply
-            // from the established boot can occur inside an unchanged epoch.
-            Event::Hello(_) if message.request_id == 0 => {
-                return Err("device restarted its greeting during station pause workload".into());
-            }
-            Event::StationLifecycle(event) => {
-                return Err(format!("station changed during pause workload: {event:?}").into());
-            }
-            _ => {}
+        // A Hello answering a request is a capability reply; only an
+        // unsolicited one restarts the greeting.
+        if message.is::<oer_hil_protocol::base::Hello>() && message.request_id == 0 {
+            return Err("device restarted its greeting during station pause workload".into());
+        }
+        if let Some(oer_hil_protocol::wifi::StationLifecycle(event)) = message.decode() {
+            return Err(format!("station changed during pause workload: {event:?}").into());
         }
     }
     Ok(())
@@ -2398,7 +2338,10 @@ pub(super) fn station_unchanged_since_in(
 
 /// A drained profile: the target's status and each hart's raw `(pc, ra)`
 /// samples.
-pub(crate) type DrainedProfile = (oer_hil_protocol::ProfileStatus, [Vec<(u32, u32)>; 2]);
+pub(crate) type DrainedProfile = (
+    oer_hil_protocol::telemetry::ProfileStatus,
+    [Vec<(u32, u32)>; 2],
+);
 
 /// Whether console bytes show a chip starting: the ROM banner or the ESP-IDF
 /// bootloader's lines.

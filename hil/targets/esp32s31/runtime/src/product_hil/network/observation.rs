@@ -2,7 +2,7 @@
 use super::progress::{Counters, Event, Snapshot};
 use crate::console::runtime_log_reliably;
 use oer_hil_esp32s31_telemetry::wait;
-use oer_hil_protocol::WifiNetworkInterface;
+use oer_hil_protocol::wifi::WifiNetworkInterface;
 
 static STATION: Counters = Counters::new();
 static ACCESS_POINT: Counters = Counters::new();

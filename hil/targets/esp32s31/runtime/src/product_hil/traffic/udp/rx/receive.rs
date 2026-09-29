@@ -5,7 +5,8 @@ use embassy_time::{Duration, Instant, with_timeout};
 use oer_hil_esp32s31_telemetry::task_poll::{TaskPollSet, TaskPollSetSnapshot};
 use oer_hil_esp32s31_telemetry::udp_rx_window::RxWindow;
 use oer_hil_protocol::{
-    Completion, FlowTransportEvidence, SESSION_FLOW_CAPACITY, UdpSessionPayloadIdentity,
+    network::Completion, network::FlowTransportEvidence, network::SESSION_FLOW_CAPACITY,
+    network::UdpSessionPayloadIdentity,
 };
 use oer_hil_target_core::traffic::payload::PayloadFillCheck;
 
@@ -181,7 +182,7 @@ pub(super) async fn run(
             crate::console::publish_event_reliably(
                 session.session_id,
                 0,
-                oer_hil_protocol::Event::UdpRxStarted { datagrams: 256 },
+                oer_hil_protocol::network::UdpRxStarted { datagrams: 256 },
             )
             .await;
         }
@@ -246,7 +247,7 @@ pub(super) async fn run(
     }
     let terminal_seen = flows.iter().flatten().all(|flow| flow.terminal);
     let flow_evidence = flows.map(|flow| flow.map(|flow| flow.evidence));
-    let aggregate = oer_hil_protocol::TransportEvidence::from_flows(flow_evidence);
+    let aggregate = oer_hil_protocol::network::TransportEvidence::from_flows(flow_evidence);
     Outcome {
         bytes: aggregate.rx_bytes,
         datagrams: aggregate.rx_units,

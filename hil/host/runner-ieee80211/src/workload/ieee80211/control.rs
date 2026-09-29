@@ -4,9 +4,10 @@ use hil_core::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{
-    StationDisconnectReason, StationLifecycleEvent, WifiMonitorRequest, WifiNetworkInterface,
-    WifiRadioRestartEvidence, WifiRadioRestartRf, WifiRole, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
+    wifi::StationDisconnectReason, wifi::StationLifecycleEvent, wifi::WifiMonitorRequest,
+    wifi::WifiNetworkInterface, wifi::WifiRadioRestartEvidence, wifi::WifiRadioRestartRf,
+    wifi::WifiRole, wifi::WifiRoleTransitionEvidence, wifi::WifiScanEvidence,
+    wifi::WifiScanRequest, wifi::WifiStationAccessPointRequest,
 };
 
 use crate::{Result, scenario::LinkExpectation};
@@ -81,7 +82,7 @@ fn qualify(
     link: LinkExpectation,
 ) -> Result<()> {
     let capabilities = capture.prepare_station(context.target(), options.timeout)?;
-    if !capabilities.features.wifi_role_control {
+    if !capabilities.has::<oer_hil_protocol::wifi::RoleControl>() {
         return Err("firmware does not advertise explicit Wi-Fi role control".into());
     }
     report_stack(capture, options.timeout, "connected")?;
@@ -89,7 +90,7 @@ fn qualify(
     if operation == Operation::Restart {
         context.lab.station_fixture.require_phy(link.phy)?;
         if context.settings.data_plane
-            != oer_hil_protocol::WifiDataPlanePlacement::SplitRadioNetwork
+            != oer_hil_protocol::wifi::WifiDataPlanePlacement::SplitRadioNetwork
         {
             return Err("radio lifecycle requires split radio/network data-plane ownership".into());
         }
@@ -159,13 +160,13 @@ fn qualify(
         return Ok(());
     }
     if operation == Operation::AccessPoint {
-        if !capabilities.features.wifi_access_point {
+        if !capabilities.has::<oer_hil_protocol::wifi::AccessPoint>() {
             return Err("firmware does not advertise the access-point role".into());
         }
         let mut request = context
             .lab
             .access_point
-            .protocol_request(oer_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
+            .protocol_request(oer_hil_protocol::wifi::WifiAccessPointSecurity::Wpa2Personal)?;
         if let Some(channel) = options.monitor_channel {
             request.channel = channel;
         }
@@ -247,13 +248,13 @@ fn qualify(
     }
 
     if operation == Operation::StationAccessPoint {
-        if !capabilities.features.simultaneous_station_access_point {
+        if !capabilities.has::<oer_hil_protocol::wifi::StationAccessPoint>() {
             return Err("firmware does not advertise simultaneous STA+AP".into());
         }
         let mut access_point = context
             .lab
             .access_point
-            .protocol_request(oer_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
+            .protocol_request(oer_hil_protocol::wifi::WifiAccessPointSecurity::Wpa2Personal)?;
         if let Some(channel) = options.monitor_channel {
             access_point.channel = channel;
         }
@@ -467,9 +468,9 @@ pub(super) fn require_station_link(
         PhyExpectation::Ht20 | PhyExpectation::He20 => 20,
     };
     let expected_security = if link.access_point_security.offers_sae() {
-        oer_hil_protocol::StationLinkSecurity::Wpa3Personal
+        oer_hil_protocol::wifi::StationLinkSecurity::Wpa3Personal
     } else {
-        oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+        oer_hil_protocol::wifi::StationLinkSecurity::Wpa2Personal {
             management_protection: link.management_frame_protection.negotiated(),
         }
     };

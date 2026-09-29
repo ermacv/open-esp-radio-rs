@@ -10,7 +10,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use oer_hil_protocol::{TaskSlot, TaskStall};
+use oer_hil_protocol::base::{TaskSlot, TaskStall};
 
 /// A disarmed slot. Arming stores the uptime in milliseconds, so an uptime
 /// equal to this value is stored one millisecond early.

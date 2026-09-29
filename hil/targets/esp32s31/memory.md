@@ -35,7 +35,7 @@ remove the upstream adapter's Ethernet copy.
 
 ## Memory copy measurements
 
-`diagnostic-memory-benchmark` exposes `ProbeMemoryBenchmark` before radio
+`diagnostic-memory-benchmark` exposes `system::RunMemoryBenchmark` before radio
 initialization. Run the `memory-copy-benchmark` scenario through `cargo hil`;
 normal radio initialization is unsupported in this image. The task owns
 AXI-GDMA channel 0 and dedicated static allocations. This image is separate

@@ -1,4 +1,4 @@
-use oer_hil_protocol::Ieee802154ObservedEventState::{
+use oer_hil_protocol::ieee802154::Ieee802154ObservedEventState::{
     Clear, Timer0AndTimer1, Timer0Only, Timer1Only, UnexpectedNamed,
 };
 

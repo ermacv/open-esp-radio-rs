@@ -96,10 +96,13 @@ fn a_scenario_is_marked_unsupported_exactly_when_no_current_image_serves_it() {
     };
     for scenario in catalog().all() {
         let class = scenario.image();
-        let served = built(class)
-            && class
-                .console_capabilities()
-                .is_none_or(|declared| scenario.family.served_by(&declared));
+        let served = if class == ImageClass::BootSmoke {
+            built(class)
+        } else {
+            class
+                .capabilities_on("esp32s31")
+                .is_some_and(|reported| scenario.family.served_by(&reported))
+        };
         assert_eq!(
             served,
             scenario.header.unsupported.is_none(),

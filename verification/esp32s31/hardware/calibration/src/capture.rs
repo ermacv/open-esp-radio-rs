@@ -371,7 +371,7 @@ fn production_boot(
         if lifecycle == Lifecycle::Restart {
             let evidence = capture
                 .wait_wifi_radio_restart(capture.request_radio_restart()?, RESTART_TIMEOUT)?;
-            if evidence.rf != oer_hil_protocol::WifiRadioRestartRf::ClosedAndWoken {
+            if evidence.rf != oer_hil_protocol::wifi::WifiRadioRestartRf::ClosedAndWoken {
                 return Err(format!("the production restart kept RF open: {evidence:?}").into());
             }
         }
@@ -421,7 +421,7 @@ fn production_boot(
         return Ok(replies);
     }
     let status = status.ok_or("the production image published no startup artifact")?;
-    if status.disposition != oer_hil_protocol::StartupArtifactDisposition::Created {
+    if status.disposition != oer_hil_protocol::phy::StartupArtifactDisposition::Created {
         return Err(format!(
             "the production boot did not calibrate cold: {:?}",
             status.disposition
@@ -436,13 +436,14 @@ fn production_boot(
 /// power.
 fn ieee802154_session(capture: &SerialCapture) -> Result<()> {
     capture.start_ieee802154_session(
-        oer_hil_protocol::Ieee802154SessionConfig {
+        oer_hil_protocol::ieee802154::Ieee802154SessionConfig {
             channel: crate::peer::CHANNEL,
             pan_id: crate::peer::PAN_ID,
             short_address: crate::peer::SHORT_ADDRESS,
             extended_address: crate::peer::EXTENDED_ADDRESS,
             promiscuous: false,
-            maintenance_policy: oer_hil_protocol::Ieee802154SessionMaintenancePolicy::Vendor,
+            maintenance_policy:
+                oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy::Vendor,
             background_maintenance: false,
             enhanced_ack: false,
             wifi_coexistence: false,
@@ -453,17 +454,18 @@ fn ieee802154_session(capture: &SerialCapture) -> Result<()> {
 }
 
 /// Requests covering the ascending `indices` in runs of at most one reply.
-fn windows(indices: &[usize]) -> Vec<oer_hil_protocol::PhyRegisterImageRequest> {
-    let mut windows: Vec<oer_hil_protocol::PhyRegisterImageRequest> = vec![];
+fn windows(indices: &[usize]) -> Vec<oer_hil_protocol::phy::PhyRegisterImageRequest> {
+    let mut windows: Vec<oer_hil_protocol::phy::PhyRegisterImageRequest> = vec![];
     for &index in indices {
         match windows.last_mut() {
             Some(window)
                 if usize::from(window.first) + usize::from(window.count) == index
-                    && usize::from(window.count) < oer_hil_protocol::PHY_REGISTER_IMAGE_WORDS =>
+                    && usize::from(window.count)
+                        < oer_hil_protocol::phy::PHY_REGISTER_IMAGE_WORDS =>
             {
                 window.count += 1
             }
-            _ => windows.push(oer_hil_protocol::PhyRegisterImageRequest {
+            _ => windows.push(oer_hil_protocol::phy::PhyRegisterImageRequest {
                 first: index as u16,
                 count: 1,
             }),

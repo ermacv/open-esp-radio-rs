@@ -42,7 +42,7 @@ pub(super) fn wait_for_services(
             )
             .into());
         }
-        capture.wait_for_protocol_after(cursor, remaining, |_| true)?;
+        capture.wait_for_message_after(cursor, remaining, |_| true)?;
     }
 }
 
@@ -77,15 +77,15 @@ pub fn await_tcp_ready(
 ) -> Result<TcpReady> {
     let capabilities = capture.prepare_station(target, timeout)?;
     let direction_supported = match direction {
-        Direction::Rx => capabilities.features.rx,
-        Direction::Tx => capabilities.features.tx,
-        Direction::Bidirectional => capabilities.features.bidirectional,
+        Direction::Rx => capabilities.has::<oer_hil_protocol::network::Rx>(),
+        Direction::Tx => capabilities.has::<oer_hil_protocol::network::Tx>(),
+        Direction::Bidirectional => capabilities.has::<oer_hil_protocol::network::Bidirectional>(),
     };
-    if !capabilities.features.tcp || !direction_supported {
+    if !capabilities.has::<oer_hil_protocol::network::Tcp>() || !direction_supported {
         return Err(format!("firmware does not advertise TCP {direction:?} capability").into());
     }
-    if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
-        return Err("TCP RX requires runtime sessions and structured evidence".into());
+    if !capabilities.has::<oer_hil_protocol::network::RuntimeConfiguration>() {
+        return Err("TCP RX requires runtime sessions".into());
     }
     let address = wait_for_services(
         capture,
@@ -121,13 +121,13 @@ pub fn await_udp_rx_ready(
     timeout: Duration,
 ) -> Result<UdpRxReady> {
     let capabilities = capture.prepare_station(target, timeout)?;
-    if !capabilities.features.udp || !capabilities.features.rx {
+    if !capabilities.has::<oer_hil_protocol::network::Udp>()
+        || !capabilities.has::<oer_hil_protocol::network::Rx>()
+    {
         return Err("firmware does not advertise UDP RX capability".into());
     }
-    if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
-        return Err(
-            "qualification firmware requires runtime sessions and structured evidence".into(),
-        );
+    if !capabilities.has::<oer_hil_protocol::network::RuntimeConfiguration>() {
+        return Err("qualification firmware requires runtime sessions".into());
     }
     probe_udp_rx_ready(capture, address_hint, port, timeout)
 }
@@ -197,7 +197,7 @@ pub fn probe_udp_rx_ready_via(
             || !tx_service_ready
             || capture.observed_protocol_ipv4(network_interface).is_none()
         {
-            capture.wait_for_protocol_after(
+            capture.wait_for_message_after(
                 event_start,
                 deadline.saturating_duration_since(Instant::now()),
                 |_| true,
@@ -212,19 +212,15 @@ pub fn probe_udp_rx_ready_via(
         packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
         socket.send(&packet)?;
         if capture
-            .wait_for_protocol_after(
+            .wait_for_after(
                 event_start,
                 RX_PROBE_RESPONSE_TIMEOUT.min(deadline.saturating_duration_since(Instant::now())),
-                |message| {
+                |message, oer_hil_protocol::network::ServiceReady(service)| {
                     message.boot_id == boot_id
-                        && matches!(
-                            message.body,
-                            Event::ServiceReady(service)
-                                if service.network_interface == network_interface
-                                    && service.transport == Transport::Udp
-                                    && service.direction == Direction::Rx
-                                    && service.local_port == port
-                        )
+                        && service.network_interface == network_interface
+                        && service.transport == Transport::Udp
+                        && service.direction == Direction::Rx
+                        && service.local_port == port
                 },
             )?
             .is_some()
@@ -247,13 +243,13 @@ pub fn await_udp_tx_ready(
     timeout: Duration,
 ) -> Result<UdpTxReady> {
     let capabilities = capture.prepare_station(target, timeout)?;
-    if !capabilities.features.udp || !capabilities.features.tx {
+    if !capabilities.has::<oer_hil_protocol::network::Udp>()
+        || !capabilities.has::<oer_hil_protocol::network::Tx>()
+    {
         return Err("firmware does not advertise UDP TX capability".into());
     }
-    if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
-        return Err(
-            "qualification firmware requires runtime sessions and structured evidence".into(),
-        );
+    if !capabilities.has::<oer_hil_protocol::network::RuntimeConfiguration>() {
+        return Err("qualification firmware requires runtime sessions".into());
     }
     let address = wait_for_services(
         capture,

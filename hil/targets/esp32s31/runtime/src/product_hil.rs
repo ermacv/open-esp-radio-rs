@@ -70,18 +70,20 @@ use oer_hil_esp32s31_telemetry::{
 };
 
 use oer_hil_protocol::{
-    Event as HilEvent, NetworkCredentials, NetworkIpv4Configuration, StartupArtifactDisposition,
-    StationDisconnectReason, StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
-    WifiAccessPointEvidence, WifiAccessPointSecurity as HilWifiAccessPointSecurity,
-    WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
-    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRadioRestartEvidence,
-    WifiRadioRestartRf, WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason,
-    WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
-    WifiStationAccessPointStopEvidence,
+    phy::StartupArtifactDisposition, wifi::NetworkCredentials, wifi::NetworkIpv4Configuration,
+    wifi::StationDisconnectReason, wifi::StationEpochEvidence,
+    wifi::WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, wifi::WifiAccessPointEvidence,
+    wifi::WifiAccessPointSecurity as HilWifiAccessPointSecurity,
+    wifi::WifiChannelWidth as HilWifiChannelWidth, wifi::WifiDataPlanePlacement,
+    wifi::WifiMonitorCaptureRequest, wifi::WifiMonitorEvidence, wifi::WifiMonitorEvidenceSource,
+    wifi::WifiMonitorFrameChunk, wifi::WifiMonitorObserved, wifi::WifiMonitorPhyEvidence,
+    wifi::WifiMonitorPhyFormat, wifi::WifiNetworkInterface, wifi::WifiRadioRestartEvidence,
+    wifi::WifiRadioRestartRf, wifi::WifiRole, wifi::WifiRoleFailureEvidence,
+    wifi::WifiRoleFailureReason, wifi::WifiRoleOperation, wifi::WifiRoleTransitionEvidence,
+    wifi::WifiScanEvidence, wifi::WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "station-exit-evidence")]
-use oer_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
+use oer_hil_protocol::{wifi::StationAttemptFailureReason, wifi::StationFailureStage};
 
 use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
@@ -95,7 +97,7 @@ use crate::console::{
 
 use oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters;
 
-use oer_hil_protocol::StationLifecycleEvent;
+use oer_hil_protocol::wifi::StationLifecycleEvent;
 
 use oer_ieee80211_runtime::await_stack_boundary;
 
@@ -111,7 +113,7 @@ mod rx_rejection;
 mod traffic;
 
 #[cfg(not(feature = "station-exit-evidence"))]
-use oer_hil_protocol::WifiMacRxHardwareEvidence;
+use oer_hil_protocol::wifi::WifiMacRxHardwareEvidence;
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
@@ -126,16 +128,18 @@ use traffic::{
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
 
-pub(crate) use crate::capabilities::{
-    OPEN_RADIO_DRIVER_OBSERVATION, OPEN_RADIO_TASK_POLL_TELEMETRY, OPEN_RADIO_TCP_CHUNK_CAPACITY,
-};
+pub(crate) use crate::limits::OPEN_RADIO_TCP_CHUNK_CAPACITY;
+
+pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
+    cfg!(feature = "connected-datapath-poll-telemetry");
+pub(crate) const OPEN_RADIO_DRIVER_OBSERVATION: bool = cfg!(feature = "driver-observation");
 
 struct AppNetworkStart {
     station_device: WifiDevice,
     access_point_device: WifiDevice,
     station_ipv4: NetworkIpv4Configuration,
-    rx_checksum: oer_hil_protocol::WifiRxChecksumPolicy,
-    tx_udp_checksum: oer_hil_protocol::WifiTxUdpChecksumPolicy,
+    rx_checksum: oer_hil_protocol::wifi::WifiRxChecksumPolicy,
+    tx_udp_checksum: oer_hil_protocol::wifi::WifiTxUdpChecksumPolicy,
     seed: u64,
     l1_cache: &'static L1CachePerformanceCounters,
 }
@@ -342,14 +346,16 @@ async fn report_access_point_aggregate_fill(request_id: u32, generation: u32) {
         crate::console::publish_event_reliably(
             0,
             request_id,
-            oer_hil_protocol::Event::WifiApAggregateFill(oer_hil_protocol::WifiApAggregateFill {
-                generation,
-                association_id: fill.association_id,
-                aggregates: fill.aggregates,
-                subframes: fill.subframes,
-                maximum_subframes: fill.maximum_subframes,
-                histogram: fill.histogram,
-            }),
+            oer_hil_protocol::wifi::AccessPointAggregateFill(
+                oer_hil_protocol::wifi::WifiApAggregateFill {
+                    generation,
+                    association_id: fill.association_id,
+                    aggregates: fill.aggregates,
+                    subframes: fill.subframes,
+                    maximum_subframes: fill.maximum_subframes,
+                    histogram: fill.histogram,
+                },
+            ),
         )
         .await;
     }
@@ -1365,17 +1371,17 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                             .map(|security| {
                                 match security {
                             oer_esp32s31_ieee80211_system::StationLinkSecurity::Open => {
-                                oer_hil_protocol::StationLinkSecurity::Open
+                                oer_hil_protocol::wifi::StationLinkSecurity::Open
                             }
                             oer_esp32s31_ieee80211_system::StationLinkSecurity::Wpa2Personal {
                                 management_protection,
                             } => {
-                                oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+                                oer_hil_protocol::wifi::StationLinkSecurity::Wpa2Personal {
                                     management_protection,
                                 }
                             }
                             oer_esp32s31_ieee80211_system::StationLinkSecurity::Wpa3Personal => {
-                                oer_hil_protocol::StationLinkSecurity::Wpa3Personal
+                                oer_hil_protocol::wifi::StationLinkSecurity::Wpa3Personal
                             }
                         }
                             });
@@ -1542,7 +1548,9 @@ fn station_request_with_preference(
     )
 }
 
-fn access_point_request(request: &oer_hil_protocol::WifiAccessPointRequest) -> AccessPointRequest {
+fn access_point_request(
+    request: &oer_hil_protocol::wifi::WifiAccessPointRequest,
+) -> AccessPointRequest {
     let ssid = WifiSsid::new(request.credentials.ssid())
         .expect("validated HIL AP SSID must fit the driver request");
     let security = match request.security {
@@ -1574,7 +1582,7 @@ async fn report_network(iface: Iface<'static>, network_interface: WifiNetworkInt
         iface.wait_config_v4_up().await;
         let info = network::info(iface, network_interface)
             .expect("wait_config_v4_up proves an IPv4 configuration");
-        publish_event_reliably(0, 0, HilEvent::NetworkReady(info)).await;
+        publish_event_reliably(0, 0, oer_hil_protocol::network::Ready(info)).await;
         runtime_log(format_args!(
             "OPEN_RADIO_HIL result=PASS stage=network-ready interface={network_interface:?} address={:?} gateway={:?}",
             info.address, info.gateway,
@@ -1616,7 +1624,7 @@ pub async fn run(
             publish_event_reliably(
                 0,
                 probe.request_id,
-                HilEvent::Ieee802154EventStatusProbeCompleted(evidence),
+                oer_hil_protocol::ieee802154::EventStatusProbed(evidence),
             )
             .await;
             return;
@@ -1627,7 +1635,7 @@ pub async fn run(
             publish_event_reliably(
                 0,
                 probe.request_id,
-                HilEvent::Ieee802154RouteProbeCompleted(evidence),
+                oer_hil_protocol::ieee802154::RouteProbed(evidence),
             )
             .await;
             return;
@@ -1638,7 +1646,7 @@ pub async fn run(
             publish_event_reliably(
                 0,
                 probe.request_id,
-                HilEvent::Ieee802154EdEventProbeCompleted(evidence),
+                oer_hil_protocol::ieee802154::EdEventProbed(evidence),
             )
             .await;
             return;
@@ -1655,7 +1663,7 @@ pub async fn run(
             publish_event_reliably(
                 0,
                 check.request_id,
-                HilEvent::Ieee802154AirCheckCompleted(evidence),
+                oer_hil_protocol::ieee802154::AirCheckCompleted(evidence),
             )
             .await;
             return;
@@ -1701,7 +1709,7 @@ pub async fn run(
     configure_multi_flow_burst_datagrams(
         if matches!(
             tx_buffer,
-            oer_hil_protocol::WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
+            oer_hil_protocol::wifi::WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
         ) {
             32
         } else {
@@ -1711,31 +1719,31 @@ pub async fn run(
     #[cfg(feature = "tx-psram-dma-probe")]
     oer_esp32s31_ieee80211_system::configure_direct_psram_tx_dma_probe(matches!(
         tx_buffer,
-        oer_hil_protocol::WifiTxBufferPolicy::PsramDirectDmaDiagnostic
+        oer_hil_protocol::wifi::WifiTxBufferPolicy::PsramDirectDmaDiagnostic
     ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     oer_esp32s31_ieee80211_system::configure_interrupt_driven_recycled_append_for_diagnostics(
         matches!(
             rx_continuation,
-            oer_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
+            oer_hil_protocol::wifi::WifiRxContinuationPolicy::LevelIrqDiagnostic
         ),
     );
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     oer_esp32s31_ieee80211_system::configure_adaptive_recycled_rx_probe_for_diagnostics(matches!(
         rx_continuation,
-        oer_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic
     ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     oer_esp32s31_ieee80211_system::configure_recycled_rx_probe_delay_for_diagnostics(
         match rx_continuation {
-            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => 64,
-            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => 128,
-            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => 256,
-            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => 512,
-            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => 1024,
-            oer_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe
-            | oer_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
-            | oer_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => 0,
+            oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => 64,
+            oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => 128,
+            oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => 256,
+            oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => 512,
+            oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => 1024,
+            oer_hil_protocol::wifi::WifiRxContinuationPolicy::ImmediateSoftwareProbe
+            | oer_hil_protocol::wifi::WifiRxContinuationPolicy::LevelIrqDiagnostic
+            | oer_hil_protocol::wifi::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => 0,
         },
     );
     let mut station_address = [0; 6];
@@ -1995,26 +2003,28 @@ pub async fn run(
     // path which is not executing.
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     let effective_rx_continuation = match rx_continuation {
-        oer_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe => {
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::ImmediateSoftwareProbe => {
             "immediate-software-probe"
         }
-        oer_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic => "level-irq",
-        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => {
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::LevelIrqDiagnostic => "level-irq",
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => {
             "delayed-probe-64us"
         }
-        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => {
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => {
             "delayed-probe-128us"
         }
-        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => {
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => {
             "delayed-probe-256us"
         }
-        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => {
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => {
             "delayed-probe-512us"
         }
-        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => {
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => {
             "delayed-probe-1024us"
         }
-        oer_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => "adaptive-probe",
+        oer_hil_protocol::wifi::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => {
+            "adaptive-probe"
+        }
     };
     #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
     let effective_rx_continuation = "adaptive-probe";
@@ -2058,7 +2068,7 @@ enum ProductWifiRole<P> {
 async fn start_station_access_point_role<P: oer::wifi::WifiSupervisorPort>(
     idle: oer::wifi::WifiIdle<P>,
     request_id: u32,
-    request: oer_hil_protocol::WifiStationAccessPointRequest,
+    request: oer_hil_protocol::wifi::WifiStationAccessPointRequest,
 ) -> ProductWifiRole<P>
 where
     P::Error: core::fmt::Debug,

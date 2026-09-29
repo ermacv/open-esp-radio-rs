@@ -1,9 +1,37 @@
-use super::capture::test_support::hello;
+use super::Received;
+use super::capture::test_support::received;
 use oer_hil_protocol::{
-    DecodeCounters, Direction, Envelope, Event, Finished, FlowTransportEvidence, RadioEvidence,
-    ResultSummary, RxRadioEvidence, RxZeroCopyEvidence, SessionLinkRequirements, SessionReady,
-    StackUsage, StackWatermark, StationLifecycleEvent, TransportEvidence,
+    DecodeCounters, Envelope, network::Direction, network::Finished,
+    network::FlowTransportEvidence, network::RadioEvidence, network::ResultSummary,
+    network::RxRadioEvidence, network::RxZeroCopyEvidence, network::SessionLinkRequirements,
+    network::SessionReady, network::TransportEvidence, system::StackUsage, system::StackWatermark,
+    wifi::StationLifecycleEvent,
 };
+
+/// Boot `boot_id`'s `Hello` as the host receives it.
+fn hello(boot_id: u64, message_sequence: u32) -> Received {
+    received(super::capture::test_support::hello(
+        boot_id,
+        message_sequence,
+    ))
+}
+
+/// A device event as the host receives it.
+fn event<M: oer_hil_protocol::Message>(
+    boot_id: u64,
+    message_sequence: u32,
+    session_id: u64,
+    request_id: u32,
+    body: M,
+) -> Received {
+    received(Envelope::new(
+        boot_id,
+        message_sequence,
+        session_id,
+        request_id,
+        body,
+    ))
+}
 
 use crate::session::{
     ProtocolHealth, SessionEvidence, beacon_loss_count_in, command_response_matches,
@@ -27,7 +55,7 @@ fn attachment_accepts_an_existing_sequence_but_still_detects_a_gap() {
 
 #[test]
 fn command_response_requires_boot_session_and_request_identity() {
-    let response = Envelope::new(7, 13, 17, 19, Event::Accepted);
+    let response = event(7, 13, 17, 19, oer_hil_protocol::base::Accepted);
     assert!(command_response_matches(&response, 7, 17, 19));
     assert!(!command_response_matches(&response, 8, 17, 19));
     assert!(!command_response_matches(&response, 7, 18, 19));
@@ -74,7 +102,7 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
                 minimum_free_bytes: 1,
             },
         },
-        link: oer_hil_protocol::LinkHealth {
+        link: oer_hil_protocol::base::LinkHealth {
             rx_frames: 1,
             rx_cobs_errors: 0,
             rx_checksum_errors: 0,
@@ -87,7 +115,7 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         },
         finished: Finished {
             summary: ResultSummary {
-                verdict: oer_hil_protocol::SessionVerdict::Passed,
+                verdict: oer_hil_protocol::network::SessionVerdict::Passed,
                 evidence_records: 4,
             },
             evidence_crc32c: 0,
@@ -368,7 +396,7 @@ fn target_sequence_discontinuity_is_a_fatal_protocol_error() {
     let mut health = ProtocolHealth::default();
     health.observe(&hello(7, 0), DecodeCounters::default());
     health.observe(
-        &Envelope::new(7, 2, 0, 0, Event::Accepted),
+        &event(7, 2, 0, 0, oer_hil_protocol::base::Accepted),
         DecodeCounters::default(),
     );
     assert!(
@@ -384,7 +412,7 @@ fn a_new_boot_must_restart_its_target_sequence() {
     let mut health = ProtocolHealth::default();
     health.observe(&hello(7, 0), DecodeCounters::default());
     health.observe(
-        &Envelope::new(8, 3, 0, 0, Event::Accepted),
+        &event(8, 3, 0, 0, oer_hil_protocol::base::Accepted),
         DecodeCounters::default(),
     );
     assert!(
@@ -400,7 +428,7 @@ fn a_valid_new_boot_clears_previous_boot_failure() {
     let mut health = ProtocolHealth::default();
     health.observe(&hello(7, 0), DecodeCounters::default());
     health.observe(
-        &Envelope::new(7, 2, 0, 0, Event::Accepted),
+        &event(7, 2, 0, 0, oer_hil_protocol::base::Accepted),
         DecodeCounters::default(),
     );
     assert!(health.failure.is_some());
@@ -413,23 +441,23 @@ fn a_valid_new_boot_clears_previous_boot_failure() {
 fn beacon_loss_qualification_ignores_previous_boots() {
     let mut messages = vec![
         hello(7, 0),
-        Envelope::new(
+        event(
             7,
             1,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Disconnected {
                 generation: 0,
-                reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
+                reason: oer_hil_protocol::wifi::StationDisconnectReason::BeaconLoss,
             }),
         ),
         hello(8, 0),
-        Envelope::new(
+        event(
             8,
             1,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 0,
                 association_bandwidth_mhz: None,
                 security: None,
@@ -438,14 +466,14 @@ fn beacon_loss_qualification_ignores_previous_boots() {
     ];
     assert_eq!(beacon_loss_count_in(&messages), 0);
 
-    messages.push(Envelope::new(
+    messages.push(event(
         8,
         2,
         0,
         0,
-        Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+        oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Disconnected {
             generation: 0,
-            reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
+            reason: oer_hil_protocol::wifi::StationDisconnectReason::BeaconLoss,
         }),
     ));
     assert_eq!(beacon_loss_count_in(&messages), 1);
@@ -453,7 +481,7 @@ fn beacon_loss_qualification_ignores_previous_boots() {
 
 #[test]
 fn tx_radio_requires_exact_balance_including_interval_boundary_owners() {
-    use oer_hil_protocol::{TxAggregateTimingEvidence, TxRadioEvidence};
+    use oer_hil_protocol::{network::TxAggregateTimingEvidence, network::TxRadioEvidence};
     let check = |publications, pending_start, pending_end| {
         let mut session = session_with_rx(RxRadioEvidence::default());
         session.radio.as_mut().unwrap().tx = Some(TxRadioEvidence {
@@ -500,12 +528,12 @@ fn tx_radio_requires_exact_balance_including_interval_boundary_owners() {
 fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
     use super::protocol::station_unchanged_since_in;
     let connected = |sequence, generation| {
-        Envelope::new(
+        event(
             7,
             sequence,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation,
                 association_bandwidth_mhz: None,
                 security: None,
@@ -514,7 +542,7 @@ fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
     };
     let mut events = vec![hello(7, 0), connected(1, 3)];
     let cursor = events.len();
-    events.push(Envelope::new(7, 2, 1, 0, Event::Accepted));
+    events.push(event(7, 2, 1, 0, oer_hil_protocol::base::Accepted));
     assert!(station_unchanged_since_in(&events, cursor).is_ok());
     events.push(connected(3, 4));
     assert!(station_unchanged_since_in(&events, cursor).is_err());
@@ -522,14 +550,14 @@ fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
     events.push(hello(8, 0));
     assert!(station_unchanged_since_in(&events, cursor).is_err());
     events.pop();
-    events.push(Envelope::new(
+    events.push(event(
         7,
         3,
         0,
         0,
-        Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+        oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Disconnected {
             generation: 3,
-            reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
+            reason: oer_hil_protocol::wifi::StationDisconnectReason::BeaconLoss,
         }),
     ));
     assert!(station_unchanged_since_in(&events, cursor).is_err());
@@ -547,19 +575,7 @@ fn pause_accepts_capability_reply_only_in_the_established_boot() {
     assert!(station_unchanged_since_in(&events, 1).is_err());
     events[1] = hello(7, 2);
     assert!(station_unchanged_since_in(&events, 1).is_err());
-    events[1] = Envelope::new(8, 2, 1, 11, Event::Accepted);
+    events[1] = event(8, 2, 1, 11, oer_hil_protocol::base::Accepted);
     assert!(station_unchanged_since_in(&events, 1).is_err());
     assert!(station_unchanged_since_in(&events, 0).is_err());
-}
-
-#[test]
-fn a_sent_command_is_logged_by_its_variant_name_without_its_payload() {
-    assert_eq!(
-        super::command_kind(&oer_hil_protocol::Command::GetCapabilities),
-        "GetCapabilities"
-    );
-    assert_eq!(
-        super::command_kind(&oer_hil_protocol::Command::GetPostMortemCheckpoints { first: 3 }),
-        "GetPostMortemCheckpoints"
-    );
 }

@@ -1,7 +1,7 @@
 use super::*;
 use oer_hil_protocol::{
-    Finished, FlowTransportEvidence, LinkHealth, ResultSummary, StackUsage, StackWatermark,
-    TransportEvidence,
+    base::LinkHealth, network::Finished, network::FlowTransportEvidence, network::ResultSummary,
+    network::TransportEvidence, system::StackUsage, system::StackWatermark,
 };
 
 fn loopback_flow() -> (UdpSocket, UdpSocket) {
@@ -66,10 +66,10 @@ fn target_evidence(rx_units: u64, tx_units: u64, passed: bool) -> SessionEvidenc
         finished: Finished {
             summary: ResultSummary {
                 verdict: if passed {
-                    oer_hil_protocol::SessionVerdict::Passed
+                    oer_hil_protocol::network::SessionVerdict::Passed
                 } else {
-                    oer_hil_protocol::SessionVerdict::Failed(
-                        oer_hil_protocol::SessionFailure::NoDatagrams,
+                    oer_hil_protocol::network::SessionVerdict::Failed(
+                        oer_hil_protocol::network::SessionFailure::NoDatagrams,
                     )
                 },
                 evidence_records: 4,

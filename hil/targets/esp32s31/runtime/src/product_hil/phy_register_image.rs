@@ -8,8 +8,8 @@
 
 use embassy_sync::once_lock::OnceLock;
 use oer_hil_protocol::{
-    Event, PHY_REGISTER_IMAGE_WORDS, PhyAnalogImageBytes, PhyRegisterImageRequest,
-    PhyRegisterImageWords, RejectReason,
+    base::RejectReason, phy::PHY_REGISTER_IMAGE_WORDS, phy::PhyAnalogImageBytes,
+    phy::PhyRegisterImageRequest, phy::PhyRegisterImageWords,
 };
 
 /// Busy-host polls one analog read may take; a read completes within a
@@ -26,9 +26,11 @@ pub(crate) fn adopt(radio: &'static super::SharedRadio) {
 
 /// Read the requested window, or reject a window outside the image or
 /// wider than one reply.
-pub(crate) async fn read(request: PhyRegisterImageRequest) -> Event {
+pub(crate) async fn read(
+    request: PhyRegisterImageRequest,
+) -> Result<oer_hil_protocol::phy::RegisterImageWords, RejectReason> {
     let Some(radio) = RADIO.try_get() else {
-        return Event::Rejected(RejectReason::InvalidState);
+        return Err(RejectReason::InvalidState);
     };
     let mut guard = radio.lock().await;
     let lease = guard.lease();
@@ -36,28 +38,32 @@ pub(crate) async fn read(request: PhyRegisterImageRequest) -> Event {
     let first = usize::from(request.first);
     let count = usize::from(request.count);
     if count > PHY_REGISTER_IMAGE_WORDS || first + count > length {
-        return Event::Rejected(RejectReason::InvalidConfiguration);
+        return Err(RejectReason::InvalidConfiguration);
     }
     let mut values = heapless::Vec::new();
     for index in first..first + count {
         let Some(value) = lease.phy_register_image(index) else {
-            return Event::Rejected(RejectReason::InvalidConfiguration);
+            return Err(RejectReason::InvalidConfiguration);
         };
         let _ = values.push(value);
     }
-    Event::PhyRegisterImage(PhyRegisterImageWords {
-        first: request.first,
-        length: length as u16,
-        values,
-    })
+    Ok(oer_hil_protocol::phy::RegisterImageWords(
+        PhyRegisterImageWords {
+            first: request.first,
+            length: length as u16,
+            values,
+        },
+    ))
 }
 
 /// Read the requested window of the analog image, or reject a window
 /// outside the image or wider than one reply, and a read whose analog host
 /// stays busy.
-pub(crate) async fn read_analog(request: PhyRegisterImageRequest) -> Event {
+pub(crate) async fn read_analog(
+    request: PhyRegisterImageRequest,
+) -> Result<oer_hil_protocol::phy::AnalogImageBytes, RejectReason> {
     let Some(radio) = RADIO.try_get() else {
-        return Event::Rejected(RejectReason::InvalidState);
+        return Err(RejectReason::InvalidState);
     };
     let mut guard = radio.lock().await;
     let lease = guard.lease();
@@ -65,7 +71,7 @@ pub(crate) async fn read_analog(request: PhyRegisterImageRequest) -> Event {
     let first = usize::from(request.first);
     let count = usize::from(request.count);
     if count > PHY_REGISTER_IMAGE_WORDS || first + count > length {
-        return Event::Rejected(RejectReason::InvalidConfiguration);
+        return Err(RejectReason::InvalidConfiguration);
     }
     let mut values = heapless::Vec::new();
     for index in first..first + count {
@@ -73,13 +79,15 @@ pub(crate) async fn read_analog(request: PhyRegisterImageRequest) -> Event {
             Some(Ok(value)) => {
                 let _ = values.push(value);
             }
-            Some(Err(_)) => return Event::Rejected(RejectReason::Busy),
-            None => return Event::Rejected(RejectReason::InvalidConfiguration),
+            Some(Err(_)) => return Err(RejectReason::Busy),
+            None => return Err(RejectReason::InvalidConfiguration),
         }
     }
-    Event::PhyAnalogImage(PhyAnalogImageBytes {
-        first: request.first,
-        length: length as u16,
-        values,
-    })
+    Ok(oer_hil_protocol::phy::AnalogImageBytes(
+        PhyAnalogImageBytes {
+            first: request.first,
+            length: length as u16,
+            values,
+        },
+    ))
 }

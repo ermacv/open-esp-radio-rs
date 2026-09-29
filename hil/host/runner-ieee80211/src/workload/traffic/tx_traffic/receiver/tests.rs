@@ -155,7 +155,7 @@ fn signal_cancels_idle_collector_without_a_manual_completion_wake() {
 fn delayed_probe_replies_do_not_become_measured_packets() {
     let output = tempfile::tempdir().unwrap();
     let (socket, sender) = pair();
-    let probe = oer_hil_protocol::UdpProbe {
+    let probe = oer_hil_protocol::network::UdpProbe {
         nonce: 42,
         response: true,
     };

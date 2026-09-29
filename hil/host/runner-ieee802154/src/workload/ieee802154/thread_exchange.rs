@@ -23,9 +23,10 @@ use std::{
 
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
-    Ieee802154SessionResult, Ieee802154ThreadDataset, Ieee802154ThreadPayload,
-    Ieee802154ThreadReceiveEvidence, Ieee802154ThreadRole, Ieee802154ThreadSendRequest,
-    Ieee802154ThreadStartRequest,
+    ieee802154::Ieee802154SessionResult, ieee802154::Ieee802154ThreadDataset,
+    ieee802154::Ieee802154ThreadPayload, ieee802154::Ieee802154ThreadReceiveEvidence,
+    ieee802154::Ieee802154ThreadRole, ieee802154::Ieee802154ThreadSendRequest,
+    ieee802154::Ieee802154ThreadStartRequest,
 };
 use serde::Serialize;
 
@@ -211,7 +212,7 @@ fn exchange<L: PeerLink>(
     boot: u8,
 ) -> Result<BootReport> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_thread {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::Thread>() {
         return Err("firmware does not advertise Thread sessions".into());
     }
     peer.form(config.channel, config.pan_id)?;

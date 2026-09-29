@@ -1,4 +1,4 @@
-use oer_hil_protocol::{RxDeliveryEvidence, RxSequenceStageEvidence};
+use oer_hil_protocol::{network::RxDeliveryEvidence, network::RxSequenceStageEvidence};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxDeliveryAssessment {

@@ -7,8 +7,10 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionFlowConfig,
-    SessionLinkRequirements, Transport, UdpProbe, UdpSessionPayloadIdentity, WifiNetworkInterface,
+    network::Completion, network::Direction, network::FlowConfig, network::Ipv4Endpoint,
+    network::SessionConfig, network::SessionFlowConfig, network::SessionLinkRequirements,
+    network::Transport, network::UdpProbe, network::UdpSessionPayloadIdentity,
+    wifi::WifiNetworkInterface,
 };
 
 use crate::{Result, workload::traffic::host_network::BenchmarkIpv4Route};

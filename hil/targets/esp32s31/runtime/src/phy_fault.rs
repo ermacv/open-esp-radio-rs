@@ -1,13 +1,15 @@
 //! Wire adaptation only. Production PHY owns checkpoints, composition owns
 //! the deadline, and no diagnostic command can renew that deadline.
-use oer_hil_protocol::{Event, PhyFaultCommand, RejectReason};
+use oer_hil_protocol::{base::RejectReason, phy::PhyFaultCommand};
 
-pub(super) fn control(command: PhyFaultCommand) -> Event {
+pub(super) fn control(
+    command: PhyFaultCommand,
+) -> Result<oer_hil_protocol::phy::FaultState, RejectReason> {
     #[cfg(feature = "phy-fault-injection")]
     {
         use oer_esp32s31_phy::fault_injection::{self as fault, Mode, Phase};
         use oer_hil_protocol::{
-            PhyFaultEvidence, PhyFaultMode as WireMode, PhyFaultPhase as WirePhase,
+            phy::PhyFaultEvidence, phy::PhyFaultMode as WireMode, phy::PhyFaultPhase as WirePhase,
         };
         let accepted = match command {
             PhyFaultCommand::Arm(mode) => fault::arm(match mode {
@@ -22,9 +24,9 @@ pub(super) fn control(command: PhyFaultCommand) -> Event {
             PhyFaultCommand::Release => fault::phase() == Phase::Reached,
         };
         if !accepted {
-            return Event::Rejected(RejectReason::InvalidState);
+            return Err(RejectReason::InvalidState);
         }
-        Event::PhyFault(PhyFaultEvidence {
+        Ok(oer_hil_protocol::phy::FaultState(PhyFaultEvidence {
             phase: match if command == PhyFaultCommand::Release {
                 Phase::Released
             } else {
@@ -37,12 +39,12 @@ pub(super) fn control(command: PhyFaultCommand) -> Event {
                 Phase::Cancelled => WirePhase::Cancelled,
             },
             reset_reason: crate::system::boot_evidence().reset_reason,
-        })
+        }))
     }
     #[cfg(not(feature = "phy-fault-injection"))]
     {
         let _ = command;
-        Event::Rejected(RejectReason::InvalidState)
+        Err(RejectReason::InvalidState)
     }
 }
 

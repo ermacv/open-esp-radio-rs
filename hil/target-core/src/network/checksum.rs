@@ -5,7 +5,7 @@
 
 use core::task::Waker;
 use embassy_net::driver::{self, Driver, PacketBuf};
-use oer_hil_protocol::{WifiRxChecksumPolicy, WifiTxUdpChecksumPolicy};
+use oer_hil_protocol::{wifi::WifiRxChecksumPolicy, wifi::WifiTxUdpChecksumPolicy};
 
 pub struct Device<D> {
     inner: D,

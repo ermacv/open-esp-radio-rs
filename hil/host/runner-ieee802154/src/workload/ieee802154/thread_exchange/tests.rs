@@ -1,4 +1,4 @@
-use oer_hil_protocol::Ieee802154ThreadDatagram;
+use oer_hil_protocol::ieee802154::Ieee802154ThreadDatagram;
 
 use super::*;
 
@@ -69,5 +69,8 @@ fn the_device_must_receive_every_datagram_in_order_from_the_peer() {
 #[test]
 fn payloads_name_their_direction_and_index_and_fit_the_session() {
     assert_eq!(payload("D2P", 2), b"OER-THREAD-D2P-2");
-    assert!(payload("P2D", u8::MAX).len() <= oer_hil_protocol::IEEE802154_THREAD_PAYLOAD_CAPACITY);
+    assert!(
+        payload("P2D", u8::MAX).len()
+            <= oer_hil_protocol::ieee802154::IEEE802154_THREAD_PAYLOAD_CAPACITY
+    );
 }

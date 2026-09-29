@@ -13,9 +13,10 @@ use oer_esp32s31_ieee802154_runtime::Ieee802154RadioEvent;
 use oer_esp32s31_ieee802154_system::Ieee802154System;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_hil_protocol::{
-    Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence, Ieee802154AirCheckRequest,
-    Ieee802154AirCheckStop, Ieee802154AirCycle, Ieee802154AirEnergyOutcome, Ieee802154AirTransmit,
-    Ieee802154AirWindow,
+    ieee802154::Ieee802154AirCcaOutcome, ieee802154::Ieee802154AirCheckEvidence,
+    ieee802154::Ieee802154AirCheckRequest, ieee802154::Ieee802154AirCheckStop,
+    ieee802154::Ieee802154AirCycle, ieee802154::Ieee802154AirEnergyOutcome,
+    ieee802154::Ieee802154AirTransmit, ieee802154::Ieee802154AirWindow,
 };
 use oer_ieee802154::{
     Channel, Configuration, EnergyScanRequest, FrameView, Interface, RadioCommand, RadioTimestamp,

@@ -16,9 +16,10 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, RxRadioEvidence, SessionConfig,
-    SessionFlowConfig, SessionLinkRequirements, Transport, TransportEvidence,
-    TxAggregateTimingEvidence, TxRadioEvidence,
+    network::Completion, network::Direction, network::FlowConfig, network::Ipv4Endpoint,
+    network::RxRadioEvidence, network::SessionConfig, network::SessionFlowConfig,
+    network::SessionLinkRequirements, network::Transport, network::TransportEvidence,
+    network::TxAggregateTimingEvidence, network::TxRadioEvidence,
 };
 
 use crate::{
@@ -262,7 +263,7 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
         "station",
     )?;
     let session = capture.start_session(SessionConfig {
-        network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
+        network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::Station,
         transport: Transport::Udp,
         direction: Direction::Bidirectional,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),

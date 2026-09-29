@@ -1,7 +1,7 @@
 //! Raw HCI commands to the Controller of the `bluetooth_hci` image.
 use crate::Result;
 use hil_core::session::SerialCapture;
-use oer_hil_protocol::{BluetoothHciRequest, BluetoothHciResponse};
+use oer_hil_protocol::{bluetooth::BluetoothHciRequest, bluetooth::BluetoothHciResponse};
 use std::time::Duration;
 
 pub const RESET: u16 = 0x0c03;
@@ -19,7 +19,7 @@ pub const EVENT_MASK_WITH_LE_META: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0x1f
 /// Wait for the image's hello and require raw HCI exchanges.
 pub fn require(capture: &SerialCapture) -> Result<()> {
     let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
-    if !capabilities.features.bluetooth_hci {
+    if !capabilities.has::<oer_hil_protocol::bluetooth::Hci>() {
         return Err("firmware lacks raw Bluetooth HCI exchanges".into());
     }
     Ok(())

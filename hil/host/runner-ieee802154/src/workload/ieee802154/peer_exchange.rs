@@ -25,11 +25,13 @@ use std::{fs, path::Path, time::Duration};
 
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
-    Ieee802154AirTxOutcome, Ieee802154SessionCoexistence, Ieee802154SessionConfig,
-    Ieee802154SessionFrame, Ieee802154SessionMaintenancePolicy, Ieee802154SessionPendingMode,
-    Ieee802154SessionPendingRequest, Ieee802154SessionPhyMaintenance,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionResult, Ieee802154SessionTransmitEvidence,
-    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, ieee802154_frame_crc32c,
+    ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionCoexistence,
+    ieee802154::Ieee802154SessionConfig, ieee802154::Ieee802154SessionFrame,
+    ieee802154::Ieee802154SessionMaintenancePolicy, ieee802154::Ieee802154SessionPendingMode,
+    ieee802154::Ieee802154SessionPendingRequest, ieee802154::Ieee802154SessionPhyMaintenance,
+    ieee802154::Ieee802154SessionReceiveEvidence, ieee802154::Ieee802154SessionResult,
+    ieee802154::Ieee802154SessionTransmitEvidence, ieee802154::Ieee802154SessionTransmitRequest,
+    ieee802154::Ieee802154SessionTxMode, ieee802154::ieee802154_frame_crc32c,
 };
 use serde::Serialize;
 
@@ -232,7 +234,7 @@ fn exchange<L: PeerLink>(
     boot: u8,
 ) -> Result<BootReport> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_session {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::Session>() {
         return Err("firmware does not advertise IEEE 802.15.4 sessions".into());
     }
     peer.configure(&PeerConfig {

@@ -67,6 +67,8 @@ pub(super) fn start(
 ) -> ! {
     let entropy = Entropy::new(rng);
     let boot = u64::from_le_bytes(entropy.random_bytes().expect("HIL boot entropy")).max(1);
+    crate::transport::CONSOLE.start(boot);
+    crate::transport::init_logger();
     let entropy = ENTROPY.init(BluetoothEntropy::new(entropy));
     let public_address = platform.bluetooth_public_address();
     executor.run(|spawner| {

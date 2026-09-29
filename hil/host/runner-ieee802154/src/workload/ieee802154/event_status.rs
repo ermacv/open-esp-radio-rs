@@ -10,9 +10,9 @@ use hil_core::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{
-    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
-    Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState,
-    Ieee802154ValidationEventEnableState,
+    ieee802154::Ieee802154EventStatusProbeEvidence, ieee802154::Ieee802154EventStatusProbeRequest,
+    ieee802154::Ieee802154EventStatusProbeStop, ieee802154::Ieee802154ObservedEventState,
+    ieee802154::Ieee802154ValidationEventEnableState,
 };
 use serde::Serialize;
 
@@ -119,7 +119,7 @@ fn probe(
     boot: u8,
 ) -> Result<BootReport> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_event_status_probe {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::EventStatusProbe>() {
         return Err("firmware does not advertise the IEEE 802.15.4 EVENT_STATUS probe".into());
     }
     let target = capture.probe_ieee802154_event_status(request, COMMAND_TIMEOUT)?;

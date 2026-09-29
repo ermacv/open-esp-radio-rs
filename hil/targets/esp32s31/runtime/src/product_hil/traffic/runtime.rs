@@ -15,7 +15,7 @@ use super::{
     run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark, run_session_dispatcher,
 };
 use crate::product_hil::{OPEN_RADIO_TASK_POLL_TELEMETRY, RX_PIPELINE, TASK_POLLS};
-use oer_hil_protocol::WifiNetworkInterface;
+use oer_hil_protocol::wifi::WifiNetworkInterface;
 
 const UDP_PAYLOAD_CAPACITY: usize = 1_472;
 // Workload pacing is independent of the stack's packet-pool capacity.
@@ -43,7 +43,7 @@ static ACCESS_POINT_TCP_TX_BUFFER: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>
 
 struct ConnectedTrafficResources {
     udp_rx: ConstStaticCell<UdpRxStorage>,
-    udp_tx: ConstStaticCell<[UdpTxStorage; oer_hil_protocol::SESSION_FLOW_CAPACITY]>,
+    udp_tx: ConstStaticCell<[UdpTxStorage; oer_hil_protocol::network::SESSION_FLOW_CAPACITY]>,
     tcp_rx_buffer: &'static ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]>,
     tcp_tx_buffer: &'static ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]>,
     bidirectional_rx_sessions: BidirectionalSessionChannel,
@@ -61,7 +61,7 @@ impl ConnectedTrafficResources {
         Self {
             udp_rx: ConstStaticCell::new(UdpRxStorage::new()),
             udp_tx: ConstStaticCell::new(
-                [const { UdpTxStorage::new() }; oer_hil_protocol::SESSION_FLOW_CAPACITY],
+                [const { UdpTxStorage::new() }; oer_hil_protocol::network::SESSION_FLOW_CAPACITY],
             ),
             tcp_rx_buffer,
             tcp_tx_buffer,

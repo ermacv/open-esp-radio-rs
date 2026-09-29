@@ -1,21 +1,37 @@
-//! What each image class's runtime compiles and reports, derived from the
-//! runtime manifest's feature graph.
+//! What each image class's runtime compiles and reports, derived from its
+//! chip's runtime manifest.
 //!
 //! A class names the Cargo features its runtime is built with; the manifest
 //! says which features each of those enables in turn. The closure of that
 //! graph is exactly what `cfg(feature = ...)` sees in the runtime, and the
-//! runtime reports its capabilities with the same function of it
-//! ([`oer_hil_target_core::image_capabilities`]), so the host's expectation
-//! of a flashed image cannot drift from the firmware.
+//! runtime reports its capability keys with the same function of it
+//! ([`oer_hil_target_core::image_capabilities::image_keys`]), so the host's
+//! expectation of a flashed image cannot drift from the firmware. A flashed
+//! image is the one class of its chip whose keys it reports.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use oer_hil_protocol::FeatureCapabilities;
+use crate::session::DeviceCapabilities;
 
 use super::{ImageClass, Integration};
 
-/// The runtime manifest of this tree.
-const RUNTIME_MANIFEST: &str = include_str!("../../../../targets/esp32s31/runtime/Cargo.toml");
+/// The runtime manifests of this tree, by chip.
+const RUNTIME_MANIFESTS: [(&str, &str); 2] = [
+    (
+        "esp32s31",
+        include_str!("../../../../targets/esp32s31/runtime/Cargo.toml"),
+    ),
+    (
+        "esp32c5",
+        include_str!("../../../../targets/esp32c5/runtime/Cargo.toml"),
+    ),
+];
+
+fn runtime_manifest(chip: &str) -> Option<&'static str> {
+    RUNTIME_MANIFESTS
+        .iter()
+        .find_map(|(name, manifest)| (*name == chip).then_some(*manifest))
+}
 
 /// The runtime's features and the features each enables, leaving out
 /// optional dependencies (`dep:x`) and other packages' features (`x/f`,
@@ -60,39 +76,62 @@ fn closure(graph: &BTreeMap<String, Vec<String>>, roots: &[&str]) -> BTreeSet<St
 }
 
 impl ImageClass {
-    /// Every Cargo feature this class's runtime is built with.
-    pub fn enabled_features(self) -> BTreeSet<String> {
+    /// Every Cargo feature this class's runtime on `chip` is built with, or
+    /// `None` where the chip's runtime has no such class.
+    pub fn enabled_features_on(self, chip: &str) -> Option<BTreeSet<String>> {
+        let graph = feature_graph(runtime_manifest(chip)?);
         let features = self.build_features(Integration::OwnedXarxa);
-        closure(
-            &feature_graph(RUNTIME_MANIFEST),
-            &features.split(',').collect::<Vec<_>>(),
-        )
+        let roots: Vec<&str> = features
+            .split(',')
+            .filter(|root| !root.is_empty())
+            .collect();
+        // A class whose own features the chip's runtime lacks is not built
+        // there; the network integration is the esp32s31 runtime's alone.
+        let own = self.runtime_features();
+        if !own.split(',').all(|feature| graph.contains_key(feature)) {
+            return None;
+        }
+        let roots: Vec<&str> = roots
+            .into_iter()
+            .filter(|root| graph.contains_key(*root))
+            .collect();
+        Some(closure(&graph, &roots))
     }
 
-    /// The capabilities this class's runtime reports, or `None` for the boot
-    /// smoke image, which reports none.
-    pub fn capabilities(self) -> Option<FeatureCapabilities> {
+    /// The capability keys this class's runtime on `chip` reports, or `None`
+    /// for the boot smoke image, which reports none, and for a class the
+    /// chip does not build.
+    pub fn capabilities_on(self, chip: &str) -> Option<DeviceCapabilities> {
         if self == Self::BootSmoke {
             return None;
         }
-        let enabled = self.enabled_features();
-        Some(
-            oer_hil_target_core::image_capabilities::feature_capabilities(&|feature| {
+        let enabled = self.enabled_features_on(chip)?;
+        Some(DeviceCapabilities::of_keys(
+            oer_hil_target_core::image_capabilities::image_keys(&|feature| {
                 enabled.contains(feature)
             }),
-        )
+        ))
     }
+}
 
-    /// Whether the image compiles the program-counter sampler
-    /// (`pc-profile`), so a scenario can request a profile of it.
-    pub fn samples_program_counter(self) -> bool {
-        self.enabled_features().contains("pc-profile")
-    }
+/// The class of `chip` whose keys a flashed image reports.
+pub fn classify_flashed(chip: &str, capabilities: &DeviceCapabilities) -> Option<ImageClass> {
+    ImageClass::ALL.into_iter().find(|class| {
+        class
+            .capabilities_on(chip)
+            .is_some_and(|expected| expected.same_keys(capabilities))
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use oer_hil_protocol::{Message, bluetooth, network, system, telemetry, wifi};
+
     use super::*;
+
+    fn keys(class: ImageClass) -> DeviceCapabilities {
+        class.capabilities_on("esp32s31").unwrap()
+    }
 
     #[test]
     fn the_feature_graph_keeps_only_the_runtime_s_own_features() {
@@ -112,53 +151,51 @@ mod tests {
     }
 
     #[test]
-    fn every_class_but_boot_smoke_reports_capabilities_no_other_class_does() {
-        let mut seen = BTreeMap::new();
-        for class in ImageClass::ALL {
-            let Some(capabilities) = class.capabilities() else {
-                assert_eq!(class, ImageClass::BootSmoke);
-                continue;
-            };
-            if let Some(other) = seen.insert(format!("{capabilities:?}"), class) {
-                panic!(
-                    "{} and {} report the same capabilities",
-                    other.id(),
+    fn every_class_of_a_chip_reports_its_own_keys_and_classifies_as_itself() {
+        for (chip, _) in RUNTIME_MANIFESTS {
+            let mut seen = BTreeMap::new();
+            for class in ImageClass::ALL {
+                let Some(capabilities) = class.capabilities_on(chip) else {
+                    continue;
+                };
+                if let Some(other) = seen.insert(capabilities.keys().clone(), class) {
+                    panic!(
+                        "{chip}: {} and {} report the same keys",
+                        other.id(),
+                        class.id()
+                    );
+                }
+                assert_eq!(
+                    classify_flashed(chip, &capabilities),
+                    Some(class),
+                    "{chip}: {}",
                     class.id()
                 );
             }
-            assert_eq!(
-                crate::image::classify_flashed_capabilities(&capabilities),
-                Some(class),
-                "{}",
-                class.id()
-            );
+            assert!(!seen.is_empty(), "{chip} builds no class");
         }
     }
 
     #[test]
-    fn a_capability_no_class_builds_is_no_class() {
-        let performance = ImageClass::Performance.capabilities().unwrap();
-        for foreign in [
-            FeatureCapabilities {
-                phy_fault_injection: true,
-                ..performance
-            },
-            FeatureCapabilities {
-                bluetooth_dtm: true,
-                ..performance
-            },
-            FeatureCapabilities {
-                udp: true,
-                ..ImageClass::BluetoothDtm.capabilities().unwrap()
-            },
-        ] {
-            assert_eq!(crate::image::classify_flashed_capabilities(&foreign), None);
-        }
+    fn a_key_set_no_class_builds_is_no_class() {
+        let performance = keys(ImageClass::Performance);
+        let mut foreign = performance.keys().clone();
+        foreign.insert(<bluetooth::Dtm as Message>::KEY);
+        assert_eq!(
+            classify_flashed("esp32s31", &DeviceCapabilities::of_keys(foreign)),
+            None
+        );
+        let mut missing = performance.keys().clone();
+        missing.remove(&<network::Udp as Message>::KEY);
+        assert_eq!(
+            classify_flashed("esp32s31", &DeviceCapabilities::of_keys(missing)),
+            None
+        );
     }
 
     #[test]
-    fn every_feature_the_capabilities_read_is_the_runtime_s() {
-        let graph = feature_graph(RUNTIME_MANIFEST);
+    fn every_feature_the_keys_read_is_the_runtime_s() {
+        let graph = feature_graph(runtime_manifest("esp32s31").unwrap());
         for feature in oer_hil_target_core::image_capabilities::READ_FEATURES {
             assert!(graph.contains_key(*feature), "{feature}");
         }
@@ -166,27 +203,29 @@ mod tests {
 
     #[test]
     fn the_classes_report_what_their_features_promise() {
-        let performance = ImageClass::Performance.capabilities().unwrap();
-        assert!(performance.udp && !performance.driver_observation_evidence);
-        let correctness = ImageClass::Correctness.capabilities().unwrap();
-        assert!(correctness.driver_observation_evidence);
-        let coex = ImageClass::WifiBleCoex.capabilities().unwrap();
-        assert!(coex.bluetooth_gatt && coex.udp);
-        let dtm = ImageClass::BluetoothDtm.capabilities().unwrap();
-        assert!(dtm.bluetooth_dtm && dtm.bluetooth_hci && !dtm.udp);
-        assert!(
-            ImageClass::SystemWatchdog
-                .capabilities()
-                .unwrap()
-                .system_watchdog
-        );
-        assert!(
-            ImageClass::DiagnosticMemoryBenchmark
-                .capabilities()
-                .unwrap()
-                .memory_benchmark
-        );
-        assert!(ImageClass::DiagnosticTaskResidence.samples_program_counter());
-        assert!(!ImageClass::Performance.samples_program_counter());
+        let performance = keys(ImageClass::Performance);
+        assert!(performance.has::<network::Udp>());
+        assert!(!performance.has::<wifi::DriverObservation>());
+        assert!(keys(ImageClass::Correctness).has::<wifi::DriverObservation>());
+        let coex = keys(ImageClass::WifiBleCoex);
+        assert!(coex.has::<bluetooth::Gatt>() && coex.has::<network::Udp>());
+        let dtm = keys(ImageClass::BluetoothDtm);
+        assert!(dtm.has::<bluetooth::Dtm>() && dtm.has::<bluetooth::Hci>());
+        assert!(!dtm.has::<network::Udp>());
+        let watchdog = keys(ImageClass::SystemWatchdog);
+        assert!(watchdog.has::<system::WatchdogTest>());
+        assert!(!watchdog.has::<network::Udp>());
+        assert!(keys(ImageClass::DiagnosticMemoryBenchmark).has::<system::MemoryBenchmark>());
+        assert!(keys(ImageClass::DiagnosticTaskResidence).has::<telemetry::PcProfile>());
+        assert!(!performance.has::<telemetry::PcProfile>());
+    }
+
+    #[test]
+    fn the_esp32c5_builds_its_system_watchdog_image() {
+        let watchdog = ImageClass::SystemWatchdog
+            .capabilities_on("esp32c5")
+            .unwrap();
+        assert!(watchdog.has::<system::WatchdogTest>());
+        assert!(ImageClass::Performance.capabilities_on("esp32c5").is_none());
     }
 }

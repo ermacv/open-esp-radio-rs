@@ -1,7 +1,7 @@
 //! Value-only RX observations and conversion into HIL wire evidence.
 
 #[cfg(feature = "station-exit-evidence")]
-use oer_hil_protocol::WifiMacRxHardwareEvidence;
+use oer_hil_protocol::wifi::WifiMacRxHardwareEvidence;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::product_hil) struct ObservedRxStatistics {

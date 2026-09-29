@@ -1,9 +1,12 @@
 # HIL protocol
 
-Typed commands and evidence shared by the host runner and target firmware.
-The wire version is defined only by [`PROTOCOL_VERSION`](src/message.rs).
-Version compatibility, image capabilities, current-state admission and product
-qualification are separate contracts.
+Typed messages shared by the host runner and target firmware. Every message
+is its own type in one module, identified on the wire by a key: a hash of the
+message's path and of its postcard schema. [`messages.lock`](messages.lock)
+names the framing version, each module's dependencies (`[modules]`) and every
+message's path, key and kind (`[messages]`); its test keeps it equal to the
+source. Image capabilities, current-state admission and
+product qualification are separate contracts.
 
 - [Wire contract](wire.md): framing, version checks, discovery and boot identity.
 - [Wi-Fi](wifi.md): role ownership, traffic sessions and retained results.
@@ -16,28 +19,49 @@ meaning and limits. Host scenario execution belongs to the
 [runner](../host/README.md); firmware setup belongs to the
 [ESP32-S31 target](../targets/esp32s31/README.md).
 
+## Modules and messages
+
+A module is a path prefix and a directory: `base` (hello, capabilities, boot
+status, post-mortem, link health, acceptance and refusal), `system`, `wifi`,
+`network`, `bluetooth`, `ieee802154`, `phy` and `telemetry`. A module declares
+its messages with `messages!`:
+
+- an endpoint is a request the device serves and names its one response;
+- a topic is a device message: a response or an unsolicited event;
+- a property is a marker an image advertises in its capabilities and never
+  sends.
+
+A response may follow other messages about the same request: a replayed
+session publishes its evidence before `network::Finished`, and an accepted
+Wi-Fi operation publishes its completion later, with the request's identifier.
+A refusal is `base::Rejected` with its reason.
+
+The crate root is the framework: `key.rs` (message identity and
+`messages!`), `framing.rs`, `io.rs` and `envelope.rs`. It names no module.
+Everything else lives in a module's directory, `src/<module>/`: its
+messages in `mod.rs` and every payload type they carry beside them, reached
+as `oer_hil_protocol::<module>::Type`. A module may use another module's
+payloads through `crate::<module>`; the lock's `[modules]` section lists each
+module with the modules it uses, the registry test derives that list from the
+sources and rejects a cycle. A runner that speaks a module needs the
+framework, `base`, that module and what it uses.
+
+A message's meaning is its path and its type. A change of meaning without a
+change of type takes a new path; units live in the types. A change of a
+message's schema changes its key, and the lock records the change for review.
+
 ## Radio families
 
 The crate compiles its radio families behind features of the observer
-registry's family names: `wifi` (traffic sessions, roles, monitor and scan,
-their evidence, UDP probes and stream patterns), `bluetooth` (Direct Test
-Mode, HCI, GATT and secure GATT), `ieee802154` (probes, air check, peer
-sessions and Thread) and `system` (the memory copy benchmark). The shared
-core is always compiled: framing, the envelope and its `Command`, `Event`
-and `EvidenceRecord` sets, capabilities, boot and post-mortem evidence, the
-event trace, the program-counter profile, PHY diagnostics and startup artifacts. The host enables every
-family, the default; an image enables only the families it serves, so its
-build, and the evidence bound to its sources, reads only their files.
-
-A family that is off keeps its variants in the three enums, in the same
-order, because the wire encodes a variant by its position: their payload
-types become the uninhabited `Absent`, so such a variant can be neither built
-nor decoded and the encoding of every other variant is unchanged. An intact
-frame of this protocol version whose body the build cannot decode is a
-command of such a family: the decoder reports `UndecodableBody` with the
-request's identity, and the image answers `Rejected(Unsupported)` at once.
-
-A family's payload changes stay in its own modules. A new variant still
-edits `message.rs`, which every image compiles, so batch new variants rather
-than adding them one change at a time.
-
+registry's family names: `wifi` (the `wifi` and `network` modules' messages,
+traffic sessions, roles, monitor and scan, their evidence, UDP probes and
+stream patterns), `bluetooth` (Direct Test Mode, HCI, GATT and secure GATT),
+`ieee802154` (probes, air check, peer sessions and Thread) and `system` (the
+memory copy benchmark). The shared core is always compiled: framing, the
+envelope, keys and capabilities, the `base` module, boot and post-mortem
+evidence, the event trace, the program-counter profile, PHY diagnostics and
+startup artifacts. An image enables only the families it serves, so its
+build, and the evidence bound to its sources, reads only their files; a
+family that is off has no messages in the build. The host decodes every
+message: the `registry` feature enables every family and lists each
+message's path, key, kind, schema and readable decoder.

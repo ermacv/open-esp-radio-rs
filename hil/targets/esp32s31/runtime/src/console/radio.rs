@@ -4,11 +4,14 @@
 //! for images that contain a radio/network product owner.
 
 use super::*;
+#[cfg(all(feature = "ieee802154-radio", not(feature = "ieee802154-thread")))]
+use embassy_futures::select::{Either3, select3};
 use oer_hil_protocol::{
-    STARTUP_ARTIFACT_CHUNK_MAX_LEN, StartupArtifactDisposition, StartupArtifactStatus,
-    StationEpochEvidence, StationLifecycleEvent, WifiAccessPointEvidence, WifiMonitorEvidence,
-    WifiMonitorFrameChunk, WifiRoleFailureEvidence, WifiRoleTransitionEvidence, WifiScanEvidence,
-    WifiStationAccessPointStopEvidence,
+    phy::STARTUP_ARTIFACT_CHUNK_MAX_LEN, phy::StartupArtifactDisposition,
+    phy::StartupArtifactStatus, wifi::StationEpochEvidence, wifi::StationLifecycleEvent,
+    wifi::WifiAccessPointEvidence, wifi::WifiMonitorEvidence, wifi::WifiMonitorFrameChunk,
+    wifi::WifiRoleFailureEvidence, wifi::WifiRoleTransitionEvidence, wifi::WifiScanEvidence,
+    wifi::WifiStationAccessPointStopEvidence,
 };
 
 /// The single owner-consuming operation selected before radio initialization.
@@ -38,11 +41,11 @@ pub enum PreInitializationRequest {
 
 /// Queues one best-effort diagnostic line on the runtime USB transport.
 ///
-/// Unlike [`emergency_log`], this path is serialized by [`logger_task`] with
+/// Unlike [`emergency_log`], this path is serialized by the console task with
 /// binary protocol frames. Runtime code must use this function so a ROM write
 /// cannot overtake a USB packet that the asynchronous HAL has only submitted.
 pub fn runtime_log(args: Arguments<'_>) {
-    submit_line(args);
+    CONSOLE.line(args);
 }
 
 /// Queues one diagnostic line without allowing the bounded text queue to
@@ -52,18 +55,7 @@ pub fn runtime_log(args: Arguments<'_>) {
 /// awaiting text capacity inside radio, network or traffic service would make
 /// USB progress part of their runtime contract.
 pub async fn runtime_log_reliably(args: Arguments<'_>) {
-    if RUNTIME_ACTIVE.load(Ordering::Acquire) {
-        // Wait for a free slot before formatting, so the caller's future
-        // never holds a whole record across the await.
-        loop {
-            core::future::poll_fn(|cx| RECORDS.poll_ready_to_send(cx)).await;
-            if RECORDS.try_send(format_record(args)).is_ok() {
-                break;
-            }
-        }
-    } else {
-        write_record_immediate(&format_record(args));
-    }
+    CONSOLE.line_reliably(args).await;
 }
 
 /// Publish the application-visible Wi-Fi owner state used for command
@@ -165,7 +157,7 @@ pub async fn receive_pre_initialization_request() -> PreInitializationRequest {
 
 /// Publish the role-neutral completion edge for one initialization command.
 pub async fn complete_initialization(request_id: u32) {
-    publish_event_reliably(0, request_id, Event::Initialized).await;
+    publish_event_reliably(0, request_id, oer_hil_protocol::wifi::Initialized).await;
 }
 
 /// Returns the current target-defined startup artifact to the host in bounded
@@ -177,14 +169,14 @@ pub async fn publish_startup_artifact(
     bytes: &[u8],
 ) {
     let Ok(total_length) = u16::try_from(bytes.len()) else {
-        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+        CONSOLE.lose_message();
         return;
     };
     let checksum = startup_artifact_crc32c(bytes);
     publish_event_reliably(
         0,
         0,
-        Event::StartupArtifactReady(StartupArtifactStatus {
+        oer_hil_protocol::phy::StartupArtifactReady(StartupArtifactStatus {
             disposition,
             total_length,
             initialization_elapsed_micros,
@@ -194,14 +186,14 @@ pub async fn publish_startup_artifact(
     for (index, part) in bytes.chunks(STARTUP_ARTIFACT_CHUNK_MAX_LEN).enumerate() {
         let offset = index * STARTUP_ARTIFACT_CHUNK_MAX_LEN;
         let Ok(offset) = u16::try_from(offset) else {
-            PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+            CONSOLE.lose_message();
             return;
         };
         let Ok(chunk) = StartupArtifactChunk::try_new(total_length, offset, checksum, part) else {
-            PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
+            CONSOLE.lose_message();
             return;
         };
-        publish_event_reliably(0, 0, Event::StartupArtifact(chunk)).await;
+        publish_event_reliably(0, 0, oer_hil_protocol::phy::StartupArtifactPart(chunk)).await;
     }
 }
 
@@ -223,48 +215,86 @@ pub async fn receive_wifi_control_request() -> WifiControlRequest {
 /// Unlike text diagnostics, this event is serialized by the protocol owner
 /// and retains the command request ID used by the host qualifier.
 pub async fn complete_station_epoch_cycle(request_id: u32, evidence: StationEpochEvidence) {
-    publish_event_reliably(0, request_id, Event::StationEpochCompleted(evidence)).await;
+    publish_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::StationEpochCompleted(evidence),
+    )
+    .await;
 }
 
 /// Reliably acknowledge complete station dematerialization and reconstruction
 /// of the role-neutral Wi-Fi owner.
 pub async fn complete_wifi_role_transition(request_id: u32, evidence: WifiRoleTransitionEvidence) {
-    let sequence = queue_event_reliably(0, request_id, Event::WifiRoleTransitioned(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::RoleTransitioned(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn complete_wifi_radio_restart(
     request_id: u32,
-    evidence: oer_hil_protocol::WifiRadioRestartEvidence,
+    evidence: oer_hil_protocol::wifi::WifiRadioRestartEvidence,
 ) {
-    let sequence = queue_event_reliably(0, request_id, Event::WifiRadioRestarted(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::RadioRestarted(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn complete_wifi_scan(request_id: u32, evidence: WifiScanEvidence) {
-    let sequence = queue_event_reliably(0, request_id, Event::WifiScanCompleted(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::ScanCompleted(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn complete_monitor_start(request_id: u32, evidence: WifiRoleTransitionEvidence) {
-    let sequence = queue_event_reliably(0, request_id, Event::WifiMonitorStarted(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::MonitorStarted(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn complete_monitor_stop(request_id: u32, evidence: WifiMonitorEvidence) {
-    let sequence = queue_event_reliably(0, request_id, Event::WifiMonitorStopped(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::MonitorStopped(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn complete_access_point_start(request_id: u32, evidence: WifiRoleTransitionEvidence) {
-    let sequence =
-        queue_event_reliably(0, request_id, Event::WifiAccessPointStarted(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::AccessPointStarted(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn complete_access_point_stop(request_id: u32, evidence: WifiAccessPointEvidence) {
-    let sequence =
-        queue_event_reliably(0, request_id, Event::WifiAccessPointStopped(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::AccessPointStopped(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
@@ -275,29 +305,34 @@ pub async fn complete_station_access_point_stop(
     let sequence = queue_event_reliably(
         0,
         request_id,
-        Event::WifiStationAccessPointStopped(evidence),
+        oer_hil_protocol::wifi::StationAccessPointStopped(evidence),
     )
     .await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn complete_wifi_role_failure(request_id: u32, evidence: WifiRoleFailureEvidence) {
-    let sequence = queue_event_reliably(0, request_id, Event::WifiRoleFailed(evidence)).await;
+    let sequence =
+        queue_event_reliably(0, request_id, oer_hil_protocol::wifi::RoleFailed(evidence)).await;
     wait_until_serialized(sequence).await;
 }
 
 pub async fn publish_monitor_frame(request_id: u32, chunk: WifiMonitorFrameChunk) {
-    queue_event_reliably(0, request_id, Event::WifiMonitorFrame(chunk)).await;
+    queue_event_reliably(0, request_id, oer_hil_protocol::wifi::MonitorFrame(chunk)).await;
 }
 
 pub async fn complete_monitor_capture(request_id: u32, evidence: WifiMonitorEvidence) {
-    let sequence =
-        queue_event_reliably(0, request_id, Event::WifiMonitorCaptureCompleted(evidence)).await;
+    let sequence = queue_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::wifi::MonitorCaptureCompleted(evidence),
+    )
+    .await;
     wait_until_serialized(sequence).await;
 }
 
 async fn wait_until_serialized(sequence: u32) {
-    SERIALIZED_WIFI_EVENTS.wait_for(sequence).await;
+    CONSOLE.written(sequence).await;
 }
 
 /// Reliably publish one unsolicited station generation/link edge.
@@ -305,7 +340,8 @@ async fn wait_until_serialized(sequence: u32) {
 /// The caller emits this only after the corresponding ownership transition;
 /// unlike UART text, it cannot be dropped under diagnostic pressure.
 pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
-    let sequence = queue_event_reliably(0, 0, Event::StationLifecycle(event)).await;
+    let sequence =
+        queue_event_reliably(0, 0, oer_hil_protocol::wifi::StationLifecycle(event)).await;
     wait_until_serialized(sequence).await;
 }
 
@@ -316,11 +352,11 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
 pub async fn complete_session(
     session_id: u64,
     flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
-    radio: Option<oer_hil_protocol::RadioEvidence>,
-    tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
+    radio: Option<oer_hil_protocol::network::RadioEvidence>,
+    tx_timing: Option<oer_hil_protocol::network::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
-    rx_zero_copy: Option<oer_hil_protocol::RxZeroCopyEvidence>,
-    verdict: oer_hil_protocol::SessionVerdict,
+    rx_zero_copy: Option<oer_hil_protocol::network::RxZeroCopyEvidence>,
+    verdict: oer_hil_protocol::network::SessionVerdict,
 ) {
     let evidence = TransportEvidence::from_flows(flow_evidence);
     SESSION_RESULTS

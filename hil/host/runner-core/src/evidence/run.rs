@@ -150,6 +150,7 @@ impl RunSession {
             lab_provenance_path: None,
             firmware: Vec::new(),
             experiment: crate::experiment::Experiment::from_environment()?,
+            messages_used: Vec::new(),
         };
         atomic_json(&directory.join("manifest.json"), &manifest)?;
         record_created_run(&manifest.run_id)?;
@@ -253,6 +254,7 @@ impl RunSession {
             render::html(&suite, &self.manifest).as_bytes(),
         )?;
         self.record_event(RunEventKind::RunFinished, None, None, Some(outcome))?;
+        self.manifest.messages_used = messages_used(&self.directory)?;
         self.manifest.state = RunState::Completed;
         self.manifest.finished_unix_millis = Some(finished_unix_millis);
         self.manifest.duration_millis = Some(duration_millis);
@@ -284,6 +286,7 @@ impl Drop for RunSession {
             None,
             Some(Outcome::Interrupted),
         );
+        self.manifest.messages_used = messages_used(&self.directory).unwrap_or_default();
         self.manifest.state = RunState::Interrupted;
         self.manifest.finished_unix_millis = unix_millis().ok();
         self.manifest.duration_millis = Some(duration_millis(self.started.elapsed()));
@@ -302,6 +305,43 @@ impl Drop for RunSession {
             Err(error) => eprintln!("cannot seal interrupted HIL run: {error}"),
         }
     }
+}
+
+/// Every message path the run's protocol captures record: the target's
+/// messages and the host's requests, sorted and unique.
+fn messages_used(directory: &Path) -> Result<Vec<String>> {
+    fn captures(directory: &Path, found: &mut Vec<PathBuf>) -> Result<()> {
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                captures(&path, found)?;
+            } else if path
+                .file_name()
+                .is_some_and(|name| name == "protocol.jsonl")
+            {
+                found.push(path);
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    captures(directory, &mut files)?;
+    let mut paths = std::collections::BTreeSet::new();
+    for file in files {
+        for line in fs::read_to_string(&file)?.lines() {
+            let record: serde_json::Value = serde_json::from_str(line)
+                .map_err(|error| format!("{}: {error}", file.display()))?;
+            let path = match record["record"].as_str() {
+                Some("target-event") => &record["message"]["path"],
+                Some("host-command") => &record["command"]["path"],
+                _ => continue,
+            };
+            if let Some(path) = path.as_str() {
+                paths.insert(path.to_owned());
+            }
+        }
+    }
+    Ok(paths.into_iter().collect())
 }
 
 pub fn duration_millis(duration: Duration) -> u64 {
@@ -427,7 +467,7 @@ pub fn runner_provenance() -> Result<RunnerProvenance> {
         ),
         package: runner.package.to_owned(),
         version: runner.version.to_owned(),
-        protocol_version: oer_hil_protocol::PROTOCOL_VERSION,
+        messages_lock_sha256: format!("{:x}", Sha256::digest(oer_hil_protocol::MESSAGES_LOCK)),
         host_os: std::env::consts::OS.to_owned(),
         host_arch: std::env::consts::ARCH.to_owned(),
         tools: ["rustc", "cargo", "espflash"]

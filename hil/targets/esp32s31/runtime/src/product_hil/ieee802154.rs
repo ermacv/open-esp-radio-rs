@@ -79,21 +79,25 @@ use oer_esp32s31_hal::{
 
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use oer_hil_protocol::{
-    Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
-    Ieee802154PolledEdMaskState, Ieee802154PolledEdOutcome, Ieee802154PolledEdStage,
-    Ieee802154RxAbortObservation, Ieee802154RxAbortReason, Ieee802154ValidationEdDurationState,
-    Ieee802154ValidationRxAbortEnableState,
+    ieee802154::Ieee802154EdEventProbeEvidence, ieee802154::Ieee802154EdEventProbeRequest,
+    ieee802154::Ieee802154EdEventProbeStop, ieee802154::Ieee802154PolledEdMaskState,
+    ieee802154::Ieee802154PolledEdOutcome, ieee802154::Ieee802154PolledEdStage,
+    ieee802154::Ieee802154RxAbortObservation, ieee802154::Ieee802154RxAbortReason,
+    ieee802154::Ieee802154ValidationEdDurationState,
+    ieee802154::Ieee802154ValidationRxAbortEnableState,
 };
 #[cfg(feature = "ieee802154-event-status-probe")]
 use oer_hil_protocol::{
-    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
-    Ieee802154EventStatusProbeStop,
+    ieee802154::Ieee802154EventStatusProbeEvidence, ieee802154::Ieee802154EventStatusProbeRequest,
+    ieee802154::Ieee802154EventStatusProbeStop,
 };
 #[cfg(any(
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use oer_hil_protocol::{Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState};
+use oer_hil_protocol::{
+    ieee802154::Ieee802154ObservedEventState, ieee802154::Ieee802154ValidationEventEnableState,
+};
 
 /// Bring the IEEE 802.15.4 client of a concurrent split to its MAC
 /// foundation: common power, module clocks, MAC reset, foundation.

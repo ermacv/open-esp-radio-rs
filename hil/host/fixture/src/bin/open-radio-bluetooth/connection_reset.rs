@@ -24,9 +24,10 @@ use bt_hci::{
     },
 };
 use oer_hil_protocol::{
-    BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS,
-    BluetoothPeripheralTermination, bluetooth_peripheral_acl_payload,
-    bluetooth_peripheral_acl_payload_for_sequence,
+    bluetooth::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES,
+    bluetooth::BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS,
+    bluetooth::BluetoothPeripheralTermination, bluetooth::bluetooth_peripheral_acl_payload,
+    bluetooth::bluetooth_peripheral_acl_payload_for_sequence,
 };
 use std::time::{Duration, Instant};
 
@@ -802,8 +803,9 @@ fn enable_encryption(
     refresh: bool,
 ) -> Result<()> {
     use oer_hil_protocol::{
-        BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK, BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV,
-        BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
+        bluetooth::BLUETOOTH_REFRESH_EDIV, bluetooth::BLUETOOTH_REFRESH_LTK,
+        bluetooth::BLUETOOTH_REFRESH_RAND, bluetooth::BLUETOOTH_TEST_EDIV,
+        bluetooth::BLUETOOTH_TEST_LTK, bluetooth::BLUETOOTH_TEST_RAND,
     };
     let started = Instant::now();
     user.send_command(&LeEnableEncryption::new(

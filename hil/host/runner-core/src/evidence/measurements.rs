@@ -4,7 +4,6 @@
 //! even when teardown or a gate fails; replayed evidence is counted only once.
 
 use crate::{Result, evidence::run::Measurement};
-use oer_hil_protocol::{Envelope, Event};
 use std::{
     collections::BTreeMap,
     path::{Component, Path},
@@ -104,8 +103,12 @@ impl Recorder {
 }
 
 impl CaptureRecorder {
-    pub fn record(&self, events: &[Envelope<Event>], received_bytes: u64) -> Vec<Measurement> {
-        let observations = protocol::observations(&self.prefix, events, received_bytes);
+    pub fn record(
+        &self,
+        messages: &[crate::session::Received],
+        received_bytes: u64,
+    ) -> Vec<Measurement> {
+        let observations = protocol::observations(&self.prefix, messages, received_bytes);
         self.recorder.record(observations.iter().cloned());
         observations
     }

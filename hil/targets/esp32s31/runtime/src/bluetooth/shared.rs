@@ -17,7 +17,7 @@ use oer_esp32s31_bluetooth_system::{
     BluetoothEntropy, BluetoothHostTransport, BluetoothParked, BluetoothSystem, start_bluetooth_hci,
 };
 use oer_esp32s31_hal::root::BluetoothPartition;
-use oer_hil_protocol::BluetoothGattEvidence;
+use oer_hil_protocol::bluetooth::BluetoothGattEvidence;
 use static_cell::StaticCell;
 
 use super::{Radio, VERSION, gatt};

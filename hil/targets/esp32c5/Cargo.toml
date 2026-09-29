@@ -19,6 +19,8 @@ debug_assert_with_mut_call = "deny"
 disallowed_methods = "deny"
 
 [workspace.dependencies]
+embassy-futures = "0.1.2"
+embassy-sync = "0.8.0"
 critical-section = "1.2.0"
 embedded-io-async = "0.7.0"
 heapless = "0.9.3"

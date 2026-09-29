@@ -18,7 +18,7 @@ fn retryable_peer_failure_does_not_preempt_lifecycle_policy() {
     let retrying = StationLifecycleEvent::AttemptFailed {
         generation: 1,
         attempt: 1,
-        stage: oer_hil_protocol::StationFailureStage::Association,
+        stage: oer_hil_protocol::wifi::StationFailureStage::Association,
         reason: StationAttemptFailureReason::PeerProtocol,
     };
     assert!(validate_cycle_event(retrying, 2).is_ok());
@@ -29,14 +29,14 @@ fn fatal_or_exhausted_lifecycle_fails_immediately() {
     let fatal = StationLifecycleEvent::AttemptFailed {
         generation: 1,
         attempt: 1,
-        stage: oer_hil_protocol::StationFailureStage::Hardware,
+        stage: oer_hil_protocol::wifi::StationFailureStage::Hardware,
         reason: StationAttemptFailureReason::ContractViolation,
     };
     assert!(validate_cycle_event(fatal, 2).is_err());
     let exhausted = StationLifecycleEvent::RetryExhausted {
         generation: 1,
         attempts: 3,
-        stage: oer_hil_protocol::StationFailureStage::CandidateSelection,
+        stage: oer_hil_protocol::wifi::StationFailureStage::CandidateSelection,
         reason: StationAttemptFailureReason::NoCandidate,
     };
     assert!(validate_cycle_event(exhausted, 2).is_err());
@@ -63,7 +63,7 @@ fn cycle_requires_ordered_disconnect_and_next_generation_connect() {
         .observe_lifecycle(
             StationLifecycleEvent::Disconnected {
                 generation: 1,
-                reason: oer_hil_protocol::StationDisconnectReason::ReconnectRequested,
+                reason: oer_hil_protocol::wifi::StationDisconnectReason::ReconnectRequested,
             },
             1,
             1,

@@ -17,7 +17,7 @@ pub struct RebootObservation {
 impl ProtocolState {
     pub(super) fn accept_expected_reboot(
         &mut self,
-        message: &Envelope<Event>,
+        message: &super::Received,
         now: Instant,
     ) -> bool {
         let Some(expected) = self.expected_reboot.as_ref() else {
@@ -29,7 +29,7 @@ impl ProtocolState {
             || expected.old == message.boot_id
             || message.boot_id == 0
             || message.message_sequence != 0
-            || !matches!(message.body, Event::Hello(_))
+            || !message.is::<oer_hil_protocol::base::Hello>()
             || now < expected.earliest
             || now > expected.deadline
         {
@@ -102,6 +102,7 @@ impl SerialCapture {
 }
 #[cfg(test)]
 mod tests {
+    use super::super::capture::test_support;
     use super::*;
     #[test]
     fn reboot_expectation_is_timed_single_use_and_cannot_erase_failure() {
@@ -109,7 +110,7 @@ mod tests {
         let make = || {
             let mut state = ProtocolState::default();
             state.health.observe(
-                &super::super::capture::test_support::hello(1, 0),
+                &test_support::received(test_support::hello(1, 0)),
                 DecodeCounters::default(),
             );
             state.expected_reboot = Some(ExpectedReboot {
@@ -120,7 +121,7 @@ mod tests {
             });
             state
         };
-        let hello = super::super::capture::test_support::hello(2, 0);
+        let hello = test_support::received(test_support::hello(2, 0));
         assert!(!make().accept_expected_reboot(&hello, now));
         assert!(!make().accept_expected_reboot(&hello, now + Duration::from_secs(3)));
         let mut state = make();

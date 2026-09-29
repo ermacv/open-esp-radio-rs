@@ -20,9 +20,9 @@ use oer_esp32s31_radio_esp_hal::EspHalRadioClocks;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
 use oer_esp32s31_radio_runtime::RadioSystem;
 use oer_hil_protocol::{
-    Event as HilEvent, Ieee802154SessionCoexistence, Ieee802154SessionConfig,
-    Ieee802154SessionMaintenanceCounts, Ieee802154SessionRestartEvidence, Ieee802154SessionResult,
-    Ieee802154SessionStopEvidence,
+    ieee802154::Ieee802154SessionCoexistence, ieee802154::Ieee802154SessionConfig,
+    ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionRestartEvidence,
+    ieee802154::Ieee802154SessionResult, ieee802154::Ieee802154SessionStopEvidence,
 };
 use oer_ieee802154::{Channel, RadioCommand};
 
@@ -92,7 +92,7 @@ pub(in crate::product_hil) async fn run_session(
         publish_event_reliably(
             0,
             request_id,
-            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
+            oer_hil_protocol::ieee802154::SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
         )
         .await;
         return;
@@ -101,7 +101,7 @@ pub(in crate::product_hil) async fn run_session(
         publish_event_reliably(
             0,
             request_id,
-            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
+            oer_hil_protocol::ieee802154::SessionStarted(Ieee802154SessionResult::UnsupportedSetup),
         )
         .await;
         return;
@@ -114,7 +114,7 @@ pub(in crate::product_hil) async fn run_session(
         publish_event_reliably(
             0,
             request_id,
-            HilEvent::Ieee802154SessionStarted(Ieee802154SessionResult::StartFailed),
+            oer_hil_protocol::ieee802154::SessionStarted(Ieee802154SessionResult::StartFailed),
         )
         .await;
         return;
@@ -139,7 +139,12 @@ pub(in crate::product_hil) async fn run_session(
         system.enable_wifi_coexistence(client.radio).await;
         coexistence.enabled = true;
     }
-    publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionStarted(started)).await;
+    publish_event_reliably(
+        0,
+        request_id,
+        oer_hil_protocol::ieee802154::SessionStarted(started),
+    )
+    .await;
 
     // The coexistence schedule runs beside the session while it takes part.
     let schedule_stop = Signal::<CriticalSectionRawMutex, ()>::new();
@@ -179,7 +184,7 @@ pub(in crate::product_hil) async fn run_session(
                     publish_event_reliably(
                         0,
                         request_id,
-                        HilEvent::Ieee802154SessionRadioRestarted(evidence),
+                        oer_hil_protocol::ieee802154::SessionRadioRestarted(evidence),
                     )
                     .await;
                     let Some(restarted) = restarted else {
@@ -215,7 +220,7 @@ pub(in crate::product_hil) async fn run_session(
     publish_event_reliably(
         0,
         stop_request,
-        HilEvent::Ieee802154SessionStopped(Ieee802154SessionStopEvidence {
+        oer_hil_protocol::ieee802154::SessionStopped(Ieee802154SessionStopEvidence {
             result: stopped,
             maintenance: counts.get(),
             coexistence,

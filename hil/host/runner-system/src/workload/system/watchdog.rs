@@ -1,7 +1,7 @@
 //! SoC reset evidence without a radio peer; distinct from DTM RF evidence.
 use crate::Result;
 use hil_core::context::Context;
-use oer_hil_protocol::{ResetReason, WatchdogTestMode as Mode};
+use oer_hil_protocol::{base::ResetReason, system::WatchdogTestMode as Mode};
 use std::{path::Path, time::Duration};
 
 pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
@@ -15,10 +15,10 @@ pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
         let directory = output.join(scope(mode));
         std::fs::create_dir_all(&directory)?;
         context.with_capture(&directory, |capture| {
-            let features = capture
+            if !capture
                 .request_capabilities(Duration::from_secs(10))?
-                .features;
-            if !features.system_watchdog {
+                .has::<oer_hil_protocol::system::WatchdogTest>()
+            {
                 return Err("requires the exclusive watchdog diagnostic image".into());
             }
             if mode != Mode::Complete {

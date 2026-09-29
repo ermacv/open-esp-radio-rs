@@ -8,12 +8,16 @@ use hil_core::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{
-    Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
-    Ieee802154ObservedEventState, Ieee802154PolledEdOutcome, Ieee802154ValidationEdDurationState,
-    Ieee802154ValidationEventEnableState, Ieee802154ValidationRxAbortEnableState,
+    ieee802154::Ieee802154EdEventProbeEvidence, ieee802154::Ieee802154EdEventProbeRequest,
+    ieee802154::Ieee802154EdEventProbeStop, ieee802154::Ieee802154ObservedEventState,
+    ieee802154::Ieee802154PolledEdOutcome, ieee802154::Ieee802154ValidationEdDurationState,
+    ieee802154::Ieee802154ValidationEventEnableState,
+    ieee802154::Ieee802154ValidationRxAbortEnableState,
 };
 #[cfg(test)]
-use oer_hil_protocol::{Ieee802154RxAbortObservation, Ieee802154RxAbortReason};
+use oer_hil_protocol::{
+    ieee802154::Ieee802154RxAbortObservation, ieee802154::Ieee802154RxAbortReason,
+};
 use serde::Serialize;
 
 use crate::Result;
@@ -123,7 +127,7 @@ fn probe(
     boot: u8,
 ) -> Result<BootReport> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_ed_event_probe {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::EdEventProbe>() {
         return Err("firmware does not advertise the IEEE 802.15.4 ED event probe".into());
     }
     let target = capture.probe_ieee802154_ed_event(request, COMMAND_TIMEOUT)?;

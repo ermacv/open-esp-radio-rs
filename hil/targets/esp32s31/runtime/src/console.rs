@@ -1,52 +1,85 @@
-//! Early-console and runtime logging backend.
+//! The product image's requests and the messages they publish.
 //!
-//! Application code should use the macros from the `log` crate. Direct ROM
-//! output remains available for the boot and panic paths, where the executor
-//! and the asynchronous logging transport may not be running yet.
+//! The console itself is the target core's, bound to this chip in
+//! [`crate::transport`]; this module serves the product image's requests and
+//! keeps its publishing helpers.
 
-use oer_hil_target_core::console::{progress, writer};
+use crate::transport::CONSOLE;
 
 use core::{
     cell::RefCell,
-    fmt::{Arguments, Write},
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    fmt::Arguments,
+    sync::atomic::{AtomicU32, Ordering},
 };
-use embassy_futures::select::{Either, Either3, select, select3};
+use embassy_futures::select::{Either, select};
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
     channel::Channel,
-    mutex::Mutex as AsyncMutex,
 };
 use embassy_time::{Instant, Timer};
-use embedded_io_async::{Read as _, Write as _};
-use esp_hal::{
-    Async,
-    peripherals::USB_DEVICE,
-    usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
+use esp_hal::peripherals::USB_DEVICE;
+#[cfg(feature = "ieee802154-ed-event-probe")]
+use oer_hil_protocol::ieee802154::Ieee802154EdEventProbeRequest;
+#[cfg(feature = "ieee802154-event-status-probe")]
+use oer_hil_protocol::ieee802154::Ieee802154EventStatusProbeRequest;
+use oer_hil_protocol::phy::{ControlFault, UploadStartupArtifact};
+#[cfg(not(feature = "memory-benchmark"))]
+use oer_hil_protocol::phy::{ControlTracking, ReadAnalogImage, ReadRegisterImage};
+#[cfg(not(feature = "memory-benchmark"))]
+use oer_hil_protocol::system::HangTarget;
+use oer_hil_protocol::system::{
+    GetInterruptStacks, GetStacks, InterruptStacks, ProbeTimebase, Stacks,
 };
 #[cfg(not(feature = "memory-benchmark"))]
-use oer_hil_protocol::HangTarget;
-#[cfg(feature = "ieee802154-ed-event-probe")]
-use oer_hil_protocol::Ieee802154EdEventProbeRequest;
-#[cfg(feature = "ieee802154-event-status-probe")]
-use oer_hil_protocol::Ieee802154EventStatusProbeRequest;
+use oer_hil_protocol::system::{HangInjected, InjectHang};
+#[cfg(feature = "pc-profile")]
+use oer_hil_protocol::telemetry::{ControlProfile, GetProfileSamples};
+#[cfg(not(feature = "memory-benchmark"))]
+use oer_hil_protocol::telemetry::{
+    ControlTrace, GetTraceEntries, GetTraceSnapshot, TraceEntriesPage, TraceSnapshot, TraceState,
+};
 use oer_hil_protocol::{
-    Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, FailureCode, Finished,
-    FlowTransportEvidence, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials,
-    NetworkIpv4Configuration, RejectReason, ResultSummary, RxDeliveryEvidence,
-    SESSION_FLOW_CAPACITY, SessionConfig, SessionFailure, SessionState, SessionVerdict,
-    StartupArtifactChunk, StateChange, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
-    TransportEvidence, WifiAccessPointRequest, WifiMonitorCaptureRequest, WifiMonitorRequest,
-    WifiRole, WifiScanRequest, WifiStationAccessPointRequest, evidence_crc32c,
-    startup_artifact_crc32c,
+    Envelope, Message,
+    base::{LinkHealth, RejectReason, Rejected},
+    network::Direction,
+    network::EvidenceRecord,
+    network::FailureCode,
+    network::Finished,
+    network::FlowTransportEvidence,
+    network::ResultSummary,
+    network::RxDeliveryEvidence,
+    network::SESSION_FLOW_CAPACITY,
+    network::SessionConfig,
+    network::SessionFailure,
+    network::SessionState,
+    network::SessionVerdict,
+    network::StateChange,
+    network::Transport,
+    network::TransportEvidence,
+    network::evidence_crc32c,
+    phy::StartupArtifactChunk,
+    phy::startup_artifact_crc32c,
+    system::TimebaseProbeEvidence,
+    system::TimebaseProbeRequest,
+    wifi::NetworkCredentials,
+    wifi::NetworkIpv4Configuration,
+    wifi::WifiAccessPointRequest,
+    wifi::WifiMonitorCaptureRequest,
+    wifi::WifiMonitorRequest,
+    wifi::WifiRole,
+    wifi::WifiScanRequest,
+    wifi::WifiStationAccessPointRequest,
 };
 #[cfg(feature = "ieee802154-radio")]
 use oer_hil_protocol::{
-    Ieee802154AirCheckRequest, Ieee802154SessionAssessRequest, Ieee802154SessionConfig,
-    Ieee802154SessionPendingRequest, Ieee802154SessionTransmitRequest,
+    ieee802154::Ieee802154AirCheckRequest, ieee802154::Ieee802154SessionAssessRequest,
+    ieee802154::Ieee802154SessionConfig, ieee802154::Ieee802154SessionPendingRequest,
+    ieee802154::Ieee802154SessionTransmitRequest,
 };
 #[cfg(feature = "ieee802154-thread")]
-use oer_hil_protocol::{Ieee802154ThreadSendRequest, Ieee802154ThreadStartRequest};
+use oer_hil_protocol::{
+    ieee802154::Ieee802154ThreadSendRequest, ieee802154::Ieee802154ThreadStartRequest,
+};
 
 #[cfg(not(feature = "memory-benchmark"))]
 mod radio;
@@ -54,81 +87,104 @@ mod radio;
 pub(crate) use radio::*;
 
 pub(crate) const STARTUP_ARTIFACT_CAPACITY: usize = 512;
-// Images with the Wi-Fi system's diagnostics (every driver-observation image
-// and the station-exit diagnostic) log whole Debug records of driver state,
-// up to about 900 bytes; production-like images keep the smaller footprint.
-#[cfg(feature = "station-exit-evidence")]
-const MESSAGE_CAPACITY: usize = 1024;
-#[cfg(not(feature = "station-exit-evidence"))]
-const MESSAGE_CAPACITY: usize = 384;
-// Diagnostic role transitions emit synchronous register/status bursts before
-// the logger can run. Reserve bounded burst storage only in observer images;
-// production-like measurements retain the smaller logging footprint.
-#[cfg(feature = "station-exit-evidence")]
-const QUEUE_CAPACITY: usize = 32;
-#[cfg(not(feature = "station-exit-evidence"))]
-const QUEUE_CAPACITY: usize = 8;
-const DRAIN_BATCH: usize = 4;
 const COMMAND_QUEUE_CAPACITY: usize = 4;
-const EVENT_QUEUE_CAPACITY: usize = 8;
-const USB_RX_CHUNK_BYTES: usize = 128;
 
-#[unsafe(link_section = ".critical.data.logging")]
-static WRITER: writer::Writer = writer::Writer::new();
-#[unsafe(link_section = ".critical.data.logging")]
-static RUNTIME_ACTIVE: AtomicBool = AtomicBool::new(false);
-#[unsafe(link_section = ".critical.data.logging")]
-static DROPPED_RECORDS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static QUEUE_FULL_RECORDS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static WRITER_BUSY_RECORDS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static WRITE_ERROR_RECORDS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static FIRST_QUEUE_LOSS: Mutex<CriticalSectionRawMutex, RefCell<Option<TextBuffer<160>>>> =
-    Mutex::new(RefCell::new(None));
-#[unsafe(link_section = ".critical.data.logging")]
-static TRUNCATED_RECORDS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static BOOT_ID_LOW: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static BOOT_ID_HIGH: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static EVENT_SEQUENCE: AtomicU32 = AtomicU32::new(0);
-// Sequence reservation and queue insertion are one producer transaction.
-// Reserving before an async `send` permits a later task to enqueue sequence
-// N+1 ahead of N, which makes an otherwise lossless wire stream fail closed.
-#[unsafe(link_section = ".critical.data.logging")]
-static EVENT_PUBLISH: AsyncMutex<CriticalSectionRawMutex, ()> = AsyncMutex::new(());
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_DROPPED: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_TX_FRAMES: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_RX_COBS_ERRORS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_RX_CHECKSUM_ERRORS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_RX_DECODE_ERRORS: AtomicU32 = AtomicU32::new(0);
-#[unsafe(link_section = ".critical.data.logging")]
-static PROTOCOL_RX_OVERFLOWS: AtomicU32 = AtomicU32::new(0);
-/// One plus the last event sequence fully written to the USB endpoint.
-/// Zero means that no event from the current boot has crossed that boundary.
-#[unsafe(link_section = ".critical.data.logging")]
-static SERIALIZED_WIFI_EVENTS: progress::SerializedEvents = progress::SerializedEvents::new();
+oer_hil_target_core::requests! {
+    /// The product image's requests beyond the base module.
+    pub(crate) enum Request (sessions = true) {
+        #[cfg(not(feature = "memory-benchmark"))]
+        ControlTracking(ControlTracking),
+        #[cfg(not(feature = "memory-benchmark"))]
+        ReadRegisterImage(ReadRegisterImage),
+        #[cfg(not(feature = "memory-benchmark"))]
+        ReadAnalogImage(ReadAnalogImage),
+        ControlFault(ControlFault),
+        UploadStartupArtifact(UploadStartupArtifact),
+        #[cfg(feature = "pc-profile")]
+        ControlProfile(ControlProfile),
+        #[cfg(feature = "pc-profile")]
+        GetProfileSamples(GetProfileSamples),
+        #[cfg(not(feature = "memory-benchmark"))]
+        ControlTrace(ControlTrace),
+        #[cfg(not(feature = "memory-benchmark"))]
+        GetTraceEntries(GetTraceEntries),
+        #[cfg(not(feature = "memory-benchmark"))]
+        GetTraceSnapshot(GetTraceSnapshot),
+        #[cfg(feature = "wifi-ble-coex")]
+        GetGatt(oer_hil_protocol::bluetooth::GetGatt),
+        #[cfg(not(feature = "memory-benchmark"))]
+        InjectHang(InjectHang),
+        GetStacks(GetStacks),
+        GetInterruptStacks(GetInterruptStacks),
+        ProbeTimebase(ProbeTimebase),
+        #[cfg(feature = "memory-benchmark")]
+        RunMemoryBenchmark(oer_hil_protocol::system::RunMemoryBenchmark),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        ProbeEventStatus(oer_hil_protocol::ieee802154::ProbeEventStatus),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        ProbeRoute(oer_hil_protocol::ieee802154::ProbeRoute),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        ProbeEdEvent(oer_hil_protocol::ieee802154::ProbeEdEvent),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        RunAirCheck(oer_hil_protocol::ieee802154::RunAirCheck),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        StartSession(oer_hil_protocol::ieee802154::StartSession),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        TransmitSession(oer_hil_protocol::ieee802154::TransmitSession),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        ReceiveSession(oer_hil_protocol::ieee802154::ReceiveSession),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        CollectSession(oer_hil_protocol::ieee802154::CollectSession),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        SetSessionPending(oer_hil_protocol::ieee802154::SetSessionPending),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        MaintainSessionPhy(oer_hil_protocol::ieee802154::MaintainSessionPhy),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        AssessSessionChannel(oer_hil_protocol::ieee802154::AssessSessionChannel),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        RestartSessionRadio(oer_hil_protocol::ieee802154::RestartSessionRadio),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        ReadSessionRecentRssi(oer_hil_protocol::ieee802154::ReadSessionRecentRssi),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        StopSession(oer_hil_protocol::ieee802154::StopSession),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        StartThread(oer_hil_protocol::ieee802154::StartThread),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        GetThread(oer_hil_protocol::ieee802154::GetThread),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        SendThread(oer_hil_protocol::ieee802154::SendThread),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        CollectThread(oer_hil_protocol::ieee802154::CollectThread),
+        #[cfg(feature = "ieee802154-diagnostic")]
+        StopThread(oer_hil_protocol::ieee802154::StopThread),
+        Initialize(oer_hil_protocol::wifi::Initialize),
+        Configure(oer_hil_protocol::network::Configure),
+        Arm(oer_hil_protocol::network::Arm),
+        Start(oer_hil_protocol::network::Start),
+        GetStatus(oer_hil_protocol::network::GetStatus),
+        Cancel(oer_hil_protocol::network::Cancel),
+        ReplayResult(oer_hil_protocol::network::ReplayResult),
+        AcknowledgeResult(oer_hil_protocol::network::AcknowledgeResult),
+        Recover(oer_hil_protocol::network::Recover),
+        CycleStationEpoch(oer_hil_protocol::wifi::CycleStationEpoch),
+        StopStation(oer_hil_protocol::wifi::StopStation),
+        StartStation(oer_hil_protocol::wifi::StartStation),
+        RestartRadio(oer_hil_protocol::wifi::RestartRadio),
+        Scan(oer_hil_protocol::wifi::Scan),
+        StartMonitor(oer_hil_protocol::wifi::StartMonitor),
+        StopMonitor(oer_hil_protocol::wifi::StopMonitor),
+        StartAccessPoint(oer_hil_protocol::wifi::StartAccessPoint),
+        StopAccessPoint(oer_hil_protocol::wifi::StopAccessPoint),
+        StartStationAccessPoint(oer_hil_protocol::wifi::StartStationAccessPoint),
+        StopStationAccessPoint(oer_hil_protocol::wifi::StopStationAccessPoint),
+        CaptureMonitor(oer_hil_protocol::wifi::CaptureMonitor),
+    }
+}
+
 #[unsafe(link_section = ".critical.data.logging")]
 static WIFI_ROLE_STATE: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
-static RECORDS: Channel<CriticalSectionRawMutex, TextBuffer<MESSAGE_CAPACITY>, QUEUE_CAPACITY> =
-    Channel::new();
-#[unsafe(link_section = ".critical.data.logging")]
-static COMMANDS: Channel<CriticalSectionRawMutex, Envelope<Command>, COMMAND_QUEUE_CAPACITY> =
-    Channel::new();
-#[unsafe(link_section = ".critical.data.logging")]
-static EVENTS: Channel<CriticalSectionRawMutex, Envelope<Event>, EVENT_QUEUE_CAPACITY> =
+static COMMANDS: Channel<CriticalSectionRawMutex, Envelope<Request>, COMMAND_QUEUE_CAPACITY> =
     Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
 static STARTUP_CONFIGURATIONS: Channel<CriticalSectionRawMutex, StartupConfiguration, 1> =
@@ -236,14 +292,14 @@ pub struct ActiveSession {
     )
 )]
 pub struct StartupConfiguration {
-    pub ap_scheduler: oer_hil_protocol::WifiApScheduler,
+    pub ap_scheduler: oer_hil_protocol::wifi::WifiApScheduler,
     pub request_id: u32,
     pub ipv4: NetworkIpv4Configuration,
-    pub data_plane: oer_hil_protocol::WifiDataPlanePlacement,
-    pub rx_checksum: oer_hil_protocol::WifiRxChecksumPolicy,
-    pub tx_udp_checksum: oer_hil_protocol::WifiTxUdpChecksumPolicy,
-    pub tx_buffer: oer_hil_protocol::WifiTxBufferPolicy,
-    pub rx_continuation: oer_hil_protocol::WifiRxContinuationPolicy,
+    pub data_plane: oer_hil_protocol::wifi::WifiDataPlanePlacement,
+    pub rx_checksum: oer_hil_protocol::wifi::WifiRxChecksumPolicy,
+    pub tx_udp_checksum: oer_hil_protocol::wifi::WifiTxUdpChecksumPolicy,
+    pub tx_buffer: oer_hil_protocol::wifi::WifiTxBufferPolicy,
+    pub rx_continuation: oer_hil_protocol::wifi::WifiRxContinuationPolicy,
     pub l1_cache_counters: bool,
     pub phy_calibration_artifact: Option<StartupArtifact>,
 }
@@ -257,7 +313,7 @@ pub struct Ieee802154EventStatusProbe {
 #[cfg(feature = "ieee802154-route-probe")]
 pub struct Ieee802154RouteProbe {
     pub request_id: u32,
-    pub request: oer_hil_protocol::Ieee802154RouteProbeRequest,
+    pub request: oer_hil_protocol::ieee802154::Ieee802154RouteProbeRequest,
 }
 
 #[cfg(feature = "ieee802154-ed-event-probe")]
@@ -321,13 +377,18 @@ async fn admit_ieee802154_thread_command(
         publish_event_reliably(
             session_id,
             request_id,
-            Event::Rejected(RejectReason::InvalidState),
+            oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
         )
         .await;
         return false;
     }
     if IEEE802154_THREAD_COMMANDS.try_send(command).is_err() {
-        publish_event_reliably(session_id, request_id, Event::Rejected(RejectReason::Busy)).await;
+        publish_event_reliably(
+            session_id,
+            request_id,
+            oer_hil_protocol::base::Rejected(RejectReason::Busy),
+        )
+        .await;
         return false;
     }
     true
@@ -387,13 +448,18 @@ async fn admit_ieee802154_session_command(
         publish_event_reliably(
             session_id,
             request_id,
-            Event::Rejected(RejectReason::InvalidState),
+            oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
         )
         .await;
         return false;
     }
     if IEEE802154_SESSION_COMMANDS.try_send(command).is_err() {
-        publish_event_reliably(session_id, request_id, Event::Rejected(RejectReason::Busy)).await;
+        publish_event_reliably(
+            session_id,
+            request_id,
+            oer_hil_protocol::base::Rejected(RejectReason::Busy),
+        )
+        .await;
         return false;
     }
     true
@@ -489,10 +555,10 @@ struct SessionResult {
     session_id: u64,
     flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     evidence: TransportEvidence,
-    radio: Option<oer_hil_protocol::RadioEvidence>,
-    tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
+    radio: Option<oer_hil_protocol::network::RadioEvidence>,
+    tx_timing: Option<oer_hil_protocol::network::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
-    rx_zero_copy: Option<oer_hil_protocol::RxZeroCopyEvidence>,
+    rx_zero_copy: Option<oer_hil_protocol::network::RxZeroCopyEvidence>,
     verdict: SessionVerdict,
 }
 
@@ -502,7 +568,7 @@ struct SessionResult {
 struct RetainedSessionResult {
     measurement: SessionResult,
     link: LinkHealth,
-    stack: oer_hil_protocol::StackUsage,
+    stack: oer_hil_protocol::system::StackUsage,
 }
 
 #[derive(Clone, Copy)]
@@ -556,46 +622,6 @@ unsafe extern "C" {
     fn ets_printf(format: *const u8, ...) -> i32;
     fn EspDefaultHandler();
     static __EXTERNAL_INTERRUPTS: u8;
-}
-
-#[derive(Clone, Copy)]
-struct TextBuffer<const N: usize> {
-    bytes: [u8; N],
-    len: usize,
-    truncated: bool,
-}
-
-impl<const N: usize> TextBuffer<N> {
-    const fn new() -> Self {
-        Self {
-            bytes: [0; N],
-            len: 0,
-            truncated: false,
-        }
-    }
-
-    fn as_c_string(&self) -> *const u8 {
-        self.bytes.as_ptr()
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
-    }
-
-    fn was_truncated(&self) -> bool {
-        self.truncated
-    }
-}
-
-impl<const N: usize> Write for TextBuffer<N> {
-    fn write_str(&mut self, text: &str) -> core::fmt::Result {
-        let available = self.bytes.len() - 1 - self.len;
-        let length = text.len().min(available);
-        self.bytes[self.len..self.len + length].copy_from_slice(&text.as_bytes()[..length]);
-        self.len += length;
-        self.truncated |= length != text.len();
-        Ok(())
-    }
 }
 
 /// Reports the IEEE 802.15.4 MAC power-sequencing words once, before a
@@ -892,14 +918,6 @@ pub fn panic_wifi_rx_frontier() {
     }
 }
 
-/// Formats and writes one emergency line immediately.
-///
-/// This bypasses the queue and is intended only for early boot, panic, and
-/// last-resort diagnostics.
-pub fn emergency_log(args: Arguments<'_>) {
-    write_line_immediate(args);
-}
-
 /// Writes the panic source without acquiring the normal transport writer.
 ///
 /// A panic raised by a USB interrupt can preempt the async logger while its
@@ -929,26 +947,6 @@ pub fn panic_origin(info: &core::panic::PanicInfo<'_>) {
     }
 }
 
-/// Returns the number of records discarded because the queue was full or
-/// another core/interrupt was already using the immediate writer.
-pub fn dropped_records() -> u32 {
-    DROPPED_RECORDS.load(Ordering::Relaxed)
-}
-
-/// Returns the number of records whose text exceeded [`MESSAGE_CAPACITY`].
-pub fn truncated_records() -> u32 {
-    TRUNCATED_RECORDS.load(Ordering::Relaxed)
-}
-
-/// Installs the identity of the current boot before protocol tasks start.
-pub fn init_protocol(boot_id: u64) {
-    BOOT_ID_LOW.store(boot_id as u32, Ordering::Relaxed);
-    BOOT_ID_HIGH.store((boot_id >> 32) as u32, Ordering::Release);
-    EVENT_SEQUENCE.store(0, Ordering::Relaxed);
-    SERIALIZED_WIFI_EVENTS.publish_next(0);
-    WIFI_ROLE_STATE.store(0, Ordering::Relaxed);
-}
-
 fn wifi_role_is(role: WifiRole) -> bool {
     let expected = match role {
         WifiRole::Idle => 1,
@@ -958,49 +956,6 @@ fn wifi_role_is(role: WifiRole) -> bool {
         WifiRole::StationAccessPoint => 5,
     };
     WIFI_ROLE_STATE.load(Ordering::Acquire) == expected
-}
-
-fn boot_id() -> u64 {
-    u64::from(BOOT_ID_LOW.load(Ordering::Acquire))
-        | (u64::from(BOOT_ID_HIGH.load(Ordering::Acquire)) << 32)
-}
-
-/// Queues a typed event without making a radio or network task wait for USB.
-pub fn publish_event(session_id: u64, request_id: u32, body: Event) {
-    let Ok(_publisher) = EVENT_PUBLISH.try_lock() else {
-        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
-        return;
-    };
-    let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let event = Envelope::new(boot_id(), message_sequence, session_id, request_id, body);
-    if EVENTS.try_send(event).is_err() {
-        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-/// Queue a control-plane event without allowing a full telemetry queue to
-/// erase a required host/target state transition.
-///
-/// Use this for readiness and lifecycle boundaries outside measured traffic.
-/// High-rate observations should continue to use [`publish_event`] so they
-/// cannot apply backpressure to the radio or network hot path.
-pub(crate) async fn publish_event_reliably(session_id: u64, request_id: u32, body: Event) {
-    let _ = queue_event_reliably(session_id, request_id, body).await;
-}
-
-async fn queue_event_reliably(session_id: u64, request_id: u32, body: Event) -> u32 {
-    let _publisher = EVENT_PUBLISH.lock().await;
-    let message_sequence = EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    EVENTS
-        .send(Envelope::new(
-            boot_id(),
-            message_sequence,
-            session_id,
-            request_id,
-            body,
-        ))
-        .await;
-    message_sequence
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1092,12 +1047,11 @@ const _: () = {
     large_assignments,
     reason = "the protocol task moves bounded typed session results into its static Embassy arena; the linked-image stack audit remains authoritative"
 )]
-pub async fn protocol_task(capabilities: Capabilities) {
-    publish_event_reliably(0, 0, Event::Hello(capabilities)).await;
+pub async fn protocol_task() {
     publish_event_reliably(
         0,
         0,
-        Event::State(StateChange {
+        oer_hil_protocol::network::StateChanged(StateChange {
             previous: SessionState::Booting,
             current: SessionState::WaitingForInitialization,
         }),
@@ -1121,7 +1075,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
     // opaque session ID and no two live slots may target the same interface.
     let mut sessions = [None::<ProtocolSession>; 2];
     let mut startup_artifact = StartupArtifactAssembler::new();
-    let mut ap_scheduler = oer_hil_protocol::WifiApScheduler::Disabled;
+    let mut ap_scheduler = oer_hil_protocol::wifi::WifiApScheduler::Disabled;
     loop {
         #[cfg(not(feature = "memory-benchmark"))]
         crate::hang_watchdog::console_stall_point().await;
@@ -1129,166 +1083,81 @@ pub async fn protocol_task(capabilities: Capabilities) {
             Either::First(command) => {
                 #[cfg(not(feature = "memory-benchmark"))]
                 crate::hang_watchdog::took_work(
-                    oer_hil_protocol::TaskSlot::Console,
+                    oer_hil_protocol::base::TaskSlot::Console,
                     !COMMANDS.is_empty(),
                 );
                 let session_id = command.session_id;
                 let request_id = command.request_id;
                 match command.body {
-                    Command::PhyTracking(control) => {
-                        let response = if session_id != 0 {
-                            Event::Rejected(RejectReason::InvalidState)
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Request::ControlTracking(ControlTracking(control)) => {
+                        let reply = if session_id != 0 {
+                            Err(RejectReason::InvalidState)
                         } else {
-                            #[cfg(not(feature = "memory-benchmark"))]
-                            {
-                                crate::phy_tracking::control(control)
-                            }
-                            #[cfg(feature = "memory-benchmark")]
-                            {
-                                let _ = control;
-                                Event::Rejected(RejectReason::Unsupported)
-                            }
+                            Ok(crate::phy_tracking::control(control))
                         };
-                        queue_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, reply).await;
                     }
-                    Command::PhyRegisterImage(request) => {
-                        let response = if session_id != 0 {
-                            Event::Rejected(RejectReason::InvalidState)
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Request::ReadRegisterImage(ReadRegisterImage(request)) => {
+                        let reply = if session_id != 0 {
+                            Err(RejectReason::InvalidState)
                         } else {
-                            #[cfg(all(
-                                feature = "open-radio-hil",
-                                not(feature = "memory-benchmark")
-                            ))]
-                            {
-                                crate::product_hil::phy_register_image::read(request).await
-                            }
-                            #[cfg(not(all(
-                                feature = "open-radio-hil",
-                                not(feature = "memory-benchmark")
-                            )))]
-                            {
-                                let _ = request;
-                                Event::Rejected(RejectReason::Unsupported)
-                            }
+                            crate::product_hil::phy_register_image::read(request).await
                         };
-                        queue_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, reply).await;
                     }
                     // The program-counter profile: served by images that
                     // compile the sampler (`pc-profile`).
-                    Command::ProfileControl(control) => {
-                        #[cfg(feature = "pc-profile")]
-                        let response = crate::pc_profile::control(control);
-                        #[cfg(not(feature = "pc-profile"))]
-                        let response = {
-                            let _ = control;
-                            Event::Rejected(RejectReason::Unsupported)
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
+                    #[cfg(feature = "pc-profile")]
+                    Request::ControlProfile(ControlProfile(control)) => {
+                        respond(session_id, request_id, crate::pc_profile::control(control)).await;
                     }
-                    Command::GetProfileSamples { hart, first } => {
-                        #[cfg(feature = "pc-profile")]
-                        let response = crate::pc_profile::samples(hart, first);
-                        #[cfg(not(feature = "pc-profile"))]
-                        let response = {
-                            let _ = (hart, first);
-                            Event::Rejected(RejectReason::Unsupported)
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
+                    #[cfg(feature = "pc-profile")]
+                    Request::GetProfileSamples(GetProfileSamples { hart, first }) => {
+                        respond(
+                            session_id,
+                            request_id,
+                            crate::pc_profile::samples(hart, first),
+                        )
+                        .await;
                     }
-                    Command::PhyAnalogImage(request) => {
-                        let response = if session_id != 0 {
-                            Event::Rejected(RejectReason::InvalidState)
+                    #[cfg(not(feature = "memory-benchmark"))]
+                    Request::ReadAnalogImage(ReadAnalogImage(request)) => {
+                        let reply = if session_id != 0 {
+                            Err(RejectReason::InvalidState)
                         } else {
-                            #[cfg(all(
-                                feature = "open-radio-hil",
-                                not(feature = "memory-benchmark")
-                            ))]
-                            {
-                                crate::product_hil::phy_register_image::read_analog(request).await
-                            }
-                            #[cfg(not(all(
-                                feature = "open-radio-hil",
-                                not(feature = "memory-benchmark")
-                            )))]
-                            {
-                                let _ = request;
-                                Event::Rejected(RejectReason::Unsupported)
-                            }
+                            crate::product_hil::phy_register_image::read_analog(request).await
                         };
-                        queue_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, reply).await;
                     }
-                    Command::PhyFault(control) => {
-                        let response = if session_id == 0 {
+                    Request::ControlFault(ControlFault(control)) => {
+                        let reply = if session_id == 0 {
                             crate::phy_fault::control(control)
                         } else {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         };
-                        let accepted = matches!(response, Event::PhyFault(_));
-                        let sequence = queue_event_reliably(session_id, request_id, response).await;
+                        let accepted = reply.is_ok();
+                        let sequence = respond(session_id, request_id, reply).await;
                         if accepted {
-                            SERIALIZED_WIFI_EVENTS.wait_for(sequence).await;
+                            CONSOLE.written(sequence).await;
                             crate::phy_fault::after_response(control, true);
                         }
                     }
                     #[cfg(feature = "wifi-ble-coex")]
-                    Command::QueryBluetoothGatt => {
-                        publish_event_reliably(
+                    Request::GetGatt(oer_hil_protocol::bluetooth::GetGatt) => {
+                        respond(
                             session_id,
                             request_id,
-                            Event::BluetoothGatt(crate::bluetooth::shared::evidence()),
+                            Ok(oer_hil_protocol::bluetooth::GattState(
+                                crate::bluetooth::shared::evidence(),
+                            )),
                         )
                         .await;
-                    }
-                    #[cfg(not(feature = "wifi-ble-coex"))]
-                    Command::QueryBluetoothGatt => {
-                        publish_event_reliably(
-                            session_id,
-                            request_id,
-                            Event::Rejected(RejectReason::InvalidState),
-                        )
-                        .await;
-                    }
-                    Command::BluetoothDtm(_)
-                    | Command::BluetoothHci(_)
-                    | Command::QueryBluetoothSecureGatt
-                    | Command::ConfirmBluetoothGatt(_)
-                    | Command::RestartBluetoothGatt { .. }
-                    | Command::FailBluetoothGattResetRead { .. }
-                    | Command::BluetoothGattResetReadGate { .. }
-                    | Command::FailNextBluetoothGattBondLoad { .. }
-                    | Command::SystemWatchdogTest(_) => {
-                        publish_event_reliably(
-                            session_id,
-                            request_id,
-                            Event::Rejected(RejectReason::InvalidState),
-                        )
-                        .await;
-                    }
-                    Command::GetCapabilities => {
-                        publish_event_reliably(session_id, request_id, Event::Hello(capabilities))
-                            .await;
-                    }
-                    Command::GetBootStatus => {
-                        let response = if session_id == 0 {
-                            Event::BootStatus(crate::system::boot_evidence())
-                        } else {
-                            Event::Rejected(RejectReason::InvalidState)
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
-                    }
-                    Command::GetPostMortemCheckpoints { first } => {
-                        let response = if session_id == 0 {
-                            Event::PostMortemCheckpoints(crate::system::post_mortem_checkpoints(
-                                first,
-                            ))
-                        } else {
-                            Event::Rejected(RejectReason::InvalidState)
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
                     }
                     #[cfg(not(feature = "memory-benchmark"))]
-                    Command::InjectHang(target) => {
-                        let response = if session_id == 0 {
+                    Request::InjectHang(InjectHang(target)) => {
+                        let reply = if session_id == 0 {
                             match target {
                                 HangTarget::ProtocolExecutor => crate::hang_watchdog::inject(
                                     crate::hang_watchdog::Executor::Protocol,
@@ -1298,92 +1167,68 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 ),
                                 HangTarget::Console => crate::hang_watchdog::inject_console_stall(),
                             }
-                            Event::HangInjected(target)
+                            Ok(HangInjected(target))
                         } else {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
-                    }
-                    // The memory benchmark image has no hang watchdog.
-                    #[cfg(feature = "memory-benchmark")]
-                    Command::InjectHang(_) => {
-                        publish_event_reliably(
-                            session_id,
-                            request_id,
-                            Event::Rejected(RejectReason::InvalidState),
-                        )
-                        .await;
+                        respond(session_id, request_id, reply).await;
                     }
                     #[cfg(not(feature = "memory-benchmark"))]
-                    Command::TraceControl(control) => {
-                        let response = if session_id == 0 {
-                            Event::TraceStatus(crate::trace::control(control))
+                    Request::ControlTrace(ControlTrace(control)) => {
+                        let reply = if session_id == 0 {
+                            Ok(TraceState(crate::trace::control(control)))
                         } else {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, reply).await;
                     }
                     #[cfg(not(feature = "memory-benchmark"))]
-                    Command::GetTraceEntries { first } => {
-                        let response = if session_id == 0 {
-                            Event::TraceEntries(crate::trace::entries(first))
+                    Request::GetTraceEntries(GetTraceEntries { first }) => {
+                        let reply = if session_id == 0 {
+                            Ok(TraceEntriesPage(crate::trace::entries(first)))
                         } else {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, reply).await;
                     }
                     #[cfg(not(feature = "memory-benchmark"))]
-                    Command::GetTraceSnapshot { slot, offset } => {
-                        let response = if session_id == 0 {
-                            Event::TraceSnapshot(crate::trace::snapshot(slot, offset))
+                    Request::GetTraceSnapshot(GetTraceSnapshot { slot, offset }) => {
+                        let reply = if session_id == 0 {
+                            Ok(TraceSnapshot(crate::trace::snapshot(slot, offset)))
                         } else {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, reply).await;
                     }
-                    // The memory benchmark image links no trace.
-                    #[cfg(feature = "memory-benchmark")]
-                    Command::TraceControl(_)
-                    | Command::GetTraceEntries { .. }
-                    | Command::GetTraceSnapshot { .. } => {
-                        publish_event_reliably(
-                            session_id,
-                            request_id,
-                            Event::Rejected(RejectReason::Unsupported),
-                        )
-                        .await;
+                    Request::GetStacks(GetStacks) => {
+                        let reply = if stacks_observable(initialized, state, &sessions, session_id)
+                        {
+                            Ok(Stacks(crate::stack_usage_snapshot().await))
+                        } else {
+                            Err(RejectReason::InvalidState)
+                        };
+                        respond(session_id, request_id, reply).await;
                     }
-                    Command::QueryStackUsage | Command::QueryInterruptStackUsage => {
-                        let response = if initialized
-                            && state == SessionState::Idle
-                            && sessions.iter().all(Option::is_none)
-                            && session_id == 0
+                    Request::GetInterruptStacks(GetInterruptStacks) => {
+                        let reply = if stacks_observable(initialized, state, &sessions, session_id)
                         {
                             let stack = crate::stack_usage_snapshot().await;
-                            if matches!(command.body, Command::QueryInterruptStackUsage) {
-                                Event::InterruptStackUsage {
-                                    cpu0: stack.cpu0_irq,
-                                    cpu1: stack.cpu1_irq,
-                                }
-                            } else {
-                                Event::StackUsage(stack)
-                            }
+                            Ok(InterruptStacks {
+                                cpu0: stack.cpu0_irq,
+                                cpu1: stack.cpu1_irq,
+                            })
                         } else {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
-                    }
-                    Command::QueryLinkHealth => {
-                        let response = if session_id == 0 {
-                            Event::LinkHealth(link_health_snapshot())
-                        } else {
-                            Event::Rejected(RejectReason::InvalidState)
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, reply).await;
                     }
                     #[cfg(feature = "memory-benchmark")]
-                    Command::ProbeMemoryBenchmark(request) => {
-                        let rejection = if !capabilities.features.memory_benchmark {
+                    Request::RunMemoryBenchmark(oer_hil_protocol::system::RunMemoryBenchmark(
+                        request,
+                    )) => {
+                        let rejection = if !crate::image_features::has::<
+                            oer_hil_protocol::system::MemoryBenchmark,
+                        >() {
                             Some(RejectReason::Unsupported)
                         } else if initialized
                             || state != SessionState::WaitingForInitialization
@@ -1403,32 +1248,41 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             }
                         };
                         if let Some(reason) = rejection {
-                            publish_event_reliably(session_id, request_id, Event::Rejected(reason))
-                                .await;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                oer_hil_protocol::base::Rejected(reason),
+                            )
+                            .await;
                         }
                     }
-                    // A build without the family cannot decode the command.
-                    #[cfg(not(feature = "memory-benchmark"))]
-                    Command::ProbeMemoryBenchmark(absent) => match absent {},
-                    Command::ProbeTimebase(request) => {
-                        let response = if !capabilities.features.timebase_probe {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::ProbeTimebase(oer_hil_protocol::system::ProbeTimebase(request)) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::system::TimebaseProbe,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if initialized
                             || state != SessionState::WaitingForInitialization
                             || session_id != 0
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if !request.validate() {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else {
-                            Event::TimebaseProbeCompleted(run_timebase_probe(request).await)
+                            Ok(oer_hil_protocol::system::TimebaseProbed(
+                                run_timebase_probe(request).await,
+                            ))
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
                     #[cfg(feature = "ieee802154-diagnostic")]
-                    Command::ProbeIeee802154EventStatus(request) => {
+                    Request::ProbeEventStatus(oer_hil_protocol::ieee802154::ProbeEventStatus(
+                        request,
+                    )) => {
                         let admission = ieee802154_event_status_probe_admission(
-                            capabilities.features.ieee802154_event_status_probe,
+                            crate::image_features::has::<
+                                oer_hil_protocol::ieee802154::EventStatusProbe,
+                            >(),
                             initialized,
                             state == SessionState::WaitingForInitialization,
                             session_id,
@@ -1440,7 +1294,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(reason),
+                                    oer_hil_protocol::base::Rejected(reason),
                                 )
                                 .await;
                             }
@@ -1457,7 +1311,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                         publish_event_reliably(
                                             session_id,
                                             request_id,
-                                            Event::Rejected(RejectReason::Busy),
+                                            oer_hil_protocol::base::Rejected(RejectReason::Busy),
                                         )
                                         .await;
                                     } else {
@@ -1468,19 +1322,17 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(RejectReason::Unsupported),
+                                    oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                                 )
                                 .await;
                             }
                         }
                     }
-                    // A build without the family cannot decode the command.
-                    #[cfg(not(feature = "ieee802154-diagnostic"))]
-                    Command::ProbeIeee802154EventStatus(absent) => match absent {},
                     #[cfg(feature = "ieee802154-diagnostic")]
-                    Command::ProbeIeee802154Route(request) => {
+                    Request::ProbeRoute(oer_hil_protocol::ieee802154::ProbeRoute(request)) => {
                         let admission = ieee802154_event_status_probe_admission(
-                            capabilities.features.ieee802154_route_probe,
+                            crate::image_features::has::<oer_hil_protocol::ieee802154::RouteProbe>(
+                            ),
                             initialized,
                             state == SessionState::WaitingForInitialization,
                             session_id,
@@ -1492,7 +1344,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(reason),
+                                    oer_hil_protocol::base::Rejected(reason),
                                 )
                                 .await;
                             }
@@ -1509,7 +1361,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                         publish_event_reliably(
                                             session_id,
                                             request_id,
-                                            Event::Rejected(RejectReason::Busy),
+                                            oer_hil_protocol::base::Rejected(RejectReason::Busy),
                                         )
                                         .await;
                                     } else {
@@ -1520,19 +1372,17 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(RejectReason::Unsupported),
+                                    oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                                 )
                                 .await;
                             }
                         }
                     }
-                    // A build without the family cannot decode the command.
-                    #[cfg(not(feature = "ieee802154-diagnostic"))]
-                    Command::ProbeIeee802154Route(absent) => match absent {},
                     #[cfg(feature = "ieee802154-diagnostic")]
-                    Command::ProbeIeee802154EdEvent(request) => {
+                    Request::ProbeEdEvent(oer_hil_protocol::ieee802154::ProbeEdEvent(request)) => {
                         let admission = ieee802154_event_status_probe_admission(
-                            capabilities.features.ieee802154_ed_event_probe,
+                            crate::image_features::has::<oer_hil_protocol::ieee802154::EdEventProbe>(
+                            ),
                             initialized,
                             state == SessionState::WaitingForInitialization,
                             session_id,
@@ -1544,7 +1394,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(reason),
+                                    oer_hil_protocol::base::Rejected(reason),
                                 )
                                 .await;
                             }
@@ -1561,7 +1411,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                         publish_event_reliably(
                                             session_id,
                                             request_id,
-                                            Event::Rejected(RejectReason::Busy),
+                                            oer_hil_protocol::base::Rejected(RejectReason::Busy),
                                         )
                                         .await;
                                     } else {
@@ -1572,19 +1422,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(RejectReason::Unsupported),
+                                    oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                                 )
                                 .await;
                             }
                         }
                     }
-                    // A build without the family cannot decode the command.
-                    #[cfg(not(feature = "ieee802154-diagnostic"))]
-                    Command::ProbeIeee802154EdEvent(absent) => match absent {},
                     #[cfg(feature = "ieee802154-diagnostic")]
-                    Command::RunIeee802154AirCheck(request) => {
+                    Request::RunAirCheck(oer_hil_protocol::ieee802154::RunAirCheck(request)) => {
                         let admission = ieee802154_event_status_probe_admission(
-                            capabilities.features.ieee802154_air_check,
+                            crate::image_features::has::<oer_hil_protocol::ieee802154::AirCheck>(),
                             initialized,
                             state == SessionState::WaitingForInitialization,
                             session_id,
@@ -1596,7 +1443,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(reason),
+                                    oer_hil_protocol::base::Rejected(reason),
                                 )
                                 .await;
                             }
@@ -1613,7 +1460,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                         publish_event_reliably(
                                             session_id,
                                             request_id,
-                                            Event::Rejected(RejectReason::Busy),
+                                            oer_hil_protocol::base::Rejected(RejectReason::Busy),
                                         )
                                         .await;
                                     } else {
@@ -1624,19 +1471,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(RejectReason::Unsupported),
+                                    oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                                 )
                                 .await;
                             }
                         }
                     }
-                    // A build without the family cannot decode the command.
-                    #[cfg(not(feature = "ieee802154-diagnostic"))]
-                    Command::RunIeee802154AirCheck(absent) => match absent {},
                     #[cfg(feature = "ieee802154-diagnostic")]
-                    Command::StartIeee802154Session(config) => {
+                    Request::StartSession(oer_hil_protocol::ieee802154::StartSession(config)) => {
                         let admission = ieee802154_event_status_probe_admission(
-                            capabilities.features.ieee802154_session,
+                            crate::image_features::has::<oer_hil_protocol::ieee802154::Session>(),
                             initialized,
                             state == SessionState::WaitingForInitialization,
                             session_id,
@@ -1648,7 +1492,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(reason),
+                                    oer_hil_protocol::base::Rejected(reason),
                                 )
                                 .await;
                             }
@@ -1662,7 +1506,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                         publish_event_reliably(
                                             session_id,
                                             request_id,
-                                            Event::Rejected(RejectReason::Busy),
+                                            oer_hil_protocol::base::Rejected(RejectReason::Busy),
                                         )
                                         .await;
                                     } else {
@@ -1674,16 +1518,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(RejectReason::Unsupported),
+                                    oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                                 )
                                 .await;
                             }
                         }
                     }
-                    // A build without the family cannot decode the command.
-                    #[cfg(not(feature = "ieee802154-diagnostic"))]
-                    Command::StartIeee802154Session(absent) => match absent {},
-                    Command::TransmitIeee802154Session(request) => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::TransmitSession(oer_hil_protocol::ieee802154::TransmitSession(
+                        request,
+                    )) => {
                         #[cfg(feature = "ieee802154-radio")]
                         if request.validate() {
                             admit_ieee802154_session_command(
@@ -1700,7 +1544,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidConfiguration),
+                                oer_hil_protocol::base::Rejected(
+                                    RejectReason::InvalidConfiguration,
+                                ),
                             )
                             .await;
                         }
@@ -1710,12 +1556,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::Unsupported),
+                                oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                             )
                             .await;
                         }
                     }
-                    Command::ReceiveIeee802154Session => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::ReceiveSession(oer_hil_protocol::ieee802154::ReceiveSession) => {
                         #[cfg(feature = "ieee802154-radio")]
                         admit_ieee802154_session_command(
                             ieee802154_session_open,
@@ -1728,11 +1575,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::CollectIeee802154Session => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::CollectSession(oer_hil_protocol::ieee802154::CollectSession) => {
                         #[cfg(feature = "ieee802154-radio")]
                         admit_ieee802154_session_command(
                             ieee802154_session_open,
@@ -1745,11 +1593,14 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::SetIeee802154SessionPending(request) => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::SetSessionPending(
+                        oer_hil_protocol::ieee802154::SetSessionPending(request),
+                    ) => {
                         #[cfg(feature = "ieee802154-radio")]
                         admit_ieee802154_session_command(
                             ieee802154_session_open,
@@ -1767,12 +1618,15 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::Unsupported),
+                                oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                             )
                             .await;
                         }
                     }
-                    Command::MaintainIeee802154SessionPhy => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::MaintainSessionPhy(
+                        oer_hil_protocol::ieee802154::MaintainSessionPhy,
+                    ) => {
                         #[cfg(feature = "ieee802154-radio")]
                         admit_ieee802154_session_command(
                             ieee802154_session_open,
@@ -1785,11 +1639,14 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::AssessIeee802154SessionChannel(request) => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::AssessSessionChannel(
+                        oer_hil_protocol::ieee802154::AssessSessionChannel(request),
+                    ) => {
                         #[cfg(feature = "ieee802154-radio")]
                         if request.validate() {
                             admit_ieee802154_session_command(
@@ -1806,7 +1663,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidConfiguration),
+                                oer_hil_protocol::base::Rejected(
+                                    RejectReason::InvalidConfiguration,
+                                ),
                             )
                             .await;
                         }
@@ -1816,15 +1675,15 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::Unsupported),
+                                oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                             )
                             .await;
                         }
                     }
                     #[cfg(feature = "ieee802154-diagnostic")]
-                    Command::StartIeee802154Thread(request) => {
+                    Request::StartThread(oer_hil_protocol::ieee802154::StartThread(request)) => {
                         let admission = ieee802154_event_status_probe_admission(
-                            capabilities.features.ieee802154_thread,
+                            crate::image_features::has::<oer_hil_protocol::ieee802154::Thread>(),
                             initialized,
                             state == SessionState::WaitingForInitialization,
                             session_id,
@@ -1836,7 +1695,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(reason),
+                                    oer_hil_protocol::base::Rejected(reason),
                                 )
                                 .await;
                             }
@@ -1853,7 +1712,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                         publish_event_reliably(
                                             session_id,
                                             request_id,
-                                            Event::Rejected(RejectReason::Busy),
+                                            oer_hil_protocol::base::Rejected(RejectReason::Busy),
                                         )
                                         .await;
                                     } else {
@@ -1867,17 +1726,15 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                     publish_event_reliably(
                                         session_id,
                                         request_id,
-                                        Event::Rejected(RejectReason::Unsupported),
+                                        oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                                     )
                                     .await;
                                 }
                             }
                         }
                     }
-                    // A build without the family cannot decode the command.
-                    #[cfg(not(feature = "ieee802154-diagnostic"))]
-                    Command::StartIeee802154Thread(absent) => match absent {},
-                    Command::QueryIeee802154Thread => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::GetThread(oer_hil_protocol::ieee802154::GetThread) => {
                         #[cfg(feature = "ieee802154-thread")]
                         admit_ieee802154_thread_command(
                             ieee802154_thread_open,
@@ -1890,11 +1747,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::SendIeee802154Thread(request) => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::SendThread(oer_hil_protocol::ieee802154::SendThread(request)) => {
                         #[cfg(feature = "ieee802154-thread")]
                         if request.validate() {
                             admit_ieee802154_thread_command(
@@ -1911,7 +1769,9 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidConfiguration),
+                                oer_hil_protocol::base::Rejected(
+                                    RejectReason::InvalidConfiguration,
+                                ),
                             )
                             .await;
                         }
@@ -1921,12 +1781,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::Unsupported),
+                                oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                             )
                             .await;
                         }
                     }
-                    Command::CollectIeee802154Thread => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::CollectThread(oer_hil_protocol::ieee802154::CollectThread) => {
                         #[cfg(feature = "ieee802154-thread")]
                         admit_ieee802154_thread_command(
                             ieee802154_thread_open,
@@ -1939,11 +1800,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::StopIeee802154Thread => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::StopThread(oer_hil_protocol::ieee802154::StopThread) => {
                         #[cfg(feature = "ieee802154-thread")]
                         if admit_ieee802154_thread_command(
                             ieee802154_thread_open,
@@ -1959,11 +1821,14 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::RestartIeee802154SessionRadio => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::RestartSessionRadio(
+                        oer_hil_protocol::ieee802154::RestartSessionRadio,
+                    ) => {
                         #[cfg(feature = "ieee802154-radio")]
                         admit_ieee802154_session_command(
                             ieee802154_session_open,
@@ -1976,11 +1841,14 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::ReadIeee802154SessionRecentRssi => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::ReadSessionRecentRssi(
+                        oer_hil_protocol::ieee802154::ReadSessionRecentRssi,
+                    ) => {
                         #[cfg(feature = "ieee802154-radio")]
                         admit_ieee802154_session_command(
                             ieee802154_session_open,
@@ -1993,11 +1861,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::StopIeee802154Session => {
+                    #[cfg(feature = "ieee802154-diagnostic")]
+                    Request::StopSession(oer_hil_protocol::ieee802154::StopSession) => {
                         #[cfg(feature = "ieee802154-radio")]
                         if admit_ieee802154_session_command(
                             ieee802154_session_open,
@@ -2013,30 +1882,35 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::Rejected(RejectReason::Unsupported),
+                            oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                         )
                         .await;
                     }
-                    Command::UploadStartupArtifact(chunk) => {
-                        let response = if !capabilities.features.startup_artifact {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::UploadStartupArtifact(
+                        oer_hil_protocol::phy::UploadStartupArtifact(chunk),
+                    ) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::phy::StartupArtifact,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if initialized || state != SessionState::WaitingForInitialization {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if startup_artifact.push(&chunk).is_err() {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::Initialize(configuration) => {
+                    Request::Initialize(oer_hil_protocol::wifi::Initialize(configuration)) => {
                         // This diagnostic image reserves pre-radio execution for
                         // repeated memory cases; it never initializes Wi-Fi.
-                        if capabilities.features.memory_benchmark {
+                        if crate::image_features::has::<oer_hil_protocol::system::MemoryBenchmark>()
+                        {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::Unsupported),
+                                oer_hil_protocol::base::Rejected(RejectReason::Unsupported),
                             )
                             .await;
                             continue;
@@ -2046,16 +1920,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 initialized,
                                 ieee802154_diagnostic_requested,
                             ) {
-                            (Event::Rejected(reason), false)
+                            (Err(reason), false)
                         } else if configuration.ap_scheduler
-                            != oer_hil_protocol::WifiApScheduler::Disabled
+                            != oer_hil_protocol::wifi::WifiApScheduler::Disabled
                             && !cfg!(feature = "owned-network")
                         {
-                            (Event::Rejected(RejectReason::Unsupported), false)
+                            (Err(RejectReason::Unsupported), false)
                         } else if !configuration.validate()
                             || startup_artifact.started_but_incomplete()
                         {
-                            (Event::Rejected(RejectReason::InvalidConfiguration), false)
+                            (Err(RejectReason::InvalidConfiguration), false)
                         } else if STARTUP_CONFIGURATIONS
                             .try_send(StartupConfiguration {
                                 ap_scheduler: configuration.ap_scheduler,
@@ -2071,29 +1945,31 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             })
                             .is_err()
                         {
-                            (Event::Rejected(RejectReason::Busy), false)
+                            (Err(RejectReason::Busy), false)
                         } else {
                             initialized = true;
                             ap_scheduler = configuration.ap_scheduler;
-                            (Event::Accepted, true)
+                            (Ok(oer_hil_protocol::base::Accepted), true)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                         if accepted {
                             transition_state(&mut state, SessionState::Idle, 0, request_id).await;
                         }
                     }
-                    Command::Configure(config) => {
+                    Request::Configure(oer_hil_protocol::network::Configure(config)) => {
                         let duplicate_interface = sessions.iter().flatten().any(|session| {
                             session.active.config.network_interface == config.network_interface
                         });
                         let free = sessions.iter().position(Option::is_none);
-                        let rejection = if !capabilities.features.runtime_configuration {
+                        let rejection = if !crate::image_features::has::<
+                            oer_hil_protocol::network::RuntimeConfiguration,
+                        >() {
                             Some(RejectReason::Unsupported)
                         } else if !initialized || state != SessionState::Idle {
                             Some(RejectReason::InvalidState)
                         } else if session_id == 0 {
                             Some(RejectReason::SessionId)
-                        } else if !valid_session_config(config, capabilities) {
+                        } else if !valid_session_config(config) {
                             Some(RejectReason::InvalidConfiguration)
                         } else if duplicate_interface || free.is_none() {
                             Some(RejectReason::Busy)
@@ -2101,15 +1977,24 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             None
                         };
                         if let Some(reason) = rejection {
-                            publish_event_reliably(session_id, request_id, Event::Rejected(reason))
-                                .await;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                oer_hil_protocol::base::Rejected(reason),
+                            )
+                            .await;
                         } else {
                             let index = free.expect("validated session capacity has a free slot");
                             sessions[index] = Some(ProtocolSession {
                                 active: ActiveSession { session_id, config },
                                 state: SessionState::Idle,
                             });
-                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                oer_hil_protocol::base::Accepted,
+                            )
+                            .await;
                             transition_state(
                                 &mut sessions[index]
                                     .as_mut()
@@ -2122,7 +2007,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         }
                     }
-                    Command::Arm => {
+                    Request::Arm(oer_hil_protocol::network::Arm) => {
                         let slot = sessions.iter().position(|slot| {
                             slot.is_some_and(|session| session.active.session_id == session_id)
                         });
@@ -2133,12 +2018,17 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidState),
+                                oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                             )
                             .await;
                         } else {
                             let index = slot.expect("validated arm has a session slot");
-                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                oer_hil_protocol::base::Accepted,
+                            )
+                            .await;
                             transition_state(
                                 &mut sessions[index]
                                     .as_mut()
@@ -2151,7 +2041,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         }
                     }
-                    Command::Start => {
+                    Request::Start(oer_hil_protocol::network::Start) => {
                         let slot = sessions.iter().position(|slot| {
                             slot.is_some_and(|session| {
                                 session.active.session_id == session_id
@@ -2166,12 +2056,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 publish_event_reliably(
                                     session_id,
                                     request_id,
-                                    Event::Rejected(RejectReason::Busy),
+                                    oer_hil_protocol::base::Rejected(RejectReason::Busy),
                                 )
                                 .await;
                             } else {
-                                publish_event_reliably(session_id, request_id, Event::Accepted)
-                                    .await;
+                                publish_event_reliably(
+                                    session_id,
+                                    request_id,
+                                    oer_hil_protocol::base::Accepted,
+                                )
+                                .await;
                                 transition_state(
                                     &mut sessions[index]
                                         .as_mut()
@@ -2187,32 +2081,34 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidState),
+                                oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                             )
                             .await;
                         }
                     }
-                    Command::GetStatus => {
+                    Request::GetStatus(oer_hil_protocol::network::GetStatus) => {
                         let session = sessions.iter().flatten().find(|session| {
                             session_id == 0 || session.active.session_id == session_id
                         });
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::OperationStatus(oer_hil_protocol::OperationStatus {
-                                state: session.map_or(state, |session| session.state),
-                                configured_session_id: session
-                                    .map(|session| session.active.session_id),
-                                completed_session_id: session
-                                    .and_then(|session| {
-                                        retained_session_result(session.active.session_id)
-                                    })
-                                    .map(|result| result.measurement.session_id),
-                            }),
+                            oer_hil_protocol::network::Status(
+                                oer_hil_protocol::network::OperationStatus {
+                                    state: session.map_or(state, |session| session.state),
+                                    configured_session_id: session
+                                        .map(|session| session.active.session_id),
+                                    completed_session_id: session
+                                        .and_then(|session| {
+                                            retained_session_result(session.active.session_id)
+                                        })
+                                        .map(|result| result.measurement.session_id),
+                                },
+                            ),
                         )
                         .await;
                     }
-                    Command::Cancel => {
+                    Request::Cancel(oer_hil_protocol::network::Cancel) => {
                         let slot = sessions.iter().position(|slot| {
                             slot.is_some_and(|session| {
                                 session.active.session_id == session_id
@@ -2227,11 +2123,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 .expect("located cancel slot remains owned")
                                 .state;
                             sessions[index] = None;
-                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::State(StateChange {
+                                oer_hil_protocol::base::Accepted,
+                            )
+                            .await;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                oer_hil_protocol::network::StateChanged(StateChange {
                                     previous,
                                     current: SessionState::Idle,
                                 }),
@@ -2241,24 +2142,24 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidState),
+                                oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                             )
                             .await;
                         }
                     }
-                    Command::ReplayResult => {
+                    Request::ReplayResult(oer_hil_protocol::network::ReplayResult) => {
                         if let Some(result) = retained_session_result(session_id) {
                             publish_result(result, request_id).await;
                         } else {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidState),
+                                oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                             )
                             .await;
                         }
                     }
-                    Command::AcknowledgeResult => {
+                    Request::AcknowledgeResult(oer_hil_protocol::network::AcknowledgeResult) => {
                         let slot = sessions.iter().position(|slot| {
                             slot.is_some_and(|session| {
                                 session.active.session_id == session_id
@@ -2269,11 +2170,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         if let Some(index) = slot {
                             let _ = discard_session_result(session_id);
                             sessions[index] = None;
-                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::State(StateChange {
+                                oer_hil_protocol::base::Accepted,
+                            )
+                            .await;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                oer_hil_protocol::network::StateChanged(StateChange {
                                     previous: SessionState::Finished,
                                     current: SessionState::Idle,
                                 }),
@@ -2283,12 +2189,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidState),
+                                oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                             )
                             .await;
                         }
                     }
-                    Command::Recover => {
+                    Request::Recover(oer_hil_protocol::network::Recover) => {
                         let slot = sessions.iter().position(|slot| {
                             slot.is_some_and(|session| {
                                 session.active.session_id == session_id
@@ -2304,11 +2210,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 .state;
                             sessions[index] = None;
                             let _ = discard_session_result(session_id);
-                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::State(StateChange {
+                                oer_hil_protocol::base::Accepted,
+                            )
+                            .await;
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                oer_hil_protocol::network::StateChanged(StateChange {
                                     previous,
                                     current: SessionState::Idle,
                                 }),
@@ -2318,63 +2229,69 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             publish_event_reliably(
                                 session_id,
                                 request_id,
-                                Event::Rejected(RejectReason::InvalidState),
+                                oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                             )
                             .await;
                         }
                     }
-                    Command::CycleStationEpoch => {
-                        let response = if !capabilities.features.station_epoch_control {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::CycleStationEpoch(oer_hil_protocol::wifi::CycleStationEpoch) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::StationEpochControl,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Station)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::Cycle { request_id })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StopStation => {
-                        let response = if !capabilities.features.wifi_role_control {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::StopStation(oer_hil_protocol::wifi::StopStation) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::RoleControl,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Station)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StopStation { request_id })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StartStation(credentials) => {
-                        let response = if !capabilities.features.wifi_role_control {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::StartStation(oer_hil_protocol::wifi::StartStation(credentials)) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::RoleControl,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if credentials.validate().is_err() {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StartStation {
                                 request_id,
@@ -2382,47 +2299,51 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::RestartRadio => {
-                        let response = if !capabilities.features.wifi_role_control {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::RestartRadio(oer_hil_protocol::wifi::RestartRadio) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::RoleControl,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::RestartRadio { request_id })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::ScanWifi(request) => {
+                    Request::Scan(oer_hil_protocol::wifi::Scan(request)) => {
                         let valid = request.channel_mask_2_4_ghz != 0
                             && request.channel_mask_2_4_ghz & !0x1fff == 0
                             && (1..=1_000).contains(&request.dwell_millis);
-                        let response = if !capabilities.features.wifi_role_control {
-                            Event::Rejected(RejectReason::Unsupported)
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::RoleControl,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !valid {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::Scan {
                                 request_id,
@@ -2430,26 +2351,28 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StartMonitor(request) => {
+                    Request::StartMonitor(oer_hil_protocol::wifi::StartMonitor(request)) => {
                         let valid =
                             (1..=13).contains(&request.channel) && request.snapshot_length <= 2_304;
-                        let response = if !capabilities.features.wifi_role_control {
-                            Event::Rejected(RejectReason::Unsupported)
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::RoleControl,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !valid {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StartMonitor {
                                 request_id,
@@ -2457,44 +2380,50 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StopMonitor => {
-                        let response = if !capabilities.features.wifi_role_control {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::StopMonitor(oer_hil_protocol::wifi::StopMonitor) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::RoleControl,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Monitor)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StopMonitor { request_id })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StartAccessPoint(request) => {
-                        let response = if !capabilities.features.wifi_access_point {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::StartAccessPoint(oer_hil_protocol::wifi::StartAccessPoint(
+                        request,
+                    )) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::AccessPoint,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if request.validate().is_err() {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StartAccessPoint {
                                 request_id,
@@ -2502,46 +2431,52 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StopAccessPoint => {
-                        let response = if !capabilities.features.wifi_access_point {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::StopAccessPoint(oer_hil_protocol::wifi::StopAccessPoint) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::AccessPoint,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::AccessPoint)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StopAccessPoint { request_id })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StartStationAccessPoint(request) => {
-                        let response = if !capabilities.features.simultaneous_station_access_point
-                            || ap_scheduler != oer_hil_protocol::WifiApScheduler::Disabled
+                    Request::StartStationAccessPoint(
+                        oer_hil_protocol::wifi::StartStationAccessPoint(request),
+                    ) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::StationAccessPoint,
+                        >() || ap_scheduler
+                            != oer_hil_protocol::wifi::WifiApScheduler::Disabled
                         {
-                            Event::Rejected(RejectReason::Unsupported)
+                            Err(RejectReason::Unsupported)
                         } else if request.validate().is_err() {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StartStationAccessPoint {
                                 request_id,
@@ -2549,47 +2484,53 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::StopStationAccessPoint => {
-                        let response = if !capabilities.features.simultaneous_station_access_point {
-                            Event::Rejected(RejectReason::Unsupported)
+                    Request::StopStationAccessPoint(
+                        oer_hil_protocol::wifi::StopStationAccessPoint,
+                    ) => {
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::StationAccessPoint,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::StationAccessPoint)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::StopStationAccessPoint { request_id })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
-                    Command::CaptureMonitor(request) => {
+                    Request::CaptureMonitor(oer_hil_protocol::wifi::CaptureMonitor(request)) => {
                         let valid = (1..=13).contains(&request.channel)
                             && request.snapshot_length <= 2_304
                             && (100..=30_000).contains(&request.duration_millis);
-                        let response = if !capabilities.features.wifi_monitor_capture {
-                            Event::Rejected(RejectReason::Unsupported)
+                        let response = if !crate::image_features::has::<
+                            oer_hil_protocol::wifi::MonitorCapture,
+                        >() {
+                            Err(RejectReason::Unsupported)
                         } else if !valid {
-                            Event::Rejected(RejectReason::InvalidConfiguration)
+                            Err(RejectReason::InvalidConfiguration)
                         } else if !initialized
                             || state != SessionState::Idle
                             || sessions.iter().any(Option::is_some)
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
-                            Event::Rejected(RejectReason::InvalidState)
+                            Err(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
                             .try_send(WifiControlRequest::CaptureMonitor {
                                 request_id,
@@ -2597,11 +2538,11 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             })
                             .is_err()
                         {
-                            Event::Rejected(RejectReason::Busy)
+                            Err(RejectReason::Busy)
                         } else {
-                            Event::Accepted
+                            Ok(oer_hil_protocol::base::Accepted)
                         };
-                        publish_event_reliably(session_id, request_id, response).await;
+                        respond(session_id, request_id, response).await;
                     }
                 }
             }
@@ -2632,7 +2573,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             result.session_id,
                             0,
-                            Event::Failed(FailureCode::EvidenceOverflow),
+                            oer_hil_protocol::network::Failed(FailureCode::EvidenceOverflow),
                         )
                         .await;
                         transition_state(
@@ -2662,7 +2603,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     publish_event_reliably(
                         result.session_id,
                         0,
-                        Event::Rejected(RejectReason::InvalidState),
+                        oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                     )
                     .await;
                 }
@@ -2671,25 +2612,25 @@ pub async fn protocol_task(capabilities: Capabilities) {
     }
 }
 
-fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bool {
+fn valid_session_config(config: SessionConfig) -> bool {
     let direction_supported = match config.direction {
-        Direction::Rx => capabilities.features.rx,
-        Direction::Tx => capabilities.features.tx,
+        Direction::Rx => crate::image_features::has::<oer_hil_protocol::network::Rx>(),
+        Direction::Tx => crate::image_features::has::<oer_hil_protocol::network::Tx>(),
         Direction::Bidirectional => {
-            capabilities.features.bidirectional
-                && capabilities.features.rx
-                && capabilities.features.tx
+            crate::image_features::has::<oer_hil_protocol::network::Bidirectional>()
+                && crate::image_features::has::<oer_hil_protocol::network::Rx>()
+                && crate::image_features::has::<oer_hil_protocol::network::Tx>()
         }
     };
     let transport_valid = match config.transport {
-        Transport::Udp => capabilities.features.udp,
-        Transport::Tcp => capabilities.features.tcp,
+        Transport::Udp => crate::image_features::has::<oer_hil_protocol::network::Udp>(),
+        Transport::Tcp => crate::image_features::has::<oer_hil_protocol::network::Tcp>(),
     };
     transport_valid
         && direction_supported
         && config.structurally_valid(
-            capabilities.maximum_payload_bytes,
-            capabilities.features.udp_multi_flow,
+            crate::limits::MAXIMUM_PAYLOAD_BYTES,
+            crate::image_features::has::<oer_hil_protocol::network::UdpMultiFlow>(),
         )
 }
 
@@ -2704,7 +2645,7 @@ async fn transition_state(
     publish_event_reliably(
         session_id,
         request_id,
-        Event::State(StateChange { previous, current }),
+        oer_hil_protocol::network::StateChanged(StateChange { previous, current }),
     )
     .await;
 }
@@ -2754,18 +2695,23 @@ async fn publish_result(retained: RetainedSessionResult, request_id: u32) {
         .expect("transport and stack evidence fit the protocol digest buffer");
     let evidence_records = evidence.len() as u16;
     for record in evidence {
-        publish_event_reliably(result.session_id, request_id, Event::Evidence(record)).await;
+        publish_event_reliably(
+            result.session_id,
+            request_id,
+            oer_hil_protocol::network::Evidence(record),
+        )
+        .await;
     }
     publish_event_reliably(
         result.session_id,
         request_id,
-        Event::Finished(Finished {
+        Finished {
             summary: ResultSummary {
                 verdict: session_verdict(result.verdict, &link),
                 evidence_records,
             },
             evidence_crc32c: checksum,
-        }),
+        },
     )
     .await;
 }
@@ -2790,20 +2736,6 @@ fn session_verdict(workload: SessionVerdict, link: &LinkHealth) -> SessionVerdic
         });
     }
     SessionVerdict::Passed
-}
-
-fn link_health_snapshot() -> LinkHealth {
-    LinkHealth {
-        rx_frames: PROTOCOL_RX_FRAMES.load(Ordering::Acquire),
-        rx_cobs_errors: PROTOCOL_RX_COBS_ERRORS.load(Ordering::Acquire),
-        rx_checksum_errors: PROTOCOL_RX_CHECKSUM_ERRORS.load(Ordering::Acquire),
-        rx_decode_errors: PROTOCOL_RX_DECODE_ERRORS.load(Ordering::Acquire),
-        rx_overflows: PROTOCOL_RX_OVERFLOWS.load(Ordering::Acquire),
-        tx_frames: PROTOCOL_TX_FRAMES.load(Ordering::Acquire),
-        tx_dropped: PROTOCOL_DROPPED.load(Ordering::Acquire),
-        text_dropped: DROPPED_RECORDS.load(Ordering::Acquire),
-        text_truncated: TRUNCATED_RECORDS.load(Ordering::Acquire),
-    }
 }
 
 async fn run_timebase_probe(request: TimebaseProbeRequest) -> TimebaseProbeEvidence {
@@ -2835,285 +2767,102 @@ async fn run_timebase_probe(request: TimebaseProbeRequest) -> TimebaseProbeEvide
     }
 }
 
-/// Runs the runtime transport worker.
-///
-/// Spawn this task once the Embassy executor starts. Before it starts, records
-/// are written synchronously so early boot diagnostics remain visible. Once it
-/// is active, normal `log` records use a bounded, non-blocking SRAM queue. The
-/// worker sleeps while the USB endpoint is busy and resumes from its interrupt;
-/// it never spins waiting for the host.
-#[embassy_executor::task]
-pub async fn logger_task(usb_device: USB_DEVICE<'static>) {
-    let (mut rx, mut tx) = UsbSerialJtag::new(usb_device).into_async().split();
-    RUNTIME_ACTIVE.store(true, Ordering::Release);
-    let mut reported_dropped = 0;
-    let mut reported_truncated = 0;
-    let mut decoder = FrameDecoder::new();
-    let mut encoder = FrameEncoder::new();
-    let mut rx_buffer = [0_u8; USB_RX_CHUNK_BYTES];
-    loop {
-        match select3(EVENTS.receive(), rx.read(&mut rx_buffer), RECORDS.receive()).await {
-            Either3::First(event) => write_event_async(&mut tx, &mut encoder, &event).await,
-            Either3::Second(Ok(length)) => {
-                decoder.feed::<Command>(&rx_buffer[..length], |message| match message {
-                    Ok(command) => receive_command(command),
-                    // A command of a radio family this image leaves out.
-                    Err(oer_hil_protocol::DecodeError::UndecodableBody(request)) => publish_event(
-                        request.session_id,
-                        request.request_id,
-                        Event::Rejected(RejectReason::Unsupported),
-                    ),
-                    Err(_) => {}
-                });
-                let counters = decoder.counters();
-                PROTOCOL_RX_FRAMES.store(counters.frames, Ordering::Release);
-                PROTOCOL_RX_COBS_ERRORS.store(counters.cobs_errors, Ordering::Release);
-                PROTOCOL_RX_CHECKSUM_ERRORS.store(counters.checksum_errors, Ordering::Release);
-                PROTOCOL_RX_DECODE_ERRORS.store(
-                    counters
-                        .too_short
-                        .saturating_add(counters.header_errors)
-                        .saturating_add(counters.framing_version_errors)
-                        .saturating_add(counters.message_kind_errors)
-                        .saturating_add(counters.protocol_version_errors)
-                        .saturating_add(counters.payload_length_errors)
-                        .saturating_add(counters.deserialize_errors),
-                    Ordering::Release,
-                );
-                PROTOCOL_RX_OVERFLOWS.store(counters.overflows, Ordering::Release);
-            }
-            Either3::Second(Err(_)) => {}
-            Either3::Third(record) => write_record_async(&mut tx, &record).await,
-        }
-
-        for _ in 1..DRAIN_BATCH {
-            if let Ok(event) = EVENTS.try_receive() {
-                write_event_async(&mut tx, &mut encoder, &event).await;
-            } else if let Ok(record) = RECORDS.try_receive() {
-                write_record_async(&mut tx, &record).await;
-            } else {
-                break;
-            }
-        }
-        report_health_changes(&mut tx, &mut reported_dropped, &mut reported_truncated).await;
-        embassy_futures::yield_now().await;
-    }
-}
-
-fn receive_command(command: Envelope<Command>) {
-    let session_id = command.session_id;
-    let request_id = command.request_id;
-    if let Err(reason) = command.validate_target(boot_id()) {
-        publish_event(session_id, request_id, Event::Rejected(reason));
-        return;
-    }
+/// The image's requests, handed to [`protocol_task`] in order.
+pub(crate) fn serve(request: oer_hil_protocol::RequestIdentity, command: Request) {
     // Armed before the command is queued, so the consumer taking it can
     // never be followed by a stale arm.
     #[cfg(not(feature = "memory-benchmark"))]
-    crate::hang_watchdog::arm(oer_hil_protocol::TaskSlot::Console);
+    crate::hang_watchdog::arm(oer_hil_protocol::base::TaskSlot::Console);
+    let command = Envelope::new(
+        request.boot_id,
+        0,
+        request.session_id,
+        request.request_id,
+        command,
+    );
     if COMMANDS.try_send(command).is_err() {
-        publish_event(session_id, request_id, Event::Rejected(RejectReason::Busy));
+        publish_event(
+            request.session_id,
+            request.request_id,
+            oer_hil_protocol::base::Rejected(RejectReason::Busy),
+        );
     }
 }
 
-async fn write_event_async(
-    tx: &mut UsbSerialJtagTx<'static, Async>,
-    encoder: &mut FrameEncoder,
-    event: &Envelope<Event>,
-) {
-    let Ok(frame) = encoder.encode(event) else {
-        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
-        return;
-    };
-    let _guard = WRITER.acquire_async().await;
-    if tx.write_all(frame).await.is_ok() && tx.write_all(b"\r\n").await.is_ok() {
-        PROTOCOL_TX_FRAMES.fetch_add(1, Ordering::Relaxed);
-        if confirms_wifi_serialization(&event.body) {
-            SERIALIZED_WIFI_EVENTS.publish_next(event.message_sequence.wrapping_add(1));
+/// Queues a typed event without making a radio or network task wait for USB.
+pub fn publish_event<M: Message>(session_id: u64, request_id: u32, body: M) {
+    CONSOLE.publish(session_id, request_id, &body);
+}
+
+/// Queue a control-plane event without allowing a full telemetry queue to
+/// erase a required host/target state transition.
+///
+/// Use this for readiness and lifecycle boundaries outside measured traffic.
+/// High-rate observations should continue to use [`publish_event`] so they
+/// cannot apply backpressure to the radio or network hot path.
+pub(crate) async fn publish_event_reliably<M: Message>(session_id: u64, request_id: u32, body: M) {
+    CONSOLE
+        .publish_reliably(session_id, request_id, &body)
+        .await;
+}
+
+/// Publishes `body` reliably and returns its message sequence.
+#[cfg(not(feature = "memory-benchmark"))]
+async fn queue_event_reliably<M: Message>(session_id: u64, request_id: u32, body: M) -> u32 {
+    CONSOLE
+        .publish_reliably(session_id, request_id, &body)
+        .await
+}
+
+/// Publishes `reply` to request `request_id` reliably: its response, or the
+/// reason the request was refused. Returns the reply's message sequence.
+pub(crate) async fn respond<M: Message>(
+    session_id: u64,
+    request_id: u32,
+    reply: Result<M, RejectReason>,
+) -> u32 {
+    match reply {
+        Ok(response) => {
+            CONSOLE
+                .publish_reliably(session_id, request_id, &response)
+                .await
         }
-    } else {
-        PROTOCOL_DROPPED.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-fn confirms_wifi_serialization(event: &Event) -> bool {
-    if matches!(event, Event::PhyFault(_)) {
-        return true;
-    }
-    matches!(
-        event,
-        Event::StationLifecycle(_)
-            | Event::WifiRoleTransitioned(_)
-            | Event::WifiRadioRestarted(_)
-            | Event::WifiScanCompleted(_)
-            | Event::WifiMonitorStarted(_)
-            | Event::WifiMonitorStopped(_)
-            | Event::WifiMonitorCaptureCompleted(_)
-            | Event::WifiAccessPointStarted(_)
-            | Event::WifiAccessPointStopped(_)
-            | Event::WifiStationAccessPointStopped(_)
-            | Event::WifiRoleFailed(_)
-    )
-}
-
-async fn report_health_changes(
-    tx: &mut UsbSerialJtagTx<'static, Async>,
-    reported_dropped: &mut u32,
-    reported_truncated: &mut u32,
-) {
-    let dropped = dropped_records();
-    let truncated = truncated_records();
-    if dropped == *reported_dropped && truncated == *reported_truncated {
-        return;
-    }
-
-    let first = FIRST_QUEUE_LOSS.lock(|first| *first.borrow());
-    let first = first
-        .as_ref()
-        .and_then(|record| core::str::from_utf8(record.as_bytes()).ok())
-        .unwrap_or("");
-    let record = format_record(format_args!(
-        "[WARN logger] dropped_total={dropped} truncated_total={truncated} queue_full={} writer_busy={} write_errors={} first_queue_drop={first:?}",
-        QUEUE_FULL_RECORDS.load(Ordering::Relaxed),
-        WRITER_BUSY_RECORDS.load(Ordering::Relaxed),
-        WRITE_ERROR_RECORDS.load(Ordering::Relaxed),
-    ));
-    write_record_async(tx, &record).await;
-    *reported_dropped = dropped;
-    *reported_truncated = truncated;
-}
-
-fn format_record(args: Arguments<'_>) -> TextBuffer<MESSAGE_CAPACITY> {
-    let mut message = TextBuffer::<MESSAGE_CAPACITY>::new();
-    let _ = message.write_fmt(args);
-    if message.was_truncated() {
-        TRUNCATED_RECORDS.fetch_add(1, Ordering::Relaxed);
-    }
-    message
-}
-
-fn record_queue_loss(args: Arguments<'_>) {
-    if QUEUE_FULL_RECORDS.fetch_add(1, Ordering::Relaxed) == 0 {
-        let mut first = TextBuffer::new();
-        let _ = first.write_fmt(args);
-        FIRST_QUEUE_LOSS.lock(|slot| *slot.borrow_mut() = Some(first));
-    }
-    DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
-}
-
-fn submit_line(args: Arguments<'_>) {
-    if RUNTIME_ACTIVE.load(Ordering::Acquire) {
-        // Under sustained pressure, avoid paying even the formatting cost for
-        // a record that cannot enter the bounded queue. This observation is a
-        // best-effort fast path; try_send below remains the authoritative race-
-        // safe capacity check.
-        if RECORDS.is_full() {
-            record_queue_loss(args);
-            return;
-        }
-        let record = format_record(args);
-        if RECORDS.try_send(record).is_err() {
-            record_queue_loss(args);
-        }
-    } else {
-        let record = format_record(args);
-        write_record_immediate(&record);
-    }
-}
-
-fn write_line_immediate(args: Arguments<'_>) {
-    let record = format_record(args);
-    write_record_immediate(&record);
-}
-
-fn write_record_immediate(message: &TextBuffer<MESSAGE_CAPACITY>) {
-    let Some(_guard) = WRITER.try_acquire() else {
-        WRITER_BUSY_RECORDS.fetch_add(1, Ordering::Relaxed);
-        DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
-        return;
-    };
-
-    unsafe {
-        ets_printf(c"%s\r\n".as_ptr().cast(), message.as_c_string());
-    }
-}
-
-async fn write_record_async(
-    tx: &mut UsbSerialJtagTx<'static, Async>,
-    message: &TextBuffer<MESSAGE_CAPACITY>,
-) {
-    let _guard = WRITER.acquire_async().await;
-
-    // The HAL submits at most one 64-byte USB packet at a time. If the endpoint
-    // is busy, this await parks the task until SERIAL_IN_EMPTY wakes it.
-    if tx.write_all(message.as_bytes()).await.is_err() || tx.write_all(b"\r\n").await.is_err() {
-        WRITE_ERROR_RECORDS.fetch_add(1, Ordering::Relaxed);
-        DROPPED_RECORDS.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-struct ConsoleLogger;
-
-impl ::log::Log for ConsoleLogger {
-    fn enabled(&self, metadata: &::log::Metadata<'_>) -> bool {
-        metadata.level() <= ::log::STATIC_MAX_LEVEL
-    }
-
-    fn log(&self, record: &::log::Record<'_>) {
-        if self.enabled(record.metadata()) {
-            submit_line(format_args!(
-                "[{} {}] {}",
-                record.level(),
-                record.target(),
-                record.args()
-            ));
+        Err(reason) => {
+            CONSOLE
+                .publish_reliably(session_id, request_id, &Rejected(reason))
+                .await
         }
     }
-
-    fn flush(&self) {}
 }
 
-/// Installs the firmware logger. Calling this more than once is harmless.
-pub fn init_logger() {
-    static LOGGER: ConsoleLogger = ConsoleLogger;
-    if ::log::set_logger(&LOGGER).is_ok() {
-        ::log::set_max_level(::log::LevelFilter::Info);
-    }
+/// Whether the stacks may be sampled: the radio runs, idle, outside every
+/// session.
+fn stacks_observable(
+    initialized: bool,
+    state: SessionState,
+    sessions: &[Option<ProtocolSession>],
+    session_id: u64,
+) -> bool {
+    initialized
+        && state == SessionState::Idle
+        && sessions.iter().all(Option::is_none)
+        && session_id == 0
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Event, TextBuffer, confirms_wifi_serialization};
-    use core::fmt::Write;
-    use oer_hil_protocol::{WifiRadioCalibrationPath, WifiRadioRestartEvidence};
+fn link_health_snapshot() -> LinkHealth {
+    CONSOLE.link_health()
+}
 
-    #[test]
-    fn text_buffer_keeps_space_for_nul() {
-        let mut buffer = TextBuffer::<5>::new();
-        write!(&mut buffer, "abcdef").unwrap();
+/// Formats and writes one emergency line immediately.
+///
+/// This bypasses the queue and is intended only for early boot, panic, and
+/// last-resort diagnostics.
+pub fn emergency_log(args: Arguments<'_>) {
+    CONSOLE.line_immediately(args);
+}
 
-        assert_eq!(&buffer.bytes, b"abcd\0");
-        assert!(buffer.was_truncated());
-    }
-
-    #[test]
-    fn exact_fit_is_not_truncated() {
-        let mut buffer = TextBuffer::<5>::new();
-        write!(&mut buffer, "abcd").unwrap();
-
-        assert_eq!(&buffer.bytes, b"abcd\0");
-        assert!(!buffer.was_truncated());
-    }
-
-    #[test]
-    fn radio_restart_advances_the_wifi_serialization_barrier() {
-        assert!(confirms_wifi_serialization(&Event::WifiRadioRestarted(
-            WifiRadioRestartEvidence {
-                generation: 2,
-                previous_phy_registration_generation: 0,
-                phy_registration_generation: 1,
-                calibration_path: WifiRadioCalibrationPath::RestoredCache,
-            },
-        )));
-    }
+/// The product image's console: the base module and the legacy commands.
+#[embassy_executor::task]
+pub async fn console_task(usb: USB_DEVICE<'static>, boot: u64) {
+    crate::transport::serve::<Request>(usb, boot, crate::limits::MAXIMUM_PAYLOAD_BYTES, serve).await
 }

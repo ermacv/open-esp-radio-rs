@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use crate::product_hil::network::sockets::{Stack, accept, listen, new_tcp};
-use oer_hil_protocol::{SessionFailure, SessionVerdict};
+use oer_hil_protocol::{network::SessionFailure, network::SessionVerdict};
 use oer_hil_target_core::traffic::connection;
 
 use embassy_futures::join::join;
@@ -9,9 +9,10 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use oer_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use oer_hil_protocol::{
-    Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
-    FlowTransportEvidence, ServiceInfo, SessionReady, Transport as HilTransport, TransportEvidence,
-    WifiNetworkInterface, fill_stream_pattern, stream_pattern_matches,
+    network::Completion as HilCompletion, network::Direction as HilDirection,
+    network::FlowTransportEvidence, network::ServiceInfo, network::SessionReady,
+    network::Transport as HilTransport, network::TransportEvidence, network::fill_stream_pattern,
+    network::stream_pattern_matches, wifi::WifiNetworkInterface,
 };
 
 use crate::console::{complete_session, publish_event_reliably, runtime_log};
@@ -68,7 +69,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         publish_event_reliably(
             0,
             0,
-            HilEvent::ServiceReady(ServiceInfo {
+            oer_hil_protocol::network::ServiceReady(ServiceInfo {
                 network_interface: config.network_interface,
                 transport: HilTransport::Tcp,
                 direction,
@@ -118,10 +119,10 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                 publish_event_reliably(
                     session.session_id,
                     0,
-                    HilEvent::SessionReady(SessionReady {
+                    SessionReady {
                         direction: session.config.direction,
                         tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
-                    }),
+                    },
                 )
                 .await;
             }),

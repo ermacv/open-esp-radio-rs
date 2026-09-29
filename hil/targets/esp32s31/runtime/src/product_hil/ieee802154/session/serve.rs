@@ -10,15 +10,15 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use oer_esp32s31_ieee802154_system::{Ieee802154PhyMaintenance, Ieee802154System};
 use oer_esp32s31_phy::ConcurrentTrackingTick;
 use oer_hil_protocol::{
-    Event as HilEvent, Ieee802154SessionConfig, Ieee802154SessionMaintenanceCounts,
-    Ieee802154SessionMaintenancePolicy, Ieee802154SessionPhyMaintenance, Ieee802154SessionResult,
-    RejectReason,
+    base::RejectReason, ieee802154::Ieee802154SessionConfig,
+    ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionMaintenancePolicy,
+    ieee802154::Ieee802154SessionPhyMaintenance, ieee802154::Ieee802154SessionResult,
 };
 use oer_ieee802154::RadioCommand;
 
 use super::super::client::Client;
 use crate::console::{
-    Ieee802154SessionCommand, publish_event_reliably, receive_ieee802154_session_command,
+    Ieee802154SessionCommand, publish_event_reliably, receive_ieee802154_session_command, respond,
 };
 
 use super::Radio;
@@ -68,18 +68,18 @@ async fn serve(
                 publish_event_reliably(
                     0,
                     request_id,
-                    HilEvent::Ieee802154SessionTransmitted(evidence),
+                    oer_hil_protocol::ieee802154::SessionTransmitted(evidence),
                 )
                 .await;
             }
             Ieee802154SessionCommand::Receive { request_id } => {
                 let id = session.id();
                 let channel = session.channel;
-                let response = match session.submit(RadioCommand::Receive { id, channel }) {
-                    Ok(()) => HilEvent::Accepted,
-                    Err(_) => HilEvent::Rejected(RejectReason::InvalidState),
-                };
-                publish_event_reliably(0, request_id, response).await;
+                let reply = session
+                    .submit(RadioCommand::Receive { id, channel })
+                    .map(|()| oer_hil_protocol::base::Accepted)
+                    .map_err(|_| RejectReason::InvalidState);
+                respond(0, request_id, reply).await;
             }
             Ieee802154SessionCommand::Collect { request_id } => {
                 let mut evidence = session.received.take();
@@ -89,7 +89,7 @@ async fn serve(
                 publish_event_reliably(
                     0,
                     request_id,
-                    HilEvent::Ieee802154SessionReceived(evidence),
+                    oer_hil_protocol::ieee802154::SessionReceived(evidence),
                 )
                 .await;
             }
@@ -97,12 +97,12 @@ async fn serve(
                 request_id,
                 request,
             } => {
-                let response = if session.pending(request) {
-                    HilEvent::Accepted
+                let reply = if session.pending(request) {
+                    Ok(oer_hil_protocol::base::Accepted)
                 } else {
-                    HilEvent::Rejected(RejectReason::InvalidConfiguration)
+                    Err(RejectReason::InvalidConfiguration)
                 };
-                publish_event_reliably(0, request_id, response).await;
+                respond(0, request_id, reply).await;
             }
             Ieee802154SessionCommand::MaintainPhy { request_id } => {
                 let Some((system, radio)) = foreground.as_mut() else {
@@ -110,7 +110,7 @@ async fn serve(
                     publish_event_reliably(
                         0,
                         request_id,
-                        HilEvent::Rejected(RejectReason::InvalidState),
+                        oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                     )
                     .await;
                     continue;
@@ -131,7 +131,7 @@ async fn serve(
                 publish_event_reliably(
                     0,
                     request_id,
-                    HilEvent::Ieee802154SessionPhyMaintained(outcome),
+                    oer_hil_protocol::ieee802154::SessionPhyMaintained(outcome),
                 )
                 .await;
             }
@@ -143,14 +143,18 @@ async fn serve(
                 publish_event_reliably(
                     0,
                     request_id,
-                    HilEvent::Ieee802154SessionAssessed(assessment),
+                    oer_hil_protocol::ieee802154::SessionAssessed(assessment),
                 )
                 .await;
             }
             Ieee802154SessionCommand::RecentRssi { request_id } => {
                 let read = session.recent_rssi();
-                publish_event_reliably(0, request_id, HilEvent::Ieee802154SessionRecentRssi(read))
-                    .await;
+                publish_event_reliably(
+                    0,
+                    request_id,
+                    oer_hil_protocol::ieee802154::SessionRecentRssi(read),
+                )
+                .await;
             }
             Ieee802154SessionCommand::Restart { request_id } => {
                 if restartable {
@@ -161,7 +165,7 @@ async fn serve(
                 publish_event_reliably(
                     0,
                     request_id,
-                    HilEvent::Rejected(RejectReason::InvalidState),
+                    oer_hil_protocol::base::Rejected(RejectReason::InvalidState),
                 )
                 .await;
             }

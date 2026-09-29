@@ -3,7 +3,7 @@
 ## Fault injection
 
 `phy_fault_injection` advertises destructive checkpoints in real PHY maintenance.
-`PhyFault(Arm(mode))` is one-shot per boot. `Status` reports `Reached` only after the
+`phy::ControlFault(Arm(mode))` is one-shot per boot. `Status` reports `Reached` only after the
 selected physical frontier. `Release` is accepted only then, and its
 acknowledgement is serialized before injecting the fault. There is no disarm or
 deadline renewal command. `Cancelled` means the actual child future was dropped,
@@ -20,9 +20,9 @@ internal SRAM without changing its graph or ROM short-delay policy.
 
 ## Delivery continuity
 
-`UdpRxStarted` reports the first 256 valid single-flow UDP datagrams consumed
+`network::UdpRxStarted` reports the first 256 valid single-flow UDP datagrams consumed
 inside a session. It is correlated by boot/session and is distinct from
-`SessionReady`: readiness alone does not prove delivery.
+`network::SessionReady`: readiness alone does not prove delivery.
 
 Transport and per-flow evidence optionally retain `rx_maximum_silence_micros`
 for a complete single-flow UDP receive window, including trailing silence.

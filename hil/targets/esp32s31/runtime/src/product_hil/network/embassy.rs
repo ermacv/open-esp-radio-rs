@@ -6,7 +6,9 @@ use core::mem::MaybeUninit;
 
 use oer_esp32s31_ieee80211_system::{WifiDevice, WifiNetworkDevice};
 
-use oer_hil_protocol::{WifiNetworkInterface, WifiRxChecksumPolicy, WifiTxUdpChecksumPolicy};
+use oer_hil_protocol::{
+    wifi::WifiNetworkInterface, wifi::WifiRxChecksumPolicy, wifi::WifiTxUdpChecksumPolicy,
+};
 #[cfg(feature = "task-poll-telemetry")]
 type Device = progress::Device<WifiNetworkDevice>;
 #[cfg(not(feature = "task-poll-telemetry"))]

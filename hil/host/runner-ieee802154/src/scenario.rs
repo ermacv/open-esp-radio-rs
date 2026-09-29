@@ -98,10 +98,14 @@ pub enum MaintenancePolicy {
 }
 
 impl MaintenancePolicy {
-    const fn session(self) -> oer_hil_protocol::Ieee802154SessionMaintenancePolicy {
+    const fn session(self) -> oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy {
         match self {
-            Self::Vendor => oer_hil_protocol::Ieee802154SessionMaintenancePolicy::Vendor,
-            Self::Quiesced => oer_hil_protocol::Ieee802154SessionMaintenancePolicy::Quiesced,
+            Self::Vendor => {
+                oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy::Vendor
+            }
+            Self::Quiesced => {
+                oer_hil_protocol::ieee802154::Ieee802154SessionMaintenancePolicy::Quiesced
+            }
         }
     }
 }
@@ -134,8 +138,8 @@ pub struct AirCheck {
 }
 
 impl AirCheck {
-    fn request(self) -> oer_hil_protocol::Ieee802154AirCheckRequest {
-        oer_hil_protocol::Ieee802154AirCheckRequest {
+    fn request(self) -> oer_hil_protocol::ieee802154::Ieee802154AirCheckRequest {
+        oer_hil_protocol::ieee802154::Ieee802154AirCheckRequest {
             channel: self.channel,
             cycles: self.cycles,
             energy_scan_micros: self.energy_scan_micros,
@@ -173,7 +177,7 @@ impl Ieee802154Scenario {
                 bounded(
                     exchange.frames,
                     1,
-                    oer_hil_protocol::IEEE802154_SESSION_RECORDED_FRAMES as u8,
+                    oer_hil_protocol::ieee802154::IEEE802154_SESSION_RECORDED_FRAMES as u8,
                     "frames",
                 )
             }
@@ -181,7 +185,7 @@ impl Ieee802154Scenario {
                 bounded(energy.boots, 1, 20, "boots")?;
                 bounded(energy.samples, 1, 16, "samples")?;
                 for channel in [energy.channel, energy.far_channel] {
-                    let request = oer_hil_protocol::Ieee802154SessionAssessRequest {
+                    let request = oer_hil_protocol::ieee802154::Ieee802154SessionAssessRequest {
                         channel,
                         energy_scan_micros: energy.energy_scan_micros,
                     };
@@ -203,7 +207,7 @@ impl Ieee802154Scenario {
                 bounded(
                     live.frames,
                     1,
-                    oer_hil_protocol::IEEE802154_SESSION_RECORDED_FRAMES as u8,
+                    oer_hil_protocol::ieee802154::IEEE802154_SESSION_RECORDED_FRAMES as u8,
                     "frames",
                 )?;
                 if live.high_power_dbm <= live.low_power_dbm {
@@ -213,7 +217,7 @@ impl Ieee802154Scenario {
             }
             Self::RouteProbe(probe) => {
                 bounded(probe.boots, 1, 20, "boots")?;
-                let request = oer_hil_protocol::Ieee802154RouteProbeRequest {
+                let request = oer_hil_protocol::ieee802154::Ieee802154RouteProbeRequest {
                     threshold_micros: probe.threshold_micros,
                     settle_micros: probe.settle_micros,
                 };
@@ -230,7 +234,7 @@ impl Ieee802154Scenario {
                 bounded(
                     exchange.datagrams,
                     1,
-                    oer_hil_protocol::IEEE802154_THREAD_RECORDED_DATAGRAMS as u8,
+                    oer_hil_protocol::ieee802154::IEEE802154_THREAD_RECORDED_DATAGRAMS as u8,
                     "datagrams",
                 )
             }

@@ -82,14 +82,20 @@ compile_error!("the joint Wi-Fi/Bluetooth image runs Bluetooth as a shared-radio
 #[cfg(feature = "boot-smoke")]
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
-mod capabilities;
-#[cfg(feature = "open-radio-hil")]
 mod console;
 mod exception;
 #[cfg(feature = "gdma-mem2mem-probe")]
 mod gdma_mem2mem_probe;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod hang_watchdog;
+#[cfg(any(
+    feature = "system-watchdog",
+    feature = "open-radio-hil",
+    feature = "bluetooth-radio"
+))]
+mod image_features;
+#[cfg(feature = "open-radio-hil")]
+mod limits;
 #[cfg(feature = "memory-benchmark")]
 mod memory_benchmark;
 #[cfg(feature = "pc-profile")]
@@ -107,6 +113,12 @@ mod stack_evidence;
 mod system;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod trace;
+#[cfg(any(
+    feature = "system-watchdog",
+    feature = "open-radio-hil",
+    feature = "bluetooth-radio"
+))]
+mod transport;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod watchdog;
 #[cfg(all(feature = "memory-benchmark", feature = "gdma-mem2mem-probe"))]
@@ -405,7 +417,7 @@ extern "C" fn runtime_main() -> ! {
 
     #[cfg(feature = "open-radio-hil")]
     {
-        console::init_logger();
+        transport::init_logger();
         use esp_hal::rng::Trng;
         #[cfg(not(feature = "wifi-ble-coex"))]
         let _trng_source = TRNG_SOURCE.init(esp_hal::rng::TrngSource::new(peripherals.RNG));
@@ -417,7 +429,7 @@ extern "C" fn runtime_main() -> ! {
         let trng = Trng::try_new()
             .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
-        console::init_protocol(boot_id);
+        transport::CONSOLE.start(boot_id);
         #[cfg(not(feature = "memory-benchmark"))]
         let radio = product_hil::RadioPlatforms {
             radio: oer_esp32s31_ieee80211_system::EspHalRadioPlatform::new(
@@ -436,11 +448,11 @@ extern "C" fn runtime_main() -> ! {
         };
         let usb = peripherals.USB_DEVICE;
         executor.run(|spawner| {
-            let Ok(logger) = console::logger_task(usb) else {
+            let Ok(logger) = console::console_task(usb, boot_id) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
             };
             spawner.spawn(logger);
-            let Ok(protocol) = console::protocol_task(capabilities::hil_capabilities()) else {
+            let Ok(protocol) = console::protocol_task() else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
@@ -652,9 +664,9 @@ fn paint_app_core_stack() {
 }
 
 #[cfg(feature = "open-radio-hil")]
-pub(crate) async fn stack_usage_snapshot() -> oer_hil_protocol::StackUsage {
+pub(crate) async fn stack_usage_snapshot() -> oer_hil_protocol::system::StackUsage {
     let (cpu1, cpu1_irq) = stack_evidence::cpu1_snapshot().await;
-    oer_hil_protocol::StackUsage {
+    oer_hil_protocol::system::StackUsage {
         cpu0: cpu0_stack_usage_snapshot(),
         cpu1,
         cpu0_irq: stack_evidence::current_irq_snapshot(),
@@ -663,7 +675,7 @@ pub(crate) async fn stack_usage_snapshot() -> oer_hil_protocol::StackUsage {
 }
 
 #[cfg(feature = "open-radio-hil")]
-pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
+pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::system::StackWatermark {
     let bottom = psram_task_stack::cpu1_task_stack_bottom();
     measure_stack(
         bottom,
@@ -679,7 +691,7 @@ pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     feature = "bluetooth-gatt",
     feature = "bluetooth-secure-gatt"
 ))]
-pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
+pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::system::StackWatermark {
     let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
     let cpu0_top = symbol(ptr::addr_of!(_stack_start));
     let cpu0_paint_start = cpu0_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
@@ -705,7 +717,7 @@ fn measure_stack(
     paint_end: u32,
     top: u32,
     minimum_free_bytes: u32,
-) -> oer_hil_protocol::StackWatermark {
+) -> oer_hil_protocol::system::StackWatermark {
     if bottom >= paint_start || paint_start >= paint_end || paint_end > top {
         fail(c"OPEN_RADIO_HIL runtime=FAIL reason=stack-paint-layout\r\n");
     }
@@ -719,7 +731,7 @@ fn measure_stack(
         }
         address += 4;
     }
-    oer_hil_protocol::StackWatermark {
+    oer_hil_protocol::system::StackWatermark {
         capacity_bytes: top - bottom,
         free_bytes: lowest_used - paint_start,
         used_bytes: (top - bottom) - (lowest_used - paint_start),

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::image::ImageClass;
 
-pub const RUN_SCHEMA: u16 = 2;
+pub const RUN_SCHEMA: u16 = 3;
 
 pub use oer_hil_schema::run::{
     Comparison, FailureKind, MeasurementUnit, MeasurementVerdict, Outcome, RunEventKind, RunState,
@@ -290,7 +290,9 @@ pub struct RunnerProvenance {
     pub observer: Option<serde_json::Value>,
     pub package: String,
     pub version: String,
-    pub protocol_version: u16,
+    /// SHA-256 of the runner's [`oer_hil_protocol::MESSAGES_LOCK`]: runs
+    /// whose runners share it spoke the same wire.
+    pub messages_lock_sha256: String,
     pub host_os: String,
     pub host_arch: String,
     pub tools: Vec<ToolVersion>,
@@ -465,6 +467,9 @@ pub struct RunManifest {
     /// The A/B experiment arm this run measured, when `cargo hil ab` ran it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub experiment: Option<crate::experiment::Experiment>,
+    /// Every message path the run's captures record in either direction,
+    /// sorted and unique; written when the run is sealed.
+    pub messages_used: Vec<String>,
 }
 
 impl RunManifest {

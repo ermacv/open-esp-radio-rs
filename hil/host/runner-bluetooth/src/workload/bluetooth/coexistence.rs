@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use hil_core::session::SerialCapture;
-use oer_hil_protocol::BluetoothGattEvidence as Evidence;
+use oer_hil_protocol::bluetooth::BluetoothGattEvidence as Evidence;
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -51,8 +51,7 @@ impl<'a> Echo<'a> {
     pub fn connect(capture: &'a SerialCapture, adapter: Adapter, output: &Path) -> Result<Self> {
         if !capture
             .request_capabilities(Duration::from_secs(10))?
-            .features
-            .bluetooth_gatt
+            .has::<oer_hil_protocol::bluetooth::Gatt>()
         {
             return Err("joint image without the GATT application".into());
         }

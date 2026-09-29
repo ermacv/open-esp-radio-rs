@@ -4,8 +4,8 @@ use hil_core::context::Context;
 use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
 
 use oer_hil_protocol::{
-    Completion, Direction, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements,
-    Transport,
+    network::Completion, network::Direction, network::FlowConfig, network::SessionConfig,
+    network::SessionFlowConfig, network::SessionLinkRequirements, network::Transport,
 };
 
 use crate::{
@@ -69,7 +69,7 @@ pub fn run(
     options.device = ready.address;
     reject_overlapping_ipv4_links(options.device)?;
     let session = capture.start_session(SessionConfig {
-        network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
+        network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::Station,
         transport: Transport::Tcp,
         direction,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),

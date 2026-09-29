@@ -41,7 +41,7 @@ pub fn task_poll_markdown(task_polls: TaskPollSet) -> String {
 }
 
 fn network_scheduler_markdown(
-    evidence: Option<oer_hil_protocol::NetworkSchedulerEvidence>,
+    evidence: Option<oer_hil_protocol::network::NetworkSchedulerEvidence>,
 ) -> String {
     let Some(evidence) = evidence else {
         return String::from(

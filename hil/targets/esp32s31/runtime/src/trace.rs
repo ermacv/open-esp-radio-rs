@@ -9,8 +9,9 @@
 
 use embassy_time::{Duration, Timer};
 use oer_hil_protocol::{
-    TRACE_ENTRY_PAGE, TRACE_SNAPSHOT_PAGE, TraceControl, TraceEntries, TraceEntry,
-    TraceSnapshotPage, TraceStatus,
+    telemetry::TRACE_ENTRY_PAGE, telemetry::TRACE_SNAPSHOT_PAGE, telemetry::TraceControl,
+    telemetry::TraceEntries, telemetry::TraceEntry, telemetry::TraceSnapshotPage,
+    telemetry::TraceStatus,
 };
 use oer_trace::{Retained, Trace};
 

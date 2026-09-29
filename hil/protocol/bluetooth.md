@@ -3,7 +3,7 @@
 ## Trouble GATT
 
 The `bluetooth_gatt` capability identifies the separate plaintext Trouble
-application image. `QueryBluetoothGatt` returns `BluetoothGattEvidence` with
+application image. `bluetooth::GetGatt` returns `BluetoothGattEvidence` with
 the Controller address, application connection/read/write observations and
 the CPU0 stack measurement. All observations belong to the envelope's boot;
 the query neither resets the Controller nor submits ATT/HCI work. Counters are
@@ -11,17 +11,17 @@ not independent proof of ATT delivery. The Linux peer validates actual replies
 and reconnection. This capability does not imply pairing or secure GATT.
 
 The separate `bluetooth_secure_gatt` capability identifies the actual secure
-application with one caller-owned RAM bond slot. `QueryBluetoothSecureGatt`
+application with one caller-owned RAM bond slot. `bluetooth::GetSecureGatt`
 reports traffic counters, the current unanswered Numeric Comparison challenge,
 independent confirmation/bond/reconnect/notification counters and application
-failure. It does not export keys. `ConfirmBluetoothGatt` requires the exact boot,
+failure. It does not export keys. `bluetooth::ConfirmGatt` requires the exact boot,
 session zero, challenge ID and six-digit number. Stale/duplicate replies are
-rejected. `BluetoothGattDecisionRecorded` acknowledges a queued UI decision,
+rejected. `bluetooth::GattDecisionRecorded` acknowledges a queued UI decision,
 not successful pairing or protected access. Cancellation of the application
 prompt revokes even a queued answer. These commands cannot submit HCI or ATT
 traffic, clear bonds or force a security transition.
 
-`RestartBluetoothGatt { epoch }` accepts only the currently running secure
+`bluetooth::RestartGatt { epoch }` accepts only the currently running secure
 application epoch, on session zero and the discovered boot. Duplicate, stale
 and stopped-application requests are rejected. Its initial snapshot acknowledges
 the request, not completed retirement. Completion requires a new `epoch`,
@@ -32,7 +32,7 @@ the caller's RAM bond store and comparison history, not connections or ATT state
 Independent encrypted peer traffic without another pairing establishes key reuse;
 these lifecycle counters alone do not.
 
-`BluetoothGattResetReadGate { epoch, release }` controls a one-shot secure HIL
+`bluetooth::GattResetReadGate { epoch, release }` controls a one-shot secure HIL
 reader gate on the discovered boot and current epoch. Arming (`release = false`)
 requires an advertising, disconnected application and does not send Reset.
 An explicit restart drops the old producers and submits its real final Reset;
@@ -45,7 +45,7 @@ The gate does not report RF cessation or model a hung silicon operation. While
 held, the unchanged epoch and cold-release count must be observed; release must
 be followed by actual retirement/restart and independent encrypted peer traffic.
 
-`FailBluetoothGattResetRead { epoch }` selects failure instead of release at the
+`bluetooth::FailGattResetRead { epoch }` selects failure instead of release at the
 same reached checkpoint. Early, stale or duplicate requests are rejected.
 `FailureRequested` acknowledges only the command; `ReadFailed` means the wrapper
 actually returned its distinct injected error without reading or discarding the
@@ -54,7 +54,7 @@ its original stop cause and retain physical execution. Release/restart are then
 rejected. This tests a Host-facing I/O error, not a silicon or PHY failure; no
 RF-stop, physical-close or autonomous-recovery claim follows from retention.
 
-`FailNextBluetoothGattBondLoad { epoch }` is a one-shot secure HIL diagnostic.
+`bluetooth::FailNextGattBondLoad { epoch }` is a one-shot secure HIL diagnostic.
 It requires a connected, bonded application on the current boot/epoch, rejects
 duplicates and excludes a concurrent restart. Arming it does not stop the Host.
 The next actual application store load returns a backend failure without
@@ -73,15 +73,15 @@ counters mean Host queue acceptance; the independent peer must receive the value
 
 The `bluetooth-dtm` image declares `bluetooth_dtm` and `bluetooth_hci` and
 runs the production Controller behind an in-image HCI Host.
-`BluetoothDtm(operation)` runs one fixed LE 1M, channel 0, 37-byte PRBS9
+`bluetooth::RunDtm(operation)` runs one fixed LE 1M, channel 0, 37-byte PRBS9
 Receiver Test, Transmitter Test, Test End or Reset and returns
 `BluetoothDtmEvidence` with the boot's reset reason and the counted packets.
 
-`BluetoothHci(Command { opcode, parameters })` sends one HCI command with at
+`bluetooth::ExchangeHci(Command { opcode, parameters })` sends one HCI command with at
 most `BLUETOOTH_HCI_PARAMETER_BYTES` parameter octets and returns its Command
 Complete or Command Status packet (`Completed`), `Timeout` or
 `TransportFailed`. Other events that arrive meanwhile are queued.
-`BluetoothHci(NextEvent { wait_ms })` returns the oldest queued event, or the
+`bluetooth::ExchangeHci(NextEvent { wait_ms })` returns the oldest queued event, or the
 next one within `wait_ms` (`Event { packet, dropped }`), or `NoEvent`;
 `dropped` counts events lost to the bounded queue since the last returned one.
 Host workloads drive advertising, scanning and connections through these two

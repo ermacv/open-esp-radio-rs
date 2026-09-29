@@ -6,8 +6,8 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    Completion, FlowConfig, Ipv4Endpoint, SessionConfig, SessionFlowConfig,
-    SessionLinkRequirements, Transport,
+    network::Completion, network::FlowConfig, network::Ipv4Endpoint, network::SessionConfig,
+    network::SessionFlowConfig, network::SessionLinkRequirements, network::Transport,
 };
 
 use crate::scenario::{Direction, access_point::UdpCriteria};
@@ -69,7 +69,7 @@ pub(super) fn qualify_udp(
     if rx_rate_bps.is_some() {
         probe_udp_rx_ready_via(
             capture,
-            oer_hil_protocol::WifiNetworkInterface::AccessPoint,
+            oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
             target,
             (traffic_target != target).then_some(traffic_target),
             UDP_RX_PORT,
@@ -87,7 +87,7 @@ pub(super) fn qualify_udp(
         socket.connect(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT))?;
         hil_core::session::prepare_udp_reverse_flow(
             capture,
-            oer_hil_protocol::WifiNetworkInterface::AccessPoint,
+            oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
             &socket,
             config.timeout,
         )?;
@@ -109,7 +109,7 @@ pub(super) fn qualify_udp(
         })
         .transpose()?;
     let session = capture.start_session(SessionConfig {
-        network_interface: oer_hil_protocol::WifiNetworkInterface::AccessPoint,
+        network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::AccessPoint,
         transport: Transport::Udp,
         direction: protocol_direction,
         completion: Completion::DurationMillis(duration_millis),

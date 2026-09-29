@@ -15,9 +15,11 @@ use hil_core::{context::Context, session::SerialCapture};
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{
-    Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence, Ieee802154AirCheckRequest,
-    Ieee802154AirCheckStop, Ieee802154AirCycle, Ieee802154AirEnergyOutcome, Ieee802154AirTransmit,
-    Ieee802154AirTxOutcome, Ieee802154AirWindow,
+    ieee802154::Ieee802154AirCcaOutcome, ieee802154::Ieee802154AirCheckEvidence,
+    ieee802154::Ieee802154AirCheckRequest, ieee802154::Ieee802154AirCheckStop,
+    ieee802154::Ieee802154AirCycle, ieee802154::Ieee802154AirEnergyOutcome,
+    ieee802154::Ieee802154AirTransmit, ieee802154::Ieee802154AirTxOutcome,
+    ieee802154::Ieee802154AirWindow,
 };
 use serde::Serialize;
 
@@ -94,7 +96,7 @@ fn check(
     timeout: Duration,
 ) -> Result<Ieee802154AirCheckEvidence> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_air_check {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::AirCheck>() {
         return Err("firmware does not advertise the IEEE 802.15.4 air check".into());
     }
     capture.run_ieee802154_air_check(request, timeout)

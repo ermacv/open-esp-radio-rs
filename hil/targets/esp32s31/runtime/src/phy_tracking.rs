@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use oer_esp32s31_phy::{ConcurrentPhyTrackingError, ConcurrentTrackingTick};
-use oer_hil_protocol::{Event, PhyTrackingCommand, PhyTrackingEvidence};
+use oer_hil_protocol::{phy::PhyTrackingCommand, phy::PhyTrackingEvidence};
 
 static SUSPENDED: AtomicBool = AtomicBool::new(false);
 static CHANGED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
@@ -17,13 +17,13 @@ static NOT_DUE: AtomicU32 = AtomicU32::new(0);
 static SKIPPED: AtomicU32 = AtomicU32::new(0);
 
 /// Apply one wire command and report the timer.
-pub(crate) fn control(command: PhyTrackingCommand) -> Event {
+pub(crate) fn control(command: PhyTrackingCommand) -> oer_hil_protocol::phy::TrackingState {
     match command {
         PhyTrackingCommand::Resume => set_suspended(false),
         PhyTrackingCommand::Suspend => set_suspended(true),
         PhyTrackingCommand::Status => {}
     }
-    Event::PhyTracking(PhyTrackingEvidence {
+    oer_hil_protocol::phy::TrackingState(PhyTrackingEvidence {
         running: !SUSPENDED.load(Ordering::Acquire),
         tracked: TRACKED.load(Ordering::Relaxed),
         not_due: NOT_DUE.load(Ordering::Relaxed),

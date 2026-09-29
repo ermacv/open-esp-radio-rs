@@ -11,8 +11,9 @@ use std::{fs, path::Path, time::Duration};
 
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
-    Ieee802154AirTxOutcome, Ieee802154SessionConfig, Ieee802154SessionMaintenancePolicy,
-    Ieee802154SessionStopEvidence, Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode,
+    ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionConfig,
+    ieee802154::Ieee802154SessionMaintenancePolicy, ieee802154::Ieee802154SessionStopEvidence,
+    ieee802154::Ieee802154SessionTransmitRequest, ieee802154::Ieee802154SessionTxMode,
 };
 use serde::Serialize;
 
@@ -118,7 +119,7 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
 
 fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154SessionStopEvidence> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_session {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::Session>() {
         return Err("firmware does not advertise IEEE 802.15.4 sessions".into());
     }
     expect_session(
@@ -157,7 +158,9 @@ fn session(capture: &SerialCapture, config: &Config) -> Result<Ieee802154Session
 
 #[cfg(test)]
 mod tests {
-    use oer_hil_protocol::{Ieee802154SessionMaintenanceCounts, Ieee802154SessionResult};
+    use oer_hil_protocol::{
+        ieee802154::Ieee802154SessionMaintenanceCounts, ieee802154::Ieee802154SessionResult,
+    };
 
     use super::*;
 

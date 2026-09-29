@@ -1,6 +1,6 @@
 //! Each hart scans its own inactive IRQ stack and publishes a typed result.
 
-use oer_hil_protocol::StackWatermark;
+use oer_hil_protocol::system::StackWatermark;
 
 pub(crate) fn current_irq_snapshot() -> Option<StackWatermark> {
     {

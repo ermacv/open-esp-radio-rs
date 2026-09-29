@@ -1,6 +1,7 @@
 //! A fake serial link to the target for session and workload tests.
 use super::*;
-use oer_hil_protocol::{Capabilities, FeatureCapabilities};
+use oer_hil_protocol::base::{Capabilities, GetCapabilities, Hello};
+use oer_hil_protocol::{Key, Message, WireKind};
 use std::{
     io,
     sync::{
@@ -126,18 +127,56 @@ pub fn capture(output: &Output, fail_write: bool) -> (SerialCapture, Input) {
     (capture, input)
 }
 
-/// Encode one target event as a wire frame.
-pub fn frame(event: Envelope<Event>) -> Vec<u8> {
-    FrameEncoder::new().encode(&event).unwrap().to_vec()
+/// Encode one message as a wire frame.
+pub fn frame<M: Message>(message: Envelope<M>) -> Vec<u8> {
+    FrameEncoder::new().encode(&message).unwrap().to_vec()
+}
+
+/// A message of any type, framed once its header is known, so messages of
+/// several types share one list.
+pub struct AnyMessage(Box<dyn Fn(u64, u32, u64, u32) -> Vec<u8> + Send>);
+
+impl AnyMessage {
+    pub fn frame(
+        &self,
+        boot_id: u64,
+        message_sequence: u32,
+        session_id: u64,
+        request_id: u32,
+    ) -> Vec<u8> {
+        (self.0)(boot_id, message_sequence, session_id, request_id)
+    }
+}
+
+pub fn any<M: Message + Clone + Send + 'static>(body: M) -> AnyMessage {
+    AnyMessage(Box::new(
+        move |boot_id, message_sequence, session_id, request_id| {
+            frame(Envelope::new(
+                boot_id,
+                message_sequence,
+                session_id,
+                request_id,
+                body.clone(),
+            ))
+        },
+    ))
+}
+
+/// One message as the host receives it.
+pub fn received<M: Message>(message: Envelope<M>) -> Received {
+    let bytes = frame(message);
+    let mut received = None;
+    FrameDecoder::new().feed(M::WIRE_KIND, &bytes, |frame| {
+        received = Some(Received::from_frame(&frame.unwrap()).unwrap());
+    });
+    received.unwrap()
 }
 
 /// Deliver the boot `Hello` and wait until the capture observes it.
 pub fn activate(capture: &SerialCapture, input: &Input) {
     input.send(Ok(frame(hello(7, 0)))).unwrap();
     capture
-        .wait_for_protocol_after(0, Duration::from_secs(2), |message| {
-            matches!(message.body, Event::Hello(_))
-        })
+        .wait_for_message_after(0, Duration::from_secs(2), Received::is::<Hello>)
         .unwrap()
         .unwrap();
 }
@@ -157,68 +196,74 @@ pub fn capture_with_commands(output: &Output) -> (SerialCapture, Input, mpsc::Re
     (capture, input, commands)
 }
 
-/// Decode the next host command written to a [`capture_with_commands`] link.
-pub fn receive_command(writes: &mpsc::Receiver<Vec<u8>>) -> Envelope<Command> {
+/// Decode the next host request written to a [`capture_with_commands`] link.
+pub fn receive_request(writes: &mpsc::Receiver<Vec<u8>>) -> Received {
     let bytes = writes.recv_timeout(Duration::from_secs(2)).unwrap();
-    let mut command = None;
-    FrameDecoder::new().feed::<Command>(&bytes, |decoded| command = Some(decoded.unwrap()));
-    command.unwrap()
+    let mut request = None;
+    FrameDecoder::new().feed(WireKind::Command, &bytes, |frame| {
+        request = Some(Received::from_frame(&frame.unwrap()).unwrap());
+    });
+    request.unwrap()
 }
 
-/// A target `Hello` with the default HIL capabilities.
-pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
+/// Decode the next host request, which must be an `M`.
+pub fn receive<M: oer_hil_protocol::Message>(writes: &mpsc::Receiver<Vec<u8>>) -> (Received, M) {
+    let request = receive_request(writes);
+    let body = request
+        .decode::<M>()
+        .unwrap_or_else(|| panic!("the host sent {}, not {}", request.path(), M::PATH));
+    (request, body)
+}
+
+/// The capabilities of the fake target: the esp32s31 correctness image's.
+pub fn capability_keys() -> Vec<Key> {
+    let capabilities = crate::image::ImageClass::Correctness
+        .capabilities_on("esp32s31")
+        .unwrap();
+    capabilities.keys().iter().copied().collect()
+}
+
+/// The fake target's boot `Hello`, announcing [`capability_keys`].
+pub fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Hello> {
     Envelope::new(
         boot_id,
         message_sequence,
         0,
         0,
-        Event::Hello(Capabilities {
-            features: FeatureCapabilities {
-                bluetooth_secure_gatt: false,
-                bluetooth_gatt: false,
-                phy_fault_injection: false,
-                phy_register_image: false,
-                bluetooth_dtm: false,
-                bluetooth_hci: false,
-                system_watchdog: false,
-                udp: true,
-                tcp: true,
-                rx: true,
-                tx: true,
-                bidirectional: true,
-                runtime_initialization: true,
-                runtime_configuration: true,
-                structured_evidence: true,
-                udp_multi_flow: false,
-                startup_artifact: true,
-                station_epoch_control: true,
-                wifi_role_control: true,
-                wifi_access_point: true,
-                simultaneous_station_access_point: true,
-                wifi_monitor_capture: true,
-                station_lifecycle_events: true,
-                driver_observation_evidence: true,
-                rx_delivery_evidence: true,
-                diagnostic_features: oer_hil_protocol::DiagnosticFeatures::empty(),
-                phy_rx_hot_sram: false,
-                task_poll_evidence: false,
-                tx_architecture_probe: false,
-                core0_rx_cycle_evidence: false,
-                mac_irq_evidence: false,
-                psram_task_stack: false,
-                network_scheduler_evidence: false,
-                data_plane_placement: true,
-                timebase_probe: true,
-                memory_benchmark: false,
-                ieee802154_event_status_probe: false,
-                ieee802154_ed_event_probe: false,
-                ieee802154_air_check: false,
-                ieee802154_session: false,
-                ieee802154_thread: false,
-                ieee802154_route_probe: false,
-            },
-            maximum_payload_bytes: 1,
-            maximum_wire_frame_bytes: 1,
-        }),
+        Capabilities::new(&capability_keys()).hello(1),
     )
+}
+
+/// Answer the host's capability requests for [`capability_keys`] as boot
+/// `boot_id`, starting at target message `message_sequence`; returns the
+/// next free target message sequence.
+pub fn answer_capabilities(
+    input: &Input,
+    writes: &mpsc::Receiver<Vec<u8>>,
+    boot_id: u64,
+    mut message_sequence: u32,
+) -> u32 {
+    let keys = capability_keys();
+    let capabilities = Capabilities::new(&keys);
+    let mut first = 0;
+    while usize::from(first) < keys.len() {
+        let request = receive_request(writes);
+        let asked = request.decode::<GetCapabilities>().unwrap_or_else(|| {
+            panic!("the host sent {}, not a capability request", request.path())
+        });
+        assert_eq!(asked.first, first);
+        let page = capabilities.page(first);
+        first += page.keys.len() as u16;
+        input
+            .send(Ok(frame(Envelope::new(
+                boot_id,
+                message_sequence,
+                request.session_id,
+                request.request_id,
+                page,
+            ))))
+            .unwrap();
+        message_sequence += 1;
+    }
+    message_sequence
 }

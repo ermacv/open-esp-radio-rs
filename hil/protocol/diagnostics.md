@@ -21,10 +21,10 @@ cessation. The separate DTM reset scenario retains its independent peer gates.
 ## Event trace
 
 An image that links `oer-trace` keeps typed trace entries, and optionally
-snapshot slots of register windows, in reset-retained memory. `TraceControl`
+snapshot slots of register windows, in reset-retained memory. `telemetry::ControlTrace`
 reports the trace's `TraceStatus`, starts it over with a channel mask or
-changes the mask while it runs; `GetTraceEntries` pages out up to 16 complete
-entries from a storage slot, and `GetTraceSnapshot` one slot's snapshot in
+changes the mask while it runs; `telemetry::GetTraceEntries` pages out up to 16 complete
+entries from a storage slot, and `telemetry::GetTraceSnapshot` one slot's snapshot in
 pages of 64 words. Entries travel raw, with their event kind; the host decodes
 their words with the same event types the target records.
 
@@ -45,7 +45,7 @@ Sampling records only while the profile is armed and the workload's measured
 window is open: the workload opens and closes it around its measured phase,
 and opening it again starts over. `ProfileStatus` reports whether the window
 is open, its length, the per-hart capacity the image chose, and each hart's
-retained and dropped samples. `GetProfileSamples { hart, first }` returns up
+retained and dropped samples. `telemetry::GetProfileSamples { hart, first }` returns up
 to 48 raw `(pc, ra)` pairs of a closed window; an open window has no pages,
 so the host never reads half a window. The samples are not folded on the
 target; the host symbolizes them against the run's ELF.
@@ -55,12 +55,12 @@ throughput or timing measurement.
 
 ## Memory copy benchmark
 
-`ProbeMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
+`system::RunMemoryBenchmark` runs one pre-initialization CPU, blocking GDMA or async
 GDMA copy from SRAM/PSRAM into SRAM. A request specifies 1..=4096 payload bytes
 per frame, 1..=32 frames and 1..=64 measured iterations. Each iteration copies
 at most 49,152 payload bytes, excluding storage padding and guards. The CPU
 copies frames in a loop; GDMA uses one scatter-gather chain per iteration.
-`MemoryBenchmarkCompleted` echoes the request and retains completed iterations,
+`system::MemoryBenchmarkCompleted` echoes the request and retains completed iterations,
 terminal correctness status and separate elapsed/foreground counter scopes.
 Completed iterations account for entire batches whose payloads and guards
 passed verification; a partially completed batch does not add an iteration.
@@ -78,11 +78,11 @@ request/response task; CPU0 never scans its live stack storage. A missing
 response fails rather than publishing a cached measurement. Images with shared
 task/IRQ stacks report `None` for both dedicated IRQ fields.
 
-`QueryInterruptStackUsage` provides a separate short response without enlarging
+`system::GetInterruptStacks` provides a separate short response without enlarging
 the wire-frame limit. Bluetooth reports its CPU0 dedicated IRQ watermark and
 `None` for its inactive CPU1. The secure GATT workload checks this response at
 its boundaries. Wi-Fi
-accepts this query under the same idle-session conditions as `QueryStackUsage`.
+accepts this query under the same idle-session conditions as `system::GetStacks`.
 
 IRQ sampling runs in thread mode with local interrupts masked during the SRAM
 scan. It therefore adds a short interruption to RF servicing; these diagnostic

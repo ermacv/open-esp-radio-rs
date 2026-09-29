@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_hil_protocol::{TimebaseProbeEvidence, TimebaseProbeRequest};
+use oer_hil_protocol::{system::TimebaseProbeEvidence, system::TimebaseProbeRequest};
 use serde::Serialize;
 
 use crate::Result;
@@ -50,7 +50,7 @@ pub fn run(config: Config, output: &Path, context: &Context<'_>) -> Result<()> {
 
 fn probe(capture: &SerialCapture, config: &Config, boot: u8) -> Result<BootReport> {
     let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
-    if !capabilities.features.timebase_probe {
+    if !capabilities.has::<oer_hil_protocol::system::TimebaseProbe>() {
         return Err("firmware does not advertise the timebase probe".into());
     }
     let period_micros = u32::from(config.period_millis) * 1_000;

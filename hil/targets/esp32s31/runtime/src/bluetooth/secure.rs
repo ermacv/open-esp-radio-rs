@@ -25,7 +25,12 @@ use oer_bluetooth_hci::{
 use oer_esp32s31_bluetooth_system::{
     BluetoothHci, BluetoothHciService, BluetoothHostTransport, BluetoothSystem, start,
 };
-use oer_hil_protocol::{Command, Event, FeatureCapabilities};
+use oer_hil_protocol::RequestIdentity;
+use oer_hil_protocol::base::RejectReason;
+use oer_hil_protocol::bluetooth::{
+    ConfirmGatt, FailGattResetRead, FailNextGattBondLoad, GattResetReadGate, GetSecureGatt,
+    RestartGatt, SecureGattState,
+};
 use oer_hil_target_core::bluetooth_gatt::secure::{
     reset_gate::{self, GatedController},
     state::State,
@@ -47,24 +52,59 @@ type HostExit = epoch::Exit<Gated, store::InjectedBondLoadFailure>;
 static RESOURCES: StaticCell<Resources> = StaticCell::new();
 static STATE: StaticCell<State> = StaticCell::new();
 
+oer_hil_target_core::requests! {
+    /// The secure GATT image's requests.
+    pub(super) enum Request (sessions = false) {
+        FailResetRead(FailGattResetRead),
+        ResetReadGate(GattResetReadGate),
+        FailNextBondLoad(FailNextGattBondLoad),
+        Restart(RestartGatt),
+        Get(GetSecureGatt),
+        Confirm(ConfirmGatt),
+    }
+}
+
+/// `reply` with the CPU0 stack the image used so far.
+fn with_stack(
+    reply: Result<SecureGattState, RejectReason>,
+) -> Result<SecureGattState, RejectReason> {
+    reply.map(|SecureGattState(mut value)| {
+        value.traffic.cpu0_stack = Some(crate::cpu0_stack_usage_snapshot());
+        SecureGattState(value)
+    })
+}
+
 impl console::Profile for State {
-    fn features(&self) -> FeatureCapabilities {
-        FeatureCapabilities {
-            bluetooth_secure_gatt: true,
-            ..FeatureCapabilities::default()
-        }
+    type Request = Request;
+
+    fn queue(&self) -> &'static console::Queue<Request> {
+        static QUEUE: console::Queue<Request> = console::Queue::new();
+        &QUEUE
     }
 
     fn maximum_payload_bytes(&self) -> u16 {
         0
     }
 
-    async fn command(&self, command: Command) -> Event {
-        let mut event = State::command(self, command);
-        if let Event::BluetoothSecureGatt(value) = &mut event {
-            value.traffic.cpu0_stack = Some(crate::cpu0_stack_usage_snapshot());
+    async fn serve(&self, request: RequestIdentity, body: Request) {
+        match body {
+            Request::FailResetRead(body) => {
+                console::respond(request, with_stack(self.fail_reset_read(body))).await
+            }
+            Request::ResetReadGate(body) => {
+                console::respond(request, with_stack(self.reset_read_gate(body))).await
+            }
+            Request::FailNextBondLoad(body) => {
+                console::respond(request, with_stack(self.fail_next_bond_load(body))).await
+            }
+            Request::Restart(body) => {
+                console::respond(request, with_stack(self.restart_application(body))).await
+            }
+            Request::Get(GetSecureGatt) => {
+                console::respond(request, with_stack(Ok(self.snapshot()))).await
+            }
+            Request::Confirm(body) => console::respond(request, self.confirm(body)).await,
         }
-        event
     }
 }
 
@@ -86,7 +126,14 @@ pub(super) async fn run(
     spawner.spawn(
         lifecycle(radio, system, hci, public_address, state).expect("Bluetooth lifecycle task"),
     );
-    console::run(usb, boot, state).await
+    spawner.spawn(requests(state).expect("Bluetooth request task"));
+    console::serve_console(usb, boot, state).await
+}
+
+/// Serves the requests the console queued, in a task of its own.
+#[embassy_executor::task]
+async fn requests(state: &'static State) {
+    console::serve_requests(state).await
 }
 
 #[embassy_executor::task]
@@ -217,7 +264,8 @@ fn build(controller: Gated, resources: &mut Resources) -> Stack<'_, Gated, Defau
 fn record_shutdown(state: &State, exit: &HostExit) {
     use gatt_application::security::{bonds::StoreError, gatt::RunError};
     use oer_hil_protocol::{
-        BluetoothGattResetOutcome as Reset, BluetoothGattShutdown, BluetoothGattStopCause as Cause,
+        bluetooth::BluetoothGattResetOutcome as Reset, bluetooth::BluetoothGattShutdown,
+        bluetooth::BluetoothGattStopCause as Cause,
     };
     if let epoch::Cause::Application(error) = &exit.cause {
         state.application_failure(error);

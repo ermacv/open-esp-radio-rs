@@ -5,7 +5,7 @@ use hil_core::{
     lab::link::{HtGuardIntervalExpectation, PhyExpectation},
     scenario::bounded,
 };
-use oer_hil_protocol::{WifiAccessPointSecurity, WifiApScheduler};
+use oer_hil_protocol::{wifi::WifiAccessPointSecurity, wifi::WifiApScheduler};
 use serde::{Deserialize, Serialize};
 
 use super::{

@@ -21,7 +21,7 @@ pub(super) fn observe(record: Option<AccessPointRxRejection>) {
     }
 }
 
-pub(super) fn snapshot() -> Option<oer_hil_protocol::WifiRxRejection> {
+pub(super) fn snapshot() -> Option<oer_hil_protocol::wifi::WifiRxRejection> {
     #[cfg(feature = "station-exit-evidence")]
     {
         FIRST

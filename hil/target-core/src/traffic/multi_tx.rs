@@ -1,6 +1,9 @@
 //! Independent offered-load state with bounded, event-driven socket service.
 use core::task::{Context, Poll};
-use oer_hil_protocol::{FlowTransportEvidence, Ipv4Endpoint, SESSION_FLOW_CAPACITY, SessionConfig};
+use oer_hil_protocol::{
+    network::FlowTransportEvidence, network::Ipv4Endpoint, network::SESSION_FLOW_CAPACITY,
+    network::SessionConfig,
+};
 
 #[derive(Clone, Copy)]
 pub struct Publication {

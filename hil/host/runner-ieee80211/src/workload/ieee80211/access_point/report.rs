@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use oer_hil_protocol::{Ipv4Endpoint, SESSION_FLOW_CAPACITY};
+use oer_hil_protocol::{network::Ipv4Endpoint, network::SESSION_FLOW_CAPACITY};
 
 use crate::scenario::Direction;
 use crate::{
@@ -40,7 +40,7 @@ pub(super) struct CycleReport {
     /// performance images. An omitted field is deliberately different from a
     /// diagnostic snapshot whose counters all happened to be zero.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) access_point: Option<oer_hil_protocol::WifiAccessPointEvidence>,
+    pub(super) access_point: Option<oer_hil_protocol::wifi::WifiAccessPointEvidence>,
 }
 
 #[derive(Serialize)]

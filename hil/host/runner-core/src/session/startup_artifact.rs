@@ -7,7 +7,7 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    STARTUP_ARTIFACT_CHUNK_MAX_LEN, StartupArtifactChunk, startup_artifact_crc32c,
+    phy::STARTUP_ARTIFACT_CHUNK_MAX_LEN, phy::StartupArtifactChunk, phy::startup_artifact_crc32c,
 };
 
 use crate::Result;

@@ -2,7 +2,9 @@
 use embassy_net::Stack;
 use embassy_net::iface;
 use embassy_net::wire::{IpAddr, IpCidr, Ipv4Addr, Ipv4Cidr};
-use oer_hil_protocol::{NetworkInfo, NetworkIpv4Configuration, WifiNetworkInterface};
+use oer_hil_protocol::{
+    network::NetworkInfo, wifi::NetworkIpv4Configuration, wifi::WifiNetworkInterface,
+};
 
 #[derive(Clone, Copy)]
 pub struct Iface<'a>(pub iface::Iface<'a>);

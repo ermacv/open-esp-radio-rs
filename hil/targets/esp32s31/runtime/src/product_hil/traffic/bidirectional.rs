@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use oer_hil_protocol::SessionVerdict;
+use oer_hil_protocol::network::SessionVerdict;
 use oer_hil_protocol::{
-    Direction, FlowTransportEvidence, RadioEvidence, RxDeliveryEvidence, RxZeroCopyEvidence,
-    SESSION_FLOW_CAPACITY, TxAggregateTimingEvidence,
+    network::Direction, network::FlowTransportEvidence, network::RadioEvidence,
+    network::RxDeliveryEvidence, network::RxZeroCopyEvidence, network::SESSION_FLOW_CAPACITY,
+    network::TxAggregateTimingEvidence,
 };
 
 use crate::console::{ActiveSession, complete_session};

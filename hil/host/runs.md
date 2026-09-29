@@ -71,7 +71,7 @@ oldest first, then lets the target record again; `runs why` shows the
 trace's last events.
 
 A traffic session that ends without passing names its first failed check in
-its `Finished` event (a typed `SessionFailure`: no datagrams, no terminal
+its `network::Finished` message (a typed `SessionFailure`: no datagrams, no terminal
 marker, receive, socket or transmit errors, an incomplete TCP connection or
 transfer, a pattern mismatch, receive loss, a failed ownership audit, or
 control-link corruption), and the runner puts it in the repetition's failure
@@ -237,10 +237,11 @@ cargo hil bisect --good <commit> --bad <commit> --scenario <id> [--layout-seed N
 `bisect` searches the commits after `--good` up to `--bad` (which must
 descend from it) for the first one at which the scenario does not pass. Each
 tested commit is checked out, detached, in the bisection's worktree below
-`target/hil/bisect/<id>/`. When its `PROTOCOL_VERSION` is this checkout's,
-this checkout's runner judges it: `run --source-snapshot DIR` builds the
-revision's firmware from a snapshot of the worktree and runs this checkout's
-host code and scenario. A commit with another protocol version runs its own
+`target/hil/bisect/<id>/`. When its `hil/protocol/messages.lock` equals this
+checkout's, it speaks this checkout's wire and this checkout's runner judges
+it: `run --source-snapshot DIR` builds the revision's firmware from a snapshot
+of the worktree and runs this checkout's host code and scenario. A commit with
+another wire, or none named, runs its own
 runner, built in the worktree, while the bisection holds a whole-stand lease;
 that runner uses a private arbiter directory with a copy of the stand's
 `devices.json`.
@@ -274,7 +275,7 @@ features against it, and qualification never counts such an image as its
 class's. Each arm's revision is
 checked out in a worktree below `target/hil/ab/<id>/` and captured with its
 overrides into a source snapshot; this checkout's runner builds and runs
-both, so both revisions must have this checkout's `PROTOCOL_VERSION`. For
+both, so both revisions must have this checkout's `messages.lock`. For
 every layout seed `1..=K` the first round runs A, then B, building their
 images; the remaining rounds replay those exact images. Each round, A then B
 of one seed, holds a whole-stand lease of its own, so drift of the air and

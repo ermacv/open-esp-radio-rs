@@ -13,11 +13,12 @@ use oer_esp32s31_ieee80211_system::TX_PERFORMANCE;
 ))]
 use oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters;
 use oer_hil_protocol::{
-    Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
-    FlowTransportEvidence, SESSION_FLOW_CAPACITY, ServiceInfo, SessionConfig, SessionReady,
-    Transport as HilTransport, TransportEvidence,
+    network::Completion as HilCompletion, network::Direction as HilDirection,
+    network::FlowTransportEvidence, network::SESSION_FLOW_CAPACITY, network::ServiceInfo,
+    network::SessionConfig, network::SessionReady, network::Transport as HilTransport,
+    network::TransportEvidence,
 };
-use oer_hil_protocol::{SessionFailure, SessionVerdict};
+use oer_hil_protocol::{network::SessionFailure, network::SessionVerdict};
 
 use crate::{
     console::{publish_event_reliably, runtime_log},
@@ -59,7 +60,7 @@ pub(in crate::product_hil) struct UdpTxSessionSource {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
-    pub network_interface: oer_hil_protocol::WifiNetworkInterface,
+    pub network_interface: oer_hil_protocol::wifi::WifiNetworkInterface,
     pub source_port: u16,
     pub payload_capacity: usize,
     /// Maximum application datagrams admitted before enforcing the next
@@ -118,7 +119,7 @@ async fn transmit_multi_flow(
                         {
                             assert!(identity.write_to(payload));
                             assert!(
-                                oer_hil_protocol::UdpSessionPayloadIdentity::fill_after_header(
+                                oer_hil_protocol::network::UdpSessionPayloadIdentity::fill_after_header(
                                     payload
                                 )
                             );
@@ -189,7 +190,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         publish_event_reliably(
             0,
             0,
-            HilEvent::ServiceReady(ServiceInfo {
+            oer_hil_protocol::network::ServiceReady(ServiceInfo {
                 network_interface: config.network_interface,
                 transport: HilTransport::Udp,
                 direction: HilDirection::Tx,
@@ -206,8 +207,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     ));
     loop {
         let session = loop {
-            let mut probe = [0_u8; oer_hil_protocol::UdpProbe::LENGTH + 1];
-            let mut secondary_probe = [0_u8; oer_hil_protocol::UdpProbe::LENGTH + 1];
+            let mut probe = [0_u8; oer_hil_protocol::network::UdpProbe::LENGTH + 1];
+            let mut secondary_probe = [0_u8; oer_hil_protocol::network::UdpProbe::LENGTH + 1];
             match embassy_futures::select::select3(
                 config.session_source.sessions.receive(),
                 socket.recv_from(&mut probe),
@@ -217,7 +218,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             {
                 embassy_futures::select::Either3::First(session) => break session,
                 embassy_futures::select::Either3::Second(Ok((length, peer))) => {
-                    if let Some(mut request) = oer_hil_protocol::UdpProbe::decode(&probe[..length])
+                    if let Some(mut request) =
+                        oer_hil_protocol::network::UdpProbe::decode(&probe[..length])
                         && !request.response
                     {
                         request.response = true;
@@ -228,7 +230,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 }
                 embassy_futures::select::Either3::Third(Ok((length, peer))) => {
                     if let Some(mut request) =
-                        oer_hil_protocol::UdpProbe::decode(&secondary_probe[..length])
+                        oer_hil_protocol::network::UdpProbe::decode(&secondary_probe[..length])
                         && !request.response
                     {
                         request.response = true;
@@ -244,10 +246,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         publish_event_reliably(
             session.session_id,
             0,
-            HilEvent::SessionReady(SessionReady {
+            SessionReady {
                 direction: HilDirection::Tx,
                 tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
-            }),
+            },
         )
         .await;
         let session_flow = session
@@ -352,7 +354,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                             if let Some(identity) = session_flow.payload_identity {
                                 assert!(identity.write_to(packet));
                                 assert!(
-                                    oer_hil_protocol::UdpSessionPayloadIdentity::fill_after_header(
+                                    oer_hil_protocol::network::UdpSessionPayloadIdentity::fill_after_header(
                                         packet
                                     )
                                 );

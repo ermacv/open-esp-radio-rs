@@ -1,151 +1,97 @@
-//! The typed HIL console of the Bluetooth images. It answers the common
-//! queries itself and hands every other command to the image's profile.
+//! The HIL console of the Bluetooth images: the runtime's console, with the
+//! image's profile serving the requests beyond the base module.
 
-use embedded_io_async::Read;
-use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
-use oer_hil_protocol::{
-    Capabilities, Command, Envelope, Event, FeatureCapabilities, FrameDecoder, FrameEncoder,
-    LinkHealth, RejectReason,
-};
-use static_cell::StaticCell;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use oer_hil_protocol::base::{RejectReason, Rejected};
+use oer_hil_protocol::system::{GetInterruptStacks, InterruptStacks};
+use oer_hil_protocol::{Message, RequestIdentity};
+use oer_hil_target_core::base::{Either, Requests};
+
+use crate::transport::CONSOLE;
+
+oer_hil_target_core::requests! {
+    /// What every Bluetooth image serves beyond the base module.
+    pub(super) enum Common (sessions = false) {
+        InterruptStacks(GetInterruptStacks),
+    }
+}
+
+/// Requests the console handed over, served in order.
+pub(super) type Queue<R> =
+    Channel<CriticalSectionRawMutex, (RequestIdentity, Either<Common, R>), 4>;
 
 /// What one image adds to the console.
 pub(super) trait Profile {
-    fn features(&self) -> FeatureCapabilities;
+    /// The image's own requests; none belongs to a session.
+    type Request: Requests + 'static;
+
+    /// The image's request queue.
+    fn queue(&self) -> &'static Queue<Self::Request>;
+
     fn maximum_payload_bytes(&self) -> u16;
-    /// Called only after exact boot and session-zero validation.
-    async fn command(&self, command: Command) -> Event;
+
+    /// Serve one request and publish its reply.
+    async fn serve(&self, request: RequestIdentity, body: Self::Request);
 }
 
-struct Console {
-    usb: UsbSerialJtag<'static, Async>,
-    boot: u64,
-    sequence: u32,
-    decoder: FrameDecoder,
-    encoder: FrameEncoder,
-}
-
-impl Console {
-    fn capabilities(profile: &impl Profile) -> Capabilities {
-        Capabilities {
-            features: FeatureCapabilities {
-                structured_evidence: true,
-                psram_task_stack: true,
-                ..profile.features()
-            },
-            maximum_payload_bytes: profile.maximum_payload_bytes(),
-            maximum_wire_frame_bytes: oer_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
+/// Publish `reply` to `request`: its response, or the reason it was refused.
+pub(super) async fn respond<M: Message>(request: RequestIdentity, reply: Result<M, RejectReason>) {
+    match reply {
+        Ok(response) => {
+            CONSOLE
+                .publish_reliably(request.session_id, request.request_id, &response)
+                .await
         }
-    }
-
-    #[inline(never)]
-    fn send(&mut self, request: u32, event: Event) -> impl Future<Output = ()> + '_ {
-        let bytes = self
-            .encoder
-            .encode(&Envelope::new(self.boot, self.sequence, 0, request, event))
-            .expect("bounded Bluetooth response");
-        let usb = &mut self.usb;
-        let sequence = &mut self.sequence;
-        async move {
-            if oer_hil_protocol::write_frame(usb, bytes).await.is_err() {
-                esp_hal::system::software_reset();
-            }
-            *sequence = sequence.checked_add(1).expect("HIL sequence exhausted");
+        Err(reason) => {
+            CONSOLE
+                .publish_reliably(request.session_id, request.request_id, &Rejected(reason))
+                .await
         }
-    }
-
-    /// The next complete command, or the request of an intact frame this
-    /// image cannot decode: a command of a radio family it leaves out.
-    #[inline(never)]
-    fn decode(
-        &mut self,
-        byte: &[u8],
-    ) -> Option<Result<Envelope<Command>, oer_hil_protocol::RequestIdentity>> {
-        let mut command = None;
-        self.decoder.feed::<Command>(byte, |frame| {
-            command = match frame {
-                Ok(frame) => Some(Ok(frame)),
-                Err(oer_hil_protocol::DecodeError::UndecodableBody(request)) => Some(Err(request)),
-                Err(_) => None,
-            }
-        });
-        command
-    }
-
-    fn health(&self) -> Event {
-        let c = self.decoder.counters();
-        Event::LinkHealth(LinkHealth {
-            rx_frames: c.frames,
-            rx_cobs_errors: c.cobs_errors,
-            rx_checksum_errors: c.checksum_errors,
-            rx_decode_errors: c.deserialize_errors
-                + c.header_errors
-                + c.protocol_version_errors
-                + c.framing_version_errors
-                + c.message_kind_errors
-                + c.payload_length_errors
-                + c.too_short,
-            rx_overflows: c.overflows,
-            tx_frames: self.sequence,
-            tx_dropped: 0,
-            text_dropped: 0,
-            text_truncated: 0,
-        })
-    }
+    };
 }
 
-pub(super) async fn run(
+/// Serve the host over `usb`, handing the image's requests to its queue;
+/// [`serve_requests`] serves them, in a task of its own.
+pub(super) async fn serve_console<P: Profile>(
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot: u64,
-    profile: &impl Profile,
+    profile: &P,
 ) -> ! {
-    static CONSOLE: StaticCell<Console> = StaticCell::new();
-    let console = CONSOLE.init_with(|| Console {
-        usb: UsbSerialJtag::new(usb).into_async(),
+    let requests = profile.queue();
+    crate::transport::serve(
+        usb,
         boot,
-        sequence: 0,
-        decoder: FrameDecoder::new(),
-        encoder: FrameEncoder::new(),
-    });
-    console
-        .send(0, Event::Hello(Console::capabilities(profile)))
-        .await;
-    loop {
-        let mut byte = [0];
-        if !matches!(console.usb.read(&mut byte).await, Ok(1)) {
-            continue;
-        }
-        let command = match console.decode(&byte) {
-            None => continue,
-            Some(Err(request)) => {
-                console
-                    .send(
-                        request.request_id,
-                        Event::Rejected(RejectReason::Unsupported),
-                    )
-                    .await;
-                continue;
+        profile.maximum_payload_bytes(),
+        |request, body: Either<Common, P::Request>| {
+            if requests.try_send((request, body)).is_err() {
+                CONSOLE.publish(
+                    request.session_id,
+                    request.request_id,
+                    &Rejected(RejectReason::Busy),
+                );
             }
-            Some(Ok(command)) => command,
-        };
-        let response = match command.validate_target(console.boot) {
-            Err(reason) => Event::Rejected(reason),
-            Ok(()) if command.session_id != 0 => Event::Rejected(RejectReason::InvalidState),
-            Ok(()) => match command.body {
-                Command::GetCapabilities => Event::Hello(Console::capabilities(profile)),
-                Command::GetBootStatus => Event::BootStatus(crate::system::boot_evidence()),
-                Command::GetPostMortemCheckpoints { first } => {
-                    Event::PostMortemCheckpoints(crate::system::post_mortem_checkpoints(first))
-                }
-                Command::QueryLinkHealth => console.health(),
-                // Only CPU0 runs in the Bluetooth images.
-                Command::QueryInterruptStackUsage => Event::InterruptStackUsage {
-                    cpu0: crate::stack_evidence::current_irq_snapshot(),
-                    cpu1: None,
-                },
-                command => profile.command(command).await,
-            },
-        };
-        console.send(command.request_id, response).await;
+        },
+    )
+    .await
+}
+
+/// Serve the requests the console queued for `profile`, in order.
+pub(super) async fn serve_requests<P: Profile>(profile: &P) -> ! {
+    let requests = profile.queue();
+    loop {
+        match requests.receive().await {
+            // Only CPU0 runs in the Bluetooth images.
+            (request, Either::First(Common::InterruptStacks(GetInterruptStacks))) => {
+                respond(
+                    request,
+                    Ok(InterruptStacks {
+                        cpu0: crate::stack_evidence::current_irq_snapshot(),
+                        cpu1: None,
+                    }),
+                )
+                .await;
+            }
+            (request, Either::Second(body)) => profile.serve(request, body).await,
+        }
     }
 }

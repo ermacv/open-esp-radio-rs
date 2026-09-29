@@ -31,7 +31,7 @@ fn manifest() -> RunManifest {
             observer: None,
             package: String::from("runner"),
             version: String::from("1"),
-            protocol_version: 1,
+            messages_lock_sha256: String::from("00"),
             host_os: String::from("linux"),
             host_arch: String::from("x86_64"),
             tools: Vec::new(),
@@ -44,7 +44,36 @@ fn manifest() -> RunManifest {
         lab_provenance_path: None,
         firmware: Vec::new(),
         experiment: None,
+        messages_used: Vec::new(),
     }
+}
+
+#[test]
+fn messages_used_collects_both_directions_from_every_capture() {
+    let directory = temporary_directory("messages-used");
+    let capture = directory.join("scenarios/a/repetition-001/image-preflight");
+    fs::create_dir_all(&capture).unwrap();
+    fs::write(
+        directory.join("scenarios/a/repetition-001/protocol.jsonl"),
+        concat!(
+            r#"{"record":"host-command","command":{"path":"wifi/initialize","request_id":1}}"#,
+            "\n",
+            r#"{"record":"target-event","message":{"path":"base/hello"}}"#,
+            "\n",
+            r#"{"record":"link-health","health":null}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        capture.join("protocol.jsonl"),
+        r#"{"record":"target-event","message":{"path":"base/hello"}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        messages_used(&directory).unwrap(),
+        ["base/hello", "wifi/initialize"]
+    );
 }
 
 fn failed_suite() -> SuiteResult {

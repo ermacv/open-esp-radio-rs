@@ -2,7 +2,7 @@
 use oer_esp32s31_ieee80211_runtime::roles::access_point::{
     AccessPointRxRejection, AccessPointRxRejectionReason as DriverReason,
 };
-use oer_hil_protocol::{WifiRxRejection, WifiRxRejectionReason as Reason};
+use oer_hil_protocol::{wifi::WifiRxRejection, wifi::WifiRxRejectionReason as Reason};
 use oer_ieee80211_mac::{
     ccmp::CcmpReplayError, data::DataDecapError, fragmentation::OpenDataFragmentError,
 };

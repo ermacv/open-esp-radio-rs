@@ -1,7 +1,8 @@
 //! Fault-close evidence is separate from normal reconnect and from RF loss.
 use super::{Duration, Evidence, Instant, Observation, Owner, Result};
 use oer_hil_protocol::{
-    BluetoothGattResetOutcome as Reset, BluetoothGattShutdown, BluetoothGattStopCause as Cause,
+    bluetooth::BluetoothGattResetOutcome as Reset, bluetooth::BluetoothGattShutdown,
+    bluetooth::BluetoothGattStopCause as Cause,
 };
 
 fn require_closed(before: Evidence, after: Evidence) -> Result<()> {
@@ -103,7 +104,7 @@ mod tests {
             cold_releases: 2,
             old_hci_closed: true,
             bond_load_failures: 1,
-            traffic: oer_hil_protocol::BluetoothGattEvidence {
+            traffic: oer_hil_protocol::bluetooth::BluetoothGattEvidence {
                 disconnections: 1,
                 ..Default::default()
             },

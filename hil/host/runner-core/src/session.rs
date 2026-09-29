@@ -15,24 +15,31 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FlowTransportEvidence, FrameDecoder, FrameEncoder, Ieee802154AirCheckEvidence,
-    Ieee802154AirCheckRequest, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest,
-    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
-    Ieee802154RouteProbeEvidence, Ieee802154RouteProbeRequest, Ieee802154SessionAssessRequest,
-    Ieee802154SessionAssessment, Ieee802154SessionConfig, Ieee802154SessionPendingRequest,
-    Ieee802154SessionPhyMaintenance, Ieee802154SessionReceiveEvidence, Ieee802154SessionRecentRssi,
-    Ieee802154SessionRestartEvidence, Ieee802154SessionResult, Ieee802154SessionStopEvidence,
-    Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
-    Ieee802154ThreadReceiveEvidence, Ieee802154ThreadSendRequest, Ieee802154ThreadStartRequest,
-    Ieee802154ThreadState, LinkHealth, NetworkSchedulerEvidence, OperationStatus, RadioEvidence,
-    RxDeliveryEvidence, RxRadioEvidence, RxZeroCopyEvidence, SESSION_FLOW_CAPACITY, SessionConfig,
-    SessionLinkRequirements, SessionReady, SessionState, StackUsage, StartupArtifactChunk,
-    StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent,
-    TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
-    TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
-    WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface, WifiRadioRestartEvidence,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    DecodeCounters, Envelope, FrameDecoder, FrameEncoder, base::LinkHealth,
+    ieee802154::Ieee802154AirCheckEvidence, ieee802154::Ieee802154AirCheckRequest,
+    ieee802154::Ieee802154EdEventProbeEvidence, ieee802154::Ieee802154EdEventProbeRequest,
+    ieee802154::Ieee802154EventStatusProbeEvidence, ieee802154::Ieee802154EventStatusProbeRequest,
+    ieee802154::Ieee802154RouteProbeEvidence, ieee802154::Ieee802154RouteProbeRequest,
+    ieee802154::Ieee802154SessionAssessRequest, ieee802154::Ieee802154SessionAssessment,
+    ieee802154::Ieee802154SessionConfig, ieee802154::Ieee802154SessionPendingRequest,
+    ieee802154::Ieee802154SessionPhyMaintenance, ieee802154::Ieee802154SessionReceiveEvidence,
+    ieee802154::Ieee802154SessionRecentRssi, ieee802154::Ieee802154SessionRestartEvidence,
+    ieee802154::Ieee802154SessionResult, ieee802154::Ieee802154SessionStopEvidence,
+    ieee802154::Ieee802154SessionTransmitEvidence, ieee802154::Ieee802154SessionTransmitRequest,
+    ieee802154::Ieee802154ThreadReceiveEvidence, ieee802154::Ieee802154ThreadSendRequest,
+    ieee802154::Ieee802154ThreadStartRequest, ieee802154::Ieee802154ThreadState,
+    network::Direction, network::EvidenceRecord, network::Finished, network::FlowTransportEvidence,
+    network::NetworkSchedulerEvidence, network::OperationStatus, network::RadioEvidence,
+    network::RxDeliveryEvidence, network::RxRadioEvidence, network::RxZeroCopyEvidence,
+    network::SESSION_FLOW_CAPACITY, network::SessionConfig, network::SessionLinkRequirements,
+    network::SessionReady, network::Transport, network::TransportEvidence,
+    network::TxAggregateTimingEvidence, network::TxRadioEvidence, network::evidence_crc32c,
+    phy::StartupArtifactChunk, phy::StartupArtifactStatus, system::StackUsage,
+    system::TimebaseProbeEvidence, system::TimebaseProbeRequest, wifi::StationEpochEvidence,
+    wifi::StationLifecycleEvent, wifi::WifiMonitorCaptureRequest, wifi::WifiMonitorEvidence,
+    wifi::WifiMonitorFrameChunk, wifi::WifiMonitorRequest, wifi::WifiNetworkInterface,
+    wifi::WifiRadioRestartEvidence, wifi::WifiRoleTransitionEvidence, wifi::WifiScanEvidence,
+    wifi::WifiScanRequest,
 };
 use zeroize::Zeroizing;
 
@@ -42,6 +49,8 @@ mod target;
 pub use target::{Settings, Target};
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
+mod received;
+pub use received::{DeviceCapabilities, Received, message_info};
 
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -64,7 +73,7 @@ struct ProtocolEvents {
 struct ProtocolState {
     expected_reboot: Option<ExpectedReboot>,
     observed_reboot: Option<RebootObservation>,
-    messages: Vec<Envelope<Event>>,
+    messages: Vec<Received>,
     /// When the host decoded each of `messages`, in Unix microseconds.
     received_unix_micros: Vec<u64>,
     /// Every command the host sent, in order.
@@ -80,8 +89,8 @@ struct ProtocolState {
 struct SentCommand {
     request_id: u32,
     session_id: u64,
-    /// The command's variant name.
-    kind: String,
+    /// The command's message path.
+    path: &'static str,
     host_sent_unix_micros: u64,
 }
 
@@ -92,20 +101,7 @@ fn host_unix_micros() -> u64 {
         .map_or(0, |elapsed| elapsed.as_micros() as u64)
 }
 
-/// The variant name of a serialized command: `"GetCapabilities"` or the key
-/// of `{"StartStation": {...}}`.
-fn command_kind(command: &oer_hil_protocol::Command) -> String {
-    match serde_json::to_value(command) {
-        Ok(serde_json::Value::String(name)) => name,
-        Ok(serde_json::Value::Object(fields)) => fields
-            .keys()
-            .next()
-            .cloned()
-            .unwrap_or_else(|| String::from("unknown")),
-        _ => String::from("unknown"),
-    }
-}
-
+/// What a sent message was: its path.
 impl ProtocolState {
     fn check(&self) -> Result<()> {
         if let Some(error) = &self.failure {
@@ -178,7 +174,7 @@ enum CaptureOrigin {
 }
 
 impl ProtocolHealth {
-    fn observe(&mut self, message: &Envelope<Event>, decoder_counters: DecodeCounters) {
+    fn observe(&mut self, message: &Received, decoder_counters: DecodeCounters) {
         match self.boot_id {
             None => {
                 self.begin_boot(message, decoder_counters);
@@ -198,7 +194,7 @@ impl ProtocolHealth {
         }
     }
 
-    fn begin_boot(&mut self, message: &Envelope<Event>, decoder_counters: DecodeCounters) {
+    fn begin_boot(&mut self, message: &Received, decoder_counters: DecodeCounters) {
         self.active = true;
         self.boot_id = Some(message.boot_id);
         self.next_sequence = message.message_sequence.wrapping_add(1);
@@ -208,10 +204,10 @@ impl ProtocolHealth {
         if message.boot_id == 0 {
             self.fail("target published a reserved zero boot identity".into());
         } else if self.origin == CaptureOrigin::Boot
-            && (message.message_sequence != 0 || !matches!(message.body, Event::Hello(_)))
+            && (message.message_sequence != 0 || !message.is::<oer_hil_protocol::base::Hello>())
         {
             if self.accept_solicited_hello
-                && matches!(message.body, Event::Hello(_))
+                && message.is::<oer_hil_protocol::base::Hello>()
                 && message.request_id != 0
                 && message.message_sequence <= SOLICITED_HELLO_SEQUENCE_LIMIT
             {
@@ -221,8 +217,10 @@ impl ProtocolHealth {
                 return;
             }
             self.fail(format!(
-                "boot {} began with {:?} at target message sequence {}, expected Hello at 0",
-                message.boot_id, message.body, message.message_sequence
+                "boot {} began with {} at target message sequence {}, expected Hello at 0",
+                message.boot_id,
+                message.path(),
+                message.message_sequence
             ));
         }
     }
@@ -258,9 +256,6 @@ fn decode_counter_delta(totals: DecodeCounters, baseline: DecodeCounters) -> Dec
         message_kind_errors: totals
             .message_kind_errors
             .saturating_sub(baseline.message_kind_errors),
-        protocol_version_errors: totals
-            .protocol_version_errors
-            .saturating_sub(baseline.protocol_version_errors),
         payload_length_errors: totals
             .payload_length_errors
             .saturating_sub(baseline.payload_length_errors),
@@ -293,7 +288,7 @@ pub struct SerialCapture {
 }
 
 fn command_response_matches(
-    message: &Envelope<Event>,
+    message: &Received,
     boot_id: u64,
     session_id: u64,
     request_id: u32,
@@ -342,7 +337,7 @@ pub struct WifiCommandHandle {
 pub struct StationConnectionObservation {
     pub generation: u32,
     pub association_bandwidth_mhz: Option<u16>,
-    pub security: Option<oer_hil_protocol::StationLinkSecurity>,
+    pub security: Option<oer_hil_protocol::wifi::StationLinkSecurity>,
     pub event_cursor_after: usize,
 }
 

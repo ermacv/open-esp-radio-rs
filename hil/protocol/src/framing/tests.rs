@@ -1,4 +1,6 @@
 use super::*;
+use crate::network::evidence_crc32c;
+use crate::phy::startup_artifact_crc32c;
 
 #[test]
 fn gatt_observation_round_trips_with_epoch_and_stack_measurement() {
@@ -7,7 +9,7 @@ fn gatt_observation_round_trips_with_epoch_and_stack_measurement() {
         9,
         0,
         8,
-        Event::BluetoothGatt(crate::BluetoothGattEvidence {
+        crate::bluetooth::GattState(crate::bluetooth::BluetoothGattEvidence {
             address: Some([1, 2, 3, 4, 5, 6]),
             connected: true,
             connections: 3,
@@ -15,7 +17,7 @@ fn gatt_observation_round_trips_with_epoch_and_stack_measurement() {
             reads: 6,
             writes: 3,
             value: 0x73,
-            cpu0_stack: Some(crate::StackWatermark {
+            cpu0_stack: Some(crate::system::StackWatermark {
                 capacity_bytes: 65536,
                 free_bytes: 32768,
                 used_bytes: 32768,
@@ -27,49 +29,70 @@ fn gatt_observation_round_trips_with_epoch_and_stack_measurement() {
     let mut encoder = FrameEncoder::new();
     let bytes = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed::<Event>(bytes, |frame| observed = Some(frame.unwrap()));
+    let observed = receive(&mut decoder, bytes).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 mod airtime;
 mod secure_gatt;
+
+/// Feeds `bytes` and returns the last complete frame as message `M`.
+fn receive<M: crate::Message>(
+    decoder: &mut FrameDecoder,
+    bytes: &[u8],
+) -> Option<Result<Envelope<M>, DecodeError>> {
+    let mut last = None;
+    decoder.feed(M::WIRE_KIND, bytes, |frame| {
+        last = Some(frame.and_then(|frame| {
+            frame
+                .decode::<M>()
+                .expect("the frame carries the expected type")
+        }));
+    });
+    last
+}
+use crate::system::{HangTarget, InjectHang};
 use crate::{
-    Command, Completion, Direction, Envelope, Event, FlowConfig, Ieee802154EdEventProbeEvidence,
-    Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop, Ieee802154EventStatusProbeEvidence,
-    Ieee802154EventStatusProbeRequest, Ieee802154EventStatusProbeStop,
-    Ieee802154ObservedEventState, Ieee802154PolledEdOutcome, Ieee802154RxAbortObservation,
-    Ieee802154ValidationEdDurationState, Ieee802154ValidationEventEnableState,
-    Ieee802154ValidationRxAbortEnableState, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
-    StackUsage, StackWatermark, StartupArtifactChunk, StationAttemptFailureReason,
-    StationDisconnectReason, StationFailureStage, StationLifecycleEvent, Transport,
-    WifiRadioRestartEvidence, WifiRadioRestartRf, WifiRole, WifiRoleTransitionEvidence, WireKind,
+    Envelope, WireKind, ieee802154::Ieee802154EdEventProbeEvidence,
+    ieee802154::Ieee802154EdEventProbeRequest, ieee802154::Ieee802154EdEventProbeStop,
+    ieee802154::Ieee802154EventStatusProbeEvidence, ieee802154::Ieee802154EventStatusProbeRequest,
+    ieee802154::Ieee802154EventStatusProbeStop, ieee802154::Ieee802154ObservedEventState,
+    ieee802154::Ieee802154PolledEdOutcome, ieee802154::Ieee802154RxAbortObservation,
+    ieee802154::Ieee802154ValidationEdDurationState,
+    ieee802154::Ieee802154ValidationEventEnableState,
+    ieee802154::Ieee802154ValidationRxAbortEnableState, network::Completion, network::Direction,
+    network::FlowConfig, network::Ipv4Endpoint, network::SessionConfig,
+    network::SessionLinkRequirements, network::Transport, phy::StartupArtifactChunk,
+    system::StackUsage, system::StackWatermark, wifi::StationAttemptFailureReason,
+    wifi::StationDisconnectReason, wifi::StationFailureStage, wifi::StationLifecycleEvent,
+    wifi::WifiRadioRestartEvidence, wifi::WifiRadioRestartRf, wifi::WifiRole,
+    wifi::WifiRoleTransitionEvidence,
 };
 
-fn command(sequence: u32) -> Envelope<Command> {
+fn command(sequence: u32) -> Envelope<InjectHang> {
     Envelope::new(
         0x1234_5678_9abc_def0,
         sequence,
         42,
         sequence,
-        Command::Start,
+        InjectHang(HangTarget::Console),
     )
 }
 
 #[test]
 fn initialization_preserves_each_explicit_ap_scheduler_policy() {
     for ap_scheduler in [
-        crate::WifiApScheduler::Disabled,
-        crate::WifiApScheduler::RrHtResponse24,
-        crate::WifiApScheduler::DeficitHtResponse24,
+        crate::wifi::WifiApScheduler::Disabled,
+        crate::wifi::WifiApScheduler::RrHtResponse24,
+        crate::wifi::WifiApScheduler::DeficitHtResponse24,
     ] {
         let expected = Envelope::new(
             1,
             1,
             0,
             1,
-            Command::Initialize(crate::InitializationConfiguration {
+            crate::wifi::Initialize(crate::wifi::InitializationConfiguration {
                 ap_scheduler,
-                ipv4: crate::NetworkIpv4Configuration::Dhcp,
+                ipv4: crate::wifi::NetworkIpv4Configuration::Dhcp,
                 data_plane: Default::default(),
                 rx_checksum: Default::default(),
                 tx_udp_checksum: Default::default(),
@@ -80,10 +103,8 @@ fn initialization_preserves_each_explicit_ap_scheduler_policy() {
         );
         let mut encoder = FrameEncoder::new();
         let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(encoder.encode(&expected).unwrap(), |result| {
-            observed = Some(result.unwrap())
-        });
+        let observed =
+            receive(&mut decoder, encoder.encode(&expected).unwrap()).map(Result::unwrap);
         assert_eq!(observed, Some(expected));
     }
 }
@@ -91,8 +112,8 @@ fn initialization_preserves_each_explicit_ap_scheduler_policy() {
 #[test]
 fn memory_benchmark_bounds_and_worst_case_evidence_fit_the_wire() {
     use crate::{
-        MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest,
-        MemoryBenchmarkSource, MemoryBenchmarkStop,
+        system::MemoryBenchmarkEvidence, system::MemoryBenchmarkMode,
+        system::MemoryBenchmarkRequest, system::MemoryBenchmarkSource, system::MemoryBenchmarkStop,
     };
     let request = MemoryBenchmarkRequest {
         mode: MemoryBenchmarkMode::GdmaAsync,
@@ -145,20 +166,17 @@ fn memory_benchmark_bounds_and_worst_case_evidence_fit_the_wire() {
         }
         .validate()
     );
-    let command = Envelope::new(7, 3, 0, 2, Command::ProbeMemoryBenchmark(request));
+    let command = Envelope::new(7, 3, 0, 2, crate::system::RunMemoryBenchmark(request));
     let mut encoder = FrameEncoder::new();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(encoder.encode(&command).unwrap(), |result| {
-        observed = Some(result.unwrap())
-    });
+    let observed = receive(&mut decoder, encoder.encode(&command).unwrap()).map(Result::unwrap);
     assert_eq!(observed, Some(command));
     let event = Envelope::new(
         u64::MAX,
         u32::MAX,
         u64::MAX,
         u32::MAX,
-        Event::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
+        crate::system::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
             request,
             completed_iterations: u16::MAX,
             elapsed_micros: u64::MAX,
@@ -173,14 +191,13 @@ fn memory_benchmark_bounds_and_worst_case_evidence_fit_the_wire() {
     let frame = encoder.encode(&event).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(event));
 }
 
 #[test]
 fn command_envelope_remains_small_enough_for_embedded_queues() {
-    let size = core::mem::size_of::<Envelope<Command>>();
+    let size = core::mem::size_of::<Envelope<crate::wifi::StartStationAccessPoint>>();
     // The largest command owns two independent WPA2 credential sets for
     // one atomic STA+AP request. Keep the complete decoded queue element
     // within an explicit embedded budget instead of splitting that
@@ -239,7 +256,7 @@ fn ieee802154_event_status_probe_command_fits_and_round_trips() {
         3,
         9,
         2,
-        Command::ProbeIeee802154EventStatus(Ieee802154EventStatusProbeRequest {
+        crate::ieee802154::ProbeEventStatus(Ieee802154EventStatusProbeRequest {
             poll_limit: 1_000_000,
             timer_threshold: 1_000,
         }),
@@ -248,8 +265,7 @@ fn ieee802154_event_status_probe_command_fits_and_round_trips() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -260,7 +276,7 @@ fn ieee802154_event_status_probe_evidence_fits_and_round_trips() {
         3,
         9,
         2,
-        Event::Ieee802154EventStatusProbeCompleted(Ieee802154EventStatusProbeEvidence {
+        crate::ieee802154::EventStatusProbed(Ieee802154EventStatusProbeEvidence {
             stop: Ieee802154EventStatusProbeStop::Complete,
             event_enable_before: Ieee802154ValidationEventEnableState::Unexpected,
             event_enable_active: Ieee802154ValidationEventEnableState::TimerPairOnly,
@@ -290,8 +306,7 @@ fn ieee802154_event_status_probe_evidence_fits_and_round_trips() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -338,7 +353,7 @@ fn ieee802154_ed_event_probe_command_and_evidence_fit_and_round_trip() {
         3,
         9,
         2,
-        Command::ProbeIeee802154EdEvent(Ieee802154EdEventProbeRequest {
+        crate::ieee802154::ProbeEdEvent(Ieee802154EdEventProbeRequest {
             poll_limit: 1_000_000,
             timer_threshold: 1_000,
         }),
@@ -348,7 +363,7 @@ fn ieee802154_ed_event_probe_command_and_evidence_fit_and_round_trip() {
         3,
         9,
         2,
-        Event::Ieee802154EdEventProbeCompleted(Ieee802154EdEventProbeEvidence {
+        crate::ieee802154::EdEventProbed(Ieee802154EdEventProbeEvidence {
             stop: Ieee802154EdEventProbeStop::Complete,
             production_ed_first: Ieee802154PolledEdOutcome::Complete {
                 rss_code: i8::MIN,
@@ -390,8 +405,7 @@ fn ieee802154_ed_event_probe_command_and_evidence_fit_and_round_trip() {
         let frame = encoder.encode(&command).unwrap();
         assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
         let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        let observed = receive(&mut decoder, frame).map(Result::unwrap);
         assert_eq!(observed, Some(command));
     }
     {
@@ -399,15 +413,14 @@ fn ieee802154_ed_event_probe_command_and_evidence_fit_and_round_trip() {
         let frame = encoder.encode(&evidence).unwrap();
         assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
         let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        let observed = receive(&mut decoder, frame).map(Result::unwrap);
         assert_eq!(observed, Some(evidence));
     }
 }
 
 #[test]
 fn access_point_retry_evidence_fits_and_round_trips() {
-    use crate::{WifiAccessPointEvidence, WifiMacRxHardwareEvidence};
+    use crate::{wifi::WifiAccessPointEvidence, wifi::WifiMacRxHardwareEvidence};
 
     let evidence = WifiAccessPointEvidence {
         rx_hardware: WifiMacRxHardwareEvidence {
@@ -462,9 +475,9 @@ fn access_point_retry_evidence_fits_and_round_trips() {
         tx_collision_retries: u32::MAX,
         ..WifiAccessPointEvidence::default()
     };
-    let evidence = crate::WifiAccessPointEvidence {
-        first_rx_protocol_rejection: Some(crate::WifiRxRejection {
-            reason: crate::WifiRxRejectionReason::FragmentRetryPacketNumberMismatch {
+    let evidence = crate::wifi::WifiAccessPointEvidence {
+        first_rx_protocol_rejection: Some(crate::wifi::WifiRxRejection {
+            reason: crate::wifi::WifiRxRejectionReason::FragmentRetryPacketNumberMismatch {
                 fragment_number: u8::MAX,
                 expected: u64::MAX,
                 observed: u64::MAX,
@@ -478,20 +491,19 @@ fn access_point_retry_evidence_fits_and_round_trips() {
             packet_number: Some(u64::MAX),
             mpdu_length: u32::MAX,
         }),
-        tx_retention: Some(crate::WifiTxRetentionEvidence {
+        tx_retention: Some(crate::wifi::WifiTxRetentionEvidence {
             active_queue_full: u32::MAX,
             unicast_power_save_full: u32::MAX,
             group_power_save_full: u32::MAX,
         }),
         ..evidence
     };
-    let expected = Envelope::new(7, 3, 9, 2, Event::WifiAccessPointStopped(evidence));
+    let expected = Envelope::new(7, 3, 9, 2, crate::wifi::AccessPointStopped(evidence));
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -503,9 +515,9 @@ fn round_trips_one_byte_at_a_time() {
     let mut decoder = FrameDecoder::new();
     let mut observed = None;
     for byte in frame {
-        decoder.feed(core::slice::from_ref(byte), |result| {
-            observed = Some(result.unwrap())
-        });
+        if let Some(message) = receive(&mut decoder, core::slice::from_ref(byte)) {
+            observed = Some(message.unwrap());
+        }
     }
     assert_eq!(observed, Some(expected));
     assert_eq!(decoder.counters().frames, 1);
@@ -522,19 +534,19 @@ fn wire_header_is_fixed_and_precedes_the_postcard_body() {
     assert_eq!(&raw[..4], &WIRE_MAGIC);
     assert_eq!(raw[4], FRAMING_VERSION);
     assert_eq!(raw[5], WireKind::Command as u8);
-    assert_eq!(u16::from_le_bytes([raw[6], raw[7]]), PROTOCOL_VERSION);
     assert_eq!(
-        u64::from_le_bytes(raw[8..16].try_into().unwrap()),
+        u64::from_le_bytes(raw[6..14].try_into().unwrap()),
         expected.boot_id
     );
     assert_eq!(
-        u32::from_le_bytes(raw[16..20].try_into().unwrap()),
+        u32::from_le_bytes(raw[14..18].try_into().unwrap()),
         expected.message_sequence
     );
-    let payload_length = usize::from(u16::from_le_bytes([raw[32], raw[33]]));
+    assert_eq!(raw[KEY_RANGE], <InjectHang as crate::Message>::KEY.0);
+    let payload_length = usize::from(u16::from_le_bytes(raw[LENGTH_RANGE].try_into().unwrap()));
     assert_eq!(decoded, WIRE_HEADER_BYTES + payload_length + CHECKSUM_BYTES);
     assert_eq!(
-        postcard::from_bytes::<Command>(
+        postcard::from_bytes::<InjectHang>(
             &raw[WIRE_HEADER_BYTES..WIRE_HEADER_BYTES + payload_length]
         )
         .unwrap(),
@@ -543,27 +555,32 @@ fn wire_header_is_fixed_and_precedes_the_postcard_body() {
 }
 
 #[test]
-fn rejects_protocol_version_before_deserializing_the_body() {
-    let mut expected = command(7);
-    expected.protocol_version = PROTOCOL_VERSION - 1;
+fn a_frame_of_another_type_is_not_decoded_as_this_one() {
     let mut encoder = FrameEncoder::new();
-    let frame = encoder.encode(&expected).unwrap();
+    let frame = encoder
+        .encode(&Envelope::new(7, 1, 0, 1, crate::base::GetBootStatus))
+        .unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed::<Command>(frame, |result| observed = Some(result));
-    assert_eq!(observed, Some(Err(DecodeError::ProtocolVersion)));
-    assert_eq!(decoder.counters().protocol_version_errors, 1);
-    assert_eq!(decoder.counters().deserialize_errors, 0);
+    let mut seen = None;
+    decoder.feed(WireKind::Command, frame, |result| {
+        let frame = result.unwrap();
+        assert_eq!(
+            frame.key,
+            <crate::base::GetBootStatus as crate::Message>::KEY
+        );
+        seen = Some(frame.decode::<InjectHang>().is_none());
+    });
+    assert_eq!(seen, Some(true));
+    assert_eq!(decoder.counters().frames, 1);
 }
 
 #[test]
 fn rejects_an_event_on_the_command_endpoint() {
-    let expected = Envelope::new(7, 1, 0, 1, Event::Accepted);
+    let expected = Envelope::new(7, 1, 0, 1, crate::base::Accepted);
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed::<Command>(frame, |result| observed = Some(result));
+    let observed = receive::<InjectHang>(&mut decoder, frame);
     assert_eq!(observed, Some(Err(DecodeError::MessageKind)));
     assert_eq!(decoder.counters().message_kind_errors, 1);
     assert_eq!(decoder.counters().deserialize_errors, 0);
@@ -581,11 +598,15 @@ fn leading_delimiter_recovers_from_text_output() {
 
     let mut decoder = FrameDecoder::new();
     let mut observed = None;
-    decoder.feed(&input[..NOISE.len() + frame.len()], |result| {
-        if let Ok(message) = result {
-            observed = Some(message);
-        }
-    });
+    decoder.feed(
+        WireKind::Command,
+        &input[..NOISE.len() + frame.len()],
+        |result| {
+            if let Ok(frame) = result {
+                observed = frame.decode::<InjectHang>().map(Result::unwrap);
+            }
+        },
+    );
     assert_eq!(observed, Some(expected));
 }
 
@@ -603,14 +624,10 @@ fn rejects_checksum_corruption_and_recovers_for_next_frame() {
 
     let mut decoder = FrameDecoder::new();
     let mut errors = 0;
-    let mut observed = None;
-    decoder.feed(
-        &damaged[..damaged_length],
-        |result: Result<Envelope<Command>, _>| {
-            errors += usize::from(result.is_err());
-        },
-    );
-    decoder.feed(second_frame, |result| observed = Some(result.unwrap()));
+    decoder.feed(WireKind::Command, &damaged[..damaged_length], |result| {
+        errors += usize::from(result.is_err());
+    });
+    let observed = receive(&mut decoder, second_frame).map(Result::unwrap);
     assert_eq!(errors, 1);
     assert_eq!(observed, Some(second));
 }
@@ -619,14 +636,13 @@ fn rejects_checksum_corruption_and_recovers_for_next_frame() {
 fn discards_overfull_noise_until_a_delimiter() {
     let expected = command(3);
     let mut decoder = FrameDecoder::new();
-    decoder.feed::<Command>(&[0], |_| {});
-    decoder.feed::<Command>(&[0x55; MAX_COBS_FRAME_BYTES + 4], |_| {});
-    decoder.feed::<Command>(&[0], |_| {});
+    decoder.feed(WireKind::Command, &[0], |_| {});
+    decoder.feed(WireKind::Command, &[0x55; MAX_COBS_FRAME_BYTES + 4], |_| {});
+    decoder.feed(WireKind::Command, &[0], |_| {});
 
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
     assert_eq!(decoder.counters().overflows, 1);
 }
@@ -635,7 +651,7 @@ fn discards_overfull_noise_until_a_delimiter() {
 fn credentials_round_trip_without_debugging_the_secret() {
     extern crate std;
 
-    use crate::NetworkCredentials;
+    use crate::wifi::NetworkCredentials;
 
     let credentials = NetworkCredentials::try_new(b"test-network", b"private-password").unwrap();
     assert_eq!(credentials.ssid(), b"test-network");
@@ -643,12 +659,11 @@ fn credentials_round_trip_without_debugging_the_secret() {
     let debug = std::format!("{credentials:?}");
     assert!(!debug.contains("private-password"));
 
-    let expected = Envelope::new(7, 1, 0, 1, Command::StartStation(credentials));
+    let expected = Envelope::new(7, 1, 0, 1, crate::wifi::StartStation(credentials));
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -657,8 +672,8 @@ fn access_point_request_round_trips_without_debugging_the_secret() {
     extern crate std;
 
     use crate::{
-        NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest,
-        WifiAccessPointSecurity, WifiChannelWidth,
+        wifi::NetworkCredentials, wifi::NetworkIpv4Configuration, wifi::WifiAccessPointRequest,
+        wifi::WifiAccessPointSecurity, wifi::WifiChannelWidth,
     };
 
     let request = WifiAccessPointRequest {
@@ -678,25 +693,24 @@ fn access_point_request_round_trips_without_debugging_the_secret() {
     invalid_geometry.channel = 13;
     assert_eq!(
         invalid_geometry.validate(),
-        Err(crate::WifiAccessPointRequestError::Channel)
+        Err(crate::wifi::WifiAccessPointRequestError::Channel)
     );
     let debug = std::format!("{request:?}");
     assert!(!debug.contains("private-password"));
 
-    let expected = Envelope::new(7, 1, 0, 2, Command::StartAccessPoint(request));
+    let expected = Envelope::new(7, 1, 0, 2, crate::wifi::StartAccessPoint(request));
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn station_access_point_request_round_trips_as_one_owned_command() {
     use crate::{
-        NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest,
-        WifiAccessPointSecurity, WifiChannelWidth, WifiStationAccessPointRequest,
+        wifi::NetworkCredentials, wifi::NetworkIpv4Configuration, wifi::WifiAccessPointRequest,
+        wifi::WifiAccessPointSecurity, wifi::WifiChannelWidth, wifi::WifiStationAccessPointRequest,
     };
 
     let request = WifiStationAccessPointRequest {
@@ -717,12 +731,11 @@ fn station_access_point_request_round_trips_as_one_owned_command() {
         },
     };
     assert_eq!(request.validate(), Ok(()));
-    let expected = Envelope::new(7, 1, 0, 3, Command::StartStationAccessPoint(request));
+    let expected = Envelope::new(7, 1, 0, 3, crate::wifi::StartStationAccessPoint(request));
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -733,13 +746,13 @@ fn asymmetric_bidirectional_session_round_trips() {
         2,
         11,
         3,
-        Command::Configure(SessionConfig {
-            network_interface: crate::WifiNetworkInterface::Station,
+        crate::network::Configure(SessionConfig {
+            network_interface: crate::wifi::WifiNetworkInterface::Station,
             transport: Transport::Udp,
             direction: Direction::Bidirectional,
             completion: Completion::DurationMillis(12_000),
             flows: [
-                Some(crate::SessionFlowConfig {
+                Some(crate::network::SessionFlowConfig {
                     flow_id: 7,
                     peer: Some(Ipv4Endpoint {
                         address: [192, 0, 2, 10],
@@ -765,15 +778,14 @@ fn asymmetric_bidirectional_session_round_trips() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn two_peer_udp_session_round_trips_without_erasing_flow_identity() {
     let flow = |flow_id, address| {
-        Some(crate::SessionFlowConfig {
+        Some(crate::network::SessionFlowConfig {
             flow_id,
             peer: Some(Ipv4Endpoint {
                 address,
@@ -797,8 +809,8 @@ fn two_peer_udp_session_round_trips_without_erasing_flow_identity() {
         2,
         11,
         3,
-        Command::Configure(SessionConfig {
-            network_interface: crate::WifiNetworkInterface::AccessPoint,
+        crate::network::Configure(SessionConfig {
+            network_interface: crate::wifi::WifiNetworkInterface::AccessPoint,
             transport: Transport::Udp,
             direction: Direction::Bidirectional,
             completion: Completion::DurationMillis(12_000),
@@ -810,19 +822,17 @@ fn two_peer_udp_session_round_trips_without_erasing_flow_identity() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn stack_usage_query_and_correlated_response_round_trip() {
-    let command = Envelope::new(7, 2, 0, 9, Command::QueryStackUsage);
+    let command = Envelope::new(7, 2, 0, 9, crate::system::GetStacks);
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&command).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(command));
 
     let response = Envelope::new(
@@ -830,7 +840,7 @@ fn stack_usage_query_and_correlated_response_round_trip() {
         3,
         0,
         9,
-        Event::StackUsage(StackUsage {
+        crate::system::Stacks(StackUsage {
             cpu0_irq: None,
             cpu1_irq: None,
             cpu0: StackWatermark {
@@ -848,8 +858,7 @@ fn stack_usage_query_and_correlated_response_round_trip() {
         }),
     );
     let frame = encoder.encode(&response).unwrap();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(response));
 }
 
@@ -867,17 +876,15 @@ fn dedicated_irq_stacks_round_trip_with_explicit_inactive_hart() {
             3,
             0,
             9,
-            Event::InterruptStackUsage {
+            crate::system::InterruptStacks {
                 cpu0: Some(watermark),
                 cpu1,
             },
         );
         let mut encoder = FrameEncoder::new();
         let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(encoder.encode(&response).unwrap(), |result| {
-            observed = Some(result.unwrap())
-        });
+        let observed =
+            receive(&mut decoder, encoder.encode(&response).unwrap()).map(Result::unwrap);
         assert_eq!(observed, Some(response));
     }
 }
@@ -889,7 +896,7 @@ fn station_beacon_loss_generation_round_trips() {
         3,
         0,
         0,
-        Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+        crate::wifi::StationLifecycle(StationLifecycleEvent::Disconnected {
             generation: 4,
             reason: StationDisconnectReason::BeaconLoss,
         }),
@@ -897,8 +904,7 @@ fn station_beacon_loss_generation_round_trips() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -909,10 +915,10 @@ fn connected_station_negotiated_link_round_trips_on_current_version() {
         4,
         0,
         0,
-        Event::StationLifecycle(StationLifecycleEvent::Connected {
+        crate::wifi::StationLifecycle(StationLifecycleEvent::Connected {
             generation: 5,
             association_bandwidth_mhz: Some(40),
-            security: Some(crate::StationLinkSecurity::Wpa2Personal {
+            security: Some(crate::wifi::StationLinkSecurity::Wpa2Personal {
                 management_protection: true,
             }),
         }),
@@ -920,8 +926,7 @@ fn connected_station_negotiated_link_round_trips_on_current_version() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -932,7 +937,7 @@ fn station_retry_exhaustion_round_trips_without_text_markers() {
         4,
         0,
         0,
-        Event::StationLifecycle(StationLifecycleEvent::RetryExhausted {
+        crate::wifi::StationLifecycle(StationLifecycleEvent::RetryExhausted {
             generation: 1,
             attempts: 3,
             stage: StationFailureStage::CandidateSelection,
@@ -942,8 +947,7 @@ fn station_retry_exhaustion_round_trips_without_text_markers() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -954,7 +958,7 @@ fn explicit_wifi_role_transition_round_trips_with_request_identity() {
         5,
         0,
         42,
-        Event::WifiRoleTransitioned(WifiRoleTransitionEvidence {
+        crate::wifi::RoleTransitioned(WifiRoleTransitionEvidence {
             previous: WifiRole::Station,
             current: WifiRole::Idle,
             generation: 9,
@@ -963,8 +967,7 @@ fn explicit_wifi_role_transition_round_trips_with_request_identity() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -975,7 +978,7 @@ fn radio_restart_round_trips_rf_outcome_with_request_identity() {
         6,
         0,
         43,
-        Event::WifiRadioRestarted(WifiRadioRestartEvidence {
+        crate::wifi::RadioRestarted(WifiRadioRestartEvidence {
             generation: 10,
             rf: WifiRadioRestartRf::ClosedAndWoken,
         }),
@@ -983,16 +986,15 @@ fn radio_restart_round_trips_rf_outcome_with_request_identity() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_monitor_frame_chunk_fits_and_round_trips() {
     use crate::{
-        Event, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
-        WifiMonitorObserved,
+        wifi::WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, wifi::WifiMonitorEvidenceSource,
+        wifi::WifiMonitorFrameChunk, wifi::WifiMonitorObserved,
     };
 
     let bytes = [0xa5; WIFI_MONITOR_FRAME_CHUNK_MAX_LEN];
@@ -1015,13 +1017,12 @@ fn maximum_monitor_frame_chunk_fits_and_round_trips() {
         &bytes,
     )
     .unwrap();
-    let expected = Envelope::new(9, 3, 0, 77, Event::WifiMonitorFrame(chunk));
+    let expected = Envelope::new(9, 3, 0, 77, crate::wifi::MonitorFrame(chunk));
     let mut encoder = FrameEncoder::new();
     let wire = encoder.encode(&expected).unwrap();
     assert!(wire.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(wire, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, wire).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -1032,7 +1033,7 @@ fn control_mailbox_overflow_disconnect_round_trips_on_current_protocol() {
         5,
         0,
         43,
-        Event::StationLifecycle(crate::StationLifecycleEvent::Disconnected {
+        crate::wifi::StationLifecycle(crate::wifi::StationLifecycleEvent::Disconnected {
             generation: 11,
             reason: StationDisconnectReason::ControlMailboxOverflow,
         }),
@@ -1040,38 +1041,37 @@ fn control_mailbox_overflow_disconnect_round_trips_on_current_protocol() {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_startup_artifact_chunk_fits_and_round_trips() {
-    let bytes = [0x5a; crate::STARTUP_ARTIFACT_CHUNK_MAX_LEN];
+    let bytes = [0x5a; crate::phy::STARTUP_ARTIFACT_CHUNK_MAX_LEN];
     let checksum = startup_artifact_crc32c(&bytes);
     let chunk = StartupArtifactChunk::try_new(
-        crate::STARTUP_ARTIFACT_CHUNK_MAX_LEN as u16,
+        crate::phy::STARTUP_ARTIFACT_CHUNK_MAX_LEN as u16,
         0,
         checksum,
         &bytes,
     )
     .unwrap();
-    let expected = Envelope::new(7, 2, 0, 2, Command::UploadStartupArtifact(chunk));
+    let expected = Envelope::new(7, 2, 0, 2, crate::phy::UploadStartupArtifact(chunk));
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
 
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_rx_delivery_evidence_fits_and_round_trips() {
     use crate::{
-        EvidenceRecord, RxConsumerLedgerEvidence, RxDeliveryEvidence, RxMacOrderEvidence,
-        RxReorderDeliveryEvidence, RxSequenceStageEvidence,
+        network::EvidenceRecord, network::RxConsumerLedgerEvidence, network::RxDeliveryEvidence,
+        network::RxMacOrderEvidence, network::RxReorderDeliveryEvidence,
+        network::RxSequenceStageEvidence,
     };
 
     let stage = RxSequenceStageEvidence {
@@ -1101,7 +1101,7 @@ fn maximum_rx_delivery_evidence_fits_and_round_trips() {
             first_observed: Some(u32::MAX),
         },
         mac_order: RxMacOrderEvidence {
-            first_forward_gap: Some(crate::RxForwardGapEvidence {
+            first_forward_gap: Some(crate::network::RxForwardGapEvidence {
                 previous_udp: u32::MAX,
                 current_udp: u32::MAX,
                 tid: u8::MAX,
@@ -1136,27 +1136,26 @@ fn maximum_rx_delivery_evidence_fits_and_round_trips() {
         2,
         9,
         2,
-        Event::Evidence(EvidenceRecord::RxDelivery(delivery)),
+        crate::network::Evidence(EvidenceRecord::RxDelivery(delivery)),
     );
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_network_scheduler_evidence_fits_and_round_trips() {
-    use crate::{EvidenceRecord, NetworkSchedulerEvidence};
+    use crate::{network::EvidenceRecord, network::NetworkSchedulerEvidence};
 
     let expected = Envelope::new(
         7,
         3,
         9,
         2,
-        Event::Evidence(EvidenceRecord::NetworkScheduler(NetworkSchedulerEvidence {
+        crate::network::Evidence(EvidenceRecord::NetworkScheduler(NetworkSchedulerEvidence {
             polls: u32::MAX,
             ingress_calls: u32::MAX,
             ingress_packets: u32::MAX,
@@ -1176,21 +1175,20 @@ fn maximum_network_scheduler_evidence_fits_and_round_trips() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_zero_copy_evidence_fits_and_round_trips() {
-    use crate::{EvidenceRecord, RxZeroCopyEvidence};
+    use crate::{network::EvidenceRecord, network::RxZeroCopyEvidence};
 
     let expected = Envelope::new(
         7,
         3,
         9,
         2,
-        Event::Evidence(EvidenceRecord::RxZeroCopy(RxZeroCopyEvidence {
+        crate::network::Evidence(EvidenceRecord::RxZeroCopy(RxZeroCopyEvidence {
             cap: u16::MAX,
             adopted: u32::MAX,
             copied_over_cap: u32::MAX,
@@ -1204,21 +1202,23 @@ fn maximum_zero_copy_evidence_fits_and_round_trips() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_radio_evidence_fits_and_round_trips() {
-    use crate::{EvidenceRecord, RadioEvidence, RxRadioEvidence, TxRadioEvidence};
+    use crate::{
+        network::EvidenceRecord, network::RadioEvidence, network::RxRadioEvidence,
+        network::TxRadioEvidence,
+    };
 
     let expected = Envelope::new(
         7,
         3,
         9,
         2,
-        Event::Evidence(EvidenceRecord::Radio(RadioEvidence {
+        crate::network::Evidence(EvidenceRecord::Radio(RadioEvidence {
             rx: Some(RxRadioEvidence {
                 phy_format: u8::MAX,
                 ht40_long_gi_frames: u32::MAX,
@@ -1265,7 +1265,7 @@ fn maximum_radio_evidence_fits_and_round_trips() {
                 mac_irq_classified_entries: u32::MAX,
             }),
             tx: Some(TxRadioEvidence {
-                station_terminal: crate::StationTxTerminalEvidence {
+                station_terminal: crate::network::StationTxTerminalEvidence {
                     exchanges: u32::MAX,
                     mpdus: u32::MAX,
                     acknowledged: u32::MAX,
@@ -1288,21 +1288,20 @@ fn maximum_radio_evidence_fits_and_round_trips() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_tx_aggregate_timing_evidence_fits_and_round_trips() {
-    use crate::{EvidenceRecord, TxAggregateTimingEvidence};
+    use crate::{network::EvidenceRecord, network::TxAggregateTimingEvidence};
 
     let expected = Envelope::new(
         7,
         3,
         9,
         2,
-        Event::Evidence(EvidenceRecord::TxAggregateTiming(
+        crate::network::Evidence(EvidenceRecord::TxAggregateTiming(
             TxAggregateTimingEvidence {
                 preparation_micros: u32::MAX,
                 preparation_max_micros: u32::MAX,
@@ -1337,21 +1336,20 @@ fn maximum_tx_aggregate_timing_evidence_fits_and_round_trips() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
 #[test]
 fn maximum_flow_transport_evidence_fits_and_round_trips() {
-    use crate::{EvidenceRecord, FlowTransportEvidence};
+    use crate::{network::EvidenceRecord, network::FlowTransportEvidence};
 
     let expected = Envelope::new(
         7,
         3,
         9,
         2,
-        Event::Evidence(EvidenceRecord::FlowTransport(FlowTransportEvidence {
+        crate::network::Evidence(EvidenceRecord::FlowTransport(FlowTransportEvidence {
             rx_maximum_silence_micros: Some(u64::MAX),
             flow_id: u8::MAX,
             rx_bytes: u64::MAX,
@@ -1366,8 +1364,7 @@ fn maximum_flow_transport_evidence_fits_and_round_trips() {
     let frame = encoder.encode(&expected).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(expected));
 }
 
@@ -1380,7 +1377,7 @@ fn startup_artifact_chunk_rejects_empty_and_out_of_range_payloads() {
 
 #[test]
 fn evidence_digest_is_order_and_value_sensitive() {
-    use crate::{EvidenceRecord, TransportEvidence};
+    use crate::{network::EvidenceRecord, network::TransportEvidence};
 
     let first = EvidenceRecord::Transport(TransportEvidence {
         rx_maximum_silence_micros: None,
@@ -1416,44 +1413,10 @@ fn evidence_digest_is_order_and_value_sensitive() {
 }
 
 #[test]
-fn platform_boot_evidence_round_trips_without_a_radio_command() {
-    for reset_reason in [
-        crate::ResetReason::Other,
-        crate::ResetReason::Software,
-        crate::ResetReason::MainWatchdog1,
-    ] {
-        let expected = Envelope::new(
-            7,
-            2,
-            0,
-            3,
-            Event::BootStatus(crate::BootEvidence {
-                reset_reason,
-                raw_reset_reason: 3,
-                post_mortem: None,
-            }),
-        );
-        let mut encoder = FrameEncoder::new();
-        let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(encoder.encode(&expected).unwrap(), |frame| {
-            observed = Some(frame.unwrap())
-        });
-        assert_eq!(observed, Some(expected));
-    }
-    let expected = Envelope::new(7, 2, 0, 3, Command::GetBootStatus);
-    let mut encoder = FrameEncoder::new();
-    let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(encoder.encode(&expected).unwrap(), |frame| {
-        observed = Some(frame.unwrap())
-    });
-    assert_eq!(observed, Some(expected));
-}
-
-#[test]
 fn ieee802154_air_check_validation_accepts_only_contract_bounds() {
-    use crate::{IEEE802154_AIR_CHECK_MAX_CYCLES, Ieee802154AirCheckRequest};
+    use crate::{
+        ieee802154::IEEE802154_AIR_CHECK_MAX_CYCLES, ieee802154::Ieee802154AirCheckRequest,
+    };
     let valid = Ieee802154AirCheckRequest {
         channel: 11,
         cycles: 1,
@@ -1516,10 +1479,11 @@ fn ieee802154_air_check_validation_accepts_only_contract_bounds() {
 #[test]
 fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
     use crate::{
-        IEEE802154_AIR_CHECK_MAX_CYCLES, Ieee802154AirCcaOutcome, Ieee802154AirCheckEvidence,
-        Ieee802154AirCheckRequest, Ieee802154AirCheckStop, Ieee802154AirCycle,
-        Ieee802154AirEnergyOutcome, Ieee802154AirTransmit, Ieee802154AirTxOutcome,
-        Ieee802154AirWindow,
+        ieee802154::IEEE802154_AIR_CHECK_MAX_CYCLES, ieee802154::Ieee802154AirCcaOutcome,
+        ieee802154::Ieee802154AirCheckEvidence, ieee802154::Ieee802154AirCheckRequest,
+        ieee802154::Ieee802154AirCheckStop, ieee802154::Ieee802154AirCycle,
+        ieee802154::Ieee802154AirEnergyOutcome, ieee802154::Ieee802154AirTransmit,
+        ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154AirWindow,
     };
     let transmit = Ieee802154AirTransmit {
         outcome: Ieee802154AirTxOutcome::InvalidAcknowledgement,
@@ -1547,7 +1511,7 @@ fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
         3,
         9,
         2,
-        Command::RunIeee802154AirCheck(Ieee802154AirCheckRequest {
+        crate::ieee802154::RunAirCheck(Ieee802154AirCheckRequest {
             channel: 26,
             cycles: 4,
             energy_scan_micros: u32::MAX,
@@ -1561,7 +1525,7 @@ fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
         3,
         9,
         2,
-        Event::Ieee802154AirCheckCompleted(Ieee802154AirCheckEvidence {
+        crate::ieee802154::AirCheckCompleted(Ieee802154AirCheckEvidence {
             stop: Ieee802154AirCheckStop::Complete,
             completed_cycles: u8::MAX,
             cycles: [cycle; IEEE802154_AIR_CHECK_MAX_CYCLES],
@@ -1571,26 +1535,27 @@ fn ieee802154_air_check_command_and_evidence_fit_and_round_trip() {
 
 fn round_trip<T>(message: Envelope<T>)
 where
-    T: WireBody + serde::Serialize + serde::de::DeserializeOwned + core::fmt::Debug + PartialEq,
+    T: crate::Message + core::fmt::Debug + PartialEq,
 {
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&message).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(message));
 }
 
 #[test]
 fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
     use crate::{
-        IEEE802154_SESSION_FRAME_CAPACITY, IEEE802154_SESSION_RECORDED_FRAMES,
-        Ieee802154AirTxOutcome, Ieee802154SessionAck, Ieee802154SessionConfig,
-        Ieee802154SessionFrame, Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
-        Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionResult,
-        Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
-        Ieee802154SessionTxMode,
+        ieee802154::IEEE802154_SESSION_FRAME_CAPACITY,
+        ieee802154::IEEE802154_SESSION_RECORDED_FRAMES, ieee802154::Ieee802154AirTxOutcome,
+        ieee802154::Ieee802154SessionAck, ieee802154::Ieee802154SessionConfig,
+        ieee802154::Ieee802154SessionFrame, ieee802154::Ieee802154SessionPendingMode,
+        ieee802154::Ieee802154SessionPendingRequest, ieee802154::Ieee802154SessionReceiveEvidence,
+        ieee802154::Ieee802154SessionReceivedFrame, ieee802154::Ieee802154SessionResult,
+        ieee802154::Ieee802154SessionTransmitEvidence,
+        ieee802154::Ieee802154SessionTransmitRequest, ieee802154::Ieee802154SessionTxMode,
     };
     let full = || {
         let mut frame = Ieee802154SessionFrame::new();
@@ -1605,7 +1570,7 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         short_address: u16::MAX,
         extended_address: [u8::MAX; 8],
         promiscuous: true,
-        maintenance_policy: crate::Ieee802154SessionMaintenancePolicy::Quiesced,
+        maintenance_policy: crate::ieee802154::Ieee802154SessionMaintenancePolicy::Quiesced,
         background_maintenance: true,
         enhanced_ack: true,
         wifi_coexistence: true,
@@ -1626,30 +1591,70 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
         }
         .validate()
     );
-    for command in [
-        Command::StartIeee802154Session(config),
-        Command::TransmitIeee802154Session(Ieee802154SessionTransmitRequest {
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::StartSession(config),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::TransmitSession(Ieee802154SessionTransmitRequest {
             frame: full(),
             mode: Ieee802154SessionTxMode::CsmaCa { max_backoffs: 4 },
             max_frame_retries: 15,
         }),
-        Command::ReceiveIeee802154Session,
-        Command::CollectIeee802154Session,
-        Command::SetIeee802154SessionPending(Ieee802154SessionPendingRequest {
+    ));
+    round_trip(Envelope::new(7, 3, 9, 2, crate::ieee802154::ReceiveSession));
+    round_trip(Envelope::new(7, 3, 9, 2, crate::ieee802154::CollectSession));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SetSessionPending(Ieee802154SessionPendingRequest {
             mode: Ieee802154SessionPendingMode::Zigbee,
             short_address: Some(u16::MAX),
         }),
-        Command::StopIeee802154Session,
-        Command::MaintainIeee802154SessionPhy,
-        Command::AssessIeee802154SessionChannel(crate::Ieee802154SessionAssessRequest {
-            channel: 26,
-            energy_scan_micros: 1_000_000,
-        }),
-        Command::RestartIeee802154SessionRadio,
-        Command::ReadIeee802154SessionRecentRssi,
-    ] {
-        round_trip(Envelope::new(7, 3, 9, 2, command));
-    }
+    ));
+    round_trip(Envelope::new(7, 3, 9, 2, crate::ieee802154::StopSession));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::MaintainSessionPhy,
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::AssessSessionChannel(
+            crate::ieee802154::Ieee802154SessionAssessRequest {
+                channel: 26,
+                energy_scan_micros: 1_000_000,
+            },
+        ),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::RestartSessionRadio,
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::ReadSessionRecentRssi,
+    ));
     let mut frames = heapless::Vec::new();
     for _ in 0..IEEE802154_SESSION_RECORDED_FRAMES {
         frames
@@ -1661,9 +1666,19 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
             })
             .unwrap();
     }
-    for event in [
-        Event::Ieee802154SessionStarted(Ieee802154SessionResult::StartFailed),
-        Event::Ieee802154SessionTransmitted(Ieee802154SessionTransmitEvidence {
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionStarted(Ieee802154SessionResult::StartFailed),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionTransmitted(Ieee802154SessionTransmitEvidence {
             result: Ieee802154SessionResult::Done,
             outcome: Ieee802154AirTxOutcome::Success,
             acknowledgement: Some(Ieee802154SessionAck {
@@ -1672,52 +1687,92 @@ fn ieee802154_session_messages_at_their_bounds_fit_and_round_trip() {
                 lqi: u8::MAX,
             }),
         }),
-        Event::Ieee802154SessionReceived(Ieee802154SessionReceiveEvidence {
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionReceived(Ieee802154SessionReceiveEvidence {
             result: Ieee802154SessionResult::Done,
             total: u16::MAX,
             frames,
         }),
-        Event::Ieee802154SessionStopped(crate::Ieee802154SessionStopEvidence {
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionStopped(crate::ieee802154::Ieee802154SessionStopEvidence {
             result: Ieee802154SessionResult::Done,
-            maintenance: crate::Ieee802154SessionMaintenanceCounts {
+            maintenance: crate::ieee802154::Ieee802154SessionMaintenanceCounts {
                 not_due: u16::MAX,
                 tracked: u16::MAX,
                 awaiting_other_clients: u16::MAX,
                 busy: u16::MAX,
                 failed: true,
             },
-            coexistence: crate::Ieee802154SessionCoexistence {
+            coexistence: crate::ieee802154::Ieee802154SessionCoexistence {
                 enabled: true,
                 disable_failed: true,
             },
         }),
-        Event::Ieee802154SessionPhyMaintained(crate::Ieee802154SessionPhyMaintenance::Tracked),
-        Event::Ieee802154SessionRadioRestarted(crate::Ieee802154SessionRestartEvidence {
-            result: crate::Ieee802154SessionResult::StopFailed,
-            rf_closed: true,
-        }),
-        Event::Ieee802154SessionRecentRssi(crate::Ieee802154SessionRecentRssi {
-            result: crate::Ieee802154SessionResult::Done,
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionPhyMaintained(
+            crate::ieee802154::Ieee802154SessionPhyMaintenance::Tracked,
+        ),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionRadioRestarted(
+            crate::ieee802154::Ieee802154SessionRestartEvidence {
+                result: crate::ieee802154::Ieee802154SessionResult::StopFailed,
+                rf_closed: true,
+            },
+        ),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionRecentRssi(crate::ieee802154::Ieee802154SessionRecentRssi {
+            result: crate::ieee802154::Ieee802154SessionResult::Done,
             rssi_dbm: i8::MIN,
         }),
-        Event::Ieee802154SessionAssessed(crate::Ieee802154SessionAssessment {
-            result: crate::Ieee802154SessionResult::Done,
-            energy: crate::Ieee802154AirEnergyOutcome::Energy(i8::MIN),
-            cca: crate::Ieee802154AirCcaOutcome::Busy,
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SessionAssessed(crate::ieee802154::Ieee802154SessionAssessment {
+            result: crate::ieee802154::Ieee802154SessionResult::Done,
+            energy: crate::ieee802154::Ieee802154AirEnergyOutcome::Energy(i8::MIN),
+            cca: crate::ieee802154::Ieee802154AirCcaOutcome::Busy,
         }),
-    ] {
-        round_trip(Envelope::new(7, 3, 9, 2, event));
-    }
+    ));
 }
 
 #[test]
 fn ieee802154_thread_messages_at_their_bounds_fit_and_round_trip() {
     use crate::{
-        IEEE802154_THREAD_DATASET_CAPACITY, IEEE802154_THREAD_PAYLOAD_CAPACITY,
-        IEEE802154_THREAD_RECORDED_DATAGRAMS, Ieee802154SessionResult, Ieee802154ThreadDatagram,
-        Ieee802154ThreadDataset, Ieee802154ThreadPayload, Ieee802154ThreadReceiveEvidence,
-        Ieee802154ThreadRole, Ieee802154ThreadSendRequest, Ieee802154ThreadStartRequest,
-        Ieee802154ThreadState,
+        ieee802154::IEEE802154_THREAD_DATASET_CAPACITY,
+        ieee802154::IEEE802154_THREAD_PAYLOAD_CAPACITY,
+        ieee802154::IEEE802154_THREAD_RECORDED_DATAGRAMS, ieee802154::Ieee802154SessionResult,
+        ieee802154::Ieee802154ThreadDatagram, ieee802154::Ieee802154ThreadDataset,
+        ieee802154::Ieee802154ThreadPayload, ieee802154::Ieee802154ThreadReceiveEvidence,
+        ieee802154::Ieee802154ThreadRole, ieee802154::Ieee802154ThreadSendRequest,
+        ieee802154::Ieee802154ThreadStartRequest, ieee802154::Ieee802154ThreadState,
     };
     let payload = || {
         let mut payload = Ieee802154ThreadPayload::new();
@@ -1730,23 +1785,31 @@ fn ieee802154_thread_messages_at_their_bounds_fit_and_round_trip() {
     dataset
         .extend_from_slice(&[0x5a; IEEE802154_THREAD_DATASET_CAPACITY])
         .unwrap();
-    for command in [
-        Command::StartIeee802154Thread(Ieee802154ThreadStartRequest {
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::StartThread(Ieee802154ThreadStartRequest {
             dataset,
             rx_on_when_idle: true,
             udp_port: u16::MAX,
         }),
-        Command::QueryIeee802154Thread,
-        Command::SendIeee802154Thread(Ieee802154ThreadSendRequest {
+    ));
+    round_trip(Envelope::new(7, 3, 9, 2, crate::ieee802154::GetThread));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::SendThread(Ieee802154ThreadSendRequest {
             destination: [u8::MAX; 16],
             port: u16::MAX,
             payload: payload(),
         }),
-        Command::CollectIeee802154Thread,
-        Command::StopIeee802154Thread,
-    ] {
-        round_trip(Envelope::new(7, 3, 9, 2, command));
-    }
+    ));
+    round_trip(Envelope::new(7, 3, 9, 2, crate::ieee802154::CollectThread));
+    round_trip(Envelope::new(7, 3, 9, 2, crate::ieee802154::StopThread));
     let mut datagrams = heapless::Vec::new();
     for _ in 0..IEEE802154_THREAD_RECORDED_DATAGRAMS {
         datagrams
@@ -1757,32 +1820,59 @@ fn ieee802154_thread_messages_at_their_bounds_fit_and_round_trip() {
             })
             .unwrap();
     }
-    for event in [
-        Event::Ieee802154ThreadStarted(Ieee802154SessionResult::StartFailed),
-        Event::Ieee802154ThreadState(Ieee802154ThreadState {
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::ThreadStarted(Ieee802154SessionResult::StartFailed),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::ThreadState(Ieee802154ThreadState {
             result: Ieee802154SessionResult::Done,
             role: Ieee802154ThreadRole::Leader,
             rloc16: u16::MAX,
             mesh_local_eid: Some([u8::MAX; 16]),
         }),
-        Event::Ieee802154ThreadSent(Ieee802154SessionResult::CommandRejected),
-        Event::Ieee802154ThreadReceived(Ieee802154ThreadReceiveEvidence {
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::ThreadSent(Ieee802154SessionResult::CommandRejected),
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::ThreadReceived(Ieee802154ThreadReceiveEvidence {
             result: Ieee802154SessionResult::EventsLost,
             total: u16::MAX,
             datagrams,
         }),
-        Event::Ieee802154ThreadStopped(Ieee802154SessionResult::StopFailed),
-    ] {
-        round_trip(Envelope::new(7, 3, 9, 2, event));
-    }
+    ));
+    round_trip(Envelope::new(
+        7,
+        3,
+        9,
+        2,
+        crate::ieee802154::ThreadStopped(Ieee802154SessionResult::StopFailed),
+    ));
 }
 
 #[test]
 fn ieee802154_route_probe_messages_at_their_bounds_fit_and_round_trip() {
     use crate::{
-        IEEE802154_ROUTE_PROBE_MAX_ENTRIES, Ieee802154ObservedEventState,
-        Ieee802154RouteProbeEntry, Ieee802154RouteProbeEvidence, Ieee802154RouteProbeRequest,
-        Ieee802154RouteProbeStop, Ieee802154SameBitOutcome,
+        ieee802154::IEEE802154_ROUTE_PROBE_MAX_ENTRIES, ieee802154::Ieee802154ObservedEventState,
+        ieee802154::Ieee802154RouteProbeEntry, ieee802154::Ieee802154RouteProbeEvidence,
+        ieee802154::Ieee802154RouteProbeRequest, ieee802154::Ieee802154RouteProbeStop,
+        ieee802154::Ieee802154SameBitOutcome,
     };
     let request = Ieee802154RouteProbeRequest {
         threshold_micros: 10_000,
@@ -1810,7 +1900,7 @@ fn ieee802154_route_probe_messages_at_their_bounds_fit_and_round_trip() {
         3,
         9,
         2,
-        Command::ProbeIeee802154Route(request),
+        crate::ieee802154::ProbeRoute(request),
     ));
     let entry = Ieee802154RouteProbeEntry {
         snapshot: Ieee802154ObservedEventState::Unclassified,
@@ -1828,7 +1918,7 @@ fn ieee802154_route_probe_messages_at_their_bounds_fit_and_round_trip() {
         3,
         9,
         2,
-        Event::Ieee802154RouteProbeCompleted(Ieee802154RouteProbeEvidence {
+        crate::ieee802154::RouteProbed(Ieee802154RouteProbeEvidence {
             stop: Ieee802154RouteProbeStop::RouteFailed,
             polled_snapshot: Ieee802154ObservedEventState::Timer0Only,
             polled_after_acknowledgement: Ieee802154ObservedEventState::Clear,
@@ -1841,92 +1931,31 @@ fn ieee802154_route_probe_messages_at_their_bounds_fit_and_round_trip() {
     ));
 }
 
-/// The largest post-mortem summary and a full checkpoint page fit one frame.
-#[test]
-fn the_largest_post_mortem_fits_a_frame() {
-    use crate::{
-        BootEvidence, Checkpoint, Fault, HangFault, HartState, POST_MORTEM_CHECKPOINT_PAGE,
-        PanicFault, PostMortemCheckpoints, PostMortemSummary, ResetReason,
-    };
-    let text = |bytes: usize| "x".repeat(bytes);
-    let hart = HartState {
-        responded: true,
-        mepc: u32::MAX,
-        ra: u32::MAX,
-        sp: u32::MAX,
-        mcause: u32::MAX,
-        mstatus: u32::MAX,
-    };
-    let faults = [
-        Fault::Hang(HangFault {
-            detected_uptime_ms: u32::MAX,
-            stalled_executors: u8::MAX,
-            harts: [hart; 2],
-            samples: [u32::MAX; 16],
-            stalled_task: Some(crate::TaskStall {
-                slot: crate::TaskSlot::SessionEvidence,
-                pending_ms: u32::MAX,
-            }),
-        }),
-        Fault::Panic(PanicFault {
-            file: text(48).as_str().try_into().unwrap(),
-            line: u32::MAX,
-            message: text(96).as_str().try_into().unwrap(),
-        }),
-    ];
-    let mut encoder = FrameEncoder::new();
-    for fault in faults {
-        let boot = Event::BootStatus(BootEvidence {
-            reset_reason: ResetReason::CpuLockup,
-            raw_reset_reason: u8::MAX,
-            post_mortem: Some(PostMortemSummary {
-                boot_count: u32::MAX,
-                checkpoints: u8::MAX,
-                fault: Some(fault),
-            }),
-        });
-        encoder
-            .encode(&Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, boot))
-            .unwrap();
-    }
-    let mut checkpoints = heapless::Vec::new();
-    for _ in 0..POST_MORTEM_CHECKPOINT_PAGE {
-        checkpoints
-            .push(Checkpoint {
-                name: text(crate::CHECKPOINT_NAME_BYTES)
-                    .as_str()
-                    .try_into()
-                    .unwrap(),
-                arg: u32::MAX,
-                uptime_ms: u32::MAX,
-                hart: u8::MAX,
-            })
-            .unwrap();
-    }
-    let page = Event::PostMortemCheckpoints(PostMortemCheckpoints {
-        first: u8::MAX,
-        checkpoints,
-    });
-    encoder
-        .encode(&Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, page))
-        .unwrap();
-}
-
 #[test]
 fn full_trace_pages_fit_a_frame_and_round_trip() {
-    let entry = crate::TraceEntry {
+    let entry = crate::telemetry::TraceEntry {
         tag: u16::MAX,
         kind: u16::MAX,
         t_us: u32::MAX,
         words: [u32::MAX; 2],
     };
-    let events = [
-        Event::TraceEntries(crate::TraceEntries {
+    round_trip(Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        crate::telemetry::TraceEntriesPage(crate::telemetry::TraceEntries {
             first: u16::MAX,
             next: u16::MAX,
-            entries: core::iter::repeat_n(entry, crate::TRACE_ENTRY_PAGE).collect(),
+            entries: core::iter::repeat_n(entry, crate::telemetry::TRACE_ENTRY_PAGE).collect(),
         }),
-        Event::TraceSnapshot(Some(crate::TraceSnapshotPage {
+    ));
+    round_trip(Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        crate::telemetry::TraceSnapshot(Some(crate::telemetry::TraceSnapshotPage {
             slot: u8::MAX,
             point: u16::MAX,
             tag: u16::MAX,
@@ -1934,9 +1963,15 @@ fn full_trace_pages_fit_a_frame_and_round_trip() {
             len: u16::MAX,
             truncated: true,
             offset: u16::MAX,
-            words: core::iter::repeat_n(u32::MAX, crate::TRACE_SNAPSHOT_PAGE).collect(),
+            words: core::iter::repeat_n(u32::MAX, crate::telemetry::TRACE_SNAPSHOT_PAGE).collect(),
         })),
-        Event::TraceStatus(crate::TraceStatus {
+    ));
+    round_trip(Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        crate::telemetry::TraceState(crate::telemetry::TraceStatus {
             installed: true,
             entries: u16::MAX,
             snapshot_slots: u8::MAX,
@@ -1949,17 +1984,7 @@ fn full_trace_pages_fit_a_frame_and_round_trip() {
             stored_entries: u16::MAX,
             stored_snapshots: u8::MAX,
         }),
-    ];
-    let mut encoder = FrameEncoder::new();
-    for body in events {
-        let expected = Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, body);
-        let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(encoder.encode(&expected).unwrap(), |result| {
-            observed = Some(result.unwrap())
-        });
-        assert_eq!(observed, Some(expected));
-    }
+    ));
 }
 
 #[test]
@@ -1970,40 +1995,39 @@ fn the_largest_hci_exchange_fits_one_frame_each_way() {
         u32::MAX,
         u64::MAX,
         u32::MAX,
-        Command::BluetoothHci(crate::BluetoothHciRequest::Command {
+        crate::bluetooth::ExchangeHci(crate::bluetooth::BluetoothHciRequest::Command {
             opcode: u16::MAX,
-            parameters: heapless::Vec::from_slice(&[0xa5; crate::BLUETOOTH_HCI_PARAMETER_BYTES])
-                .unwrap(),
+            parameters: heapless::Vec::from_slice(
+                &[0xa5; crate::bluetooth::BLUETOOTH_HCI_PARAMETER_BYTES],
+            )
+            .unwrap(),
         }),
     );
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(encoder.encode(&command).unwrap(), |result| {
-        observed = Some(result.unwrap())
-    });
+    let observed = receive(&mut decoder, encoder.encode(&command).unwrap()).map(Result::unwrap);
     assert_eq!(observed, Some(command));
     let event = Envelope::new(
         u64::MAX,
         u32::MAX,
         u64::MAX,
         u32::MAX,
-        Event::BluetoothHci(crate::BluetoothHciResponse::Event {
-            packet: heapless::Vec::from_slice(&[0x5a; crate::BLUETOOTH_HCI_EVENT_BYTES]).unwrap(),
+        crate::bluetooth::HciResponse(crate::bluetooth::BluetoothHciResponse::Event {
+            packet: heapless::Vec::from_slice(&[0x5a; crate::bluetooth::BLUETOOTH_HCI_EVENT_BYTES])
+                .unwrap(),
             dropped: u16::MAX,
         }),
     );
     let frame = encoder.encode(&event).unwrap();
     assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed(frame, |result| observed = Some(result.unwrap()));
+    let observed = receive(&mut decoder, frame).map(Result::unwrap);
     assert_eq!(observed, Some(event));
 }
 
 #[test]
-fn an_intact_frame_with_an_undecodable_body_names_its_request() {
-    // A command variant this build cannot decode, as a build without its
-    // radio family sees one: an intact frame whose body is no known command.
+fn an_intact_frame_whose_payload_is_not_its_type_is_a_payload_error() {
+    // Equal keys mean equal schemas, so only a defective sender produces
+    // this: an intact frame whose body is no value of the type it names.
     let expected = command(9);
     let mut encoder = FrameEncoder::new();
     let frame = encoder.encode(&expected).unwrap();
@@ -2015,7 +2039,7 @@ fn an_intact_frame_with_an_undecodable_body_names_its_request() {
     assert_eq!(
         protected,
         WIRE_HEADER_BYTES + 1,
-        "Start is one variant byte"
+        "a hang target is one variant byte"
     );
     raw[WIRE_HEADER_BYTES] = 0x7f;
     let checksum = CRC32C.checksum(&raw[..protected]).to_le_bytes();
@@ -2026,15 +2050,27 @@ fn an_intact_frame_with_an_undecodable_body_names_its_request() {
     let frame = &reencoded[..written + 3];
 
     let mut decoder = FrameDecoder::new();
-    let mut observed = None;
-    decoder.feed::<Command>(frame, |result| observed = Some(result));
-    assert_eq!(
-        observed,
-        Some(Err(DecodeError::UndecodableBody(RequestIdentity {
-            boot_id: expected.boot_id,
-            session_id: expected.session_id,
-            request_id: expected.request_id,
-        })))
-    );
-    assert_eq!(decoder.counters().deserialize_errors, 1);
+    let observed = receive::<InjectHang>(&mut decoder, frame);
+    assert_eq!(observed, Some(Err(DecodeError::Payload)));
+    assert_eq!(decoder.counters().frames, 1);
+}
+
+#[test]
+fn a_message_serialized_by_its_producer_frames_like_an_encoded_one() {
+    let expected = command(11);
+    let mut encoder = FrameEncoder::new();
+    let direct = encoder.encode(&expected).unwrap().to_vec();
+    let outbound = Outbound::new(
+        expected.message_sequence,
+        expected.session_id,
+        expected.request_id,
+        &expected.body,
+    )
+    .unwrap();
+    assert!(outbound.is::<InjectHang>());
+    let queued = encoder
+        .encode_outbound(expected.boot_id, &outbound)
+        .unwrap()
+        .to_vec();
+    assert_eq!(queued, direct);
 }

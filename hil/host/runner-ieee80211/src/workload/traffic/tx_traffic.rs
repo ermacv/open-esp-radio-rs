@@ -15,8 +15,9 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionFlowConfig,
-    SessionLinkRequirements, Transport,
+    network::Completion, network::Direction, network::FlowConfig, network::Ipv4Endpoint,
+    network::SessionConfig, network::SessionFlowConfig, network::SessionLinkRequirements,
+    network::Transport,
 };
 
 use crate::{
@@ -282,7 +283,7 @@ pub fn run(
         Err(error) => return capture.finish_with(Err(error)),
     };
     let session = match capture.start_session(SessionConfig {
-        network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
+        network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::Station,
         transport: Transport::Udp,
         direction: Direction::Tx,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),

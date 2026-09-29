@@ -186,7 +186,8 @@ fn collect(
                     Ok((length, source)) if source == target && length >= 4 => {
                         // A retried preflight response may arrive after Start. It is
                         // control traffic and never part of delivery accounting.
-                        if oer_hil_protocol::UdpProbe::decode(&packet[..length]).is_some() {
+                        if oer_hil_protocol::network::UdpProbe::decode(&packet[..length]).is_some()
+                        {
                             continue;
                         }
                         let sequence =

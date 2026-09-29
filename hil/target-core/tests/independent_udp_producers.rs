@@ -1,6 +1,7 @@
 //! Exercise the target's real producer with independently controlled sockets.
 use multi_tx::Producer;
-use oer_hil_protocol::*;
+use oer_hil_protocol::network::*;
+use oer_hil_protocol::wifi::WifiNetworkInterface;
 use oer_hil_target_core::traffic::multi_tx;
 use std::{
     cell::Cell,

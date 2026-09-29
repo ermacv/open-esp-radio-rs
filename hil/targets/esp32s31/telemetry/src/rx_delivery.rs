@@ -1,8 +1,9 @@
 //! Exact, session-scoped UDP RX delivery evidence for qualification images.
 
 use oer_hil_protocol::{
-    RxConsumerLedgerEvidence, RxDeliveryEvidence, RxForwardGapEvidence, RxMacOrderEvidence,
-    RxReorderDeliveryEvidence, RxSequenceStageEvidence,
+    network::RxConsumerLedgerEvidence, network::RxDeliveryEvidence, network::RxForwardGapEvidence,
+    network::RxMacOrderEvidence, network::RxReorderDeliveryEvidence,
+    network::RxSequenceStageEvidence,
 };
 use oer_ieee80211_mac::sequence::SequenceNumber;
 

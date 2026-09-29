@@ -26,7 +26,7 @@ use oer_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTrack
 
 use oer_hil_esp32s31_telemetry::rx_evidence::{RxAmpduCounters, RxPhyCounters, RxSmpduCounters};
 #[cfg(feature = "rx-delivery-telemetry")]
-use oer_hil_protocol::{RxDeliveryEvidence, RxReorderDeliveryEvidence};
+use oer_hil_protocol::{network::RxDeliveryEvidence, network::RxReorderDeliveryEvidence};
 #[cfg(feature = "rx-delivery-telemetry")]
 use oer_network_interface::FrameLengthError;
 #[cfg(feature = "station-exit-evidence")]

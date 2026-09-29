@@ -12,9 +12,11 @@ use gatt_application::gatt;
 use gatt_application::gatt::Observation;
 use oer_bluetooth_hci::bt_hci::controller::ExternalController;
 use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
-use oer_hil_protocol::BluetoothGattEvidence;
 #[cfg(feature = "bluetooth-gatt")]
-use oer_hil_protocol::{Command, Event, FeatureCapabilities, RejectReason};
+use oer_hil_protocol::RequestIdentity;
+use oer_hil_protocol::bluetooth::BluetoothGattEvidence;
+#[cfg(feature = "bluetooth-gatt")]
+use oer_hil_protocol::bluetooth::{GattState, GetGatt};
 use static_cell::StaticCell;
 use trouble_host::prelude::*;
 
@@ -32,26 +34,33 @@ static RESOURCES: StaticCell<HostResources<DefaultPacketPool, 1, 3>> = StaticCel
 struct Profile(Cell<BluetoothGattEvidence>);
 
 #[cfg(feature = "bluetooth-gatt")]
+oer_hil_target_core::requests! {
+    /// The Trouble GATT image's requests.
+    pub(super) enum Request (sessions = false) {
+        Get(GetGatt),
+    }
+}
+
+#[cfg(feature = "bluetooth-gatt")]
 impl console::Profile for Profile {
-    fn features(&self) -> FeatureCapabilities {
-        FeatureCapabilities {
-            bluetooth_gatt: true,
-            ..FeatureCapabilities::default()
-        }
+    type Request = Request;
+
+    fn queue(&self) -> &'static console::Queue<Request> {
+        static QUEUE: console::Queue<Request> = console::Queue::new();
+        &QUEUE
     }
 
     fn maximum_payload_bytes(&self) -> u16 {
         0
     }
 
-    async fn command(&self, command: Command) -> Event {
-        match command {
-            Command::QueryBluetoothGatt => {
+    async fn serve(&self, request: RequestIdentity, body: Request) {
+        match body {
+            Request::Get(GetGatt) => {
                 let mut value = self.0.get();
                 value.cpu0_stack = Some(crate::cpu0_stack_usage_snapshot());
-                Event::BluetoothGatt(value)
+                console::respond(request, Ok(GattState(value))).await;
             }
-            _ => Event::Rejected(RejectReason::InvalidState),
         }
     }
 }
@@ -68,15 +77,17 @@ pub(super) async fn task(
     let profile = Profile(Cell::new(BluetoothGattEvidence::default()));
     let host = core::pin::pin!(runner.run());
     let application = core::pin::pin!(gatt::run(&stack, |event| observe(&profile.0, event)));
-    let console = core::pin::pin!(console::run(usb, boot, &profile));
-    match embassy_futures::select::select3(host, application, console).await {
-        embassy_futures::select::Either3::First(_) => {
+    let console = core::pin::pin!(console::serve_console(usb, boot, &profile));
+    let requests = core::pin::pin!(console::serve_requests(&profile));
+    match embassy_futures::select::select4(host, application, console, requests).await {
+        embassy_futures::select::Either4::First(_) => {
             crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-host-stopped\r\n")
         }
-        embassy_futures::select::Either3::Second(_) => {
+        embassy_futures::select::Either4::Second(_) => {
             crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-gatt-stopped\r\n")
         }
-        embassy_futures::select::Either3::Third(never) => match never {},
+        embassy_futures::select::Either4::Third(never)
+        | embassy_futures::select::Either4::Fourth(never) => match never {},
     }
 }
 

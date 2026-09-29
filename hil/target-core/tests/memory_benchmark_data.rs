@@ -3,7 +3,8 @@
 use oer_hil_target_core::memory_benchmark as data;
 
 use oer_hil_protocol::{
-    MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource, MemoryBenchmarkStop,
+    system::MemoryBenchmarkMode, system::MemoryBenchmarkRequest, system::MemoryBenchmarkSource,
+    system::MemoryBenchmarkStop,
 };
 
 const LENGTHS: &[usize] = &[1, 31, 32, 33, 63, 64, 65, 1514, 4095, 4096];

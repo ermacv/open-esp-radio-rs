@@ -12,7 +12,7 @@ use crate::{
         StationIpv4Definition,
     },
 };
-use oer_hil_protocol::WifiChannelWidth;
+use oer_hil_protocol::wifi::WifiChannelWidth;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -51,7 +51,7 @@ fn fixture() -> (PathBuf, PathBuf) {
             "runner": {
                 "package": "runner",
                 "version": "1",
-                "protocol_version": 1,
+                "messages_lock_sha256": "00",
                 "host_os": "linux",
                 "host_arch": "x86_64",
                 "tools": []
@@ -69,7 +69,8 @@ fn fixture() -> (PathBuf, PathBuf) {
                 "runtime_elf_sha256": "00".repeat(32),
                 "runtime_bin_sha256": "11".repeat(32),
                 "bootstrap_elf_sha256": "22".repeat(32)
-            }]
+            }],
+            "messages_used": ["base/hello"]
         }),
     )
     .unwrap();

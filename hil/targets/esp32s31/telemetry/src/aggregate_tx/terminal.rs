@@ -1,6 +1,6 @@
 //! Terminal receipts only; no intermediate BA or live-tail inference.
 use core::sync::atomic::{AtomicU32, Ordering};
-use oer_hil_protocol::StationTxTerminalEvidence;
+use oer_hil_protocol::network::StationTxTerminalEvidence;
 use oer_ieee80211_softmac::{MacAmpduTxResult, MacAmpduTxStatus};
 
 pub(super) struct Counters {

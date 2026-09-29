@@ -49,7 +49,7 @@ fn initial_absence_cannot_be_satisfied_by_a_recovery_epoch_or_another_role() {
     };
     assert!(validate_event(initial, initial, "initial absence").is_ok());
     assert!(validate_event(recovery, initial, "initial absence").is_err());
-    use oer_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+    use oer_hil_protocol::{wifi::WifiRole, wifi::WifiRoleTransitionEvidence};
     let admitted = WifiRoleTransitionEvidence {
         previous: WifiRole::Idle,
         current: WifiRole::Station,

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn retention_gate_reports_loss_before_radio_instead_of_a_generic_delivery_failure() {
-    use oer_hil_protocol::{WifiAccessPointEvidence, WifiTxRetentionEvidence};
+    use oer_hil_protocol::{wifi::WifiAccessPointEvidence, wifi::WifiTxRetentionEvidence};
     let stopped = WifiAccessPointEvidence {
         tx_retention: Some(WifiTxRetentionEvidence {
             unicast_power_save_full: 3,
@@ -20,7 +20,9 @@ fn retention_gate_reports_loss_before_radio_instead_of_a_generic_delivery_failur
 
 #[test]
 fn protocol_rejection_gate_names_the_exact_retained_failure() {
-    use oer_hil_protocol::{WifiAccessPointEvidence, WifiRxRejection, WifiRxRejectionReason};
+    use oer_hil_protocol::{
+        wifi::WifiAccessPointEvidence, wifi::WifiRxRejection, wifi::WifiRxRejectionReason,
+    };
     let evidence = WifiAccessPointEvidence {
         protected_data_protocol_rejected: 1,
         first_rx_protocol_rejection: Some(WifiRxRejection {
@@ -75,8 +77,10 @@ fn cleanup_annotation_preserves_fixture_cancellation_and_scenario_causes() {
     }
 }
 use oer_hil_protocol::{
-    Finished, RadioEvidence, ResultSummary, RxConsumerLedgerEvidence, RxDeliveryEvidence,
-    RxRadioEvidence, RxSequenceStageEvidence, StackUsage, StackWatermark, TransportEvidence,
+    network::Finished, network::RadioEvidence, network::ResultSummary,
+    network::RxConsumerLedgerEvidence, network::RxDeliveryEvidence, network::RxRadioEvidence,
+    network::RxSequenceStageEvidence, network::TransportEvidence, system::StackUsage,
+    system::StackWatermark,
 };
 
 fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> SessionEvidence {
@@ -90,7 +94,7 @@ fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> Sessi
         transport_errors: 0,
     };
     SessionEvidence {
-        link: oer_hil_protocol::LinkHealth {
+        link: oer_hil_protocol::base::LinkHealth {
             rx_frames: 1,
             rx_cobs_errors: 0,
             rx_checksum_errors: 0,
@@ -103,16 +107,16 @@ fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> Sessi
         },
         finished: Finished {
             summary: ResultSummary {
-                verdict: oer_hil_protocol::SessionVerdict::Passed,
+                verdict: oer_hil_protocol::network::SessionVerdict::Passed,
                 evidence_records: 0,
             },
             evidence_crc32c: 0,
         },
         transport,
         flow_transport: [
-            Some(oer_hil_protocol::FlowTransportEvidence::from_session_total(
-                0, transport,
-            )),
+            Some(
+                oer_hil_protocol::network::FlowTransportEvidence::from_session_total(0, transport),
+            ),
             None,
         ],
         radio: (rx_units != 0).then_some(RadioEvidence {
@@ -541,7 +545,7 @@ fn ap_ht40_mcs7_gate_is_directional_and_fails_closed() {
     };
     let rx = udp(Some(1), None);
     let tx = udp(None, Some(1));
-    let mut observed = oer_hil_protocol::WifiAccessPointEvidence::default();
+    let mut observed = oer_hil_protocol::wifi::WifiAccessPointEvidence::default();
     assert!(validate_mcs_evidence(&rx, link, &observed).is_err());
     observed.rx_ht_data_frames = 1;
     observed.rx_ht40_mcs_frames[7] = 1;
@@ -570,7 +574,7 @@ fn ap_guard_interval_gate_tolerates_only_epoch_warmup_frames() {
         },
         criteria: Default::default(),
     });
-    let mut observed = oer_hil_protocol::WifiAccessPointEvidence {
+    let mut observed = oer_hil_protocol::wifi::WifiAccessPointEvidence {
         rx_ht_data_frames: 100,
         rx_ht40_short_gi_frames: 99,
         rx_ht40_long_gi_frames: 1,
@@ -586,7 +590,7 @@ fn ap_guard_interval_gate_tolerates_only_epoch_warmup_frames() {
 
 #[test]
 fn ap_hardware_rx_health_uses_terminal_mac_counters() {
-    let mut observed = oer_hil_protocol::WifiAccessPointEvidence::default();
+    let mut observed = oer_hil_protocol::wifi::WifiAccessPointEvidence::default();
     assert!(validate_rx_hardware_health(0, &observed).is_ok());
 
     observed.rx_hardware.buffer_full = 1;
@@ -603,7 +607,7 @@ fn ap_hardware_rx_health_uses_terminal_mac_counters() {
 
 #[test]
 fn functional_ap_observation_does_not_require_optional_pipeline_report() {
-    let observed = oer_hil_protocol::WifiAccessPointEvidence {
+    let observed = oer_hil_protocol::wifi::WifiAccessPointEvidence {
         beacons_transmitted: 1,
         authentication_responses: 1,
         association_responses: 1,

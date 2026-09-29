@@ -11,9 +11,10 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    Completion, Direction as HilDirection, FlowConfig, Ipv4Endpoint, SessionConfig,
-    SessionFlowConfig, SessionLinkRequirements, Transport, WifiNetworkInterface, WifiRole,
-    WifiStationAccessPointRequest,
+    network::Completion, network::Direction as HilDirection, network::FlowConfig,
+    network::Ipv4Endpoint, network::SessionConfig, network::SessionFlowConfig,
+    network::SessionLinkRequirements, network::Transport, wifi::WifiNetworkInterface,
+    wifi::WifiRole, wifi::WifiStationAccessPointRequest,
 };
 use serde::Serialize;
 
@@ -63,7 +64,7 @@ struct Report {
     maximum_fairness_skew_percent: u8,
     station: InterfaceReport,
     access_point: InterfaceReport,
-    access_point_epoch: Option<oer_hil_protocol::WifiAccessPointEvidence>,
+    access_point_epoch: Option<oer_hil_protocol::wifi::WifiAccessPointEvidence>,
     access_point_air: Option<LocalAirMonitorEvidence>,
 }
 
@@ -127,7 +128,7 @@ fn qualify(
     output: &Path,
 ) -> Result<QualificationOutcome> {
     let capabilities = capture.prepare_station(context.target(), config.timeout)?;
-    if !capabilities.features.simultaneous_station_access_point {
+    if !capabilities.has::<oer_hil_protocol::wifi::StationAccessPoint>() {
         return Err("firmware does not advertise simultaneous STA+AP".into());
     }
     let _ = stop_station(capture, config.timeout)?;
@@ -135,7 +136,7 @@ fn qualify(
     let access_point_request = context
         .lab
         .access_point
-        .protocol_request(oer_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
+        .protocol_request(oer_hil_protocol::wifi::WifiAccessPointSecurity::Wpa2Personal)?;
     let request = WifiStationAccessPointRequest {
         station_credentials: context.lab.station.protocol_credentials()?,
         access_point: access_point_request.clone(),
@@ -550,7 +551,9 @@ fn validate_fairness(name: &str, first: u64, second: u64, maximum_skew: u8) -> R
     Ok(())
 }
 
-fn validate_access_point_epoch(evidence: oer_hil_protocol::WifiAccessPointEvidence) -> Result<()> {
+fn validate_access_point_epoch(
+    evidence: oer_hil_protocol::wifi::WifiAccessPointEvidence,
+) -> Result<()> {
     if evidence.beacons_transmitted == 0
         || evidence.missed_beacon_intervals != 0
         || evidence.maximum_beacon_lateness_micros >= 102_400

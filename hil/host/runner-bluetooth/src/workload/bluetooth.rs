@@ -10,7 +10,9 @@ pub mod secure_gatt;
 
 use crate::{Result, fixture::bluetooth};
 use hil_core::{context::Context, session::SerialCapture};
-use oer_hil_protocol::{BluetoothDtmOperation as Operation, BluetoothDtmResult};
+use oer_hil_protocol::{
+    bluetooth::BluetoothDtmOperation as Operation, bluetooth::BluetoothDtmResult,
+};
 use std::{path::Path, time::Duration};
 
 /// How the adapter's receiver ended while both sides listened.
@@ -77,7 +79,7 @@ fn probe(
     quiet_cycles: Option<u16>,
 ) -> Result<()> {
     let caps = capture.request_capabilities(Duration::from_secs(10))?;
-    if !caps.features.bluetooth_dtm {
+    if !caps.has::<oer_hil_protocol::bluetooth::Dtm>() {
         return Err("firmware lacks Bluetooth DTM control".into());
     }
     capture.bluetooth_dtm(Operation::Reset)?;

@@ -9,7 +9,7 @@ fn fairness_is_symmetric_and_bounded() {
 
 #[test]
 fn access_point_epoch_rejects_one_beacon_period_lateness() {
-    let evidence = oer_hil_protocol::WifiAccessPointEvidence {
+    let evidence = oer_hil_protocol::wifi::WifiAccessPointEvidence {
         beacons_transmitted: 1,
         maximum_beacon_lateness_micros: 102_400,
         ..Default::default()
@@ -46,9 +46,9 @@ fn both_reverse_probes_finish_before_collectors_start() {
         .map(|peer| {
             let peer = peer.try_clone().unwrap();
             thread::spawn(move || {
-                let mut bytes = [0; oer_hil_protocol::UdpProbe::LENGTH];
+                let mut bytes = [0; oer_hil_protocol::network::UdpProbe::LENGTH];
                 let length = peer.recv(&mut bytes).unwrap();
-                let mut probe = oer_hil_protocol::UdpProbe::decode(&bytes[..length])
+                let mut probe = oer_hil_protocol::network::UdpProbe::decode(&bytes[..length])
                     .expect("real reverse-path challenge");
                 assert!(!probe.response);
                 probe.response = true;

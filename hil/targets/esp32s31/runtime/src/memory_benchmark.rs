@@ -24,8 +24,8 @@ use oer_esp32s31_soc_esp_hal::{
     BurstSize,
 };
 use oer_hil_protocol::{
-    Event, MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest,
-    MemoryBenchmarkSource, MemoryBenchmarkStop, RejectReason,
+    base::RejectReason, system::MemoryBenchmarkEvidence, system::MemoryBenchmarkMode,
+    system::MemoryBenchmarkRequest, system::MemoryBenchmarkSource, system::MemoryBenchmarkStop,
 };
 
 const WARMUPS: u16 = 4;
@@ -111,7 +111,7 @@ pub(crate) async fn task(channel: DMA_AXI_CH0<'static>) {
         crate::console::publish_event_reliably(
             0,
             command.id,
-            Event::MemoryBenchmarkCompleted(report),
+            oer_hil_protocol::system::MemoryBenchmarkCompleted(report),
         )
         .await;
     }

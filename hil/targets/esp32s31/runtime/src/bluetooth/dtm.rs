@@ -25,10 +25,13 @@ use oer_bluetooth_hci::bt_hci::{
     transport::{PacketToController, Transport},
 };
 use oer_esp32s31_bluetooth_system::BluetoothHostTransport;
+use oer_hil_protocol::base::RejectReason;
+use oer_hil_protocol::bluetooth::{DtmResult, ExchangeHci, HciResponse, RunDtm};
 use oer_hil_protocol::{
-    BLUETOOTH_HCI_EVENT_BYTES, BluetoothDtmEvidence, BluetoothDtmOperation as Operation,
-    BluetoothDtmResult, BluetoothDtmRxDiagnostics, BluetoothHciRequest, BluetoothHciResponse,
-    Command, Event, FeatureCapabilities, RejectReason,
+    RequestIdentity, bluetooth::BLUETOOTH_HCI_EVENT_BYTES, bluetooth::BluetoothDtmEvidence,
+    bluetooth::BluetoothDtmOperation as Operation, bluetooth::BluetoothDtmResult,
+    bluetooth::BluetoothDtmRxDiagnostics, bluetooth::BluetoothHciRequest,
+    bluetooth::BluetoothHciResponse,
 };
 
 use super::console;
@@ -84,50 +87,64 @@ pub(super) async fn run(
     boot: u64,
 ) -> ! {
     spawner.spawn(tester(host).expect("Bluetooth HCI task"));
-    console::run(usb, boot, &Profile).await
+    spawner.spawn(requests().expect("Bluetooth request task"));
+    console::serve_console(usb, boot, &Profile).await
+}
+
+/// Serves the requests the console queued, in a task of its own.
+#[embassy_executor::task]
+async fn requests() {
+    console::serve_requests(&Profile).await
 }
 
 struct Profile;
 
+oer_hil_target_core::requests! {
+    /// The DTM/HCI image's requests.
+    pub(super) enum Served (sessions = false) {
+        Dtm(RunDtm),
+        Hci(ExchangeHci),
+    }
+}
+
 impl console::Profile for Profile {
-    fn features(&self) -> FeatureCapabilities {
-        FeatureCapabilities {
-            bluetooth_dtm: true,
-            bluetooth_hci: true,
-            phy_rx_hot_sram: cfg!(feature = "phy-rx-hot-sram"),
-            ..FeatureCapabilities::default()
-        }
+    type Request = Served;
+
+    fn queue(&self) -> &'static console::Queue<Served> {
+        static QUEUE: console::Queue<Served> = console::Queue::new();
+        &QUEUE
     }
 
     fn maximum_payload_bytes(&self) -> u16 {
         u16::from(PAYLOAD_BYTES)
     }
 
-    async fn command(&self, command: Command) -> Event {
-        let request = match command {
-            Command::BluetoothDtm(operation) => Request::Dtm(operation),
-            Command::BluetoothHci(request) => Request::Hci(request),
-            _ => return Event::Rejected(RejectReason::InvalidState),
-        };
-        let operation = match &request {
-            Request::Dtm(operation) => Some(*operation),
-            Request::Hci(_) => None,
-        };
-        REQUESTS.send(request).await;
-        match (REPLIES.receive().await, operation) {
-            (Reply::Dtm(result, received), Some(operation)) => {
-                Event::BluetoothDtm(BluetoothDtmEvidence {
-                    reset_reason: crate::system::boot_evidence().reset_reason,
-                    operation,
-                    result,
-                    rx_diagnostics: BluetoothDtmRxDiagnostics {
-                        counted_packets: u32::from(received),
-                        ..BluetoothDtmRxDiagnostics::default()
-                    },
-                })
+    async fn serve(&self, identity: RequestIdentity, body: Served) {
+        match body {
+            Served::Dtm(RunDtm(operation)) => {
+                REQUESTS.send(Request::Dtm(operation)).await;
+                let reply = match REPLIES.receive().await {
+                    Reply::Dtm(result, received) => Ok(DtmResult(BluetoothDtmEvidence {
+                        reset_reason: crate::system::boot_evidence().reset_reason,
+                        operation,
+                        result,
+                        rx_diagnostics: BluetoothDtmRxDiagnostics {
+                            counted_packets: u32::from(received),
+                            ..BluetoothDtmRxDiagnostics::default()
+                        },
+                    })),
+                    Reply::Hci(_) => Err(RejectReason::InvalidState),
+                };
+                console::respond(identity, reply).await;
             }
-            (Reply::Hci(response), None) => Event::BluetoothHci(response),
-            _ => Event::Rejected(RejectReason::InvalidState),
+            Served::Hci(ExchangeHci(request)) => {
+                REQUESTS.send(Request::Hci(request)).await;
+                let reply = match REPLIES.receive().await {
+                    Reply::Hci(response) => Ok(HciResponse(response)),
+                    Reply::Dtm(..) => Err(RejectReason::InvalidState),
+                };
+                console::respond(identity, reply).await;
+            }
         }
     }
 }

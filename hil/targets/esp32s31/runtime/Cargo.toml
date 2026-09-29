@@ -20,7 +20,9 @@ boot-smoke = []
 system-watchdog = [
     "dep:oer-hil-protocol",
     "oer-hil-protocol?/system",
-    "dep:embedded-io-async",
+    "dep:embassy-futures",
+    "dep:embassy-sync",
+    "dep:log",
     "dep:oer-hil-target-core",
     "dep:heapless",
     "dep:critical-section",
@@ -46,6 +48,7 @@ bluetooth-radio = [
     "dep:embassy-sync",
     "dep:embedded-io",
     "dep:embedded-io-async",
+    "dep:log",
     "dep:oer-hil-protocol",
     "dep:oer-hil-target-core",
     "dep:heapless",

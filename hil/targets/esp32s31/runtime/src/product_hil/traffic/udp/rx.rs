@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use core::sync::atomic::Ordering;
-use oer_hil_protocol::{SessionFailure, SessionVerdict};
+use oer_hil_protocol::{network::SessionFailure, network::SessionVerdict};
 
 use crate::product_hil::network::sockets::{Stack, UdpRxStorage, new_udp, recv_from_with};
 use embassy_futures::{
@@ -26,10 +26,11 @@ use oer_hil_esp32s31_telemetry::{
     task_poll::TaskPollSet,
 };
 #[cfg(feature = "rx-delivery-telemetry")]
-use oer_hil_protocol::RxReorderDeliveryEvidence;
+use oer_hil_protocol::network::RxReorderDeliveryEvidence;
 use oer_hil_protocol::{
-    Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence,
-    RxZeroCopyEvidence, ServiceInfo, SessionReady, Transport as HilTransport,
+    network::Direction as HilDirection, network::RadioEvidence, network::RxRadioEvidence,
+    network::RxZeroCopyEvidence, network::ServiceInfo, network::SessionReady,
+    network::Transport as HilTransport,
 };
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -60,7 +61,7 @@ pub(in crate::product_hil) struct UdpRxSessionSource {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpRxBenchmarkConfig {
-    pub network_interface: oer_hil_protocol::WifiNetworkInterface,
+    pub network_interface: oer_hil_protocol::wifi::WifiNetworkInterface,
     pub local_port: u16,
     pub queue_depth: usize,
     pub payload_capacity: usize,
@@ -96,7 +97,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
     publish_event_reliably(
         0,
         0,
-        HilEvent::ServiceReady(ServiceInfo {
+        oer_hil_protocol::network::ServiceReady(ServiceInfo {
             network_interface: config.network_interface,
             transport: HilTransport::Udp,
             direction: HilDirection::Rx,
@@ -128,7 +129,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                     publish_event_reliably(
                         0,
                         0,
-                        HilEvent::ServiceReady(ServiceInfo {
+                        oer_hil_protocol::network::ServiceReady(ServiceInfo {
                             network_interface: config.network_interface,
                             transport: HilTransport::Udp,
                             direction: HilDirection::Rx,
@@ -150,10 +151,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         publish_event_reliably(
             session.session_id,
             0,
-            HilEvent::SessionReady(SessionReady {
+            SessionReady {
                 direction: HilDirection::Rx,
                 tx_block_ack_tid: None,
-            }),
+            },
         )
         .await;
         yield_now().await;

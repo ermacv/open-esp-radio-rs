@@ -10,8 +10,8 @@ use std::{
 use crate::Result;
 use hil_core::session::SerialCapture;
 use oer_hil_protocol::{
-    StartupArtifactDisposition, StartupArtifactStatus, StationAttemptFailureReason,
-    StationEpochEvidence, StationLifecycleEvent,
+    phy::StartupArtifactDisposition, phy::StartupArtifactStatus, wifi::StationAttemptFailureReason,
+    wifi::StationEpochEvidence, wifi::StationLifecycleEvent,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -92,7 +92,7 @@ fn qualify(
     let (capabilities, startup_artifact_status) =
         capture.prepare_station_with_startup_artifact_status(context.target(), timeout)?;
     validate_startup_artifact_replay(boot, startup_artifact_status)?;
-    if !capabilities.features.station_epoch_control {
+    if !capabilities.has::<oer_hil_protocol::wifi::StationEpochControl>() {
         return Err("firmware does not advertise station epoch control".into());
     }
     // Network provisioning is acknowledged before the radio task finishes
@@ -203,7 +203,7 @@ impl CycleProgress {
         match event {
             StationLifecycleEvent::Disconnected {
                 generation: observed,
-                reason: oer_hil_protocol::StationDisconnectReason::ReconnectRequested,
+                reason: oer_hil_protocol::wifi::StationDisconnectReason::ReconnectRequested,
             } if observed == generation && !self.disconnected => {
                 self.disconnected = true;
                 Ok(())

@@ -280,7 +280,7 @@ impl SerialCapture {
                 &mut log,
                 &serde_json::json!({
                     "record": "target-event",
-                    "envelope": message,
+                    "message": message.to_json(),
                     "host_received_unix_micros": state.received_unix_micros.get(index),
                 }),
             )?;
@@ -423,9 +423,9 @@ fn capture_serial(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let before_read = decoder.counters();
-        decoder.feed::<Event>(chunk, |message| {
-            match message {
-                Ok(message) => {
+        decoder.feed(oer_hil_protocol::WireKind::Event, chunk, |frame| {
+            match frame.map(|frame| super::Received::from_frame(&frame)) {
+                Ok(Ok(message)) => {
                     if let Some(boot_id) = state.health.boot_id
                         && boot_id != message.boot_id
                         && !state.accept_expected_reboot(&message, Instant::now())
@@ -445,19 +445,15 @@ fn capture_serial(
                         ));
                     }
                 }
-                Err(error) => {
-                    // A recognizable incompatible header is actionable even
-                    // before Hello. Arbitrary boot text is not a wire failure.
-                    if matches!(
-                        error,
-                        oer_hil_protocol::DecodeError::ProtocolVersion
-                            | oer_hil_protocol::DecodeError::FramingVersion
-                    ) {
-                        state.health.fail(error.to_string());
-                    } else {
-                        state.health.decode_error(error);
-                    }
+                // Nothing can decode or check a message whose key this host
+                // does not know: the capture cannot vouch for it.
+                Ok(Err(unknown)) => state.health.fail(unknown),
+                // Another framing is an image of another protocol: actionable
+                // even before Hello. Arbitrary boot text is not a wire failure.
+                Err(error @ oer_hil_protocol::DecodeError::FramingVersion) => {
+                    state.health.fail(error.to_string());
                 }
+                Err(error) => state.health.decode_error(error),
             }
             if let Some(error) = state.health.failure.clone() {
                 state.fail(LinkError::protocol(error));

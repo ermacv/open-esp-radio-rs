@@ -43,7 +43,7 @@ and spawns its own PHY tracking task,
 partition and runs the radio runner, the HCI service, the Trouble Host and the
 plaintext GATT application on their own tasks; it adds no radio-system task.
 The Bluetooth entropy service owns the SoC random source that the Wi-Fi client
-also reads. The Wi-Fi console answers `QueryBluetoothGatt` with the
+also reads. The Wi-Fi console answers `bluetooth::GetGatt` with the
 application's observations and advertises `bluetooth_gatt`. The host drives it
 with the ATT echo load in `runner-bluetooth`'s
 `workload::bluetooth::coexistence`: one connection writes and reads back the
@@ -104,8 +104,8 @@ remain shared resources of the selected integration. Their pressure can still
 limit both flows. Offered rates alone do not prove continuous driver backlog
 or airtime fairness between unequal peers.
 
-With a scheduling comparison enabled, `WifiAirtimePeer` records and a final
-`WifiAirtimeReport` precede the correlated AP stop event. They count the whole AP
+With a scheduling comparison enabled, `wifi::AirtimePeer` records and a final
+`wifi::AirtimeReport` precede the correlated AP stop event. They count the whole AP
 epoch, including its ordinary traffic and teardown, rather than only the UDP
 window. The target accumulates at most eight distinct association/group keys;
 it retains old generations and reports dropped events or saturation explicitly.

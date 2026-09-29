@@ -3,7 +3,7 @@
 use hil_core::context::Context;
 use std::net::Ipv4Addr;
 
-use oer_hil_protocol::WifiAccessPointSecurity;
+use oer_hil_protocol::wifi::WifiAccessPointSecurity;
 
 use crate::scenario::AccessPointClients;
 use crate::workload::ieee80211::access_point::with_cleanup_errors;

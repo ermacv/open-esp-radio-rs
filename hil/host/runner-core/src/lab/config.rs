@@ -7,7 +7,8 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointSecurity, WifiChannelWidth,
+    wifi::NetworkCredentials, wifi::NetworkIpv4Configuration, wifi::WifiAccessPointSecurity,
+    wifi::WifiChannelWidth,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -893,8 +894,8 @@ impl AccessPointConfig {
     pub fn protocol_request(
         &self,
         security: WifiAccessPointSecurity,
-    ) -> Result<oer_hil_protocol::WifiAccessPointRequest> {
-        Ok(oer_hil_protocol::WifiAccessPointRequest {
+    ) -> Result<oer_hil_protocol::wifi::WifiAccessPointRequest> {
+        Ok(oer_hil_protocol::wifi::WifiAccessPointRequest {
             credentials: NetworkCredentials::try_new(
                 self.ssid.as_bytes(),
                 self.passphrase.as_bytes(),

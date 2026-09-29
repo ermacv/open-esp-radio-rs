@@ -30,14 +30,14 @@ Configure -> Arm -> Start -> SessionReady -> Evidence -> Finished(CRC)
           -> AcknowledgeResult -> Idle
 ```
 
-UDP `ServiceReady` is published after the socket is bound. The host waits for
-both this declaration and `NetworkReady` for the same interface before sending
+UDP `network::ServiceReady` is published after the socket is bound. The host waits for
+both this declaration and `network::Ready` for the same interface before sending
 an unmeasured `UdpProbe` challenge on the exact TX flow. Only its matching
 nonce response confirms the reverse path; a successful host `send()` does not.
-The target services probes while idle, before `Start`, using its bound TX
+The target services probes while idle, before `network::Start`, using its bound TX
 socket. Requests retry on a deadline within an absolute failure bound. Probe
 responses never contribute to measured sequence counts, including late copies.
-The host starts its socket collectors before `Start`. `SessionReady` confirms that the requested
+The host starts its socket collectors before `network::Start`. `network::SessionReady` confirms that the requested
 workers and link preconditions are ready for the measured session. Readiness
 has no fallback IP, settle delay or success-on-timeout path. USB serialization
 completion and BlockAck readiness wake their waiters on state changes.
@@ -45,7 +45,7 @@ The host serial reactor wakes on descriptor readiness, queued commands or
 shutdown. Protocol waiters also receive cancellation notifications; their
 timeout is a failure bound rather than a periodic readiness poll.
 
-`Finished` counts stack admissions, not on-air delivery. Host UDP collectors
+`network::Finished` counts stack admissions, not on-air delivery. Host UDP collectors
 use its TX count to complete as soon as every datagram arrives, or record a
 delivery deadline and the remaining deficit. A missing terminal result and a
 fully delivered stream are distinct outcomes. Each `*-reception.json` records
@@ -54,7 +54,7 @@ A nonzero delta invalidates the measurement as `host-overflow`; unavailable
 accounting on another platform is `null`, never an asserted zero.
 
 The target retains the complete result before its first publication, including
-fixed link and stack snapshots. `ReplayResult` changes only the response
+fixed link and stack snapshots. `network::ReplayResult` changes only the response
 envelope identity and sequence, not evidence or its digest. The host verifies
 the replay before acknowledging removal of the retained result.
 
@@ -104,14 +104,14 @@ new `Connected` edge in the next link epoch. A connected edge includes the
 actually negotiated association width and security from the production station
 status snapshot. Missing metadata cannot establish HT40/WPA2-Personal.
 
-The lifecycle scenarios require fresh station `NetworkReady` after each
+The lifecycle scenarios require fresh station `network::Ready` after each
 reconnection, then a bounded bidirectional UDP application session before and
 after each radio cycle. Its optional `SessionFlowConfig.payload_identity`
 binds the payload to the current boot and session ID. The target counts only
 consumed RX datagrams with matching identity and fill; the Host checks each
 received target TX datagram's source, length, identity, fill and sequence, and
-reconciles both directions with retained session evidence. `ServiceReady`,
-`SessionReady`, a probe response or a previous network address cannot replace
+reconciles both directions with retained session evidence. `network::ServiceReady`,
+`network::SessionReady`, a probe response or a previous network address cannot replace
 that payload proof. Other sessions leave `payload_identity` unset and retain
 their existing traffic format. Hardware execution and dated link evidence are
 still required for radio-cycle qualification.

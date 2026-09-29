@@ -1,4 +1,6 @@
-use oer_hil_protocol::{Ieee802154SessionAck, Ieee802154SessionReceivedFrame};
+use oer_hil_protocol::{
+    ieee802154::Ieee802154SessionAck, ieee802154::Ieee802154SessionReceivedFrame,
+};
 
 use super::*;
 use crate::peer::{PeerAck, PeerFrame};
@@ -183,7 +185,7 @@ fn only_an_unacknowledged_transmit_passes_the_foreign_check() {
 /// cleanly.
 #[test]
 fn coexistence_matches_the_request_and_is_left_cleanly() {
-    use oer_hil_protocol::Ieee802154SessionCoexistence;
+    use oer_hil_protocol::ieee802154::Ieee802154SessionCoexistence;
     let evidence = |enabled, disable_failed| Ieee802154SessionCoexistence {
         enabled,
         disable_failed,

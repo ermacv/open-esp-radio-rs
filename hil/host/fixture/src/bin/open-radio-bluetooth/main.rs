@@ -23,7 +23,7 @@ enum TerminationArg {
     TargetReset,
 }
 
-impl From<TerminationArg> for oer_hil_protocol::BluetoothPeripheralTermination {
+impl From<TerminationArg> for oer_hil_protocol::bluetooth::BluetoothPeripheralTermination {
     fn from(value: TerminationArg) -> Self {
         match value {
             TerminationArg::PeerReset => Self::PeerReset,
@@ -61,7 +61,7 @@ enum Command {
         #[arg(long)]
         peer: model::PeerAddress,
         #[arg(long)]
-        failure: oer_hil_protocol::BluetoothSecurityFailure,
+        failure: oer_hil_protocol::bluetooth::BluetoothSecurityFailure,
         /// After missing-key rejection, require remote-version completion before Disconnect.
         #[arg(long)]
         read_version_before_disconnect: bool,
@@ -144,7 +144,7 @@ fn main() {
         report.read_version_before_disconnect = read_version_before_disconnect;
         let result = (|| -> Result<()> {
             if read_version_before_disconnect
-                && failure != oer_hil_protocol::BluetoothSecurityFailure::MissingKey
+                && failure != oer_hil_protocol::bluetooth::BluetoothSecurityFailure::MissingKey
             {
                 return Err("remote-version diagnostic requires missing-key rejection".into());
             }

@@ -2,7 +2,9 @@
 use oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::{
     AccessPointAirtimePeer, AirtimeAction, AirtimeObservation,
 };
-use oer_hil_protocol::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
+use oer_hil_protocol::{
+    wifi::WifiAirtimePeer, wifi::WifiAirtimePeerEvidence, wifi::WifiAirtimeReport,
+};
 
 #[derive(Clone, Copy)]
 pub struct AirtimeHistory {

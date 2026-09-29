@@ -1,6 +1,6 @@
 //! Retain terminal MAC receipts separately from UDP and unfinished TX work.
 use crate::Result;
-use oer_hil_protocol::StationTxTerminalEvidence;
+use oer_hil_protocol::network::StationTxTerminalEvidence;
 use std::{fs, path::Path};
 
 pub(super) fn retain(output: &Path, value: StationTxTerminalEvidence) -> Result<()> {

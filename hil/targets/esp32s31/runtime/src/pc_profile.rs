@@ -24,7 +24,7 @@ use esp_hal::{
     time::Duration,
     timer::{PeriodicTimer, systimer::Alarm},
 };
-use oer_hil_protocol::{Event, ProfileControl, RejectReason};
+use oer_hil_protocol::{base::RejectReason, telemetry::ProfileControl};
 use oer_hil_target_core::profile::{PageRefusal, ProfileTimer, Profiler};
 
 /// Samples retained per hart: a 16-second window at a 2-ms period.
@@ -85,11 +85,13 @@ pub(crate) fn bind_core1_sampler() {
 }
 
 /// Serve one host profile command.
-pub(crate) fn control(control: ProfileControl) -> Event {
+pub(crate) fn control(
+    control: ProfileControl,
+) -> Result<oer_hil_protocol::telemetry::ProfileState, RejectReason> {
     match control {
         ProfileControl::Arm { harts, period_us } => {
             if !(MINIMUM_PERIOD_MICROS..=MAXIMUM_PERIOD_MICROS).contains(&period_us) {
-                return Event::Rejected(RejectReason::InvalidConfiguration);
+                return Err(RejectReason::InvalidConfiguration);
             }
             SystimerProfileTimer.stop();
             PROFILER.arm(harts, period_us);
@@ -101,16 +103,17 @@ pub(crate) fn control(control: ProfileControl) -> Event {
         }
         ProfileControl::Status => {}
     }
-    Event::ProfileStatus(PROFILER.status())
+    Ok(oer_hil_protocol::telemetry::ProfileState(PROFILER.status()))
 }
 
 /// Serve one page of a closed window's samples.
-pub(crate) fn samples(hart: u8, first: u32) -> Event {
+pub(crate) fn samples(
+    hart: u8,
+    first: u32,
+) -> Result<oer_hil_protocol::telemetry::ProfileSamples, RejectReason> {
     match PROFILER.page(usize::from(hart), first) {
-        Ok(page) => Event::ProfileSamples(page),
-        Err(PageRefusal::WindowOpen | PageRefusal::Hart) => {
-            Event::Rejected(RejectReason::InvalidState)
-        }
+        Ok(page) => Ok(oer_hil_protocol::telemetry::ProfileSamples(page)),
+        Err(PageRefusal::WindowOpen | PageRefusal::Hart) => Err(RejectReason::InvalidState),
     }
 }
 

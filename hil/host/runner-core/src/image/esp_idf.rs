@@ -49,20 +49,6 @@ pub fn serves(root: &Path, chip: &str, class: ImageClass) -> Result<bool> {
         .all(|feature| declared.contains_key(feature)))
 }
 
-/// The image class a flashed ESP-IDF application's capabilities name: these
-/// images run their tasks from SRAM, so no class reports a PSRAM task
-/// stack. The boot-smoke image reports none.
-pub fn classify_flashed_capabilities(
-    features: &oer_hil_protocol::FeatureCapabilities,
-) -> Option<ImageClass> {
-    let system_watchdog = oer_hil_protocol::FeatureCapabilities {
-        system_watchdog: true,
-        structured_evidence: true,
-        ..oer_hil_protocol::FeatureCapabilities::default()
-    };
-    (*features == system_watchdog).then_some(ImageClass::SystemWatchdog)
-}
-
 /// Build `class` for `profile`'s chip from the sources at `source`, into
 /// `output`, compiling in `cache`.
 pub fn build(
@@ -230,27 +216,6 @@ mod tests {
         assert!(serves(&root, "esp32c5", ImageClass::BootSmoke).unwrap());
         assert!(serves(&root, "esp32c5", ImageClass::SystemWatchdog).unwrap());
         assert!(!serves(&root, "esp32c5", ImageClass::Correctness).unwrap());
-    }
-
-    #[test]
-    fn an_esp_idf_system_image_has_no_psram_task_stack() {
-        use oer_hil_protocol::FeatureCapabilities;
-        let system = FeatureCapabilities {
-            system_watchdog: true,
-            structured_evidence: true,
-            ..FeatureCapabilities::default()
-        };
-        assert_eq!(
-            classify_flashed_capabilities(&system),
-            Some(ImageClass::SystemWatchdog)
-        );
-        // The staged image's capabilities are not an ESP-IDF application's.
-        let staged = ImageClass::SystemWatchdog.console_capabilities().unwrap();
-        assert_eq!(classify_flashed_capabilities(&staged), None);
-        assert_eq!(
-            classify_flashed_capabilities(&FeatureCapabilities::default()),
-            None
-        );
     }
 
     #[test]

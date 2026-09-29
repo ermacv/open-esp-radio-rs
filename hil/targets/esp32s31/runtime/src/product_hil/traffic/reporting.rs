@@ -25,7 +25,9 @@ use oer_hil_esp32s31_telemetry::{
     rx_pipeline::{RxPipelineCounterSnapshot, RxPipelineCounters},
     task_poll::{TaskPollCounters, TaskPollSet, TaskPollSetSnapshot, TaskPollSnapshot},
 };
-use oer_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRadioEvidence};
+use oer_hil_protocol::{
+    network::RadioEvidence, network::TxAggregateTimingEvidence, network::TxRadioEvidence,
+};
 
 use crate::console::runtime_log_reliably;
 

@@ -76,7 +76,7 @@ the owned Xarxa fork as dependency overrides; the
 Station composes DHCP and UDP echo on port 4321. AP composes a DHCP server and
 UDP/TCP echo services on port 7. HIL UDP/TCP RX, TX and bidirectional workloads
 share one session protocol, pacing, timeouts, payload validation and result
-reporting. TCP starts accepting before HIL publishes `SessionReady`, including
+reporting. TCP starts accepting before HIL publishes `network::SessionReady`, including
 when the stack enters listen state on the first poll of `accept()`; the same
 accept future is retained through readiness publication and connection
 completion.

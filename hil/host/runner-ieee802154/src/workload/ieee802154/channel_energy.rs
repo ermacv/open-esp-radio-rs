@@ -20,10 +20,12 @@ use std::{fs, path::Path, time::Duration};
 
 use hil_core::{context::Context, session::SerialCapture};
 use oer_hil_protocol::{
-    Ieee802154AirCcaOutcome, Ieee802154AirEnergyOutcome, Ieee802154AirTxOutcome,
-    Ieee802154SessionAssessRequest, Ieee802154SessionAssessment, Ieee802154SessionConfig,
-    Ieee802154SessionMaintenancePolicy, Ieee802154SessionReceiveEvidence,
-    Ieee802154SessionTransmitRequest, Ieee802154SessionTxMode, ieee802154_frame_crc32c,
+    ieee802154::Ieee802154AirCcaOutcome, ieee802154::Ieee802154AirEnergyOutcome,
+    ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionAssessRequest,
+    ieee802154::Ieee802154SessionAssessment, ieee802154::Ieee802154SessionConfig,
+    ieee802154::Ieee802154SessionMaintenancePolicy, ieee802154::Ieee802154SessionReceiveEvidence,
+    ieee802154::Ieee802154SessionTransmitRequest, ieee802154::Ieee802154SessionTxMode,
+    ieee802154::ieee802154_frame_crc32c,
 };
 use serde::Serialize;
 
@@ -336,7 +338,7 @@ fn measure<L: PeerLink>(
     config: &Config,
 ) -> Result<Measurements> {
     let capabilities = capture.request_capabilities(CAPABILITIES_TIMEOUT)?;
-    if !capabilities.features.ieee802154_session {
+    if !capabilities.has::<oer_hil_protocol::ieee802154::Session>() {
         return Err("firmware does not advertise IEEE 802.15.4 sessions".into());
     }
     peer.configure(&PeerConfig {

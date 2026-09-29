@@ -18,7 +18,7 @@
 //! [`RateMonitor`] reports a caller that checkpoints too often.
 
 use crc::{CRC_32_ISCSI, Crc};
-use oer_hil_protocol::{
+use oer_hil_protocol::base::{
     CHECKPOINT_NAME_BYTES, Checkpoint, Fault, HangFault, HartState, POST_MORTEM_CHECKPOINT_PAGE,
     POST_MORTEM_CHECKPOINTS, PanicFault, PostMortemCheckpoints, PostMortemSummary, TaskSlot,
     TaskStall,

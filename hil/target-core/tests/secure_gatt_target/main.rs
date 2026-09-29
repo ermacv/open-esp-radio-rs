@@ -3,13 +3,10 @@
 use oer_hil_target_core::bluetooth_gatt::secure::{state, store};
 mod reset_gate_tests;
 use gatt_application::security::gatt::Observation;
-use oer_hil_protocol::*;
+use oer_hil_protocol::bluetooth::*;
 
 fn snapshot(state: &state::State) -> BluetoothSecureGattEvidence {
-    let Event::BluetoothSecureGatt(e) = state.command(Command::QueryBluetoothSecureGatt) else {
-        panic!("snapshot")
-    };
-    e
+    state.snapshot().0
 }
 
 #[test]
@@ -44,7 +41,7 @@ fn application_failure_preserves_status_without_sensitive_host_payloads() {
 #[test]
 fn terminal_stop_clears_restart_intent_without_inventing_cold_release() {
     let state = state::State::new();
-    state.command(Command::RestartBluetoothGatt { epoch: 1 });
+    let _ = state.restart_application(bluetooth::RestartGatt { epoch: 1 });
     assert!(snapshot(&state).restarting);
     let shutdown = BluetoothGattShutdown {
         cause: BluetoothGattStopCause::Application,
@@ -63,8 +60,8 @@ fn terminal_stop_clears_restart_intent_without_inventing_cold_release() {
     assert_eq!((cold.epoch, cold.cold_releases), (1, 1));
     assert!(cold.application_stopped && cold.old_hci_closed);
     assert!(matches!(
-        state.command(Command::RestartBluetoothGatt { epoch: 1 }),
-        Event::Rejected(RejectReason::InvalidState)
+        state.restart_application(bluetooth::RestartGatt { epoch: 1 }),
+        Err(base::RejectReason::InvalidState)
     ));
 }
 
@@ -81,10 +78,10 @@ fn injected_load_failure_is_single_use_and_preserves_the_real_ram_record() {
         }
     }
     let state = state::State::new();
-    let command = Command::FailNextBluetoothGattBondLoad { epoch: 1 };
-    assert!(matches!(state.command(command.clone()), Event::Rejected(_)));
+    let command = bluetooth::FailNextGattBondLoad { epoch: 1 };
+    assert!(matches!(state.fail_next_bond_load(command.clone()), Err(_)));
     state.observe(Observation::Connected);
-    assert!(matches!(state.command(command.clone()), Event::Rejected(_)));
+    assert!(matches!(state.fail_next_bond_load(command.clone()), Err(_)));
     let mut ram = RamBondStore::<1>::new();
     let bond = BondInformation::new(
         Identity::from(Address::random([1, 2, 3, 4, 5, 0xc6])),
@@ -99,19 +96,16 @@ fn injected_load_failure_is_single_use_and_preserves_the_real_ram_record() {
     ready(store.insert(bond.clone())).unwrap();
     state.observe(Observation::BondStored);
     assert!(matches!(
-        state.command(Command::FailNextBluetoothGattBondLoad { epoch: 0 }),
-        Event::Rejected(_)
+        state.fail_next_bond_load(bluetooth::FailNextGattBondLoad { epoch: 0 }),
+        Err(_)
     ));
-    assert!(matches!(
-        state.command(command.clone()),
-        Event::BluetoothSecureGatt(_)
-    ));
+    assert!(matches!(state.fail_next_bond_load(command.clone()), Ok(_)));
     assert_eq!(snapshot(&state).bond_load_failures, 0);
     assert!(snapshot(&state).shutdown.is_none());
-    assert!(matches!(state.command(command.clone()), Event::Rejected(_)));
+    assert!(matches!(state.fail_next_bond_load(command.clone()), Err(_)));
     assert!(matches!(
-        state.command(Command::RestartBluetoothGatt { epoch: 1 }),
-        Event::Rejected(_)
+        state.restart_application(bluetooth::RestartGatt { epoch: 1 }),
+        Err(_)
     ));
     // Merely creating an unpolled read must not consume the injection.
     drop(store.load(0));
@@ -124,7 +118,7 @@ fn injected_load_failure_is_single_use_and_preserves_the_real_ram_record() {
     assert!(!snapshot(&state).application_stopped);
     assert_eq!(snapshot(&state).cold_releases, 0);
     assert!(ready(store.load(0)).unwrap().as_ref() == Some(&bond));
-    assert!(matches!(state.command(command), Event::Rejected(_)));
+    assert!(matches!(state.fail_next_bond_load(command), Err(_)));
 }
 #[test]
 fn explicit_decision_is_single_use_and_not_bond_evidence() {
@@ -136,21 +130,21 @@ fn explicit_decision_is_single_use_and_not_bond_evidence() {
         accept: true,
     };
     assert_eq!(
-        state.command(Command::ConfirmBluetoothGatt(decision)),
-        Event::BluetoothGattDecisionRecorded(decision)
+        state.confirm(bluetooth::ConfirmGatt(decision)),
+        Ok(bluetooth::GattDecisionRecorded(decision))
     );
     assert!(snapshot(&state).comparison.is_none());
     assert_eq!(snapshot(&state).bonds_stored, 0);
     assert_eq!(snapshot(&state).accepted, 0);
     assert!(matches!(
-        state.command(Command::ConfirmBluetoothGatt(decision)),
-        Event::Rejected(_)
+        state.confirm(bluetooth::ConfirmGatt(decision)),
+        Err(_)
     ));
     drop(lease);
     let _next = state.comparison.begin(123).unwrap();
     assert!(matches!(
-        state.command(Command::ConfirmBluetoothGatt(decision)),
-        Event::Rejected(_)
+        state.confirm(bluetooth::ConfirmGatt(decision)),
+        Err(_)
     ));
     state.stopped();
     let decision = BluetoothNumericDecision {
@@ -158,8 +152,8 @@ fn explicit_decision_is_single_use_and_not_bond_evidence() {
         accept: true,
     };
     assert!(matches!(
-        state.command(Command::ConfirmBluetoothGatt(decision)),
-        Event::Rejected(_)
+        state.confirm(bluetooth::ConfirmGatt(decision)),
+        Err(_)
     ));
 }
 #[test]
@@ -192,10 +186,6 @@ fn observations_preserve_epoch_counters_without_inventing_peer_delivery() {
     );
     assert!(e.comparison.is_none());
     assert!(!e.application_stopped);
-    assert!(matches!(
-        state.command(Command::QueryBluetoothGatt),
-        Event::Rejected(_)
-    ));
 }
 
 #[test]
@@ -210,19 +200,19 @@ fn cold_restart_is_epoch_bound_and_does_not_reset_bond_or_comparison_history() {
         accept: true,
     };
     assert!(matches!(
-        state.command(Command::RestartBluetoothGatt { epoch: 0 }),
-        Event::Rejected(_)
+        state.restart_application(bluetooth::RestartGatt { epoch: 0 }),
+        Err(_)
     ));
     assert!(
-        matches!(state.command(Command::RestartBluetoothGatt { epoch: 1 }), Event::BluetoothSecureGatt(e) if e.restarting)
+        matches!(state.restart_application(bluetooth::RestartGatt { epoch: 1 }), Ok(bluetooth::SecureGattState(e)) if e.restarting)
     );
     assert!(matches!(
-        state.command(Command::RestartBluetoothGatt { epoch: 1 }),
-        Event::Rejected(_)
+        state.restart_application(bluetooth::RestartGatt { epoch: 1 }),
+        Err(_)
     ));
     assert!(matches!(
-        state.command(Command::ConfirmBluetoothGatt(decision)),
-        Event::Rejected(_)
+        state.confirm(bluetooth::ConfirmGatt(decision)),
+        Err(_)
     ));
     drop(prompt);
     state.cold(true);
@@ -235,18 +225,18 @@ fn cold_restart_is_epoch_bound_and_does_not_reset_bond_or_comparison_history() {
     assert!(e.old_hci_closed);
     assert!(!e.restarting);
     assert!(matches!(
-        state.command(Command::RestartBluetoothGatt { epoch: 1 }),
-        Event::Rejected(_)
+        state.restart_application(bluetooth::RestartGatt { epoch: 1 }),
+        Err(_)
     ));
     let _new = state.comparison.begin(123).unwrap();
     assert!(matches!(
-        state.command(Command::ConfirmBluetoothGatt(decision)),
-        Event::Rejected(_)
+        state.confirm(bluetooth::ConfirmGatt(decision)),
+        Err(_)
     ));
     state.stopped();
     assert!(matches!(
-        state.command(Command::RestartBluetoothGatt { epoch: 2 }),
-        Event::Rejected(_)
+        state.restart_application(bluetooth::RestartGatt { epoch: 2 }),
+        Err(_)
     ));
     assert!(snapshot(&state).application_stopped);
 }

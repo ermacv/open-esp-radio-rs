@@ -30,9 +30,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Context, Result, hil_runs};
 
-/// The file declaring the HIL protocol version.
-pub(crate) const PROTOCOL_SOURCE: &str = "hil/protocol/src/message.rs";
-const REPORT_SCHEMA: u16 = 1;
+/// The file naming a revision's HIL wire: revisions with equal locks speak
+/// the same protocol.
+const MESSAGES_LOCK: &str = "hil/protocol/messages.lock";
+const REPORT_SCHEMA: u16 = 2;
 
 #[derive(clap::Parser)]
 #[command(name = "cargo hil bisect")]
@@ -87,8 +88,8 @@ impl std::fmt::Display for Broken {
 pub enum Runner {
     /// This checkout's runner with the revision's firmware.
     Current,
-    /// The revision's own runner, for its other protocol version.
-    Revision { protocol_version: u16 },
+    /// The revision's own runner, for its other wire.
+    Revision,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -173,16 +174,10 @@ pub fn search(len: usize, mut probe: impl FnMut(usize) -> Result<Probe>) -> Resu
     }
 }
 
-/// `N` from the `PROTOCOL_VERSION: u16 = N;` declaration.
-pub(crate) fn protocol_version(source: &str) -> Option<u16> {
-    source.lines().find_map(|line| {
-        line.split_once("PROTOCOL_VERSION: u16 =")?
-            .1
-            .trim()
-            .strip_suffix(';')?
-            .parse()
-            .ok()
-    })
+/// The HIL wire of the tree at `root`, or `None` for a revision older than
+/// the keyed protocol, whose wire no lock names.
+pub(crate) fn messages_lock(root: &Path) -> Option<String> {
+    fs::read_to_string(root.join(MESSAGES_LOCK)).ok()
 }
 
 /// Whether an image build log shows a link failure rather than a compile
@@ -262,8 +257,7 @@ pub fn run(ctx: &Context, owner: &str, args: &[OsString]) -> Result<std::process
     .lines()
     .map(str::to_owned)
     .collect::<Vec<_>>();
-    let current = protocol_version(&fs::read_to_string(ctx.root.join(PROTOCOL_SOURCE))?)
-        .ok_or("this checkout's HIL protocol version is unreadable")?;
+    let current = messages_lock(&ctx.root).ok_or("this checkout names no HIL wire")?;
     let id = unix_millis().to_string();
     let directory = ctx.root.join("target/hil/bisect").join(&id);
     fs::create_dir_all(&directory)?;
@@ -346,7 +340,7 @@ struct Bisection<'a> {
     owner: &'a str,
     scenario: &'a str,
     layout_seed: Option<NonZeroU32>,
-    current: u16,
+    current: String,
     worktree: PathBuf,
     arbiter: PathBuf,
 }
@@ -355,18 +349,10 @@ impl Bisection<'_> {
     fn step(&self, commit: &str) -> Result<Step> {
         self.checkout(commit)?;
         let subject = git_text(&self.worktree, &["log", "-1", "--format=%s"])?;
-        let version = fs::read_to_string(self.worktree.join(PROTOCOL_SOURCE))
-            .ok()
-            .and_then(|source| protocol_version(&source));
-        let (runner, verdict) = if version == Some(self.current) {
+        let (runner, verdict) = if messages_lock(&self.worktree).as_ref() == Some(&self.current) {
             (Runner::Current, self.with_current_runner()?)
         } else {
-            (
-                Runner::Revision {
-                    protocol_version: version.unwrap_or_default(),
-                },
-                self.with_revision_runner()?,
-            )
+            (Runner::Revision, self.with_revision_runner()?)
         };
         Ok(Step {
             commit: commit.to_owned(),
@@ -489,9 +475,7 @@ fn step_line(step: &Step) -> String {
     let short = &step.commit[..12.min(step.commit.len())];
     let runner = match step.runner {
         Runner::Current => String::new(),
-        Runner::Revision { protocol_version } => {
-            format!(" [own runner, protocol {protocol_version}]")
-        }
+        Runner::Revision => String::from(" [own runner]"),
     };
     let verdict = match &step.verdict {
         Verdict::Good { run } => format!("good (run {run})"),

@@ -10,9 +10,11 @@
 #[cfg(feature = "owned-network")]
 extern crate embassy_net_owned as embassy_net;
 
+pub mod base;
 #[cfg(feature = "secure-gatt")]
 pub mod bluetooth_gatt;
 pub mod console;
+pub mod image_capabilities;
 pub mod liveness;
 #[cfg(feature = "system")]
 pub mod memory_benchmark;
@@ -23,3 +25,6 @@ pub mod profile;
 pub mod trace;
 #[cfg(feature = "wifi")]
 pub mod traffic;
+
+#[doc(hidden)]
+pub use oer_hil_protocol as __protocol;

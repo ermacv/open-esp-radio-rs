@@ -1,5 +1,5 @@
 use super::*;
-use oer_hil_protocol::{RxConsumerLedgerEvidence, RxReorderDeliveryEvidence};
+use oer_hil_protocol::{network::RxConsumerLedgerEvidence, network::RxReorderDeliveryEvidence};
 
 fn exact() -> RxDeliveryEvidence {
     let stage = RxSequenceStageEvidence {

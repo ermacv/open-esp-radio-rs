@@ -93,7 +93,7 @@ fn lifecycle_stop_requires_the_current_station_link_disconnect() {
             StationLifecycleEvent::Connected {
                 generation: u32::MAX,
                 association_bandwidth_mhz: Some(40),
-                security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+                security: Some(oer_hil_protocol::wifi::StationLinkSecurity::Wpa2Personal {
                     management_protection: false
                 }),
             },
@@ -126,12 +126,12 @@ fn a_wpa3_fixture_requires_an_sae_link() {
     let sae = StationConnectionObservation {
         generation: 1,
         association_bandwidth_mhz: Some(40),
-        security: Some(oer_hil_protocol::StationLinkSecurity::Wpa3Personal),
+        security: Some(oer_hil_protocol::wifi::StationLinkSecurity::Wpa3Personal),
         event_cursor_after: 3,
     };
     assert!(require_station_link(sae, wpa3).is_ok());
     let psk = StationConnectionObservation {
-        security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+        security: Some(oer_hil_protocol::wifi::StationLinkSecurity::Wpa2Personal {
             management_protection: true,
         }),
         ..sae
@@ -145,7 +145,7 @@ fn lifecycle_connected_link_requires_negotiated_phy_and_security() {
     let ht40_wpa2 = StationConnectionObservation {
         generation: 4,
         association_bandwidth_mhz: Some(40),
-        security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+        security: Some(oer_hil_protocol::wifi::StationLinkSecurity::Wpa2Personal {
             management_protection: false,
         }),
         event_cursor_after: 3,
@@ -157,7 +157,7 @@ fn lifecycle_connected_link_requires_negotiated_phy_and_security() {
     assert!(
         require_station_link(
             StationConnectionObservation {
-                security: Some(oer_hil_protocol::StationLinkSecurity::Wpa2Personal {
+                security: Some(oer_hil_protocol::wifi::StationLinkSecurity::Wpa2Personal {
                     management_protection: true,
                 }),
                 ..ht40_wpa2
@@ -169,7 +169,7 @@ fn lifecycle_connected_link_requires_negotiated_phy_and_security() {
     assert!(
         require_station_link(
             StationConnectionObservation {
-                security: Some(oer_hil_protocol::StationLinkSecurity::Open),
+                security: Some(oer_hil_protocol::wifi::StationLinkSecurity::Open),
                 ..ht40_wpa2
             },
             link(PhyExpectation::Ht40, Disabled),

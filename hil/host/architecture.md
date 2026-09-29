@@ -232,7 +232,9 @@ Each invocation creates an immutable directory under
 run. Its canonical records are:
 
 ```text
-manifest.json       invocation, repository, host, lab and firmware provenance
+manifest.json       invocation, repository, host, lab and firmware provenance;
+                    at sealing, `messages_used`: every message path sent or
+                    received, sorted and unique
 lab-provenance.json secret-free pre-run topology, host and fixture observation
 plan.json           selected and filtered catalog entries
 events.jsonl        append-only execution timeline
@@ -285,7 +287,7 @@ its execution context. Captures project decoded protocol values into numeric
 observations and save a `measurements.json` beside `protocol.jsonl`, including
 on error or unwinding. Repetition results include the same observations.
 Names distinguish boot/capture paths, sessions, requests and individual flows;
-`ReplayResult` cannot duplicate or replace the first traffic observation.
+`network::ReplayResult` cannot duplicate or replace the first traffic observation.
 Transport rates use the target's reported elapsed time; zero elapsed time
 produces no rate. Link counters are explicitly named as lifetime observations.
 The projection includes transport, link/stack, timer, scan, monitor, AP peer

@@ -1,10 +1,14 @@
 use super::*;
-use crate::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
+use crate::{wifi::WifiAirtimePeer, wifi::WifiAirtimePeerEvidence, wifi::WifiAirtimeReport};
 
 #[test]
 fn worst_case_airtime_records_fit_existing_wire_frames() {
-    for body in [
-        Event::WifiAirtimePeer(WifiAirtimePeerEvidence {
+    round_trip(Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        crate::wifi::AirtimePeer(WifiAirtimePeerEvidence {
             peer: WifiAirtimePeer::Unicast {
                 address: [255; 6],
                 association_id: u16::MAX,
@@ -22,26 +26,23 @@ fn worst_case_airtime_records_fit_existing_wire_frames() {
             outstanding_micros: u64::MAX,
             maximum_outstanding: u32::MAX,
         }),
-        Event::WifiAirtimeReport(WifiAirtimeReport {
+    ));
+    round_trip(Envelope::new(
+        u64::MAX,
+        u32::MAX,
+        u64::MAX,
+        u32::MAX,
+        crate::wifi::AirtimeReport(WifiAirtimeReport {
             peer_records: u8::MAX,
             dropped_events: u64::MAX,
             saturated: true,
         }),
-    ] {
-        let expected = Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, body);
-        let mut encoder = FrameEncoder::new();
-        let mut decoder = FrameDecoder::new();
-        let mut actual = None;
-        decoder.feed(encoder.encode(&expected).unwrap(), |record| {
-            actual = Some(record.unwrap())
-        });
-        assert_eq!(actual, Some(expected));
-    }
+    ));
 }
 
 #[test]
 fn worst_case_aggregate_fill_record_fits_one_wire_frame() {
-    let body = Event::WifiApAggregateFill(crate::WifiApAggregateFill {
+    let body = crate::wifi::AccessPointAggregateFill(crate::wifi::WifiApAggregateFill {
         generation: u32::MAX,
         association_id: u16::MAX,
         aggregates: u32::MAX,
@@ -52,9 +53,6 @@ fn worst_case_aggregate_fill_record_fits_one_wire_frame() {
     let expected = Envelope::new(u64::MAX, u32::MAX, u64::MAX, u32::MAX, body);
     let mut encoder = FrameEncoder::new();
     let mut decoder = FrameDecoder::new();
-    let mut actual = None;
-    decoder.feed(encoder.encode(&expected).unwrap(), |record| {
-        actual = Some(record.unwrap())
-    });
+    let actual = receive(&mut decoder, encoder.encode(&expected).unwrap()).map(Result::unwrap);
     assert_eq!(actual, Some(expected));
 }

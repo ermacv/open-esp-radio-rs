@@ -69,19 +69,10 @@ fn a_link_failure_is_told_from_a_compile_failure() {
 }
 
 #[test]
-fn the_protocol_version_is_read_from_its_declaration() {
-    assert_eq!(
-        protocol_version("pub const PROTOCOL_VERSION: u16 = 196;\n"),
-        Some(196)
-    );
-    assert_eq!(protocol_version("const OTHER: u16 = 3;"), None);
-    let source = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join(PROTOCOL_SOURCE),
-    )
-    .unwrap();
-    assert!(protocol_version(&source).is_some());
+fn this_tree_names_its_wire_and_an_older_tree_none() {
+    let lock = messages_lock(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    assert!(lock.is_some_and(|lock| lock.contains("\nframing ")));
+    assert_eq!(messages_lock(tempfile::tempdir().unwrap().path()), None);
 }
 
 fn run_with(

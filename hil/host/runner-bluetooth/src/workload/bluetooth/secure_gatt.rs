@@ -9,7 +9,7 @@ use crate::{
     fixture::bluetooth::secure_gatt::Owner,
 };
 use hil_core::{context::Context, session::SerialCapture};
-use oer_hil_protocol::BluetoothSecureGattEvidence as Evidence;
+use oer_hil_protocol::bluetooth::BluetoothSecureGattEvidence as Evidence;
 use std::{
     path::Path,
     time::{Duration, Instant},
@@ -110,7 +110,7 @@ pub fn run(
         let mut peer = None;
         let probe = (|| -> Result<()> {
             let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
-            if !capabilities.features.bluetooth_secure_gatt || capabilities.features.bluetooth_gatt { return Err("exclusive secure GATT image required".into()); }
+            if !capabilities.has::<oer_hil_protocol::bluetooth::SecureGatt>() || capabilities.has::<oer_hil_protocol::bluetooth::Gatt>() { return Err("exclusive secure GATT image required".into()); }
             capture.require_bluetooth_irq_stack()?;
             let initial = wait(capture,&mut samples,|e|e.traffic.advertising && e.traffic.address.is_some())?;
             if initial.traffic.connections != 0 || initial.bonds_stored != 0 || initial.comparisons != 0 || initial.traffic.value != 0 { return Err("fresh secure application epoch required".into()); }

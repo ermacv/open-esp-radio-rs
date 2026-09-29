@@ -13,9 +13,9 @@ mod tcp;
 mod udp;
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use oer_hil_protocol::SessionLinkRequirements;
-use oer_hil_protocol::Transport;
-use oer_hil_protocol::WifiNetworkInterface;
+use oer_hil_protocol::network::SessionLinkRequirements;
+use oer_hil_protocol::network::Transport;
+use oer_hil_protocol::wifi::WifiNetworkInterface;
 
 use crate::console::{ActiveSession, receive_session_start};
 
@@ -99,11 +99,11 @@ pub(super) use udp::{
 /// that stops before publishing becomes a named hang instead of silence.
 pub(in crate::product_hil) fn session_evidence_due() {
     #[cfg(not(feature = "memory-benchmark"))]
-    crate::hang_watchdog::arm(oer_hil_protocol::TaskSlot::SessionEvidence);
+    crate::hang_watchdog::arm(oer_hil_protocol::base::TaskSlot::SessionEvidence);
 }
 
 /// The session's evidence reached the protocol owner.
 pub(in crate::product_hil) fn session_evidence_published() {
     #[cfg(not(feature = "memory-benchmark"))]
-    crate::hang_watchdog::took_work(oer_hil_protocol::TaskSlot::SessionEvidence, false);
+    crate::hang_watchdog::took_work(oer_hil_protocol::base::TaskSlot::SessionEvidence, false);
 }

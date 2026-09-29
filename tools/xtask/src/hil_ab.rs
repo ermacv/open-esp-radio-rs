@@ -227,16 +227,14 @@ pub(crate) fn run(
     let id = unix_millis().to_string();
     let directory = ctx.root.join("target/hil/ab").join(&id);
     fs::create_dir_all(&directory)?;
-    let current = crate::hil_bisect::protocol_version(&fs::read_to_string(
-        ctx.root.join(crate::hil_bisect::PROTOCOL_SOURCE),
-    )?)
-    .ok_or("this checkout's HIL protocol version is unreadable")?;
+    let current =
+        crate::hil_bisect::messages_lock(&ctx.root).ok_or("this checkout names no HIL wire")?;
     let arms = [
         (Arm::A, cli.a.parse::<VariantSpec>()?),
         (Arm::B, cli.b.parse::<VariantSpec>()?),
     ]
     .into_iter()
-    .map(|(arm, spec)| prepare(ctx, &directory, arm, &spec, current))
+    .map(|(arm, spec)| prepare(ctx, &directory, arm, &spec, &current))
     .collect::<Result<Vec<_>>>()?;
     let mut report = Report {
         schema: REPORT_SCHEMA,
@@ -406,7 +404,7 @@ fn prepare(
     directory: &Path,
     arm: Arm,
     spec: &VariantSpec,
-    current: u16,
+    current: &str,
 ) -> Result<PreparedArm> {
     let commit = git_text(
         &ctx.root,
@@ -430,15 +428,12 @@ fn prepare(
             &commit,
         ],
     )?;
-    let version = fs::read_to_string(worktree.join(crate::hil_bisect::PROTOCOL_SOURCE))
-        .ok()
-        .and_then(|source| crate::hil_bisect::protocol_version(&source));
-    if version != Some(current) {
+    if crate::hil_bisect::messages_lock(&worktree).as_deref() != Some(current) {
         return Err(format!(
-            "arm {arm} ({}) speaks HIL protocol {}, this checkout {current}; an A/B comparison \
-             runs both arms on this checkout's runner",
-            spec.revision,
-            version.map_or_else(|| String::from("unknown"), |version| version.to_string())
+            "arm {arm} ({}) speaks another HIL wire than this checkout (its \
+             hil/protocol/messages.lock differs); an A/B comparison runs both arms on this \
+             checkout's runner",
+            spec.revision
         )
         .into());
     }

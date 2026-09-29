@@ -1,10 +1,10 @@
 //! HIL-owned stack composition; all implementations share the traffic workloads.
 #![forbid(unsafe_code)]
 pub(super) struct Settings {
-    pub ipv4: Option<oer_hil_protocol::NetworkIpv4Configuration>,
+    pub ipv4: Option<oer_hil_protocol::wifi::NetworkIpv4Configuration>,
     pub seed: u64,
-    pub rx_checksum: oer_hil_protocol::WifiRxChecksumPolicy,
-    pub tx_udp_checksum: oer_hil_protocol::WifiTxUdpChecksumPolicy,
+    pub rx_checksum: oer_hil_protocol::wifi::WifiRxChecksumPolicy,
+    pub tx_udp_checksum: oer_hil_protocol::wifi::WifiTxUdpChecksumPolicy,
 }
 
 mod embassy;

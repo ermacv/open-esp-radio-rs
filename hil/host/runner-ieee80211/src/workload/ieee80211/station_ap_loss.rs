@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_hil_protocol::{StationDisconnectReason, StationLifecycleEvent};
+use oer_hil_protocol::{wifi::StationDisconnectReason, wifi::StationLifecycleEvent};
 
 use crate::{Result, fixture::controlled_ap::ControlledAp};
 use hil_core::{lab::link::PhyExpectation, session::SerialCapture};
@@ -40,7 +40,7 @@ pub fn run(
             // replies, not cached readiness, prove the recovered data path.
             let address = capture.wait_for_network_ready_after(
                 0,
-                oer_hil_protocol::WifiNetworkInterface::Station,
+                oer_hil_protocol::wifi::WifiNetworkInterface::Station,
                 options.timeout,
             )?;
             let result = crate::workload::traffic::icmp_latency::fresh_echo(address);
@@ -79,7 +79,7 @@ fn qualify(
     timeout: Duration,
 ) -> Result<()> {
     let capabilities = capture.prepare_station(context.target(), timeout)?;
-    if !capabilities.features.station_lifecycle_events {
+    if !capabilities.has::<oer_hil_protocol::wifi::StationLifecycleEvents>() {
         return Err("firmware does not advertise reliable station lifecycle events".into());
     }
 

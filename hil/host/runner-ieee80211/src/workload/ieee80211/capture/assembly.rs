@@ -1,4 +1,6 @@
-use oer_hil_protocol::{WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence};
+use oer_hil_protocol::{
+    wifi::WifiMonitorFrameChunk, wifi::WifiMonitorObserved, wifi::WifiMonitorPhyEvidence,
+};
 
 use crate::Result;
 

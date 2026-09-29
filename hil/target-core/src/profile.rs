@@ -14,7 +14,10 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
-use oer_hil_protocol::{PROFILE_SAMPLE_PAGE, ProfileHarts, ProfileSamplesPage, ProfileStatus};
+use oer_hil_protocol::{
+    telemetry::PROFILE_SAMPLE_PAGE, telemetry::ProfileHarts, telemetry::ProfileSamplesPage,
+    telemetry::ProfileStatus,
+};
 
 /// The chip's sampling timer. Its handlers call [`Profiler::record`] for
 /// each hart the profile samples.

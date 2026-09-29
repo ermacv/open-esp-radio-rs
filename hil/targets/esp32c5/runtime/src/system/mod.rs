@@ -3,9 +3,9 @@ pub(crate) mod console;
 pub(crate) mod postmortem;
 mod watchdog;
 
-pub(crate) fn boot_evidence() -> oer_hil_protocol::BootEvidence {
+pub(crate) fn boot_evidence() -> oer_hil_protocol::base::BootEvidence {
     use esp_hal::rtc_cntl::SocResetReason as Soc;
-    use oer_hil_protocol::{BootEvidence, ResetReason};
+    use oer_hil_protocol::base::{BootEvidence, ResetReason};
     let raw = esp_hal::system::reset_reason();
     BootEvidence {
         // Only reasons that mean the same as on the other chips are named;
@@ -28,10 +28,10 @@ pub(crate) fn boot_evidence() -> oer_hil_protocol::BootEvidence {
 }
 
 /// Checkpoints `first..` of the previous boot's post-mortem.
-pub(crate) fn post_mortem_checkpoints(first: u8) -> oer_hil_protocol::PostMortemCheckpoints {
+pub(crate) fn post_mortem_checkpoints(first: u8) -> oer_hil_protocol::base::PostMortemCheckpoints {
     postmortem::previous(|previous| {
         previous.map_or_else(
-            || oer_hil_protocol::PostMortemCheckpoints {
+            || oer_hil_protocol::base::PostMortemCheckpoints {
                 first,
                 checkpoints: Default::default(),
             },

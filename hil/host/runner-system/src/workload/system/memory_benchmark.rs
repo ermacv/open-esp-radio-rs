@@ -3,8 +3,8 @@
 use crate::Result;
 use hil_core::context::Context;
 use oer_hil_protocol::{
-    MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource,
-    MemoryBenchmarkStop,
+    system::MemoryBenchmarkEvidence, system::MemoryBenchmarkMode, system::MemoryBenchmarkRequest,
+    system::MemoryBenchmarkSource, system::MemoryBenchmarkStop,
 };
 use serde::Serialize;
 use std::{fs, path::Path, time::Duration};
@@ -30,7 +30,7 @@ pub fn run(config: Config<'_>, output: &Path, context: &Context<'_>) -> Result<(
     for boot in 1..=config.boots {
         let result = context.with_capture(&output.join(format!("boot-{boot:03}")), |capture| {
             let capabilities = capture.request_capabilities(Duration::from_secs(10))?;
-            if !capabilities.features.memory_benchmark {
+            if !capabilities.has::<oer_hil_protocol::system::MemoryBenchmark>() {
                 return Err("firmware does not advertise memory benchmarks".into());
             }
             for &requested in &requests {

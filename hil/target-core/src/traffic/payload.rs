@@ -1,5 +1,5 @@
 //! Whether a UDP receive session compares its payload fill.
-use oer_hil_protocol::UdpSessionPayloadIdentity;
+use oer_hil_protocol::network::UdpSessionPayloadIdentity;
 
 /// Decided once per session: only a session with an identified flow reads the
 /// fill verdict, so an unidentified benchmark never scans received payloads.

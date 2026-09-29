@@ -1,4 +1,4 @@
-use oer_hil_protocol::WifiMonitorFrameChunk;
+use oer_hil_protocol::wifi::WifiMonitorFrameChunk;
 
 use super::*;
 

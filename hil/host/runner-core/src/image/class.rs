@@ -1,6 +1,5 @@
 //! HIL image identity and reproducible build feature recipes.
 
-use oer_hil_protocol::FeatureCapabilities;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -108,42 +107,6 @@ impl ImageClass {
             Self::DiagnosticIeee802154Route => "diagnostic-ieee802154-route",
             Self::DiagnosticMemoryBenchmark => "diagnostic-memory-benchmark",
         }
-    }
-
-    /// The capabilities a dedicated console image of this class declares,
-    /// or `None` for an image that reports the Wi-Fi HIL profile.
-    pub fn console_capabilities(self) -> Option<FeatureCapabilities> {
-        let console = FeatureCapabilities {
-            structured_evidence: true,
-            psram_task_stack: true,
-            ..FeatureCapabilities::default()
-        };
-        let dtm = FeatureCapabilities {
-            bluetooth_dtm: true,
-            ..console
-        };
-        Some(match self {
-            Self::SystemWatchdog => FeatureCapabilities {
-                system_watchdog: true,
-                ..console
-            },
-            Self::BluetoothGatt => FeatureCapabilities {
-                bluetooth_gatt: true,
-                ..console
-            },
-            Self::BluetoothSecureGatt => FeatureCapabilities {
-                bluetooth_secure_gatt: true,
-                ..console
-            },
-            // The radio-contract image serves Direct Test Mode and raw HCI
-            // exchanges.
-            Self::BluetoothDtm => FeatureCapabilities {
-                phy_rx_hot_sram: true,
-                bluetooth_hci: true,
-                ..dtm
-            },
-            _ => return None,
-        })
     }
 
     /// Whether the image compiles the program-counter sampler

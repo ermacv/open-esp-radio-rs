@@ -9,8 +9,8 @@ use std::{
 };
 
 use oer_hil_protocol::{
-    StationAttemptFailureReason, StationDisconnectReason, StationFailureStage,
-    StationLifecycleEvent,
+    wifi::StationAttemptFailureReason, wifi::StationDisconnectReason, wifi::StationFailureStage,
+    wifi::StationLifecycleEvent,
 };
 
 use crate::{Result, fixture::controlled_ap::ControlledAp};
@@ -66,13 +66,13 @@ fn qualify(
         ap.stop()?;
         let (capabilities, handle) = capture.begin_station_attempt(context.target())?;
         validate_service_admission(capture.wait_wifi_role_transition(handle, timeout)?)?;
-        if !capabilities.features.station_lifecycle_events {
+        if !capabilities.has::<oer_hil_protocol::wifi::StationLifecycleEvents>() {
             return Err("firmware does not advertise reliable station lifecycle events".into());
         }
         0
     } else {
         let capabilities = capture.prepare_station(context.target(), timeout)?;
-        if !capabilities.features.station_lifecycle_events {
+        if !capabilities.has::<oer_hil_protocol::wifi::StationLifecycleEvents>() {
             return Err("firmware does not advertise reliable station lifecycle events".into());
         }
         expect_event(
@@ -147,9 +147,9 @@ fn qualify(
 }
 
 fn validate_service_admission(
-    evidence: oer_hil_protocol::WifiRoleTransitionEvidence,
+    evidence: oer_hil_protocol::wifi::WifiRoleTransitionEvidence,
 ) -> Result<()> {
-    use oer_hil_protocol::WifiRole;
+    use oer_hil_protocol::wifi::WifiRole;
     if evidence.previous != WifiRole::Idle || evidence.current != WifiRole::Station {
         return Err(format!(
             "initial absence did not admit the requested station service: {evidence:?}"

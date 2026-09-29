@@ -27,8 +27,8 @@ use hil_wifi::workload::traffic::{
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
 };
 use oer_hil_protocol::{
-    Completion, Direction, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements,
-    Transport,
+    network::Completion, network::Direction, network::FlowConfig, network::SessionConfig,
+    network::SessionFlowConfig, network::SessionLinkRequirements, network::Transport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -101,7 +101,7 @@ impl CoexistenceScenario {
             let route = BenchmarkIpv4Route::discover(ready.address, &context.lab.station_fixture)?;
             let mut echo = Echo::connect(capture, adapter, output)?;
             let session = capture.start_session(SessionConfig {
-                network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
+                network_interface: oer_hil_protocol::wifi::WifiNetworkInterface::Station,
                 transport: Transport::Udp,
                 direction: Direction::Rx,
                 completion: Completion::DurationMillis(u32::try_from(duration.as_millis())?),

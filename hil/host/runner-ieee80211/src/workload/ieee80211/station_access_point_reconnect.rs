@@ -5,8 +5,8 @@ use hil_core::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use oer_hil_protocol::{
-    StationDisconnectReason, StationLifecycleEvent, WifiNetworkInterface, WifiRole,
-    WifiStationAccessPointRequest,
+    wifi::StationDisconnectReason, wifi::StationLifecycleEvent, wifi::WifiNetworkInterface,
+    wifi::WifiRole, wifi::WifiStationAccessPointRequest,
 };
 
 use crate::{
@@ -51,8 +51,8 @@ fn qualify(
 ) -> Result<()> {
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
     let capabilities = capture.prepare_station(context.target(), timeout)?;
-    if !capabilities.features.simultaneous_station_access_point
-        || !capabilities.features.station_lifecycle_events
+    if !capabilities.has::<oer_hil_protocol::wifi::StationAccessPoint>()
+        || !capabilities.has::<oer_hil_protocol::wifi::StationLifecycleEvents>()
     {
         return Err("firmware lacks paired-role or lifecycle evidence".into());
     }
@@ -154,14 +154,14 @@ fn start_pair(
     capture: &SerialCapture,
     timeout: Duration,
     context: &Context<'_>,
-) -> Result<oer_hil_protocol::WifiRoleTransitionEvidence> {
+) -> Result<oer_hil_protocol::wifi::WifiRoleTransitionEvidence> {
     let transition = capture.wait_wifi_role_transition(
         capture.request_station_access_point_start(WifiStationAccessPointRequest {
             station_credentials: context.lab.station.protocol_credentials()?,
             access_point: context
                 .lab
                 .access_point
-                .protocol_request(oer_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?,
+                .protocol_request(oer_hil_protocol::wifi::WifiAccessPointSecurity::Wpa2Personal)?,
         })?,
         timeout,
     )?;

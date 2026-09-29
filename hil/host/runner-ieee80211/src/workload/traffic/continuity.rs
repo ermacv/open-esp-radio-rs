@@ -1,6 +1,6 @@
 //! Delivery continuity is independent of average-throughput and radio gates.
 use crate::Result;
-use oer_hil_protocol::TransportEvidence;
+use oer_hil_protocol::network::TransportEvidence;
 
 pub(super) fn record_rx_silence(
     recorder: &hil_core::evidence::measurements::Recorder,

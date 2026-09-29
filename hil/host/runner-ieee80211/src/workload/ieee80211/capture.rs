@@ -10,7 +10,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use oer_hil_protocol::WifiMonitorCaptureRequest;
+use oer_hil_protocol::wifi::WifiMonitorCaptureRequest;
 
 use crate::{
     Result, workload::ieee80211::control::scan, workload::ieee80211::control::start_station,
@@ -86,7 +86,7 @@ fn qualify(
     options: &Config,
 ) -> Result<CaptureResult> {
     let capabilities = serial.prepare_station(context.target(), options.timeout)?;
-    if !capabilities.features.wifi_monitor_capture {
+    if !capabilities.has::<oer_hil_protocol::wifi::MonitorCapture>() {
         return Err("firmware does not advertise typed monitor capture".into());
     }
     stop_station(serial, options.timeout)?;

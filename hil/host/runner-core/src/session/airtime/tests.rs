@@ -1,5 +1,13 @@
 use super::*;
-use oer_hil_protocol::{WifiAccessPointEvidence, WifiAirtimePeer, WifiAirtimeReport};
+use crate::session::test_support::received;
+
+/// `body` as the host receives it.
+fn message<M: oer_hil_protocol::Message>(body: M) -> Received {
+    received(oer_hil_protocol::Envelope::new(7, 0, 0, 1, body))
+}
+use oer_hil_protocol::{
+    wifi::WifiAccessPointEvidence, wifi::WifiAirtimePeer, wifi::WifiAirtimeReport,
+};
 
 fn peer() -> WifiAirtimePeerEvidence {
     WifiAirtimePeerEvidence {
@@ -17,19 +25,31 @@ fn peer() -> WifiAirtimePeerEvidence {
         maximum_outstanding: 2,
     }
 }
-fn report() -> Event {
-    Event::WifiAirtimeReport(WifiAirtimeReport {
+fn report() -> Received {
+    message(oer_hil_protocol::wifi::AirtimeReport(WifiAirtimeReport {
         peer_records: 1,
         ..Default::default()
-    })
+    }))
 }
-fn stopped() -> Event {
-    Event::WifiAccessPointStopped(WifiAccessPointEvidence::default())
+fn stopped() -> Received {
+    message(oer_hil_protocol::wifi::AccessPointStopped(
+        WifiAccessPointEvidence::default(),
+    ))
 }
 
 #[test]
 fn complete_accounting_accepts_debt_but_requires_every_reservation_closed() {
-    assert!(validate([Event::WifiAirtimePeer(peer()), report(), stopped()].iter()).is_ok());
+    assert!(
+        validate(
+            [
+                message(oer_hil_protocol::wifi::AirtimePeer(peer())),
+                report(),
+                stopped()
+            ]
+            .iter()
+        )
+        .is_ok()
+    );
     let pending = WifiAirtimePeerEvidence {
         settlements: 1,
         settled_grants_micros: 1000,
@@ -37,18 +57,38 @@ fn complete_accounting_accepts_debt_but_requires_every_reservation_closed() {
         outstanding_micros: 1000,
         ..peer()
     };
-    assert!(validate([Event::WifiAirtimePeer(pending), report(), stopped()].iter()).is_err());
+    assert!(
+        validate(
+            [
+                message(oer_hil_protocol::wifi::AirtimePeer(pending)),
+                report(),
+                stopped()
+            ]
+            .iter()
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn missing_duplicate_late_and_inconsistent_evidence_is_rejected() {
     assert!(validate([stopped()].iter()).is_err());
-    assert!(validate([Event::WifiAirtimePeer(peer()), stopped(), report()].iter()).is_err());
     assert!(
         validate(
             [
-                Event::WifiAirtimePeer(peer()),
-                Event::WifiAirtimePeer(peer()),
+                message(oer_hil_protocol::wifi::AirtimePeer(peer())),
+                stopped(),
+                report()
+            ]
+            .iter()
+        )
+        .is_err()
+    );
+    assert!(
+        validate(
+            [
+                message(oer_hil_protocol::wifi::AirtimePeer(peer())),
+                message(oer_hil_protocol::wifi::AirtimePeer(peer())),
                 report(),
                 stopped()
             ]
@@ -60,7 +100,17 @@ fn missing_duplicate_late_and_inconsistent_evidence_is_rejected() {
         granted_micros: 3001,
         ..peer()
     };
-    assert!(validate([Event::WifiAirtimePeer(wrong), report(), stopped()].iter()).is_err());
+    assert!(
+        validate(
+            [
+                message(oer_hil_protocol::wifi::AirtimePeer(wrong)),
+                report(),
+                stopped()
+            ]
+            .iter()
+        )
+        .is_err()
+    );
     for incomplete in [
         WifiAirtimeReport {
             peer_records: 2,
@@ -80,8 +130,8 @@ fn missing_duplicate_late_and_inconsistent_evidence_is_rejected() {
         assert!(
             validate(
                 [
-                    Event::WifiAirtimePeer(peer()),
-                    Event::WifiAirtimeReport(incomplete),
+                    message(oer_hil_protocol::wifi::AirtimePeer(peer())),
+                    message(oer_hil_protocol::wifi::AirtimeReport(incomplete)),
                     stopped()
                 ]
                 .iter()

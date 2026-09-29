@@ -14,44 +14,41 @@ use gatt_application::security::{
 };
 use oer_bluetooth_controller::{LeController, LeControllerConfig};
 use oer_bluetooth_hci::*;
-use oer_hil_protocol::{BluetoothGattResetReadGate as Phase, Command, Event};
+use oer_hil_protocol::{bluetooth, bluetooth::BluetoothGattResetReadGate as Phase};
 use oer_hil_target_core::bluetooth_gatt::secure::reset_gate::GatedController;
 use trouble_host::prelude::*;
 
 #[test]
 fn gate_requests_are_epoch_bound_one_shot_and_cannot_release_early() {
     let state = state::State::new();
-    let arm = Command::BluetoothGattResetReadGate {
+    let arm = bluetooth::GattResetReadGate {
         epoch: 1,
         release: false,
     };
-    let release = Command::BluetoothGattResetReadGate {
+    let release = bluetooth::GattResetReadGate {
         epoch: 1,
         release: true,
     };
-    assert!(matches!(state.command(arm.clone()), Event::Rejected(_)));
+    assert!(matches!(state.reset_read_gate(arm.clone()), Err(_)));
     state.observe(Observation::Advertising);
     assert!(matches!(
-        state.command(Command::BluetoothGattResetReadGate {
+        state.reset_read_gate(bluetooth::GattResetReadGate {
             epoch: 0,
             release: false
         }),
-        Event::Rejected(_)
+        Err(_)
     ));
-    assert!(matches!(state.command(release.clone()), Event::Rejected(_)));
-    assert!(matches!(
-        state.command(arm.clone()),
-        Event::BluetoothSecureGatt(_)
-    ));
+    assert!(matches!(state.reset_read_gate(release.clone()), Err(_)));
+    assert!(matches!(state.reset_read_gate(arm.clone()), Ok(_)));
     assert_eq!(snapshot(&state).reset_read_gate, Phase::Armed);
-    assert!(matches!(state.command(arm), Event::Rejected(_)));
-    assert!(matches!(state.command(release.clone()), Event::Rejected(_)));
-    state.command(Command::RestartBluetoothGatt { epoch: 1 });
+    assert!(matches!(state.reset_read_gate(arm), Err(_)));
+    assert!(matches!(state.reset_read_gate(release.clone()), Err(_)));
+    let _ = state.restart_application(bluetooth::RestartGatt { epoch: 1 });
     assert!(matches!(
-        state.command(Command::FailBluetoothGattResetRead { epoch: 1 }),
-        Event::Rejected(_)
+        state.fail_reset_read(bluetooth::FailGattResetRead { epoch: 1 }),
+        Err(_)
     ));
-    assert!(matches!(state.command(release), Event::Rejected(_)));
+    assert!(matches!(state.reset_read_gate(release), Err(_)));
     assert!(snapshot(&state).shutdown.is_none());
     assert_eq!(snapshot(&state).cold_releases, 0);
 }
@@ -91,13 +88,13 @@ fn exercise(cancel: bool, fail: bool) {
     let state = state::State::new();
     state.observe(Observation::Advertising);
     assert!(matches!(
-        state.command(Command::BluetoothGattResetReadGate {
+        state.reset_read_gate(bluetooth::GattResetReadGate {
             epoch: 1,
             release: false
         }),
-        Event::BluetoothSecureGatt(_)
+        Ok(_)
     ));
-    state.command(Command::RestartBluetoothGatt { epoch: 1 });
+    let _ = state.restart_application(bluetooth::RestartGatt { epoch: 1 });
     let gate = &state.reset_gate;
     let controller = GatedController {
         inner: ExternalController::<_, 1>::new(endpoints.host),
@@ -145,33 +142,32 @@ fn exercise(cancel: bool, fail: bool) {
         );
         if !cancel {
             assert!(matches!(
-                state.command(Command::BluetoothGattResetReadGate {
+                state.reset_read_gate(bluetooth::GattResetReadGate {
                     epoch: 2,
                     release: true
                 }),
-                Event::Rejected(_)
+                Err(_)
             ));
             let wakes = count.0.load(std::sync::atomic::Ordering::SeqCst);
-            let operation = if fail {
-                Command::FailBluetoothGattResetRead { epoch: 1 }
-            } else {
-                Command::BluetoothGattResetReadGate {
-                    epoch: 1,
-                    release: true,
+            let operation = || {
+                if fail {
+                    state.fail_reset_read(bluetooth::FailGattResetRead { epoch: 1 })
+                } else {
+                    state.reset_read_gate(bluetooth::GattResetReadGate {
+                        epoch: 1,
+                        release: true,
+                    })
                 }
             };
-            assert!(matches!(
-                state.command(operation.clone()),
-                Event::BluetoothSecureGatt(_)
-            ));
-            assert!(matches!(state.command(operation), Event::Rejected(_)));
+            assert!(operation().is_ok());
+            assert!(operation().is_err());
             assert!(count.0.load(std::sync::atomic::Ordering::SeqCst) > wakes);
             assert!(matches!(
-                state.command(Command::BluetoothGattResetReadGate {
+                state.reset_read_gate(bluetooth::GattResetReadGate {
                     epoch: 1,
                     release: true
                 }),
-                Event::Rejected(_)
+                Err(_)
             ));
             let mut exit = None;
             for _ in 0..4 {

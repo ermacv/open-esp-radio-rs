@@ -17,21 +17,33 @@ fn rx_delivery_wait_ignores_other_sessions_and_requires_actual_data() {
         flow_ids: [Some(0), None],
     };
     for (sequence, id, event) in [
-        (1, 8, Event::UdpRxStarted { datagrams: 256 }),
-        (2, 9, Event::UdpRxStarted { datagrams: 255 }),
+        (
+            1,
+            8,
+            any(oer_hil_protocol::network::UdpRxStarted { datagrams: 256 }),
+        ),
+        (
+            2,
+            9,
+            any(oer_hil_protocol::network::UdpRxStarted { datagrams: 255 }),
+        ),
         (
             3,
             9,
-            Event::SessionReady(oer_hil_protocol::SessionReady {
-                direction: oer_hil_protocol::Direction::Rx,
+            any(oer_hil_protocol::network::SessionReady {
+                direction: oer_hil_protocol::network::Direction::Rx,
                 tx_block_ack_tid: None,
             }),
         ),
-        (4, 9, Event::Failed(oer_hil_protocol::FailureCode::Network)),
+        (
+            4,
+            9,
+            any(oer_hil_protocol::network::Failed(
+                oer_hil_protocol::network::FailureCode::Network,
+            )),
+        ),
     ] {
-        input
-            .send(Ok(frame(Envelope::new(7, sequence, id, 0, event))))
-            .unwrap();
+        input.send(Ok(event.frame(7, sequence, id, 0))).unwrap();
     }
     assert!(
         capture
@@ -53,7 +65,7 @@ fn rx_delivery_event_wakes_the_session_waiter() {
             1,
             9,
             0,
-            Event::UdpRxStarted { datagrams: 256 },
+            oer_hil_protocol::network::UdpRxStarted { datagrams: 256 },
         ))))
         .unwrap();
     let session = SessionHandle {
@@ -82,7 +94,7 @@ fn measurements_survive_link_failure_and_unwinding_capture() {
             1,
             5,
             1,
-            Event::Evidence(EvidenceRecord::Transport(TransportEvidence {
+            oer_hil_protocol::network::Evidence(EvidenceRecord::Transport(TransportEvidence {
                 rx_maximum_silence_micros: None,
                 rx_bytes: 125,
                 tx_bytes: 0,
@@ -131,53 +143,68 @@ fn observation_discovers_a_running_boot_without_initializing_or_clearing_results
         .unwrap();
     let input_guard = input.clone();
     let target = thread::spawn(move || {
-        for (offset, expected) in [
-            Command::GetCapabilities,
-            Command::GetStatus,
-            Command::QueryStackUsage,
-            Command::QueryLinkHealth,
-            Command::QueryLinkHealth,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let request = receive_command(&commands);
-            assert_eq!(request.body, expected);
-            assert_eq!(request.boot_id, if offset == 0 { 0 } else { 7 });
-            assert_eq!(request.session_id, 0);
-            request.validate_target(7).unwrap();
-            let body = match expected {
-                Command::GetCapabilities => hello(7, 87).body,
-                Command::GetStatus => Event::OperationStatus(OperationStatus {
-                    state: SessionState::Finished,
-                    configured_session_id: Some(9),
-                    completed_session_id: Some(9),
-                }),
-                Command::QueryStackUsage => {
-                    Event::Rejected(oer_hil_protocol::RejectReason::InvalidState)
-                }
-                Command::QueryLinkHealth => Event::LinkHealth(LinkHealth {
-                    rx_frames: 12,
-                    rx_cobs_errors: 0,
-                    rx_checksum_errors: 2,
-                    rx_decode_errors: 0,
-                    rx_overflows: 0,
-                    tx_frames: 87 + offset as u32,
-                    tx_dropped: 0,
-                    text_dropped: 0,
-                    text_truncated: 0,
-                }),
-                _ => unreachable!(),
-            };
+        fn reply<M: oer_hil_protocol::Message>(
+            input: &Input,
+            request: &Received,
+            sequence: u32,
+            body: M,
+        ) {
             input
                 .send(Ok(frame(Envelope::new(
                     7,
-                    87 + offset as u32,
+                    sequence,
                     0,
                     request.request_id,
                     body,
                 ))))
                 .unwrap();
+        }
+        let request = receive_request(&commands);
+        assert!(request.is::<oer_hil_protocol::base::GetHello>());
+        assert_eq!((request.boot_id, request.session_id), (0, 0));
+        reply(&input, &request, 87, hello(7, 87).body);
+        let mut sequence = answer_capabilities(&input, &commands, 7, 88);
+        let (request, oer_hil_protocol::network::GetStatus) = receive(&commands);
+        assert_eq!((request.boot_id, request.session_id), (7, 0));
+        let status = OperationStatus {
+            state: oer_hil_protocol::network::SessionState::Finished,
+            configured_session_id: Some(9),
+            completed_session_id: Some(9),
+        };
+        reply(
+            &input,
+            &request,
+            sequence,
+            oer_hil_protocol::network::Status(status),
+        );
+        sequence += 1;
+        let (request, oer_hil_protocol::system::GetStacks) = receive(&commands);
+        assert_eq!((request.boot_id, request.session_id), (7, 0));
+        let refused = oer_hil_protocol::base::RejectReason::InvalidState;
+        reply(
+            &input,
+            &request,
+            sequence,
+            oer_hil_protocol::base::Rejected(refused),
+        );
+        sequence += 1;
+        for _ in 0..2 {
+            let request = receive_request(&commands);
+            assert!(request.is::<oer_hil_protocol::base::GetLinkHealth>());
+            assert_eq!(request.boot_id, 7);
+            let health = oer_hil_protocol::base::LinkHealth {
+                rx_frames: 12,
+                rx_cobs_errors: 0,
+                rx_checksum_errors: 2,
+                rx_decode_errors: 0,
+                rx_overflows: 0,
+                tx_frames: sequence,
+                tx_dropped: 0,
+                text_dropped: 0,
+                text_truncated: 0,
+            };
+            reply(&input, &request, sequence, health);
+            sequence += 1;
         }
     });
     let report = capture.observe(Duration::from_secs(2));
@@ -192,7 +219,7 @@ fn observation_discovers_a_running_boot_without_initializing_or_clearing_results
     assert!(
         fs::read_to_string(output.0.join("protocol.jsonl"))
             .unwrap()
-            .contains("target-link-health")
+            .contains("base/link-health")
     );
 }
 
@@ -215,7 +242,7 @@ fn signal_cancellation_harness() {
     });
     let started = Instant::now();
     let error = capture
-        .wait_for_protocol_after(0, Duration::from_secs(60), |_| false)
+        .wait_for_message_after(0, Duration::from_secs(60), |_| false)
         .unwrap_err();
     sender.join().unwrap();
     assert!(oer_process::is_cancelled(&*error));
@@ -272,7 +299,7 @@ fn signals_cancel_protocol_wait_and_preserve_partial_capture() {
 fn failure(capture: &SerialCapture, kind: ErrorKind) -> String {
     let start = Instant::now();
     let error = capture
-        .wait_for_protocol_after(0, Duration::from_secs(3), |_| false)
+        .wait_for_message_after(0, Duration::from_secs(3), |_| false)
         .unwrap_err();
     assert!(
         start.elapsed() < Duration::from_secs(1),
@@ -381,7 +408,7 @@ fn reboot_cannot_clear_a_failure_or_satisfy_an_old_operation() {
     let output = Output::new();
     let (capture, input) = capture(&output, false);
     activate(&capture, &input);
-    let mut batch = frame(Envelope::new(7, 3, 0, 0, Event::Accepted));
+    let mut batch = frame(Envelope::new(7, 3, 0, 0, oer_hil_protocol::base::Accepted));
     batch.extend(frame(hello(8, 0)));
     input.send(Ok(batch)).unwrap();
     let cause = failure(&capture, ErrorKind::Protocol);
@@ -404,23 +431,24 @@ fn optional_wait_reports_absence_only_while_the_link_is_healthy() {
     let (capture, input) = capture(&output, false);
     assert!(
         capture
-            .wait_for_protocol_after(0, Duration::ZERO, |_| true)
+            .wait_for_message_after(0, Duration::ZERO, |_| true)
             .unwrap()
             .is_none()
     );
     activate(&capture, &input);
     assert!(
         capture
-            .wait_for_protocol_after(0, Duration::ZERO, |event| matches!(
-                event.body,
-                Event::Hello(_)
-            ))
+            .wait_for_message_after(
+                0,
+                Duration::ZERO,
+                Received::is::<oer_hil_protocol::base::Hello>
+            )
             .unwrap()
             .is_some()
     );
     assert!(
         capture
-            .wait_for_protocol_after(1, Duration::from_millis(5), |_| true)
+            .wait_for_message_after(1, Duration::from_millis(5), |_| true)
             .unwrap()
             .is_none()
     );
@@ -438,7 +466,7 @@ fn lifecycle_cursor_advances_and_does_not_repeat_events() {
             1,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 4,
                 association_bandwidth_mhz: None,
                 security: None,
@@ -465,7 +493,7 @@ fn lifecycle_cursor_advances_and_does_not_repeat_events() {
 
 #[test]
 fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
-    use oer_hil_protocol::{NetworkInfo, WifiNetworkInterface};
+    use oer_hil_protocol::{network::NetworkInfo, wifi::WifiNetworkInterface};
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -476,7 +504,7 @@ fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
             1,
             0,
             0,
-            Event::NetworkReady(NetworkInfo {
+            oer_hil_protocol::network::Ready(NetworkInfo {
                 network_interface: WifiNetworkInterface::Station,
                 address: [127, 0, 0, 1],
                 prefix_length: 8,
@@ -485,9 +513,11 @@ fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
         ))))
         .unwrap();
     capture
-        .wait_for_protocol_after(1, Duration::from_secs(2), |message| {
-            matches!(message.body, Event::NetworkReady(_))
-        })
+        .wait_for_after(
+            1,
+            Duration::from_secs(2),
+            |_, _: &oer_hil_protocol::network::Ready| true,
+        )
         .unwrap()
         .unwrap();
     let next_stage = capture.station_lifecycle_cursor();
@@ -512,7 +542,7 @@ fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
             2,
             0,
             0,
-            Event::NetworkReady(NetworkInfo {
+            oer_hil_protocol::network::Ready(NetworkInfo {
                 network_interface: WifiNetworkInterface::Station,
                 address: [127, 0, 0, 2],
                 prefix_length: 8,
@@ -534,7 +564,7 @@ fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
 
 #[test]
 fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link() {
-    use oer_hil_protocol::StationLinkSecurity;
+    use oer_hil_protocol::wifi::StationLinkSecurity;
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -545,7 +575,7 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
             1,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 4,
                 association_bandwidth_mhz: Some(40),
                 security: Some(StationLinkSecurity::Wpa2Personal {
@@ -570,7 +600,7 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
             2,
             9,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 5,
                 association_bandwidth_mhz: Some(40),
                 security: Some(StationLinkSecurity::Wpa2Personal {
@@ -585,7 +615,7 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
             3,
             0,
             77,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 5,
                 association_bandwidth_mhz: Some(40),
                 security: Some(StationLinkSecurity::Wpa2Personal {
@@ -606,7 +636,7 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
             4,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 5,
                 association_bandwidth_mhz: Some(20),
                 security: Some(StationLinkSecurity::Open),
@@ -623,13 +653,13 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
 
 #[test]
 fn network_recovery_requires_readiness_after_the_new_connected_edge() {
-    use oer_hil_protocol::{NetworkInfo, StationLinkSecurity};
+    use oer_hil_protocol::{network::NetworkInfo, wifi::StationLinkSecurity};
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
     activate(&capture, &input);
     let network = |address| {
-        Event::NetworkReady(NetworkInfo {
+        oer_hil_protocol::network::Ready(NetworkInfo {
             network_interface: WifiNetworkInterface::Station,
             address,
             prefix_length: 8,
@@ -651,7 +681,7 @@ fn network_recovery_requires_readiness_after_the_new_connected_edge() {
             2,
             0,
             0,
-            Event::StationLifecycle(StationLifecycleEvent::Connected {
+            oer_hil_protocol::wifi::StationLifecycle(StationLifecycleEvent::Connected {
                 generation: 5,
                 association_bandwidth_mhz: Some(40),
                 security: Some(StationLinkSecurity::Wpa2Personal {
@@ -696,7 +726,10 @@ fn network_recovery_requires_readiness_after_the_new_connected_edge() {
 
 #[test]
 fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
-    use oer_hil_protocol::{Direction, NetworkInfo, ServiceInfo, Transport, WifiNetworkInterface};
+    use oer_hil_protocol::{
+        network::Direction, network::NetworkInfo, network::ServiceInfo, network::Transport,
+        wifi::WifiNetworkInterface,
+    };
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -709,37 +742,35 @@ fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
     for (sequence, event) in [
         (
             1,
-            Event::NetworkReady(NetworkInfo {
+            any(oer_hil_protocol::network::Ready(NetworkInfo {
                 network_interface: WifiNetworkInterface::Station,
                 address: Ipv4Addr::LOCALHOST.octets(),
                 prefix_length: 8,
                 gateway: None,
-            }),
+            })),
         ),
         (
             2,
-            Event::ServiceReady(ServiceInfo {
+            any(oer_hil_protocol::network::ServiceReady(ServiceInfo {
                 network_interface: WifiNetworkInterface::Station,
                 transport: Transport::Udp,
                 direction: Direction::Rx,
                 local_port: rx_port,
                 maximum_payload_bytes: 64,
-            }),
+            })),
         ),
         (
             3,
-            Event::ServiceReady(ServiceInfo {
+            any(oer_hil_protocol::network::ServiceReady(ServiceInfo {
                 network_interface: WifiNetworkInterface::Station,
                 transport: Transport::Udp,
                 direction: Direction::Tx,
                 local_port: 4_324,
                 maximum_payload_bytes: 64,
-            }),
+            })),
         ),
     ] {
-        input
-            .send(Ok(frame(Envelope::new(7, sequence, 0, 0, event))))
-            .unwrap();
+        input.send(Ok(event.frame(7, sequence, 0, 0))).unwrap();
     }
     let target_input = input.clone();
     let target = thread::spawn(move || {
@@ -753,7 +784,7 @@ fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
                 4,
                 0,
                 0,
-                Event::ServiceReady(ServiceInfo {
+                oer_hil_protocol::network::ServiceReady(ServiceInfo {
                     network_interface: WifiNetworkInterface::Station,
                     transport: Transport::Udp,
                     direction: Direction::Rx,
@@ -776,13 +807,20 @@ fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
 }
 
 #[test]
-fn incompatible_version_is_reported_before_hello_timeout() {
+fn a_message_this_host_does_not_know_fails_the_link() {
+    /// A message of some other revision's wire.
+    #[derive(serde::Serialize, serde::Deserialize, postcard_schema::Schema)]
+    struct Stranger;
+    impl oer_hil_protocol::Message for Stranger {
+        const PATH: &'static str = "base/stranger";
+    }
     let output = Output::new();
     let (capture, input) = capture(&output, false);
-    let mut message = hello(7, 0);
-    message.protocol_version += 1;
-    input.send(Ok(frame(message))).unwrap();
-    assert!(failure(&capture, ErrorKind::Protocol).contains("unsupported HIL protocol version"));
+    activate(&capture, &input);
+    input
+        .send(Ok(frame(Envelope::new(7, 1, 0, 0, Stranger))))
+        .unwrap();
+    assert!(failure(&capture, ErrorKind::Protocol).contains("does not know"));
 }
 
 #[test]
@@ -807,7 +845,7 @@ fn target_session_failure_does_not_turn_into_an_evidence_timeout() {
             1,
             9,
             0,
-            Event::Failed(oer_hil_protocol::FailureCode::Network),
+            oer_hil_protocol::network::Failed(oer_hil_protocol::network::FailureCode::Network),
         ))))
         .unwrap();
     let session = SessionHandle {
@@ -828,7 +866,8 @@ fn target_session_failure_does_not_turn_into_an_evidence_timeout() {
 #[test]
 fn monitor_failure_is_correlated_and_terminal() {
     use oer_hil_protocol::{
-        WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
+        wifi::WifiRole, wifi::WifiRoleFailureEvidence, wifi::WifiRoleFailureReason,
+        wifi::WifiRoleOperation,
     };
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -839,7 +878,7 @@ fn monitor_failure_is_correlated_and_terminal() {
             1,
             0,
             22,
-            Event::WifiRoleFailed(WifiRoleFailureEvidence {
+            oer_hil_protocol::wifi::RoleFailed(WifiRoleFailureEvidence {
                 role: WifiRole::Monitor,
                 operation: WifiRoleOperation::Start,
                 reason: WifiRoleFailureReason::HardwareFault,
@@ -860,7 +899,8 @@ fn monitor_failure_is_correlated_and_terminal() {
 #[test]
 fn radio_restart_failure_is_correlated_and_terminal() {
     use oer_hil_protocol::{
-        WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
+        wifi::WifiRole, wifi::WifiRoleFailureEvidence, wifi::WifiRoleFailureReason,
+        wifi::WifiRoleOperation,
     };
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -871,7 +911,7 @@ fn radio_restart_failure_is_correlated_and_terminal() {
             1,
             0,
             23,
-            Event::WifiRoleFailed(WifiRoleFailureEvidence {
+            oer_hil_protocol::wifi::RoleFailed(WifiRoleFailureEvidence {
                 role: WifiRole::Idle,
                 operation: WifiRoleOperation::Restart,
                 reason: WifiRoleFailureReason::HardwareFault,
@@ -892,7 +932,7 @@ fn radio_restart_failure_is_correlated_and_terminal() {
 
 #[test]
 fn wifi_command_completion_is_scoped_to_accepted_boot_request_and_session() {
-    use oer_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+    use oer_hil_protocol::{wifi::WifiRole, wifi::WifiRoleTransitionEvidence};
 
     let output = Output::new();
     let (input, rx) = serial_pair();
@@ -913,33 +953,35 @@ fn wifi_command_completion_is_scoped_to_accepted_boot_request_and_session() {
         generation: 7,
     };
     let target = thread::spawn(move || {
-        let request = receive_command(&commands);
-        assert!(matches!(request.body, Command::StopStation));
+        let (request, oer_hil_protocol::wifi::StopStation) = receive(&commands);
         for (sequence, session, request_id, event) in [
             (
                 1,
                 0,
                 request.request_id.wrapping_add(1),
-                Event::WifiRoleTransitioned(evidence),
+                any(oer_hil_protocol::wifi::RoleTransitioned(evidence)),
             ),
             (
                 2,
                 9,
                 request.request_id,
-                Event::WifiRoleTransitioned(evidence),
+                any(oer_hil_protocol::wifi::RoleTransitioned(evidence)),
             ),
-            (3, 0, request.request_id, Event::Accepted),
+            (
+                3,
+                0,
+                request.request_id,
+                any(oer_hil_protocol::base::Accepted),
+            ),
             (
                 4,
                 0,
                 request.request_id,
-                Event::WifiRoleTransitioned(evidence),
+                any(oer_hil_protocol::wifi::RoleTransitioned(evidence)),
             ),
         ] {
             input
-                .send(Ok(frame(Envelope::new(
-                    7, sequence, session, request_id, event,
-                ))))
+                .send(Ok(event.frame(7, sequence, session, request_id)))
                 .unwrap();
         }
     });
@@ -957,7 +999,7 @@ fn wifi_command_completion_is_scoped_to_accepted_boot_request_and_session() {
 
 #[test]
 fn wifi_completion_before_acceptance_cannot_satisfy_a_new_operation() {
-    use oer_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+    use oer_hil_protocol::{wifi::WifiRole, wifi::WifiRoleTransitionEvidence};
 
     let output = Output::new();
     let (input, rx) = serial_pair();
@@ -973,8 +1015,8 @@ fn wifi_completion_before_acceptance_cannot_satisfy_a_new_operation() {
     activate(&capture, &input);
     let input_guard = input.clone();
     let target = thread::spawn(move || {
-        let request = receive_command(&commands);
-        let event = Event::WifiRoleTransitioned(WifiRoleTransitionEvidence {
+        let (request, oer_hil_protocol::wifi::StopStation) = receive(&commands);
+        let event = oer_hil_protocol::wifi::RoleTransitioned(WifiRoleTransitionEvidence {
             previous: WifiRole::Station,
             current: WifiRole::Idle,
             generation: 7,
@@ -988,19 +1030,28 @@ fn wifi_completion_before_acceptance_cannot_satisfy_a_new_operation() {
                 2,
                 0,
                 request.request_id,
-                Event::Accepted,
+                oer_hil_protocol::base::Accepted,
             ))))
             .unwrap();
     });
-    let error = capture.request_station_stop().unwrap_err();
-    assert!(error.to_string().contains("invalid station stop response"));
+    // The request's reply is its acceptance; the completion that preceded
+    // it belongs to no operation this acceptance began.
+    let handle = capture.request_station_stop().unwrap();
     target.join().unwrap();
+    let error = capture
+        .wait_wifi_role_transition(handle, Duration::from_millis(50))
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("did not complete the Wi-Fi role transition")
+    );
     drop(input_guard);
 }
 
 #[test]
 fn late_and_duplicate_wifi_completions_do_not_close_a_successor_request() {
-    use oer_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+    use oer_hil_protocol::{wifi::WifiRole, wifi::WifiRoleTransitionEvidence};
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -1015,7 +1066,7 @@ fn late_and_duplicate_wifi_completions_do_not_close_a_successor_request() {
             .wait_wifi_role_transition(first, Duration::ZERO)
             .is_err()
     );
-    let old = Event::WifiRoleTransitioned(WifiRoleTransitionEvidence {
+    let old = oer_hil_protocol::wifi::RoleTransitioned(WifiRoleTransitionEvidence {
         previous: WifiRole::Station,
         current: WifiRole::Idle,
         generation: 7,
@@ -1047,7 +1098,7 @@ fn late_and_duplicate_wifi_completions_do_not_close_a_successor_request() {
             3,
             0,
             23,
-            Event::WifiRoleTransitioned(current),
+            oer_hil_protocol::wifi::RoleTransitioned(current),
         ))))
         .unwrap();
     assert_eq!(
@@ -1077,8 +1128,8 @@ fn finalization_failure_keeps_the_primary_cause_and_both_messages() {
     assert!(records.contains("end of stream"));
 }
 
-fn result_events(rx_frames: u32) -> Vec<Event> {
-    use oer_hil_protocol::{ResultSummary, StackWatermark};
+fn result_events(rx_frames: u32) -> Vec<AnyMessage> {
+    use oer_hil_protocol::{network::ResultSummary, system::StackWatermark};
     let transport = TransportEvidence {
         rx_maximum_silence_micros: None,
         rx_bytes: 8,
@@ -1117,28 +1168,22 @@ fn result_events(rx_frames: u32) -> Vec<Event> {
     ];
     let finished = Finished {
         summary: ResultSummary {
-            verdict: oer_hil_protocol::SessionVerdict::Passed,
+            verdict: oer_hil_protocol::network::SessionVerdict::Passed,
             evidence_records: 4,
         },
         evidence_crc32c: evidence_crc32c(&records).unwrap(),
     };
     records
         .into_iter()
-        .map(Event::Evidence)
-        .chain([Event::Finished(finished)])
+        .map(|record| any(oer_hil_protocol::network::Evidence(record)))
+        .chain([any(finished)])
         .collect()
 }
 
 fn publish_result(input: &Input, sequence: u32, request: u32, rx_frames: u32) {
     for (offset, event) in result_events(rx_frames).into_iter().enumerate() {
         input
-            .send(Ok(frame(Envelope::new(
-                7,
-                sequence + offset as u32,
-                9,
-                request,
-                event,
-            ))))
+            .send(Ok(event.frame(7, sequence + offset as u32, 9, request)))
             .unwrap();
     }
 }
@@ -1167,25 +1212,20 @@ fn replay_before_acknowledgement(changed: bool) {
         .unwrap();
     let input_guard = input.clone();
     let target = thread::spawn(move || {
-        let replay = receive_command(&commands);
-        assert!(matches!(replay.body, Command::ReplayResult));
+        let (replay, oer_hil_protocol::network::ReplayResult) = receive(&commands);
         assert_eq!(replay.session_id, 9);
         // Model live link counters changing between the first result and its
         // replay: the historical target bug changed both evidence and CRC.
         publish_result(&input, 6, replay.request_id, if changed { 6 } else { 5 });
         if !changed {
-            let ack = receive_command(&commands);
-            assert!(matches!(ack.body, Command::AcknowledgeResult));
+            let (ack, oer_hil_protocol::network::AcknowledgeResult) = receive(&commands);
             input
                 .send(Ok(frame(Envelope::new(
                     7,
                     11,
                     9,
                     ack.request_id,
-                    Event::State(StateChange {
-                        previous: SessionState::Finished,
-                        current: SessionState::Idle,
-                    }),
+                    oer_hil_protocol::base::Accepted,
                 ))))
                 .unwrap();
         }
@@ -1218,7 +1258,7 @@ fn changed_replay_is_rejected_before_result_removal() {
 
 #[test]
 fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
-    use oer_hil_protocol::{NetworkInfo, ServiceInfo};
+    use oer_hil_protocol::{network::NetworkInfo, network::ServiceInfo};
     let output = Output::new();
     let (capture, input) = capture(&output, false);
     activate(&capture, &input);
@@ -1228,7 +1268,7 @@ fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     socket.connect(peer.local_addr().unwrap()).unwrap();
     let network = |interface| {
-        Event::NetworkReady(NetworkInfo {
+        oer_hil_protocol::network::Ready(NetworkInfo {
             network_interface: interface,
             address: [10, 43, 0, 1],
             prefix_length: 24,
@@ -1237,7 +1277,7 @@ fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
     };
     let source_port = peer.local_addr().unwrap().port();
     let service = |local_port| {
-        Event::ServiceReady(ServiceInfo {
+        oer_hil_protocol::network::ServiceReady(ServiceInfo {
             network_interface: WifiNetworkInterface::AccessPoint,
             transport: Transport::Udp,
             direction: Direction::Tx,
@@ -1246,15 +1286,13 @@ fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
         })
     };
     for (sequence, event) in [
-        (1, service(source_port.wrapping_add(1))),
-        (2, network(WifiNetworkInterface::Station)),
+        (1, any(service(source_port.wrapping_add(1)))),
+        (2, any(network(WifiNetworkInterface::Station))),
     ] {
-        input
-            .send(Ok(frame(Envelope::new(7, sequence, 0, 0, event))))
-            .unwrap();
+        input.send(Ok(event.frame(7, sequence, 0, 0))).unwrap();
     }
     capture
-        .wait_for_protocol_after(0, Duration::from_secs(1), |event| {
+        .wait_for_message_after(0, Duration::from_secs(1), |event| {
             event.message_sequence == 2
         })
         .unwrap()
@@ -1282,7 +1320,7 @@ fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
         ))))
         .unwrap();
     capture
-        .wait_for_protocol_after(0, Duration::from_secs(1), |event| {
+        .wait_for_message_after(0, Duration::from_secs(1), |event| {
             event.message_sequence == 3
         })
         .unwrap()
@@ -1305,9 +1343,9 @@ fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
         .unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
     let responder = std::thread::spawn(move || {
-        let mut bytes = [0; oer_hil_protocol::UdpProbe::LENGTH];
+        let mut bytes = [0; oer_hil_protocol::network::UdpProbe::LENGTH];
         let (length, source) = peer.recv_from(&mut bytes).unwrap();
-        let mut probe = oer_hil_protocol::UdpProbe::decode(&bytes[..length]).unwrap();
+        let mut probe = oer_hil_protocol::network::UdpProbe::decode(&bytes[..length]).unwrap();
         assert!(!probe.response);
         probe.response = true;
         peer.send_to(&probe.encode(), source).unwrap();
@@ -1409,23 +1447,35 @@ fn queued_commands_make_progress_without_inbound_bytes_or_read_timeouts() {
     );
 }
 
-/// A target that answers the host's capability request of boot `boot` with
-/// its Hello at target message `sequence`. The thread hands its end of the
-/// link back, so the link stays open until the test joins it.
-fn answer_capabilities(
+/// A target that answers the host's hello request of boot `boot` with its
+/// Hello at target message `sequence`, then its capability pages. The thread
+/// hands its end of the link back, so the link stays open until the test
+/// joins it.
+fn answer_hello(
     input: Input,
     writes: std::sync::mpsc::Receiver<Vec<u8>>,
     boot: u64,
     sequence: u32,
 ) -> std::thread::JoinHandle<Input> {
     std::thread::spawn(move || {
-        let command = receive_command(&writes);
-        assert_eq!(command.body, Command::GetCapabilities);
-        let mut answer = hello(boot, sequence);
-        answer.request_id = command.request_id;
-        input.send(Ok(frame(answer))).unwrap();
+        answer_hello_request(&input, &writes, boot, sequence);
+        answer_capabilities(&input, &writes, boot, sequence + 1);
         input
     })
+}
+
+/// Answer the host's next request, a hello request, as boot `boot`.
+fn answer_hello_request(
+    input: &Input,
+    writes: &std::sync::mpsc::Receiver<Vec<u8>>,
+    boot: u64,
+    sequence: u32,
+) {
+    let request = receive_request(writes);
+    assert!(request.is::<oer_hil_protocol::base::GetHello>());
+    let mut answer = hello(boot, sequence);
+    answer.request_id = request.request_id;
+    input.send(Ok(frame(answer))).unwrap();
 }
 
 /// Wait until the capture has taken in `bytes`, however loaded the host.
@@ -1460,12 +1510,12 @@ fn a_boot_whose_hello_the_link_lost_begins_with_its_capability_answer() {
     // The capture must have read the boot's line before it looks for it.
     wait_for_console(&capture, boot_line);
     input.send(Ok(truncated_hello(9))).unwrap();
-    let target = answer_capabilities(input, writes, 9, 1);
+    let target = answer_hello(input, writes, 9, 1);
     let capabilities = capture
         .request_capabilities(Duration::from_secs(1))
         .unwrap();
     target.join().unwrap();
-    assert!(capabilities.features.structured_evidence);
+    assert!(capabilities.has::<oer_hil_protocol::wifi::DriverObservation>());
     let health = capture.protocol.state.lock().unwrap().health.clone();
     assert_eq!(health.boot_id, Some(9));
     assert_eq!(
@@ -1500,7 +1550,11 @@ fn an_answer_late_in_a_boot_begins_no_boot() {
     let (capture, input, writes) = capture_with_commands(&output);
     input.send(Ok(b"ESP-ROM:esp32s31\r\n".to_vec())).unwrap();
     wait_for_console(&capture, b"ESP-ROM:");
-    let target = answer_capabilities(input, writes, 9, 40);
+    // The answer begins no boot, so the host asks for no capability page.
+    let target = std::thread::spawn(move || {
+        answer_hello_request(&input, &writes, 9, 40);
+        input
+    });
     assert!(
         capture
             .request_capabilities(Duration::from_secs(1))

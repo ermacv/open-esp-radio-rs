@@ -1,7 +1,7 @@
 //! Independent Linux ATT peer for the shared plaintext Trouble application.
 use crate::{Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress};
 use hil_core::{context::Context, session::SerialCapture};
-use oer_hil_protocol::BluetoothGattEvidence as Evidence;
+use oer_hil_protocol::bluetooth::BluetoothGattEvidence as Evidence;
 use std::{
     path::Path,
     time::{Duration, Instant},
@@ -129,8 +129,7 @@ fn exercise(
 ) -> Result<()> {
     if !capture
         .request_capabilities(Duration::from_secs(10))?
-        .features
-        .bluetooth_gatt
+        .has::<oer_hil_protocol::bluetooth::Gatt>()
     {
         return Err("exclusive Trouble GATT image required".into());
     }

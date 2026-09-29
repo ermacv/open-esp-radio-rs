@@ -10,7 +10,7 @@
 
 use std::{path::Path, time::Duration};
 
-use oer_hil_protocol::{BootEvidence, Checkpoint, Fault, HangFault, ResetReason};
+use oer_hil_protocol::base::{BootEvidence, Checkpoint, Fault, HangFault, ResetReason};
 
 use crate::{
     evidence::run::{Failure, FailureKind},
@@ -200,7 +200,8 @@ pub fn inspect(
 /// new boot records. A target without a trace, or one that does not answer,
 /// leaves nothing.
 fn drain_trace(capture: &SerialCapture, directory: &Path) {
-    let Ok(status) = capture.trace_control(oer_hil_protocol::TraceControl::Status) else {
+    let Ok(status) = capture.trace_control(oer_hil_protocol::telemetry::TraceControl::Status)
+    else {
         return;
     };
     if !status.installed || status.stored_entries == 0 && status.stored_snapshots == 0 {
@@ -230,14 +231,15 @@ fn drain_trace(capture: &SerialCapture, directory: &Path) {
     }
     let _ = std::fs::write(directory.join("trace.txt"), text);
     if status.holding_previous {
-        let _ = capture.trace_control(oer_hil_protocol::TraceControl::Start { mask: u64::MAX });
+        let _ = capture
+            .trace_control(oer_hil_protocol::telemetry::TraceControl::Start { mask: u64::MAX });
     }
 }
 
 /// The trace's entries, oldest first, one per line: time, event and words.
 fn decode_trace(
-    status: &oer_hil_protocol::TraceStatus,
-    entries: &[oer_hil_protocol::TraceEntry],
+    status: &oer_hil_protocol::telemetry::TraceStatus,
+    entries: &[oer_hil_protocol::telemetry::TraceEntry],
 ) -> String {
     let mut records = entries
         .iter()
@@ -278,7 +280,10 @@ fn decode_trace(
 
 /// One snapshot slot, one line: its point, the tag it was taken at, and the
 /// decoded state when a domain knows the point, else its word count.
-fn describe_snapshot(header: &oer_hil_protocol::TraceSnapshotPage, words: &[u32]) -> String {
+fn describe_snapshot(
+    header: &oer_hil_protocol::telemetry::TraceSnapshotPage,
+    words: &[u32],
+) -> String {
     let decoded = (header.point == oer_phy_trace::PhySnapshot::POINT.raw() && !header.truncated)
         .then(|| oer_phy_trace::PhySnapshot::decode(words))
         .flatten()
@@ -463,7 +468,7 @@ pub(crate) fn symbol(loader: Option<&addr2line::Loader>, address: u32) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_hil_protocol::{HartState, PostMortemSummary};
+    use oer_hil_protocol::base::{HartState, PostMortemSummary};
 
     #[test]
     fn a_silent_target_is_read_through_its_jtag_without_a_reset() {
@@ -512,8 +517,12 @@ mod tests {
         assert!(!quiet.join(JTAG_POST_MORTEM_FILE).exists());
     }
 
-    fn slot(point: u16, words: &[u32], truncated: bool) -> oer_hil_protocol::TraceSnapshotPage {
-        oer_hil_protocol::TraceSnapshotPage {
+    fn slot(
+        point: u16,
+        words: &[u32],
+        truncated: bool,
+    ) -> oer_hil_protocol::telemetry::TraceSnapshotPage {
+        oer_hil_protocol::telemetry::TraceSnapshotPage {
             slot: 0,
             point,
             tag: 7,
@@ -638,8 +647,8 @@ mod tests {
         let Fault::Hang(mut stall) = hang(0) else {
             unreachable!()
         };
-        stall.stalled_task = Some(oer_hil_protocol::TaskStall {
-            slot: oer_hil_protocol::TaskSlot::Console,
+        stall.stalled_task = Some(oer_hil_protocol::base::TaskStall {
+            slot: oer_hil_protocol::base::TaskSlot::Console,
             pending_ms: 5_250,
         });
         let failure = classify(
@@ -672,14 +681,14 @@ mod tests {
     fn a_trace_is_decoded_oldest_first_with_platform_names() {
         let hang = <oer_hil_target_core::trace::Hang as oer_trace::Event>::KIND.raw();
         let station = oer_trace::Kind::new(oer_trace::Domain::Bluetooth, 9).raw();
-        let entry = |tag, kind, t_us| oer_hil_protocol::TraceEntry {
+        let entry = |tag, kind, t_us| oer_hil_protocol::telemetry::TraceEntry {
             tag,
             kind,
             t_us,
             // The platform's events carry no words.
             words: if kind == hang { [0, 0] } else { [1, 2] },
         };
-        let status = oer_hil_protocol::TraceStatus {
+        let status = oer_hil_protocol::telemetry::TraceStatus {
             installed: true,
             entries: 4,
             snapshot_slots: 0,

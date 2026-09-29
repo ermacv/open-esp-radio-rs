@@ -6,7 +6,9 @@ use esp_hal::time::Instant;
 use oer_esp32s31_ieee802154_system::{Ieee802154Parked, Ieee802154System, start};
 use oer_esp32s31_phy::concurrent::MaintenancePolicy;
 use oer_esp32s31_radio_esp_hal::EspHalRadioPlatform;
-use oer_hil_protocol::{Ieee802154AirTxOutcome, Ieee802154SessionMaintenancePolicy};
+use oer_hil_protocol::{
+    ieee802154::Ieee802154AirTxOutcome, ieee802154::Ieee802154SessionMaintenancePolicy,
+};
 use oer_ieee802154::TxStatus;
 use oer_ieee802154_engine::pib::Ieee802154PibDefaults;
 

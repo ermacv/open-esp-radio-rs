@@ -7,13 +7,16 @@ use oer_esp32s31_ieee802154_runtime::{
 };
 use oer_esp32s31_ieee802154_system::Ieee802154SystemRuntime;
 use oer_hil_protocol::{
-    IEEE802154_SESSION_RECORDED_FRAMES, Ieee802154AirCcaOutcome, Ieee802154AirEnergyOutcome,
-    Ieee802154AirTxOutcome, Ieee802154SessionAck, Ieee802154SessionAssessRequest,
-    Ieee802154SessionAssessment, Ieee802154SessionConfig, Ieee802154SessionFrame,
-    Ieee802154SessionPendingMode, Ieee802154SessionPendingRequest,
-    Ieee802154SessionReceiveEvidence, Ieee802154SessionReceivedFrame, Ieee802154SessionRecentRssi,
-    Ieee802154SessionResult, Ieee802154SessionTransmitEvidence, Ieee802154SessionTransmitRequest,
-    Ieee802154SessionTxMode, ieee802154_frame_crc32c,
+    ieee802154::IEEE802154_SESSION_RECORDED_FRAMES, ieee802154::Ieee802154AirCcaOutcome,
+    ieee802154::Ieee802154AirEnergyOutcome, ieee802154::Ieee802154AirTxOutcome,
+    ieee802154::Ieee802154SessionAck, ieee802154::Ieee802154SessionAssessRequest,
+    ieee802154::Ieee802154SessionAssessment, ieee802154::Ieee802154SessionConfig,
+    ieee802154::Ieee802154SessionFrame, ieee802154::Ieee802154SessionPendingMode,
+    ieee802154::Ieee802154SessionPendingRequest, ieee802154::Ieee802154SessionReceiveEvidence,
+    ieee802154::Ieee802154SessionReceivedFrame, ieee802154::Ieee802154SessionRecentRssi,
+    ieee802154::Ieee802154SessionResult, ieee802154::Ieee802154SessionTransmitEvidence,
+    ieee802154::Ieee802154SessionTransmitRequest, ieee802154::Ieee802154SessionTxMode,
+    ieee802154::ieee802154_frame_crc32c,
 };
 use oer_ieee802154::{
     AutoPendingMode, Channel, Configuration, EnergyScanRequest, FrameAddress, FrameView, Interface,

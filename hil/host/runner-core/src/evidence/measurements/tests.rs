@@ -1,20 +1,41 @@
 use super::*;
+use crate::session::Received;
+use oer_hil_protocol::Envelope;
+
+/// A device event as the host receives it.
+fn event<M: oer_hil_protocol::Message>(
+    boot_id: u64,
+    message_sequence: u32,
+    session_id: u64,
+    request_id: u32,
+    body: M,
+) -> Received {
+    crate::session::test_support::received(Envelope::new(
+        boot_id,
+        message_sequence,
+        session_id,
+        request_id,
+        body,
+    ))
+}
 use crate::evidence::run::{Comparison, MeasurementUnit};
-use oer_hil_protocol::{EvidenceRecord, FlowTransportEvidence, TransportEvidence};
+use oer_hil_protocol::{
+    network::EvidenceRecord, network::FlowTransportEvidence, network::TransportEvidence,
+};
 
 #[test]
 fn memory_counter_scopes_preserve_full_values_without_cpu_percentages() {
     use oer_hil_protocol::{
-        MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest,
-        MemoryBenchmarkSource, MemoryBenchmarkStop,
+        system::MemoryBenchmarkEvidence, system::MemoryBenchmarkMode,
+        system::MemoryBenchmarkRequest, system::MemoryBenchmarkSource, system::MemoryBenchmarkStop,
     };
     let cycles = u64::from(u32::MAX) + 100;
-    let events = [Envelope::new(
+    let events = [event(
         7,
         3,
         0,
         9,
-        Event::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
+        oer_hil_protocol::system::MemoryBenchmarkCompleted(MemoryBenchmarkEvidence {
             request: MemoryBenchmarkRequest {
                 mode: MemoryBenchmarkMode::GdmaAsync,
                 source: MemoryBenchmarkSource::Psram,
@@ -82,19 +103,23 @@ fn replay_does_not_duplicate_or_replace_the_first_observation() {
     let capture = recorder.capture(Path::new("")).unwrap();
     capture.record(
         &[
-            Envelope::new(
+            event(
                 7,
                 10,
                 3,
                 1,
-                Event::Evidence(EvidenceRecord::Transport(transport(125, 1_000))),
+                oer_hil_protocol::network::Evidence(EvidenceRecord::Transport(transport(
+                    125, 1_000,
+                ))),
             ),
-            Envelope::new(
+            event(
                 7,
                 11,
                 3,
                 2,
-                Event::Evidence(EvidenceRecord::Transport(transport(999, 1_000))),
+                oer_hil_protocol::network::Evidence(EvidenceRecord::Transport(transport(
+                    999, 1_000,
+                ))),
             ),
         ],
         200,
@@ -127,21 +152,21 @@ fn boot_scopes_and_concurrent_flows_keep_distinct_measurements() {
     for (boot, value) in [("boot-001", 11), ("boot-002", 22)] {
         recorder.capture(Path::new(boot)).unwrap().record(
             &[
-                Envelope::new(
+                event(
                     7,
                     1,
                     1,
                     1,
-                    Event::Evidence(EvidenceRecord::FlowTransport(
+                    oer_hil_protocol::network::Evidence(EvidenceRecord::FlowTransport(
                         FlowTransportEvidence::from_session_total(0, transport(value, 100)),
                     )),
                 ),
-                Envelope::new(
+                event(
                     7,
                     2,
                     1,
                     1,
-                    Event::Evidence(EvidenceRecord::FlowTransport(
+                    oer_hil_protocol::network::Evidence(EvidenceRecord::FlowTransport(
                         FlowTransportEvidence::from_session_total(1, transport(value + 1, 100)),
                     )),
                 ),
@@ -166,12 +191,12 @@ fn boot_scopes_and_concurrent_flows_keep_distinct_measurements() {
 fn zero_elapsed_time_does_not_invent_a_rate_and_host_gates_remain_explicit() {
     let recorder = Recorder::default();
     recorder.capture(Path::new("")).unwrap().record(
-        &[Envelope::new(
+        &[event(
             7,
             1,
             1,
             1,
-            Event::Evidence(EvidenceRecord::Transport(transport(100, 0))),
+            oer_hil_protocol::network::Evidence(EvidenceRecord::Transport(transport(100, 0))),
         )],
         10,
     );
@@ -220,9 +245,9 @@ fn semantic_checks_record_only_explicit_observations() {
 
 #[test]
 fn aggregate_fill_projects_one_measurement_set_per_association() {
-    use oer_hil_protocol::WifiApAggregateFill;
+    use oer_hil_protocol::wifi::WifiApAggregateFill;
     let fill = |association_id, aggregates, subframes| {
-        Event::WifiApAggregateFill(WifiApAggregateFill {
+        oer_hil_protocol::wifi::AccessPointAggregateFill(WifiApAggregateFill {
             generation: 4,
             association_id,
             aggregates,
@@ -232,8 +257,8 @@ fn aggregate_fill_projects_one_measurement_set_per_association() {
         })
     };
     let events = [
-        Envelope::new(7, 3, 0, 9, fill(1, 100, 2_900)),
-        Envelope::new(7, 3, 0, 10, fill(2, 60, 1_700)),
+        event(7, 3, 0, 9, fill(1, 100, 2_900)),
+        event(7, 3, 0, 10, fill(2, 60, 1_700)),
     ];
     let observations = protocol::observations("boot-001", &events, 100);
     let value = |name: &str| {

@@ -1,6 +1,6 @@
 //! Observe a pending software Reset without treating it as an RF-close proof.
 use super::{Duration, Evidence, Instant, Observation, Result, sample, wait};
-use oer_hil_protocol::BluetoothGattResetReadGate as Phase;
+use oer_hil_protocol::bluetooth::BluetoothGattResetReadGate as Phase;
 
 fn require_held(before: Evidence, held: Evidence) -> Result<()> {
     if held.reset_read_gate != Phase::ReaderHeld

@@ -22,8 +22,8 @@ use hil_core::{
     session::Settings,
 };
 use oer_hil_protocol::{
-    WifiApScheduler, WifiDataPlanePlacement, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
+    wifi::WifiApScheduler, wifi::WifiDataPlanePlacement, wifi::WifiRxChecksumPolicy,
+    wifi::WifiRxContinuationPolicy, wifi::WifiTxBufferPolicy, wifi::WifiTxUdpChecksumPolicy,
 };
 use serde::{Deserialize, Serialize};
 

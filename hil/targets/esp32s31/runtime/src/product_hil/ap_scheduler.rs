@@ -8,7 +8,7 @@ use oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::{
     AirtimeObservation,
 };
 use oer_hil_esp32s31_telemetry::airtime::AirtimeHistory;
-use oer_hil_protocol::WifiApScheduler;
+use oer_hil_protocol::wifi::WifiApScheduler;
 use oer_ieee80211_softmac::{MacTxWork, tx_cost::PpduTiming};
 
 static HISTORY: Mutex<CriticalSectionRawMutex, RefCell<Option<AirtimeHistory>>> =
@@ -34,18 +34,25 @@ pub(super) fn reset() {
 /// Called after the radio stop edge. Copy each bounded record under the lock,
 /// then await the existing reliable event transport with no lock held.
 pub(super) async fn report(request_id: u32) {
-    use oer_hil_protocol::Event;
     for index in 0..8 {
         let peer = HISTORY.lock(|history| history.borrow().as_ref().and_then(|h| h.peers[index]));
         if let Some(peer) = peer {
-            crate::console::publish_event_reliably(0, request_id, Event::WifiAirtimePeer(peer))
-                .await;
+            crate::console::publish_event_reliably(
+                0,
+                request_id,
+                oer_hil_protocol::wifi::AirtimePeer(peer),
+            )
+            .await;
         }
     }
     let report = HISTORY.lock(|history| history.borrow().as_ref().map(|h| h.report));
     if let Some(report) = report {
-        crate::console::publish_event_reliably(0, request_id, Event::WifiAirtimeReport(report))
-            .await;
+        crate::console::publish_event_reliably(
+            0,
+            request_id,
+            oer_hil_protocol::wifi::AirtimeReport(report),
+        )
+        .await;
     }
 }
 

@@ -1,7 +1,8 @@
 //! Real PHY owner checkpoints, independently terminated by the SoC service.
 use crate::{Result, context::Context, session::SerialCapture};
 use oer_hil_protocol::{
-    PhyFaultCommand as Control, PhyFaultMode as Mode, PhyFaultPhase as Phase, ResetReason,
+    base::ResetReason, phy::PhyFaultCommand as Control, phy::PhyFaultMode as Mode,
+    phy::PhyFaultPhase as Phase,
 };
 use std::{
     path::Path,
@@ -23,7 +24,7 @@ pub trait Scenario {
         &self,
         capture: &SerialCapture,
         mode: Mode,
-    ) -> Result<oer_hil_protocol::PhyFaultEvidence>;
+    ) -> Result<oer_hil_protocol::phy::PhyFaultEvidence>;
 }
 
 pub fn run<S: Scenario>(output: &Path, context: &Context<'_>, scenario: S) -> Result<()> {
@@ -44,7 +45,7 @@ pub fn run<S: Scenario>(output: &Path, context: &Context<'_>, scenario: S) -> Re
                 "passed": false,
             });
             let result = (|| {
-                if !capture.request_capabilities(Duration::from_secs(10))?.features.phy_fault_injection {
+                if !capture.request_capabilities(Duration::from_secs(10))?.has::<oer_hil_protocol::phy::FaultInjection>() {
                     return Err("image lacks real PHY fault checkpoints".into());
                 }
                 evidence["before"] = scenario.prove_link(capture, context, &directory.join("before"))?;
@@ -80,7 +81,10 @@ pub fn run<S: Scenario>(output: &Path, context: &Context<'_>, scenario: S) -> Re
     Ok(())
 }
 
-fn wait_phase(capture: &SerialCapture, phase: Phase) -> Result<oer_hil_protocol::PhyFaultEvidence> {
+fn wait_phase(
+    capture: &SerialCapture,
+    phase: Phase,
+) -> Result<oer_hil_protocol::phy::PhyFaultEvidence> {
     let started = Instant::now();
     loop {
         let observed = capture.phy_fault(Control::Status)?;

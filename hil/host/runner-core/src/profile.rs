@@ -17,7 +17,7 @@ use crate::Result;
 
 #[derive(Deserialize)]
 struct Record {
-    status: Option<oer_hil_protocol::ProfileStatus>,
+    status: Option<oer_hil_protocol::telemetry::ProfileStatus>,
     #[serde(default)]
     samples: Vec<Vec<(u32, u32)>>,
     error: Option<String>,

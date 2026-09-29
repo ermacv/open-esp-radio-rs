@@ -7,7 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use oer_hil_runner_core::image::{ImageClass, Integration, snapshot::FrozenSources};
+use oer_hil_image_class::ImageClass;
+use oer_hil_runner_core::image::{Integration, snapshot::FrozenSources};
 
 use crate::{Context, Result};
 

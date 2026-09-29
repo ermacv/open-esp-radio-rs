@@ -5,13 +5,8 @@ use std::{path::Path, time::Duration};
 use hil_core::scenario::ScenarioFamily as _;
 
 use crate::{Result, fixture, scenario::Scenario};
-use hil_core::{
-    evidence::run::Failure,
-    image,
-    image::ImageClass,
-    lab::config::LabConfig,
-    session::{DeviceImageKeys, SerialCapture},
-};
+use hil_core::{evidence::run::Failure, lab::config::LabConfig, session::SerialCapture};
+use oer_hil_image_class::{DeviceImageKeys, ImageClass};
 
 pub(crate) fn scenario_failure(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
     fixture::preflight::scenario_precondition(lab, selected).or_else(|| {
@@ -107,7 +102,7 @@ fn check_flashed_image_keys(
     image_keys: &DeviceImageKeys,
 ) -> Result<()> {
     let expected = selected.image();
-    let observed = image::classify_flashed(chip, image_keys).ok_or_else(|| {
+    let observed = oer_hil_image_class::classify_flashed(chip, image_keys).ok_or_else(|| {
         format!("the flashed image reports image keys no {chip} image class builds")
     })?;
     if observed != expected {

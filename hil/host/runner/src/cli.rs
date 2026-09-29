@@ -87,7 +87,7 @@ pub(crate) enum CliCommand {
         /// image class's own, comma-separated. Only an A/B experiment builds
         /// such an image; it never qualifies.
         #[arg(long, value_name = "+F,-G", conflicts_with = "firmware_from")]
-        features: Option<hil_core::image::FeatureDelta>,
+        features: Option<oer_hil_image_class::FeatureDelta>,
         /// Run each selected scenario this many times instead of its own
         /// repetitions, for a quicker look while debugging. The run records
         /// the reduced count and is never noted as qualification evidence.
@@ -211,7 +211,7 @@ pub(crate) enum ImageCommand {
         /// Image classes, built one after the other; with a source snapshot
         /// they share one materialization of it.
         #[arg(required = true, num_args = 1..)]
-        classes: Vec<hil_core::image::ImageClass>,
+        classes: Vec<oer_hil_image_class::ImageClass>,
         /// Build only from a verified source snapshot directory, not the live checkout.
         #[arg(long)]
         source_snapshot: Option<PathBuf>,

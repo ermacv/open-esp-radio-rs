@@ -5,8 +5,9 @@ use super::{
 };
 use crate::{
     Result,
-    image::{Artifacts, BootArtifacts, ImageClass},
+    image::{Artifacts, BootArtifacts},
 };
+use oer_hil_image_class::ImageClass;
 use std::path::{Path, PathBuf};
 
 pub(super) struct Context<'a> {

@@ -11,19 +11,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::session::DeviceImageKeys;
-
-use super::{ImageClass, Integration};
+use crate::{DeviceImageKeys, ImageClass};
 
 /// The runtime manifests of this tree, by chip.
 const RUNTIME_MANIFESTS: [(&str, &str); 2] = [
     (
         "esp32s31",
-        include_str!("../../../../targets/esp32s31/runtime/Cargo.toml"),
+        include_str!("../../../targets/esp32s31/runtime/Cargo.toml"),
     ),
     (
         "esp32c5",
-        include_str!("../../../../targets/esp32c5/runtime/Cargo.toml"),
+        include_str!("../../../targets/esp32c5/runtime/Cargo.toml"),
     ),
 ];
 
@@ -80,14 +78,11 @@ impl ImageClass {
     /// `None` where the chip's runtime has no such class.
     pub fn enabled_features_on(self, chip: &str) -> Option<BTreeSet<String>> {
         let graph = feature_graph(runtime_manifest(chip)?);
-        let features = self.build_features(Integration::OwnedXarxa);
-        let roots: Vec<&str> = features
-            .split(',')
-            .filter(|root| !root.is_empty())
-            .collect();
         // A class whose own features the chip's runtime lacks is not built
-        // there; the network integration is the esp32s31 runtime's alone.
+        // there. The network integration's feature gates no key, so the
+        // class's own features decide what it reports.
         let own = self.runtime_features();
+        let roots: Vec<&str> = own.split(',').filter(|root| !root.is_empty()).collect();
         if !own.split(',').all(|feature| graph.contains_key(feature)) {
             return None;
         }

@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{Plan, ScenarioFamily};
-use crate::{Result, image::ImageClass};
+use crate::Result;
+use oer_hil_image_class::ImageClass;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

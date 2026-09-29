@@ -257,7 +257,7 @@ enum Check {
         #[arg(long)]
         all: bool,
         #[arg(long = "class")]
-        classes: Vec<oer_hil_runner_core::image::ImageClass>,
+        classes: Vec<oer_hil_image_class::ImageClass>,
         /// Only `cargo check` each runtime, without code generation or audits.
         #[arg(long)]
         type_check: bool,

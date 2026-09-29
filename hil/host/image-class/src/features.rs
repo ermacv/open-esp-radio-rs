@@ -4,6 +4,11 @@
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+fn sha256(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
 
 /// Features added to (`+name`) and removed from (`-name`) an image class's
 /// runtime features. An image built with a non-empty delta is not its class's
@@ -43,10 +48,7 @@ impl FeatureDelta {
         if self.is_empty() {
             return String::new();
         }
-        format!(
-            "-features-{}",
-            &crate::durable::sha256_bytes(self.to_string().as_bytes())[..12]
-        )
+        format!("-features-{}", &sha256(self.to_string().as_bytes())[..12])
     }
 }
 

@@ -5,13 +5,13 @@ use crate::{
         Attachment, Measurement, MeasurementUnit, Outcome, RepetitionResult, ScenarioResult,
         SuiteCounts, write_integrity_index,
     },
-    image::ImageClass,
     lab::provenance::{
         AccessPointDefinition, FixtureObservation, HostInterfaceObservation, HostObservation,
         LabDefinition, LabProvenance, SensitiveValueDisposition, StationFixtureDefinition,
         StationIpv4Definition,
     },
 };
+use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::wifi::WifiChannelWidth;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -184,7 +184,7 @@ fn add_build_provenance(run: &Path) {
                 target: crate::image::TARGET.to_owned(),
                 runtime_features: ImageClass::Correctness.runtime_features().to_owned(),
                 layout_seed: None,
-                features: crate::image::FeatureDelta::default(),
+                features: oer_hil_image_class::FeatureDelta::default(),
             },
             sources: vec![SourceMaterial {
                 name: String::from("repository"),

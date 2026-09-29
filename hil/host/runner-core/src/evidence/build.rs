@@ -13,8 +13,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::Result;
 use crate::durable::{atomic_write, sha256_file};
-use crate::{Result, image::ImageClass};
+use oer_hil_image_class::ImageClass;
 
 pub(super) const BUILD_PROVENANCE_SCHEMA: u16 = 1;
 static ARCHIVE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -82,8 +83,11 @@ pub(super) struct BuildParameters {
     pub(super) layout_seed: Option<std::num::NonZeroU32>,
     /// Runtime features added to or removed from the class's own; an image
     /// built with any is an experiment's, never its class's.
-    #[serde(default, skip_serializing_if = "crate::image::FeatureDelta::is_empty")]
-    pub(super) features: crate::image::FeatureDelta,
+    #[serde(
+        default,
+        skip_serializing_if = "oer_hil_image_class::FeatureDelta::is_empty"
+    )]
+    pub(super) features: oer_hil_image_class::FeatureDelta,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -584,7 +588,7 @@ pub(super) fn create_provenance(
         ImageClass,
         crate::image::Integration,
         crate::image::LayoutSeed,
-        &crate::image::FeatureDelta,
+        &oer_hil_image_class::FeatureDelta,
         // The chip, its Rust target and how it boots.
         (&str, &str, oer_chip_profile::Boot),
     ),
@@ -643,7 +647,9 @@ pub(super) fn create_provenance(
             runtime_profile: image.runtime_profile().to_owned(),
             target: rust_target.to_owned(),
             runtime_features: match boot {
-                oer_chip_profile::Boot::Staged => features.apply(&image.build_features(network)),
+                oer_chip_profile::Boot::Staged => {
+                    features.apply(&image.build_features(network.feature()))
+                }
                 oer_chip_profile::Boot::EspIdfBootloader => {
                     features.apply(image.runtime_features())
                 }

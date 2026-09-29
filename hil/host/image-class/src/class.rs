@@ -38,8 +38,10 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    /// Effective Cargo feature selection used by both the builder and provenance.
-    pub fn build_features(self, network: super::Integration) -> String {
+    /// Effective Cargo feature selection used by both the builder and
+    /// provenance, with `network`, the Cargo feature of the image's network
+    /// integration.
+    pub fn build_features(self, network: &str) -> String {
         if matches!(
             self,
             Self::SystemWatchdog
@@ -49,7 +51,7 @@ impl ImageClass {
         ) {
             self.runtime_features().to_owned()
         } else {
-            format!("{},{}", self.runtime_features(), network.feature())
+            format!("{},{}", self.runtime_features(), network)
         }
     }
 

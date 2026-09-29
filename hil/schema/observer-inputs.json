@@ -7,6 +7,7 @@
     "common": [
       "oer-hil-runner-core",
       "oer-hil-board",
+      "oer-hil-image-class",
       "oer-esp32s31-hil-board",
       "rustix",
       "oer-process",

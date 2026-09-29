@@ -139,7 +139,7 @@ pub(crate) fn run() -> Result<()> {
                                 class,
                                 image::Integration::default(),
                                 layout_seed,
-                                &image::FeatureDelta::default(),
+                                &oer_hil_image_class::FeatureDelta::default(),
                             )?;
                             let record = hil_core::evidence::build_record::publish(
                                 &root, snapshot, class, &artifacts,
@@ -152,7 +152,7 @@ pub(crate) fn run() -> Result<()> {
                             class,
                             image::Integration::default(),
                             layout_seed,
-                            &image::FeatureDelta::default(),
+                            &oer_hil_image_class::FeatureDelta::default(),
                         )?,
                     };
                     image::print_artifacts(class, &artifacts, false)?;
@@ -318,7 +318,7 @@ pub(crate) fn run() -> Result<()> {
                 hil_core::image::CurrentBuild {
                     network: image::Integration::default(),
                     layout_seed,
-                    features: image::FeatureDelta::default(),
+                    features: oer_hil_image_class::FeatureDelta::default(),
                 },
                 orchestration::Invocation {
                     arguments: invocation,

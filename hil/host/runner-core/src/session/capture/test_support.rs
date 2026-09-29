@@ -217,7 +217,7 @@ pub fn receive<M: oer_hil_protocol::Message>(writes: &mpsc::Receiver<Vec<u8>>) -
 
 /// The capabilities of the fake target: the esp32s31 correctness image's.
 pub fn capability_keys() -> Vec<Key> {
-    let capabilities = crate::image::ImageClass::Correctness
+    let capabilities = oer_hil_image_class::ImageClass::Correctness
         .image_keys_on("esp32s31")
         .unwrap();
     capabilities.keys().iter().copied().collect()

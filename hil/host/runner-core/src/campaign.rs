@@ -10,10 +10,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     Result,
-    image::{ImageClass, Integration},
+    image::Integration,
     lab::requirements::Requirements,
     scenario::{Catalog, Scenario, ScenarioFamily},
 };
+use oer_hil_image_class::ImageClass;
 
 const CAMPAIGN_SCHEMA: u16 = 7;
 

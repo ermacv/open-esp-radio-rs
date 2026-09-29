@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::image::ImageClass;
+use oer_hil_image_class::ImageClass;
 
 pub const RUN_SCHEMA: u16 = 3;
 

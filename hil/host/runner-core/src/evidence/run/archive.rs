@@ -3,9 +3,10 @@
 use crate::durable::atomic_json;
 use std::path::{Path, PathBuf};
 
+use crate::Result;
 use crate::evidence::build;
 use crate::evidence::run::{FirmwareReplayOrigin, RunSession};
-use crate::{Result, image::ImageClass};
+use oer_hil_image_class::ImageClass;
 
 impl RunSession {
     pub fn record_firmware(

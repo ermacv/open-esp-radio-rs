@@ -3021,6 +3021,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-image-class"
+version = "0.1.0"
+dependencies = [
+ "oer-hil-image-keys",
+ "oer-hil-protocol",
+ "serde",
+ "sha2 0.10.9",
+ "toml",
+]
+
+[[package]]
 name = "oer-hil-image-keys"
 version = "0.1.0"
 dependencies = [
@@ -3053,6 +3064,7 @@ dependencies = [
  "oer-esp32s31-hil-board",
  "oer-hil-board",
  "oer-hil-fixture-install",
+ "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-bluetooth",
  "oer-hil-runner-core",
@@ -3079,6 +3091,7 @@ dependencies = [
  "futures-lite",
  "heapless 0.9.3",
  "oer-hil-fixture",
+ "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-process",
@@ -3107,6 +3120,7 @@ dependencies = [
  "oer-hil-board",
  "oer-hil-fixture",
  "oer-hil-fixture-install",
+ "oer-hil-image-class",
  "oer-hil-image-keys",
  "oer-hil-protocol",
  "oer-hil-schema",
@@ -3137,6 +3151,7 @@ version = "0.1.0"
 dependencies = [
  "mio",
  "oer-hil-fixture",
+ "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-process",
@@ -3152,6 +3167,7 @@ dependencies = [
 name = "oer-hil-runner-ieee802154"
 version = "0.1.0"
 dependencies = [
+ "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "serde",
@@ -3164,6 +3180,7 @@ dependencies = [
 name = "oer-hil-runner-system"
 version = "0.1.0"
 dependencies = [
+ "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
  "oer-hil-trace",
@@ -3551,6 +3568,7 @@ dependencies = [
  "oer-esp32s31-firmware",
  "oer-hil-arbiter",
  "oer-hil-board",
+ "oer-hil-image-class",
  "oer-hil-runner-core",
  "oer-hil-schema",
  "oer-memory-report",

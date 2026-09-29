@@ -12,9 +12,9 @@ use hil_core::{
     evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
     evidence::run::PlanDisposition, evidence::run::PlanEntry, evidence::run::PlannedFirmware,
     evidence::run::RUN_SCHEMA, evidence::run::RepetitionResult, evidence::run::RunPlan,
-    evidence::run::RunSession, evidence::run::ScenarioResult, image::ImageClass,
-    lab::config::LabConfig,
+    evidence::run::RunSession, evidence::run::ScenarioResult, lab::config::LabConfig,
 };
+use oer_hil_image_class::ImageClass;
 
 use crate::scenario::{Catalog, Scenario, requirements};
 

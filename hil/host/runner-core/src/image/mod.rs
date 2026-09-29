@@ -16,18 +16,13 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 pub use oer_esp32s31_firmware::network::Integration;
+use oer_hil_image_class::{FeatureDelta, ImageClass};
 
-mod features;
-pub use features::FeatureDelta;
-mod keys;
-pub use keys::classify_flashed;
-mod class;
 pub mod esp_idf;
 pub use esp_idf::XTASK_ENV;
 pub mod snapshot;
 pub mod source_inputs;
 pub mod stack;
-pub use class::ImageClass;
 
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "oer-hil-esp32s31-runtime";
@@ -70,7 +65,7 @@ struct ArtifactReport<'a> {
 }
 
 pub fn print_artifacts(
-    class: crate::image::ImageClass,
+    class: oer_hil_image_class::ImageClass,
     artifacts: &Artifacts,
     flashed: bool,
 ) -> Result<()> {
@@ -238,7 +233,7 @@ pub const LAYOUT_SEED_ENV: &str = oer_esp32s31_platform_layout::build::LAYOUT_SE
 
 pub fn build(
     root: &Path,
-    class: crate::image::ImageClass,
+    class: oer_hil_image_class::ImageClass,
     network: Integration,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
@@ -248,7 +243,7 @@ pub fn build(
 
 fn build_selected(
     root: &Path,
-    class: crate::image::ImageClass,
+    class: oer_hil_image_class::ImageClass,
     network: Integration,
     layout_seed: LayoutSeed,
     features: &FeatureDelta,
@@ -297,7 +292,11 @@ pub(crate) struct BuildPlacement<'a> {
 /// code generation, in the class's shared compile cache. A pre-push check:
 /// lints that need monomorphization (`large_assignments`) and the link-time
 /// placement and stack audits still need `cargo hil image build`.
-pub fn check(root: &Path, class: crate::image::ImageClass, network: Integration) -> Result<()> {
+pub fn check(
+    root: &Path,
+    class: oer_hil_image_class::ImageClass,
+    network: Integration,
+) -> Result<()> {
     let cache = shared_compile_cache(root, class, network);
     let lock = oer_esp32s31_firmware::network::BuildLock::prepare(
         &root.join("hil/targets/esp32s31"),
@@ -322,7 +321,7 @@ pub fn check(root: &Path, class: crate::image::ImageClass, network: Integration)
         .args([
             "--no-default-features",
             "--features",
-            &class.build_features(network),
+            &class.build_features(network.feature()),
         ])
         .env("CARGO_TARGET_DIR", cache.join("runtime"));
     lock.configure(&mut command);
@@ -447,7 +446,7 @@ fn compile_cache_base(root: &Path, overridden: Option<std::ffi::OsString>) -> Pa
 
 pub fn shared_compile_cache(
     root: &Path,
-    class: crate::image::ImageClass,
+    class: oer_hil_image_class::ImageClass,
     network: Integration,
 ) -> PathBuf {
     compile_cache_base(root, std::env::var_os(BUILD_CACHE_ENV)).join(format!(
@@ -493,7 +492,7 @@ struct LocalOverrides<'a> {
 
 fn build_resolved(
     root: &Path,
-    class: crate::image::ImageClass,
+    class: oer_hil_image_class::ImageClass,
     network: Integration,
     local: LocalOverrides<'_>,
     placement: BuildPlacement<'_>,
@@ -558,7 +557,7 @@ fn build_resolved(
     let effective_bootstrap_lock = output.join("bootstrap-Cargo.lock");
     let application_image = output.join("application.bin");
 
-    let runtime_features = features.apply(&class.build_features(network));
+    let runtime_features = features.apply(&class.build_features(network.feature()));
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
     let stack_budget = oer_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
@@ -1103,7 +1102,11 @@ pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn audit_runtime(elf: &Path, binary: &Path, class: crate::image::ImageClass) -> Result<String> {
+fn audit_runtime(
+    elf: &Path,
+    binary: &Path,
+    class: oer_hil_image_class::ImageClass,
+) -> Result<String> {
     let report = oer_esp32s31_firmware::audit_runtime(elf, binary)
         .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
     use object::{Object, ObjectSection, ObjectSymbol};

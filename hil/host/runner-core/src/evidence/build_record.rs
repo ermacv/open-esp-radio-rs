@@ -6,8 +6,9 @@ use super::{
 };
 use crate::{
     Result,
-    image::{Artifacts, ImageClass, snapshot::FrozenSources},
+    image::{Artifacts, snapshot::FrozenSources},
 };
+use oer_hil_image_class::ImageClass;
 use serde::Serialize;
 use std::{
     fs,

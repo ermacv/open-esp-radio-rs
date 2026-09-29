@@ -10,7 +10,6 @@ use std::path::Path;
 
 use hil_core::{
     context::Context,
-    image::ImageClass,
     lab::{
         link::{
             AccessPointSecurity, HtGuardIntervalExpectation, ManagementFrameProtection,
@@ -21,6 +20,7 @@ use hil_core::{
     scenario::{Plan, bounded},
     session::Settings,
 };
+use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::{
     wifi::WifiApScheduler, wifi::WifiDataPlanePlacement, wifi::WifiRxChecksumPolicy,
     wifi::WifiRxContinuationPolicy, wifi::WifiTxBufferPolicy, wifi::WifiTxUdpChecksumPolicy,

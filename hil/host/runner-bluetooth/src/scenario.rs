@@ -4,13 +4,13 @@
 
 use std::path::Path;
 
-use hil_core::session::DeviceImageKeys;
 use hil_core::{
     context::Context,
-    image::ImageClass,
     lab::requirements::Requirements,
     scenario::{Plan, bounded},
 };
+use oer_hil_image_class::DeviceImageKeys;
+use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::bluetooth;
 use serde::{Deserialize, Serialize};
 

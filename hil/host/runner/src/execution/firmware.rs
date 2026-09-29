@@ -7,8 +7,9 @@ use crate::Result;
 use hil_core::{
     evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
     evidence::run::PlannedFirmware, evidence::run::RunSession, evidence::verify::ArchivedFirmware,
-    image::Artifacts, image::CurrentBuild, image::ImageClass, lab::config::LabConfig,
+    image::Artifacts, image::CurrentBuild, lab::config::LabConfig,
 };
+use oer_hil_image_class::ImageClass;
 
 pub(crate) enum RunFirmware {
     BuildCurrent(CurrentBuild),

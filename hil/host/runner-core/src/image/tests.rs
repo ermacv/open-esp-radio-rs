@@ -84,59 +84,65 @@ fn qualified_profile_name_is_stable() {
 
 #[test]
 fn image_classes_are_stable_and_do_not_use_workload_environment() {
-    assert_eq!(crate::image::ImageClass::ALL.len(), 24);
-    assert_eq!(crate::image::ImageClass::Performance.id(), "performance");
-    assert_eq!(crate::image::ImageClass::Correctness.id(), "correctness");
+    assert_eq!(oer_hil_image_class::ImageClass::ALL.len(), 24);
     assert_eq!(
-        crate::image::ImageClass::WifiBleCoex.runtime_features(),
+        oer_hil_image_class::ImageClass::Performance.id(),
+        "performance"
+    );
+    assert_eq!(
+        oer_hil_image_class::ImageClass::Correctness.id(),
+        "correctness"
+    );
+    assert_eq!(
+        oer_hil_image_class::ImageClass::WifiBleCoex.runtime_features(),
         "wifi-ble-coex"
     );
     assert_eq!(
-        crate::image::ImageClass::Correctness.runtime_features(),
+        oer_hil_image_class::ImageClass::Correctness.runtime_features(),
         "open-radio-hil,driver-observation"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticMacIrq.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticMacIrq.runtime_features(),
         "open-radio-hil,mac-irq-telemetry"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticTaskResidence.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticTaskResidence.runtime_features(),
         "open-radio-hil,task-residence-telemetry"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticTxArchitecture.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticTxArchitecture.runtime_features(),
         "open-radio-hil,tx-architecture-probes"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticTaskPoll.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticTaskPoll.runtime_features(),
         "open-radio-hil,task-poll-telemetry"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticCore0RxCoarse.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticCore0RxCoarse.runtime_features(),
         "open-radio-hil,core0-rx-coarse-telemetry"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
         "open-radio-hil,core0-rx-cycle-telemetry"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticRxDelivery.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticRxDelivery.runtime_features(),
         "open-radio-hil,rx-delivery-telemetry"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticIeee802154EventStatus.runtime_features(),
         "open-radio-hil,ieee802154-event-status-probe"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticIeee802154EdEvent.runtime_features(),
         "open-radio-hil,ieee802154-ed-event-probe"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticIeee802154Radio.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticIeee802154Radio.runtime_features(),
         "open-radio-hil,ieee802154-radio"
     );
     assert_eq!(
-        crate::image::ImageClass::DiagnosticIeee802154Thread.runtime_features(),
+        oer_hil_image_class::ImageClass::DiagnosticIeee802154Thread.runtime_features(),
         "open-radio-hil,ieee802154-thread"
     );
 }

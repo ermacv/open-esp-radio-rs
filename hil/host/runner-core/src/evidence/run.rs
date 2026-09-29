@@ -13,8 +13,9 @@ use std::{
 #[cfg(test)]
 use std::sync::atomic::Ordering;
 
+use crate::Result;
 use crate::evidence::{build, build::SourceMaterial};
-use crate::{Result, image::ImageClass};
+use oer_hil_image_class::ImageClass;
 
 mod archive;
 mod attempt;

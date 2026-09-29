@@ -1,10 +1,8 @@
-//! Device messages as the host receives them, and the device's image
-//! set.
+//! Device messages as the host receives them.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use oer_hil_protocol::base::{Hello, ImageKeyPage};
 use oer_hil_protocol::{Envelope, Frame, Key, Message, MessageInfo};
 
 /// Every message this host knows, by key.
@@ -94,74 +92,5 @@ impl Received {
             "path": self.path(),
             "body": message_info(self.key).and_then(|info| (info.decode_json)(&self.payload)),
         })
-    }
-}
-
-/// What the device's image serves: the keys of its endpoints, of the
-/// messages it sends and of its properties.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
-pub struct DeviceImageKeys {
-    #[serde(serialize_with = "keys_as_paths")]
-    keys: BTreeSet<Key>,
-    pub maximum_payload_bytes: u16,
-    pub maximum_wire_frame_bytes: u16,
-}
-
-fn keys_as_paths<S: serde::Serializer>(
-    keys: &BTreeSet<Key>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.collect_seq(keys.iter().map(|key| match message_info(*key) {
-        Some(info) => info.path.to_owned(),
-        None => key.to_string(),
-    }))
-}
-
-impl DeviceImageKeys {
-    /// The set a Hello announces, from its pages.
-    pub fn assemble(hello: Hello, pages: &[ImageKeyPage]) -> Result<Self, String> {
-        let keys: Vec<Key> = pages
-            .iter()
-            .flat_map(|page| page.keys.iter().copied())
-            .collect();
-        if keys.len() != usize::from(hello.keys) {
-            return Err(format!(
-                "image key pages hold {} keys, the hello announced {}",
-                keys.len(),
-                hello.keys
-            ));
-        }
-        if oer_hil_protocol::base::digest(&keys) != hello.keys_digest {
-            return Err("image key pages do not match the hello's digest".into());
-        }
-        Ok(Self {
-            keys: keys.into_iter().collect(),
-            maximum_payload_bytes: hello.maximum_payload_bytes,
-            maximum_wire_frame_bytes: hello.maximum_wire_frame_bytes,
-        })
-    }
-
-    /// A set of `keys`, for image classes the host derives.
-    pub fn of_keys(keys: impl IntoIterator<Item = Key>) -> Self {
-        Self {
-            keys: keys.into_iter().collect(),
-            maximum_payload_bytes: 0,
-            maximum_wire_frame_bytes: oer_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
-        }
-    }
-
-    /// Whether the image has message or property `M`, with this host's
-    /// schema of it.
-    pub fn has<M: Message>(&self) -> bool {
-        self.keys.contains(&M::KEY)
-    }
-
-    pub fn keys(&self) -> &BTreeSet<Key> {
-        &self.keys
-    }
-
-    /// Whether the image reports the same keys as `other`.
-    pub fn same_keys(&self, other: &Self) -> bool {
-        self.keys == other.keys
     }
 }

@@ -17,7 +17,7 @@
 //! report compares, per scenario and measurement, the arms' run means with
 //! [`crate::hil_perf::compare`] and is written to `ab-report.json`.
 
-use oer_hil_runner_core::image::FeatureDelta;
+use oer_hil_image_class::FeatureDelta;
 use std::{
     collections::BTreeMap,
     ffi::OsString,

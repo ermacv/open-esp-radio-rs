@@ -38,7 +38,7 @@ pub struct ArchivedFirmware {
     pub run_id: String,
     /// The chip the source run's image was built for.
     pub target: String,
-    pub image: crate::image::ImageClass,
+    pub image: oer_hil_image_class::ImageClass,
     pub application_path: PathBuf,
     pub application_sha256: String,
     pub build_id: Option<String>,
@@ -90,7 +90,7 @@ pub fn archived_firmware(
     root: &Path,
     target: &str,
     run_id: &str,
-    image: crate::image::ImageClass,
+    image: oer_hil_image_class::ImageClass,
 ) -> Result<ArchivedFirmware> {
     verify(root, target, Some(run_id))?;
     let run_directory = runs_directory(&root.join("target/hil").join(target))?.join(run_id);
@@ -490,7 +490,7 @@ fn validate_build_provenance(
                 .parameters
                 .features
                 .apply(&match &provenance.parameters.network {
-                    Some(network) => artifact.image.build_features(network.parse()?),
+                    Some(network) => artifact.image.build_features(network.parse::<crate::image::Integration>()?.feature()),
                     None => artifact.image.runtime_features().to_owned(),
                 })
         || provenance.parameters.target != expected_rust_target(manifest, artifact)?

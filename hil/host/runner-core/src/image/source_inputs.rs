@@ -151,13 +151,14 @@ pub fn configuration(
 }
 
 /// The sources of the code that builds, packs and audits every image: this
-/// module, the firmware packer and the memory auditor, without their tests
-/// and prose.
+/// module, the image classifier, the firmware packer and the memory
+/// auditor, without their tests and prose.
 fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
     let mut pending = vec![PathBuf::from(BUILDER_MODULE)];
     for package in [
         BUILDER_PACKAGE,
+        oer_hil_image_class::REPOSITORY_DIRECTORY,
         oer_esp32s31_firmware::REPOSITORY_DIRECTORY,
         oer_memory_report::REPOSITORY_DIRECTORY,
     ] {

@@ -7,6 +7,7 @@ use oer_hil_protocol::system::{WatchdogArmed, WatchdogTest};
 use oer_hil_protocol::{Endpoint, Message};
 
 use super::*;
+use oer_hil_image_class::DeviceImageKeys;
 
 #[derive(serde::Serialize)]
 pub struct Observation {

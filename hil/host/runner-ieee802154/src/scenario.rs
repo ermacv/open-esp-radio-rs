@@ -4,9 +4,9 @@ use std::path::Path;
 
 use hil_core::{
     context::Context,
-    image::ImageClass,
     scenario::{Plan, bounded},
 };
+use oer_hil_image_class::ImageClass;
 use serde::{Deserialize, Serialize};
 
 use crate::{Result, workload::ieee802154};

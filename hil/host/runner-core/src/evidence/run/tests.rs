@@ -480,7 +480,7 @@ fn firmware_record_archives_the_exact_application() {
     );
     assert_eq!(
         provenance.parameters.runtime_features,
-        ImageClass::Correctness.build_features(crate::image::Integration::OwnedXarxa)
+        ImageClass::Correctness.build_features(crate::image::Integration::OwnedXarxa.feature())
     );
     for name in ["embedded-lock", "bootstrap-lock"] {
         assert!(provenance.files.iter().any(|file| file.name == name));
@@ -720,7 +720,7 @@ fn provenance_records_the_network_implementation_and_its_feature() {
             ImageClass::Correctness,
             network,
             None,
-            &crate::image::FeatureDelta::default(),
+            &oer_hil_image_class::FeatureDelta::default(),
             (
                 "esp32s31",
                 crate::image::TARGET,
@@ -758,7 +758,7 @@ fn test_artifacts(
         chip: String::from("esp32s31"),
         rust_target: String::from(crate::image::TARGET),
         layout_seed: None,
-        features: crate::image::FeatureDelta::default(),
+        features: oer_hil_image_class::FeatureDelta::default(),
         network: crate::image::Integration::OwnedXarxa,
         output: application.parent().unwrap().to_path_buf(),
         runtime_elf: runtime_elf.to_path_buf(),

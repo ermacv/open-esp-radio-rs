@@ -14,7 +14,6 @@ use hil_bluetooth::workload::bluetooth::coexistence::Echo;
 use hil_core::{
     context::Context,
     evidence::run::{Comparison, Measurement, MeasurementUnit, MeasurementVerdict},
-    image::ImageClass,
     lab::{
         link::{PhyExpectation, WifiLabUse},
         requirements::Requirements,
@@ -26,6 +25,7 @@ use hil_wifi::workload::traffic::{
     host_network::BenchmarkIpv4Route,
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
 };
+use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::{
     network::Completion, network::Direction, network::FlowConfig, network::SessionConfig,
     network::SessionFlowConfig, network::SessionLinkRequirements, network::Transport,

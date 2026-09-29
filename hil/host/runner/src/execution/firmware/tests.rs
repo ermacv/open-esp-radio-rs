@@ -29,7 +29,7 @@ fn build_inputs(root: &Path) -> Artifacts {
         write(&root.join(relative), bytes);
     }
     Artifacts {
-        features: hil_core::image::FeatureDelta::default(),
+        features: oer_hil_image_class::FeatureDelta::default(),
         layout_seed: None,
         network: Integration::OwnedXarxa,
         output: root.join("build"),
@@ -122,7 +122,7 @@ fn flash_failure_is_typed_after_archival() {
 fn current_build_has_the_canonical_firmware_plan_identity() {
     assert!(matches!(
         RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
-            features: hil_core::image::FeatureDelta::default(),
+            features: oer_hil_image_class::FeatureDelta::default(),
             network: Integration::OwnedXarxa,
             layout_seed: None,
         })

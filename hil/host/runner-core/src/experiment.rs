@@ -48,8 +48,11 @@ pub struct Variant {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overrides: Vec<DependencyOverride>,
     /// Runtime features added to or removed from each image class's own.
-    #[serde(default, skip_serializing_if = "crate::image::FeatureDelta::is_empty")]
-    pub features: crate::image::FeatureDelta,
+    #[serde(
+        default,
+        skip_serializing_if = "oer_hil_image_class::FeatureDelta::is_empty"
+    )]
+    pub features: oer_hil_image_class::FeatureDelta,
 }
 
 /// A local checkout that replaces a pinned dependency, as the

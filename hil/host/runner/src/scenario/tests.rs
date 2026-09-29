@@ -1,5 +1,6 @@
 use super::*;
-use hil_core::{image::ImageClass, scenario::identity::normalize};
+use hil_core::scenario::identity::normalize;
+use oer_hil_image_class::ImageClass;
 
 fn catalog() -> Catalog {
     Catalog::load(&crate::repository_root().unwrap().join("hil/scenarios")).unwrap()

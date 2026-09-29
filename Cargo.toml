@@ -87,6 +87,7 @@ members = [
     "hil/host/board/esp32s31",
     "hil/host/fixture",
     "hil/host/fixture-install",
+    "hil/host/image-class",
     "hil/host/runner",
     "hil/host/runner-bluetooth",
     "hil/host/runner-core",

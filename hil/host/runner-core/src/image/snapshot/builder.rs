@@ -4,10 +4,10 @@ use super::*;
 
 pub fn build(
     directory: &Path,
-    class: crate::image::ImageClass,
+    class: oer_hil_image_class::ImageClass,
     network: crate::image::Integration,
     layout_seed: crate::image::LayoutSeed,
-    features: &crate::image::FeatureDelta,
+    features: &oer_hil_image_class::FeatureDelta,
 ) -> Result<crate::image::Artifacts> {
     FrozenSources::open_in_free_workspace(directory, &build_slots("esp32s31")?)?.build(
         class,
@@ -27,7 +27,7 @@ impl FrozenSources {
     /// units compiled from this slot's paths stay with it.
     pub fn compile_cache(
         &self,
-        class: crate::image::ImageClass,
+        class: oer_hil_image_class::ImageClass,
         network: crate::image::Integration,
     ) -> PathBuf {
         let base = match &self.checkout {
@@ -46,10 +46,10 @@ impl FrozenSources {
     pub fn build_for_chip(
         &self,
         chip: &str,
-        class: crate::image::ImageClass,
+        class: oer_hil_image_class::ImageClass,
         network: crate::image::Integration,
         layout_seed: crate::image::LayoutSeed,
-        features: &crate::image::FeatureDelta,
+        features: &oer_hil_image_class::FeatureDelta,
     ) -> Result<crate::image::Artifacts> {
         let profile = crate::image::chip_profile(chip)?;
         if profile.boot == oer_chip_profile::Boot::Staged {
@@ -79,10 +79,10 @@ impl FrozenSources {
 
     pub fn build(
         &self,
-        class: crate::image::ImageClass,
+        class: oer_hil_image_class::ImageClass,
         network: crate::image::Integration,
         layout_seed: crate::image::LayoutSeed,
-        features: &crate::image::FeatureDelta,
+        features: &oer_hil_image_class::FeatureDelta,
     ) -> Result<crate::image::Artifacts> {
         self.verify_unchanged()?;
         let source = self.repository();

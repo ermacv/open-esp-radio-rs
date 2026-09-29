@@ -2885,6 +2885,7 @@ dependencies = [
  "oer-hil-board",
  "oer-hil-protocol",
  "oer-hil-runner-core",
+ "oer-hil-scenario",
  "oer-register-model",
  "serde",
  "serde_json",
@@ -3081,6 +3082,7 @@ dependencies = [
  "oer-hil-runner-ieee80211",
  "oer-hil-runner-ieee802154",
  "oer-hil-runner-system",
+ "oer-hil-scenario",
  "oer-hil-schema",
  "oer-hil-source-snapshot",
  "oer-process",
@@ -3106,6 +3108,7 @@ dependencies = [
  "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
+ "oer-hil-scenario",
  "oer-process",
  "rustix",
  "serde",
@@ -3136,6 +3139,7 @@ dependencies = [
  "oer-hil-image-class",
  "oer-hil-image-keys",
  "oer-hil-protocol",
+ "oer-hil-scenario",
  "oer-hil-schema",
  "oer-hil-source-snapshot",
  "oer-hil-trace",
@@ -3169,6 +3173,7 @@ dependencies = [
  "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
+ "oer-hil-scenario",
  "oer-process",
  "rustix",
  "serde",
@@ -3185,6 +3190,7 @@ dependencies = [
  "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
+ "oer-hil-scenario",
  "serde",
  "serde_json",
  "serialport",
@@ -3199,11 +3205,25 @@ dependencies = [
  "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-core",
+ "oer-hil-scenario",
  "oer-hil-trace",
  "oer-process",
  "oer-trace",
  "serde",
  "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "oer-hil-scenario"
+version = "0.1.0"
+dependencies = [
+ "oer-hil-image-class",
+ "oer-hil-protocol",
+ "oer-hil-schema",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "toml",
 ]
 

@@ -36,9 +36,11 @@ use crate::{
     workload::traffic::host_network::BenchmarkIpv4Route,
 };
 use hil_core::{
-    lab::config::StationFixtureConfig, lab::link::PhyExpectation, session::await_udp_tx_ready,
-    transport::udp::configure_qualification_receive_buffer, transport::udp::confirm_reverse_flow,
+    lab::config::StationFixtureConfig,
+    session::await_udp_tx_ready,
+    transport::udp::{configure_qualification_receive_buffer, confirm_reverse_flow},
 };
+use oer_hil_scenario::link::PhyExpectation;
 
 const DEFAULT_PORT: u16 = 9_002;
 const DEVICE_SOURCE_PORT: u16 = 4_324;

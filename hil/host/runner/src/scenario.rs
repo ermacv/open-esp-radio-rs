@@ -3,12 +3,9 @@
 
 use std::path::Path;
 
-use hil_core::{
-    context::Context,
-    lab::requirements::Requirements,
-    scenario::{Plan, ScenarioFamily},
-};
+use hil_core::context::Context;
 use hil_wifi::{fixture::prepared::Prepared, scenario::WifiScenario};
+use oer_hil_scenario::{Plan, ScenarioFamily, requirements::Requirements};
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
@@ -32,7 +29,7 @@ impl Family {
     pub(crate) fn air_ranges(
         &self,
         lab: &hil_core::lab::config::LabConfig,
-        wifi: hil_core::lab::link::WifiLabUse,
+        wifi: oer_hil_scenario::link::WifiLabUse,
     ) -> Vec<(u64, u64)> {
         use hil_core::lab::lock::{BAND_2G4, Emits, Need, Spectrum};
         use hil_ieee802154::scenario::Ieee802154Scenario as Ieee802154;
@@ -69,8 +66,8 @@ impl Family {
     }
 }
 
-pub(crate) type Scenario = hil_core::scenario::Scenario<Family>;
-pub(crate) type Catalog = hil_core::scenario::Catalog<Family>;
+pub(crate) type Scenario = oer_hil_scenario::Scenario<Family>;
+pub(crate) type Catalog = oer_hil_scenario::Catalog<Family>;
 
 impl ScenarioFamily for Family {
     fn validate(&self) -> Result<()> {

@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Result,
     lab::config::{LabConfig, OpenWrtConfig, StationFixtureConfig},
-    lab::link::PhyExpectation,
 };
+use oer_hil_scenario::link::PhyExpectation;
 
 pub const LAB_PROVENANCE_SCHEMA: u16 = 1;
 
@@ -186,7 +186,10 @@ pub struct OpenWrtInterface {
 }
 
 impl LabProvenance {
-    pub fn capture(lab: &LabConfig, required: super::requirements::Requirements) -> Result<Self> {
+    pub fn capture(
+        lab: &LabConfig,
+        required: oer_hil_scenario::requirements::Requirements,
+    ) -> Result<Self> {
         let definition = LabDefinition::from_config(lab);
         let scope = if required.network() {
             ObservationScope::Network

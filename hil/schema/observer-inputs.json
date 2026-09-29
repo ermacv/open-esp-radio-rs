@@ -10,6 +10,7 @@
       "oer-hil-image-class",
       "oer-hil-durable",
       "oer-hil-source-snapshot",
+      "oer-hil-scenario",
       "oer-esp32s31-hil-board",
       "rustix",
       "oer-process",

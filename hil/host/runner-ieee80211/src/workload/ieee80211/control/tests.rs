@@ -105,7 +105,7 @@ fn lifecycle_stop_requires_the_current_station_link_disconnect() {
 
 fn link(
     phy: PhyExpectation,
-    management_frame_protection: hil_core::lab::link::ManagementFrameProtection,
+    management_frame_protection: oer_hil_scenario::link::ManagementFrameProtection,
 ) -> crate::scenario::LinkExpectation {
     crate::scenario::LinkExpectation {
         phy,
@@ -118,7 +118,7 @@ fn link(
 
 #[test]
 fn a_wpa3_fixture_requires_an_sae_link() {
-    use hil_core::lab::link::{AccessPointSecurity, ManagementFrameProtection::Disabled};
+    use oer_hil_scenario::link::{AccessPointSecurity, ManagementFrameProtection::Disabled};
     let wpa3 = crate::scenario::LinkExpectation {
         access_point_security: AccessPointSecurity::Wpa3Transition,
         ..link(PhyExpectation::Ht40, Disabled)
@@ -141,7 +141,7 @@ fn a_wpa3_fixture_requires_an_sae_link() {
 
 #[test]
 fn lifecycle_connected_link_requires_negotiated_phy_and_security() {
-    use hil_core::lab::link::ManagementFrameProtection::{Disabled, Required};
+    use oer_hil_scenario::link::ManagementFrameProtection::{Disabled, Required};
     let ht40_wpa2 = StationConnectionObservation {
         generation: 4,
         association_bandwidth_mhz: Some(40),

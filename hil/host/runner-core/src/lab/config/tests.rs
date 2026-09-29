@@ -281,7 +281,7 @@ fn devices_are_named_by_serial_port_or_by_registered_board() {
 #[test]
 fn a_wifi_link_occupies_its_channel_and_secondary_channel() {
     let lab = LabConfig::for_test();
-    let link = |phy| crate::lab::link::WifiLabUse {
+    let link = |phy| oer_hil_scenario::link::WifiLabUse {
         link: Some(phy),
         ..Default::default()
     };

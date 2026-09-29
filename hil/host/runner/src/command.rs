@@ -10,7 +10,8 @@ use crate::{
     emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
     repository_root,
 };
-use hil_core::{image, lab, output, scenario::SCENARIO_SCHEMA};
+use hil_core::{image, lab, output};
+use oer_hil_scenario::SCENARIO_SCHEMA;
 
 pub(crate) fn run() -> Result<()> {
     let root = repository_root()?;
@@ -77,10 +78,10 @@ pub(crate) fn run() -> Result<()> {
         CliCommand::Plan { selection, proofs } => {
             let catalog = Catalog::load(&catalog_path)?;
             let selected = selection.resolve(&catalog)?;
-            let plan = hil_core::campaign::Plan::create_for_checks(
+            let plan = oer_hil_scenario::campaign::Plan::create_for_checks(
                 &catalog,
                 &selected,
-                image::Integration::default(),
+                image::Integration::default().id(),
                 &proofs,
             )?;
             emit_json(&plan, true)

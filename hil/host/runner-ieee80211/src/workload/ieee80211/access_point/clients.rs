@@ -13,7 +13,8 @@ use crate::{
     fixture::openwrt::client::ControlledOpenWrtClient,
     fixture::openwrt::client::OpenWrtClientLinkObservation,
 };
-use hil_core::{lab::config::StationFixtureConfig, lab::link::HtGuardIntervalExpectation};
+use hil_core::lab::config::StationFixtureConfig;
+use oer_hil_scenario::link::HtGuardIntervalExpectation;
 
 pub(super) enum ConnectedClients {
     Laptop {

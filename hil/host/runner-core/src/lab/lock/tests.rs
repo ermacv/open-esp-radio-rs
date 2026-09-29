@@ -239,7 +239,7 @@ fn a_run_claims_its_boards_fixtures_and_the_air() {
 fn a_run_shares_its_fixture_software_with_other_runs_but_not_an_installation() {
     use oer_hil_arbiter::Claim;
     let lab = crate::lab::config::LabConfig::for_test();
-    let required = crate::lab::requirements::Requirements {
+    let required = oer_hil_scenario::requirements::Requirements {
         bluetooth_adapter: true,
         ..Default::default()
     };

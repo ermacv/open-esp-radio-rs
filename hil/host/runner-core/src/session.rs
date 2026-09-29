@@ -46,7 +46,7 @@ use zeroize::Zeroizing;
 use crate::Result;
 mod airtime;
 mod target;
-pub use target::{Settings, Target};
+pub use target::Target;
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
 mod received;
@@ -284,7 +284,7 @@ pub struct SerialCapture {
     persisted: bool,
     measurements: Option<crate::evidence::measurements::CaptureRecorder>,
     /// The armed program-counter profile, drained when the capture finishes.
-    profile: Option<crate::scenario::ProfileRequest>,
+    profile: Option<oer_hil_scenario::ProfileRequest>,
 }
 
 fn command_response_matches(

@@ -2,7 +2,7 @@
 
 use std::{path::Path, time::Duration};
 
-use hil_core::scenario::ScenarioFamily as _;
+use oer_hil_scenario::ScenarioFamily as _;
 
 use crate::{Result, fixture, scenario::Scenario};
 use hil_core::{evidence::run::Failure, lab::config::LabConfig, session::SerialCapture};

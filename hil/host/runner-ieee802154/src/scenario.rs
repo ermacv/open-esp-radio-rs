@@ -2,11 +2,9 @@
 
 use std::path::Path;
 
-use hil_core::{
-    context::Context,
-    scenario::{Plan, bounded},
-};
+use hil_core::context::Context;
 use oer_hil_image_class::ImageClass;
+use oer_hil_scenario::{Plan, bounded};
 use serde::{Deserialize, Serialize};
 
 use crate::{Result, workload::ieee802154};

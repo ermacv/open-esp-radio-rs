@@ -241,7 +241,7 @@ pub struct PlanEntry {
     pub disposition: PlanDisposition,
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requirements: Option<crate::lab::requirements::Requirements>,
+    pub requirements: Option<oer_hil_scenario::requirements::Requirements>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -79,9 +79,9 @@ fn fixture_lifecycle_harness() {
         let error = super::controlled_ap::ControlledAp::start(
             &lab.station,
             &lab.station_fixture,
-            hil_core::lab::link::PhyExpectation::Ht40,
-            hil_core::lab::link::ManagementFrameProtection::Disabled,
-            hil_core::lab::link::AccessPointSecurity::Wpa2Personal,
+            oer_hil_scenario::link::PhyExpectation::Ht40,
+            oer_hil_scenario::link::ManagementFrameProtection::Disabled,
+            oer_hil_scenario::link::AccessPointSecurity::Wpa2Personal,
         )
         .err()
         .expect("injected fixture failure");

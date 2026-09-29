@@ -8,7 +8,7 @@ use oer_hil_image_class::ImageClass;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub(crate) enum TestFamily {
+pub enum TestFamily {
     System(TestWorkload),
     /// A repository Wi-Fi document kept opaque: cross-process tests compare
     /// its procedure with the independent evaluator's reading of the file.
@@ -16,7 +16,7 @@ pub(crate) enum TestFamily {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct OpaqueWifi {
+pub struct OpaqueWifi {
     image: ImageClass,
     #[serde(flatten)]
     rest: serde_json::Map<String, serde_json::Value>,
@@ -24,7 +24,7 @@ pub(crate) struct OpaqueWifi {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub(crate) enum TestWorkload {
+pub enum TestWorkload {
     BootSmoke,
     /// A network workload with one optional check, for requirement and
     /// named-check tests.
@@ -72,13 +72,13 @@ impl ScenarioFamily for TestFamily {
 }
 
 /// Parse a test-family document.
-pub(crate) fn scenario(text: &str) -> super::Scenario<TestFamily> {
+pub fn scenario(text: &str) -> super::Scenario<TestFamily> {
     super::Scenario::from_toml(text, std::path::Path::new("test.toml")).unwrap()
 }
 
 /// A catalog with a boot scenario and two network scenarios, one of which
 /// publishes an additional check.
-pub(crate) fn catalog() -> super::Catalog<TestFamily> {
+pub fn catalog() -> super::Catalog<TestFamily> {
     super::Catalog::new(
         [
             "schema = 5\nid = \"throughput\"\ndescription = \"rate only\"\ntags = [\"he20\"]\n[system]\nkind = \"network\"\nstation_network = true\n",

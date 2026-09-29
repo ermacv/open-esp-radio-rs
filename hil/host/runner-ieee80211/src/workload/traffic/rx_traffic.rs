@@ -24,10 +24,8 @@ use crate::{
     workload::traffic::paced_udp::Config as PacedUdpConfig,
     workload::traffic::paced_udp::send as send_paced_udp,
 };
-use hil_core::{
-    lab::config::StationFixtureConfig, lab::link::HtGuardIntervalExpectation,
-    lab::link::PhyExpectation, session::await_udp_rx_ready,
-};
+use hil_core::{lab::config::StationFixtureConfig, session::await_udp_rx_ready};
+use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
 
 const DEFAULT_PORT: u16 = 4_323;
 const DEFAULT_RATE_BPS: u64 = 20_000_000;

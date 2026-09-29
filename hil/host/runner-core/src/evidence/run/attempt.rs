@@ -5,7 +5,7 @@
 //! Closing an attempt neither closes the campaign nor releases fixture leases.
 
 use super::*;
-use crate::scenario::{Header, Scenario, ScenarioFamily};
+use oer_hil_scenario::{Header, Scenario, ScenarioFamily};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]

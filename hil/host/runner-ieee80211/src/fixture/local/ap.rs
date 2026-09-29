@@ -5,9 +5,8 @@ use crate::fixture::{
     channel::Geometry,
     local::wpa_control::{Control, field},
 };
-use hil_core::{
-    lab::config::LocalLinuxConfig, lab::config::StationConfig, lab::link::PhyExpectation,
-};
+use hil_core::lab::config::{LocalLinuxConfig, StationConfig};
+use oer_hil_scenario::link::PhyExpectation;
 use oer_process::CommandExt as _;
 use std::{
     io::{Read, Seek, SeekFrom, Write},

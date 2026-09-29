@@ -4,7 +4,8 @@
 
 use super::controlled_ap::ControlledAp;
 use crate::Result;
-use hil_core::{lab::config::LabConfig, lab::config::StationFixtureConfig, scenario::Plan};
+use hil_core::lab::config::{LabConfig, StationFixtureConfig};
+use oer_hil_scenario::Plan;
 use std::{
     cell::{RefCell, RefMut},
     path::Path,
@@ -178,7 +179,7 @@ impl BeaconProtection {
 
     /// A non-HT member requires non-HT mixed HT protection; an overlapping
     /// legacy BSS requires ERP Use_Protection.
-    fn satisfies(self, required: hil_core::lab::requirements::Requirements) -> bool {
+    fn satisfies(self, required: oer_hil_scenario::requirements::Requirements) -> bool {
         self.beacons != 0
             && (!required.non_ht_member || self.ht_protection == Some(3))
             && (!required.legacy_bss || self.erp_use_protection)
@@ -199,11 +200,11 @@ mod tests {
 
     #[test]
     fn protection_is_established_only_when_every_beacon_carries_it() {
-        let non_ht = hil_core::lab::requirements::Requirements {
+        let non_ht = oer_hil_scenario::requirements::Requirements {
             non_ht_member: true,
             ..Default::default()
         };
-        let legacy = hil_core::lab::requirements::Requirements {
+        let legacy = oer_hil_scenario::requirements::Requirements {
             legacy_bss: true,
             ..Default::default()
         };

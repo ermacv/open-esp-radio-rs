@@ -14,7 +14,12 @@ hil/
 ├── evidence/          recorded evidence shards per chip
 ├── host/
 │   ├── runner/        CLI, run orchestration and workload dispatch
-│   ├── runner-core/   scenarios, lab, UART session, images and run evidence
+│   ├── runner-core/   lab, UART session, images and run evidence
+│   ├── scenario/      scenario envelope, catalog, campaign plan and requirements
+│   ├── image-class/   image classes and the keys each serves
+│   ├── source-snapshot/ source snapshots builds and runs are made from
+│   ├── durable/       atomic host files and digests
+│   ├── board/         board support: flash, reset and boot flows per chip
 │   ├── runner-*/      one radio family's workloads and fixtures each
 │   ├── arbiter/       leases, claims, balances and the board journal
 │   ├── fixture/       finite Linux helpers and their contract

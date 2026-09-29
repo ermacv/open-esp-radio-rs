@@ -8,12 +8,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{
-    Result,
-    image::Integration,
-    lab::requirements::Requirements,
-    scenario::{Catalog, Scenario, ScenarioFamily},
-};
+use crate::{Catalog, Result, Scenario, ScenarioFamily, requirements::Requirements};
 use oer_hil_image_class::ImageClass;
 
 const CAMPAIGN_SCHEMA: u16 = 7;
@@ -51,9 +46,7 @@ pub struct Plan {
 
 // Descriptive metadata is preserved in run provenance, but is not executed.
 fn procedure<F: ScenarioFamily>(scenario: &Scenario<F>) -> Result<serde_json::Value> {
-    Ok(crate::scenario::identity::normalize(&serde_json::to_value(
-        scenario,
-    )?))
+    Ok(crate::identity::normalize(&serde_json::to_value(scenario)?))
 }
 
 impl Plan {
@@ -61,7 +54,7 @@ impl Plan {
     pub fn create<F: ScenarioFamily>(
         catalog: &Catalog<F>,
         requested: &[&Scenario<F>],
-        network: Integration,
+        network: &str,
     ) -> Result<Self> {
         Self::create_for_checks(catalog, requested, network, &[])
     }
@@ -69,7 +62,7 @@ impl Plan {
     pub fn create_for_checks<F: ScenarioFamily>(
         catalog: &Catalog<F>,
         candidates: &[&Scenario<F>],
-        network: Integration,
+        network: &str,
         checks: &[String],
     ) -> Result<Self> {
         let unique = checks.iter().collect::<BTreeSet<_>>();
@@ -134,7 +127,7 @@ impl Plan {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             schema: CAMPAIGN_SCHEMA,
-            network: network.id().to_owned(),
+            network: network.to_owned(),
             requested: ids.into_iter().collect(),
             requested_checks: checks,
             requirements: Requirements::union(ordered.iter().map(|s| s.requirements())),

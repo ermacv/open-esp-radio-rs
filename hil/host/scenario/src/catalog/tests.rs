@@ -3,9 +3,8 @@ use super::super::test_family::TestFamily;
 type Catalog = super::Catalog<TestFamily>;
 use std::{fs, path::PathBuf};
 
-const ALPHA: &str =
-    include_str!("../../../../../tests/fixtures/catalog/z-system/alpha-system.toml");
-const BETA: &str = include_str!("../../../../../tests/fixtures/catalog/a-system/beta-system.toml");
+const ALPHA: &str = include_str!("../../../../tests/fixtures/catalog/z-system/alpha-system.toml");
+const BETA: &str = include_str!("../../../../tests/fixtures/catalog/a-system/beta-system.toml");
 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 struct Tree(PathBuf);
 impl Tree {
@@ -127,7 +126,7 @@ fn a_scenario_names_no_chip() {
 #[test]
 fn only_a_diagnostic_scenario_selects_the_station_exit_image() {
     let scenario = |tags: &str| {
-        crate::scenario::Scenario::<TestFamily>::from_toml(
+        crate::Scenario::<TestFamily>::from_toml(
             &format!(
                 "schema = 5\nid = \"exit\"\ndescription = \"exit\"\ntags = [{tags}]\n\n\
                  [wifi]\nimage = \"diagnostic-station-exit\"\n"
@@ -155,7 +154,7 @@ fn a_profile_needs_a_sampling_image_a_period_in_range_and_a_diagnostic_scenario(
         )
     };
     let parse = |text: String| {
-        crate::scenario::Scenario::<super::super::test_family::TestFamily>::from_toml(
+        crate::Scenario::<super::super::test_family::TestFamily>::from_toml(
             &text,
             std::path::Path::new("profiled.toml"),
         )
@@ -168,8 +167,8 @@ fn a_profile_needs_a_sampling_image_a_period_in_range_and_a_diagnostic_scenario(
     .unwrap();
     assert_eq!(
         profiled.header.profile,
-        Some(crate::scenario::ProfileRequest {
-            harts: crate::scenario::ProfileHarts::Both,
+        Some(crate::ProfileRequest {
+            harts: crate::ProfileHarts::Both,
             period_us: 1999,
         })
     );

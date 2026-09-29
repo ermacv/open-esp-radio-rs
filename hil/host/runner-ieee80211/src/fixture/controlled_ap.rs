@@ -1,11 +1,8 @@
 //! Lifetime-safe access to the repository-controlled HIL access point.
 
 use crate::Result;
-use hil_core::{
-    lab::config::StationConfig,
-    lab::config::StationFixtureConfig,
-    lab::link::{AccessPointSecurity, ManagementFrameProtection, PhyExpectation},
-};
+use hil_core::lab::config::{StationConfig, StationFixtureConfig};
+use oer_hil_scenario::link::{AccessPointSecurity, ManagementFrameProtection, PhyExpectation};
 
 /// Restores the selected AP frontier on every normal or error return.
 pub enum ControlledAp {

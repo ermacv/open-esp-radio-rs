@@ -4,8 +4,9 @@ use crate::lab::config::LabConfig;
 use crate::{
     Result,
     evidence::measurements::Recorder,
-    session::{SerialCapture, Settings, Target},
+    session::{SerialCapture, Target},
 };
+use oer_hil_scenario::Settings;
 use std::path::Path;
 
 pub struct Context<'a> {
@@ -14,7 +15,7 @@ pub struct Context<'a> {
     pub measurements: Recorder,
     /// The program-counter profile each capture arms after the boot's hello
     /// and drains when it finishes.
-    pub profile: Option<crate::scenario::ProfileRequest>,
+    pub profile: Option<oer_hil_scenario::ProfileRequest>,
     output: &'a Path,
 }
 
@@ -30,7 +31,7 @@ impl<'a> Context<'a> {
     }
 
     /// Profile every capture of this workload.
-    pub fn with_profile(mut self, profile: Option<crate::scenario::ProfileRequest>) -> Self {
+    pub fn with_profile(mut self, profile: Option<oer_hil_scenario::ProfileRequest>) -> Self {
         self.profile = profile;
         self
     }

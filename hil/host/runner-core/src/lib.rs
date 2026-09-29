@@ -6,7 +6,6 @@
 //! depend on this crate; the `oer-hil-runner` binary composes them.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
-pub mod campaign;
 pub mod context;
 pub mod error;
 pub mod evidence;
@@ -20,7 +19,6 @@ pub mod post_mortem;
 pub mod profile;
 pub mod recovery;
 mod repository;
-pub mod scenario;
 pub mod session;
 pub mod transport;
 pub mod usb_events;

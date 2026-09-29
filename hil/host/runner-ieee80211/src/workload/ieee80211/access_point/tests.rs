@@ -531,7 +531,7 @@ fn ap_ht40_mcs7_gate_is_directional_and_fails_closed() {
     let link = Some(LinkExpectation {
         phy: PhyExpectation::Ht40,
         minimum_mcs: Some(7),
-        guard_interval: hil_core::lab::link::HtGuardIntervalExpectation::Any,
+        guard_interval: oer_hil_scenario::link::HtGuardIntervalExpectation::Any,
         management_frame_protection: Default::default(),
         access_point_security: Default::default(),
     });

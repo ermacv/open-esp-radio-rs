@@ -1,5 +1,5 @@
 use super::*;
-use hil_core::lab::link::{AccessPointSecurity, ManagementFrameProtection};
+use oer_hil_scenario::link::{AccessPointSecurity, ManagementFrameProtection};
 
 fn observation(phy: PhyExpectation) -> Observation {
     Observation {

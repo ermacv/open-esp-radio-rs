@@ -4,14 +4,11 @@
 
 use std::path::Path;
 
-use hil_core::{
-    context::Context,
-    lab::requirements::Requirements,
-    scenario::{Plan, bounded},
-};
+use hil_core::context::Context;
 use oer_hil_image_class::DeviceImageKeys;
 use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::bluetooth;
+use oer_hil_scenario::{Plan, bounded, requirements::Requirements};
 use serde::{Deserialize, Serialize};
 
 use crate::{

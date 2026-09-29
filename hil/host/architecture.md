@@ -15,7 +15,8 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | Package | Binaries | Role |
 | --- | --- | --- |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `runner-core/` (`oer-hil-runner-core`) | none | Scenarios, laboratory, UART session, workload context, images and sealed run evidence |
+| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, UART session, workload context, images and sealed run evidence |
+| `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
 | `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, and the check of a device's reported keys against them |
 | `source-snapshot/` (`oer-hil-source-snapshot`) | none | Source snapshots: capture of the repository and local dependency checkouts, their identity, and verified materialization into build workspaces |
 | `durable/` (`oer-hil-durable`) | none | Durable host files: atomic replacement, content digests and timestamps |
@@ -196,7 +197,7 @@ use the same geometry and source memory.
 
 Scenarios are versioned TOML files in domain folders under `hil/scenarios`; they contain one
 family's workload and acceptance criteria, never serial paths or secrets.
-`runner-core` owns the family-independent envelope, catalog and `Plan`
+`oer-hil-scenario` owns the family-independent envelope, catalog and `Plan`
 projection (image, laboratory requirements, target initialization, named
 checks and Wi-Fi laboratory use); each family package owns its typed table,
 validation and execution, and the runner composes the families. Machine-local

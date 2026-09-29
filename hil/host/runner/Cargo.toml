@@ -9,6 +9,7 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+oer-hil-scenario = { path = "../scenario" }
 oer-hil-source-snapshot = { path = "../source-snapshot" }
 oer-hil-durable = { path = "../durable" }
 oer-hil-image-class = { path = "../image-class" }

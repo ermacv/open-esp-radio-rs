@@ -2,8 +2,9 @@
 
 use std::{path::Path, time::Duration};
 
-use hil_core::{context::Context, lab::link::PhyExpectation};
+use hil_core::context::Context;
 use oer_hil_image_class::ImageClass;
+use oer_hil_scenario::link::PhyExpectation;
 
 use super::{
     AccessPoint, Direction, ProtectionPeer, RoleOperation, StationIcmp, StationReconnect,

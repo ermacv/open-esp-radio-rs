@@ -13,11 +13,8 @@ use oer_hil_protocol::{
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{
-    Result,
-    lab::link::{PhyExpectation, WifiLabUse},
-    repository_root,
-};
+use crate::{Result, repository_root};
+use oer_hil_scenario::link::{PhyExpectation, WifiLabUse};
 
 #[derive(Clone)]
 pub struct LabConfig {

@@ -8,22 +8,19 @@
 
 use std::path::Path;
 
-use hil_core::{
-    context::Context,
-    lab::{
-        link::{
-            AccessPointSecurity, HtGuardIntervalExpectation, ManagementFrameProtection,
-            PhyExpectation, WifiLabUse,
-        },
-        requirements::Requirements,
-    },
-    scenario::{Plan, bounded},
-    session::Settings,
-};
+use hil_core::context::Context;
 use oer_hil_image_class::ImageClass;
 use oer_hil_protocol::{
     wifi::WifiApScheduler, wifi::WifiDataPlanePlacement, wifi::WifiRxChecksumPolicy,
     wifi::WifiRxContinuationPolicy, wifi::WifiTxBufferPolicy, wifi::WifiTxUdpChecksumPolicy,
+};
+use oer_hil_scenario::{
+    Plan, Settings, bounded,
+    link::{
+        AccessPointSecurity, HtGuardIntervalExpectation, ManagementFrameProtection, PhyExpectation,
+        WifiLabUse,
+    },
+    requirements::Requirements,
 };
 use serde::{Deserialize, Serialize};
 

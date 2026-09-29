@@ -90,6 +90,7 @@ members = [
     "hil/host/image-class",
     "hil/host/durable",
     "hil/host/source-snapshot",
+    "hil/host/scenario",
     "hil/host/runner",
     "hil/host/runner-bluetooth",
     "hil/host/runner-core",

@@ -249,7 +249,7 @@ fn add_lab_provenance(run: &Path, device_id: &str) {
                     secondary_client_address: None,
                 },
                 station_fixture: StationFixtureDefinition::External {
-                    phys: vec![crate::lab::link::PhyExpectation::Ht40],
+                    phys: vec![oer_hil_scenario::link::PhyExpectation::Ht40],
                 },
                 sensitive_network_values: SensitiveValueDisposition::Omitted,
             },
@@ -309,7 +309,7 @@ fn system_provenance_requires_a_matching_scenario_snapshot() {
     provenance.scope = crate::lab::provenance::ObservationScope::System;
     provenance.fixture = FixtureObservation::NotUsed;
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
-    let mut scenario = crate::scenario::test_family::scenario(include_str!(
+    let mut scenario = oer_hil_scenario::test_family::scenario(include_str!(
         "../../../../../scenarios/system/boot-smoke.toml"
     ));
     let snapshot = run
@@ -357,7 +357,7 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
     provenance.fixture = FixtureObservation::NotUsed;
     provenance.definition.bluetooth_adapter = Some("hci0".into());
     atomic_json(&run.join("lab-provenance.json"), &provenance).unwrap();
-    let scenario = crate::scenario::test_family::scenario(include_str!(
+    let scenario = oer_hil_scenario::test_family::scenario(include_str!(
         "../../../../../scenarios/system/boot-smoke.toml"
     ));
     let directory = run.join("scenarios").join(scenario.id());
@@ -374,7 +374,7 @@ fn bluetooth_plan_accepts_system_provenance_with_an_adapter_requirement() {
             repetitions: scenario.repetitions(),
             disposition: crate::evidence::run::PlanDisposition::Selected,
             reason: None,
-            requirements: Some(crate::lab::requirements::Requirements {
+            requirements: Some(oer_hil_scenario::requirements::Requirements {
                 bluetooth_adapter: true,
                 ..Default::default()
             }),

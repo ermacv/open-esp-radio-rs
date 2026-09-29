@@ -18,9 +18,10 @@ use crate::{
     workload::ieee80211::control::start_station, workload::ieee80211::control::stop_station,
 };
 use hil_core::{
-    lab::config::StationFixtureConfig, lab::link::HtGuardIntervalExpectation,
-    lab::link::PhyExpectation, session::SerialCapture, session::SessionEvidence,
+    lab::config::StationFixtureConfig,
+    session::{SerialCapture, SessionEvidence},
 };
+use oer_hil_scenario::link::{HtGuardIntervalExpectation, PhyExpectation};
 
 mod clients;
 mod icmp;

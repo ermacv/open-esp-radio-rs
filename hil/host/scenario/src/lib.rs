@@ -1,4 +1,5 @@
-//! Family-agnostic HIL scenario envelope and catalog.
+//! Family-agnostic HIL scenario envelope, catalog and campaign plan, with
+//! the laboratory requirements and target settings a scenario declares.
 //!
 //! A scenario document is a common header plus exactly one radio-family
 //! table. The family owns its typed workload, its validation and the
@@ -12,17 +13,20 @@ use std::{
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{
-    Result,
-    lab::{link::WifiLabUse, requirements::Requirements},
-    session::Settings,
-};
+use crate::{link::WifiLabUse, requirements::Requirements};
 use oer_hil_image_class::ImageClass;
 
+pub mod campaign;
 mod catalog;
 pub mod identity;
+pub mod link;
+pub mod requirements;
+mod settings;
 
 pub use catalog::Catalog;
+pub use settings::Settings;
+
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub const SCENARIO_SCHEMA: u16 = 5;
 
@@ -359,5 +363,6 @@ where
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) mod test_family;
+// A minimal family for the tests of this crate and of the runner core.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_family;

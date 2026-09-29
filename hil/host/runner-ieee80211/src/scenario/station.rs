@@ -1,10 +1,10 @@
 //! Station workloads: the target joins the laboratory AP.
 
-use hil_core::{
-    lab::link::{HtGuardIntervalExpectation, PhyExpectation},
-    scenario::bounded,
-};
 use oer_hil_image_class::ImageClass;
+use oer_hil_scenario::{
+    bounded,
+    link::{HtGuardIntervalExpectation, PhyExpectation},
+};
 use serde::{Deserialize, Serialize};
 
 use super::{CORE0_RX_CYCLE_MAX_DURATION_SECONDS, Direction, LinkExpectation, Offer, RateFloors};

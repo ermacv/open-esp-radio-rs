@@ -1197,7 +1197,7 @@ impl SerialCapture {
 
     /// Arm the program-counter profile once the boot's hello arrived; the
     /// capture drains it into `profile.json` when it finishes.
-    pub fn profiled(mut self, profile: crate::scenario::ProfileRequest) -> Result<Self> {
+    pub fn profiled(mut self, profile: oer_hil_scenario::ProfileRequest) -> Result<Self> {
         self.wait_for_message_after(0, PROTOCOL_READY_TIMEOUT, |message| message.is::<Hello>())?
             .ok_or("device did not publish a HIL protocol hello before the profile")?;
         match self.call(

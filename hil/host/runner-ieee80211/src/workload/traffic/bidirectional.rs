@@ -35,11 +35,11 @@ use crate::{
     workload::traffic::paced_udp::send as send_paced_udp, workload::traffic::tx_traffic::Burst,
     workload::traffic::tx_traffic::Receiver, workload::traffic::tx_traffic::describe_bursts,
 };
-use hil_core::lab::link::HtGuardIntervalExpectation;
 use hil_core::{
     lab::config::StationFixtureConfig, session::SessionEvidence, session::await_udp_rx_ready,
     transport::udp::configure_qualification_receive_buffer, transport::udp::confirm_reverse_flow,
 };
+use oer_hil_scenario::link::HtGuardIntervalExpectation;
 
 const DEFAULT_PORT: u16 = 4_323;
 const DEFAULT_RATE_BPS: u64 = 10_000_000;
@@ -197,8 +197,8 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
         output,
         options.duration,
         match options.phy {
-            Phy::Ht40 => hil_core::lab::link::PhyExpectation::Ht40,
-            Phy::He20 => hil_core::lab::link::PhyExpectation::He20,
+            Phy::Ht40 => oer_hil_scenario::link::PhyExpectation::Ht40,
+            Phy::He20 => oer_hil_scenario::link::PhyExpectation::He20,
         },
         fixture_guard_interval,
         None,
@@ -211,8 +211,8 @@ pub fn run(options: Config, output: &Path, context: &Context<'_>, policy: RunPol
             options.tx_port,
             options.duration,
             match options.phy {
-                Phy::Ht40 => hil_core::lab::link::PhyExpectation::Ht40,
-                Phy::He20 => hil_core::lab::link::PhyExpectation::He20,
+                Phy::Ht40 => oer_hil_scenario::link::PhyExpectation::Ht40,
+                Phy::He20 => oer_hil_scenario::link::PhyExpectation::He20,
             },
         )?),
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,

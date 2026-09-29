@@ -35,7 +35,7 @@ where
     {
         if matches!(
             self.aggregate_phase,
-            Some(AggregateServicePhase::Unaggregating { .. })
+            Some(AggregateServicePhase::Unaggregating | AggregateServicePhase::RequestingBlockAck)
         ) {
             let (_, ordinary) = control
                 .mac
@@ -138,8 +138,14 @@ where
         let phase = self
             .aggregate_phase
             .expect("ordinary service returned above");
-        if let AggregateServicePhase::Unaggregating { retries } = phase {
-            return self.service_unaggregating(aggregate, control, hardware, wake, retries);
+        match phase {
+            AggregateServicePhase::Unaggregating => {
+                return self.service_unaggregating(aggregate, control, hardware, wake);
+            }
+            AggregateServicePhase::RequestingBlockAck => {
+                return self.service_block_ack_request(aggregate, control, hardware, wake);
+            }
+            _ => {}
         }
         let action = phase.action(wake, || {
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -160,6 +166,7 @@ where
                     .map_err(AccessPointDatapathError::Aggregate)?;
                 ordinary.reset_aggregate_contention();
                 self.aggregate_phase = None;
+                let work = self.take_exchange_work(aggregate);
                 #[cfg(any(feature = "diagnostics", test))]
                 {
                     self.exchange_started_micros = None;
@@ -167,12 +174,10 @@ where
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.observer {
                     observer.observe(AggregateTxObservation::HardwareTimeout);
-                    observer.observe(AggregateTxObservation::WorkCompleted {
-                        work: aggregate.active_mut().work(),
-                    });
+                    observer.observe(AggregateTxObservation::WorkCompleted { work });
                 }
                 if let Some(accounting) = self.airtime.as_mut() {
-                    accounting.complete_active(aggregate.active_mut().work())?;
+                    accounting.complete_active(work)?;
                 }
                 return Ok(WifiTxProgress::Complete);
             }
@@ -192,6 +197,7 @@ where
             }
             ordinary.reset_aggregate_contention();
             self.aggregate_phase = None;
+            let work = self.take_exchange_work(aggregate);
             #[cfg(any(feature = "diagnostics", test))]
             {
                 self.exchange_started_micros = None;
@@ -199,12 +205,10 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::Collision);
-                observer.observe(AggregateTxObservation::WorkCompleted {
-                    work: aggregate.active_mut().work(),
-                });
+                observer.observe(AggregateTxObservation::WorkCompleted { work });
             }
             if let Some(accounting) = self.airtime.as_mut() {
-                accounting.complete_active(aggregate.active_mut().work())?;
+                accounting.complete_active(work)?;
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -255,7 +259,9 @@ where
                             program_micros: finished.saturating_sub(started),
                         });
                     }
-                    ApAmpduProgress::CompletionReady(_) | ApAmpduProgress::Unaggregate(_) => {
+                    ApAmpduProgress::CompletionReady(_)
+                    | ApAmpduProgress::Unaggregate(_)
+                    | ApAmpduProgress::RequestingBlockAck(_) => {
                         observer.observe(AggregateTxObservation::CompletionCoreCompleted {
                             micros: finished.saturating_sub(started),
                         });
@@ -265,16 +271,56 @@ where
             }
             progress
         };
+        self.handle_aggregate_progress(
+            aggregate,
+            control,
+            hardware,
+            aggregate_progress,
+            service_event,
+            true,
+        )
+    }
+
+    /// Continue the aggregate exchange after one completion or BlockAckReq
+    /// resort of the aggregate owner.
+    fn handle_aggregate_progress<
+        P,
+        E,
+        T,
+        H,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        aggregate: &mut AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
+        control: &mut AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        hardware: &mut H,
+        aggregate_progress: ApAmpduProgress,
+        service_event: AggregateTxServiceEvent,
+        block_ack_sample: bool,
+    ) -> Result<WifiTxProgress, AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+        H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
+    {
         match aggregate_progress {
             ApAmpduProgress::CompletionReady(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]
                 {
-                    self.observe_completion_details(completion, false);
-                    if let Some(observer) = self.observer {
-                        observer.observe(AggregateTxObservation::WorkCompleted {
-                            work: aggregate.active_mut().work(),
-                        });
-                    }
+                    self.observe_completion_details(completion, false, block_ack_sample);
                 }
                 #[cfg(not(any(feature = "diagnostics", test)))]
                 let _ = completion;
@@ -301,14 +347,19 @@ where
                 {
                     self.exchange_started_micros = None;
                 }
+                let work = self.take_exchange_work(aggregate);
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.observer {
+                    observer.observe(AggregateTxObservation::WorkCompleted { work });
+                }
                 if let Some(accounting) = self.airtime.as_mut() {
-                    accounting.complete_active(aggregate.active_mut().work())?;
+                    accounting.complete_active(work)?;
                 }
                 Ok(WifiTxProgress::Complete)
             }
             ApAmpduProgress::Unaggregate(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]
-                self.observe_completion_details(completion, false);
+                self.observe_completion_details(completion, false, block_ack_sample);
                 #[cfg(not(any(feature = "diagnostics", test)))]
                 let _ = completion;
                 let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -318,14 +369,20 @@ where
                     .active_mut()
                     .start_next_unaggregated(ordinary, hardware)
                     .map_err(AccessPointDatapathError::Aggregate)?;
-                self.aggregate_phase = Some(AggregateServicePhase::Unaggregating {
-                    retries: MacTxWork::default(),
-                });
+                self.aggregate_phase = Some(AggregateServicePhase::Unaggregating);
+                Ok(WifiTxProgress::Pending)
+            }
+            ApAmpduProgress::RequestingBlockAck(completion) => {
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe_completion_details(completion, true, block_ack_sample);
+                #[cfg(not(any(feature = "diagnostics", test)))]
+                let _ = completion;
+                self.aggregate_phase = Some(AggregateServicePhase::RequestingBlockAck);
                 Ok(WifiTxProgress::Pending)
             }
             ApAmpduProgress::Republished(completion) => {
                 #[cfg(any(feature = "diagnostics", test))]
-                self.observe_completion_details(completion, true);
+                self.observe_completion_details(completion, true, block_ack_sample);
                 #[cfg(not(any(feature = "diagnostics", test)))]
                 let _ = completion;
                 let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -347,6 +404,102 @@ where
                 Ok(WifiTxProgress::Pending)
             }
         }
+    }
+
+    /// Resort the retained aggregate once its BlockAckReq completed: by the
+    /// BlockAck received, or with every MPDU missing when none arrived.
+    fn service_block_ack_request<
+        P,
+        E,
+        T,
+        H,
+        const DMA_BUFFER_SIZE: usize,
+        const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
+    >(
+        &mut self,
+        aggregate: &mut AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
+        control: &mut AccessPointProtocolProcessor<
+            '_,
+            '_,
+            '_,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        hardware: &mut H,
+        wake: WifiTxWake,
+    ) -> Result<WifiTxProgress, AccessPointDatapathError>
+    where
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+        H: TxHardware + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
+    {
+        let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+            AccessPointDatapathError::Control(AccessPointControlError::Mac(error))
+        })?;
+        let progress = ordinary
+            .service(hardware, wake)
+            .map_err(|error| AccessPointDatapathError::Aggregate(ApAmpduError::Ordinary(error)))?;
+        if progress == WifiTxProgress::Pending {
+            return Ok(progress);
+        }
+        let block_ack = ordinary
+            .take_last_outcome()
+            .and_then(|outcome| outcome.report().block_ack);
+        self.exchange_ordinary_work.absorb(ordinary.work());
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::BlockAckRequestCompleted {
+                answered: block_ack.is_some(),
+            });
+        }
+        let block_ack_operational = aggregate
+            .active_mut()
+            .published_agreement()
+            .is_some_and(|agreement| engine.tx_block_ack_holds(agreement));
+        #[cfg(any(feature = "diagnostics", test))]
+        let resort_started = self.observer.map(AggregateTxObserver::now_micros);
+        let aggregate_progress = aggregate
+            .active_mut()
+            .observe_block_ack_request(ordinary, hardware, block_ack, block_ack_operational)
+            .map_err(AccessPointDatapathError::Aggregate)?;
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer
+            && matches!(aggregate_progress, ApAmpduProgress::Republished(_))
+        {
+            let finished = observer.now_micros();
+            let started = resort_started.unwrap_or(finished);
+            observer.observe(AggregateTxObservation::Published {
+                at_micros: started,
+                program_micros: finished.saturating_sub(started),
+            });
+        }
+        // The BlockAckReq's answer was observed above; it is not a sample of
+        // an aggregate publication's BlockAck.
+        self.handle_aggregate_progress(
+            aggregate,
+            control,
+            hardware,
+            aggregate_progress,
+            AggregateTxServiceEvent::Pending,
+            false,
+        )
+    }
+
+    /// The aggregate's own work plus the ordinary transmissions made for
+    /// its exchange, which are reset for the next exchange.
+    fn take_exchange_work<const SLOTS: usize, const BUFFER_SIZE: usize>(
+        &mut self,
+        aggregate: &mut AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
+    ) -> MacTxWork {
+        let mut work = aggregate.active_mut().work();
+        work.absorb(core::mem::take(&mut self.exchange_ordinary_work));
+        work
     }
 
     /// Advance the ordinary retry of one MPDU taken out of an aggregate whose
@@ -376,7 +529,6 @@ where
         >,
         hardware: &mut H,
         wake: WifiTxWake,
-        mut retries: MacTxWork,
     ) -> Result<WifiTxProgress, AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
@@ -394,18 +546,17 @@ where
             return Ok(progress);
         }
         let _ = ordinary.take_last_outcome();
-        retries.absorb(ordinary.work());
+        self.exchange_ordinary_work.absorb(ordinary.work());
         if aggregate.active_mut().is_unaggregating() {
             aggregate
                 .active_mut()
                 .start_next_unaggregated(ordinary, hardware)
                 .map_err(AccessPointDatapathError::Aggregate)?;
-            self.aggregate_phase = Some(AggregateServicePhase::Unaggregating { retries });
+            self.aggregate_phase = Some(AggregateServicePhase::Unaggregating);
             return Ok(WifiTxProgress::Pending);
         }
         self.aggregate_phase = None;
-        let mut work = aggregate.active_mut().work();
-        work.absorb(retries);
+        let work = self.take_exchange_work(aggregate);
         #[cfg(any(feature = "diagnostics", test))]
         {
             self.exchange_started_micros = None;
@@ -421,20 +572,27 @@ where
     }
 
     #[cfg(any(feature = "diagnostics", test))]
-    fn observe_completion_details(&self, completion: ApAmpduCompletion, republished: bool) {
+    fn observe_completion_details(
+        &self,
+        completion: ApAmpduCompletion,
+        republished: bool,
+        block_ack_sample: bool,
+    ) {
         let Some(observer) = self.observer else {
             return;
         };
-        observer.observe(AggregateTxObservation::BlockAckProcessed {
-            tx_status: completion.tx_status,
-            block_ack_received: completion.block_ack_received,
-            control: completion.block_ack_control,
-            first_sequence: completion.first_sequence,
-            starting_sequence: completion.starting_sequence,
-            subframes: completion.subframes,
-            missing_original_indices: completion.missing_original_indices,
-            block_ack_snr_db: completion.block_ack_snr_db,
-        });
+        if block_ack_sample {
+            observer.observe(AggregateTxObservation::BlockAckProcessed {
+                tx_status: completion.tx_status,
+                block_ack_received: completion.block_ack_received,
+                control: completion.block_ack_control,
+                first_sequence: completion.first_sequence,
+                starting_sequence: completion.starting_sequence,
+                subframes: completion.subframes,
+                missing_original_indices: completion.missing_original_indices,
+                block_ack_snr_db: completion.block_ack_snr_db,
+            });
+        }
         if !republished && let Some(started) = self.exchange_started_micros {
             observer.observe(AggregateTxObservation::ExchangeCompleted {
                 micros: observer.now_micros().saturating_sub(started),

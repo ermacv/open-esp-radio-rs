@@ -62,6 +62,9 @@ where
             ConnectedTxActive::Unaggregating(unaggregating) => {
                 self.service_unaggregating(hardware, wake, unaggregating)
             }
+            ConnectedTxActive::RequestingBlockAck(active) => {
+                self.service_block_ack_request(hardware, wake, active)
+            }
             ConnectedTxActive::AbortSettling(active) => self.service_abort_settle(hardware, active),
             ConnectedTxActive::Aggregate(active) => self.service_aggregate(hardware, wake, active),
         }
@@ -257,107 +260,7 @@ where
                     block_ack_snr_db: completion.tx.ack_snr_sample(),
                 });
             }
-            let republication = match decision {
-                AmpduRetryDecision::RetainAggregate { retry_mask } => {
-                    Some((retry_mask, AmpduRepublication::Retransmission))
-                }
-                AmpduRetryDecision::RepublishUnchanged { retry_mask } => {
-                    Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
-                }
-                AmpduRetryDecision::Unaggregate { .. }
-                | AmpduRetryDecision::Finish { .. }
-                | AmpduRetryDecision::FinishTriggerFlow => None,
-            };
-            if let Some((retry_mask, republication)) = republication {
-                let queue = active.traffic.queue();
-                let aggregate = self.ampdu.active_mut().retain_for_ampdu_retry(
-                    cookie,
-                    retry_mask,
-                    republication,
-                )?;
-                self.ordinary.record_retry_failure(queue);
-                let (_, contention_window) = self.ordinary.contention_publication(queue);
-                let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
-                    rate: active.config.rate(),
-                    receiver: TxReceiver::Individual,
-                    psdu: TxPsdu::Ampdu {
-                        length: u32::from(aggregate.bytes),
-                    },
-                });
-                active.config.update_retained_retry(
-                    aggregate.bytes,
-                    aggregate.subframes,
-                    contention_window,
-                    control,
-                );
-                if let Err(error) = self.publish_attempt(hardware, &mut active) {
-                    self.cancel_prepared();
-                    return Err(error);
-                }
-                self.active = ConnectedTxActive::Aggregate(active);
-                return Ok(WifiTxProgress::Pending);
-            }
-
-            let retry_mask = decision.retry_mask();
-            let missing = decision.missing();
-            let queue = active.traffic.queue();
-            if missing == 0 {
-                self.ordinary.record_success(queue);
-            } else {
-                self.ordinary.reset_terminal_exchange(queue);
-            }
-
-            if matches!(decision, AmpduRetryDecision::Unaggregate { .. }) {
-                #[cfg(any(feature = "diagnostics", test))]
-                if let Some(observer) = self.observer {
-                    observer.observe(AggregateTxObservation::Completed {
-                        acknowledged: active.retry.acknowledged(),
-                        individual_retry: true,
-                    });
-                    self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
-                }
-                let status = MacAmpduTxStatus {
-                    // Delivered only once every missing MPDU was transmitted.
-                    result: MacAmpduTxResult::Delivered,
-                    original_subframes: u16::from(active.original_subframes),
-                    aggregate_attempts: active.retry.aggregate_attempts(),
-                    aggregate_rate: active.config.rate(),
-                    block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
-                    individual_retries: MacIndividualRetries::NONE,
-                };
-                return self.start_unaggregated_retry(
-                    hardware,
-                    Unaggregating {
-                        aggregate: active,
-                        remaining: retry_mask,
-                        status,
-                    },
-                );
-            }
-
-            self.release_completed()?;
-            let acknowledged = active.retry.acknowledged();
-            self.record_terminal_status(MacAmpduTxStatus {
-                result: if acknowledged == active.original_subframes {
-                    MacAmpduTxResult::Delivered
-                } else {
-                    MacAmpduTxResult::Incomplete
-                },
-                original_subframes: u16::from(active.original_subframes),
-                aggregate_attempts: active.retry.aggregate_attempts(),
-                aggregate_rate: active.config.rate(),
-                block_acknowledged_subframes: u16::from(acknowledged),
-                individual_retries: MacIndividualRetries::NONE,
-            });
-            #[cfg(any(feature = "diagnostics", test))]
-            if let Some(observer) = self.observer {
-                observer.observe(AggregateTxObservation::Completed {
-                    acknowledged: active.retry.acknowledged(),
-                    individual_retry: false,
-                });
-                self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
-            }
-            return Ok(WifiTxProgress::Complete);
+            return self.apply_retry_decision(hardware, active, decision);
         }
 
         if service_event == AggregateTxServiceEvent::Completion {
@@ -426,6 +329,178 @@ where
 
         self.active = ConnectedTxActive::Aggregate(active);
         Ok(WifiTxProgress::Pending)
+    }
+
+    /// Act on one retry decision for the retained aggregate: publish it
+    /// again, ask for its BlockAck, send its missing MPDUs individually or
+    /// end it.
+    fn apply_retry_decision<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        mut active: AggregateActive<SLOTS>,
+        decision: AmpduRetryDecision,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let republication = match decision {
+            AmpduRetryDecision::RetainAggregate { retry_mask } => {
+                Some((retry_mask, AmpduRepublication::Retransmission))
+            }
+            AmpduRetryDecision::RepublishUnchanged { retry_mask } => {
+                Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
+            }
+            AmpduRetryDecision::RequestBlockAck {
+                starting_sequence, ..
+            } => {
+                return self.start_block_ack_request(hardware, active, starting_sequence);
+            }
+            AmpduRetryDecision::Unaggregate { .. }
+            | AmpduRetryDecision::Finish { .. }
+            | AmpduRetryDecision::FinishTriggerFlow => None,
+        };
+        if let Some((retry_mask, republication)) = republication {
+            let queue = active.traffic.queue();
+            let aggregate = self.ampdu.active_mut().retain_for_ampdu_retry(
+                cookie,
+                retry_mask,
+                republication,
+            )?;
+            self.ordinary.record_retry_failure(queue);
+            let (_, contention_window) = self.ordinary.contention_publication(queue);
+            let (_, control) = self.ordinary.control_frame_for(ProtectedPpdu {
+                rate: active.config.rate(),
+                receiver: TxReceiver::Individual,
+                psdu: TxPsdu::Ampdu {
+                    length: u32::from(aggregate.bytes),
+                },
+            });
+            active.config.update_retained_retry(
+                aggregate.bytes,
+                aggregate.subframes,
+                contention_window,
+                control,
+            );
+            if let Err(error) = self.publish_attempt(hardware, &mut active) {
+                self.cancel_prepared();
+                return Err(error);
+            }
+            self.active = ConnectedTxActive::Aggregate(active);
+            return Ok(WifiTxProgress::Pending);
+        }
+
+        let retry_mask = decision.retry_mask();
+        let missing = decision.missing();
+        let queue = active.traffic.queue();
+        if missing == 0 {
+            self.ordinary.record_success(queue);
+        } else {
+            self.ordinary.reset_terminal_exchange(queue);
+        }
+
+        if matches!(decision, AmpduRetryDecision::Unaggregate { .. }) {
+            #[cfg(any(feature = "diagnostics", test))]
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::Completed {
+                    acknowledged: active.retry.acknowledged(),
+                    individual_retry: true,
+                });
+                self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
+            }
+            let status = MacAmpduTxStatus {
+                // Delivered only once every missing MPDU was transmitted.
+                result: MacAmpduTxResult::Delivered,
+                original_subframes: u16::from(active.original_subframes),
+                aggregate_attempts: active.retry.aggregate_attempts(),
+                aggregate_rate: active.config.rate(),
+                block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
+                individual_retries: MacIndividualRetries::NONE,
+            };
+            return self.start_unaggregated_retry(
+                hardware,
+                Unaggregating {
+                    aggregate: active,
+                    remaining: retry_mask,
+                    status,
+                },
+            );
+        }
+
+        self.release_completed()?;
+        let acknowledged = active.retry.acknowledged();
+        self.record_terminal_status(MacAmpduTxStatus {
+            result: if acknowledged == active.original_subframes {
+                MacAmpduTxResult::Delivered
+            } else {
+                MacAmpduTxResult::Incomplete
+            },
+            original_subframes: u16::from(active.original_subframes),
+            aggregate_attempts: active.retry.aggregate_attempts(),
+            aggregate_rate: active.config.rate(),
+            block_acknowledged_subframes: u16::from(acknowledged),
+            individual_retries: MacIndividualRetries::NONE,
+        });
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::Completed {
+                acknowledged: active.retry.acknowledged(),
+                individual_retry: false,
+            });
+            self.observe_terminal_exchange(observer, &active, self.ordinary.now_micros());
+        }
+        Ok(WifiTxProgress::Complete)
+    }
+
+    /// Keep the aggregate whose protection exchange failed at every attempt
+    /// and send a BlockAckReq for its head through the ordinary owner.
+    fn start_block_ack_request<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        active: AggregateActive<SLOTS>,
+        starting_sequence: SequenceNumber,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        self.ordinary
+            .reset_terminal_exchange(active.traffic.queue());
+        let progress = self.ordinary.start_block_ack_request(
+            hardware,
+            active.traffic.tid(),
+            starting_sequence,
+        )?;
+        self.active = ConnectedTxActive::RequestingBlockAck(active);
+        Ok(progress)
+    }
+
+    /// Resort the retained aggregate by the BlockAck its BlockAckReq got.
+    /// An unanswered request resorts it with every MPDU still missing.
+    fn service_block_ack_request<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        wake: WifiTxWake,
+        mut active: AggregateActive<SLOTS>,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        let progress = self.ordinary.service(hardware, wake)?;
+        if progress == WifiTxProgress::Pending {
+            self.active = ConnectedTxActive::RequestingBlockAck(active);
+            return Ok(progress);
+        }
+        let block_ack = self
+            .ordinary
+            .last_outcome()
+            .ok_or(AggregateTxError::MissingOrdinaryRetryStatus)?
+            .report()
+            .block_ack;
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::BlockAckRequestCompleted {
+                answered: block_ack.is_some(),
+            });
+        }
+        let block_ack_operational =
+            self.block_ack_generation(active.traffic.tid()) == Some(active.block_ack_generation);
+        let decision = active.retry.observe_block_ack_request(
+            block_ack,
+            self.ordinary.now_micros(),
+            block_ack_operational,
+        );
+        self.apply_retry_decision(hardware, active, decision)
     }
 
     fn observe_ordinary_rate_control(&mut self) {

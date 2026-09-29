@@ -91,6 +91,8 @@ pub(in crate::product_hil) fn aggregate_tx_evidence(
             full_block_ack: aggregate.full_block_ack,
             partial_block_ack: aggregate.partial_block_ack,
             empty_block_ack: aggregate.empty_block_ack,
+            block_ack_requests: aggregate.block_ack_requests,
+            block_ack_requests_answered: aggregate.block_ack_requests_answered,
             tx_irq_epochs: aggregate.tx_irq_epochs,
             tx_irq_service_samples: aggregate.tx_irq_service_samples,
             tx_irq_clock_skew_samples: aggregate.tx_irq_clock_skew_samples,

@@ -14,6 +14,7 @@ enum Case {
     Awake,
     Dtim,
     AggregateRetry,
+    BlockAckRequest,
     PreparedOrdinary,
     PreparedSleep,
     SelectionCapacity,
@@ -62,6 +63,14 @@ fn dtim_group_release_settles_on_completion() {
 #[test]
 fn aggregate_without_its_agreement_sends_missing_mpdus_individually() {
     run(Case::AggregateRetry);
+}
+
+/// Every protection exchange of the aggregate fails: it is kept, a
+/// BlockAckReq for its head leaves as an ordinary frame, and the BlockAck
+/// answering it resorts the aggregate.
+#[test]
+fn aggregate_whose_protection_always_fails_requests_its_block_ack() {
+    run(Case::BlockAckRequest);
 }
 
 #[test]
@@ -250,7 +259,7 @@ fn run(case: Case) {
         ) {
             owner.airtime = owner.airtime.take().map(Accounting::with_peer_selection);
         }
-        if case == Case::AggregateRetry {
+        if matches!(case, Case::AggregateRetry | Case::BlockAckRequest) {
             use oer_esp32s31_hal::types::MacHtAmpduCompletionObservation;
 
             use oer_esp32s31_ieee80211_ap::engine::ApAggregateFrame;
@@ -324,6 +333,41 @@ fn run(case: Case) {
                 .unwrap()
                 .reserve_standby(control.mac.engine(), ApTxFlowKey::associated(identity))
                 .unwrap();
+            let complete = WifiTxWake::Interrupt {
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
+            };
+            let mut ht_publications = 1;
+            let mut legacy_publications = 0;
+            if case == Case::BlockAckRequest {
+                let limit = oer_esp32s31_ieee80211_mac::tx::runtime::VENDOR_SHORT_RETRY_LIMIT;
+                for failure in 1..=limit {
+                    hardware.aggregate_completion =
+                        Some(MacHtAmpduCompletionObservation::new_model(
+                            MacTxCompletionObservation::new_model(2, 0),
+                            0,
+                            0,
+                            0,
+                            false,
+                        ));
+                    assert_eq!(
+                        owner.service(&mut aggregate, &mut control, &mut hardware, complete),
+                        Ok(WifiTxProgress::Pending)
+                    );
+                    if failure < limit {
+                        ht_publications += 1;
+                    }
+                }
+                legacy_publications += 1;
+                assert_eq!(hardware.ht_publications, ht_publications);
+                assert_eq!(
+                    hardware.legacy_publications, legacy_publications,
+                    "the BlockAckReq leaves as an ordinary frame"
+                );
+                assert!(matches!(
+                    owner.aggregate_phase,
+                    Some(AggregateServicePhase::RequestingBlockAck)
+                ));
+            }
             // The BlockAck acknowledges sequence 0 only.
             hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
                 MacTxCompletionObservation::new_model(0, 0),
@@ -332,21 +376,22 @@ fn run(case: Case) {
                 1,
                 true,
             ));
-            let complete = WifiTxWake::Interrupt {
-                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
-            };
             assert_eq!(
                 owner.service(&mut aggregate, &mut control, &mut hardware, complete),
                 Ok(WifiTxProgress::Pending)
             );
             assert_eq!(
-                hardware.ht_publications, 1,
+                hardware.ht_publications, ht_publications,
                 "the aggregate is not republished"
             );
-            assert_eq!(hardware.legacy_publications, 1, "sequence 1 leaves alone");
+            legacy_publications += 1;
+            assert_eq!(
+                hardware.legacy_publications, legacy_publications,
+                "sequence 1 leaves alone"
+            );
             assert!(matches!(
                 owner.aggregate_phase,
-                Some(AggregateServicePhase::Unaggregating { .. })
+                Some(AggregateServicePhase::Unaggregating)
             ));
             assert!(
                 aggregate.active_mut().is_idle(),
@@ -363,13 +408,17 @@ fn run(case: Case) {
                 Ok(WifiTxProgress::Complete)
             );
             assert_eq!(owner.aggregate_phase, None);
+            // Every publication of the exchange costs 600 us against the
+            // 1000-us grant: the aggregate's, the BlockAckReq's and the
+            // individual retry's settle together.
+            let charged = 600 * (ht_publications + legacy_publications) as i64;
             assert_eq!(
                 owner.airtime_balance_micros(peer),
-                Some(-200),
-                "the aggregate and its individual retry settle as one two-publication exchange"
+                Some(1000 - charged),
+                "the aggregate and its ordinary transmissions settle as one exchange"
             );
             owner.airtime.as_mut().unwrap().cancel_standby().unwrap();
-            assert_eq!(owner.airtime_balance_micros(peer), Some(800));
+            assert_eq!(owner.airtime_balance_micros(peer), Some(2000 - charged));
             return;
         }
         if matches!(

@@ -863,6 +863,58 @@ fn he_aggregate_above_the_txop_threshold_uses_rts_and_survives_a_cts_timeout() {
     assert_eq!(active.retry.acknowledged(), 0);
     assert_eq!(active.config.control().protection, rts);
     assert_eq!(hardware.legacy_publications, 0);
+
+    // Every further protection exchange fails: the aggregate is kept and a
+    // BlockAckReq for its head leaves on the video queue of TID 5.
+    for _ in 1..oer_esp32s31_ieee80211_mac::tx::runtime::VENDOR_SHORT_RETRY_LIMIT {
+        hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
+            MacTxCompletionObservation::new_model(2, 0),
+            0,
+            7,
+            u64::MAX,
+            false,
+        ));
+        assert_eq!(
+            tx.service(
+                &mut hardware,
+                WifiTxWake::Interrupt {
+                    events: EVENT_TX_COMPLETE,
+                },
+            ),
+            Ok(WifiTxProgress::Pending)
+        );
+    }
+    let ConnectedTxActive::RequestingBlockAck(active) = &tx.active else {
+        panic!("an exhausted protection exchange must request the aggregate's BlockAck");
+    };
+    let head = active.retry.current_first_sequence();
+    assert_eq!(hardware.legacy_publications, 1);
+    assert_eq!(
+        hardware.last_legacy_queue,
+        Some(LegacyTxQueue::Video.hardware_index())
+    );
+
+    // The BlockAck acknowledges every MPDU: the aggregate is delivered.
+    hardware.aggregate_completion = Some(MacHtAmpduCompletionObservation::new_model(
+        MacTxCompletionObservation::new_model(0, 0),
+        0,
+        head.get(),
+        u64::MAX,
+        true,
+    ));
+    assert_eq!(
+        tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: EVENT_TX_COMPLETE,
+            },
+        ),
+        Ok(WifiTxProgress::Complete)
+    );
+    assert!(matches!(tx.active, ConnectedTxActive::Idle));
+    let status = tx.last_aggregate_status.unwrap();
+    assert_eq!(status.result, MacAmpduTxResult::Delivered);
+    assert_eq!(u16::from(subframes), status.block_acknowledged_subframes);
 }
 
 #[test]

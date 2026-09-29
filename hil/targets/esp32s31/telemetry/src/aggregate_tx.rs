@@ -566,6 +566,8 @@ pub struct AggregateTxCounters {
     partial_missing_by_position: [AtomicU32; BLOCK_ACK_POSITIONS],
     partial_missing_counts: [AtomicU32; PARTIAL_MISSING_BUCKETS],
     empty_block_ack: AtomicU32,
+    block_ack_requests: AtomicU32,
+    block_ack_requests_answered: AtomicU32,
     full_block_ack_snr: BlockAckSnrCounters,
     partial_block_ack_snr: BlockAckSnrCounters,
     block_ack_snr_unavailable: AtomicU32,
@@ -686,6 +688,8 @@ impl AggregateTxCounters {
             partial_missing_by_position: [const { AtomicU32::new(0) }; BLOCK_ACK_POSITIONS],
             partial_missing_counts: [const { AtomicU32::new(0) }; PARTIAL_MISSING_BUCKETS],
             empty_block_ack: AtomicU32::new(0),
+            block_ack_requests: AtomicU32::new(0),
+            block_ack_requests_answered: AtomicU32::new(0),
             full_block_ack_snr: BlockAckSnrCounters::new(),
             partial_block_ack_snr: BlockAckSnrCounters::new(),
             block_ack_snr_unavailable: AtomicU32::new(0),
@@ -879,6 +883,8 @@ impl AggregateTxCounters {
                 self.partial_missing_counts[bucket].load(Ordering::Relaxed)
             }),
             empty_block_ack: self.empty_block_ack.load(Ordering::Relaxed),
+            block_ack_requests: self.block_ack_requests.load(Ordering::Relaxed),
+            block_ack_requests_answered: self.block_ack_requests_answered.load(Ordering::Relaxed),
             full_block_ack_snr: self.full_block_ack_snr.snapshot(),
             partial_block_ack_snr: self.partial_block_ack_snr.snapshot(),
             block_ack_snr_unavailable: self.block_ack_snr_unavailable.load(Ordering::Relaxed),
@@ -1263,6 +1269,13 @@ impl AggregateTxObserver for AggregateTxCounters {
             } => {
                 self.record_publication(at_micros, program_micros);
             }
+            AggregateTxObservation::BlockAckRequestCompleted { answered } => {
+                self.block_ack_requests.fetch_add(1, Ordering::Relaxed);
+                if answered {
+                    self.block_ack_requests_answered
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
             AggregateTxObservation::BlockAckProcessed {
                 tx_status,
                 block_ack_received,
@@ -1614,6 +1627,10 @@ pub struct AggregateTxCounterSnapshot {
     /// Partial BlockAcks by missing count: 1, 2, 3-4, 5-8, 9 or more.
     pub partial_missing_counts: [u32; PARTIAL_MISSING_BUCKETS],
     pub empty_block_ack: u32,
+    /// BlockAckReqs sent for aggregates whose protection exchange failed at
+    /// every attempt, and those a BlockAck answered.
+    pub block_ack_requests: u32,
+    pub block_ack_requests_answered: u32,
     /// Response SNR of BlockAcks that acknowledged every original subframe.
     pub full_block_ack_snr: BlockAckSnrSnapshot,
     /// Response SNR of BlockAcks that left some original subframes missing.
@@ -1820,6 +1837,12 @@ impl AggregateTxCounterSnapshot {
                     .wrapping_sub(earlier.partial_missing_counts[bucket])
             }),
             empty_block_ack: self.empty_block_ack.wrapping_sub(earlier.empty_block_ack),
+            block_ack_requests: self
+                .block_ack_requests
+                .wrapping_sub(earlier.block_ack_requests),
+            block_ack_requests_answered: self
+                .block_ack_requests_answered
+                .wrapping_sub(earlier.block_ack_requests_answered),
             full_block_ack_snr: self.full_block_ack_snr.delta(&earlier.full_block_ack_snr),
             partial_block_ack_snr: self
                 .partial_block_ack_snr

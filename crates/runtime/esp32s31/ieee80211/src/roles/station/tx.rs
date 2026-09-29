@@ -329,6 +329,9 @@ enum ConnectedTxActive<const SLOTS: usize> {
     /// The retained aggregate's missing MPDUs leave it one ordinary
     /// transmission at a time.
     Unaggregating(Unaggregating<SLOTS>),
+    /// The retained aggregate waits for the BlockAck its BlockAckReq
+    /// solicits from the ordinary owner.
+    RequestingBlockAck(AggregateActive<SLOTS>),
 }
 
 /// Ordinary retries of MPDUs taken out of a completed aggregate. The

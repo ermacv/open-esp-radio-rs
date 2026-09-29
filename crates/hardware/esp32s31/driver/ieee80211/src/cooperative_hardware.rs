@@ -398,13 +398,13 @@ impl TxHardware for CooperativeRadioHardware<'_> {
             detached,
         )
     }
+
+    fn take_block_ack_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
+        TxHardware::take_block_ack_completion(&mut self.wifi_mac_hal(), queue)
+    }
 }
 
 impl HtAmpduHardware for CooperativeRadioHardware<'_> {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
-        HtAmpduHardware::take_ht_ampdu_completion(&mut self.wifi_mac_hal(), queue)
-    }
-
     fn prepare_he_trigger_based_queue(
         &mut self,
         policy: MacHeTbTidLimit,

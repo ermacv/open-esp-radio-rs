@@ -145,6 +145,8 @@ pub struct AmpduEvidence {
     pub full_block_ack: u64,
     pub partial_block_ack: u64,
     pub empty_block_ack: u64,
+    pub block_ack_requests: u64,
+    pub block_ack_requests_answered: u64,
 }
 
 impl AmpduEvidence {
@@ -193,6 +195,8 @@ impl AmpduEvidence {
             full_block_ack: u64::from(typed.full_block_ack),
             partial_block_ack: u64::from(typed.partial_block_ack),
             empty_block_ack: u64::from(typed.empty_block_ack),
+            block_ack_requests: u64::from(typed.block_ack_requests),
+            block_ack_requests_answered: u64::from(typed.block_ack_requests_answered),
             tx_irq_epochs: u64::from(typed.tx_irq_epochs),
             tx_irq_samples: u64::from(typed.tx_irq_service_samples),
             tx_irq_skew: u64::from(typed.tx_irq_clock_skew_samples),

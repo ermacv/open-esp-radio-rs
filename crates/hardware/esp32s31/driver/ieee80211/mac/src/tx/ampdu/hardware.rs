@@ -7,19 +7,13 @@ use oer_esp32s31_hal::{
     owner::RadioRuntimeOwner,
     types::{
         MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-        MacHeTriggerTxQueueSnapshot, MacHtAmpduCompletionObservation,
+        MacHeTriggerTxQueueSnapshot,
     },
 };
 
-/// Hardware authority needed specifically by an aggregate completion.
-///
-/// A normal [`TxHardware`] completion may acknowledge the edge immediately.
-/// A-MPDU must first sample the queue's three BlockAck words, so the ordering
-/// is a separate trait operation and cannot accidentally be replaced with
-/// the single-MPDU completion method.
+/// Hardware authority needed specifically by aggregate and HE Trigger-based
+/// publication.
 pub trait HtAmpduHardware: TxHardware {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation>;
-
     /// Prepare one queue for a future AP Trigger before publishing TX enable.
     ///
     /// Implementations must validate every fallible input before the first
@@ -47,10 +41,6 @@ pub trait HtAmpduHardware: TxHardware {
 }
 
 impl HtAmpduHardware for WifiMacHal<'_> {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
-        WifiMacHal::take_ht_ampdu_completion(self, queue)
-    }
-
     fn prepare_he_trigger_based_queue(
         &mut self,
         policy: MacHeTbTidLimit,
@@ -85,10 +75,6 @@ impl HtAmpduHardware for WifiMacHal<'_> {
 }
 
 impl HtAmpduHardware for RadioRuntimeOwner {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
-        HtAmpduHardware::take_ht_ampdu_completion(&mut self.wifi_mac_hal(), queue)
-    }
-
     fn prepare_he_trigger_based_queue(
         &mut self,
         policy: MacHeTbTidLimit,

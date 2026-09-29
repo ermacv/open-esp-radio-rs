@@ -14,15 +14,17 @@ extern crate alloc;
 #[cfg(not(target_pointer_width = "32"))]
 use alloc::boxed::Box;
 
+pub use oer_esp32s31_hal::types::MacLegacyTxResponse;
 pub use oer_memory::{HardwareOwnedTxDma, PreparedTxDma};
 
 use oer_esp32s31_hal::types::{
     MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTbTidLimit, MacHeTid,
-    MacHeTxFormat, MacHeTxParameters, MacHeTxProgram, MacHtChannelWidth, MacHtGuardInterval,
-    MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat, MacHtTxParameters, MacHtTxProgram,
-    MacInterface, MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram,
-    MacPartialRuPowerSelector, MacTxCompletionObservation, MacTxControlFrame, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxProtection, MacTxQueueDetached,
+    MacHeTxFormat, MacHeTxParameters, MacHeTxProgram, MacHtAmpduCompletionObservation,
+    MacHtChannelWidth, MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate,
+    MacHtTxFormat, MacHtTxParameters, MacHtTxProgram, MacInterface, MacLegacyRate,
+    MacLegacyTxParameters, MacLegacyTxProgram, MacPartialRuPowerSelector,
+    MacTxCompletionObservation, MacTxControlFrame, MacTxDetachOutcome, MacTxDetachReason,
+    MacTxProtection, MacTxQueueDetached,
 };
 
 pub use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaState as TxSlotState;
@@ -218,6 +220,11 @@ pub trait TxHardware {
         None
     }
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation>;
+    /// Take the completion of a PPDU that solicited a BlockAck: an A-MPDU or
+    /// a BlockAckReq. The queue's three BlockAck words are sampled before
+    /// the completion edge is acknowledged, while that edge still owns them,
+    /// so this cannot be replaced by [`Self::take_tx_completion`].
+    fn take_block_ack_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn with_tx_queue_detached<R>(
         &mut self,
@@ -283,6 +290,10 @@ impl TxHardware for WifiMacHal<'_> {
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         WifiMacHal::take_tx_completion(self, queue)
+    }
+
+    fn take_block_ack_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
+        WifiMacHal::take_block_ack_completion(self, queue)
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
@@ -355,6 +366,10 @@ impl TxHardware for RadioRuntimeOwner {
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         TxHardware::take_tx_completion(&mut self.wifi_mac_hal(), queue)
+    }
+
+    fn take_block_ack_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
+        TxHardware::take_block_ack_completion(&mut self.wifi_mac_hal(), queue)
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
@@ -2597,7 +2612,8 @@ pub struct LegacyTxConfig {
     pub scheduler_priority: u8,
     pub pti: u8,
     pub pti_count: u16,
-    /// Whether address one is a group address.
+    /// Response the MAC awaits: none for a group address, an ACK for an
+    /// individual frame, a BlockAck for a BlockAckReq.
     ///
     /// SOURCE: `libpp.a[pp.o]::ppTxProtoProc` copies the low bit of
     /// address one into descriptor flag `0x0000_0002`.
@@ -2606,8 +2622,9 @@ pub struct LegacyTxConfig {
     /// represented here, an ordinary individual address follows the recovered
     /// zero-flags branch and selects format one. This distinction is qualified
     /// by the vendor authentication capture and by repeated open STA
-    /// authentication/association/WPA2/DHCP runs.
-    pub group_receiver: bool,
+    /// authentication/association/WPA2/DHCP runs. A BlockAckReq selects
+    /// format two ([`MacLegacyTxResponse::BlockAck`]).
+    pub response: MacLegacyTxResponse,
     /// Six-bit key-entry index. Zero is plaintext; protected traffic uses its
     /// owned hardware key slot. The formatter combines this with
     /// [`Self::interface`] in the recovered PLCP1 descriptor-control byte.
@@ -3224,7 +3241,7 @@ impl LegacyTxConfig {
             scheduler_priority: 1,
             pti: 1,
             pti_count: 1,
-            group_receiver: false,
+            response: MacLegacyTxResponse::Ack,
             hardware_key_selector: 0,
         }
     }
@@ -3404,7 +3421,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
                 rate: config.rate.pac_rate(),
                 signal: config.signal,
                 data_power: config.data_power,
-                group_receiver: config.group_receiver,
+                response: config.response,
                 hardware_key_selector: config.hardware_key_selector,
                 interface: config.interface,
                 aifsn: config.aifsn,
@@ -3568,6 +3585,37 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         }
         slot.dma.mark_completed().map_err(map_dma_storage_error)?;
         Ok(Some(decode_tx_completion(slot.active, registers)))
+    }
+
+    /// Decode and acknowledge the completion of a BlockAckReq together with
+    /// the BlockAck it solicited, sampled before the completion edge is
+    /// acknowledged.
+    pub fn acknowledge_block_ack_completion<H: TxHardware>(
+        self: Pin<&mut Self>,
+        hardware: &mut H,
+    ) -> Result<Option<ampdu::HtAmpduTxCompletion>, TxError> {
+        let slot = self.get_mut();
+        let index = slot.queue.index();
+        let Some(registers) = hardware.take_block_ack_completion(index) else {
+            return Ok(None);
+        };
+
+        if slot.dma.state() != TxSlotState::HardwareOwned {
+            slot.dma.quarantine();
+            return Err(TxError::Stale);
+        }
+        slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+        Ok(Some(ampdu::HtAmpduTxCompletion {
+            tx: decode_tx_completion(slot.active, registers.tx()),
+            block_ack: ampdu::HtBlockAckObservation::new(
+                registers.block_ack_control(),
+                oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(
+                    registers.block_ack_starting_sequence(),
+                ),
+                registers.block_ack_bitmap(),
+            ),
+            block_ack_received: registers.block_ack_received(),
+        }))
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.

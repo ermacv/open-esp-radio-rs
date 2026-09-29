@@ -13,6 +13,7 @@ pub use crate::tx::{
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     edca::EdcaContentionParameters,
+    tx::ampdu::HtBlockAckObservation,
     tx::protection::{ProtectedPpdu, TxProtectionDecision, TxPsdu, TxReceiver},
     tx::runtime::{
         OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
@@ -20,8 +21,9 @@ use oer_esp32s31_ieee80211_mac::{
         WifiTxRuntimePolicy,
     },
     tx::{
-        HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxControlFrame,
-        TxCookie, TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
+        HeSmpduTxConfig, HtTxConfig, LegacyTxConfig, LegacyTxQueue, MacLegacyTxResponse,
+        TxCompletion, TxControlFrame, TxCookie, TxError, TxHardware, TxPhyRate, TxSlot,
+        TxSlotState,
     },
 };
 use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
@@ -37,6 +39,8 @@ const TX_ABORT_SETTLE_US: u64 = 16;
 /// publication. It selects the single-MPDU container geometry while the low
 /// twenty bits retain MPDU+MIC+FCS length.
 const HE_SMPDU_METADATA_FLAG: u32 = 1 << 24;
+/// First Frame Control byte of a BlockAckReq: control type, subtype eight.
+const BLOCK_ACK_REQUEST_FRAME_CONTROL: u8 = 0x84;
 
 /// ESP32-S31 MAC interface context selected for one ordinary TX queue.
 ///
@@ -102,6 +106,8 @@ pub struct OrdinaryTxReport {
     pub retries: OrdinaryTxRetryReport,
     /// Protection selected for the final publication.
     pub protection: TxProtectionDecision,
+    /// BlockAck received for a BlockAckReq.
+    pub block_ack: Option<HtBlockAckObservation>,
 }
 
 /// Exact causes of re-publication within one ordinary-MPDU transaction.
@@ -182,6 +188,9 @@ pub enum OrdinaryTxError {
     Tx(TxError),
     Retry(OrdinaryRetryError),
     RadioResetRequired(TxResetReason),
+    /// A BlockAckReq was planned at a non-legacy rate; only the legacy
+    /// publication program solicits a BlockAck for a single frame.
+    BlockAckRequestRate,
 }
 
 impl From<TxError> for OrdinaryTxError {
@@ -244,6 +253,8 @@ struct ActiveTx {
     packet_priority: u8,
     priority_count: u16,
     receiver: TxReceiver,
+    /// Immediate response the publication solicits.
+    response: MacLegacyTxResponse,
     /// Protection selected for the current publication.
     protection: TxProtectionDecision,
     completion_timeout_us: u64,
@@ -534,13 +545,26 @@ where
         }
         let hardware_frame_length = u32::try_from(hardware_frame_length)
             .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?;
-        let receiver = {
+        let (receiver, response) = {
             let buffer = self.slot.as_mut().buffer_mut()?;
             let address1: [u8; 6] = buffer[TX_METADATA_SIZE + 4..TX_METADATA_SIZE + 10]
                 .try_into()
                 .expect("an encoded MPDU carries Address 1");
-            TxReceiver::from_address1(&address1)
+            let receiver = TxReceiver::from_address1(&address1);
+            let response = if receiver == TxReceiver::Group {
+                MacLegacyTxResponse::None
+            } else if buffer[TX_METADATA_SIZE] == BLOCK_ACK_REQUEST_FRAME_CONTROL {
+                MacLegacyTxResponse::BlockAck
+            } else {
+                MacLegacyTxResponse::Ack
+            };
+            (receiver, response)
         };
+        if response == MacLegacyTxResponse::BlockAck
+            && !matches!(plan.exchange.initial_rate, TxPhyRate::Legacy(_))
+        {
+            return Err(OrdinaryTxError::BlockAckRequestRate);
+        }
         let retry = OrdinaryMpduRetryState::new_with_rate_policy(
             LegacyTxQueue::from_access_category(plan.exchange.access_category),
             plan.exchange.initial_rate,
@@ -578,6 +602,7 @@ where
             packet_priority: plan.packet_priority,
             priority_count: plan.priority_count,
             receiver,
+            response,
             protection: TxProtectionDecision::UNPROTECTED,
             completion_timeout_us: plan.exchange.publication_timeout_micros,
             deadline_micros: 0,
@@ -619,11 +644,11 @@ where
                 .reset_required(active, TxResetReason::ConflictingInterruptEvents(tx_events));
         }
 
-        if let Some(completion) = self.slot.as_mut().acknowledge_completion(hardware)? {
+        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
             self.slot
                 .as_mut()
                 .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion);
+            return self.finish_completion(hardware, active, completion, block_ack);
         }
 
         use oer_esp32s31_ieee80211_mac::irq::{
@@ -704,11 +729,11 @@ where
         if matches!(active.phase, OrdinaryTxPhase::AbortSettling) {
             return self.service_abort_settle(hardware, active);
         }
-        if let Some(completion) = self.slot.as_mut().acknowledge_completion(hardware)? {
+        if let Some((completion, block_ack)) = self.acknowledge_completion(hardware, &active)? {
             self.slot
                 .as_mut()
                 .detach_completed(hardware, active.cookie)?;
-            return self.finish_completion(hardware, active, completion);
+            return self.finish_completion(hardware, active, completion, block_ack);
         }
         if self
             .slot
@@ -722,6 +747,34 @@ where
         }
         self.active = Some(active);
         Ok(WifiTxProgress::Pending)
+    }
+
+    /// Take the queue's completion; a BlockAckReq's completion carries the
+    /// BlockAck it solicited, sampled before the edge is acknowledged.
+    fn acknowledge_completion<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        active: &ActiveTx,
+    ) -> Result<Option<(TxCompletion, Option<HtBlockAckObservation>)>, OrdinaryTxError> {
+        if active.response != MacLegacyTxResponse::BlockAck {
+            return Ok(self
+                .slot
+                .as_mut()
+                .acknowledge_completion(hardware)?
+                .map(|completion| (completion, None)));
+        }
+        Ok(self
+            .slot
+            .as_mut()
+            .acknowledge_block_ack_completion(hardware)?
+            .map(|completion| {
+                (
+                    completion.tx,
+                    completion
+                        .block_ack_received
+                        .then_some(completion.block_ack),
+                )
+            }))
     }
 
     fn start_abort_settle(
@@ -761,6 +814,7 @@ where
         hardware: &mut H,
         mut active: ActiveTx,
         completion: TxCompletion,
+        block_ack: Option<HtBlockAckObservation>,
     ) -> Result<WifiTxProgress, OrdinaryTxError> {
         let attempts = active.retry.publications();
         let final_rate = active.retry.current_rate()?;
@@ -791,6 +845,7 @@ where
                     completion: Some(completion),
                     retries: active.retries,
                     protection: active.protection,
+                    block_ack: if success { block_ack } else { None },
                 };
                 self.last_outcome = Some(if success {
                     OrdinaryTxOutcome::Success(report)
@@ -845,6 +900,7 @@ where
                 completion: None,
                 retries: active.retries,
                 protection: active.protection,
+                block_ack: None,
             };
             self.last_outcome = Some(OrdinaryTxOutcome::HardwareTimeout(report));
             return Ok(WifiTxProgress::Complete);
@@ -872,6 +928,7 @@ where
                     completion: None,
                     retries: active.retries,
                     protection: active.protection,
+                    block_ack: None,
                 };
                 self.last_outcome = Some(OrdinaryTxOutcome::CollisionLimit(report));
                 Ok(WifiTxProgress::Complete)
@@ -958,7 +1015,7 @@ where
                 config.scheduler_priority = active.scheduler_priority;
                 config.pti = active.packet_priority;
                 config.pti_count = active.priority_count;
-                config.group_receiver = active.receiver == TxReceiver::Group;
+                config.response = active.response;
                 config.hardware_key_selector = active.hardware_key_selector;
                 config.interface = active.route.mac_interface();
                 self.slot

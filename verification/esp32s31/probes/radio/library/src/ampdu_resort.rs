@@ -50,6 +50,7 @@ const DECISION_FINISH: u32 = 2;
 const DECISION_REPUBLISH: u32 = 3;
 const DECISION_TRIGGER: u32 = 4;
 const DECISION_UNAGGREGATE: u32 = 5;
+const DECISION_REQUEST_BLOCK_ACK: u32 = 6;
 /// Failure codes: invalid inputs, then the production step that failed.
 const INVALID_INPUT: u32 = 1;
 const BEGIN_FAILED: u32 = 2;
@@ -132,13 +133,13 @@ impl TxHardware for CompletionDouble {
             descriptor_head,
         )))
     }
+
+    fn take_block_ack_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
+        self.completion.take()
+    }
 }
 
 impl HtAmpduHardware for CompletionDouble {
-    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
-        self.completion.take()
-    }
-
     fn prepare_he_trigger_based_queue(
         &mut self,
         _: MacHeTbTidLimit,
@@ -310,6 +311,7 @@ oer_probe_macros::probe! {
             AmpduRetryDecision::RepublishUnchanged { .. } => DECISION_REPUBLISH,
             AmpduRetryDecision::FinishTriggerFlow => DECISION_TRIGGER,
             AmpduRetryDecision::Unaggregate { .. } => DECISION_UNAGGREGATE,
+            AmpduRetryDecision::RequestBlockAck { .. } => DECISION_REQUEST_BLOCK_ACK,
         };
         if decision == DECISION_RETAIN
             && owner
@@ -511,6 +513,12 @@ oer_probe_macros::probe! {
             AmpduRetryDecision::Unaggregate { .. } => {
                 core::mem::forget(slot.take());
                 return DECISION_UNAGGREGATE;
+            }
+            // The kept aggregate now waits for its BlockAckReq's answer,
+            // which is not part of the compared sequence.
+            AmpduRetryDecision::RequestBlockAck { .. } => {
+                core::mem::forget(slot.take());
+                return DECISION_REQUEST_BLOCK_ACK;
             }
         };
         let Ok(retained) =

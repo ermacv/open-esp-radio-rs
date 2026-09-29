@@ -153,13 +153,13 @@ impl oer_esp32s31_ieee80211_mac::tx::TxHardware for Hardware {
             }
         }
     }
+
+    fn take_block_ack_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionObservation> {
+        self.aggregate_completion.take()
+    }
 }
 
 impl HtAmpduHardware for Hardware {
-    fn take_ht_ampdu_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionObservation> {
-        self.aggregate_completion.take()
-    }
-
     fn prepare_he_trigger_based_queue(
         &mut self,
         _policy: MacHeTbTidLimit,

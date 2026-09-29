@@ -140,6 +140,8 @@ pub enum AmpduRepublication {
     AfterProtectionFailure,
 }
 
+/// Completion of a PPDU that solicited a BlockAck: an A-MPDU or a
+/// BlockAckReq.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HtAmpduTxCompletion {
     pub tx: TxCompletion,

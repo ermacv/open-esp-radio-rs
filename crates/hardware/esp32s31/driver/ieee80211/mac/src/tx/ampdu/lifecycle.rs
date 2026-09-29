@@ -27,7 +27,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware: &mut H,
     ) -> Result<Option<HtAmpduTxCompletion>, HtAmpduTxError> {
         let storage = self.project();
-        let Some(registers) = hardware.take_ht_ampdu_completion(storage.queue.index()) else {
+        let Some(registers) = hardware.take_block_ack_completion(storage.queue.index()) else {
             return Ok(None);
         };
         if *storage.state != TxSlotState::HardwareOwned {

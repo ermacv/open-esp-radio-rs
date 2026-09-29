@@ -521,6 +521,7 @@ pub(super) fn write_report(
              - Hardware timeouts/collisions: `{}` / `{}`\n\
              - BlockAck samples/received/full/partial/empty: `{}` / `{}` / `{}` / `{}` / `{}`\n\
              - BlockAck success-without-valid/control-TID/start-outside/max-start-lag: `{}` / `{}` / `{}` / `{}`\n\
+             - BlockAckReq sent/answered after exhausted protection: `{}` / `{}`\n\
              - Preparation: `{:.2} us` average, `{}` us boot maximum\n\
              - Hardware publication programming: `{:.2} us` average, \
                `{}` us boot maximum\n\
@@ -687,6 +688,8 @@ pub(super) fn write_report(
             ampdu.block_ack_nonzero_control,
             ampdu.block_ack_start_outside,
             ampdu.block_ack_start_lag_max,
+            ampdu.block_ack_requests,
+            ampdu.block_ack_requests_answered,
             average_preparation_us,
             ampdu.preparation_max_us,
             average_publication_us,

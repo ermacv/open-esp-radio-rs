@@ -20,7 +20,10 @@ use oer_esp32s31_ieee80211::{
 
 use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpTxPacketNumberError, StaPairwiseCcmpSlot},
-    rate::schedule::{RateScheduleRef, schedule_publication_limit},
+    rate::{
+        control::DEFAULT_CONTROL_SCHEDULE,
+        schedule::{RateScheduleRef, schedule_publication_limit},
+    },
     tx::{
         LegacyTxQueue, TxControlFrame, TxError, TxHardware, TxPhyRate,
         protection::{ProtectedPpdu, TxProtectionDecision},
@@ -32,10 +35,12 @@ use oer_esp32s31_ieee80211_mac::{
 };
 
 use oer_ieee80211_mac::{
+    block_ack::encode_block_ack_request,
     channel::WifiChannel,
     extensions::espressif::esp_now::EspNowRandomValue,
     management::ProbeRequest,
     management_protection::is_robust_action_category,
+    qos::WmmUserPriority,
     security::LinkProtection,
     station::{
         StaDataFrame, StaManagementFrame, StaManagementSubtype, StaProtectedDataFrame,
@@ -179,7 +184,11 @@ pub enum SingleMpduTxError {
         expected: WifiTxTraffic,
         provided: WifiTxTraffic,
     },
+    /// A TID outside the eight QoS user priorities.
+    InvalidTid(u8),
     RadioResetRequired(TxResetReason),
+    /// A BlockAckReq was planned at a non-legacy rate.
+    BlockAckRequestRate,
 }
 
 /// Failure before one plaintext ESP-NOW request acquires the connected ordinary-TX
@@ -243,6 +252,7 @@ impl From<OrdinaryTxError> for SingleMpduTxError {
             OrdinaryTxError::Tx(error) => Self::Tx(error),
             OrdinaryTxError::Retry(error) => Self::Retry(error),
             OrdinaryTxError::RadioResetRequired(reason) => Self::RadioResetRequired(reason),
+            OrdinaryTxError::BlockAckRequestRate => Self::BlockAckRequestRate,
         }
     }
 }
@@ -578,6 +588,61 @@ where
                     packet_priority: queue.vendor_data_packet_priority(),
                     priority_count: 1,
                 },
+            )
+            .map_err(Into::into)
+    }
+
+    /// Publish a BlockAckReq for `tid` whose BlockAck starts at
+    /// `starting_sequence`.
+    ///
+    /// SOURCE: `libpp.a[pp.o]::ppFillAMPDUBar` leaves Duration zero and
+    /// queues the request on the access category of its TID; `rcGetSched`
+    /// selects row three of `rc11BSchedTbl`, the 1 Mbit/s long-preamble
+    /// schedule with 32 publications, and the descriptor solicits a BlockAck
+    /// (blobray 7a0f2090f).
+    pub fn start_block_ack_request<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        tid: u8,
+        starting_sequence: SequenceNumber,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        if self.ordinary.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        let access_category = WmmUserPriority::new(tid)
+            .ok_or(SingleMpduTxError::InvalidTid(tid))?
+            .access_category();
+        let frame = encode_block_ack_request(
+            self.config.bssid,
+            self.config.station_address,
+            tid,
+            starting_sequence,
+        );
+        self.ordinary.buffer_mut()?[TX_METADATA_SIZE..TX_METADATA_SIZE + frame.len()]
+            .copy_from_slice(&frame);
+        let schedule = DEFAULT_CONTROL_SCHEDULE;
+        let queue = LegacyTxQueue::from_access_category(access_category);
+        self.ordinary
+            .start_with_retry_rate_policy(
+                hardware,
+                OrdinaryTxPlan {
+                    frame_length: frame.len(),
+                    descriptor_capacity: None,
+                    exchange: MacTxPlan {
+                        access_category,
+                        initial_rate: select_schedule_retry_rate(schedule, 0)
+                            .expect("the control schedule starts with a legacy rate"),
+                        publication_limit: schedule_publication_limit(schedule),
+                        publication_timeout_micros: self.config.publication_timeout_micros,
+                    },
+                    hardware_mic_length: 0,
+                    hardware_key_selector: 0,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
+                    scheduler_priority: queue.vendor_data_scheduler_priority(),
+                    packet_priority: queue.vendor_data_packet_priority(),
+                    priority_count: 1,
+                },
+                OrdinaryRetryRatePolicy::Schedule(schedule),
             )
             .map_err(Into::into)
     }

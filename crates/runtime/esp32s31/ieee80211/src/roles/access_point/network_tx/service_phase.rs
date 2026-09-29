@@ -1,7 +1,5 @@
 //! Timing gate for the AP aggregate owner. Only `FinishAbort` permits detach.
 
-use oer_ieee80211_softmac::MacTxWork;
-
 use super::{AccessPointDatapathError, AggregateTxServiceEvent, ApAmpduError, WifiTxWake};
 
 /// Reuse one deadline for publication and abort settling; never retain a timer
@@ -13,11 +11,10 @@ pub(super) enum AggregateServicePhase {
     ResetRequired,
     /// The aggregate's agreement ended and its missing MPDUs leave as
     /// ordinary frames; the ordinary owner's deadline and completion drive it.
-    /// `retries` holds the work of the completed ordinary retries, which the
-    /// exchange is charged for together with the aggregate's own work.
-    Unaggregating {
-        retries: MacTxWork,
-    },
+    Unaggregating,
+    /// The retained aggregate waits for the answer to its BlockAckReq; the
+    /// ordinary owner's deadline and completion drive it.
+    RequestingBlockAck,
 }
 
 #[derive(Debug, PartialEq)]
@@ -31,7 +28,7 @@ impl AggregateServicePhase {
     pub(super) fn deadline(self) -> u64 {
         match self {
             Self::Published(deadline) | Self::AbortSettling(deadline) => deadline,
-            Self::ResetRequired | Self::Unaggregating { .. } => u64::MAX,
+            Self::ResetRequired | Self::Unaggregating | Self::RequestingBlockAck => u64::MAX,
         }
     }
 
@@ -53,7 +50,7 @@ impl AggregateServicePhase {
                 ApAmpduError::DeadlineOverflow,
             )),
             // Serviced through the ordinary owner before any aggregate action.
-            Self::Unaggregating { .. } => Ok(AggregateServiceAction::Wait),
+            Self::Unaggregating | Self::RequestingBlockAck => Ok(AggregateServiceAction::Wait),
             Self::AbortSettling(deadline) => {
                 // The abort already happened. Repeated/conflicting IRQs and
                 // late completion cannot bypass the physical settle interval.

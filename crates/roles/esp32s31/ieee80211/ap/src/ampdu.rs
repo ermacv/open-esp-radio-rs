@@ -8,7 +8,9 @@ use crate::{
     engine::{ApAggregateBinding, ApAggregateFrame},
     tx::{ApTx, ApTxError},
 };
-use oer_ieee80211_mac::sequence::SequenceNumber;
+use oer_ieee80211_mac::{
+    block_ack::encode_block_ack_request, qos::WmmAccessCategory, sequence::SequenceNumber,
+};
 
 use oer_memory::StableDmaBacking;
 
@@ -22,7 +24,7 @@ use oer_esp32s31_ieee80211_mac::tx::{
     HtRate, LegacyTxQueue, TxCookie,
     ampdu::{
         AmpduFrameLayout, AmpduFrameSize, AmpduRepublication, HtAmpduFrameRequest, HtAmpduHardware,
-        HtAmpduTxError, HtAmpduTxResources, RetainedAmpduDmaStorage,
+        HtAmpduTxError, HtAmpduTxResources, HtBlockAckObservation, RetainedAmpduDmaStorage,
         RetainedAmpduRetryCompletionError, RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
     },
     runtime::{
@@ -227,6 +229,22 @@ pub enum ApAmpduProgress {
     /// storage one ordinary transmission at a time through
     /// [`ApAmpduTx::start_next_unaggregated`].
     Unaggregate(ApAmpduCompletion),
+    /// The protection exchange failed at every attempt. The aggregate stays
+    /// retained while the ordinary owner sends a BlockAckReq for its head;
+    /// [`ApAmpduTx::observe_block_ack_request`] resorts it by the answer.
+    RequestingBlockAck(ApAmpduCompletion),
+}
+
+/// TID of every AP aggregate: the AP negotiates its TX agreement on TID 0.
+const AP_AGGREGATE_TID: u8 = 0;
+
+/// A completed aggregate whose DMA storage stays retained for its retries.
+struct RetainedAggregate<const SLOTS: usize> {
+    cookie: TxCookie,
+    rate: HtRate,
+    hardware_key_selector: u8,
+    agreement: ApAggregateAgreement,
+    retry: AmpduRetryState<SLOTS>,
 }
 
 enum ApAmpduState<const SLOTS: usize> {
@@ -249,6 +267,13 @@ enum ApAmpduState<const SLOTS: usize> {
     },
     Completed {
         cookie: TxCookie,
+    },
+    RequestingBlockAck {
+        cookie: TxCookie,
+        rate: HtRate,
+        hardware_key_selector: u8,
+        agreement: ApAggregateAgreement,
+        retry: AmpduRetryState<SLOTS>,
     },
     /// Retained aggregate subframe indices not yet copied out as ordinary
     /// MPDUs; the storage is released with the copy of the last one.
@@ -316,7 +341,8 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     /// Agreement of the aggregate hardware currently owns.
     pub fn published_agreement(&self) -> Option<ApAggregateAgreement> {
         match self.state {
-            ApAmpduState::Hardware { agreement, .. } => Some(agreement),
+            ApAmpduState::Hardware { agreement, .. }
+            | ApAmpduState::RequestingBlockAck { agreement, .. } => Some(agreement),
             _ => None,
         }
     }
@@ -508,12 +534,140 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             acknowledged: retry.acknowledged(),
             aggregate_attempts: retry.aggregate_attempts(),
         };
+        self.apply_decision(
+            ordinary,
+            hardware,
+            RetainedAggregate {
+                cookie,
+                rate,
+                hardware_key_selector,
+                agreement,
+                retry,
+            },
+            decision,
+            observation,
+        )
+    }
+
+    /// Resort the retained aggregate by the answer to its BlockAckReq: the
+    /// BlockAck received, or `None` when the request exhausted its retries.
+    pub fn observe_block_ack_request<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H>(
+        &mut self,
+        ordinary: &mut ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
+        hardware: &mut H,
+        block_ack: Option<HtBlockAckObservation>,
+        block_ack_operational: bool,
+    ) -> Result<ApAmpduProgress, ApAmpduError>
+    where
+        P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+        E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        H: HtAmpduHardware,
+    {
+        let ApAmpduState::RequestingBlockAck {
+            cookie,
+            rate,
+            hardware_key_selector,
+            agreement,
+            mut retry,
+        } = core::mem::replace(&mut self.state, ApAmpduState::Idle)
+        else {
+            return Err(ApAmpduError::Idle);
+        };
+        let first_sequence = retry.current_first_sequence();
+        let subframes = retry.current_subframes();
+        let decision = retry.observe_block_ack_request(
+            block_ack,
+            ordinary.now_micros(),
+            block_ack_operational,
+        );
+        let observation = ApAmpduCompletion {
+            tx_status: 0,
+            block_ack_received: block_ack.is_some(),
+            block_ack_control: block_ack.map_or(0, |block_ack| block_ack.control),
+            first_sequence,
+            starting_sequence: block_ack.map_or(first_sequence, |block_ack| {
+                block_ack.block_ack.starting_sequence
+            }),
+            subframes,
+            missing_original_indices: retry.missing_original_indices(),
+            block_ack_snr_db: None,
+            acknowledged: retry.acknowledged(),
+            aggregate_attempts: retry.aggregate_attempts(),
+        };
+        self.apply_decision(
+            ordinary,
+            hardware,
+            RetainedAggregate {
+                cookie,
+                rate,
+                hardware_key_selector,
+                agreement,
+                retry,
+            },
+            decision,
+            observation,
+        )
+    }
+
+    /// Act on one retry decision for the retained aggregate.
+    fn apply_decision<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H>(
+        &mut self,
+        ordinary: &mut ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
+        hardware: &mut H,
+        aggregate: RetainedAggregate<SLOTS>,
+        decision: AmpduRetryDecision,
+        observation: ApAmpduCompletion,
+    ) -> Result<ApAmpduProgress, ApAmpduError>
+    where
+        P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+        E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        H: HtAmpduHardware,
+    {
+        let RetainedAggregate {
+            cookie,
+            rate,
+            hardware_key_selector,
+            agreement,
+            retry,
+        } = aggregate;
         let republication = match decision {
             AmpduRetryDecision::RetainAggregate { retry_mask } => {
                 Some((retry_mask, AmpduRepublication::Retransmission))
             }
             AmpduRetryDecision::RepublishUnchanged { retry_mask } => {
                 Some((retry_mask, AmpduRepublication::AfterProtectionFailure))
+            }
+            AmpduRetryDecision::RequestBlockAck {
+                starting_sequence, ..
+            } => {
+                ordinary.reset_aggregate_contention();
+                let (receiver, transmitter) = {
+                    let (head, _) = self.inner.completed_frame(cookie, 0)?;
+                    (
+                        head[4..10].try_into().expect("an MPDU carries Address 1"),
+                        head[10..16].try_into().expect("an MPDU carries Address 2"),
+                    )
+                };
+                ordinary.start_block_ack_request(
+                    hardware,
+                    &encode_block_ack_request(
+                        receiver,
+                        transmitter,
+                        AP_AGGREGATE_TID,
+                        starting_sequence,
+                    ),
+                    WmmAccessCategory::BestEffort,
+                )?;
+                self.state = ApAmpduState::RequestingBlockAck {
+                    cookie,
+                    rate,
+                    hardware_key_selector,
+                    agreement,
+                    retry,
+                };
+                return Ok(ApAmpduProgress::RequestingBlockAck(observation));
             }
             AmpduRetryDecision::Unaggregate { retry_mask } => {
                 ordinary.reset_aggregate_contention();

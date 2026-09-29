@@ -1149,6 +1149,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Hardware timeouts/collisions: `{}` / `{}`\n\
              - BlockAck samples/received/full/partial/empty: `{}` / `{}` / `{}` / `{}` / `{}`\n\
              - BlockAck success-without-valid/control-TID/start-outside/max-start-lag: `{}` / `{}` / `{}` / `{}`\n\
+             - BlockAckReq sent/answered after exhausted protection: `{}` / `{}`\n\
              - Preparation average/max: `{:.2}` / `{}` us\n\
              - Publication average/max: `{:.2}` / `{}` us\n\
              - Exchange average/max: `{:.2}` / `{}` us\n\
@@ -1198,6 +1199,8 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
             report.ampdu.block_ack_nonzero_control,
             report.ampdu.block_ack_start_outside,
             report.ampdu.block_ack_start_lag_max,
+            report.ampdu.block_ack_requests,
+            report.ampdu.block_ack_requests_answered,
             report.ampdu.preparation_us as f64 / report.ampdu.aggregates.max(1) as f64,
             report.ampdu.preparation_max_us,
             report.ampdu.publication_us as f64 / report.ampdu.publications.max(1) as f64,

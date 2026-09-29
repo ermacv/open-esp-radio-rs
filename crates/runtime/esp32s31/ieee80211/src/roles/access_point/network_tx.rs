@@ -98,6 +98,10 @@ pub struct AccessPointNetworkTx<'observer, B, N = B> {
     observer_lifetime: PhantomData<&'observer ()>,
     airtime: Option<airtime::Accounting<'observer>>,
     aggregate_phase: Option<AggregateServicePhase>,
+    /// Ordinary transmissions made on behalf of the current aggregate
+    /// exchange (individual retries, BlockAckReqs); the exchange is charged
+    /// for them together with the aggregate's own work.
+    exchange_ordinary_work: oer_ieee80211_softmac::MacTxWork,
     #[cfg(any(feature = "diagnostics", test))]
     exchange_started_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))]
@@ -143,6 +147,7 @@ where
             observer_lifetime: PhantomData,
             airtime: None,
             aggregate_phase: None,
+            exchange_ordinary_work: oer_ieee80211_softmac::MacTxWork::default(),
             #[cfg(any(feature = "diagnostics", test))]
             exchange_started_micros: None,
             #[cfg(any(feature = "diagnostics", test))]

@@ -643,11 +643,11 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().with_detached_mac_tx(queue, reason, detached)
     }
 
-    pub fn take_ht_ampdu_completion(
+    pub fn take_block_ack_completion(
         &mut self,
         queue: u8,
     ) -> Option<MacHtAmpduCompletionObservation> {
-        self.pac_mut().take_mac_ht_ampdu_completion(queue)
+        self.pac_mut().take_mac_block_ack_completion(queue)
     }
 
     pub fn prepare_he_trigger_based_queue(

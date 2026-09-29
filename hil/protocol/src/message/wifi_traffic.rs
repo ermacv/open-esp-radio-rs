@@ -486,6 +486,10 @@ pub struct TxRadioEvidence {
     pub full_block_ack: u32,
     pub partial_block_ack: u32,
     pub empty_block_ack: u32,
+    /// BlockAckReqs sent for aggregates whose protection exchange failed at
+    /// every attempt, and those a BlockAck answered.
+    pub block_ack_requests: u32,
+    pub block_ack_requests_answered: u32,
     pub tx_irq_epochs: u32,
     pub tx_irq_service_samples: u32,
     pub tx_irq_clock_skew_samples: u32,

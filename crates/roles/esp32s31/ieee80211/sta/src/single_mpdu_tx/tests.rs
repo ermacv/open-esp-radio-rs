@@ -113,6 +113,13 @@ impl TxHardware for Hardware {
             )),
         }
     }
+
+    fn take_block_ack_completion(
+        &mut self,
+        _queue: u8,
+    ) -> Option<oer_esp32s31_hal::types::MacHtAmpduCompletionObservation> {
+        None
+    }
 }
 
 #[derive(Clone, Copy)]

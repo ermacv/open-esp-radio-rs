@@ -110,6 +110,11 @@ pub enum AggregateTxObservation {
         at_micros: u64,
         program_micros: u64,
     },
+    /// The BlockAckReq of an aggregate whose protection exchange failed at
+    /// every attempt completed; `answered` when a BlockAck arrived.
+    BlockAckRequestCompleted {
+        answered: bool,
+    },
     /// One detached hardware A-MPDU completion after BlockAck classification.
     BlockAckProcessed {
         tx_status: u8,

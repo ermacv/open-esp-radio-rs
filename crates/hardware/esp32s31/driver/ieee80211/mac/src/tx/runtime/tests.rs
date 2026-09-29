@@ -442,7 +442,7 @@ fn partial_block_ack_compacts_sequences_across_retained_attempts() {
 }
 
 #[test]
-fn cts_timeout_republishes_the_unchanged_aggregate_until_the_short_retry_limit() {
+fn cts_timeout_republishes_the_unchanged_aggregate_then_requests_its_block_ack() {
     let mut state =
         AmpduRetryState::<32>::new(SequenceNumber::new(40).unwrap(), 3, HT_POLICY, 0).unwrap();
     // Status two is a CTS timeout; a stale bitmap must not be consumed.
@@ -460,7 +460,81 @@ fn cts_timeout_republishes_the_unchanged_aggregate_until_the_short_retry_limit()
     assert_eq!(state.aggregate_attempts(), 1);
     assert_eq!(
         state.observe(cts_timeout, 3, 0, true),
-        Ok(AmpduRetryDecision::Finish { retry_mask: 0b111 })
+        Ok(AmpduRetryDecision::RequestBlockAck {
+            retry_mask: 0b111,
+            starting_sequence: SequenceNumber::new(40).unwrap(),
+        })
+    );
+    // The request ended that frame-exchange sequence; a later protection
+    // failure starts a new count.
+    assert_eq!(state.protection_failures(), 0);
+    assert_eq!(state.current_subframes(), 3);
+}
+
+fn block_ack(starting_sequence: u16, bitmap: u64) -> HtBlockAckObservation {
+    HtBlockAckObservation::new(0, SequenceNumber::new(starting_sequence).unwrap(), bitmap)
+}
+
+fn exhaust_protection(state: &mut AmpduRetryState<32>, first: u16, subframes: u8) {
+    let cts_timeout = completion(2, first, 0);
+    for _ in 1..VENDOR_SHORT_RETRY_LIMIT {
+        state.observe(cts_timeout, subframes, 0, true).unwrap();
+    }
+    assert!(matches!(
+        state.observe(cts_timeout, subframes, 0, true),
+        Ok(AmpduRetryDecision::RequestBlockAck { .. })
+    ));
+}
+
+#[test]
+fn block_ack_request_answer_resorts_the_kept_aggregate() {
+    let mut state =
+        AmpduRetryState::<32>::new(SequenceNumber::new(40).unwrap(), 4, HT_POLICY, 0).unwrap();
+    exhaust_protection(&mut state, 40, 4);
+    // The receiver already holds 40 and 42 from an earlier exchange.
+    assert_eq!(
+        state.observe_block_ack_request(Some(block_ack(40, 0b0101)), 0, true),
+        AmpduRetryDecision::RetainAggregate { retry_mask: 0b1010 }
+    );
+    assert_eq!(state.acknowledged(), 2);
+    assert_eq!(state.current_subframes(), 2);
+    assert_eq!(
+        state.current_first_sequence(),
+        SequenceNumber::new(41).unwrap()
+    );
+}
+
+#[test]
+fn unanswered_block_ack_request_keeps_every_mpdu_missing() {
+    let mut state =
+        AmpduRetryState::<32>::new(SequenceNumber::new(7).unwrap(), 3, HT_POLICY, 0).unwrap();
+    exhaust_protection(&mut state, 7, 3);
+    assert_eq!(
+        state.observe_block_ack_request(None, 0, true),
+        AmpduRetryDecision::RetainAggregate { retry_mask: 0b111 }
+    );
+    assert_eq!(state.acknowledged(), 0);
+}
+
+#[test]
+fn block_ack_request_answer_after_the_agreement_ended_unaggregates() {
+    let mut state =
+        AmpduRetryState::<32>::new(SequenceNumber::new(7).unwrap(), 3, HT_POLICY, 0).unwrap();
+    exhaust_protection(&mut state, 7, 3);
+    assert_eq!(
+        state.observe_block_ack_request(Some(block_ack(7, 0b001)), 0, false),
+        AmpduRetryDecision::Unaggregate { retry_mask: 0b110 }
+    );
+}
+
+#[test]
+fn aged_aggregate_ends_at_its_block_ack_request_answer() {
+    let mut state =
+        AmpduRetryState::<32>::new(SequenceNumber::new(7).unwrap(), 3, HT_POLICY, 0).unwrap();
+    exhaust_protection(&mut state, 7, 3);
+    assert_eq!(
+        state.observe_block_ack_request(None, u64::from(VENDOR_AMPDU_MSDU_LIFETIME_MICROS), true),
+        AmpduRetryDecision::Finish { retry_mask: 0b111 }
     );
 }
 

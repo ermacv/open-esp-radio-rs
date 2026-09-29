@@ -53,13 +53,13 @@ impl TxHardware for CompletionHardware {
     ) -> MacTxDetachOutcome<R> {
         MacTxDetachOutcome::NoEvent
     }
+
+    fn take_block_ack_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
+        self.completion.take()
+    }
 }
 
 impl HtAmpduHardware for CompletionHardware {
-    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
-        self.completion.take()
-    }
-
     fn prepare_he_trigger_based_queue(
         &mut self,
         _: MacHeTbTidLimit,
@@ -161,13 +161,13 @@ impl TxHardware for DetachingCompletionHardware {
         }
         MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(descriptor_head)))
     }
+
+    fn take_block_ack_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
+        self.completion.take()
+    }
 }
 
 impl HtAmpduHardware for DetachingCompletionHardware {
-    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
-        self.completion.take()
-    }
-
     fn prepare_he_trigger_based_queue(
         &mut self,
         _: MacHeTbTidLimit,

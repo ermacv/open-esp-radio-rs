@@ -22,12 +22,18 @@ use oer_esp32s31_ieee80211_mac::tx::{
     HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection, HtGuardInterval, HtMcs, HtRate,
     LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate,
     protection::{BssProtection, ProtectedPpdu, TxPsdu, TxReceiver},
+    runtime::{OrdinaryRetryRatePolicy, select_schedule_retry_rate},
     select_esp32s31_ht_duplicate_tx,
 };
 
+use oer_esp32s31_ieee80211_mac::rate::{
+    control::DEFAULT_CONTROL_SCHEDULE, schedule::schedule_publication_limit,
+};
 use oer_ieee80211_mac::{
+    block_ack::BLOCK_ACK_REQUEST_LEN,
     channel::{WifiChannel, WifiChannelWidth},
     ht::HtPeerCapabilities,
+    qos::WmmAccessCategory,
 };
 
 use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState};
@@ -356,6 +362,45 @@ where
             hardware_key_selector,
             None,
         )
+    }
+
+    /// Publish one encoded BlockAckReq on the access category of its TID.
+    ///
+    /// SOURCE: `libpp.a[pp.o]::ppFillAMPDUBar` queues the request on the
+    /// access category of its TID; `rcGetSched` selects row three of
+    /// `rc11BSchedTbl`, the 1 Mbit/s long-preamble schedule with 32
+    /// publications, and the descriptor solicits a BlockAck (blobray
+    /// 7a0f2090f).
+    pub fn start_block_ack_request<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        frame: &[u8; BLOCK_ACK_REQUEST_LEN],
+        access_category: WmmAccessCategory,
+    ) -> Result<WifiTxProgress, ApTxError> {
+        self.copy_frame(frame)?;
+        let schedule = DEFAULT_CONTROL_SCHEDULE;
+        let queue = LegacyTxQueue::from_access_category(access_category);
+        Ok(self.ordinary.start_with_retry_rate_policy(
+            hardware,
+            OrdinaryTxPlan {
+                frame_length: frame.len(),
+                descriptor_capacity: None,
+                exchange: MacTxPlan {
+                    access_category,
+                    initial_rate: select_schedule_retry_rate(schedule, 0)
+                        .expect("the control schedule starts with a legacy rate"),
+                    publication_limit: schedule_publication_limit(schedule),
+                    publication_timeout_micros: self.config.publication_timeout_micros,
+                },
+                hardware_mic_length: 0,
+                hardware_key_selector: 0,
+                interface: OrdinaryTxInterface::AccessPoint,
+                scheduler_priority: queue.vendor_data_scheduler_priority(),
+                packet_priority: queue.vendor_data_packet_priority(),
+                priority_count: 1,
+            },
+            OrdinaryRetryRatePolicy::Schedule(schedule),
+        )?)
     }
 
     fn copy_frame(&mut self, frame: &[u8]) -> Result<(), ApTxError> {

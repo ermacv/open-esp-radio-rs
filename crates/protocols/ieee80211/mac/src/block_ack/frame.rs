@@ -82,5 +82,35 @@ pub fn parse_block_ack_action(body: &[u8]) -> Option<BlockAckAction> {
     }
 }
 
+/// Length of a Compressed BlockAckReq frame without its FCS.
+pub const BLOCK_ACK_REQUEST_LEN: usize = 20;
+
+/// Encode one Basic-policy Compressed BlockAckReq for `tid` whose window
+/// starts at `starting_sequence`.
+///
+/// Frame Control is control subtype 8 with no flags and Duration is zero;
+/// BAR Control carries normal Ack Policy, no Multi-TID, a compressed bitmap
+/// and the TID; the Starting Sequence Control has fragment number zero.
+///
+/// SOURCE(esp32s31): `libpp.a[pp.o]::ppPrepareBarFrame` writes Frame Control 0x0084
+/// once and never a Duration; `ppFillAMPDUBar(tid, ra, ta, ssn)` copies RA
+/// and TA, writes BAR Control `(tid << 12) | 0x0004` and Starting Sequence
+/// Control `ssn << 4`, and clears the Retry bit (blobray BAR answer).
+pub fn encode_block_ack_request(
+    receiver: [u8; 6],
+    transmitter: [u8; 6],
+    tid: u8,
+    starting_sequence: SequenceNumber,
+) -> [u8; BLOCK_ACK_REQUEST_LEN] {
+    let mut frame = [0_u8; BLOCK_ACK_REQUEST_LEN];
+    frame[..2].copy_from_slice(&0x0084_u16.to_le_bytes());
+    frame[4..10].copy_from_slice(&receiver);
+    frame[10..16].copy_from_slice(&transmitter);
+    let control = (u16::from(tid & 0x0f) << 12) | 0x0004;
+    frame[16..18].copy_from_slice(&control.to_le_bytes());
+    frame[18..20].copy_from_slice(&starting_sequence.sequence_control().to_le_bytes());
+    frame
+}
+
 #[cfg(test)]
 mod tests;

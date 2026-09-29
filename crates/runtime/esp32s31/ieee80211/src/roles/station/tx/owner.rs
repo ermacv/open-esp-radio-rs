@@ -380,6 +380,7 @@ where
             ConnectedTxActive::Ordinary => 1,
             ConnectedTxActive::Aggregate(active)
             | ConnectedTxActive::AbortSettling(active)
+            | ConnectedTxActive::RequestingBlockAck(active)
             | ConnectedTxActive::Unaggregating(Unaggregating {
                 aggregate: active, ..
             }) => usize::from(active.original_subframes),
@@ -723,9 +724,9 @@ where
                 Some(active.deadline_micros)
             }
             ConnectedTxActive::AbortSettling(active) => Some(active.deadline_micros),
-            ConnectedTxActive::Ordinary | ConnectedTxActive::Unaggregating(_) => {
-                self.ordinary.next_deadline_micros()
-            }
+            ConnectedTxActive::Ordinary
+            | ConnectedTxActive::Unaggregating(_)
+            | ConnectedTxActive::RequestingBlockAck(_) => self.ordinary.next_deadline_micros(),
             ConnectedTxActive::Idle => None,
         }
     }

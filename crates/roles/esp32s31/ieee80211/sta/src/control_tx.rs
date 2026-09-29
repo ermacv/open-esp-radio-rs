@@ -128,6 +128,8 @@ pub enum ControlTxError {
     HardwareTimeout,
     CollisionLimit,
     RadioResetRequired(TxResetReason),
+    /// A BlockAckReq was planned at a non-legacy rate.
+    BlockAckRequestRate,
 }
 
 impl ControlTxError {
@@ -162,6 +164,7 @@ impl From<OrdinaryTxError> for ControlTxError {
             OrdinaryTxError::Tx(error) => Self::Tx(error),
             OrdinaryTxError::Retry(error) => Self::Retry(error),
             OrdinaryTxError::RadioResetRequired(reason) => Self::RadioResetRequired(reason),
+            OrdinaryTxError::BlockAckRequestRate => Self::BlockAckRequestRate,
         }
     }
 }

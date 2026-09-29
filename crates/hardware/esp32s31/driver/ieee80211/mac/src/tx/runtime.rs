@@ -14,7 +14,7 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 use crate::{
     edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
     rate::schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
-    tx::ampdu::HtAmpduTxCompletion,
+    tx::ampdu::{HtAmpduTxCompletion, HtBlockAckObservation},
     tx::protection::{BssProtection, RtsLengthThreshold, WifiTxProtectionPolicy},
     tx::{
         HeEdcaTxopLimit, HtChannelWidth, HtPeerAmpduParameters, LegacyTxQueue,
@@ -739,6 +739,18 @@ pub enum AmpduRetryDecision {
     /// retry count and contention window, skips the Retry-bit leaf and
     /// re-enters `lmacEndFrameExchangeSequence` with the unchanged frame.
     RepublishUnchanged { retry_mask: u32 },
+    /// The protection exchange failed at every attempt: keep the aggregate
+    /// and send a BlockAckReq starting at its head. The BlockAck it solicits
+    /// drives the resort ([`AmpduRetryState::observe_block_ack_request`]).
+    ///
+    /// SOURCE: `libpp.a[lmac.o]::lmacEndRetryAMPDUFail` keeps an
+    /// RTS-protected aggregate whose CTS never arrived and sends a
+    /// BlockAckReq through `ppFillAMPDUBar`/`ppReSendBar` with the starting
+    /// sequence of its head (blobray 7a0f2090f).
+    RequestBlockAck {
+        retry_mask: u32,
+        starting_sequence: SequenceNumber,
+    },
     /// End aggregate ownership and send the selected MPDUs individually,
     /// in order, each already carrying its Retry bit.
     ///
@@ -764,6 +776,7 @@ impl AmpduRetryDecision {
         match self {
             Self::RetainAggregate { retry_mask }
             | Self::RepublishUnchanged { retry_mask }
+            | Self::RequestBlockAck { retry_mask, .. }
             | Self::Unaggregate { retry_mask }
             | Self::Finish { retry_mask } => retry_mask,
             Self::FinishTriggerFlow => 0,
@@ -897,12 +910,15 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             } else {
                 (1_u32 << observed_subframes) - 1
             };
-            // The vendor short-retry limit ends the exchange through the
-            // same aggregate-failure path as an exhausted data retry.
-            return Ok(if self.protection_failures >= VENDOR_SHORT_RETRY_LIMIT {
-                AmpduRetryDecision::Finish { retry_mask }
-            } else {
-                AmpduRetryDecision::RepublishUnchanged { retry_mask }
+            if self.protection_failures < VENDOR_SHORT_RETRY_LIMIT {
+                return Ok(AmpduRetryDecision::RepublishUnchanged { retry_mask });
+            }
+            // The exhausted short retry ends this frame-exchange sequence;
+            // the aggregate survives it and asks for its BlockAck.
+            self.protection_failures = 0;
+            return Ok(AmpduRetryDecision::RequestBlockAck {
+                retry_mask,
+                starting_sequence: self.current_first_sequence(),
             });
         }
         self.block_ack_mpdu_attempts = self
@@ -939,13 +955,51 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             ));
         }
 
+        Ok(self.resort(
+            |sequence| completion.acknowledges(sequence),
+            now_micros,
+            block_ack_operational,
+        ))
+    }
+
+    /// Resort the kept aggregate by the answer to its BlockAckReq.
+    ///
+    /// `block_ack` is the BlockAck received for the request, or `None` when
+    /// the request exhausted its retries unanswered: the resort then keeps
+    /// every MPDU as missing, as the vendor resorts its unchanged queue
+    /// record.
+    pub fn observe_block_ack_request(
+        &mut self,
+        block_ack: Option<HtBlockAckObservation>,
+        now_micros: u64,
+        block_ack_operational: bool,
+    ) -> AmpduRetryDecision {
+        self.resort(
+            |sequence| {
+                block_ack.is_some_and(|block_ack| block_ack.block_ack.acknowledges(sequence))
+            },
+            now_micros,
+            block_ack_operational,
+        )
+    }
+
+    /// Keep the MPDUs `acknowledged` does not report in the aggregate.
+    ///
+    /// SOURCE: complete `libpp.a[pp.o]::ppResortTxAMPDU` preserves
+    /// Sequence Control and compacts only the MPDUs absent from BlockAck.
+    fn resort(
+        &mut self,
+        acknowledged: impl Fn(SequenceNumber) -> bool,
+        now_micros: u64,
+        block_ack_operational: bool,
+    ) -> AmpduRetryDecision {
         let mut retry_mask = 0_u32;
         let mut retry_original_indices = 0_u32;
-        let mut index = 0_usize;
-        while index < observed_subframes as usize {
-            let original_index = self.original_index(index as u8);
+        let mut index = 0_u8;
+        while index < self.current_subframes {
+            let original_index = self.original_index(index);
             let sequence = self.first_sequence.wrapping_add(u16::from(original_index));
-            if completion.acknowledges(sequence) {
+            if acknowledged(sequence) {
                 self.acknowledged = self.acknowledged.saturating_add(1);
             } else {
                 retry_mask |= 1_u32 << index;
@@ -956,14 +1010,14 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.missing_original_indices = retry_original_indices;
         let missing = retry_mask.count_ones() as u8;
         if missing == 0 || self.aged(now_micros) {
-            return Ok(AmpduRetryDecision::Finish { retry_mask });
+            return AmpduRetryDecision::Finish { retry_mask };
         }
         let decision = self.retain_or_unaggregate(retry_mask, missing, block_ack_operational);
         if matches!(decision, AmpduRetryDecision::RetainAggregate { .. }) {
             self.pending_original_indices = retry_original_indices;
             self.current_subframes = missing;
         }
-        Ok(decision)
+        decision
     }
 
     /// Keep `missing` live MPDUs in the aggregate, or hand them to the

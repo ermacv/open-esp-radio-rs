@@ -151,6 +151,37 @@ pub struct MacTxControlFrame {
     pub power_alternate: u8,
 }
 
+/// Response the MAC awaits after one legacy PPDU, published as the PLCP0
+/// format selector.
+///
+/// SOURCE: complete `libpp.a[hal_mac_tx.o]::mac_tx_set_plcp0` derives
+/// the selector from descriptor flags: a group-addressed frame (flag
+/// `0x2`) keeps format zero; an individually addressed frame selects
+/// `1 + bit19`, bit 19 marking the BlockAckReq built by
+/// `libpp.a[pp.o]::ppFillAMPDUBar` (blobray BAR answer). HT A-MPDUs,
+/// which are answered by a BlockAck as well, use format two.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MacLegacyTxResponse {
+    /// A group-addressed frame: nothing answers it.
+    None,
+    /// An individually addressed frame answered by an ACK.
+    #[default]
+    Ack,
+    /// A BlockAckReq answered by a BlockAck, which the MAC captures in the
+    /// queue's BlockAck registers.
+    BlockAck,
+}
+
+impl MacLegacyTxResponse {
+    const fn plcp_format(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Ack => 1,
+            Self::BlockAck => 2,
+        }
+    }
+}
+
 /// Semantic inputs for one bounded legacy queue publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacLegacyTxParameters {
@@ -165,7 +196,7 @@ pub struct MacLegacyTxParameters {
     pub aifsn: u8,
     pub contention_window: u16,
     pub interface: MacInterface,
-    pub group_receiver: bool,
+    pub response: MacLegacyTxResponse,
     pub hardware_key_selector: u8,
 }
 
@@ -992,7 +1023,7 @@ impl WifiRadioRegisters {
             program.descriptor_head,
             2,
             true,
-            u8::from(!parameters.group_receiver),
+            parameters.response.plcp_format(),
         );
         // `mac_tx_set_plcp0` publishes the control image and immediately
         // clears software RTS through one fresh-read protection update.
@@ -1517,13 +1548,14 @@ impl WifiRadioRegisters {
         })
     }
 
-    /// Sample an A-MPDU's BlockAck before acknowledging its TX-complete edge.
+    /// Sample the BlockAck solicited by an A-MPDU or a BlockAckReq before
+    /// acknowledging its TX-complete edge.
     ///
     /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
     /// hal_mac_tx_get_blockack` and the recovered event-23 completion order.
     /// The three BlockAck words belong to the completed queue and must be read
     /// while that completion edge still owns the result registers.
-    pub fn take_mac_ht_ampdu_completion(
+    pub fn take_mac_block_ack_completion(
         &mut self,
         queue: u8,
     ) -> Option<MacHtAmpduCompletionObservation> {

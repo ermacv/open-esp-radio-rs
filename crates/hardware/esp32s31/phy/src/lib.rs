@@ -154,9 +154,9 @@ pub use target_executor::{PhyAsyncDelay, PhyShortDelay, PhyTargetPortError};
 pub use target_port::{
     ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
     ConcurrentRfError, ConcurrentTrackingTick, ConcurrentWifiChannelError, close_concurrent_rf,
-    diag_republish_bluetooth_tx_gain, maintain_concurrent_phy, register_concurrent_phy,
-    select_concurrent_wifi_channel, switch_concurrent_wifi_channel, track_concurrent_phy,
-    wake_concurrent_rf,
+    diag_republish_bluetooth_tx_gain, diag_tracking_report, maintain_concurrent_phy,
+    register_concurrent_phy, select_concurrent_wifi_channel, switch_concurrent_wifi_channel,
+    track_concurrent_phy, wake_concurrent_rf,
 };
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{

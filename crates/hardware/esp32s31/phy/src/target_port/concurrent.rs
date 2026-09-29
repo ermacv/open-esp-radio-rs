@@ -11,6 +11,7 @@ use crate::{
     state::client::PhyModemClient,
     state::client::PhyPllTrackClock,
 };
+use core::fmt::Write as _;
 use oer_esp32s31_hal::shared_radio::{
     ClientQuiescence, ModemClockError, PhyClockModule, PlatformClockProvider, SharedRadioLease,
 };
@@ -795,4 +796,24 @@ pub fn diag_republish_bluetooth_tx_gain(lease: &mut SharedRadioLease<'_, Concurr
     );
     crate::hardware::publish_bluetooth_tx_gain_memory(&mut registers, image);
     true
+}
+
+/// DIAGNOSTIC #38 (not for merge): write the tracking and BT/15.4 gain
+/// inputs of the registered state.
+pub fn diag_tracking_report(
+    lease: &SharedRadioLease<'_, ConcurrentPhy>,
+    out: &mut impl core::fmt::Write,
+) {
+    let Ok(state) = lease.attachment().phy_state() else {
+        let _ = out.write_str("diag38 no registered PHY state\n");
+        return;
+    };
+    let _ = write!(
+        out,
+        "diag38 temp {:?}\ndiag38 txpwr {:?}\ndiag38 cal {:?}\ndiag38 btgain {:?}\n",
+        state.temperature_observation(),
+        state.tx_power_tracking_parameters(false),
+        state.calibration_tracking_parameters(None),
+        state.bluetooth_tx_gain_parameters(),
+    );
 }

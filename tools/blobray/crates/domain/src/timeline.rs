@@ -220,24 +220,10 @@ impl ExecutionEvent {
                 width,
                 value,
                 ..
-            }
-            | Self::ServiceOutput {
-                address,
-                width,
-                value,
             } => Some(MemoryTransaction::Write {
                 address: *address,
                 width: *width,
                 value: *value,
-            }),
-            Self::ServiceInput {
-                address,
-                width,
-                value,
-            } => Some(MemoryTransaction::Read {
-                address: *address,
-                width: *width,
-                value: MemoryReadValue::Known { value: *value },
             }),
             _ => None,
         }

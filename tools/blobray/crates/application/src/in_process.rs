@@ -3,10 +3,9 @@
 //! The caller supplies the request, the ELF bytes of every target source and
 //! the effect contracts and layout projections its relations select. Contracts
 //! and projections are reviewed outside Blobray and selected by the digest of
-//! their canonical encoding. Records stay in memory: no project, content store,
-//! journal or knowledge review participates. A symbol goal resolves in the
-//! given executable whose content is its object; runtime tables and reviewed
-//! call pairs need a project.
+//! their canonical encoding. Records stay in memory: no project, content store
+//! or journal participates. A symbol goal resolves in the given executable
+//! whose content is its object.
 //!
 //! The vendor side of a request can execute once and be reused by requests
 //! that differ only in their replacement side, such as the same request over
@@ -181,7 +180,6 @@ pub(crate) fn resolve_goal(
 ) -> Result<ResolvedExecutionGoal> {
     let (point, include_tail) = match goal {
         ExecutionGoal::Return => return Ok(ResolvedExecutionGoal::Return),
-        ExecutionGoal::ObserveDequeue { .. } => return Ok(ResolvedExecutionGoal::ObserveDequeue),
         ExecutionGoal::ReachSymbol { target } => (target, None),
         ExecutionGoal::ObserveCall {
             target,
@@ -222,21 +220,6 @@ fn run(
     control: &mut dyn RunControl,
 ) -> Result<Run> {
     let request = input.request;
-    // Capabilities this path does not have fail before anything else.
-    for case in &request.cases {
-        for invocation in std::iter::once(&case.vendor).chain(case.replacement.as_ref()) {
-            if !invocation.tables.is_empty() {
-                return Err(unsupported("runtime tables"));
-            }
-        }
-        if case
-            .relation
-            .as_ref()
-            .is_some_and(|r| r.reviewed_calls.is_some())
-        {
-            return Err(unsupported("reviewed call pairs"));
-        }
-    }
     request.validate()?;
     if request.replacement.is_some() != input.replacement.is_some() {
         return Err(Error::new(
@@ -340,8 +323,6 @@ fn run(
         &Resolved {
             request,
             goals: &goals,
-            tables: &[],
-            pairs: &[],
             projections: &projections,
             effects: &effects,
             sources: &sources,

@@ -11,25 +11,25 @@ lifetimes. [Workflows](workflows.md) owns user scenarios and acceptance conditio
 ## Purpose and success conditions
 
 Blobray supports reproducible investigation of compiled vendor software,
-preservation of reviewed knowledge, and evidence-based comparison with compiled
+preservation of analysis evidence, and evidence-based comparison with compiled
 Rust replacements. A researcher and an automated client operate on the same
 project state through the same application operations.
 
 The unit of work is an investigation with identified inputs and explicit
 questions. A successful investigation preserves what was observed, how it was
-derived, what was assumed, what was accepted by review, and what remains unknown.
+derived, what was assumed and what remains unknown.
 An analysis result is useful without being a proof of equivalence.
 
 The architecture satisfies these conditions:
 
 - Import preserves private binary inputs independently of their original paths.
 - Every run binds a fixed investigation revision and its execution recipe.
-- Clearing computational caches preserves accepted knowledge and its evidence.
+- Clearing computational caches preserves retained evidence.
 - Changing a library produces a new revision; existing evidence remains
   interpretable in its original context.
 - Readers observe coherent publications. Failure and cancellation cannot expose
   an unfinished run as the current completed result.
-- CLI and JSON share selection, analysis, review and verification semantics.
+- CLI and JSON share selection, analysis and verification semantics.
 - Each resource has a named owner for acquisition, completion and release.
 - An uncertainty or unsupported operation remains visible at every projection.
 
@@ -52,16 +52,15 @@ belongs to the independent qualification evaluator, as defined by the
 | Imported source | Exact captured bytes and import provenance; store | Root input, privately retained outside Git |
 | Structural observation | Artifact parser or ISA backend, identified by producer | Refers to exact source occurrences; retains unsupported regions |
 | Derived analysis | Analysis operation and its complete recipe | Depends on observations and selected interpretation inputs |
-| Hypothesis | Analysis or researcher proposal | Has supporting evidence and unresolved obligations; cannot satisfy a reviewed assertion by itself |
-| Reviewed assertion | Knowledge transaction and recorded review decision | Has subject, applicability and retained evidence; cannot rewrite an observation |
+| Hypothesis | Analysis or researcher proposal | Has supporting evidence and unresolved obligations; cannot become a reviewed contract by itself |
+| Reviewed contract | Git review outside Blobray, supplied by content to a comparison | Selected by the digest of its canonical encoding; cannot rewrite an observation |
 | Executable model | Explicit provider implementation and applicability | Supplies bounded environmental behavior; records its participation |
 | Comparison evidence | Verification operation | Records compiled inputs, scenarios, observation relation and verdict |
 | Qualification result | External evaluator | Consumes eligible evidence under independent readiness policy |
 
-Physical occurrence identity, semantic subject identity, and correspondence are
-distinct. A semantic name can outlive a binary revision, but applying it to a new
-occurrence requires a recorded association. Correspondence is evidence for that
-association, not an automatic transfer of all previous assertions.
+Physical occurrence identity and semantic meaning are distinct. A reviewed
+contract names exact physical endpoints; applying it to another binary revision
+requires a reviewed change to the contract, not an automatic transfer.
 
 ## Crates and modules
 
@@ -75,10 +74,9 @@ The shipping host package is `blobray-next` and its executable is `blobray`. Mod
 | `blobray-artifacts` | containers, objects, symbols, relocations, mappings | Structural inspection of supplied immutable bytes | domain |
 | `blobray-analysis` | passes, IR, relationships, correspondence, lineage | Derived analysis and computation dependency declarations | domain |
 | `blobray-backend-riscv` | decode, lift, ABI, execution | RV32 semantics and concrete machine state | domain |
-| `blobray-knowledge` | code, functions, interfaces, registers, review | Assertion validation and explicit acceptance/rebase decisions | domain |
 | `blobray-verification` | scenarios, comparison, evidence | Comparison relations and verdict construction | domain |
 | `blobray-store` | imports, objects, revisions, transactions, cache, retention | Durable storage and separately authorized cache operations | domain |
-| `blobray-application` | workspace, operations, planning, jobs, image preparation, queries | User operations, orchestration and resource ownership | domain, artifacts, analysis, knowledge, verification, store |
+| `blobray-application` | workspace, operations, planning, jobs, image preparation, queries | User operations, orchestration and resource ownership | domain, artifacts, analysis, verification, store |
 | `blobray` | CLI, JSON, host composition, platform adapters | Process entry points, rendering and concrete dependency selection | application, domain, backend-riscv, selected add-ons |
 
 The common `blobray-` prefix is omitted in the dependency column. Application
@@ -105,13 +103,12 @@ even when their implementation shares a crate or process.
 | application / planning | Retained snapshot, request, pass and provider descriptors | Immutable recipe and prerequisite explanation | Live input capture, pass execution or publication |
 | application / jobs | Admitted operation, host capabilities and resource policy | Scheduling, cancellation, accounting and terminal cleanup | Frontend-specific execution semantics |
 | application / image preparation | Link plan and captured input leases | Materialization recipe, tool invocation request and validated image receipt | A different tool, input order or companion chosen by the backend |
-| store / transactions | Explicit writer capability and expected base | Durable payload retention and atomic reference changes | Claim acceptance or comparison verdicts |
+| store / transactions | Explicit writer capability and expected base | Durable payload retention and atomic reference changes | Comparison verdicts |
 | store / readers | Selected revision/publication and read lease | Validation and bounded delivery of retained records | Writer creation, origin reload, repair or migration |
-| store / retention | Explicit maintenance request and reachability roots | Preview, root revalidation and reclamation | Expiration of reviewed knowledge to meet a quota |
-| analysis / passes | Declared dependencies, byte/image views, ISA ports and run control | Observations, hypotheses and disposable memo | Tool discovery, accepted knowledge changes or current selection |
-| knowledge / review | Candidate assertions, applicability and retained evidence | Semantic validation of an acceptance candidate | Fetching source paths or committing the candidate |
+| store / retention | Explicit maintenance request and reachability roots | Preview, root revalidation and reclamation | Expiration of retained evidence to meet a quota |
+| analysis / passes | Declared dependencies, byte/image views, ISA ports and run control | Observations, hypotheses and disposable memo | Tool discovery or current selection |
 | verification / comparison | Execution observations, coverage and declared relation | Verdict, counterexample and unsatisfied obligations | Substituting an implementation or upgrading a claim ceiling |
-| host / adapters | Explicit launch/render request and owned resources | OS containment, tool identification and presentation | Research selection, review or verdict policy |
+| host / adapters | Explicit launch/render request and owned resources | OS containment, tool identification and presentation | Research selection or verdict policy |
 
 Application may use concrete store transactions internally. Computation modules
 receive only byte sources, selected records and output sinks; passing a store
@@ -137,13 +134,11 @@ flowchart TD
     Host --> RV[RV32 backend and selected providers]
     App --> Store[Store]
     App --> Analysis[Analysis]
-    App --> Knowledge[Knowledge]
     App --> Verify[Verification]
     App --> Artifacts[Artifacts]
     App --> Domain[Domain values and ports]
     Store --> Domain
     Analysis --> Domain
-    Knowledge --> Domain
     Verify --> Domain
     Artifacts --> Domain
     RV --> Domain
@@ -212,8 +207,7 @@ does not authorize a query to create a project write lock or recovery record.
 Embedded synchronous adapters use the same operation lifecycle; lower-level
 streaming ports explicitly leave supervision and consumer capacity to the caller.
 
-Knowledge validators borrow observations and assertion candidates. Storage and
-application own reading, committing and exporting them. An export bundle
+Storage and application own reading and exporting retained research. An export bundle
 carries provenance; its consumers cannot modify research observations or
 comparison verdicts. HAL, driver and
 qualification behavior remains with those external owners.
@@ -234,8 +228,8 @@ dependencies or claims that their behavior meets Blobray's proof requirements.
 | Source | Relevant mechanism | Decision and limit |
 | --- | --- | --- |
 | [angr/CLE loading](https://docs.angr.io/en/latest/core-concepts/loading.html) | Objects, symbols, relocations and mapped address spaces have loader ownership | Separate artifact inventory and prepared image. CLE's extern-object representation of unresolved symbols does not establish resolved behavior for Blobray. |
-| [Ghidra DomainObject](https://ghidra.re/ghidra_docs/api/ghidra/framework/model/DomainObject.html) | Explicit consumers, release and modification transactions | Give snapshots and knowledge edits explicit ownership. Borrow the contract idea, not its Java object model. |
-| [rev.ng model](https://docs.rev.ng/user-manual/key-concepts/model/) and [artifacts and analyses](https://docs.rev.ng/user-manual/key-concepts/artifacts-and-analyses/) | Editable model is separate from derived artifacts; model changes invalidate affected cached artifacts | Separate accepted interpretation from computed results. rev.ng analyses can update its model; Blobray analysis instead proposes changes requiring a separate review decision. |
+| [Ghidra DomainObject](https://ghidra.re/ghidra_docs/api/ghidra/framework/model/DomainObject.html) | Explicit consumers, release and modification transactions | Give snapshots explicit ownership. Borrow the contract idea, not its Java object model. |
+| [rev.ng model](https://docs.rev.ng/user-manual/key-concepts/model/) and [artifacts and analyses](https://docs.rev.ng/user-manual/key-concepts/artifacts-and-analyses/) | Editable model is separate from derived artifacts; model changes invalidate affected cached artifacts | Separate reviewed interpretation from computed results. rev.ng analyses can update its model; Blobray analysis never changes a reviewed contract or register model. |
 | [LLD archive semantics](https://lld.llvm.org/ELF/warn_backrefs.html) | GNU ld and LLD can select different archive members | Identify the actual linker and recipe. A synthetic analysis link cannot prove original firmware selection. |
 | [Bazel remote caching](https://bazel.build/remote/caching) | Action-result metadata is separate from content-addressed output bytes | Separate computation identity from content identity; Blobray adds durable evidence ownership beyond cache reuse. |
 | [restic read/write ordering](https://restic.readthedocs.io/en/stable/100_references.html#read-and-write-ordering) | Write data before indexes and snapshots; read from the snapshot first | Publish a root only after its dependency closure exists. Blobray additionally retains evidence dependencies and active readers; restic's lock-file expiry is not its recovery protocol. |
@@ -244,8 +238,8 @@ dependencies or claims that their behavior meets Blobray's proof requirements.
 | [Rust GlobalAlloc](https://doc.rust-lang.org/std/alloc/trait.GlobalAlloc.html) and [Linux mmap](https://man7.org/linux/man-pages/man2/mmap.2.html) | Global allocation has reentrancy/unwind constraints; mappings and prefaulting do not guarantee physical memory availability | Keep capacity authority explicit and process containment separate. A global allocator or a successful mapping is insufficient evidence of a bounded operation. |
 
 These comparisons support the separation of loading, interpretation, execution
-and durable knowledge. Blobray deliberately does not adopt automatic unresolved
-symbol stand-ins, automatic acceptance of analysis edits, or cache retention as
+and durable evidence. Blobray deliberately does not adopt automatic unresolved
+symbol stand-ins, automatic acceptance of analysis results, or cache retention as
 evidence retention. The comparison unit is a concrete contract and its failure
 behavior, not a project's feature count. No runtime dependency on these engines
 is selected here.
@@ -258,14 +252,13 @@ Register source publication is owned by [the register tool](../../../registers/R
 with separate reviewed contracts/model/review modules and no execution dependency.
 That owner also initializes native source geometry and captures SVD imports without
 accepting hardware claims. Next's saved register catalogue uses the application
-navigation owner, pure expression observations and indexed knowledge applicability;
-it has no generator or production dependencies.
+navigation owner and pure expression observations; it has no generator or production dependencies.
 The primary `cargo blobray` command selects Next. Final-image target auditing uses
 the ordinary ephemeral supervisor and injected ISA port; it has no project writer.
 
 Saved semantic IR packaging stays within these boundaries: domain defines profile
 requests and result records, analysis propagates finite labels over supplied arcs,
-application selects the saved scope and owns call/provenance traversal, and store
+application selects the saved scope and owns call traversal, and store
 validates and atomically publishes immutable references. CLI is a client of the
 same build/query operations. Original function streams remain the semantic source;
 this adds neither an analysis engine nor another runtime owner.

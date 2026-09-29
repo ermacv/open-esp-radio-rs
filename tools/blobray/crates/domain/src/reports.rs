@@ -17,7 +17,6 @@ pub struct StorageUsage {
     pub analyses: u64,
     pub publications: u64,
     pub images: u64,
-    pub knowledge_revisions: u64,
     pub runs: u64,
     /// Filesystem observations span the walk; they are not an atomic disk snapshot.
     pub atomic_filesystem_snapshot: bool,

@@ -87,8 +87,6 @@ mod tests {
             preload: vec![],
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
             observe_memory: vec![MemorySelection {
                 name: "unavailable".into(),
                 address: 0x3000,

@@ -383,16 +383,6 @@ impl PhyImage {
                     } if observation.status != observation.expected_status() => {
                         Some(format!("{case} call {observation:?}"))
                     }
-                    blobray_domain::ExecutionEvidence::RuntimeTable {
-                        case, observation, ..
-                    } if observation.status != observation.expected_status() => {
-                        Some(format!("{case} table {observation:?}"))
-                    }
-                    blobray_domain::ExecutionEvidence::FifoService {
-                        case, observation, ..
-                    } if observation.status != observation.expected_status() => {
-                        Some(format!("{case} fifo {observation:?}"))
-                    }
                     _ => None,
                 })
                 .collect();
@@ -521,7 +511,7 @@ impl PhyImage {
     /// Exact image bytes at a linked address, checked against the source identity.
     pub fn image_data(&self, name: &str, address: u32, length: u64) -> Result<Vec<u8>> {
         let request = blobray_domain::DataRequest {
-            occurrence: blobray_domain::KnowledgeOccurrence {
+            occurrence: blobray_domain::Occurrence {
                 revision: self.revision.clone(),
                 source: self.vendor.source.clone(),
                 object: self.image_object.clone(),

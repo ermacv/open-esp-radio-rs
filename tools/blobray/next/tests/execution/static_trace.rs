@@ -108,7 +108,6 @@ fn trace_request(f: &Fixture) -> TraceRequest {
                     revision: f.target.revision.clone(),
                     publications: vec![publication.parse().unwrap()],
                     analyses: vec![],
-                    knowledge: None,
                 },
                 profiles: vec![IrProfile {
                     name: "links".into(),

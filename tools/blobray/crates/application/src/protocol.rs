@@ -45,7 +45,6 @@ pub struct WorkerReport {
 pub enum PreparedReceipt {
     Ir(PreparedIrReceipt),
     Execution(PreparedExecutionReceipt),
-    Knowledge(PreparedKnowledgeReceipt),
     Import(PreparedImport),
     Image(PreparedImageReceipt),
     Function(PreparedFunctionReceipt),
@@ -132,9 +131,6 @@ pub enum ReadQuery {
     Backup,
     Restore {
         bundle: OriginPath,
-    },
-    Knowledge {
-        revision: Option<KnowledgeRevisionId>,
     },
     PlanInvestigation {
         request: InvestigationRequest,

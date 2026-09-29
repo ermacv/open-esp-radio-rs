@@ -65,7 +65,7 @@ impl QueryOutput {
                 None
             }
             (ReadQuery::Registers { request }, QuerySummary::Registers { summary })
-                if summary.schema == 1 && summary.request == *request =>
+                if summary.schema == 2 && summary.request == *request =>
             {
                 None
             }
@@ -76,9 +76,7 @@ impl QueryOutput {
             }
             (ReadQuery::StorageUsage, QuerySummary::StorageUsage { .. }) => None,
             (ReadQuery::Data { request }, QuerySummary::Data { manifest })
-                if request == &manifest.request
-                    && manifest.knowledge.is_none()
-                    && manifest.accepted.is_none() =>
+                if request == &manifest.request =>
             {
                 None
             }
@@ -97,11 +95,6 @@ impl QueryOutput {
                 },
             )
             | (ReadQuery::Restore { .. }, QuerySummary::Preservation { restored: true, .. }) => {
-                None
-            }
-            (ReadQuery::Knowledge { revision, .. }, QuerySummary::Knowledge { status })
-                if revision == &status.revision =>
-            {
                 None
             }
             (

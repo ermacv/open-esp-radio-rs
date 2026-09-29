@@ -94,7 +94,6 @@ fn render_unbuffered(
             | app::QuerySummary::CodeCoverage { .. }
             | app::QuerySummary::RetainedPayload { .. }
             | app::QuerySummary::Preservation { .. }
-            | app::QuerySummary::Knowledge { .. }
             | app::QuerySummary::Publications { .. }
             | app::QuerySummary::Publication { .. }
             | app::QuerySummary::InvestigationStatus { .. }
@@ -543,9 +542,6 @@ impl app::QuerySink for Records<'_> {
         }
         self.record("data", r, c)
     }
-    fn knowledge_entry(&mut self, r: &KnowledgeEntry, c: &mut dyn RunControl) -> Result<()> {
-        self.record("assertion", r, c)
-    }
     fn investigation_member(
         &mut self,
         r: &InvestigationMember,
@@ -653,14 +649,6 @@ impl app::QuerySink for Records<'_> {
                             } else {
                                 "stale"
                             }
-                        )?;
-                        writeln!(
-                            w,
-                            "Knowledge: {}",
-                            status
-                                .knowledge
-                                .as_ref()
-                                .map_or("none", KnowledgeRevisionId::as_str)
                         )?;
                         if let Some(coverage) = status.coverage {
                             write_coverage(w, coverage)?;

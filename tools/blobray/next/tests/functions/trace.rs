@@ -39,7 +39,6 @@ fn target(f: &Fixture, analysis: FunctionAnalysisId) -> TraceTarget {
             revision: f.revision.clone(),
             publications: vec![],
             analyses: vec![analysis.clone()],
-            knowledge: None,
         },
         profiles: vec![IrProfile {
             name: "trace".into(),
@@ -233,10 +232,10 @@ fn assert_source_free_roundtrip(
     assert_eq!(rows, saved.0);
     let path = f.dir.path().join("trace.json");
     fs::write(&path, serde_json::to_vec(&q).unwrap()).unwrap();
-    let document = review::cli(f, &["trace", "--request", path.to_str().unwrap()]);
+    let document = super::cli(f, &["trace", "--request", path.to_str().unwrap()]);
     assert_eq!(document["summary"]["summary"]["verdict"], verdict);
     let export = f.dir.path().join("trace-export.json");
-    review::cli(
+    super::cli(
         f,
         &[
             "trace",
@@ -505,7 +504,6 @@ fn relocatable_call_link_address_never_becomes_a_physical_section_offset() {
                     revision: f.revision.clone(),
                     publications: vec![],
                     analyses: vec![caller.clone(), run.analysis.unwrap()],
-                    knowledge: None,
                 },
                 profiles: vec![IrProfile {
                     name: "trace".into(),

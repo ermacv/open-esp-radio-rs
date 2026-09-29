@@ -148,8 +148,6 @@ identity!(LinkPlanId);
 identity!(PreparedImageId);
 identity!(FunctionAnalysisId);
 identity!(PublicationId);
-identity!(KnowledgeRevisionId);
-identity!(AssertionId);
 identity!(InvestigationPlanId);
 identity!(ProjectId);
 identity!(RevisionId);
@@ -417,18 +415,12 @@ pub use semantics::*;
 mod investigation;
 pub use investigation::*;
 
-mod call_contract;
-pub use call_contract::*;
-mod function_contract;
-pub use function_contract::*;
 mod navigation;
 pub use navigation::*;
 mod access;
 pub use access::*;
-mod interfaces;
-pub use interfaces::*;
-mod knowledge;
-pub use knowledge::*;
+mod occurrence;
+pub use occurrence::*;
 
 mod audit;
 pub use audit::*;
@@ -457,20 +449,14 @@ pub use device::*;
 mod external_call;
 pub use external_call::*;
 
-mod runtime_interface;
-pub use runtime_interface::*;
-
-mod fifo_service;
-pub use fifo_service::*;
-
 mod comparison;
 pub use comparison::*;
 
 mod call_observation;
 pub use call_observation::*;
 
-mod call_correspondence;
-pub use call_correspondence::*;
+mod call_boundary;
+pub use call_boundary::*;
 
 mod timeline;
 pub use timeline::*;

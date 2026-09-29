@@ -30,9 +30,6 @@ pub(crate) fn prepare<'m>(
         {
             match &input.goal {
                 ExecutionGoal::Return => result[phase][side] = Some(ResolvedExecutionGoal::Return),
-                ExecutionGoal::ObserveDequeue { .. } => {
-                    result[phase][side] = Some(ResolvedExecutionGoal::ObserveDequeue)
-                }
                 ExecutionGoal::ReachSymbol { target: point }
                 | ExecutionGoal::ObserveCall { target: point, .. } => pending.push(
                     Pending {
@@ -52,7 +49,7 @@ pub(crate) fn prepare<'m>(
         if pending[..index].iter().any(|p| p.same_object(selected)) {
             continue;
         }
-        let occurrence = KnowledgeOccurrence {
+        let occurrence = Occurrence {
             revision: selected.target.revision.clone(),
             source: selected.point.source.clone(),
             object: selected.point.symbol.object.clone(),
@@ -77,7 +74,7 @@ pub(crate) fn prepare<'m>(
                                 include_tail: *include_tail,
                             }
                         }
-                        ExecutionGoal::Return | ExecutionGoal::ObserveDequeue { .. } => {
+                        ExecutionGoal::Return => {
                             return Err(Error::new(
                                 ErrorCode::Integrity,
                                 "unexpected pending return goal",

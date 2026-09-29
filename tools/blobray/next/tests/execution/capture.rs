@@ -1,4 +1,4 @@
-use super::interfaces::run;
+use super::run;
 use super::*;
 fn profile(words: u16) -> CallCapture {
     CallCapture {
@@ -28,7 +28,6 @@ fn select(r: &mut ExecutionRequest, words: u16) {
             },
             memory: vec![],
             calls: true,
-            reviewed_calls: None,
         });
     }
 }
@@ -226,30 +225,7 @@ fn capture_stack_unavailability_does_not_block_code_or_invent_words() {
     }
 }
 #[test]
-fn modeled_and_fifo_boundaries_have_generic_capture_before_their_effects() {
-    let (f, mut r) = super::services::setup(vec![11]);
-    select(&mut r, 2);
-    let (m, rows) = run(&f, r);
-    assert!(m.complete);
-    let e = events(&rows);
-    let call = e
-        .iter()
-        .position(|e| {
-            matches!(
-                e,
-                ExecutionEvent::CallTransfer {
-                    target_kind: ObservedCallTarget::FifoService,
-                    ..
-                }
-            )
-        })
-        .unwrap();
-    let service = e
-        .iter()
-        .position(|e| matches!(e, ExecutionEvent::ServiceCall { .. }))
-        .unwrap();
-    assert!(call + 2 < service);
-
+fn modeled_boundaries_have_generic_capture_before_their_effects() {
     let f = Fixture::new(&[0x00008413, 0x000022b7, 0x000280e7, 0x00040067]);
     let mut r = f.request();
     select(&mut r, 1);

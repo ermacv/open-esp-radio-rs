@@ -5,8 +5,6 @@
 
 mod preservation;
 pub use preservation::*;
-mod knowledge;
-pub use knowledge::*;
 mod investigations;
 pub use investigations::*;
 mod executions;
@@ -31,7 +29,6 @@ pub use records::{
 };
 pub use records::{
     PreparedExecutionReceipt, PreparedFunctionReceipt, PreparedInvestigationReceipt,
-    PreparedKnowledgeReceipt,
 };
 mod capture;
 mod jobs;
@@ -60,9 +57,9 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 39;
+const SCHEMA: i64 = 40;
 /// Run record format shared by every durable and read operation.
-pub const JOURNAL_SCHEMA: u32 = 38;
+pub const JOURNAL_SCHEMA: u32 = 39;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -143,9 +140,6 @@ impl Project {
         let connection = Connection::open(stage.path().join("project.sqlite3")).map_err(db)?;
         connection.execute_batch("PRAGMA synchronous=EXTRA;
             BEGIN IMMEDIATE;
-            CREATE TABLE knowledge_revisions (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, parent TEXT, assertion TEXT NOT NULL, action TEXT NOT NULL, supersedes TEXT);
-            CREATE INDEX knowledge_assertion ON knowledge_revisions(assertion, sequence);
-            CREATE INDEX knowledge_replacement ON knowledge_revisions(supersedes, sequence);
             CREATE TABLE publications (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL);
             CREATE TABLE current_publication (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL);
             CREATE TABLE analyses (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL);
@@ -424,20 +418,8 @@ mod execution_models;
 
 mod execution_calls;
 
-mod execution_tables;
-
-mod execution_services;
-
 mod execution_observation;
 
 mod execution_capture;
 
-mod execution_call_pairs;
-pub use execution_call_pairs::*;
-
 mod execution_timeline;
-
-mod execution_effects;
-pub use execution_effects::*;
-mod execution_projections;
-pub use execution_projections::*;

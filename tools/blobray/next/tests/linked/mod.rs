@@ -487,7 +487,7 @@ fn data_image_addresses_export_file_backing_and_reject_unmapped_ranges() {
     };
     let mut request = DataRequest {
         pointer_table: None,
-        occurrence: KnowledgeOccurrence {
+        occurrence: Occurrence {
             revision: manifest.plan.recipe.revision.clone(),
             source: FunctionSource::Image {
                 image: image.clone(),
@@ -643,7 +643,7 @@ fn image_data_relocation_overlap_uses_section_relative_coordinates() {
                 count: 1,
                 stride: 4,
             }),
-            occurrence: KnowledgeOccurrence {
+            occurrence: Occurrence {
                 revision: f.revision.clone(),
                 source: FunctionSource::Image {
                     image: image.clone(),
@@ -708,7 +708,7 @@ fn image_data_relocation_overlap_uses_section_relative_coordinates() {
 }
 
 #[test]
-fn reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
+fn explicit_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
     use object::ObjectSection as _;
     let f = fixture(false, true);
     let image = prepared(&f);
@@ -723,10 +723,6 @@ fn reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
         .unwrap();
     let extent = CodeRange {
         start: helper.address(),
-        length: helper.size(),
-    };
-    let file_range = CodeRange {
-        start: section.file_range().unwrap().0 + helper.address() - section.address(),
         length: helper.size(),
     };
     let object = ObjectId {
@@ -757,71 +753,6 @@ fn reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
         .wait();
     assert_eq!(run.state, RunState::Completed, "{run:?}");
     let analysis = run.analysis.unwrap();
-    let proposed = f
-        .app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: None,
-                actor: "test".into(),
-                reason: "exact image code".into(),
-                action: KnowledgeAction::Propose {
-                    proposal: KnowledgeProposal {
-                        subject: "helper-boundary".to_owned().try_into().unwrap(),
-                        occurrence: KnowledgeOccurrence {
-                            revision: f.revision.clone(),
-                            source,
-                            object: object.clone(),
-                            symbol: None,
-                        },
-                        claim: KnowledgeClaim::ExecutableRange {
-                            section: section.index().0 as u32,
-                            extent,
-                        },
-                        evidence: vec![
-                            EvidenceRef::Source {
-                                payload: object.artifact,
-                                range: file_range,
-                            },
-                            EvidenceRef::Analysis {
-                                analysis: analysis.clone(),
-                                record: None,
-                            },
-                        ],
-                        note: None,
-                    },
-                },
-            },
-            budget(),
-        )
-        .unwrap()
-        .wait();
-    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
-    let entries = cli(&f, &["knowledge", "show"]);
-    let assertion: AssertionId = entries["records"][0]["value"]["id"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let accepted = f
-        .app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: proposed.knowledge,
-                actor: "test".into(),
-                reason: "reviewed image bytes".into(),
-                action: KnowledgeAction::Review {
-                    assertion: assertion.clone(),
-                    decision: ReviewDecision::Accept,
-                    supersedes: None,
-                },
-            },
-            budget(),
-        )
-        .unwrap()
-        .wait();
-    assert_eq!(accepted.state, RunState::Completed, "{accepted:?}");
     let baseline = analyze(&f, Some(image.clone()));
     let baseline_coverage = cli(&f, &["coverage", "--id", baseline.as_str()]);
     let decoder = blobray_backend_riscv::RiscvDecoder;
@@ -832,9 +763,11 @@ fn reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
             InvestigationInput::Automatic {
                 request: InvestigationRequest {
                     image: Some(image),
-                    reviewed_extents: vec![ReviewedExtent {
-                        revision: accepted.knowledge.unwrap(),
-                        assertion,
+                    ranges: vec![FunctionRange {
+                        source,
+                        object,
+                        section: section.index().0 as u32,
+                        extent,
                     }],
                     ..Default::default()
                 },
@@ -873,103 +806,6 @@ fn reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
     assert_eq!(manifest.recipe.selector, selector);
     assert_eq!(manifest.recipe.extent, extent);
     assert_eq!(manifest.recipe.address_space, CodeAddressSpace::Image);
-}
-
-#[test]
-fn image_interface_data_roots_use_the_same_physical_validation_during_review() {
-    use object::ObjectSection as _;
-    let f = fixture(true, true);
-    let image = prepared(&f);
-    let bytes = export(&f, image.clone());
-    let elf = object::File::parse(bytes.as_slice()).unwrap();
-    let value = elf.symbol_by_name("value").unwrap();
-    let payload = ArtifactId::of_bytes(&bytes);
-    let object = ObjectId {
-        artifact: payload.clone(),
-        location: ObjectLocation::Standalone,
-    };
-    let symbol = SymbolId {
-        object: object.clone(),
-        table: SymbolTableKind::Static,
-        table_section: elf.section_by_name(".symtab").unwrap().index().0 as u32,
-        index: value.index().0 as u64,
-    };
-    let proposal:KnowledgeProposal=serde_json::from_value(serde_json::json!({
-        "subject":"image.interface", "occurrence":{"revision":f.revision,"source":{"kind":"image","image":image},"object":object,"symbol":symbol},
-        "claim":{"kind":"interface","contract":{
-            "root":{"kind":"symbol","symbol":symbol,"addend":0},"path":[],"layout_version":"fixture/1","layout_bytes":4,"pointer_bytes":4,"abi":"riscv-integer","index_domains":[],"guards":[{"kind":"captured-payload","payload":payload}],
-            "slots":[{"offset":0,"name":"slot","semantic":null,"signature":{"arguments":[],"result":{"kind":"void"},"variadic":false}}],"purpose":"physical data root","applicability":"declared interpretation only"
-        }}, "evidence":[{"kind":"source","payload":payload,"range":{"start":0,"length":bytes.len()}}],"note":null
-    })).unwrap();
-    let change = |proposal| KnowledgeChange {
-        expected_base: None,
-        actor: "test".into(),
-        reason: "physical identity".into(),
-        action: KnowledgeAction::Propose { proposal },
-    };
-    for which in 0..3 {
-        let mut bad = proposal.clone();
-        bad.occurrence.symbol = None;
-        let KnowledgeClaim::Interface { contract } = &mut bad.claim else {
-            panic!()
-        };
-        let AccessRoot::Symbol { symbol, .. } = &mut contract.root else {
-            panic!()
-        };
-        match which {
-            0 => symbol.index = u64::MAX,
-            1 => symbol.table = SymbolTableKind::Dynamic,
-            _ => symbol.table_section = u32::MAX,
-        }
-        let failed = f
-            .app
-            .start_knowledge(&f.project, &change(bad), budget())
-            .unwrap()
-            .wait();
-        assert_eq!(failed.state, RunState::Failed, "{failed:?}");
-        assert!(failed.knowledge.is_none());
-        assert!(
-            cli(&f, &["knowledge", "show"])["records"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
-    }
-    let proposed = f
-        .app
-        .start_knowledge(&f.project, &change(proposal), budget())
-        .unwrap()
-        .wait();
-    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
-    let entries = cli(&f, &["knowledge", "show"]);
-    let assertion = entries["records"][0]["value"]["id"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let accepted = f
-        .app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: proposed.knowledge,
-                actor: "test".into(),
-                reason: "captured data identity".into(),
-                action: KnowledgeAction::Review {
-                    assertion,
-                    decision: ReviewDecision::Accept,
-                    supersedes: None,
-                },
-            },
-            budget(),
-        )
-        .unwrap()
-        .wait();
-    assert_eq!(accepted.state, RunState::Completed, "{accepted:?}");
-    assert_eq!(
-        cli(&f, &["knowledge", "show"])["records"][0]["value"]["state"],
-        "accepted"
-    );
 }
 
 #[test]
@@ -1066,7 +902,6 @@ fn saved_trace_follows_a_linked_call_and_tail_without_promoting_may_effects() {
             revision: app::inventory(&f.project, None).unwrap().revision_id,
             publications: vec![publication.clone()],
             analyses: vec![],
-            knowledge: None,
         },
         profiles: vec![IrProfile {
             name: "calls".into(),

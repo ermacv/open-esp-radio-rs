@@ -142,18 +142,6 @@ pub struct CallInput {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallDispatch {
-    FifoService {
-        instance: u16,
-        issue: FifoIssue,
-    },
-    ObservedDequeue {
-        instance: u16,
-        value: u32,
-    },
-    RuntimeInterface {
-        instance: Option<u16>,
-        issue: RuntimeTableIssue,
-    },
     /// No selected model claims this transfer; execute captured code normally.
     Code,
     Returned {

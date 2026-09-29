@@ -54,45 +54,19 @@ pub struct LayoutProjection {
     pub applicability: String,
     pub reason: String,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProjectionReview {
-    pub knowledge: KnowledgeRevisionId,
-    pub assertion: AssertionId,
-}
 /// How a comparison selects its layout projection.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ProjectionRef {
-    /// An accepted knowledge assertion of the project.
-    Reviewed(ProjectionReview),
     /// A projection reviewed outside Blobray and supplied with the comparison,
     /// identified by the digest of its canonical encoding.
     Content { projection: ArtifactId },
-}
-impl ProjectionRef {
-    /// The knowledge review, when the projection is selected through one.
-    pub fn review_mut(&mut self) -> Option<&mut ProjectionReview> {
-        match self {
-            Self::Reviewed(review) => Some(review),
-            Self::Content { .. } => None,
-        }
-    }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedProjection {
     pub review: ProjectionRef,
     pub projection: LayoutProjection,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProjectionProposalRequest {
-    pub subject: SubjectId,
-    pub projection: LayoutProjection,
-    pub expected_base: Option<KnowledgeRevisionId>,
-    pub actor: String,
-    pub reason: String,
 }
 fn invalid() -> Error {
     Error::new(

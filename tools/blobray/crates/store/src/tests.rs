@@ -1137,98 +1137,6 @@ fn investigation_digest_rejects_encoded_expansion_without_large_buffer() {
 }
 
 #[test]
-fn knowledge_transaction_failure_and_cancellation_leave_head_and_journal_unchanged() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = Project::create(temp.path()).unwrap();
-    let mut writer = project.writer().unwrap();
-    let payload = ArtifactId::of_bytes(b"source");
-    let proposal = KnowledgeProposal {
-        subject: "subject".to_owned().try_into().unwrap(),
-        occurrence: KnowledgeOccurrence {
-            revision: payload.as_str().parse().unwrap(),
-            source: FunctionSource::Input { input: 0 },
-            object: ObjectId {
-                artifact: payload.clone(),
-                location: ObjectLocation::Standalone,
-            },
-            symbol: None,
-        },
-        claim: KnowledgeClaim::Hypothesis {
-            text: "possible".into(),
-        },
-        evidence: vec![EvidenceRef::Document { payload }],
-        note: None,
-    };
-    let change = KnowledgeChange {
-        expected_base: None,
-        actor: "reviewer".into(),
-        reason: "review".into(),
-        action: KnowledgeAction::Propose { proposal },
-    };
-    let (mut run, path) = writer
-        .register_operation(
-            ResourceBudget::default(),
-            owner(),
-            RunOperation::Knowledge {
-                change: change.clone(),
-            },
-            |_| {},
-        )
-        .unwrap();
-    let stage = Staging::open(&path).unwrap();
-    let receipt = stage
-        .knowledge_receipt(
-            &KnowledgeManifest {
-                schema: 2,
-                project: project.id().clone(),
-                change,
-                assertion: ArtifactId::of_bytes(b"candidate").as_str().parse().unwrap(),
-                evidence_roots: vec![],
-            },
-            &mut || Ok(()),
-        )
-        .unwrap();
-    run.state = RunState::Running;
-    writer.update_run(&run).unwrap();
-    run.state = RunState::Validating;
-    writer.update_run(&run).unwrap();
-    let retained = writer
-        .retain_knowledge(&run, &receipt, &mut || Ok(()))
-        .unwrap();
-    assert_eq!(
-        writer
-            .publish_knowledge(&mut run, retained, &mut || Err(Error::new(
-                ErrorCode::Cancelled,
-                "stop"
-            )))
-            .unwrap_err()
-            .code,
-        ErrorCode::Cancelled
-    );
-    assert!(project.current_knowledge().unwrap().is_none());
-    assert_eq!(project.run(&run.id).unwrap().state, RunState::Validating);
-    let db = open_connection(&project.root, true).unwrap();
-    db.execute_batch("CREATE TRIGGER fail_review BEFORE UPDATE ON runs BEGIN SELECT RAISE(ABORT,'injected failure'); END;").unwrap();
-    let retained = writer
-        .retain_knowledge(&run, &receipt, &mut || Ok(()))
-        .unwrap();
-    assert!(
-        writer
-            .publish_knowledge(&mut run, retained, &mut || Ok(()))
-            .is_err()
-    );
-    assert!(project.current_knowledge().unwrap().is_none());
-    assert_eq!(project.run(&run.id).unwrap().state, RunState::Validating);
-    db.execute_batch("DROP TRIGGER fail_review;").unwrap();
-    let retained = writer
-        .retain_knowledge(&run, &receipt, &mut || Ok(()))
-        .unwrap();
-    writer
-        .publish_knowledge(&mut run, retained, &mut || Ok(()))
-        .unwrap();
-    assert_eq!(project.current_knowledge().unwrap(), Some(receipt.revision));
-}
-#[test]
 fn backup_captures_one_database_revision_while_later_publication_adds_objects() {
     let temp = tempfile::tempdir().unwrap();
     let project = Project::create(&temp.path().join("source")).unwrap();
@@ -1347,8 +1255,6 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
                 preload: vec![],
                 models: vec![],
                 calls: vec![],
-                tables: vec![],
-                services: vec![],
             },
             replacement: None,
         }],
@@ -1402,9 +1308,6 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         .retain_temporary(file.finish().unwrap(), &mut || Ok(()))
         .unwrap();
     let mut manifest = ExecutionManifest {
-        effect_contracts: vec![],
-        projections: vec![],
-        call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
         request: encode_execution_request(&request).unwrap().0,
@@ -1451,11 +1354,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         })
         .unwrap();
         let error = goal_manifest
-            .validate_records(
-                &bytes.as_slice(),
-                &WorkingMemory::new(1024 * 1024).unwrap(),
-                &mut || Ok(()),
-            )
+            .validate_records(&bytes.as_slice(), &mut || Ok(()))
             .unwrap_err();
         assert_eq!(error.code, ErrorCode::Integrity);
         assert!(
@@ -1478,11 +1377,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         serde_json::to_writer(&mut bytes, &row).unwrap();
     }
     goal_manifest
-        .validate_records(
-            &bytes.as_slice(),
-            &WorkingMemory::new(1024 * 1024).unwrap(),
-            &mut || Ok(()),
-        )
+        .validate_records(&bytes.as_slice(), &mut || Ok(()))
         .unwrap();
     manifest.complete = false;
     let invalid = stage.execution_receipt(&manifest, &mut || Ok(())).unwrap();
@@ -1587,175 +1482,6 @@ fn durable_assessment_cannot_describe_another_result_or_fabricate_a_verdict() {
     assert_eq!(decode(&forged).unwrap_err().code, ErrorCode::Integrity);
 }
 
-#[test]
-fn frozen_knowledge_snapshot_preserves_review_history_and_checks_superseded_events() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = Project::create(temp.path()).unwrap();
-    let mut writer = project.writer().unwrap();
-    let payload = ArtifactId::of_bytes(b"source");
-    let proposal = KnowledgeProposal {
-        subject: "register".to_owned().try_into().unwrap(),
-        occurrence: KnowledgeOccurrence {
-            revision: payload.as_str().parse().unwrap(),
-            source: FunctionSource::Input { input: 0 },
-            object: ObjectId {
-                artifact: payload.clone(),
-                location: ObjectLocation::Standalone,
-            },
-            symbol: None,
-        },
-        claim: KnowledgeClaim::Hypothesis {
-            text: "reviewed proposal".into(),
-        },
-        evidence: vec![],
-        note: None,
-    };
-    let first: AssertionId = ArtifactId::of_bytes(b"first").as_str().parse().unwrap();
-    let second: AssertionId = ArtifactId::of_bytes(b"second").as_str().parse().unwrap();
-    let mut revisions = Vec::new();
-    for (assertion, action) in [
-        (
-            first.clone(),
-            KnowledgeAction::Propose {
-                proposal: proposal.clone(),
-            },
-        ),
-        (
-            first.clone(),
-            KnowledgeAction::Review {
-                assertion: first.clone(),
-                decision: ReviewDecision::Accept,
-                supersedes: None,
-            },
-        ),
-        (second.clone(), KnowledgeAction::Propose { proposal }),
-        (
-            second.clone(),
-            KnowledgeAction::Review {
-                assertion: second.clone(),
-                decision: ReviewDecision::Reject,
-                supersedes: None,
-            },
-        ),
-        (
-            second.clone(),
-            KnowledgeAction::Review {
-                assertion: second.clone(),
-                decision: ReviewDecision::Accept,
-                supersedes: Some(first.clone()),
-            },
-        ),
-    ] {
-        let change = KnowledgeChange {
-            expected_base: revisions.last().cloned(),
-            actor: "fixture".into(),
-            reason: "review".into(),
-            action,
-        };
-        let (mut run, path) = writer
-            .register_operation(
-                ResourceBudget::default(),
-                owner(),
-                RunOperation::Knowledge {
-                    change: change.clone(),
-                },
-                |_| {},
-            )
-            .unwrap();
-        let stage = Staging::open(&path).unwrap();
-        let receipt = stage
-            .knowledge_receipt(
-                &KnowledgeManifest {
-                    schema: 2,
-                    project: project.id().clone(),
-                    change,
-                    assertion,
-                    evidence_roots: vec![],
-                },
-                &mut || Ok(()),
-            )
-            .unwrap();
-        run.state = RunState::Running;
-        writer.update_run(&run).unwrap();
-        run.state = RunState::Validating;
-        writer.update_run(&run).unwrap();
-        let retained = writer
-            .retain_knowledge(&run, &receipt, &mut || Ok(()))
-            .unwrap();
-        writer
-            .publish_knowledge(&mut run, retained, &mut || Ok(()))
-            .unwrap();
-        revisions.push(receipt.revision);
-    }
-    struct Control(u64);
-    impl RunControl for Control {
-        fn checkpoint(&mut self, _: u64) -> Result<()> {
-            Ok(())
-        }
-        fn measure(&mut self, metric: WorkMetric, amount: u64) {
-            if matches!(metric, WorkMetric::KnowledgeHistoryPasses) {
-                self.0 += amount;
-            }
-        }
-    }
-    let memory = WorkingMemory::new(2 * 1024 * 1024).unwrap();
-    for at in &revisions {
-        let mut control = Control(0);
-        let snapshot = project
-            .knowledge_snapshot(Some(at), &memory, &mut control)
-            .unwrap();
-        assert_eq!(control.0, 1);
-        for entry in snapshot.entries() {
-            assert_eq!(
-                *entry,
-                project
-                    .knowledge_entry(at, &entry.id, &mut || Ok(()))
-                    .unwrap()
-            );
-        }
-        for entry in snapshot.entries() {
-            assert_eq!(snapshot.get(&entry.id, &mut control).unwrap(), Some(entry));
-        }
-        assert!(
-            snapshot
-                .get(
-                    &ArtifactId::of_bytes(b"absent").as_str().parse().unwrap(),
-                    &mut control
-                )
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(control.0, 1, "indexed lookups do not replay history");
-        drop(snapshot);
-        assert_eq!(memory.used(), 0);
-    }
-    let snapshot = project
-        .knowledge_snapshot(revisions.last(), &memory, &mut Control(0))
-        .unwrap();
-    assert_eq!(
-        snapshot.entries().find(|e| e.id == first).unwrap().state,
-        AssertionState::Superseded
-    );
-    assert_eq!(
-        snapshot.entries().find(|e| e.id == second).unwrap().state,
-        AssertionState::Accepted
-    );
-    drop(snapshot);
-    fs::write(
-        project.root.join("objects").join(revisions[0].as_str()),
-        b"corrupt old event",
-    )
-    .unwrap();
-    assert!(matches!(
-        project.knowledge_snapshot(revisions.last(), &memory, &mut Control(0)),
-        Err(Error {
-            code: ErrorCode::Integrity,
-            ..
-        })
-    ));
-    assert_eq!(memory.used(), 0);
-}
-
 fn check_ir_publication(
     project: &Project,
     analysis: &FunctionAnalysisId,
@@ -1768,7 +1494,6 @@ fn check_ir_publication(
             revision: function.recipe.revision.clone(),
             publications: vec![],
             analyses: vec![analysis.clone()],
-            knowledge: None,
         },
         profiles: vec![IrProfile {
             name: "fixture".into(),
@@ -1800,21 +1525,19 @@ fn check_ir_publication(
         name: None,
         profiles: vec![0],
         roots: vec![0],
-        provenance_only: false,
     };
     let mut file = stage.disk.temporary(&path.join("staging")).unwrap();
     serde_json::to_writer(&mut file, &row).unwrap();
     file.write_all(b"\n").unwrap();
     let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
     let manifest = SemanticIrManifest {
-        schema: 1,
-        policy: 1,
+        schema: SEMANTIC_IR_SCHEMA,
+        policy: SEMANTIC_IR_POLICY,
         project: project.id().clone(),
         request,
         records,
         record_count: 1,
         functions: 1,
-        provenance_functions: 0,
         unavailable_entries: 0,
         profiles: vec![IrProfileSummary {
             name: "fixture".into(),
@@ -1937,8 +1660,6 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         preload: vec![],
         models: vec![declaration.clone()],
         calls: vec![],
-        tables: vec![],
-        services: vec![],
     };
     let mut rows = Vec::new();
     for replacement in [false, true] {
@@ -1997,7 +1718,6 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
                 effects: None,
                 projection: None,
                 calls: false,
-                reviewed_calls: None,
                 returns: ReturnWords {
                     low: true,
                     high: false,
@@ -2020,9 +1740,6 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         max_events: 4,
     };
     let manifest = ExecutionManifest {
-        effect_contracts: vec![],
-        projections: vec![],
-        call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
         request: ArtifactId::of_bytes(b"request"),
@@ -2045,11 +1762,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             serde_json::to_writer(&mut bytes, row).unwrap();
             bytes.push(b'\n');
         }
-        m.validate_records(
-            &bytes.as_slice(),
-            &WorkingMemory::new(1024 * 1024).unwrap(),
-            &mut || Ok(()),
-        )
+        m.validate_records(&bytes.as_slice(), &mut || Ok(()))
     };
     validate(&manifest, &rows).unwrap();
     let model_index = rows
@@ -2161,237 +1874,6 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
     forged_manifest.verdict = Some(ComparisonVerdict::Match);
     assert_eq!(
         validate(&forged_manifest, &forged).unwrap_err().code,
-        ErrorCode::Integrity
-    );
-}
-
-#[test]
-fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = Project::create(temp.path()).unwrap();
-    let id = ArtifactId::of_bytes(b"fixture");
-    let object = ObjectId {
-        artifact: id.clone(),
-        location: ObjectLocation::Standalone,
-    };
-    let occurrence = KnowledgeOccurrence {
-        revision: id.as_str().parse().unwrap(),
-        source: FunctionSource::Input { input: 0 },
-        object: object.clone(),
-        symbol: Some(SymbolId {
-            object,
-            table: SymbolTableKind::Static,
-            table_section: 3,
-            index: 1,
-        }),
-    };
-    let pair = CallCorrespondence {
-        vendor: CallEndpoint {
-            occurrence: occurrence.clone(),
-            boundary: ReviewedCallBoundary::Code { address: 0x1000 },
-        },
-        replacement: CallEndpoint {
-            occurrence: occurrence.clone(),
-            boundary: ReviewedCallBoundary::Code { address: 0x2000 },
-        },
-        arguments: CallArguments::Exact { words: 0 },
-        applicability: "fixture".into(),
-        reason: "reviewed fixture".into(),
-    };
-    let assertion: AssertionId = ArtifactId::of_bytes(b"assertion").as_str().parse().unwrap();
-    let mut base = None;
-    for action in [
-        KnowledgeAction::Propose {
-            proposal: KnowledgeProposal {
-                subject: "fixture".to_owned().try_into().unwrap(),
-                occurrence,
-                claim: KnowledgeClaim::CallPair {
-                    correspondence: Box::new(pair.clone()),
-                },
-                evidence: vec![EvidenceRef::Document {
-                    payload: id.clone(),
-                }],
-                note: None,
-            },
-        },
-        KnowledgeAction::Review {
-            assertion: assertion.clone(),
-            decision: ReviewDecision::Accept,
-            supersedes: None,
-        },
-    ] {
-        let mut writer = project.writer().unwrap();
-        let change = KnowledgeChange {
-            expected_base: base,
-            actor: "fixture".into(),
-            reason: "fixture".into(),
-            action,
-        };
-        let (mut run, path) = writer
-            .register_operation(
-                ResourceBudget::default(),
-                owner(),
-                RunOperation::Knowledge {
-                    change: change.clone(),
-                },
-                |_| {},
-            )
-            .unwrap();
-        let receipt = Staging::open(&path)
-            .unwrap()
-            .knowledge_receipt(
-                &KnowledgeManifest {
-                    schema: 2,
-                    project: project.id().clone(),
-                    change,
-                    assertion: assertion.clone(),
-                    evidence_roots: vec![],
-                },
-                &mut || Ok(()),
-            )
-            .unwrap();
-        run.state = RunState::Running;
-        writer.update_run(&run).unwrap();
-        run.state = RunState::Validating;
-        writer.update_run(&run).unwrap();
-        let retained = writer
-            .retain_knowledge(&run, &receipt, &mut || Ok(()))
-            .unwrap();
-        writer
-            .publish_knowledge(&mut run, retained, &mut || Ok(()))
-            .unwrap();
-        base = Some(receipt.revision);
-    }
-    let review = CallPairReview {
-        knowledge: base.unwrap(),
-        assertion,
-    };
-    let target = ExecutionTarget {
-        revision: id.as_str().parse().unwrap(),
-        source: FunctionSource::Input { input: 0 },
-        companions: vec![],
-        abi: CallAbi::RiscvInteger,
-        stack: MemorySeed {
-            address: 0x8000,
-            length: 4096,
-            fill: None,
-            bytes: vec![],
-        },
-    };
-    let input = Invocation {
-        entry: 0x1000,
-        goal: ExecutionGoal::Return,
-        arguments: vec![],
-        memory: vec![],
-        preload: vec![],
-        models: vec![],
-        calls: vec![],
-        tables: vec![],
-        services: vec![],
-        observe_memory: vec![],
-        observe_timeline: TimelineCapture::default(),
-        observe_calls: Some(CallCapture {
-            include_tail: false,
-            argument_words: 0,
-            overrides: vec![],
-        }),
-    };
-    let request = ExecutionRequest {
-        schema: EXECUTION_SCHEMA,
-        vendor: target.clone(),
-        replacement: Some(target),
-        binding: Some(CompiledBinding::SharedCore),
-        max_events: 4,
-        cases: vec![ExecutionCase {
-            name: "fixture".into(),
-            reset: SessionReset::Cold,
-            stack_fill: None,
-            vendor: input.clone(),
-            replacement: Some(input),
-            relation: Some(ComparisonRelation {
-                effects: None,
-                projection: None,
-                returns: ReturnWords {
-                    low: false,
-                    high: false,
-                },
-                events: EventChannels {
-                    timeline: TimelineCapture::default(),
-                    mmio_read: false,
-                    mmio_write: false,
-                    fence: false,
-                    delay: false,
-                },
-                memory: vec![],
-                calls: false,
-                reviewed_calls: Some(ReviewedCalls {
-                    pairs: vec![review.clone()],
-                    unlisted: UnlistedCalls::Exclude,
-                }),
-            }),
-        }],
-    };
-    let memory = WorkingMemory::new(4 * 1024 * 1024).unwrap();
-    for _ in 0..3 {
-        let selected = project
-            .execution_call_pairs(&request, &memory, &mut || Ok(()))
-            .unwrap();
-        assert_eq!(
-            selected.pairs,
-            vec![ResolvedCallPair {
-                review: review.clone(),
-                correspondence: pair.clone()
-            }]
-        );
-        assert!(memory.used() > 0);
-        drop(selected);
-        assert_eq!(memory.used(), 0);
-    }
-    let small = WorkingMemory::new(1).unwrap();
-    assert!(matches!(
-        project.execution_call_pairs(&request, &small, &mut || Ok(())),
-        Err(Error {
-            code: ErrorCode::ResourceLimited,
-            ..
-        })
-    ));
-    assert_eq!(small.used(), 0);
-    let mut manifest = ExecutionManifest {
-        effect_contracts: vec![],
-        projections: vec![],
-        schema: EXECUTION_SCHEMA,
-        project: project.id().clone(),
-        request: encode_execution_request(&request).unwrap().0,
-        producer: ExecutionProducer {
-            executor: "test".into(),
-            environment: "test".into(),
-            verifier: "test".into(),
-        },
-        records: id,
-        verdict: Some(ComparisonVerdict::Match),
-        complete: true,
-        call_pairs: vec![ResolvedCallPair {
-            review,
-            correspondence: pair,
-        }],
-    };
-    project
-        .validate_execution_call_pairs(&manifest, &request, &memory, &mut || Ok(()))
-        .unwrap();
-    manifest.call_pairs[0].correspondence.arguments = CallArguments::Ignore;
-    assert_eq!(
-        project
-            .validate_execution_call_pairs(&manifest, &request, &memory, &mut || Ok(()))
-            .unwrap_err()
-            .code,
-        ErrorCode::Integrity
-    );
-    manifest.call_pairs.clear();
-    assert_eq!(
-        project
-            .validate_execution_call_pairs(&manifest, &request, &memory, &mut || Ok(()))
-            .unwrap_err()
-            .code,
         ErrorCode::Integrity
     );
 }

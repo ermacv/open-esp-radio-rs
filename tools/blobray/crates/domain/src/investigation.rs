@@ -14,8 +14,6 @@ pub struct InvestigationRequest {
     /// Explicit physical code ranges added to symbol enumeration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ranges: Vec<FunctionRange>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reviewed_extents: Vec<ReviewedExtent>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -162,8 +160,6 @@ pub struct InvestigationStatus {
     pub publication: Option<PublicationId>,
     pub publication_revision: Option<RevisionId>,
     pub current: bool,
-    #[serde(default)]
-    pub knowledge: Option<KnowledgeRevisionId>,
     pub coverage: Option<InvestigationCoverage>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

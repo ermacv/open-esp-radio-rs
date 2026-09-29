@@ -788,10 +788,6 @@ mod investigations;
 
 #[path = "functions/data.rs"]
 mod data;
-#[path = "functions/knowledge.rs"]
-mod knowledge;
-#[path = "functions/review.rs"]
-mod review;
 
 #[test]
 fn ten_thousand_section_relocations_fit_small_function_capacity() {
@@ -850,3 +846,23 @@ mod registers;
 
 #[path = "functions/trace.rs"]
 mod trace;
+
+fn cli(f: &Fixture, args: &[&str]) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", args[0], "--project"])
+        .arg(&f.project)
+        .args(["--limit-mode", "watchdog"])
+        .args(&args[1..])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    if out.stdout.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+}

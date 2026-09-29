@@ -11,7 +11,6 @@ description = "Blobray import and snapshot application operations"
 [dependencies]
 blobray-verification = { path = "../verification" }
 toml_edit = { version = "=0.25.13", features = ["serde"] }
-blobray-knowledge = { path = "../knowledge" }
 blobray-analysis = { path = "../analysis" }
 blobray-domain = { path = "../domain" }
 blobray-artifacts = { path = "../artifacts" }

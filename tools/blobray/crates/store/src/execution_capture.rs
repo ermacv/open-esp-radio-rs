@@ -38,7 +38,7 @@ impl CaptureState {
         &mut self,
         input: &Invocation,
         event: &ExecutionEvent,
-        index: Option<&CallRelationIndex<'_>>,
+        compared: bool,
         c: &mut dyn RunControl,
     ) -> Result<()> {
         if let ExecutionEvent::TransferArgument { word, value } = event {
@@ -79,7 +79,6 @@ impl CaptureState {
             tail,
             stack,
             words,
-            target_kind,
             ..
         } = event
         {
@@ -104,16 +103,9 @@ impl CaptureState {
                     "physical call boundary differs from capture profile",
                 ));
             }
-            let selection = match index {
-                Some(i) => i.select(*target, *target_kind, c)?,
-                None => CallSelection::Physical,
-            };
+            c.checkpoint(u64::from(*words) + 1)?;
             self.selected.fill(false);
-            c.checkpoint(u64::from(*words) * selection.selection_work() + 1)?;
-            for word in 0..*words {
-                self.selected[usize::from(word)] =
-                    selection.selects_word(word, index.is_some_and(CallRelationIndex::replacement));
-            }
+            self.selected[..usize::from(*words)].fill(compared);
             self.next = 0;
             self.words = *words;
             self.stack = *stack;
@@ -127,7 +119,7 @@ mod tests {
     use super::*;
     impl CaptureState {
         fn test_event(&mut self, input: &Invocation, event: &ExecutionEvent) -> Result<()> {
-            self.event(input, event, None, &mut || Ok(()))
+            self.event(input, event, true, &mut || Ok(()))
         }
     }
     #[test]
@@ -140,8 +132,6 @@ mod tests {
             preload: vec![],
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
             observe_memory: vec![],
             observe_timeline: TimelineCapture::default(),
             observe_calls: Some(CallCapture {

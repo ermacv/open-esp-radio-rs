@@ -9,7 +9,6 @@ pub enum WorkMetric {
     SectionsPrepared,
     RelocationLookups,
     PublicationPasses,
-    KnowledgeHistoryPasses,
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WorkMeasurements {
@@ -20,7 +19,6 @@ pub struct WorkMeasurements {
     pub sections_prepared: u64,
     pub relocation_lookups: u64,
     pub publication_passes: u64,
-    pub knowledge_history_passes: u64,
 }
 impl WorkMeasurements {
     pub fn add(&mut self, metric: WorkMetric, amount: u64) {
@@ -32,7 +30,6 @@ impl WorkMeasurements {
             WorkMetric::SectionsPrepared => &mut self.sections_prepared,
             WorkMetric::RelocationLookups => &mut self.relocation_lookups,
             WorkMetric::PublicationPasses => &mut self.publication_passes,
-            WorkMetric::KnowledgeHistoryPasses => &mut self.knowledge_history_passes,
         };
         *target = target.saturating_add(amount);
     }

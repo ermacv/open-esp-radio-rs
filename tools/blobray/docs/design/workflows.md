@@ -43,10 +43,9 @@ connection. Existing CLI commands are not the authority for these boundaries.
 | User question or action | Operation route and retained result | Governing contract | Acceptance scenarios |
 | --- | --- | --- | --- |
 | What is in these inputs, including missing/unsupported parts? | import → store capture → artifacts inventory → revision → read query | [Import](contracts.md#import-and-revision-capture), [identity](contracts.md#identity-and-provenance) | A1, A3, A4, A6, A8, R5, R7 |
-| What does this occurrence do? | snapshot → plan → analysis with ISA ports → validated publication → query | [Handles](contracts.md#handles-and-capability-boundaries), [analysis ports](contracts.md#analysis-knowledge-and-verification-ports) | A7, I1, I3, R1, R8, R9 |
+| What does this occurrence do? | snapshot → plan → analysis with ISA ports → validated publication → query | [Handles](contracts.md#handles-and-capability-boundaries), [analysis ports](contracts.md#analysis-and-verification-ports) | A7, I1, I3, R1, R8, R9 |
 | Can this archive entry be executed under this environment? | snapshot → link plan → host tool → prepared image → execution session | [Image preparation](contracts.md#artifact-inspection-and-image-preparation) | A2, A5, A7, J1 |
-| Can this interpretation be accepted and explained later? | evidence-bearing candidate → knowledge validation → review transaction → retained knowledge revision | [Review](contracts.md#analysis-knowledge-and-verification-ports), [retention](contracts.md#durable-repository) | K4, K5 |
-| Does the compiled Rust implementation satisfy the declared comparison? | identified pair → prepared images → sessions → verifier → retained evidence | [Comparison](contracts.md#analysis-knowledge-and-verification-ports) | V1, V2, V3, A5 |
+| Does the compiled Rust implementation satisfy the declared comparison? | identified pair → prepared images → sessions → verifier → retained evidence | [Comparison](contracts.md#analysis-and-verification-ports) | V1, V2, V3, A5 |
 | Can I cancel, recover or move the project? | supervisor or explicit recovery/backup → retained records and leased closure → validated outcome | [Jobs](contracts.md#jobs-cancellation-and-failures), [retention](contracts.md#durable-repository) | J1–J5, P1, P4–P6, M2 |
 
 A workflow requires all its relevant authority, resource and coverage contracts,
@@ -122,31 +121,6 @@ selected source occurrences can be traced where known, and all execution entry
 points apply the same preparation rules. Synthetic placement is labeled in every
 export that exposes addresses.
 
-## Review and preserve knowledge
-
-The researcher proposes an assertion over a physical occurrence or semantic
-subject, supplies its applicability, and references supporting evidence. Examples
-include a recovered function boundary, interface signature, register meaning,
-data layout or constant.
-
-Validation checks that the evidence exists, the subject is unambiguous, the claim
-does not exceed its evidence class, and the assertion is consistent with other
-accepted assertions. The reviewer accepts a specific candidate against a specific
-base revision. The commit creates a new knowledge revision and retains the full
-evidence dependency closure. If the base changed, the application returns a
-conflict with both revisions rather than overwriting another decision.
-
-Code, function, interface and register assertions keep their own validation
-rules. They share the transaction, provenance and retention mechanism. An
-accepted display name does not become a physical symbol identity, and acceptance
-does not erase a contradictory observation.
-
-Success means accepted knowledge can be explained and exported from its
-retained evidence alone. Required recovered hardware tables and calibration
-coefficients retain source identity, purpose, representation and applicability
-under the [source policy](../../../../docs/source-policy.md). Their binary origin
-does not justify dropping them or substituting another profile.
-
 ## Recover a table or coefficient
 
 The researcher selects an exact occurrence and sized symbol or explicit section/
@@ -161,6 +135,10 @@ runtime state. The observation is evidence, not an accepted interpretation.
 
 Success means an export preserves the exact object, data ranges, supporting
 analysis records and provenance after source deletion, move and restore.
+Required recovered hardware tables and calibration coefficients retain source
+identity, purpose, representation and applicability under the
+[source policy](../../../../docs/source-policy.md). Their binary origin does not
+justify dropping them or substituting another profile.
 
 ## Compare a Rust replacement
 
@@ -188,10 +166,10 @@ requirements.
 ## Update a vendor library or interpretation input
 
 Importing changed libraries creates a new revision with its own physical
-identities. Reviewed interpretation changes create a separate knowledge revision.
+identities. Reviewed contracts and register models change through Git review.
 ABI/model selections belong to analysis or execution recipes; changing them does
 not manufacture a new source revision when captured inputs are unchanged.
-No correspondence, lineage or automatic transfer of knowledge between
+No correspondence, lineage or automatic transfer of research between
 revisions exists: each revision's research stands on its own, and an old
 result can still be opened explicitly without being shown as current proof.
 
@@ -229,7 +207,7 @@ lock or pack files by hand.
 ## Export, back up and move an investigation
 
 Research export and private backup have separate purposes. A research export
-contains selected knowledge/evidence and provenance; it does not include private
+contains selected evidence and provenance; it does not include private
 binary bytes unless the caller explicitly selects a private bundle. A complete
 backup includes retained revisions, their source/evidence closure and a manifest
 of object identities. Neither operation uploads data implicitly.
@@ -266,8 +244,6 @@ layout or generated register constants.
 | A6 | Source changes during import or after revision creation | Detectable capture change/expected-digest mismatch rejects capture; committed revision always uses its imported bytes | import, store |
 | A7 | Required source mapping or relocation is unknown | Affected claim is incomplete, never inferred from an equal label or placeholder value | artifacts, verification |
 | A8 | Import unchanged thin-container bytes with a changed external member | Old and new snapshots retain their own payload bindings; equal occurrence selectors do not reuse stale analysis or transfer evidence | domain, planning, store |
-| K4 | Two reviews use the same base revision | First commit succeeds; second reports conflict without lost decisions | application, store |
-| K5 | An analysis proposes an assertion, then its candidate or evidence changes before review commit | Analysis cannot accept it; commit validates the exact reviewed candidate and retained supporting closure | knowledge, application, store |
 | P1 | Inject failure before payload sync, before metadata commit and after commit | Readers see the previous or new complete publication; no mixed result bundle | store |
 | P4 | Exhaust disk quota with protected content | Write fails without evicting accepted evidence or replacing current publication | store |
 | P5 | Export files are deleted or changed | Snapshot queries still read retained content; export can be recreated | application, store |
@@ -347,42 +323,10 @@ validation alone establishes neither those runtime guarantees nor hardware
 qualification.
 
 
-## Reviewed runtime callback (implemented profile)
-
-Select an accepted interface assertion and its exact knowledge revision. Supply
-`Invocation.tables` with that selection, a fresh normal-memory range, exact slot
-addresses and existing writable pointer cells. Select captured callback bytes or
-an explicit call model with reviewed semantic/signature metadata. Run through the
-shared `execute`/`compare` operation.
-
-Inspect both code outcome and runtime-table lifecycle: initialization, conditions,
-current-target association, writes and closure. Unknown/ambiguous targets or failed
-guards are incomplete. Warm phases retain only session instances; cold phases
-start fresh. Preserve the project and use retained reads/replay after source
-removal. The [runtime interface contract](contracts.md#runtime-interface-instances)
-defines exact ownership and the value-association claim.
-
-
-## Function and argument-context review (implemented profile)
-
-Select a captured function symbol or explicit executable range. Propose its native
-function contract with retained evidence, known or unknown signature, argument
-contexts, field roles and caller preconditions through the knowledge API, then
-review it against an explicit knowledge base. Conflicting accepted
-interpretations require explicit supersession; invalid physical identities or
-contradictory layout/predicates publish no knowledge revision.
-
-Query/export the accepted revision after source removal. Review preserves the
-interpretation and never rewrites the saved function analysis or supplies observed
-runtime preconditions. Declaration alone does not assert a call path, executable
-route or behavioral equivalence.
-
-
 ## Register discovery and source publication
 
-Select saved analyses/publications and, optionally, a frozen knowledge revision.
-`registers` reports the selected coverage, unknown/alternative addresses, local
-observations, expression masks and applicable declarations/conflicts. The same API
+Select saved analyses/publications. `registers` reports the selected coverage,
+unknown/alternative addresses, local observations and expression masks. The same API
 exports its complete typed result without reacquiring original binaries. An
 instruction access width never becomes physical geometry or hardware behavior.
 
@@ -396,16 +340,15 @@ See the [source-authoring commands](../../../registers/README.md) and
 [saved register reference](../../next/reference/registers-data/README.md#saved-register-research).
 
 Regression owners are Next `functions/registers.rs` (address filters, partial scope
-and invalid requests), analysis `registers` (mask bounds), application
-`registers::index` (applicability and retired claims) and register tool `drafts`
+and invalid requests), analysis `registers` (mask bounds) and register tool `drafts`
 (initialization/import, explicit review and four-output publication).
 
 ## Saved semantic IR build (implemented)
 
-Select frozen publications/analyses and optional knowledge, then configure named
+Select frozen publications/analyses, then configure named
 all/prefix/exact-analysis roots and resolved call closure. One application build
 publishes an immutable IR identity that retains the original facts with profile
-membership, partial coverage, unresolved links and transitive provenance.
+membership, partial coverage and unresolved links.
 Deleting origins, moving the project and restoring a backup preserve that identity.
 A successful build means the configured bundle was retained; static-trace exactness
 and concrete execution are separate consumer claims. Details and commands:
@@ -438,24 +381,8 @@ execution. [Call regressions](../../next/tests/execution/calls.rs) check the act
 return and participation, all three verdicts, output ownership, stack words,
 unknown values, response exhaustion, early goals, resource failure and identical
 API/CLI replay after source removal and backup/restore. Model effects retain their
-conditional scope; hardware qualification and reviewed service dispatch are separate.
+conditional scope; hardware qualification is separate.
 
-
-## Reviewed FIFO service scenario (implemented profile)
-
-Select accepted interface contracts and place their explicit `service` slots in
-an execution request. Declare bounded FIFO owners with handle, item width,
-initial items and phase/session lifetime; bind enqueue/dequeue/length to exact
-reviewed table slots and call boundaries. Supply physical ABI arguments and
-private-stack input/output pointers in the captured caller.
-
-Run setup and action phases through the shared execution API/CLI. Inspect queue
-transitions, known inputs/outputs, wake values and closure alongside code outcomes.
-Use `observe-dequeue` for a selected successful service event; use `return` when
-the caller must finish. Full/empty are declared responses, while invalid pointers,
-handles and unknown required values are incomplete. Warm continuation cannot hide
-a failed phase. Preserve the project and reopen/replay without source files.
-These FIFO mechanisms do not execute an RTOS or qualify scheduler/hardware behavior.
 
 ## Selected final-state comparison (implemented profile)
 
@@ -485,24 +412,7 @@ Compare call groups together with the required MMIO/fence/delay channels to reta
 their relative order. Unknown selected words yield INCOMPLETE. `observe-call`
 goals stop after boundary capture and before dispatch, so that prefix never proves
 callee-body behavior. Exact physical comparison does not map renamed or relocated
-semantic operations; select reviewed correspondence explicitly for that scenario.
-
-### Compare reviewed call operations (implemented)
-
-Create a call-pair proposal through `knowledge propose-call-pair --request` or
-`Application::start_propose_call_pair`; the generic `KnowledgeAction::Propose`
-path accepts the same `call-pair` claim and enforces the same physical checks.
-Each endpoint names its captured context and exact code symbol/address or explicit
-model/service binding identity. Review the proposal with the ordinary knowledge
-accept/reject action. A proposed or rejected assertion cannot authorize comparison.
-
-Select accepted `knowledge`/`assertion` references in each case's `reviewed_calls`,
-choose exact/selected/ignored physical words in the reviewed claim, and explicitly
-choose exact or excluded unlisted calls. Execute/compare with `calls: false`.
-Read `manifest.call_pairs` and raw calls beside the verdict. Different addresses
-can correspond only through the selected pair. Changed source/definition or
-ambiguous selected endpoints fail before publication. Reading and replaying the
-retained result after source removal/restore uses the same frozen reviews.
+semantic operations.
 
 ### Compare the internal physical timeline (implemented)
 
@@ -515,33 +425,32 @@ delay selections preserve their order relative to selected internal observations
 A final-memory match can coexist with a timeline difference: an intermediate write,
 load order, atomic outcome/order or branch choice may differ despite identical final
 bytes and return. Excluded raw observations remain readable. Unknown/inaccessible
-selected reads cannot MATCH. Model/service memory effects retain their explicit
+selected reads cannot MATCH. Call-model memory effects retain their explicit
 assumption provenance; setup and inspection are excluded. Physical branch sites
-compare exactly; cross-layout/ABI/control correspondence needs the reviewed layout
+compare exactly; cross-layout/control correspondence needs the reviewed layout
 profile below, with no automatic normalization.
 
 ### Reviewed layout comparison — implemented finite profile
 
-Capture both linked entries → propose explicit paired fields/branches (or call ABI
-word positions) → review → select the exact accepted snapshot in the comparison.
-Capture requested final ranges/timeline channels and execute through the shared
-application workflow. Compare keeps raw physical observations and explicit unknowns;
-unmapped selected effects cannot MATCH. Different addresses/word positions can match
-only under the selected mapping. Query, move, backup/restore and replay preserve
-that frozen scope independently of subsequent knowledge changes. Arbitrary type,
+Capture both linked entries → declare explicit paired fields/branches in a
+projection reviewed outside Blobray → select it by content in an in-process
+comparison that receives it. Capture requested final ranges/timeline channels.
+Compare keeps raw physical observations and explicit unknowns; unmapped selected
+effects cannot MATCH. Different addresses can match only under the selected
+mapping. A project execution rejects a projection selection. Arbitrary type,
 pointer-value and dynamic-path conversions are not part of this profile.
 
 ### Reviewed effect refinement — implemented finite profile
 
-Capture both compiled inputs → identify exact root entries → propose explicit
-required/omitted/replaced/added or forbidden MMIO/delay/fence rules → review →
-select the accepted effect assertion with the desired call, layout, timeline,
-return and final-memory relations → execute/compare → inspect claim ceiling and
-remaining obligations → preserve/reopen/replay the same research.
+Capture both compiled inputs → identify exact root entries → declare explicit
+required/omitted/replaced/added or forbidden MMIO/delay/fence rules in a contract
+reviewed outside Blobray → select it by content with the desired layout, timeline,
+return and final-memory relations → compare in process → inspect claim ceiling
+and remaining obligations.
 
 All raw effects remain evidence. A policy may deliberately relax physical
 observations only under the reviewed refinement ceiling; it cannot discharge
 unknown classification, missing required exercise or unfinished execution.
-[Effect scenarios](../../next/tests/execution/effects.rs) exercise generic and
-specialized proposal, CLI review, conflicting/stale selection, combined relations,
-failed-run atomicity and source-free restore/replay.
+[Effect scenarios](../../next/tests/execution/effects.rs) exercise content
+selection, rejection by a project execution, exact-value replacement, case
+applicability and combined relations.

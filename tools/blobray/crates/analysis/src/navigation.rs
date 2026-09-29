@@ -123,10 +123,9 @@ impl<'a, 'm> Facts<'a, 'm> {
         &self,
         value: &AbstractValue,
         recipe: &FunctionRecipe,
-        abi: Option<CallAbi>,
         c: &mut dyn RunControl,
     ) -> Result<(Vec<AccessPath>, Option<AccessIssue>)> {
-        crate::paths::address_paths(value, &self.expressions, recipe, abi, c)
+        crate::paths::address_paths(value, &self.expressions, recipe, c)
     }
     fn indirect(
         &self,

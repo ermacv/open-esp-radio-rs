@@ -370,8 +370,6 @@ mod tests {
             preload: vec![],
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
             observe_memory: vec![],
             observe_calls: None,
             observe_timeline: crate::harness::TIMELINE,

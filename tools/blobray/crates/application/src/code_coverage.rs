@@ -74,12 +74,6 @@ impl Reached {
             self.roots.insert(vendor.entry);
             self.boundaries
                 .extend(vendor.calls.iter().map(|call| call.binding.address));
-            self.boundaries.extend(
-                vendor
-                    .services
-                    .iter()
-                    .flat_map(|service| service.bindings.iter().map(|b| b.call.address)),
-            );
             match goal[0] {
                 Some(ResolvedExecutionGoal::ReachSymbol { address })
                 | Some(ResolvedExecutionGoal::ObserveCall { address, .. }) => {
@@ -150,7 +144,6 @@ fn collect(
             &execution.manifest,
             request,
             &execution.records,
-            memory,
             c,
             &mut |record, _| {
                 if matches!(record, ExecutionEvidence::Coverage { .. }) {

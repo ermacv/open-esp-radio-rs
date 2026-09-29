@@ -3,16 +3,6 @@ use blobray_domain::*;
 fn integrity(message: &str) -> Error {
     Error::new(ErrorCode::Integrity, message)
 }
-fn word(register: u8, abi: Option<CallAbi>) -> std::result::Result<u8, AccessIssue> {
-    if abi.is_none() {
-        return Err(AccessIssue::AbiRequired);
-    }
-    if (10..=17).contains(&register) {
-        Ok(register - 10)
-    } else {
-        Err(AccessIssue::UnsupportedArgument)
-    }
-}
 fn leaf(
     v: &AbstractValue,
     recipe: &FunctionRecipe,
@@ -51,15 +41,6 @@ fn finish(
                 path.push(AccessStep::LoadPointer { offset: bytes });
                 offset = 0;
             }
-            step @ AccessStep::Index { .. } => {
-                if offset != 0 {
-                    path.push(AccessStep::Offset {
-                        bytes: i32::try_from(offset).map_err(|_| AccessIssue::OffsetOutOfRange)?,
-                    });
-                    offset = 0;
-                }
-                path.push(*step);
-            }
         }
     }
     Ok(AccessPath {
@@ -75,49 +56,10 @@ fn expression<'a>(id: u32, expressions: &[&'a Expression]) -> Result<&'a Express
         .copied()
         .ok_or_else(|| integrity("interface expression ID is absent"))
 }
-fn index_operand(
-    v: &AbstractValue,
-    expressions: &[&Expression],
-    abi: Option<CallAbi>,
-) -> Result<Option<(u8, u32)>> {
-    let AbstractValue::Expression { id } = v else {
-        return Ok(None);
-    };
-    let (register, stride) = match expression(*id, expressions)? {
-        Expression::EntryRegister { .. } => return Ok(None),
-        Expression::Integer {
-            op: IntegerOp::Mul | IntegerOp::Shl,
-            left: AbstractValue::Expression { id: arg },
-            right: AbstractValue::Constant { value },
-            ..
-        } if arg < id => {
-            let Expression::EntryRegister { register } = expression(*arg, expressions)? else {
-                return Ok(None);
-            };
-            let stride = if matches!(
-                expression(*id, expressions)?,
-                Expression::Integer {
-                    op: IntegerOp::Shl,
-                    ..
-                }
-            ) {
-                1u32 << (*value & 31)
-            } else {
-                *value
-            };
-            (*register, stride)
-        }
-        _ => return Ok(None),
-    };
-    Ok((stride != 0)
-        .then(|| word(register, abi).ok().map(|arg| (arg, stride)))
-        .flatten())
-}
 pub fn address_paths(
     v: &AbstractValue,
     expressions: &[&Expression],
     recipe: &FunctionRecipe,
-    abi: Option<CallAbi>,
     c: &mut dyn RunControl,
 ) -> Result<(Vec<AccessPath>, Option<AccessIssue>)> {
     let mut current = v;
@@ -137,29 +79,12 @@ pub fn address_paths(
                 }
                 previous = Some(*id);
                 match expression(*id, expressions)? {
-                    Expression::EntryRegister { register } => match word(*register, abi) {
-                        Ok(word) => Ok(AccessRoot::EntryWord {
-                            function: recipe.selector.clone(),
-                            word,
-                        }),
-                        Err(issue) => Err(issue),
-                    },
-                    Expression::Load {
-                        address: AbstractValue::EntryStack { offset },
+                    Expression::EntryRegister { .. }
+                    | Expression::Load {
+                        address: AbstractValue::EntryStack { .. },
                         width: 4,
                         ..
-                    } => {
-                        if abi.is_none() {
-                            Err(AccessIssue::AbiRequired)
-                        } else if *offset >= 0 && *offset % 4 == 0 && *offset / 4 < 56 {
-                            Ok(AccessRoot::EntryWord {
-                                function: recipe.selector.clone(),
-                                word: 8 + (*offset / 4) as u8,
-                            })
-                        } else {
-                            Err(AccessIssue::UnsupportedArgument)
-                        }
-                    }
+                    } => Err(AccessIssue::EntryArgument),
                     Expression::Load {
                         address, width: 4, ..
                     } => {
@@ -170,18 +95,6 @@ pub fn address_paths(
                     Expression::Load { .. } => Err(AccessIssue::NonPointerLoad),
                     Expression::CallResult { .. } => Err(AccessIssue::UnmodeledCallResult),
                     Expression::Integer { op, left, right } => {
-                        if *op == IntegerOp::Add {
-                            if let Some((word, stride)) = index_operand(right, expressions, abi)? {
-                                reverse.push(AccessStep::Index { word, stride });
-                                current = left;
-                                continue;
-                            }
-                            if let Some((word, stride)) = index_operand(left, expressions, abi)? {
-                                reverse.push(AccessStep::Index { word, stride });
-                                current = right;
-                                continue;
-                            }
-                        }
                         let constant = match (op, left, right) {
                             (IntegerOp::And, v, AbstractValue::Constant { value: u32::MAX })
                             | (IntegerOp::And, AbstractValue::Constant { value: u32::MAX }, v) => {

@@ -658,42 +658,6 @@ impl Application {
             ),
         }
     }
-    pub fn start_propose_effect_contract(
-        &self,
-        project: &Path,
-        request: EffectProposalRequest,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(
-            project,
-            ScenarioRequest::ProposeEffectContract { request },
-            budget,
-        )
-    }
-    pub fn start_propose_projection(
-        &self,
-        project: &Path,
-        request: ProjectionProposalRequest,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(
-            project,
-            ScenarioRequest::ProposeProjection { request },
-            budget,
-        )
-    }
-    pub fn start_propose_call_pair(
-        &self,
-        project: &Path,
-        request: CallPairProposalRequest,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(
-            project,
-            ScenarioRequest::ProposeCallPair { request },
-            budget,
-        )
-    }
     pub fn start_replay(
         &self,
         project: &Path,
@@ -754,24 +718,6 @@ impl Application {
                         Error::new(ErrorCode::NotFound, "project has no revision")
                     })?);
             }
-        }
-        if let ScenarioRequest::ProposeEffectContract { request } = &request {
-            request.contract.validate()?;
-            writer
-                .project()
-                .check_knowledge_base(&request.expected_base)?;
-        }
-        if let ScenarioRequest::ProposeProjection { request } = &request {
-            request.projection.validate()?;
-            writer
-                .project()
-                .check_knowledge_base(&request.expected_base)?;
-        }
-        if let ScenarioRequest::ProposeCallPair { request } = &request {
-            request.correspondence.validate()?;
-            writer
-                .project()
-                .check_knowledge_base(&request.expected_base)?;
         }
         let mut work = ScenarioWork {
             schema: 1,
@@ -866,66 +812,6 @@ impl Application {
             },
         )
     }
-    pub fn start_knowledge(
-        &self,
-        project: &Path,
-        change: &KnowledgeChange,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        let mut jobs = self.jobs.lock().unwrap();
-        let permit = self.admit(&mut jobs)?;
-        budget.validate()?;
-        write_control_message(std::io::sink(), change)?;
-        blobray_knowledge::validate_change(change)?;
-        if budget.working_memory_bytes.is_none() {
-            return Err(Error::new(
-                ErrorCode::InvalidRequest,
-                "working capacity missing",
-            ));
-        }
-        let project = std::path::absolute(project).map_err(storage_io)?;
-        let started_ms = self.host.now_ms();
-        let deadline_ms = started_ms
-            .checked_add(budget.timeout_ms)
-            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "deadline overflow"))?;
-        self.temporary.root(&*self.host)?;
-        let mut reservation = self.temporary.reserve()?;
-        let mut writer = Writer::open(&project)?;
-        writer
-            .project()
-            .check_knowledge_base(&change.expected_base)?;
-        let mut work = KnowledgeWork {
-            schema: 1,
-            run: ArtifactId::of_bytes(b"admission").as_str().parse()?,
-            project: OriginPath::from_path(&project),
-            change: change.clone(),
-            budget: budget.clone(),
-            started_ms,
-            deadline_ms,
-        };
-        write_control_message(&mut std::io::sink(), &work)?;
-        let (record, stage) = writer.register_operation(
-            budget,
-            self.host.owner()?,
-            RunOperation::Knowledge {
-                change: change.clone(),
-            },
-            |stage| reservation.attach(stage),
-        )?;
-        work.run = record.id.clone();
-        self.launch_durable(
-            &mut jobs,
-            project,
-            DurableAdmission {
-                writer,
-                record,
-                stage,
-                work: DurableWork::Knowledge(Box::new(work)),
-                permit,
-                reservation,
-            },
-        )
-    }
     /// Admit a read-only operation in the same owned job set as imports.
     pub fn start_query(
         &self,
@@ -956,11 +842,6 @@ impl Application {
             .checked_add(budget.timeout_ms)
             .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "deadline overflow"))?;
         let path = std::path::absolute(project).map_err(storage_io)?;
-        if let ReadQuery::Knowledge { revision, .. } = &mut query
-            && revision.is_none()
-        {
-            *revision = Project::open(&path)?.current_knowledge()?;
-        }
         if !matches!(
             query,
             ReadQuery::ExecutePlan { .. }
@@ -1031,7 +912,6 @@ impl Application {
             image: None,
             analysis: None,
             publication: None,
-            knowledge: None,
             execution: None,
             semantic_ir: None,
             assessment: None,
@@ -1221,7 +1101,6 @@ enum DurableWork {
     Ir(Box<IrWork>),
     Scenario(Box<ScenarioWork>),
     Execution(Box<ExecutionWork>),
-    Knowledge(Box<KnowledgeWork>),
     Import(ImportWork),
     Image(Box<ImageWork>),
     Function(Box<FunctionWork>),
@@ -1233,7 +1112,6 @@ impl DurableWork {
             Self::Ir(w) => w.started_ms,
             Self::Scenario(w) => w.started_ms,
             Self::Execution(w) => w.started_ms,
-            Self::Knowledge(w) => w.started_ms,
             Self::Import(w) => w.started_ms,
             Self::Image(w) => w.started_ms,
             Self::Function(w) => w.started_ms,
@@ -1245,7 +1123,6 @@ impl DurableWork {
             Self::Ir(w) => w.deadline_ms,
             Self::Scenario(w) => w.deadline_ms,
             Self::Execution(w) => w.deadline_ms,
-            Self::Knowledge(w) => w.deadline_ms,
             Self::Import(w) => w.deadline_ms,
             Self::Image(w) => w.deadline_ms,
             Self::Function(w) => w.deadline_ms,
@@ -1256,7 +1133,6 @@ impl DurableWork {
 enum Retained {
     Ir(blobray_store::RetainedIr),
     Execution(blobray_store::RetainedExecution),
-    Knowledge(Box<blobray_store::RetainedKnowledge>),
     Import(blobray_store::RetainedImport),
     Image(blobray_store::RetainedImage),
     Function(blobray_store::RetainedFunction),
@@ -1284,10 +1160,6 @@ fn supervise(
             )?,
             DurableWork::Execution(work) => crate::protocol::write_request(
                 std::fs::File::create(stage.join("execution.json")).map_err(storage_io)?,
-                work,
-            )?,
-            DurableWork::Knowledge(work) => crate::protocol::write_request(
-                std::fs::File::create(stage.join("knowledge.json")).map_err(storage_io)?,
                 work,
             )?,
             DurableWork::Investigation(work) => crate::protocol::write_request(
@@ -1352,7 +1224,6 @@ fn supervise(
             work,
             DurableWork::Ir(_)
                 | DurableWork::Investigation(_)
-                | DurableWork::Knowledge(_)
                 | DurableWork::Execution(_)
                 | DurableWork::Scenario(_)
         ) {
@@ -1405,15 +1276,6 @@ fn supervise(
                         &mut context,
                     )?)
                 }
-                (DurableWork::Scenario(_), PreparedReceipt::Knowledge(p))
-                    if matches!(record.effective_operation(), RunOperation::Knowledge { .. }) =>
-                {
-                    Retained::Knowledge(Box::new(writer.retain_knowledge(
-                        &record,
-                        &p,
-                        &mut context,
-                    )?))
-                }
                 (DurableWork::Scenario(_), PreparedReceipt::Function(p))
                     if matches!(
                         record.effective_operation(),
@@ -1451,13 +1313,6 @@ fn supervise(
                 (DurableWork::Execution(_), PreparedReceipt::Execution(p)) => Retained::Execution(
                     writer.retain_execution(&record, &p, &publication_memory, &mut context)?,
                 ),
-                (DurableWork::Knowledge(_), PreparedReceipt::Knowledge(prepared)) => {
-                    Retained::Knowledge(Box::new(writer.retain_knowledge(
-                        &record,
-                        &prepared,
-                        &mut context,
-                    )?))
-                }
                 (DurableWork::Investigation(work), PreparedReceipt::Investigation(prepared)) => {
                     Retained::Investigation(Box::new(writer.retain_investigation(
                         &record,
@@ -1518,9 +1373,6 @@ fn supervise(
         match retained {
             Retained::Ir(retained) => writer.publish_ir(&mut record, retained),
             Retained::Execution(retained) => writer.publish_execution(&mut record, retained),
-            Retained::Knowledge(retained) => {
-                writer.publish_knowledge(&mut record, *retained, &mut context)
-            }
             Retained::Investigation(retained) => {
                 let result = writer.publish_investigation(&mut record, *retained, &mut context);
                 record.diagnostics.as_mut().unwrap().progress = Some(context.snapshot());

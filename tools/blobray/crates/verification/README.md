@@ -30,16 +30,12 @@ abstract service internals are outside this implemented relation. Results concer
 compiled binding; they do not establish whole-domain equivalence or qualification.
 See [selected comparison contracts](../../docs/design/contracts.md#selected-final-memory-and-comparison-relations).
 
-An explicit `reviewed_calls` selection supplies immutable accepted call pairs to
-this pure verifier. The shared bounded domain index maps each side's physical
-boundary to a selected pair and applies exact/selected/ignored physical words.
-Unlisted calls are explicitly exact or excluded, with raw evidence retained.
-Pairs can relate distinct targets; they do not infer ABI/layout or pointer
-normalization. Store independently checks selected reviews and uses the same
-index for knownness admission. No knowledge lookup occurs inside verification.
+A relation that compares calls compares every captured call physically: the
+same target and every captured argument word, with raw evidence retained. It
+infers no ABI, layout or pointer normalization.
 
 `events.timeline` selects normal reads/writes, atomics and conditional branches.
-Guest memory records and declared call/service effects share typed normal-memory
+Guest memory records and declared call effects share typed normal-memory
 comparison without duplicate bookkeeping events. Dynamic allocation compares one
 zeroed requested span, excluding inaccessible capacity; empty spans add no memory
 effect. Bulk initialization is distinct from individual stores. Memory sites/origins remain

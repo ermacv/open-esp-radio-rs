@@ -8,7 +8,7 @@ authority. Edges to callees never schedule analysis of another function.
 
 `registers` recognizes bounded saved load/mask/store expression shapes using
 the shared borrowed fact index. It reports bit-selection observations with their
-original physical load width; application owns address scope and knowledge matching.
+original physical load width; application owns address scope.
 It never infers register geometry, hardware field meaning or safe RMW semantics.
 
 The private `values` module owns finite-lattice register states and a bounded
@@ -65,8 +65,8 @@ physical access paths without storage, linking or binding authority. Cycles are
 reported as structural edges; unknown addresses remain explicit.
 
 The flow module computes bounded iterative reachability over caller-selected
-unambiguous arcs. It returns predecessor indexes and depths; storage and reviewed
-path authority stay with application/knowledge.
+unambiguous arcs. It returns predecessor indexes and depths; storage and path
+authority stay with application.
 
 `trace` consumes supplied original local IR and physical call links. Borrowed
 per-function indexes are reused across invocations; admitted expression memoization,

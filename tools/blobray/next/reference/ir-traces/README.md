@@ -11,8 +11,7 @@ and `FunctionManifest` remain the semantic representation. Building profiles doe
 not reread live binaries or schedule analysis; prepare an image and analyze
 it first when linked addresses and callees are required.
 
-A request contains `scope` (frozen `revision`, `publications`, `analyses`, optional
-`knowledge`) and 1–32 uniquely named `profiles`. Each profile supplies `name`,
+A request contains `scope` (frozen `revision`, `publications` and `analyses`) and 1–32 uniquely named `profiles`. Each profile supplies `name`,
 `include_reachable`, and `roots`: `{"kind":"all"}`, `{"kind":"name-prefix",
 "prefix":[112,104,121,95]}` (raw name bytes), or `{"kind":"analyses",
 "analyses":["<analysis-id>"]}`. Prefix names come from selected publication
@@ -29,13 +28,10 @@ which `trace` selects. `ReadQuery::SemanticIr` / `QuerySink::semantic_ir` read i
 through the library API. The saved index
 references immutable original streams; a read expands every original fact
 with its analysis ID and record ordinal. It includes original coverage, physical
-links and ambiguity, profile memberships/roots, and the explicitly selected frozen
-knowledge entries for the source revision, retaining their review state.
+links and ambiguity and profile memberships/roots.
 
 Only an unambiguous selected physical target extends call closure. A profile with
-`include_reachable:false` keeps its root selection. Analyses cited as evidence by
-selected knowledge are retained transitively as `provenance_only` functions,
-without adding them to a profile. Cycles use bounded
+`include_reachable:false` keeps its root selection. Cycles use bounded
 iterative worklists. No unresolved call is replaced by another engine or a guess.
 
 Manifest schema 1 / policy 1 separately counts roots, selected functions, partial

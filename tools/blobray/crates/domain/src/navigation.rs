@@ -12,8 +12,6 @@ pub struct NavigationScope {
     pub revision: RevisionId,
     pub publications: Vec<PublicationId>,
     pub analyses: Vec<FunctionAnalysisId>,
-    /// None means no reviewed declarations, never the current head.
-    pub knowledge: Option<KnowledgeRevisionId>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -33,16 +31,9 @@ pub enum NavigationFilter {
         direction: CallDirection,
     },
     Object {
-        occurrence: Box<KnowledgeOccurrence>,
+        occurrence: Box<Occurrence>,
         selector: DataSelector,
         access: Option<AccessDirection>,
-    },
-    Context {
-        assertion: AssertionId,
-        field: Option<ContextFieldKey>,
-        access: Option<AccessDirection>,
-        /// Required for unknown signatures; supplied known mappings must agree with the signature.
-        arguments: Vec<ArgumentWord>,
     },
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -75,8 +66,6 @@ pub struct LocationMatch {
     /// Relative to the selected object span or field start.
     pub offset: i64,
     pub partial_overlap: bool,
-    pub field: Option<String>,
-    pub argument: Option<u8>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -87,11 +76,6 @@ pub enum NavigationRecord {
         address_space: CodeAddressSpace,
         coverage: FunctionCoverage,
         semantic_complete: Option<bool>,
-    },
-    Declaration {
-        function: NavigationFunction,
-        assertion: AssertionId,
-        state: AssertionState,
     },
     Call {
         caller: NavigationFunction,
@@ -136,24 +120,10 @@ pub struct NavigationSummary {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ArgumentWord {
-    pub argument: u8,
-    /// ABI word position: 0..7 are a0..a7, 8 is the first incoming stack word.
-    pub word: u8,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AccessDirection {
     Readers,
     Writers,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ContextFieldKey {
-    pub argument: u8,
-    pub name: String,
 }
 impl FunctionLocation {
     pub fn allocated_bytes(&self) -> u64 {

@@ -69,7 +69,6 @@ impl Project {
             ("analyses", &mut usage.analyses),
             ("publications", &mut usage.publications),
             ("images", &mut usage.images),
-            ("knowledge_revisions", &mut usage.knowledge_revisions),
             ("runs", &mut usage.runs),
         ] {
             let mut statement = connection

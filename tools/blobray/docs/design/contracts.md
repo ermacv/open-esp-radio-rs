@@ -16,11 +16,11 @@ comparison. `ResultAssessment` is shared by `QuerySummary::assessment`,
 | Field | Meaning | Applicable operations |
 | --- | --- | --- |
 | `coverage: {subject, status, scope}` | `complete`, `partial` or `unknown` for the identified result, never an unscoped boolean | Inventory revision, function analysis, investigation publication, execution evidence or static-target audit |
-| `check` | `pass`, `fail` or `inconclusive` policy decision | Doctor, link-plan, knowledge validation and static-target audit |
+| `check` | `pass`, `fail` or `inconclusive` policy decision | Doctor, link-plan and static-target audit |
 | `comparison` | `MATCH`, `DIFF` or `INCOMPLETE` under the retained relation | Concrete comparison only |
 
 A failed/cancelled/limited attempt has no assessment. Successful listings,
-selection, inspection, image preparation, knowledge mutation and exports have an
+selection, inspection, image preparation and exports have an
 empty assessment unless a specific result contract supplies one. A function
 without semantic analysis has unknown semantic coverage even if decoding is
 complete. A partial inventory returns partial coverage in both query summary and
@@ -42,8 +42,8 @@ Unknown structure remains explicit and does not become a zero-byte observation.
 `PASS` for target auditing covers resolved static transfers only. Unknown indirect
 transfers remain separately counted. Comparison retains its explicit relation:
 per-case event channels, low/high return words, exact paired final-memory
-selections, physical or reviewed call correspondence and the selected internal
-physical timeline, explicitly reviewed layout/ABI projections and reviewed effect contracts.
+selections, physical call observations and the selected internal physical
+timeline, explicitly reviewed layout projections and reviewed effect contracts.
 
 ### Durable and ephemeral acquisition
 
@@ -108,9 +108,7 @@ it does not reserve a fixed large allowance for each relocation.
 
 `AdmittedVec` admits simultaneous old/new buffers before growth, fails without
 changing existing contents and releases its reservation on drop. Research indexes
-are local to one run. Store's `knowledge_snapshot` verifies every selected event
-and evidence root once, then folds review/supersession into admitted owned entries.
-No global cache, scheduler or allocator exists. `WorkingMemory` remains
+are local to one run. No global cache, scheduler or allocator exists. `WorkingMemory` remains
 capacity admission, not an RSS meter or a claim of zero system allocations.
 Fixed phase/counter diagnostics continue across worker/coordinator handoff.
 
@@ -127,11 +125,10 @@ identity at a subsystem boundary.
 | `ObjectId` | Artifact identity plus standalone-object or archive payload ordinal |
 | `SymbolId` | Object identity plus symbol-table kind, table section and entry index |
 | `RevisionId` | Immutable source manifest: ordered input roles/bindings, captured occurrences, target and inventory producer |
-| `KnowledgeRevisionId` | Immutable review event chain, independently selected by analysis recipes; does not change a source revision |
 | `PublicationId` | Immutable completed result root for an identified revision; independent of the mutable current-publication reference |
 | `PlanId` | Immutable operation recipe bound to a revision and requested obligations |
 | `RunId` | One execution attempt of a plan; retries have separate run identities |
-| `SubjectId` | Reviewed semantic subject; association with physical occurrences is explicit |
+| `SubjectId` | Caller-assigned semantic subject of a reviewed contract; association with physical occurrences is explicit |
 
 Archive payload ordinals preserve independent occurrences even when names and
 bytes repeat. An identical content object may be physically deduplicated while
@@ -156,9 +153,8 @@ selected target; no narrowing to RV32 occurs in generic identities or storage.
 
 Every observation records its subject, input identities, producer identity,
 applicability and completeness. An evidence reference identifies both record and
-relevant location within it. Assertions additionally record the review decision,
-accepted interpretation and supporting evidence. A missing supporting record
-cannot be reconstructed from a display label.
+relevant location within it. A missing supporting record cannot be
+reconstructed from a display label.
 
 ## Resource owners
 
@@ -192,9 +188,8 @@ implementation. Human output is a renderer of those results.
 | `plan` | Snapshot, operation request and resource budget | Immutable plan, dependencies, obligations and missing prerequisites; no analysis publication |
 | `start_run` | Plan and application capabilities | `RunHandle`; executes the recorded plan rather than resolving new inputs |
 | `query` | Snapshot and typed selector | Observations/projections with provenance, completeness and diagnostics; no implicit analysis or repair |
-| `review` | Base revision, assertion changes, decision and evidence references | Validated knowledge transaction producing a new revision or a conflict |
 | `compare` | Snapshot, both compiled implementations, scenario and relation | A supervised execution run with explicit claim scope |
-| `export` | Snapshot, selected records, destination and overwrite policy | Verified bundle/manifest; never changes accepted knowledge |
+| `export` | Snapshot, selected records, destination and overwrite policy | Verified bundle/manifest; never changes retained evidence |
 
 `RunHandle` exposes status, typed progress events, cancellation and completion
 waiting. Every event identifies its run and phase. A late result from an older
@@ -270,12 +265,6 @@ digests. Later parsing/linking never follows those original paths. Materialized
 link inputs preserve membership/order and record any reconstructed container as
 a derived artifact, retaining a mapping to the original member occurrences.
 
-Reviewed text packs remain portable, reviewable source material suitable for
-Git. Loading or editing a pack does not mutate accepted knowledge in an existing
-revision. The review operation validates and captures a new immutable version;
-export materializes a selected version. An external edit must be imported or
-reviewed explicitly before it affects a run.
-
 ## Artifact inspection and image preparation
 
 Artifact inspection returns every enumerated payload member and its parse outcome.
@@ -314,7 +303,7 @@ Identity includes implementation/version and semantic recipe inputs, not just
 the executable's filename. Failed tool diagnostics and exit outcome are attached to the
 run; successful bounded stderr and exit status are retained in the image manifest. Unresolved relocations are explicit blockers, never valid placeholder data.
 
-## Analysis, knowledge and verification ports
+## Analysis and verification ports
 
 The implemented [function operation](../../next/reference/analysis/README.md#function-analysis-contract)
 consumes an imported occurrence or a symbol in a selected prepared image, with an
@@ -338,11 +327,9 @@ and transfer limitations are documented by Next, without claiming execution
 or interprocedural completeness.
 
 
-Knowledge validation checks subject identity, applicability, evidence existence,
-claim strength and conflicts. It produces an acceptance candidate; the application
-commits it with an expected base revision. Correspondence and lineage analyses
-provide proposed associations, while reviewers accept their intended meaning.
-A changed body or ABI does not inherit an old proof merely because its name or
+Reviewed interpretations such as effect contracts and layout projections are
+reviewed through Git outside Blobray and reach a comparison by content. A changed
+body or ABI does not inherit an old contract merely because its name or
 normalized representation matches.
 
 Verification receives two identified compiled implementations, explicit input
@@ -371,7 +358,7 @@ The implementation uses SQLite transactions for metadata and durable immutable
 object storage for payloads. Pack layout, compression and indexes are internal
 storage choices; no public ID contains a pack offset or database row number.
 
-Store retains every revision, publication, knowledge event, run record and
+Store retains every revision, publication, run record and
 evidence payload. It has no cache, pruning, compaction or garbage collection,
 so nothing retained is ever reclaimed. An active read lease protects the
 referenced bytes through publication. Persisted records and transient process
@@ -384,7 +371,7 @@ Re-execution additionally requires the recorded tools/providers; their absence
 is an explicit limitation, not permission to substitute current versions.
 
 Disk quota failure prevents a new write that cannot complete; it never deletes
-retained knowledge or evidence to make an operation fit.
+retained evidence to make an operation fit.
 
 ## Publication and recovery
 
@@ -631,20 +618,13 @@ and store owns retained bytes. Unknown values, incomplete effects and failed
 resource admission are distinct outcomes. No hardware knowledge or executable
 memory environment is acquired implicitly.
 
-### Implemented review and preservation boundary
+### Implemented preservation boundary
 
-[Blobray Next review and preservation](../../next/reference/knowledge-review/README.md#knowledge-and-preservation)
-owns the implemented wire contracts. `KnowledgeRevisionId` identifies review
-events, independently of the import `RevisionId`; existing import IDs retain
-their original meaning. `SubjectId` is a project-scoped semantic key. Claims
-retain their exact source occurrence and typed evidence references. Accepted
-hypotheses do not become observations or proof. Selection of an accepted function
-extent is explicit in an investigation plan.
-
-Storage metadata and journal format support follow the result-assessment contract above.
-Backup/restore preserve source, analysis, publication and knowledge identities.
-Existing target executable ABI/interface validators and register-publication policies remain outside
-this implemented review vocabulary. Reviewed MMIO region/register interpretation is implemented.
+[Blobray Next preservation](../../next/reference/preservation/README.md#backup-and-restore)
+owns the implemented wire contracts. Storage metadata and journal format support
+follow the result-assessment contract above. Backup/restore preserve source,
+analysis, publication and execution identities. Register publication remains
+with the independent register tool.
 
 ### Implemented concrete execution boundary
 
@@ -724,12 +704,12 @@ request limits, memory initialization, schemas and unsupported behavior.
 
 ### Captured data interpretations
 
-`DataRequest` binds a `KnowledgeOccurrence`, explicit ranges and retained analysis
+`DataRequest` binds an `Occurrence`, explicit ranges and retained analysis
 IDs. Artifacts owns the verified ELF buffer and prepared section metadata; each
 `DataView` borrows them for one callback. Application resolves the occurrence
 once, owns the query budget and streams observations. Store neither parses ELF
 nor interprets a table. Query delivery owns its private exported files until
-transfer or drop, and does not publish knowledge as a side effect.
+transfer or drop, and publishes nothing as a side effect.
 
 Data exports retain the captured object, selected bytes and analysis coverage.
 Original paths are
@@ -744,7 +724,7 @@ are never excluded merely by their offset, and invalid known extents are rejecte
 Prepared function/data views select SHT_SYMTAB or SHT_DYNSYM by physical table
 kind, section and entry index; conventional section names are not identities.
 One table of each kind is supported. Missing, duplicate or mismatched tables and
-invalid indices fail before publishing an analysis or accepting knowledge.
+invalid indices fail before publishing an analysis.
 Dynamic symbols in static RV32 ET_REL/ET_EXEC remain ordinary captured metadata;
 they grant no dynamic-loading or TLS support. Static relocations keep their own
 `sh_link` target table independently of the selected function/data symbol. A
@@ -768,11 +748,8 @@ application's shared occurrence acquisition owns source/image/revision identity.
 No range is inferred from neighbors, padding or disassembly. Prepared views keep
 the existing callback lifetime and admitted memory owner.
 
-`KnowledgeClaim::ExecutableRange` uses a symbol-independent occurrence and exact
-section/extent. Proposal and acceptance validate the same captured bytes as
-analysis. Overlapping differing ranges in the same section conflict. Reviewed
-boundaries supply native `InvestigationRequest.ranges`; unused or duplicate
-selections fail planning, invalid bytes produce blocked function outcomes. Store
+Explicit ranges enter investigations through `InvestigationRequest.ranges`;
+unused or duplicate selections fail planning, invalid bytes produce blocked function outcomes. Store
 validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
@@ -781,8 +758,8 @@ Function and investigation records carry these identities under the
 [current formats](../../next/reference/interfaces-formats/README.md#current-formats). Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover invalid ranges and
 explicit range planning;
-`reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
-prepared-image review and virtual addresses.
+`explicit_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
+prepared-image ranges and virtual addresses.
 
 ### Captured pointer-table observations
 
@@ -802,7 +779,7 @@ Pointer values distinguish null, numeric address, defined symbol plus addend,
 external symbol plus addend and a typed unresolved transformation. Linked words
 must agree with known R_RISCV_32 results; captured bytes are never patched. Address
 values establish neither executable mappings nor function/ABI boundaries.
-Data manifest schema 3 includes producer identity and classification counters;
+Data manifest schema 4 includes producer identity and classification counters;
 resource failure aborts the query, never truncates a successful table.
 
 Next pointer regressions cover null, address, defined and external slots,
@@ -835,108 +812,14 @@ Contract regressions: analysis `value_sets::tests` and
 `values::tests::joins_and_loops_converge_independently_of_visit_order`; Next
 `persisted_alternatives_are_flat_bounded_and_canonical`.
 
-## Conditional interface declarations
-
-`KnowledgeClaim::Interface` owns one bounded boxed `InterfaceContract`. Domain
-owns roots, paths, layout/slot signatures, index domains, guards and semantic keys.
-Knowledge performs pure layout/ABI/domain/guard validation and acceptance conflict
-checks. Application uses the shared captured-occurrence owner for all proposals
-and reviews: symbol roots are physical data-symbol identities, argument roots
-validate a real symbol or explicit function range, section roots validate a physical
-section location, and payload guards match the
-actual captured object bytes. Optional occurrence symbols have the same validation
-as data export. No caller reopens a live path or guesses a symbol by name.
-
-Accepted interface declarations are conditional assertions. Runtime guards and
-index ranges are preconditions, never observed execution facts. `semantic` is a
-reviewed subject key, not a model/callee resolver. Literal-root bounds and static
-range overlap are checked; different dynamic dereference paths do not establish
-runtime non-aliasing. Slot ABI support is an explicit RV32 integer/pointer,
-nonvariadic profile; an unknown slot signature is represented by `None`.
-Declaration of an argument position does not imply that an
-execution engine supports its ABI placement.
-
-The existing knowledge lifecycle supplies expected-base admission, review states,
-immutable revisions, query/export and atomic publication. Store accounts the
-boxed contract and variable capacities when retaining knowledge snapshots. The
-same 64 KiB event bound applies; no new catalog, compatibility format or execution
-workflow exists. Source-free reopening retains exact interface/evidence
-identities; knowledge JSON export remains a reference export, not a binary backup.
-
-Regressions: knowledge `interfaces::tests` checks guards/domains/ABI and physical
-static overlap; Next `native_interface_roots_validate_review_and_export_without_sources`
-checks generic admission, every root kind, symbol-less arguments, thin members,
-resource failure and source-free CLI review/export.
-
-
-### Function/context declaration boundary (implemented profile)
-
-A function contract belongs to one exact captured function selector and occurrence.
-It shares the integer/pointer call-signature vocabulary with interface slots; it
-adds function/return roles, named argument contexts and field layouts, applicability
-and explicit preconditions. A missing signature stays unknown. Context offsets are
-signed and bounded by an explicit extent; fields have byte widths, optional types
-and declared read/write roles. These are reviewed interpretations, not substituted
-analysis facts, allocation ownership or execution permissions.
-
-Typed argument predicates constrain raw ABI bit patterns (inclusive ranges and
-masked equalities); context predicates constrain explicitly located bytes. Bounds,
-contradictions and unsupported representations must fail admission. An uninterpreted
-named assumption remains attributed text, never an evaluated predicate. Review does
-not turn any precondition into an observed runtime fact. Pure validation and conflict
-checks belong to knowledge, captured selector/evidence validation to application,
-and immutable review publication to store. No frontend owns a second validator.
-
-Saved facts do not change when a function contract is accepted. Read/export must
-retain exact occurrence, evidence and review identities after source removal. A
-contract with the same physical selector and incompatible interpretation requires
-explicit review replacement. Alias equivalence cannot be inferred from a display
-name. Narrative paths and event-route witnesses are separate assertions with their
-own evidence; this declaration alone does not prove an executable route.
-
-
-`KnowledgeClaim::Function` boxes one `FunctionContract`; `CallSignature`,
-`CallArgument` and `AbiValueType` are shared with interface slots. Application
-validates the exact symbol or executable range through the captured prepared-object
-owner, including image and thin-member occurrences. A data symbol cannot stand in
-for a function. The signature has at most 32 arguments; the contract has at most
-16 contexts, 128 fields in total and 64 preconditions, inside the same 64 KiB event
-limit. Store accounts boxed and variable capacities with its knowledge snapshot.
-
-The RV32 integer profile allows 8/16/32/64-bit integer and pointer values. Context
-fields may have unknown types; known types must match their widths. Packed fields
-are permitted but overlapping field declarations require another explicit profile
-and are rejected here. A known signature's context argument must be a pointer;
-unknown signatures do not invent arity or return types. A return role requires an
-explicit non-void return type. Context read/write roles are declarations, never
-substitutes for retained observed accesses.
-
-Argument range/mask predicates require explicit signature types. Bit ranges are
-unsigned even for signed ABI values, and non-null pointer types exclude zero.
-Admission intersects ranges and masks using a fixed 64-bit tight-bound solver;
-it does not enumerate the input domain. Little-endian context predicates reject
-contradictions across overlapping byte/halfword/word/doubleword views. Assumptions
-have unique attributed IDs and remain uninterpreted. None of these checks asserts
-runtime satisfaction or modifies analysis identity/results.
-
-Contract regressions: knowledge `functions::tests` independently enumerates small
-predicate domains and checks 64-bit boundaries, layout/type errors and contradictory
-predicates; Next
-`function_contracts_validate_review_and_export_exact_symbols_ranges_and_contexts`
-and `image_function_contracts_reject_data_symbols_and_preserve_review_after_source_removal`
-cover ordinary/thin/image capture, shared CLI/API, resource/conflict atomicity and
-source-free review/export. Signature validation also remains covered by the native
-interface regressions through the shared `calls` validator.
-
-
 ## Register research and source publication
 
-Register discovery reads an explicit saved analysis/publication scope and an
-optional frozen knowledge revision. Candidate addresses, instruction access widths
-and expression masks are observations, not physical register/field declarations.
-Unknown addresses, alternatives, partial analyses and unavailable members remain
-visible. A catalogue matches declarations only in their exact source revision and
-object applicability; no hardware meaning is inferred from a coincident address.
+Register discovery reads an explicit saved analysis/publication scope.
+Candidate addresses, instruction access widths and expression masks are
+observations, not physical register/field declarations. Unknown addresses,
+alternatives, partial analyses and unavailable members remain visible. No
+hardware meaning is inferred from a coincident address; the reviewed register
+model owns register identity.
 
 The independent register owner initializes editable source models from explicit
 peripheral geometry and imports CMSIS-SVD into the same native source format.
@@ -960,9 +843,7 @@ partial function coverage remain separate evidence. Cycles are finite graph edge
 not input-controlled host recursion. Packaging does not certify an executable path.
 
 One operation owns admitted profile/graph indexes, temporary index output and a
-staged immutable manifest. Original function streams remain immutable; their
-transitive saved analysis provenance is retained separately from profile membership.
-An evidence-only dependency never silently becomes a selected callee. The normal
+staged immutable manifest. Original function streams remain immutable. The normal
 supervisor validates/promotes the closure and publishes the result with the run;
 capacity, cancellation or validation failure cannot publish an incomplete bundle.
 Trace extraction reads original facts with exact analysis and record identities
@@ -1087,147 +968,6 @@ selects MMIO/fence/delay, return words, final memory, physical/reviewed calls an
 internal timeline channels; excluded model records remain available for inspection. Delay values are assumptions, never wall-time or
 hardware timing evidence. All clients use the existing execution/replay lifecycle.
 
-## Runtime interface instances
-
-`Invocation.tables` selects exact `InterfaceReview` pairs: a retained knowledge
-revision and an accepted interface assertion in that snapshot. A later knowledge
-head cannot silently change the selection. Missing, pending, rejected, mismatched
-source/revision and incompatible layout selections fail before publication.
-Review remains a structural/applicability claim; placing a runtime table is an
-explicit execution assumption, never hardware qualification.
-
-Application `execution_interfaces` resolves selected roots from captured ET_EXEC
-objects. Literal addresses, allocated sections, physical defined/absolute symbols
-with checked addends, and exact symbol/range entry-word selectors are supported.
-Entry-word selectors must name the installing invocation's entry. Accepted contracts
-supply pointer width (RV32 four bytes), ABI, exact slot offsets, layout size, guards
-and bounded index domains. Captured-payload guards must match the acquired object.
-Objects are prepared once per selected knowledge snapshot/object group; their
-buffers and snapshot are released before mutable sessions. Only admitted resolved
-roots, contracts and placement declarations remain.
-
-Session `runtime_tables` owns each instance and its phase/session lifetime. The
-entire table range is a fresh writable normal-memory mapping, disjoint from other
-owned mappings and modeled ports. Seed bytes initialize padding; explicit slots
-initialize pointers. Pointer installation writes the table base to existing
-writable normal-memory cells. Phase instances and their bytes are released before
-the next phase; session instances survive warm transitions until cold reset/end.
-Redeclaring a live id or overlapping ownership fails. Closed instance slots may be
-reused; lifecycle indices are scoped to their live interval and implementation.
-
-Roots evaluate bounded offset/index/pointer-load paths over current known normal
-memory, with the installing phase's initial ABI words. Warm phases do not silently
-rebind those words. Required conditions are checked at installation, warm entry and
-before each associated indirect use. `conditions_checked` records such successful
-checks, not a perpetual predicate over every instruction. Runtime guard mutations
-after the final use do not retroactively invalidate that use. Unknown root/pointer,
-overflow, violated index domain or failed guard remains an explicit interface gap.
-No MMIO read is performed merely to evaluate a root or guard.
-
-Slot targets explicitly select null, captured executable address or live external
-call model address. Model slots require reviewed semantic and signature metadata;
-the call declaration must supply enough physical ABI words for its named integer/
-pointer arguments. Variadic/aggregate lowering remains explicit. A model never
-appears because a symbol name or semantic label looks familiar. Captured-code
-substitution still requires the external-call boundary declaration. Neither a
-reviewed signature nor a matching pointer proves the callee's implementation.
-
-Guest stores, successful SC/AMO, model outputs and pointer installation update
-current slot values and emit lifecycle writes. A bounded sorted target index is
-rebuilt when values change. Eligible indirect transfers require one unique live
-slot with that value, checked conditions, and available code or an explicitly
-bound reviewed model. Null, absent, unavailable and ambiguous targets are distinct
-incomplete outcomes. The association is by current value; it does not fabricate
-load/register provenance. Direct transfers, canonical returns and the reserved
-root-return sentinel keep their ordinary execution paths. Observe-call goals
-retain their earlier boundary: they complete before callee dispatch.
-
-Domain carries declarations, stable definition identities, gaps and lifecycle
-records; the RISC-V backend supplies the indirect/direct transfer fact through its
-existing call port. Application owns memory and dispatch. Store validates the
-selected accepted review, definition/placement identity, ordered initialization,
-pointer counts, writes/current-target associations, checked conditions and closure
-before retention and when reading. Store does not re-execute code. Initialization
-or condition failures cannot turn other unfinished instances into complete ones.
-`ExecutionObservation::completed` requires both the code goal and all due table,
-call and device obligations. Known selected differences still produce DIFF.
-
-There are at most 128 live tables per side, 64 reviewed slots and 128 pointer cells
-per table, further limited by request size and shared work/memory/event/disk
-budgets. Instance metadata, roots, slot indexes, normal bytes and knownness buffers
-are admitted. No global allocator/cache or new runtime crate owns this state.
-Events and closure snapshots share the existing atomic execution publication;
-capacity/cancellation failures publish no successful prefix. Source-free replay
-reuses the frozen request, reviews and captured mappings in the project.
-
-## Stateful FIFO services
-
-`Invocation.services` declares bounded `FifoService` owners. Each declaration
-contains a stable id, applicability, phase/session lifetime, nonzero opaque handle,
-item width (1/2/4 bytes), capacity, ordered initial items and exact `FifoBinding`s.
-A binding selects a live reviewed runtime table id/slot, explicit captured/unmapped
-call boundary, physical ABI word count, handle word and operation. Its slot must
-select `RuntimeSlotTarget::Service` at that address, with reviewed semantic and
-signature metadata. No service is inferred from a function or RTOS name.
-
-Application `fifo_services` owns admitted ring buffers, instance definitions,
-counters and sorted target indexes. Session `execution_services` validates the
-selected association and complete effects; the shared call-word helper reads
-register/stack arguments. The RISC-V backend retains instruction ownership and
-ordinary ABI clobbers, and receives typed service gaps or successful goal events
-through its existing call port. No service state belongs to the backend or frontend.
-
-Enqueue reads either a physical argument word or a known aligned private-stack
-item through a pointer word. It rejects values outside the declared width. Space
-permits appending at the ring tail; full leaves the queue unchanged and returns the
-explicit full response. Optional private-stack wake output receives one for an
-empty-to-nonempty transition, otherwise zero, including full. This is a modeled
-notification value, not proof of a sleeping task or actual wakeup. Dequeue writes
-and removes the oldest item, or returns the explicit empty response without touching
-output. Length returns depth. Successful responses set a0 and leave a1 unknown.
-
-Handle, input, output geometry and permissions are checked before any queue or
-output mutation. A private-stack pointer cannot use normal RAM, table memory or
-MMIO as a fallback. Unknown required words/data, wrong handle or width and invalid
-pointers produce typed incomplete evidence. Full and empty are ordinary responses;
-a queue has no implicit drain-at-closure obligation. Side effects remain private
-to the operation until the common atomic publication; resource or cancellation
-failure cannot publish a successful prefix.
-
-Phase owners release rings after phase evidence; session owners retain independent
-state across successful warm phases. Cold reset releases all owners before new
-state is allocated. A live id/handle or target cannot be redeclared; closed instance
-indices are reusable. Each implementation has separate queues. An incomplete phase
-blocks dependent warm phases. Service and table lifetimes are explicit: calling a
-service whose table/binding has expired cannot silently restore that binding.
-
-The `observe-dequeue` goal selects service id and optional value in the current
-phase. Application resolves a live owner; completion is signaled only after its
-successful matching dequeue and output write. Empty dequeue, other services or
-other values cannot satisfy it; returning first is `goal-not-reached`. It does not
-require executing the remainder of the caller/callee. Return comparison is disabled
-for this goal. Code-goal completion still requires all due device/call/table/service
-obligations to make the complete observation true.
-
-Fixed-size service-call, argument, input, output and result events retain selected
-binding, known values, transition/depth and returns. Closure snapshots retain
-identity, operation count, depth and issue. Store validates initialization and
-reviewed slot selection, ordered values/full/empty/wake/returns, private-stack
-ranges, queue depth/counts, closure and exact successful goal event. Its admitted
-ring reconstruction verifies transcripts; it does not re-execute guest instructions
-or prove unknown pointer provenance. Retained current-target association retains
-its separately documented limit.
-
-There are at most 128 live FIFO services per side, 64 bindings per service and
-65,536 items per queue, further constrained by request and working capacity.
-Queue rings and target/instance indexes are admitted in execution and retained
-validation. Enqueue/dequeue use constant-time ring operations; no front removal
-shifts all remaining items. Request, event, work/deadline and temporary disk budgets
-remain shared with the full scenario. The selected comparison relation retains service evidence but does not implicitly
-compare queue internals or callbacks; explicit code returns and selected normal
-memory remain part of the declared relation.
-Device FIFO transcripts remain a distinct port model from these stateful services.
-
 ## Selected final memory and comparison relations
 
 Every comparison case owns a `ComparisonRelation`; single-implementation cases
@@ -1295,10 +1035,10 @@ The backend invokes the observation port on x1/x5 transfers and optionally x0
 noncanonical transfers. Canonical x1/x5 returns and the root return sentinel are
 excluded. Opt-in x0 transfers are tail candidates: this convention also includes
 intrafunction jumps and does not prove function boundaries. Capture precedes
-observe-call goal completion, interface checks, model/service dispatch and callee
+observe-call goal completion, model dispatch and callee
 code. It never invokes the destination. A `call-transfer` header retains physical
 site/target, direct/indirect form, tail flag, current SP, word count and selected
-target kind (captured code, call model, FIFO service or unavailable). Target kind
+target kind (captured code, call model or unavailable). Target kind
 describes the available boundary, not proof that its body executed; the request,
 model identities and adjacent dispatch evidence retain that distinction.
 
@@ -1330,73 +1070,8 @@ borrows grouped slices without allocating or rescanning preceding calls. The
 [capture regressions](../../next/tests/execution/capture.rs) exercise application,
 CLI, persistence, word/effect differences and resource atomicity;
 [store validation](../../crates/store/src/execution_capture.rs) rejects malformed
-groups. Reviewed semantic pairs require a separately selected accepted correspondence;
-ABI/layout projections require their explicit reviewed relation below. Neither is
-inferred by this physical profile.
-
-### Reviewed call correspondence
-
-A native knowledge proposal owns an ordered vendor/replacement pair, explicit
-argument policy and applicability/reason. Each endpoint names its exact source
-revision/object and either a validated executable symbol/address or an explicit
-call-model/FIFO definition and binding. The proposal's primary occurrence is the
-vendor endpoint; application validates and retains both physical occurrences.
-Review does not assert modeled boundaries executed captured code.
-
-A comparison selects immutable accepted assertion IDs from explicit knowledge
-revisions. Application prepares the selected contracts once before execution;
-store verifies their selected review/source/definition applicability on publication
-and reopening. Execution retains the resolved contracts with their review IDs.
-There is no latest-head, name, address-only or unreviewed fallback. Exact policies
-select all declared words; selected policies name physical word indices; ignored
-arguments remain retained. ABI/layout reinterpretation is a separate relation.
-Unlisted calls require an explicit exact-or-excluded policy and stay in raw
-capture. Ambiguous endpoint/pair selections fail before publication.
-
-The implemented relation uses `reviewed_calls: {pairs, unlisted}` alongside
-`calls: false`; selecting both physical and reviewed call modes is invalid. Each
-pair reference has `knowledge` and `assertion`. At most 128 distinct selected
-reviews are retained per execution. `ExecutionManifest.call_pairs` contains one
-admitted copy per selected review, verified against the immutable accepted claim
-at publication and read time. Existing 64 KiB request/manifest bounds still apply;
-large selections fail explicitly without partial publication. The store owns
-review acquisition and admitted copies; application owns execution and physical
-proposal validation; the verifier receives only borrowed resolved contracts.
-
-A code endpoint requires its occurrence's exact symbol and executable address,
-including zero-sized physical symbols. A model endpoint uses the canonical
-`CallDeclaration::identity` and complete `CallBinding`; a service endpoint uses
-`FifoService::identity`, complete binding and `binding_index` (ordinal in the
-service's bindings array, not a table byte offset). A modeled endpoint has no
-function symbol. Its occurrence anchors captured execution context; the definition
-digest is an explicit conditional assumption, not a claim that this source
-contains the modeled implementation. The declaration remains in the execution
-request, where its identity, lifetime and active binding are checked. A changed
-response, initial queue state, binding or lifetime requires an applicable review.
-Phase-owned declarations expire; session declarations remain available until cold
-reset. Missing, conflicting or differently classified boundaries have no fallback.
-
-Argument policies are `exact: {words}`, `selected: {words: [indices]}` and
-`ignore`. Exact requires the declared capture count on both sides. Selected
-indices are unique physical word positions present in both captures; no position
-remapping, type conversion or pointer normalization occurs. Ignore retains all
-words but excludes them from equality. Unlisted calls require `exact` (same capture
-profile on both sides) or `exclude`; the explicit policy and raw calls remain
-visible in the result. Listed pairs are a selection domain, not a requirement to
-invoke every listed operation. Pair order is compared in the same selected event
-stream; missing or reordered observed calls differ when the shorter side's code
-goal completed. Unknown selected words remain incomplete.
-
-The domain's bounded borrowed `CallRelationIndex` supplies identical selection to
-verification and store knownness validation. Proposal/review uses shared physical
-occurrence acquisition for both endpoints; specialized proposal only supplies
-source evidence before entering the same generic validation/publication path.
-[Call-pair regressions](../../next/tests/execution/call_pairs.rs) cover generic and
-specialized API/CLI, both-source validation, frozen reviews, ambiguity, definition
-changes, phase ownership, all argument policies, unlisted calls and source-free
-restore/replay. Store tests reject changed/missing resolved policies and verify
-admitted owner release. Review authorizes this comparison assumption, not hardware
-qualification or proof of whole-function equivalence.
+groups. Layout projections require their explicit reviewed relation below; this
+physical profile infers none.
 
 ### Internal timeline
 
@@ -1406,9 +1081,8 @@ channels for comparison. Selected channels must be captured by both sides.
 Application owns admitted event storage and physical normal-memory ownership;
 the backend supplies the current instruction identity and branch decision.
 Instruction fetch, argument inspection and setup initialization do not become
-guest data transactions. Declared call/service memory effects retain their existing
-records and enter selected normal-memory channels once, without duplicate table
-bookkeeping events. Memory site/origin remain provenance; physical address, width,
+guest data transactions. Declared call-model memory effects retain their existing
+records and enter selected normal-memory channels once. Memory site/origin remain provenance; physical address, width,
 values and atomic outcome/order are comparison inputs. Conditional branches retain
 physical site, target, fallthrough and taken decision. No cross-layout or branch
 correspondence is inferred by this profile.
@@ -1434,8 +1108,8 @@ than inventing a normal-memory owner or using an implicit device fallback.
 `observe_timeline.written` is not an event channel: it reports the persistent
 bytes a phase stores into writable image segments, session RAM and session
 allocations as ascending, coalesced `WrittenRange` records after the phase's
-final memory, without values or order. Stack, phase-lifetime memory and runtime
-tables are excluded. A phase holds at most `MAX_WRITTEN_RANGES` ranges; a store
+final memory, without values or order. Stack and phase-lifetime memory are
+excluded. A phase holds at most `MAX_WRITTEN_RANGES` ranges; a store
 that would add one more stops the run as resource-limited. Store validation
 requires the capture flag, record order and ascending coalesced ranges. Clients
 use the ranges to find written state that no relation compares.
@@ -1444,14 +1118,13 @@ The executor's `instruction` port identifies memory sites independently of share
 progress. A phase clears this identity and capture flags. Conditional branch
 records include site, target, fallthrough and taken decision for both ordinary and
 compressed instructions. Fetch, setup seeds, argument inspection, final snapshots
-and runtime-table bookkeeping never duplicate guest transactions. Existing
-`CallOutput`/`ServiceOutput` writes and `ServiceInput` reads enter the selected
-normal-memory relation once via their original records, retaining model provenance.
+never duplicate guest transactions. Existing `CallOutput` writes enter the
+selected normal-memory relation once via their original records, retaining model
+provenance.
 Dynamic `Allocation` records enter writes as one `initialize-zeroed` span for
 the nonempty requested prefix, never the unused capacity. A zero-length request
 retains allocation evidence but has no memory transaction. Bulk initialization is
-an explicit transaction, not implicitly coalesced with individual stores. Table
-initialization and pointer installation remain setup, not guest writes.
+an explicit transaction, not implicitly coalesced with individual stores.
 
 Event storage remains admitted once per session and recycled per phase. Memory
 writes/atomics check event capacity before mutation; RMW admission precedes its
@@ -1462,36 +1135,27 @@ execution from the transcript. A claimed completed outcome plus an unknown selec
 read still cannot admit MATCH. Verification borrows transactions and compares
 normal-memory values without including source PC/origin as an implicit equality
 condition. Branch comparison is exact physical control comparison; differing code
-addresses require an explicitly selected accepted projection.
+addresses require an explicitly selected reviewed projection.
 
 [Timeline regressions](../../next/tests/execution/timeline.rs) cover all widths,
 AMO/orderings and LR/SC, ordinary/compressed branches, intermediate differences
-with equal final RAM, model/service effects, phase capture, unknown/unreadable
+with equal final RAM, call-model effects, phase capture, unknown/unreadable
 memory, capacity, cancellation and source-free restore/replay.
 [Store validation](../../crates/store/src/execution_timeline.rs) rejects malformed
 or unrequested transcripts and invented MATCH; application verifies capacity before
 atomic callback/mutation. No elapsed-time or real hardware equivalence is implied.
 
 
-### Reviewed layout and ABI projections
+### Reviewed layout projections
 
-`CallArguments::Projected` contains a nonempty bounded list of unique vendor and
-replacement ABI word positions. Each pair compares the exact 32-bit word, including
-pointer bits; positions can cross a0–a7 and the captured stack argument area. Both
-capture widths must include every selected position. Duplicate positions, out-of-range
-words and unknown selected values cannot establish equality. Unselected words stay
-in raw call groups. `CallArgument.word` identifies the selected pair ordinal for
-this policy; its immutable correspondence resolves both physical positions. These
-projections share the existing call-pair review and model/service definition checks.
-
-`KnowledgeClaim::LayoutProjection` owns two exact captured code entry occurrences,
+`LayoutProjection` owns two exact captured code entry occurrences,
 explicit normal-memory address domains, paired byte fields and conditional branch
 coordinates, with applicability and reason. Entry boundaries must be physical code
 symbols in retained linked executables. Domain/field declarations are reviewed
 runtime layout assumptions, not claims that the ELF contains initialized data there.
 The session's normal-memory permissions and byte knownness remain authoritative.
 The selected execution source/revision and entry must match each endpoint; changing
-an entry, source or selected review cannot silently reuse a projection.
+an entry or source cannot silently reuse a projection.
 
 At most 128 fields, domains per side and branches are accepted. Domains are bounded,
 nonempty and nonoverlapping, and every domain has a declared field. Field names are
@@ -1504,21 +1168,18 @@ All declared final fields require captured snapshots containing every byte and
 cannot overlap a physical whole-selection comparison. Unknown padding outside the
 selected fields stays in evidence without claiming it is equal.
 
-Branches declare site, target and fallthrough on each side. Application borrows
-executable bytes from artifacts and checks them through the supplied ISA decoder
-on both proposal and review. No backend dependency or decoder implementation lives
-in application/artifacts. Duplicate branch sites, invalid instruction geometry and
-coordinates differing from captured instructions fail before publication. Projected
+Branches declare site, target and fallthrough on each side. Duplicate branch sites
+and invalid geometry fail validation; the comparison maps only branch records at
+exactly the declared coordinates and does not decode the instructions. Projected
 branches compare the paired identity and the same taken decision; predicate inversion
 or different dynamic path shapes are not inferred.
 
-The case selects one immutable `ProjectionReview` in `ComparisonRelation.projection`.
-All field/branch scopes declared by that projection participate; a final-only profile
-is explicit. Store loads accepted snapshots into operation-owned admitted vectors,
-validates applicability and preserves resolved contracts in the execution manifest.
-A later knowledge head cannot change that selection. Generic proposal, specialized
-`start_propose_projection`, CLI `knowledge propose-projection --request`, review,
-query, compare and replay share this lifecycle. No automatic acceptance occurs.
+The case selects one projection in `ComparisonRelation.projection` by the digest
+of its canonical encoding. The projection is reviewed outside Blobray and supplied
+with an in-process comparison, which validates its applicability to the request.
+All field/branch scopes declared by that projection participate; a final-only
+profile is explicit. A project execution rejects a relation that selects a
+projection, so no retained evidence carries one.
 
 Verification borrows the selected contract and observations. Final fields compare
 all selected known bytes at completed goals. Timeline memory is mapped to field and
@@ -1531,39 +1192,31 @@ or branch observation makes equality unknown rather than disappearing or falling
 back to physical equality. Known mapped differences remain DIFF; unknown bytes or
 unfinished code/model obligations cannot MATCH.
 
-Store independently reconstructs a bounded sorted index of selected final-byte
-intervals, validates projected timeline coverage/knownness and rejects forged MATCH.
 The verifier traverses array snapshots with advancing borrowed byte cursors, without
-rescanning their chunks per byte. Store rechecks that retained resolved contracts
-equal selected accepted assertions.
-Raw physical evidence and excluded bytes remain intact. This finite profile claims
+rescanning their chunks per byte. Raw physical evidence and excluded bytes remain intact. This finite profile claims
 selected observation equality under reviewed assumptions, not universal ABI, type,
 algorithm or hardware equivalence. Arbitrary width conversion, pointer-value mapping
 and path normalization are outside this profile and are never approximated.
 
-[Projection scenarios](../../next/tests/execution/projections.rs) cover physical
-admission, generic/specialized API/CLI, frozen/superseded/conflicting reviews, final
-fields, unknown padding/fields, missing capture, source-free restore/replay and
-failed-run atomicity. [Verifier tests](../../crates/verification/src/projection.rs)
-check ordered mapped memory/control and unknowns; [store tests](../../crates/store/src/execution_projections.rs)
-check selected-byte masks, admitted owner release and changed retained policy.
+[Projection scenarios](../../next/tests/execution/projections.rs) cover content
+selection, rejection by a project execution, invalid geometry, final fields,
+unknown padding/fields and missing capture. [Verifier tests](../../crates/verification/src/projection.rs)
+check ordered mapped memory/control and unknowns.
 
 ### Reviewed effect contracts
 
-`EffectContract` binds exact captured vendor/replacement code entries using the
-same physical endpoint validation as call correspondence. Application validates
-both symbols, source occurrences and evidence for generic proposal, specialized
-proposal and review. The secondary captured roots are retained with the claim.
-Knowledge owns structural validation and conflicting acceptance; store owns the
-immutable accepted snapshot and admitted copies; verification owns comparison.
-There is no policy-name lookup, implicit current revision or inferred replacement.
+`EffectContract` binds exact captured vendor/replacement code entries. It is
+reviewed outside Blobray and supplied with an in-process comparison, which
+validates its structure and applicability to the request; verification owns the
+comparison. There is no policy-name lookup, implicit current revision or inferred
+replacement.
 
-Each case selects one `EffectReview` in `ComparisonRelation.effects`. The resolved
-contract is retained in `ExecutionManifest.effect_contracts` and checked against
-that exact accepted assertion on publication and reopening. Selection requires
-all four concrete MMIO read/write, fence and modeled-delay channels. Internal
+Each case selects one contract in `ComparisonRelation.effects` by the digest of
+its canonical encoding; a project execution rejects that selection. Selection
+requires all four concrete MMIO read/write, fence and modeled-delay channels. Internal
 memory/branch, call, return and final-memory selections remain independent and
-compose with the effect relation. A missing selected review is an error; absence
+compose with the effect relation. A selected contract the comparison was not
+given is an error; absence
 of an effect selection retains the explicitly selected physical comparison.
 
 The finite profile permits up to 128 uniquely named rules. Every rule has a reason,
@@ -1579,8 +1232,8 @@ A pattern may add a `followed_by` selector: it then selects an effect only when
 the immediately next concrete MMIO, fence or delay effect on the same side matches
 that selector. The end of the case has no successor. Two patterns whose base
 selectors overlap are distinct only when both carry non-overlapping successor
-selectors. Verification and retained admission evaluate the successor with the
-same one-event lookahead; no other context or history is expressible.
+selectors. Verification evaluates the successor with a one-event lookahead; no
+other context or history is expressible.
 
 `unclassified` selects the treatment of effects that no rule selects. The default
 `incomplete` keeps the every-effect-classified policy below. The explicit
@@ -1611,8 +1264,8 @@ return/final-memory differences and directly observed policy violations can stil
 establish DIFF. Full policy accounting precedes alignment, so a violation after an
 unclassified event remains visible. Neither a satisfied contract nor excluded
 observations can turn unfinished execution or unmet environment obligations into
-MATCH. Raw excluded effects, exact inputs, model participation and review reasons
-remain retained and replayable.
+MATCH. Raw excluded effects, exact inputs and model participation remain in the
+records.
 
 `CaseComparison.effect_claim` exposes the selected claim ceiling even for DIFF or
 INCOMPLETE. `selected-effect-equality` permits only required/forbidden rules;
@@ -1626,10 +1279,6 @@ are retained alongside an independently established difference.
 
 Verification borrows the resolved contract and raw observations. Bounded per-side
 counters have no expanding heap allocation; every rule scan consumes the shared
-work budget. Store uses the same typed classification for retained admission,
-checks claim/gap/violation identities and rejects MATCH with unmet policy
-obligations. It does not re-execute the ISA or acquire verdict authority.
-[Effect scenarios](../../next/tests/execution/effects.rs),
-[verifier tests](../../crates/verification/src/effects.rs) and
-[retained-admission tests](../../crates/store/src/execution_effects.rs) cover these
-boundaries, policy composition and source-free preservation.
+work budget. [Effect scenarios](../../next/tests/execution/effects.rs) and
+[verifier tests](../../crates/verification/src/effects.rs) cover these boundaries
+and policy composition.

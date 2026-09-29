@@ -3,7 +3,6 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 mod profiles;
-mod provenance;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -151,13 +150,10 @@ fn build(
     )?;
     c.phase(RunPhase::ComposeResearch)?;
     let summaries = profiles::select(&work.request.profiles, &mut nodes, &calls, memory, c)?;
-    let mut proof = provenance::Closure::new(memory);
     let mut selected = 0;
-    let mut reader = project.analysis_reader(memory);
     for node in nodes.iter().filter(|n| n.profiles != 0) {
         c.checkpoint(1)?;
         selected += 1;
-        proof.selected(&node.function.analysis, c)?;
         output.emit(
             &SemanticIrRecord::Function {
                 function: node.function.clone(),
@@ -165,7 +161,6 @@ fn build(
                 name: node.name.clone(),
                 profiles: bits(node.profiles),
                 roots: bits(node.roots),
-                provenance_only: false,
             },
             c,
         )?;
@@ -184,26 +179,6 @@ fn build(
     }
     drop(calls);
     drop(nodes);
-    let knowledge = project.knowledge_snapshot(work.request.scope.knowledge.as_ref(), memory, c)?;
-    for entry in knowledge
-        .entries()
-        .filter(|e| e.proposal.occurrence.revision == work.request.scope.revision)
-    {
-        c.checkpoint(1)?;
-        for evidence in &entry.proposal.evidence {
-            if let EvidenceRef::Analysis { analysis, .. } = evidence {
-                proof.require(analysis, c)?;
-            }
-        }
-        output.emit(
-            &SemanticIrRecord::Knowledge {
-                entry: Box::new(entry.clone()),
-            },
-            c,
-        )?;
-    }
-    drop(knowledge);
-    let provenance = proof.finish(&mut reader, &work.request.scope.revision, &mut output, c)?;
     let record_count = output.count;
     let records = staging.retain_temporary(output.file, c)?;
     staging.ir_receipt(
@@ -215,7 +190,6 @@ fn build(
             records,
             record_count,
             functions: selected,
-            provenance_functions: provenance,
             unavailable_entries: selection.unavailable_entries,
             profiles: summaries,
         },

@@ -87,7 +87,6 @@ dependencies = [
  "blobray-analysis",
  "blobray-artifacts",
  "blobray-domain",
- "blobray-knowledge",
  "blobray-store",
  "blobray-verification",
  "serde",
@@ -120,13 +119,6 @@ dependencies = [
  "serde",
  "sha2",
  "thiserror",
-]
-
-[[package]]
-name = "blobray-knowledge"
-version = "0.1.0"
-dependencies = [
- "blobray-domain",
 ]
 
 [[package]]

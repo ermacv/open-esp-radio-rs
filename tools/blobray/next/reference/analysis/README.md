@@ -342,12 +342,8 @@ An executable object with neither selected symbols nor explicit ranges is a gap;
 no function boundaries are inferred from disassembly. `InvestigationRequest.ranges`
 adds `{ "source": SOURCE, "object": OBJECT_ID, "section": 1, "extent":
 {"start":8,"length":16} }` selections. Duplicate or unused selections fail
-planning; invalid selected extents become blocked outcomes. A reviewed
-`KnowledgeClaim::ExecutableRange` uses `section` and `extent` with an occurrence
-whose `symbol` is null. Generic proposal/review checks executable backing and
-physical identity. Accepted references in `reviewed_extents` supply ranges for
-input or prepared-image research. Different overlapping boundary proposals in
-the same section conflict; review does not assert semantic completeness.
+planning; invalid selected extents become blocked outcomes. Ranges apply to
+input or prepared-image research and do not assert semantic completeness.
 Symbol and explicit-range aliases remain separate results; coverage counts their
 byte union once. Complete coverage means complete outcomes for this
 selected symbol scope, not proof that every executable byte has a function or

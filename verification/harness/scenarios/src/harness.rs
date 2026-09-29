@@ -6,8 +6,8 @@
 use blobray_application::RunRecord;
 use blobray_domain::{
     CallAbi, ComparisonRelation, DataRequest, DataSelector, DeviceDeclaration, EventChannels,
-    ExecutionCase, ExecutionGoal, ExecutionRegion, FunctionSource, Invocation, KnowledgeOccurrence,
-    MemoryPair, MemorySeed, MemorySelection, ObjectInventory, RegionLifetime, ReturnWords,
+    ExecutionCase, ExecutionGoal, ExecutionRegion, FunctionSource, Invocation, MemoryPair,
+    MemorySeed, MemorySelection, ObjectInventory, Occurrence, RegionLifetime, ReturnWords,
     Revision, RevisionId, SectionRecord, SessionReset, SymbolRecord, TimelineCapture,
 };
 use blobray_next_host::wire::{InventoryDocument, RunDocument};
@@ -532,8 +532,6 @@ pub fn invocation(
         preload: vec![],
         models,
         calls: vec![],
-        tables: vec![],
-        services: vec![],
         observe_memory: observe,
         observe_calls: None,
         observe_timeline: TIMELINE,
@@ -573,7 +571,6 @@ pub fn relation(memory: bool) -> ComparisonRelation {
             vec![]
         },
         calls: false,
-        reviewed_calls: None,
     }
 }
 
@@ -628,7 +625,7 @@ pub fn data_request(
     range: DataSelector,
 ) -> DataRequest {
     DataRequest {
-        occurrence: KnowledgeOccurrence {
+        occurrence: Occurrence {
             revision: revision.clone(),
             source,
             object: object.id.clone(),

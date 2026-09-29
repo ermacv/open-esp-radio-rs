@@ -8,7 +8,7 @@ fn invalid(message: &str) -> Error {
 /// Resolve an exact object once, then borrow all its data from one prepared owner.
 pub(crate) fn with_object<T>(
     project: &Project,
-    occurrence: &KnowledgeOccurrence,
+    occurrence: &Occurrence,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
     consume: impl FnOnce(
@@ -20,54 +20,6 @@ pub(crate) fn with_object<T>(
     crate::occurrence::with_source(project, occurrence, memory, c, |capture, c| {
         capture.with_prepared(memory, c, |object, c| consume(capture.payload, object, c))
     })
-}
-
-/// Physical checks are repeated on proposal, review and export against retained bytes.
-pub(crate) fn validate_table(
-    payload: &ArtifactId,
-    view: &blobray_artifacts::DataView<'_>,
-    proposal: &KnowledgeProposal,
-) -> Result<()> {
-    let Some(layout) = proposal.claim.table_layout() else {
-        return Ok(());
-    };
-    if layout.byte_length() != Some(view.span.file_range.length) {
-        return Err(invalid(
-            "table layout must describe the exact selected byte range",
-        ));
-    }
-    if !proposal.evidence.contains(&EvidenceRef::Source {
-        payload: payload.clone(),
-        range: view.span.file_range,
-    }) {
-        return Err(invalid("table requires exact captured byte evidence"));
-    }
-    // The interpretation is of captured bytes. Relocations remain observations,
-    // never silently applied numeric values; pointer tables need their own profile.
-    Ok(())
-}
-pub(crate) fn validate_constant(
-    proposal: &KnowledgeProposal,
-    analysis: &FunctionAnalysisId,
-    ordinal: u64,
-    record: &FunctionRecord,
-) -> Result<()> {
-    if let KnowledgeClaim::Constant {
-        analysis: expected,
-        record: index,
-        operand,
-        value,
-        ..
-    } = &proposal.claim
-        && expected == analysis
-        && *index == ordinal
-        && operand.select(record) != Some(&AbstractValue::Constant { value: *value })
-    {
-        return Err(invalid(
-            "constant claim does not match a known value at the selected analysis record",
-        ));
-    }
-    Ok(())
 }
 
 fn write_record(
@@ -84,7 +36,6 @@ pub(crate) fn prepare(
     stage: &Path,
     project: &Project,
     request: &DataRequest,
-    accepted: Option<(KnowledgeRevisionId, KnowledgeEntry)>,
     decoder: Option<&dyn FunctionSemantics>,
     memory: &WorkingMemory,
     disk: &blobray_store::TemporaryBudget,
@@ -139,59 +90,63 @@ pub(crate) fn prepare(
             let mut export_offset = 0u64;
             for (index, selector) in request.ranges.iter().enumerate() {
                 object.with_data(&request.occurrence.object, selector, c, |view, c| {
-                for (chunk, bytes) in view.bytes.chunks(WORK_BLOCK).enumerate() {
-                    c.bytes(bytes.len())?;
-                    bytes_out.write_all(bytes).map_err(storage_io)?;
-                    emit(&DataRecord::Bytes { range: index as u32, offset: (chunk * WORK_BLOCK) as u64, bytes: bytes.to_vec() }, c)?;
-                }
-                if !spans.iter().any(|s: &DataSpan| s.section == view.span.section) {
-                    for relocation in view.relocations { emit(&DataRecord::Relocation { section: view.span.section, relocation: relocation.clone() }, c)?; }
-                }
-                if let Some((_, entry)) = &accepted
-                    && let KnowledgeClaim::IntegerTable { layout, .. } = &entry.proposal.claim {
-                    validate_table(payload, &view, &entry.proposal)?;
-                    // Values decode *file initialization bytes*. Their classification is
-                    // explicit; only proven unaffected ranges supply numeric values.
-                    if view.span.unknown_relocation_extents != 0 {
-                        emit(&DataRecord::Unresolved { range: index as u32, reason: "section contains relocations with unknown write extents; integer values are not resolved".into() }, c)?;
-                    } else if view.span.overlapping_relocations != 0 {
-                        emit(&DataRecord::Unresolved { range: index as u32, reason: "relocation writes intersect the selected range; integer values are not resolved".into() }, c)?;
-                    } else {
-                        for i in 0..layout.count {
-                            c.checkpoint(1)?;
-                            let offset = i.checked_mul(layout.stride).ok_or_else(|| invalid("table offset overflow"))?;
-                            let mut encoded = [0u8; 8];
-                            let width = usize::from(layout.encoding.width);
-                            let start = usize::try_from(offset).map_err(|_| invalid("table offset overflow"))?;
-                            let slice = view.bytes.get(start..start+width).ok_or_else(|| invalid("table element out of bounds"))?;
-                            let bits = match layout.encoding.byte_order {
-                                DataByteOrder::Little => { encoded[..width].copy_from_slice(slice); u64::from_le_bytes(encoded) },
-                                DataByteOrder::Big => { encoded[8-width..].copy_from_slice(slice); u64::from_be_bytes(encoded) },
-                            };
-                            let signed = layout.encoding.signed.then(|| ((bits << (64-width*8)) as i64) >> (64-width*8));
-                            emit(&DataRecord::Integer { index: i, offset, bits, signed }, c)?;
+                    for (chunk, bytes) in view.bytes.chunks(WORK_BLOCK).enumerate() {
+                        c.bytes(bytes.len())?;
+                        bytes_out.write_all(bytes).map_err(storage_io)?;
+                        emit(
+                            &DataRecord::Bytes {
+                                range: index as u32,
+                                offset: (chunk * WORK_BLOCK) as u64,
+                                bytes: bytes.to_vec(),
+                            },
+                            c,
+                        )?;
+                    }
+                    if !spans
+                        .iter()
+                        .any(|s: &DataSpan| s.section == view.span.section)
+                    {
+                        for relocation in view.relocations {
+                            emit(
+                                &DataRecord::Relocation {
+                                    section: view.span.section,
+                                    relocation: relocation.clone(),
+                                },
+                                c,
+                            )?;
                         }
                     }
-                }
-                if let Some(layout) = &request.pointer_table {
-                    if let Some((_, entry)) = &accepted { validate_table(payload, &view, &entry.proposal)?; }
-                    let image = view.address_space == CodeAddressSpace::Image;
-                    let start = view.span.section_range.start.checked_add(if image { view.section_address } else { 0 })
-                        .ok_or_else(|| invalid("pointer range address overflow"))?;
-                    pointers = Some(blobray_analysis::pointers::analyze(
-                        blobray_analysis::pointers::PointerInput {
-                            bytes: view.bytes, start, image,
-                            unknown_write_extents: view.span.unknown_relocation_extents != 0,
-                            max_write_bytes: view.max_relocation_width, relocations: view.relocations,
-                        }, layout, decoder.unwrap(), c, &mut emit,
-                    )?);
-                }
-                let mut span = view.span;
-                span.export_offset = export_offset;
-                export_offset = export_offset.checked_add(span.file_range.length).ok_or_else(|| invalid("export size overflow"))?;
-                spans.push(span);
-                Ok(())
-            })?;
+                    if let Some(layout) = &request.pointer_table {
+                        let image = view.address_space == CodeAddressSpace::Image;
+                        let start = view
+                            .span
+                            .section_range
+                            .start
+                            .checked_add(if image { view.section_address } else { 0 })
+                            .ok_or_else(|| invalid("pointer range address overflow"))?;
+                        pointers = Some(blobray_analysis::pointers::analyze(
+                            blobray_analysis::pointers::PointerInput {
+                                bytes: view.bytes,
+                                start,
+                                image,
+                                unknown_write_extents: view.span.unknown_relocation_extents != 0,
+                                max_write_bytes: view.max_relocation_width,
+                                relocations: view.relocations,
+                            },
+                            layout,
+                            decoder.unwrap(),
+                            c,
+                            &mut emit,
+                        )?);
+                    }
+                    let mut span = view.span;
+                    span.export_offset = export_offset;
+                    export_offset = export_offset
+                        .checked_add(span.file_range.length)
+                        .ok_or_else(|| invalid("export size overflow"))?;
+                    spans.push(span);
+                    Ok(())
+                })?;
             }
             Ok((payload.clone(), spans))
         },
@@ -211,9 +166,6 @@ pub(crate) fn prepare(
         }
         let mut ordinal = 0;
         blobray_store::visit_jsonl(&lease.records, c, |record: FunctionRecord, c| {
-            if let Some((_, entry)) = &accepted {
-                validate_constant(&entry.proposal, id, ordinal, &record)?;
-            }
             let mut ranges = Vec::new();
             if let FunctionRecord::Reference {
                 target,
@@ -253,17 +205,12 @@ pub(crate) fn prepare(
     }
     bytes_out.sync_all().map_err(storage_io)?;
     records_out.sync_all().map_err(storage_io)?;
-    let (knowledge, accepted) = accepted.map_or((None, None), |(revision, entry)| {
-        (Some(revision), Some(entry))
-    });
     let manifest = DataManifest {
-        schema: 3,
+        schema: 4,
         request: request.clone(),
         payload,
         spans,
         analyses,
-        knowledge,
-        accepted,
         pointer_producer: pointer_producer.map(str::to_owned),
         pointers,
     };

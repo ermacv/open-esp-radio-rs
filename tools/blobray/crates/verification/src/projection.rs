@@ -117,7 +117,7 @@ mod tests {
             location: ObjectLocation::Standalone,
         };
         let entry = CallEndpoint {
-            occurrence: KnowledgeOccurrence {
+            occurrence: Occurrence {
                 revision: id.as_str().parse().unwrap(),
                 source: FunctionSource::Input { input: 0 },
                 object: object.clone(),
@@ -203,8 +203,6 @@ mod tests {
             preload: vec![],
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
             observe_calls: None,
             observe_memory: vec![],
             observe_timeline: TimelineCapture {
@@ -219,7 +217,6 @@ mod tests {
             effects: None,
             projection: Some(p.review.clone()),
             calls: false,
-            reviewed_calls: None,
             returns: ReturnWords {
                 low: false,
                 high: false,
@@ -259,8 +256,6 @@ mod tests {
             events,
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
             final_memory: vec![],
             written: vec![],
         };
@@ -317,7 +312,6 @@ mod tests {
                 &left,
                 right,
                 &relation,
-                &[],
                 Some(ProjectionComparison {
                     resolved: &p,
                     vendor: &input,

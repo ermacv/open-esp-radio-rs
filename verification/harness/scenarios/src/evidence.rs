@@ -255,8 +255,6 @@ pub fn phy_effects(observed: &[ExecutionEvent]) -> Vec<PhyEffect> {
 fn record_case(record: &ExecutionEvidence) -> Option<u32> {
     match record {
         ExecutionEvidence::FinalMemory { case, .. }
-        | ExecutionEvidence::FifoService { case, .. }
-        | ExecutionEvidence::RuntimeTable { case, .. }
         | ExecutionEvidence::CallModel { case, .. }
         | ExecutionEvidence::Model { case, .. }
         | ExecutionEvidence::Event { case, .. }
@@ -308,8 +306,6 @@ pub fn split_cases(records: &[ExecutionEvidence], counts: &[u32]) -> Vec<Vec<Exe
         let mut record = record.clone();
         let case = match &mut record {
             ExecutionEvidence::FinalMemory { case, .. }
-            | ExecutionEvidence::FifoService { case, .. }
-            | ExecutionEvidence::RuntimeTable { case, .. }
             | ExecutionEvidence::CallModel { case, .. }
             | ExecutionEvidence::Model { case, .. }
             | ExecutionEvidence::Event { case, .. }

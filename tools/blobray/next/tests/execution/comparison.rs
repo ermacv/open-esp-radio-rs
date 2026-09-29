@@ -1,4 +1,4 @@
-use super::interfaces::run;
+use super::run;
 use super::*;
 fn no_events() -> EventChannels {
     EventChannels {
@@ -37,7 +37,6 @@ fn memory_request(f: &Fixture) -> ExecutionRequest {
         effects: None,
         projection: None,
         calls: false,
-        reviewed_calls: None,
         returns: ReturnWords {
             low: false,
             high: false,

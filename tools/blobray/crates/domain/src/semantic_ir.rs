@@ -1,7 +1,7 @@
 //! Configured packaging of saved semantic facts. Packaging grants no execution claim.
 use crate::*;
 
-pub const SEMANTIC_IR_SCHEMA: u32 = 1;
+pub const SEMANTIC_IR_SCHEMA: u32 = 2;
 pub const SEMANTIC_IR_POLICY: u32 = 1;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -96,7 +96,6 @@ pub struct SemanticIrManifest {
     pub records: ArtifactId,
     pub record_count: u64,
     pub functions: u64,
-    pub provenance_functions: u64,
     pub unavailable_entries: u64,
     pub profiles: Vec<IrProfileSummary>,
 }
@@ -112,17 +111,12 @@ pub enum SemanticIrRecord {
         /// Zero-based indices in the manifest's profile list.
         profiles: Vec<u8>,
         roots: Vec<u8>,
-        /// Retained solely as transitive evidence, not added to root/call selection.
-        provenance_only: bool,
     },
     Call {
         record: Box<NavigationRecord>,
     },
     Unavailable {
         record: Box<NavigationRecord>,
-    },
-    Knowledge {
-        entry: Box<KnowledgeEntry>,
     },
     Fact {
         analysis: FunctionAnalysisId,

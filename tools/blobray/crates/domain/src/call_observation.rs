@@ -42,7 +42,6 @@ impl CallCapture {
 pub enum ObservedCallTarget {
     CapturedCode,
     CallModel,
-    FifoService,
     Unavailable,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-use super::interfaces::run;
+use super::run;
 use super::*;
 fn select(r: &mut ExecutionRequest, capture: TimelineCapture) {
     r.max_events = 128;
@@ -21,7 +21,6 @@ fn select(r: &mut ExecutionRequest, capture: TimelineCapture) {
             },
             memory: vec![],
             calls: false,
-            reviewed_calls: None,
         });
     }
 }
@@ -410,50 +409,6 @@ fn declared_model_and_service_memory_effects_enter_the_timeline_once() {
         }
     )));
     super::comparison::check_preservation(&f, r);
-
-    let (f, mut r) = super::services::setup(vec![]);
-    if let FifoOperation::Enqueue { input, .. } =
-        &mut r.cases[0].vendor.services[0].bindings[0].operation
-    {
-        *input = FifoInput::PrivateStack { word: 3, width: 4 };
-    }
-    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
-    select(
-        &mut r,
-        TimelineCapture {
-            reads: true,
-            writes: true,
-            ..Default::default()
-        },
-    );
-    let (m, rows) = run(&f, r);
-    assert_eq!(m.verdict, Some(ComparisonVerdict::Match));
-    let effects: Vec<_> = rows
-        .iter()
-        .filter_map(|r| match r {
-            ExecutionEvidence::Event {
-                replacement: false,
-                event,
-                ..
-            } => event.normal_memory(),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(effects.len(), 4); // guest stack store + table load + service input + wake output
-    assert!(rows.iter().any(|r| matches!(
-        r,
-        ExecutionEvidence::Event {
-            event: ExecutionEvent::ServiceInput { value: 42, .. },
-            ..
-        }
-    )));
-    assert!(rows.iter().any(|r| matches!(
-        r,
-        ExecutionEvidence::Event {
-            event: ExecutionEvent::ServiceOutput { value: 1, .. },
-            ..
-        }
-    )));
 }
 #[test]
 fn timeline_capture_is_phase_owned_and_uncaptured_comparison_is_rejected() {

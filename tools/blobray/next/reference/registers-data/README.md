@@ -1,4 +1,4 @@
-# Registers, tables and constants
+# Registers and captured data
 
 Inspect MMIO candidates and captured data.
 
@@ -54,7 +54,7 @@ into concatenated `data.bin`. The records preserve analysis IDs and ordinals;
 do not assert absence of other uses.
 
 Writable sections are marked as initialization data, never current runtime
-state. All section relocations are retained. Data manifest schema 3 reports
+state. All section relocations are retained. Data manifest schema 4 reports
 `overlapping_relocations` for the selected byte range and
 `unknown_relocation_extents` for the section. Known fixed-width writes ending at the range start
 or starting at its end do not overlap. Unknown transformations cannot establish
@@ -115,26 +115,22 @@ reads saved research through the same supervised API as other navigation command
 }
 ```
 
-The scope is explicit and frozen; `knowledge: null` selects no declarations.
-Empty `ranges` selects all numeric memory candidates. Unknown/nonnumeric addresses
+The scope is explicit and frozen. Empty `ranges` selects all numeric memory candidates. Unknown/nonnumeric addresses
 remain visible even with a numeric filter. Ranges filter observations and do not
 classify hardware. The command does not schedule analysis or read live binaries.
 JSON export uses the shared new-file publication path and works after source removal.
 
-Schema-1 records include selected-function coverage/unavailable members, exact
-original facts and record ordinals, address alternatives, read-selection and
-load-preserve-OR write masks, declarations with review/evidence/applicability,
-conflicts and matching bindings. Address rows aggregate candidates across the
+Schema-2 records include selected-function coverage/unavailable members, exact
+original facts and record ordinals, address alternatives, and read-selection and
+load-preserve-OR write masks. Address rows aggregate candidates across the
 selected analyses and count their local accesses.
 Instruction access widths remain a set of observations, not physical register widths.
 Masks describe saved expressions, not proven physical fields or safe hardware RMW.
 Finite alternatives are may-addresses; unresolved values are never discarded.
 
-Bindings use the declaration's exact source revision, source and object. A byte
-access can be contained within a wider explicitly reviewed register. Crossing
-accesses are distinct. Proposed/rejected declarations remain visible;
-only accepted matches contribute to the accepted-binding counter. The summary
-does not promise complete hardware coverage, absence of register accesses or PASS.
+Observations name no hardware registers: the reviewed register model owns
+register identity and fields. The summary does not promise complete hardware
+coverage, absence of register accesses or PASS.
 
 The independent [register tool](../../../../registers/README.md) owns
 source-model initialization, SVD import, reviewed source applicability and

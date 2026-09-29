@@ -225,11 +225,9 @@ pub fn validate_ir_records(
 ) -> Result<()> {
     let _envelope = memory.reserve(1024 * 1024, c.position())?;
     let mut reader = project.analysis_reader(memory);
-    let knowledge =
-        project.knowledge_snapshot(manifest.request.scope.knowledge.as_ref(), memory, c)?;
     let mut ids = AdmittedVec::new(memory);
     let mut counts = vec![(0u64, 0u64, 0u64); manifest.profiles.len()];
-    let (mut records, mut selected, mut provenance, mut unavailable) = (0u64, 0u64, 0u64, 0u64);
+    let (mut records, mut selected, mut unavailable) = (0u64, 0u64, 0u64);
     visit_jsonl(source, c, |record: SemanticIrRecord, c| {
         records += 1;
         match record {
@@ -238,7 +236,6 @@ pub fn validate_ir_records(
                 manifest: saved,
                 profiles,
                 roots,
-                provenance_only,
                 name,
             } => {
                 let index_valid = |v: &[u8]| {
@@ -248,7 +245,7 @@ pub fn validate_ir_records(
                 if !index_valid(&profiles)
                     || !index_valid(&roots)
                     || roots.iter().any(|i| !profiles.contains(i))
-                    || provenance_only != profiles.is_empty()
+                    || profiles.is_empty()
                     || saved.recipe.project != manifest.project
                     || saved.recipe.revision != manifest.request.scope.revision
                     || function.location.source != saved.recipe.source
@@ -258,14 +255,13 @@ pub fn validate_ir_records(
                 }
                 for (i, profile) in manifest.request.profiles.iter().enumerate() {
                     c.checkpoint(1)?;
-                    let is_root = !provenance_only
-                        && match &profile.roots {
-                            IrRoots::All => true,
-                            IrRoots::Analyses { analyses } => analyses.contains(&function.analysis),
-                            IrRoots::NamePrefix { prefix } => {
-                                name.as_ref().is_some_and(|n| n.starts_with(prefix))
-                            }
-                        };
+                    let is_root = match &profile.roots {
+                        IrRoots::All => true,
+                        IrRoots::Analyses { analyses } => analyses.contains(&function.analysis),
+                        IrRoots::NamePrefix { prefix } => {
+                            name.as_ref().is_some_and(|n| n.starts_with(prefix))
+                        }
+                    };
                     if roots.contains(&(i as u8)) != is_root
                         || !profile.include_reachable && profiles.contains(&(i as u8)) != is_root
                     {
@@ -281,8 +277,7 @@ pub fn validate_ir_records(
                 let capacity = memory.reserve(function.analysis.allocated_bytes(), c.position())?;
                 let mask = profiles.iter().fold(0u32, |m, i| m | (1 << i));
                 ids.push((function.analysis, mask, capacity), c.position())?;
-                selected += u64::from(!provenance_only);
-                provenance += u64::from(provenance_only);
+                selected += 1;
                 for i in profiles {
                     counts[usize::from(i)].1 += 1;
                     counts[usize::from(i)].2 += u64::from(
@@ -300,13 +295,6 @@ pub fn validate_ir_records(
             {
                 unavailable += 1;
             }
-            SemanticIrRecord::Knowledge { entry } => {
-                if knowledge.get(&entry.id, c)? != Some(&*entry) {
-                    return Err(integrity(
-                        "semantic IR changed or added unselected reviewed knowledge",
-                    ));
-                }
-            }
             _ => return Err(integrity("invalid record in semantic IR index")),
         }
         Ok(())
@@ -316,7 +304,6 @@ pub fn validate_ir_records(
     if ids.windows(2).any(|w| w[0].0 == w[1].0)
         || records != manifest.record_count
         || selected != manifest.functions
-        || provenance != manifest.provenance_functions
         || unavailable != manifest.unavailable_entries
         || counts
             .iter()
@@ -335,25 +322,10 @@ pub fn validate_ir_records(
         Ok(ids[i].1)
     };
     let mut unresolved = vec![0u64; manifest.profiles.len()];
-    let mut knowledge_ids = AdmittedVec::new(memory);
     visit_jsonl(source, c, |record: SemanticIrRecord, c| {
         match record {
             SemanticIrRecord::Function { function, .. } => {
                 reader.analysis(&function.analysis, c)?;
-            }
-            SemanticIrRecord::Knowledge { entry } => {
-                if entry.proposal.occurrence.revision != manifest.request.scope.revision {
-                    return Err(integrity(
-                        "IR contains knowledge from another source revision",
-                    ));
-                }
-                let capacity = memory.reserve(entry.id.allocated_bytes(), c.position())?;
-                knowledge_ids.push((entry.id, capacity), c.position())?;
-                for evidence in &entry.proposal.evidence {
-                    if let EvidenceRef::Analysis { analysis, .. } = evidence {
-                        member(analysis, c)?;
-                    }
-                }
             }
             SemanticIrRecord::Call { record } => {
                 let NavigationRecord::Call {
@@ -389,22 +361,12 @@ pub fn validate_ir_records(
         }
         Ok(())
     })?;
-    c.checkpoint(knowledge_ids.len() as u64 * (knowledge_ids.len().max(1).ilog2() as u64 + 1))?;
-    knowledge_ids.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-    if knowledge_ids.windows(2).any(|w| w[0].0 == w[1].0)
-        || knowledge_ids.len()
-            != knowledge
-                .entries()
-                .filter(|e| e.proposal.occurrence.revision == manifest.request.scope.revision)
-                .count()
-        || unresolved
-            .iter()
-            .zip(&manifest.profiles)
-            .any(|(n, p)| *n != p.unresolved_links)
+    if unresolved
+        .iter()
+        .zip(&manifest.profiles)
+        .any(|(n, p)| *n != p.unresolved_links)
     {
-        return Err(integrity(
-            "IR knowledge or link summary differs from saved records",
-        ));
+        return Err(integrity("IR link summary differs from saved records"));
     }
     Ok(())
 }

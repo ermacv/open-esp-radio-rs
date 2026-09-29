@@ -160,14 +160,9 @@ impl Session<'_> {
                     u64::from(a.address) < u64::from(r.address) + r.bytes.len() as u64
                         && u64::from(r.address) < end
                 })
-                || self
-                    .calls
-                    .bindings()
-                    .chain(self.services.bindings().map(|(_, _, b)| b.call))
-                    .any(|b| {
-                        u64::from(a.address) < u64::from(b.address) + 2
-                            && u64::from(b.address) < end
-                    })
+                || self.calls.bindings().any(|b| {
+                    u64::from(a.address) < u64::from(b.address) + 2 && u64::from(b.address) < end
+                })
             {
                 gap!(CallIssue::AllocationOverlap {
                     address: a.address,
@@ -229,7 +224,6 @@ impl Session<'_> {
                 c,
             )?;
             self.invalidate_reservation(address, output.width);
-            self.table_write(address, output.width, output.value, Some(input.site), c)?;
             self.event(
                 ExecutionEvent::CallOutput {
                     address,

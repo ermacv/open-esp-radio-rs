@@ -1,4 +1,4 @@
-//! Exact data observations and reviewed integer interpretations. No runtime-memory claim.
+//! Exact data observations. No runtime-memory claim.
 use crate::*;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -21,46 +21,13 @@ pub enum DataSelector {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DataRequest {
-    pub occurrence: KnowledgeOccurrence,
+    pub occurrence: Occurrence,
     pub ranges: Vec<DataSelector>,
     /// Retained analyses from the same object. Records preserve unknown calls and gaps.
     pub analyses: Vec<FunctionAnalysisId>,
     /// Explicit pointer observation profile, applied to exactly one range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pointer_table: Option<PointerTable>,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum DataByteOrder {
-    Little,
-    Big,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IntegerEncoding {
-    pub width: u8,
-    pub signed: bool,
-    pub byte_order: DataByteOrder,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct IntegerTable {
-    pub encoding: IntegerEncoding,
-    pub count: u64,
-    pub stride: u64,
-}
-impl IntegerTable {
-    pub fn byte_length(&self) -> Option<u64> {
-        if !matches!(self.encoding.width, 1 | 2 | 4 | 8)
-            || self.count == 0
-            || self.stride < u64::from(self.encoding.width)
-        {
-            return None;
-        }
-        (self.count - 1)
-            .checked_mul(self.stride)?
-            .checked_add(u64::from(self.encoding.width))
-    }
 }
 /// Captured little-endian RV32 absolute-pointer slots; no dynamic loader or ABI inference.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -75,17 +42,6 @@ impl PointerTable {
             return None;
         }
         (self.count - 1).checked_mul(self.stride)?.checked_add(4)
-    }
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum DataLayout {
-    Integer(IntegerTable),
-    Pointers(PointerTable),
-}
-impl From<IntegerTable> for DataLayout {
-    fn from(value: IntegerTable) -> Self {
-        Self::Integer(value)
     }
 }
 /// Backend interpretation, distinct from the structural width reported by ELF.
@@ -147,31 +103,6 @@ pub struct PointerSummary {
     pub unresolved: u64,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum ConstantOperand {
-    Value,
-    WriteValue,
-    Address,
-    CallArgument { index: u8 },
-    ReturnLow,
-    ReturnHigh,
-}
-impl ConstantOperand {
-    pub fn select<'a>(&self, r: &'a FunctionRecord) -> Option<&'a AbstractValue> {
-        match (self, r) {
-            (Self::Value, FunctionRecord::Value { value, .. }) => Some(value),
-            (Self::WriteValue, FunctionRecord::MemoryAccess { value, .. }) => value.as_ref(),
-            (Self::Address, FunctionRecord::MemoryAccess { address, .. }) => Some(address),
-            (Self::CallArgument { index }, FunctionRecord::CallInputs { registers, .. }) => {
-                registers.get(usize::from(*index))
-            }
-            (Self::ReturnLow, FunctionRecord::ReturnValue { low, .. }) => Some(low),
-            (Self::ReturnHigh, FunctionRecord::ReturnValue { high, .. }) => Some(high),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DataSpan {
     pub selector: DataSelector,
@@ -199,8 +130,6 @@ pub struct DataManifest {
     pub payload: ArtifactId,
     pub spans: Vec<DataSpan>,
     pub analyses: Vec<FunctionManifest>,
-    pub knowledge: Option<KnowledgeRevisionId>,
-    pub accepted: Option<KnowledgeEntry>,
     pub pointer_producer: Option<String>,
     pub pointers: Option<PointerSummary>,
 }
@@ -232,30 +161,6 @@ pub enum DataRecord {
         record: Box<FunctionRecord>,
         ranges: Vec<u32>,
     },
-    Integer {
-        index: u64,
-        offset: u64,
-        bits: u64,
-        signed: Option<i64>,
-    },
-}
-
-impl KnowledgeClaim {
-    pub fn table_layout(&self) -> Option<DataLayout> {
-        match self {
-            Self::IntegerTable { layout, .. } => Some(DataLayout::Integer(layout.clone())),
-            Self::PointerTable { layout, .. } => Some(DataLayout::Pointers(layout.clone())),
-            _ => None,
-        }
-    }
-}
-impl DataLayout {
-    pub fn byte_length(&self) -> Option<u64> {
-        match self {
-            Self::Integer(layout) => layout.byte_length(),
-            Self::Pointers(layout) => layout.byte_length(),
-        }
-    }
 }
 
 /// A physical object span; absent file backing (e.g. NOBITS) never invents bytes.

@@ -33,41 +33,6 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
-enum KnowledgeCommand {
-    /// Propose an effect classification for explicit review at exact captured entries.
-    ProposeEffectContract {
-        #[arg(long)]
-        request: PathBuf,
-    },
-    /// Propose a reviewed memory layout and branch correspondence.
-    ProposeProjection {
-        #[arg(long)]
-        request: PathBuf,
-    },
-    /// Propose an exact captured/model call correspondence for explicit review.
-    ProposeCallPair {
-        #[arg(long)]
-        request: PathBuf,
-    },
-    /// Accept a specific proposal against the selected knowledge revision.
-    Accept {
-        #[arg(long)]
-        assertion: blobray_domain::AssertionId,
-        #[arg(long)]
-        base: blobray_domain::KnowledgeRevisionId,
-        #[arg(long)]
-        actor: String,
-        #[arg(long)]
-        reason: String,
-    },
-    /// List assertion states at an explicit revision or the current head.
-    Show {
-        #[arg(long)]
-        revision: Option<blobray_domain::KnowledgeRevisionId>,
-    },
-}
-
-#[derive(Subcommand)]
 enum IrCommand {
     Build {
         #[arg(long)]
@@ -226,15 +191,6 @@ enum Command {
         backup: PathBuf,
         #[arg(long)]
         project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Propose or review retained knowledge with an explicit expected base.
-    Knowledge {
-        #[arg(long)]
-        project: PathBuf,
-        #[command(subcommand)]
-        command: KnowledgeCommand,
         #[command(flatten)]
         limits: ResourceOptions,
     },
@@ -761,60 +717,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 output,
             );
         }
-        Command::Knowledge {
-            project,
-            command,
-            limits,
-        } => match command {
-            KnowledgeCommand::ProposeEffectContract { request } => {
-                return propose_command(
-                    project,
-                    request,
-                    limits,
-                    format,
-                    ProposalInput::EffectContract,
-                );
-            }
-            KnowledgeCommand::ProposeProjection { request } => {
-                return propose_command(
-                    project,
-                    request,
-                    limits,
-                    format,
-                    ProposalInput::Projection,
-                );
-            }
-            KnowledgeCommand::ProposeCallPair { request } => {
-                return propose_command(project, request, limits, format, ProposalInput::CallPair);
-            }
-            KnowledgeCommand::Accept {
-                assertion,
-                base,
-                actor,
-                reason,
-            } => {
-                let change = blobray_domain::KnowledgeChange {
-                    expected_base: Some(base),
-                    actor,
-                    reason,
-                    action: blobray_domain::KnowledgeAction::Review {
-                        assertion,
-                        decision: blobray_domain::ReviewDecision::Accept,
-                        supersedes: None,
-                    },
-                };
-                return apply_native_knowledge(
-                    &project,
-                    &change,
-                    &limits,
-                    format,
-                    limits.budget()?,
-                );
-            }
-            KnowledgeCommand::Show { revision } => {
-                return read_query(project, ReadQuery::Knowledge { revision }, limits, format);
-            }
-        },
         Command::AnalyzeProject {
             project,
             image,
@@ -1889,17 +1791,11 @@ fn internal(args: &[OsString]) -> Result<()> {
     } else {
         None
     };
-    let knowledge: Option<app::KnowledgeWork> = if stage.join("knowledge.json").exists() {
-        Some(request(&stage.join("knowledge.json"))?)
-    } else {
-        None
-    };
     let import: Option<ImportWork> = if ir.is_none()
         && query.is_none()
         && image.is_none()
         && function.is_none()
         && investigation.is_none()
-        && knowledge.is_none()
         && execution.is_none()
         && scenario.is_none()
     {
@@ -1914,30 +1810,20 @@ fn internal(args: &[OsString]) -> Result<()> {
     } else if let Some(w) = &execution {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
     } else {
-        match (
-            &query,
-            &import,
-            &image,
-            &function,
-            &investigation,
-            &knowledge,
-        ) {
-            (Some(work), _, _, _, _, _) => {
+        match (&query, &import, &image, &function, &investigation) {
+            (Some(work), _, _, _, _) => {
                 (&work.run, work.started_ms, work.deadline_ms, &work.budget)
             }
-            (_, Some(work), _, _, _, _) if work.schema == 2 => {
+            (_, Some(work), _, _, _) if work.schema == 2 => {
                 (&work.run, work.started_ms, work.deadline_ms, &work.budget)
             }
-            (_, _, Some(work), _, _, _) if work.schema == 1 => {
+            (_, _, Some(work), _, _) if work.schema == 1 => {
                 (&work.run, work.started_ms, work.deadline_ms, &work.budget)
             }
-            (_, _, _, Some(work), _, _) if work.schema == 1 => {
+            (_, _, _, Some(work), _) if work.schema == 1 => {
                 (&work.run, work.started_ms, work.deadline_ms, &work.budget)
             }
-            (_, _, _, _, Some(work), _) if work.schema == 1 => {
-                (&work.run, work.started_ms, work.deadline_ms, &work.budget)
-            }
-            (_, _, _, _, _, Some(work)) if work.schema == 1 => {
+            (_, _, _, _, Some(work)) if work.schema == 1 => {
                 (&work.run, work.started_ms, work.deadline_ms, &work.budget)
             }
             _ => return Err(invalid("unsupported worker protocol")),
@@ -1967,8 +1853,8 @@ fn internal(args: &[OsString]) -> Result<()> {
         )
         .map(|p| Some(app::PreparedReceipt::Execution(p)))
     } else {
-        match (query, import, image, function, investigation, knowledge) {
-            (Some(work), _, _, _, _, _) => app::prepare_query_with_tools(
+        match (query, import, image, function, investigation) {
+            (Some(work), _, _, _, _) => app::prepare_query_with_tools(
                 &stage,
                 &work,
                 &mut context,
@@ -1976,9 +1862,9 @@ fn internal(args: &[OsString]) -> Result<()> {
                 Some(&blobray_backend_riscv::RiscvDecoder),
             )
             .map(|_| None),
-            (_, Some(work), _, _, _, _) => app::prepare_import(&stage, work, &mut context)
+            (_, Some(work), _, _, _) => app::prepare_import(&stage, work, &mut context)
                 .map(|p| Some(app::PreparedReceipt::Import(p))),
-            (_, _, Some(work), _, _, _) => app::prepare_image_worker(
+            (_, _, Some(work), _, _) => app::prepare_image_worker(
                 &stage,
                 &work,
                 &blobray_next_host::linux::ElfLinker,
@@ -1986,27 +1872,20 @@ fn internal(args: &[OsString]) -> Result<()> {
                 &mut linker_diagnostics,
             )
             .map(|p| Some(app::PreparedReceipt::Image(p))),
-            (_, _, _, Some(work), _, _) => app::prepare_function_worker(
+            (_, _, _, Some(work), _) => app::prepare_function_worker(
                 &stage,
                 &work,
                 &blobray_backend_riscv::RiscvDecoder,
                 &mut context,
             )
             .map(|p| Some(app::PreparedReceipt::Function(p))),
-            (_, _, _, _, Some(work), _) => app::prepare_investigation_worker(
+            (_, _, _, _, Some(work)) => app::prepare_investigation_worker(
                 &stage,
                 &work,
                 &blobray_backend_riscv::RiscvDecoder,
                 &mut context,
             )
             .map(|p| Some(app::PreparedReceipt::Investigation(p))),
-            (_, _, _, _, _, Some(work)) => app::prepare_knowledge_worker(
-                &stage,
-                &work,
-                &blobray_backend_riscv::RiscvDecoder,
-                &mut context,
-            )
-            .map(|p| Some(app::PreparedReceipt::Knowledge(p))),
             _ => unreachable!(),
         }
     };
@@ -2066,34 +1945,6 @@ fn parse_address(text: &str) -> std::result::Result<u32, String> {
     .map_err(|e| e.to_string())
 }
 
-fn apply_native_knowledge(
-    project: &std::path::Path,
-    change: &blobray_domain::KnowledgeChange,
-    limits: &ResourceOptions,
-    format: Format,
-    budget: ResourceBudget,
-) -> Result<ExitCode> {
-    let application = limits.application()?;
-    let _diagnostics = TemporaryDiagnostics(&application, format);
-    let signals = Signals::new()?;
-    let handle = application.start_knowledge(project, change, budget)?;
-    if !wait_handle(&handle, &signals, format) {
-        return Ok(ExitCode::FAILURE);
-    }
-    let run = handle.wait();
-    match format {
-        Format::Json => println!(
-            "{}",
-            serde_json::json!(blobray_next_host::wire::RunDocument {
-                schema: 6,
-                run: &run
-            })
-        ),
-        Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
-    }
-    Ok(ExitCode::SUCCESS)
-}
-
 fn export_data_query(
     project: PathBuf,
     query: ReadQuery,
@@ -2120,55 +1971,6 @@ fn export_data_query(
             })
         ),
         Format::Human => println!("Data exported to {}", output.display()),
-    }
-    Ok(ExitCode::SUCCESS)
-}
-
-enum ProposalInput {
-    EffectContract,
-    Projection,
-    CallPair,
-}
-fn propose_command(
-    project: PathBuf,
-    request: PathBuf,
-    limits: ResourceOptions,
-    format: Format,
-    kind: ProposalInput,
-) -> Result<ExitCode> {
-    let application = limits.application()?;
-    let _diagnostics = TemporaryDiagnostics(&application, format);
-    let signals = Signals::new()?;
-    let handle = match kind {
-        ProposalInput::EffectContract => application.start_propose_effect_contract(
-            &project,
-            read_json_file(&request)?,
-            limits.budget()?,
-        )?,
-        ProposalInput::Projection => application.start_propose_projection(
-            &project,
-            read_json_file(&request)?,
-            limits.budget()?,
-        )?,
-        ProposalInput::CallPair => application.start_propose_call_pair(
-            &project,
-            read_json_file(&request)?,
-            limits.budget()?,
-        )?,
-    };
-    if !wait_handle(&handle, &signals, format) {
-        return Ok(ExitCode::FAILURE);
-    }
-    let run = handle.wait();
-    match format {
-        Format::Json => println!(
-            "{}",
-            serde_json::json!(blobray_next_host::wire::RunDocument {
-                schema: 6,
-                run: &run
-            })
-        ),
-        Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
     }
     Ok(ExitCode::SUCCESS)
 }

@@ -11,8 +11,8 @@ a radio. A working channel operation alone does not implement association.
 Each layer adds a different kind of meaning.
 
 Read this page for the overall model, use the
-[synthetic register exercise](first-contribution.md#read-the-observations-before-the-declaration)
-to learn how evidence becomes an interpretation, then follow
+[synthetic register exercise](first-contribution.md#read-the-observations)
+to learn how observations differ from a hardware interpretation, then follow
 [a real channel change](channel-walkthrough.md) from reviewed hardware facts
 to the station scan caller.
 
@@ -53,10 +53,9 @@ dependencies**: the allowed dependency graph is defined in
 [repository ownership](architecture.md#owners). Production does not depend on
 Blobray, vendor artifacts or qualification.
 
-Research establishes inputs to an implementation. Accepting a Blobray assertion
-records a review decision at an identified knowledge revision; it does not
-publish a PAC. A separate reviewed model and publication policy select that
-interface. Comparison can continue after a driver exists, using probes that
+Research establishes inputs to an implementation. A Blobray observation names
+no hardware register and does not publish a PAC. A separately reviewed register
+model and publication policy select that interface. Comparison can continue after a driver exists, using probes that
 compile the production implementation rather than another copy of it.
 
 ## Who makes each decision?

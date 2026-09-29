@@ -34,14 +34,13 @@ identities and nonadjacent HI/LO pairing remain intact. Every object scope relea
 its buffers before the next object. There is no process-wide cache.
 
 Research reads each selected publication once into an admitted address index,
-loads each image's companion bindings once, and verifies the frozen knowledge
-history once. Exact registers and overlapping MMIO regions use local indexes;
+and loads each image's companion bindings once. Exact registers and overlapping MMIO regions use local indexes;
 blocked/ambiguous call targets remain unresolved. Temporary data cannot outlive
 the operation's `WorkingMemory` authority.
 
 `run.diagnostics.progress.measurements` contains fixed counters for archive
 entries, prepared objects/sections, object bytes read/hashed, relocation lookups,
-publication passes and knowledge-history passes. `phases` records cumulative
+and publication passes. `phases` records cumulative
 elapsed milliseconds and work units by phase, including coordinator retention.
 Independent coordinator validation counts as work; counters are not result
 identity. `working_memory` reports admitted requested capacity, not RSS.

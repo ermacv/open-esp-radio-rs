@@ -23,7 +23,6 @@
       "export-payload",
       "backup",
       "restore",
-      "knowledge",
       "analyze-project",
       "functions",
       "status",
@@ -406,97 +405,6 @@
     "path": [
       "blobray",
       "restore"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge"
-    ],
-    "subcommands": [
-      "propose-effect-contract",
-      "propose-projection",
-      "propose-call-pair",
-      "accept",
-      "show"
-    ]
-  },
-  {
-    "flags": [
-      "--request"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "propose-effect-contract"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--request"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "propose-projection"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--request"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "propose-call-pair"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--assertion",
-      "--base",
-      "--actor",
-      "--reason"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "accept"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--revision"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "knowledge",
-      "show"
     ],
     "subcommands": []
   },

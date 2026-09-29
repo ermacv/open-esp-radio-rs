@@ -85,7 +85,7 @@ pub(super) fn request(f: &Fixture, names: &[&[u8]]) -> DataRequest {
         .unwrap();
     DataRequest {
         pointer_table: None,
-        occurrence: KnowledgeOccurrence {
+        occurrence: Occurrence {
             revision: f.revision.clone(),
             source: f.request.source.clone(),
             object: f.request.selector.object().clone(),
@@ -110,7 +110,6 @@ pub(super) fn request(f: &Fixture, names: &[&[u8]]) -> DataRequest {
 #[derive(Default)]
 struct Collected {
     data: Vec<DataRecord>,
-    knowledge: Vec<KnowledgeEntry>,
 }
 impl ElfSink for Collected {
     fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {
@@ -138,10 +137,6 @@ impl app::DoctorSink for Collected {
 impl app::QuerySink for Collected {
     fn data(&mut self, r: &DataRecord, _: &mut dyn RunControl) -> Result<()> {
         self.data.push(r.clone());
-        Ok(())
-    }
-    fn knowledge_entry(&mut self, r: &KnowledgeEntry, _: &mut dyn RunControl) -> Result<()> {
-        self.knowledge.push(r.clone());
         Ok(())
     }
     fn summary(&mut self, _: &app::QuerySummary, _: &mut dyn RunControl) -> Result<()> {

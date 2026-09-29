@@ -2,16 +2,14 @@
 
 `blobray-application` owns import/query orchestration, supervision and explicit recovery.
 Its internal dependencies are [domain](../domain/README.md),
-[artifacts](../artifacts/README.md), [analysis](../analysis/README.md) and
-[store](../store/README.md), [knowledge](../knowledge/README.md) and
-[verification](../verification/README.md).
+[artifacts](../artifacts/README.md), [analysis](../analysis/README.md),
+[store](../store/README.md) and [verification](../verification/README.md).
 It does not depend on a concrete Linux process adapter.
 
-Saved register research uses the existing scoped navigation fact owner and one
-operation-local declaration interval/name index. It retains exact evidence,
-review state, physical occurrence applicability and partial coverage. The query
-cannot promote observed access widths or masks to hardware declarations; source
-publication remains with the independent register tool.
+Saved register research uses the existing scoped navigation fact owner. It
+retains exact evidence and partial coverage. The query cannot promote observed
+access widths or masks to hardware declarations; source publication remains
+with the independent register tool.
 
 `Application::new` receives a host capability. `start_import`, `start_query`,
 `start_plan`, `start_reopen_plan` and `start_run`
@@ -139,22 +137,17 @@ accounting in the same transaction after streamed child inserts. This operation
 adds no scheduler, backend dependency or subprocess per function. See the
 [library contract](../../next/reference/analysis/README.md#library-investigations).
 
-## Knowledge and preservation
+## Preservation
 
-`occurrence` acquires exact captured objects for both data delivery and knowledge
-admission. Prepared callbacks validate optional physical symbols once and keep
-source/range checks under the same owner. Thin-member payload roots remain
-explicit; the helper grants no publication or review authority.
-
-`start_knowledge` admits proposals and review changes through the durable job
-supervisor. The worker resolves exact retained occurrences, verifies evidence
-and uses `blobray-knowledge` for conflicts/transitions. Store atomically publishes
-the event and run outcome. `ReadQuery::Knowledge` freezes its head at admission.
+`occurrence` acquires exact captured objects for data delivery and navigation.
+Prepared callbacks validate optional physical symbols once and keep source/range
+checks under the same owner. Thin-member payload roots remain explicit; the
+helper grants no publication authority.
 
 Backup and restore use the same supervised query lifecycle. Restore cannot
 mutate an existing destination; the caller publishes a verified new project with
-`QueryOutput::publish_restore`. [Commands and contracts](../../next/reference/knowledge-review/README.md#knowledge-and-preservation)
-define the formats, bounds, publication boundary and supported conversions.
+`QueryOutput::publish_restore`. The [preservation reference](../../next/reference/preservation/README.md#backup-and-restore)
+defines the formats, bounds, publication boundary and supported conversions.
 
 `ReadQuery::NamedLinkPlan` resolves one defined entry in an explicit input and
 returns the ordinary exact link plan. Missing/ambiguous names return candidate
@@ -169,7 +162,7 @@ linking or analysis as a side effect.
 common link recipe; `linking::proposal` trial-links a request and proposes them
 from ordered candidate inputs.
 It rejects name collisions and synthetic-placement overlap; the host still only
-executes the explicit linker invocation. Knowledge occurrence validation shares
+executes the explicit linker invocation. Data occurrence resolution shares
 input/image identity with function analysis. See the
 [native workflow](../../next/reference/analysis/README.md#explicit-rom-companions).
 
@@ -234,17 +227,14 @@ backend relocation semantics into the streaming analysis port. Exports
 preserve the profile, raw bytes, physical relocation identities and classification
 counters without promoting external symbols or numeric addresses to callees.
 
-Interface proposals and reviews use the existing knowledge lifecycle and captured-occurrence helper. Exact symbol and function-range roots and captured-payload guards are checked against retained bytes. Runtime guards are conditional metadata and do not resolve callbacks or grant execution authority.
-
-`navigation` resolves explicit publication/analysis/knowledge selection,
+`navigation` resolves explicit publication/analysis selection,
 operation-local physical indexes and call links for the register catalogue and
 semantic IR builds. It releases each function record owner before reading the
 next and never starts analysis implicitly.
 
 `start_build_ir` packages explicit saved scopes into immutable named semantic
 profiles. The common navigation resolver supplies physical links and publication
-names; finite profile propagation and a separate admitted provenance worklist
-preserve the distinction between selected callees and evidence-only dependencies.
+names; finite profile propagation selects callees.
 The build owns one supervised budget/publication; no hidden analysis or
 live-origin access occurs. See [IR profiles](../../next/reference/ir-traces/README.md#saved-semantic-ir-profiles).
 
@@ -280,31 +270,13 @@ their own entry with only session-owned memory retained.
 
 `external_calls` owns immutable response copies, admitted instances and cursors. `execution_memory::execution_calls` validates complete effects, writes only checked normal memory, and owns bounded allocations. Phase/session closure and call evidence share execution supervision, capacity and atomic publication.
 
-`execution_interfaces` resolves explicitly selected accepted interface roots from
-captured objects before sessions. Admitted in-place sorting groups requests first
-by selected knowledge snapshot, then by revision/source/object. Each request still
-receives its own occurrence, layout and root validation; returned tables retain
-phase/side/declaration order. Captured ELF owners end before session allocation.
-`runtime_tables` owns admitted live instances and
-bounded current-target indexes; `execution_memory::execution_tables` places bytes,
-checks conditions and connects eligible indirect transfers to captured code or
-explicit call models. Stores, atomics and model outputs update lifecycle evidence.
-The [runtime interface contract](../../docs/design/contracts.md#runtime-interface-instances)
-defines phase release, snapshot selection and the limits of value association.
-
-`fifo_services` owns admitted FIFO rings and binding indexes by phase/session;
-`execution_memory::execution_services` validates reviewed slot dispatch, current
-ABI words and private-stack effects before mutation. It signals a selected
-successful dequeue goal through the existing execution port. Queue state is
-independent for each implementation and never implies real RTOS scheduling.
-
 `execution_memory::execution_observation` admits and captures exact selected normal
 memory at the phase stop before releasing phase owners. It preserves unchanged,
 unknown and unavailable bytes in bounded chunks, without device reads. Snapshot
 capacity lives through serialization/comparison and is released on recycle. Each
 comparison case supplies its own relation to verification; no frontend composes it.
 
-`layout_projections` validates both captured entries and branch instructions through
-the required knowledge-worker decoder capability. It shares generic proposal/review
-publication with `start_propose_projection`; CLI only supplies the request. Execution
-borrows store-owned accepted projection selections through comparison/serialization.
+Effect contracts and layout projections are reviewed outside Blobray and reach
+a comparison by content through `in_process::verify`, which validates each
+selected contract against the request. A project execution rejects a relation
+that selects either; its retained evidence carries no contract.

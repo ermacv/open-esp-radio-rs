@@ -353,21 +353,6 @@ impl Project {
         let revision =
             revision.ok_or_else(|| Error::new(ErrorCode::NotFound, "publication not found"))?;
         let manifest = decode(&self.open_payload(&id.as_str().parse()?, control)?, control)?;
-        for reference in &manifest.plan.recipe.request.reviewed_extents {
-            let entry = self.knowledge_entry(&reference.revision, &reference.assertion, control)?;
-            if entry.state != AssertionState::Accepted
-                || !matches!(
-                    entry.proposal.claim,
-                    KnowledgeClaim::FunctionExtent { .. } | KnowledgeClaim::ExecutableRange { .. }
-                )
-                || manifest.plan.recipe.request.revision.as_ref()
-                    != Some(&entry.proposal.occurrence.revision)
-            {
-                return Err(integrity(
-                    "publication reviewed extent is not retained and accepted for its source revision",
-                ));
-            }
-        }
         if manifest.plan.recipe.project != self.id
             || manifest
                 .plan
@@ -431,7 +416,6 @@ impl Project {
             .as_ref()
             .and_then(|m| m.plan.recipe.request.revision.clone());
         Ok(InvestigationStatus {
-            knowledge: crate::knowledge::current(&tx)?,
             current: publication.is_some() && revision == publication_revision,
             revision,
             publication,

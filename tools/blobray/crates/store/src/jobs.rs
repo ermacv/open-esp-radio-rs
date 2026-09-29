@@ -319,9 +319,6 @@ impl Writer {
         operation: RunOperation,
         own_stage: impl FnOnce(&Path),
     ) -> Result<(RunRecord, PathBuf)> {
-        if let RunOperation::Knowledge { change } = &operation {
-            self.project.check_knowledge_base(&change.expected_base)?;
-        }
         let source_revision = match &operation {
             RunOperation::PrepareImage { revision, .. }
             | RunOperation::Investigate { revision, .. } => Some(revision),
@@ -374,7 +371,6 @@ impl Writer {
             image: None,
             analysis: None,
             publication: None,
-            knowledge: None,
             execution: None,
             semantic_ir: None,
             assessment: None,
@@ -436,7 +432,6 @@ impl Writer {
             || previous.image != record.image
             || previous.analysis != record.analysis
             || previous.publication != record.publication
-            || previous.knowledge != record.knowledge
             || previous.schema != record.schema
             || previous.revision != record.revision
             || previous.assessment != record.assessment
@@ -843,39 +838,6 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     {
         let valid = match (request, &**resolved) {
             (
-                ScenarioRequest::ProposeEffectContract { request },
-                RunOperation::Knowledge { change },
-            ) => {
-                change.expected_base == request.expected_base
-                    && change.actor == request.actor
-                    && change.reason == request.reason
-                    && matches!(&change.action, KnowledgeAction::Propose {proposal} if proposal.subject == request.subject
-                    && proposal.occurrence == request.contract.vendor.occurrence
-                    && matches!(&proposal.claim, KnowledgeClaim::EffectContract {contract} if **contract == request.contract))
-            }
-
-            (
-                ScenarioRequest::ProposeProjection { request },
-                RunOperation::Knowledge { change },
-            ) => {
-                change.expected_base == request.expected_base
-                    && change.actor == request.actor
-                    && change.reason == request.reason
-                    && matches!(&change.action, KnowledgeAction::Propose {proposal} if proposal.subject == request.subject
-                    && proposal.occurrence == request.projection.vendor.entry.occurrence
-                    && matches!(&proposal.claim, KnowledgeClaim::LayoutProjection {projection} if **projection == request.projection))
-            }
-
-            (ScenarioRequest::ProposeCallPair { request }, RunOperation::Knowledge { change }) => {
-                change.expected_base == request.expected_base
-                    && change.actor == request.actor
-                    && change.reason == request.reason
-                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.subject == request.subject
-                        && proposal.occurrence == request.correspondence.vendor.occurrence
-                        && matches!(&proposal.claim, KnowledgeClaim::CallPair { correspondence } if **correspondence == request.correspondence))
-            }
-
-            (
                 ScenarioRequest::Investigate { request, .. },
                 RunOperation::Investigate { revision, .. },
             ) => request.revision.as_ref() == Some(revision),
@@ -898,7 +860,6 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
         record.image.is_some(),
         record.analysis.is_some(),
         record.publication.is_some(),
-        record.knowledge.is_some(),
         record.execution.is_some(),
         record.semantic_ir.is_some(),
     ]
@@ -955,7 +916,6 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                 || record.image.is_some()
                 || record.analysis.is_some()
                 || record.publication.is_some()
-                || record.knowledge.is_some()
                 || (record.state == RunState::Completed) != record.execution.is_some()
                 || (record.state == RunState::Completed && *compare)
                     != record
@@ -965,15 +925,6 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
             {
                 return Err(integrity("invalid execution outcome"));
             }
-        }
-        RunOperation::Knowledge { .. }
-            if record.revision.is_some()
-                || record.image.is_some()
-                || record.analysis.is_some()
-                || record.publication.is_some()
-                || (record.state == RunState::Completed) != record.knowledge.is_some() =>
-        {
-            return Err(integrity("invalid knowledge outcome"));
         }
         RunOperation::Investigate { .. }
             if record.revision.is_some()

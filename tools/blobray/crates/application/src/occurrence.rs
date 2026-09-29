@@ -1,5 +1,5 @@
-//! Shared physical acquisition for knowledge admission and data delivery.
-//! Captures are borrowed within one callback; claim semantics remain with callers.
+//! Shared physical acquisition of one captured object for data delivery and navigation.
+//! Captures are borrowed within one callback.
 use crate::*;
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)
@@ -7,9 +7,7 @@ fn invalid(message: &str) -> Error {
 pub(crate) struct CapturedObject<'a> {
     pub payload: &'a ArtifactId,
     pub bytes: &'a dyn ByteSource,
-    /// Thin-member bytes have their own retained CAS root.
-    pub detached: bool,
-    occurrence: &'a KnowledgeOccurrence,
+    occurrence: &'a Occurrence,
 }
 impl CapturedObject<'_> {
     pub fn with_prepared<T>(
@@ -31,7 +29,7 @@ impl CapturedObject<'_> {
 }
 pub(crate) fn with_source<T>(
     project: &Project,
-    occurrence: &KnowledgeOccurrence,
+    occurrence: &Occurrence,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
     consume: impl FnOnce(CapturedObject<'_>, &mut dyn RunControl) -> Result<T>,
@@ -89,27 +87,26 @@ pub(crate) fn with_source<T>(
         }
     };
     let container = project.open_payload(&occurrence.object.artifact, c)?;
-    let run = |bytes: &dyn ByteSource, detached, c: &mut dyn RunControl| {
+    let run = |bytes: &dyn ByteSource, c: &mut dyn RunControl| {
         consume(
             CapturedObject {
                 payload: &payload,
                 bytes,
-                detached,
                 occurrence,
             },
             c,
         )
     };
     match occurrence.object.location {
-        ObjectLocation::Standalone => run(&container, false, c),
+        ObjectLocation::Standalone => run(&container, c),
         ObjectLocation::ArchiveMember { ordinal } => {
             let mut cursor = MemberCursor::new(&container, c)?;
             while let Some(member) = cursor.next(memory, c)? {
                 if member.ordinal == ordinal {
                     return if let Some((offset, length)) = member.payload {
-                        run(&SourceRange::new(&container, offset, length)?, false, c)
+                        run(&SourceRange::new(&container, offset, length)?, c)
                     } else {
-                        run(&project.open_payload(&payload, c)?, true, c)
+                        run(&project.open_payload(&payload, c)?, c)
                     };
                 }
             }

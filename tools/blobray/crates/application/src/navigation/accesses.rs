@@ -1,25 +1,15 @@
-//! Physical access matching; declaration roles and observed access kinds stay separate.
+//! Physical access matching of one selected captured object.
 use super::*;
 use blobray_analysis::navigation::{Facts, MemoryObservation};
-pub(super) enum Target<'a> {
-    Object {
-        occurrence: &'a KnowledgeOccurrence,
-        location: DataLocation,
-        access: Option<AccessDirection>,
-    },
-    Context {
-        proposal: &'a KnowledgeProposal,
-        contract: &'a FunctionContract,
-        words: Vec<ArgumentWord>,
-        field: Option<&'a ContextFieldKey>,
-        access: Option<AccessDirection>,
-    },
+pub(super) struct Target<'a> {
+    occurrence: &'a Occurrence,
+    location: DataLocation,
+    access: Option<AccessDirection>,
 }
 impl<'a> Target<'a> {
     pub(super) fn new(
         project: &Project,
         query: &'a NavigationQuery,
-        snapshot: &'a blobray_store::KnowledgeSnapshot<'_>,
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<Option<Self>> {
@@ -43,120 +33,17 @@ impl<'a> Target<'a> {
                         })
                     },
                 )?;
-                Some(Self::Object {
+                Some(Self {
                     occurrence,
                     location,
-                    access: *access,
-                })
-            }
-            NavigationFilter::Context {
-                assertion,
-                field,
-                arguments,
-                access,
-            } => {
-                if arguments.len() > 16 {
-                    return Err(invalid("too many context argument mappings"));
-                }
-                let mut found = None;
-                for entry in snapshot.entries() {
-                    c.checkpoint(1)?;
-                    if &entry.id == assertion {
-                        found = Some(entry);
-                        break;
-                    }
-                }
-                let entry = found.ok_or_else(|| {
-                    Error::new(
-                        ErrorCode::NotFound,
-                        "context assertion is absent from selected knowledge",
-                    )
-                })?;
-                if entry.state != AssertionState::Accepted {
-                    return Err(invalid(
-                        "context navigation requires an accepted declaration",
-                    ));
-                }
-                if entry.proposal.occurrence.revision != query.scope.revision {
-                    return Err(invalid("context declaration belongs to another revision"));
-                }
-                blobray_knowledge::validate_proposal(&entry.proposal)?;
-                let KnowledgeClaim::Function { contract } = &entry.proposal.claim else {
-                    return Err(invalid("context assertion is not a function contract"));
-                };
-                for (i, mapping) in arguments.iter().enumerate() {
-                    if mapping.word >= 64
-                        || !contract
-                            .contexts
-                            .iter()
-                            .any(|ctx| ctx.argument == mapping.argument)
-                        || arguments[..i]
-                            .iter()
-                            .any(|a| a.argument == mapping.argument || a.word == mapping.word)
-                    {
-                        return Err(invalid(
-                            "context argument mappings must name distinct declared roots and supported ABI words",
-                        ));
-                    }
-                }
-                if field.as_ref().is_some_and(|f| {
-                    !contract.contexts.iter().any(|ctx| {
-                        ctx.argument == f.argument && ctx.fields.iter().any(|x| x.name == f.name)
-                    })
-                }) {
-                    return Err(Error::new(
-                        ErrorCode::NotFound,
-                        "selected context field is absent",
-                    ));
-                }
-                let mut words = Vec::with_capacity(contract.contexts.len());
-                for context in &contract.contexts {
-                    let supplied = arguments
-                        .iter()
-                        .find(|a| a.argument == context.argument)
-                        .map(|a| a.word);
-                    let word = if let Some(signature) = &contract.signature {
-                        let word = signature.argument_word(context.argument).ok_or_else(|| {
-                            invalid("context signature has no supported argument placement")
-                        })?;
-                        if supplied.is_some_and(|x| x != word) {
-                            return Err(invalid("argument mapping contradicts reviewed signature"));
-                        }
-                        word
-                    } else {
-                        supplied.ok_or_else(|| invalid("unknown signature requires an explicit context argument-to-ABI-word mapping"))?
-                    };
-                    words.push(ArgumentWord {
-                        argument: context.argument,
-                        word,
-                    });
-                }
-                Some(Self::Context {
-                    proposal: &entry.proposal,
-                    contract,
-                    words,
-                    field: field.as_ref(),
                     access: *access,
                 })
             }
             _ => None,
         })
     }
-    pub(super) fn relevant(&self, recipe: &FunctionRecipe) -> bool {
-        match self {
-            Self::Object { .. } => true,
-            Self::Context {
-                proposal, contract, ..
-            } => {
-                proposal.occurrence.source == recipe.source && contract.selector == recipe.selector
-            }
-        }
-    }
-    pub(super) fn data(&self) -> Option<DataLocation> {
-        match self {
-            Self::Object { location, .. } => Some(location.clone()),
-            _ => None,
-        }
+    pub(super) fn data(&self) -> DataLocation {
+        self.location.clone()
     }
     pub(super) fn visit(
         &self,
@@ -167,11 +54,8 @@ impl<'a> Target<'a> {
         c: &mut dyn RunControl,
         emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
     ) -> Result<()> {
-        let access_filter = match self {
-            Self::Object { access, .. } | Self::Context { access, .. } => access,
-        };
         facts.accesses(c, &mut |r, c| {
-            if access_filter.is_some_and(|want| !direction(want, r.access)) {
+            if self.access.is_some_and(|want| !direction(want, r.access)) {
                 return Ok(());
             }
             if !matches!(r.width, 1 | 2 | 4 | 8) {
@@ -223,11 +107,8 @@ impl<'a> Target<'a> {
             }
             let bytes = matches
                 .iter()
-                .try_fold(0u64, |n, m: &Match<'_>| {
-                    n.checked_add(
-                        std::mem::size_of::<LocationMatch>() as u64
-                            + m.field.map_or(0, |s| s.len() as u64),
-                    )
+                .try_fold(0u64, |n, _: &Match| {
+                    n.checked_add(std::mem::size_of::<LocationMatch>() as u64)
                 })
                 .ok_or_else(|| invalid("navigation match capacity overflow"))?;
             let _capacity = memory.reserve(bytes, c.position())?;
@@ -243,8 +124,6 @@ impl<'a> Target<'a> {
                     alternative: m.alternative,
                     offset: m.offset,
                     partial_overlap: m.partial,
-                    field: m.field.map(str::to_owned),
-                    argument: m.argument,
                 });
             }
             emit(
@@ -265,14 +144,14 @@ impl<'a> Target<'a> {
         })
     }
     #[allow(clippy::too_many_arguments)]
-    fn match_value<'b>(
-        &'b self,
+    fn match_value(
+        &self,
         r: &MemoryObservation<'_>,
         value: &AbstractValue,
         recipe: &FunctionRecipe,
         facts: &Facts<'_, '_>,
         alternative: u8,
-        matches: &mut AdmittedVec<'_, Match<'b>>,
+        matches: &mut AdmittedVec<'_, Match>,
         issue: &mut Option<NavigationIssue>,
         path_issue: &mut Option<AccessIssue>,
         alternatives: &mut usize,
@@ -284,39 +163,23 @@ impl<'a> Target<'a> {
             address,
         } = value
         {
-            if let Self::Object {
-                occurrence,
-                location,
-                ..
-            } = self
-                && *source == occurrence.source
-                && *object == occurrence.object
-                && let Some(start) = location.image_address
+            if *source == self.occurrence.source
+                && *object == self.occurrence.object
+                && let Some(start) = self.location.image_address
             {
                 add_match(
                     matches,
                     alternative,
                     i128::from(*address),
                     i128::from(start),
-                    location.section_range.length,
+                    self.location.section_range.length,
                     r.width,
-                    None,
-                    None,
                     c,
                 )?;
             }
             return Ok(());
         }
-        // The stack slot holding an incoming pointer is not a field of its pointee.
-        if matches!(self, Self::Context { .. }) && matches!(value, AbstractValue::EntryStack { .. })
-        {
-            return Ok(());
-        }
-        let abi = match self {
-            Self::Context { contract, .. } => Some(contract.abi),
-            _ => None,
-        };
-        let (paths, problem) = facts.paths(value, recipe, abi, c)?;
+        let (paths, problem) = facts.paths(value, recipe, c)?;
         *alternatives = (*alternatives).max(paths.len());
         if let Some(problem) = problem {
             *path_issue = Some(problem);
@@ -329,141 +192,82 @@ impl<'a> Target<'a> {
                 *issue = Some(NavigationIssue::IndirectPath);
                 continue;
             }
-            match self {
-                Self::Context {
-                    contract,
-                    words,
-                    field,
-                    ..
-                } => {
-                    if let AccessRoot::EntryWord { function, word } = &path.root
-                        && function == &recipe.selector
-                    {
-                        for context in &contract.contexts {
-                            c.checkpoint(1)?;
-                            if !words
-                                .iter()
-                                .any(|a| a.argument == context.argument && a.word == *word)
-                            {
-                                continue;
-                            }
-                            for f in &context.fields {
-                                c.checkpoint(1)?;
-                                if field.is_some_and(|key| {
-                                    key.argument != context.argument || key.name != f.name
-                                }) {
-                                    continue;
-                                }
-                                add_match(
-                                    matches,
-                                    alternative,
-                                    i128::from(path.offset),
-                                    i128::from(f.offset),
-                                    u64::from(f.width),
-                                    r.width,
-                                    Some(&f.name),
-                                    Some(context.argument),
-                                    c,
-                                )?;
-                            }
-                        }
-                    }
+            let (occurrence, location) = (self.occurrence, &self.location);
+            let same = recipe.source == occurrence.source
+                && *recipe.selector.object() == occurrence.object;
+            let coordinate = match &path.root {
+                AccessRoot::Address { address } if same => location
+                    .image_address
+                    .map(|start| (i128::from(*address), i128::from(start))),
+                AccessRoot::Section { section, offset } if same && *section == location.section => {
+                    Some((
+                        i128::from(*offset),
+                        i128::from(location.section_range.start),
+                    ))
                 }
-                Self::Object {
-                    occurrence,
-                    location,
-                    ..
-                } => {
-                    let same = recipe.source == occurrence.source
-                        && *recipe.selector.object() == occurrence.object;
-                    let coordinate = match &path.root {
-                        AccessRoot::Address { address } if same => location
-                            .image_address
-                            .map(|start| (i128::from(*address), i128::from(start))),
-                        AccessRoot::Section { section, offset }
-                            if same && *section == location.section =>
+                AccessRoot::Symbol { symbol, addend } => {
+                    let reference = facts.reference(symbol, c)?;
+                    if same && symbol.object == occurrence.object {
+                        if matches!(&location.selector,DataSelector::Symbol { symbol: selected, .. } if selected == symbol)
                         {
-                            Some((
-                                i128::from(*offset),
-                                i128::from(location.section_range.start),
-                            ))
-                        }
-                        AccessRoot::Symbol { symbol, addend } => {
-                            let reference = facts.reference(symbol, c)?;
-                            if same && symbol.object == occurrence.object {
-                                if matches!(&location.selector,DataSelector::Symbol { symbol: selected, .. } if selected == symbol)
-                                {
-                                    Some((i128::from(*addend), 0))
-                                } else if let Some(reference) = reference.filter(|reference| {
-                                    reference.definition == SymbolDefinition::Section
-                                        && reference.section == Some(location.section)
-                                }) {
-                                    let start = if recipe.address_space == CodeAddressSpace::Image {
-                                        location.image_address
-                                    } else {
-                                        Some(location.section_range.start)
-                                    };
-                                    start.map(|start| {
-                                        (
-                                            i128::from(reference.offset) + i128::from(*addend),
-                                            i128::from(start),
-                                        )
-                                    })
-                                } else {
-                                    *issue = Some(NavigationIssue::MissingReference);
-                                    None
-                                }
-                            } else if reference.is_none_or(|reference| {
-                                reference.definition != SymbolDefinition::Section
-                            }) {
-                                *issue = Some(NavigationIssue::MissingReference);
-                                None
+                            Some((i128::from(*addend), 0))
+                        } else if let Some(reference) = reference.filter(|reference| {
+                            reference.definition == SymbolDefinition::Section
+                                && reference.section == Some(location.section)
+                        }) {
+                            let start = if recipe.address_space == CodeAddressSpace::Image {
+                                location.image_address
                             } else {
-                                None
-                            }
-                        }
-                        AccessRoot::EntryWord { .. } => {
-                            *issue = Some(NavigationIssue::UnknownAddress);
+                                Some(location.section_range.start)
+                            };
+                            start.map(|start| {
+                                (
+                                    i128::from(reference.offset) + i128::from(*addend),
+                                    i128::from(start),
+                                )
+                            })
+                        } else {
+                            *issue = Some(NavigationIssue::MissingReference);
                             None
                         }
-                        _ => None,
-                    };
-                    if let Some((at, start)) = coordinate {
-                        add_match(
-                            matches,
-                            alternative,
-                            at + i128::from(path.offset),
-                            start,
-                            location.section_range.length,
-                            r.width,
-                            None,
-                            None,
-                            c,
-                        )?;
+                    } else if reference
+                        .is_none_or(|reference| reference.definition != SymbolDefinition::Section)
+                    {
+                        *issue = Some(NavigationIssue::MissingReference);
+                        None
+                    } else {
+                        None
                     }
                 }
+                _ => None,
+            };
+            if let Some((at, start)) = coordinate {
+                add_match(
+                    matches,
+                    alternative,
+                    at + i128::from(path.offset),
+                    start,
+                    location.section_range.length,
+                    r.width,
+                    c,
+                )?;
             }
         }
         Ok(())
     }
 }
-struct Match<'a> {
+struct Match {
     alternative: u8,
     offset: i64,
     partial: bool,
-    field: Option<&'a str>,
-    argument: Option<u8>,
 }
-#[allow(clippy::too_many_arguments)]
-fn add_match<'a>(
-    matches: &mut AdmittedVec<'_, Match<'a>>,
+fn add_match(
+    matches: &mut AdmittedVec<'_, Match>,
     alternative: u8,
     at: i128,
     start: i128,
     length: u64,
     width: u8,
-    field: Option<&'a str>,
-    argument: Option<u8>,
     c: &mut dyn RunControl,
 ) -> Result<()> {
     let end = at + i128::from(width);
@@ -475,8 +279,6 @@ fn add_match<'a>(
                 offset: i64::try_from(at - start)
                     .map_err(|_| invalid("navigation offset overflow"))?,
                 partial: at < start || end > limit,
-                field,
-                argument,
             },
             c.position(),
         )?;

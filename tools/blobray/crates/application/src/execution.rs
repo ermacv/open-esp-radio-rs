@@ -2,7 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::{collections::BTreeMap, io::Write};
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/boot-data-1/entry-registers-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/boot-data-1/entry-registers-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/final-memory-1/physical-calls-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -270,28 +270,6 @@ fn evidence(
             c,
         )?;
     }
-    for table in &observation.tables {
-        c.checkpoint(1)?;
-        emit(
-            ExecutionEvidence::RuntimeTable {
-                case,
-                replacement,
-                observation: table.clone(),
-            },
-            c,
-        )?;
-    }
-    for service in &observation.services {
-        c.checkpoint(1)?;
-        emit(
-            ExecutionEvidence::FifoService {
-                case,
-                replacement,
-                observation: service.clone(),
-            },
-            c,
-        )?;
-    }
     emit(
         ExecutionEvidence::Outcome {
             case,
@@ -345,11 +323,18 @@ pub(crate) fn prepare_execution_worker_in(
             &mut control,
         )?;
         let request = &request;
+        if request.cases.iter().any(|case| {
+            case.relation
+                .as_ref()
+                .is_some_and(|r| r.effects.is_some() || r.projection.is_some())
+        }) {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "a project execution selects no effect contract or layout projection; \
+                 an in-process comparison receives them by content",
+            ));
+        }
         let goals = crate::execution_goals::prepare(&project, request, memory, &mut control)?;
-        let tables = crate::execution_interfaces::prepare(&project, request, memory, &mut control)?;
-        let pairs = project.execution_call_pairs(request, memory, &mut control)?;
-        let projections = project.execution_projections(request, memory, &mut control)?;
-        let effects = project.execution_effects(request, memory, &mut control)?;
         let sources = Sources::load(&project, request, memory, &mut control)?;
         // Records are small; buffer them so each is not its own metered write.
         let mut file = std::io::BufWriter::with_capacity(
@@ -362,10 +347,8 @@ pub(crate) fn prepare_execution_worker_in(
             &Resolved {
                 request,
                 goals: &goals,
-                tables: &tables,
-                pairs: &pairs.pairs,
-                projections: &projections.projections,
-                effects: &effects.contracts,
+                projections: &[],
+                effects: &[],
                 sources: &sources,
                 patches: &[],
             },
@@ -388,9 +371,6 @@ pub(crate) fn prepare_execution_worker_in(
         let records = staging.retain_temporary(file, &mut control)?;
         staging.execution_receipt(
             &ExecutionManifest {
-                effect_contracts: effects.contracts,
-                projections: projections.projections,
-                call_pairs: pairs.pairs,
                 schema: EXECUTION_SCHEMA,
                 project: project.id().clone(),
                 request: work.request.clone(),
@@ -411,8 +391,6 @@ pub(crate) fn prepare_execution_worker_in(
 pub(crate) struct Resolved<'r, 'm> {
     pub request: &'r ExecutionRequest,
     pub goals: &'r [[Option<ResolvedExecutionGoal>; 2]],
-    pub tables: &'r [crate::execution_interfaces::PreparedTable<'m>],
-    pub pairs: &'r [ResolvedCallPair],
     pub projections: &'r [ResolvedProjection],
     pub effects: &'r [ResolvedEffectContract],
     pub sources: &'r Sources<'m>,
@@ -516,13 +494,7 @@ pub(crate) fn run_resolved<'m>(
             VendorSide::Execute(_) => std::borrow::Cow::Owned(engine.invoke(
                 &request.vendor,
                 &case.vendor,
-                invocation_preparation(
-                    resolved.tables,
-                    index,
-                    0,
-                    resolved.goals[index][0],
-                    control,
-                )?,
+                resolved_goal(resolved.goals[index][0])?,
                 &mut sides[0],
                 blocked,
                 control,
@@ -532,13 +504,7 @@ pub(crate) fn run_resolved<'m>(
             (Some(t), Some(i)) => Some(engine.invoke(
                 t,
                 i,
-                invocation_preparation(
-                    resolved.tables,
-                    index,
-                    1,
-                    resolved.goals[index][1],
-                    control,
-                )?,
+                resolved_goal(resolved.goals[index][1])?,
                 &mut sides[1],
                 blocked,
                 control,
@@ -563,7 +529,6 @@ pub(crate) fn run_resolved<'m>(
                 &left,
                 right,
                 relation,
-                resolved.pairs,
                 selected_projection(case.relation.as_ref(), resolved.projections)?.map(
                     |resolved| blobray_verification::ProjectionComparison {
                         resolved,
@@ -588,7 +553,6 @@ pub(crate) fn run_resolved<'m>(
                     right,
                     case.replacement.as_ref().unwrap(),
                     relation,
-                    resolved.pairs,
                     selected_projection(Some(relation), resolved.projections)?
                         .map(|p| &p.projection),
                     selected_effect_contract(Some(relation), resolved.effects)?,
@@ -700,7 +664,7 @@ impl<'m> Engine<'_, 'm> {
         &self,
         target: &ExecutionTarget,
         invocation: &Invocation,
-        ready: InvocationPreparation<'_, '_>,
+        goal: ResolvedExecutionGoal,
         side: &mut Side<'m>,
         blocked: bool,
         c: &mut dyn RunControl,
@@ -738,23 +702,7 @@ impl<'m> Engine<'_, 'm> {
             }
         }
         let machine = side.session.as_mut().unwrap();
-        let (stack, issue) = machine.phase(target, self.stack_fill, invocation, ready.tables, c)?;
-        if let Some((instance, issue)) = issue {
-            machine.capture_final_memory(invocation, c)?;
-            return machine.observation(
-                ExecutionStop::Incomplete {
-                    pc: invocation.entry,
-                    reason: ExecutionGap::RuntimeInterface {
-                        instance: Some(instance),
-                        issue,
-                    },
-                },
-                0,
-                self.close_chain,
-                c,
-            );
-        }
-        let goal = ready.goal;
+        let stack = machine.phase(target, self.stack_fill, invocation, c)?;
         c.set_position(RunPosition {
             phase: RunPhase::Execute,
             table: case,
@@ -776,22 +724,6 @@ impl<'m> Engine<'_, 'm> {
     }
 }
 
-struct InvocationPreparation<'a, 'm> {
-    goal: ResolvedExecutionGoal,
-    tables: &'a [crate::execution_interfaces::PreparedTable<'m>],
-}
-fn invocation_preparation<'a, 'm>(
-    tables: &'a [crate::execution_interfaces::PreparedTable<'m>],
-    phase: usize,
-    side: usize,
-    goal: Option<ResolvedExecutionGoal>,
-    c: &mut dyn RunControl,
-) -> Result<InvocationPreparation<'a, 'm>> {
-    c.checkpoint(2 * (tables.len().max(1).ilog2() as u64 + 1))?;
-    let start = tables.partition_point(|t| (t.phase, t.side) < (phase, side));
-    let end = tables.partition_point(|t| (t.phase, t.side) <= (phase, side));
-    Ok(InvocationPreparation {
-        goal: goal.ok_or_else(|| Error::new(ErrorCode::Integrity, "execution goal unresolved"))?,
-        tables: &tables[start..end],
-    })
+fn resolved_goal(goal: Option<ResolvedExecutionGoal>) -> Result<ResolvedExecutionGoal> {
+    goal.ok_or_else(|| Error::new(ErrorCode::Integrity, "execution goal unresolved"))
 }

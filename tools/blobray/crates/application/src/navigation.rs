@@ -24,11 +24,6 @@ struct Pending<'m> {
     call: CallObservation,
     _capacity: MemoryReservation<'m>,
 }
-struct Declaration<'a, 'm> {
-    key: FunctionLocation,
-    entry: &'a KnowledgeEntry,
-    _capacity: MemoryReservation<'m>,
-}
 fn sort_charge(n: usize, c: &mut dyn RunControl) -> Result<()> {
     c.checkpoint(n as u64 * (n.max(1).ilog2() as u64 + 1))
 }
@@ -85,8 +80,7 @@ fn query_inner(
     }
     // Current manifest, one JSON record and bounded result construction; retained indexes are separate.
     let _envelope = memory.reserve(4 * 1024 * 1024, c.position())?;
-    let snapshot = project.knowledge_snapshot(scope.knowledge.as_ref(), memory, c)?;
-    let target = accesses::Target::new(project, request, &snapshot, memory, c)?;
+    let target = accesses::Target::new(project, request, memory, c)?;
     let mut summary = NavigationSummary {
         schema: 1,
         request: request.clone(),
@@ -97,7 +91,7 @@ fn query_inner(
         observations: 0,
         unresolved: 0,
         ambiguous: 0,
-        data: target.as_ref().and_then(accesses::Target::data),
+        data: target.as_ref().map(accesses::Target::data),
     };
     let mut ids = AdmittedVec::new(memory);
     let mut add = |id: FunctionAnalysisId, name: Option<Vec<u8>>, c: &mut dyn RunControl| {
@@ -165,32 +159,6 @@ fn query_inner(
     }
     sort_charge(ids.len(), c)?;
     ids.sort_unstable_by(|a, b| a.value.cmp(&b.value));
-    let mut declarations = AdmittedVec::new(memory);
-    if matches!(request.filter, NavigationFilter::Functions { .. }) {
-        for entry in snapshot.entries() {
-            c.checkpoint(1)?;
-            if entry.proposal.occurrence.revision != scope.revision {
-                continue;
-            }
-            if let KnowledgeClaim::Function { contract } = &entry.proposal.claim {
-                let key = FunctionLocation {
-                    source: entry.proposal.occurrence.source.clone(),
-                    selector: contract.selector.clone(),
-                };
-                let capacity = memory.reserve(key.allocated_bytes(), c.position())?;
-                declarations.push(
-                    Declaration {
-                        key,
-                        entry,
-                        _capacity: capacity,
-                    },
-                    c.position(),
-                )?;
-            }
-        }
-        sort_charge(declarations.len(), c)?;
-        declarations.sort_unstable_by(|a, b| a.key.cmp(&b.key));
-    }
     let mut reader = project.analysis_reader(memory);
     let mut nodes = AdmittedVec::new(memory);
     let mut pending = AdmittedVec::new(memory);
@@ -201,7 +169,6 @@ fn query_inner(
         _ => None,
     };
     let mut focus_found = focus.is_none();
-    let mut context_found = !matches!(request.filter, NavigationFilter::Context { .. });
     for (i, id) in ids.iter().enumerate() {
         c.checkpoint(1)?;
         if i > 0 && ids[i - 1].value == id.value {
@@ -266,28 +233,11 @@ fn query_inner(
                 c,
             )?;
             summary.observations += 1;
-            c.checkpoint(declarations.len().max(1).ilog2() as u64 + 1)?;
-            let start = declarations.partition_point(|d| d.key < node.function.location);
-            for declaration in declarations[start..]
-                .iter()
-                .take_while(|d| d.key == node.function.location)
-            {
-                c.checkpoint(1)?;
-                emit(
-                    &NavigationRecord::Declaration {
-                        function: node.function.clone(),
-                        assertion: declaration.entry.id.clone(),
-                        state: declaration.entry.state,
-                    },
-                    c,
-                )?;
-            }
         }
         if inspect.is_some()
             || matches!(request.filter, NavigationFilter::Calls { .. })
-            || target.as_ref().is_some_and(|t| t.relevant(recipe))
+            || target.is_some()
         {
-            context_found = true;
             let records = crate::records::load_records(&lease.records, memory, c)?;
             summary.analyses_read += 1;
             let facts = Facts::new(&records, memory, c)?;
@@ -315,7 +265,7 @@ fn query_inner(
         }
         nodes.push(node, c.position())?;
     }
-    if !focus_found || !context_found {
+    if !focus_found {
         return Err(Error::new(
             ErrorCode::NotFound,
             "selected function is absent from the explicit research scope",

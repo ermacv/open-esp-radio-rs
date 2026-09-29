@@ -553,15 +553,6 @@ fn run(
                 ));
             }
             match memory.call(&input, control)? {
-                CallDispatch::RuntimeInterface { instance, issue } => {
-                    stop!(ExecutionGap::RuntimeInterface { instance, issue })
-                }
-                CallDispatch::FifoService { instance, issue } => {
-                    stop!(ExecutionGap::FifoService { instance, issue })
-                }
-                CallDispatch::ObservedDequeue { instance, value } => {
-                    return Ok((ExecutionStop::ObservedDequeue { instance, value }, steps));
-                }
                 CallDispatch::Code => {}
                 CallDispatch::Incomplete { issue } => stop!(ExecutionGap::CallModel {
                     target: next,

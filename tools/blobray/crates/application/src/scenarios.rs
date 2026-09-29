@@ -30,15 +30,6 @@ fn resolve(
     c: &mut dyn RunControl,
 ) -> Result<Resolution> {
     let operation = match action {
-        ScenarioRequest::ProposeEffectContract { request } => RunOperation::Knowledge {
-            change: crate::effect_contracts::propose(project, request, memory, c)?,
-        },
-        ScenarioRequest::ProposeProjection { request } => RunOperation::Knowledge {
-            change: crate::layout_projections::propose(project, request, memory, c)?,
-        },
-        ScenarioRequest::ProposeCallPair { request } => RunOperation::Knowledge {
-            change: crate::call_pairs::propose(project, request, memory, c)?,
-        },
         ScenarioRequest::Investigate { request, producer } => {
             c.phase(RunPhase::PlanInvestigation)?;
             let plan = crate::investigations::enumerate(
@@ -194,20 +185,6 @@ pub fn prepare_scenario_worker(
                     deadline_ms: work.deadline_ms,
                 };
                 PreparedReceipt::Function(crate::functions::prepare_function_worker_in(
-                    stage, &request, decoder, &memory, &disk, c,
-                )?)
-            }
-            RunOperation::Knowledge { change } => {
-                let request = KnowledgeWork {
-                    schema: 1,
-                    run: work.run.clone(),
-                    project: work.project.clone(),
-                    change: change.clone(),
-                    budget: work.budget.clone(),
-                    started_ms: work.started_ms,
-                    deadline_ms: work.deadline_ms,
-                };
-                PreparedReceipt::Knowledge(crate::knowledge::prepare_with(
                     stage, &request, decoder, &memory, &disk, c,
                 )?)
             }

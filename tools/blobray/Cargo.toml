@@ -6,7 +6,6 @@ members = [
     "crates/application",
     "crates/artifacts",
     "crates/domain",
-    "crates/knowledge",
     "crates/riscv",
     "crates/store",
     "crates/verification",

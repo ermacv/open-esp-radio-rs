@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 22;
+pub const EXECUTION_SCHEMA: u32 = 23;
 /// Upper bound of one canonical execution request payload. Requests are retained
 /// by identity; control messages, journal rows and manifests carry only the hash.
 pub const MAX_EXECUTION_REQUEST_BYTES: usize = 16 * 1024 * 1024;
@@ -62,8 +62,6 @@ pub struct Invocation {
     pub preload: Vec<MemoryPreload>,
     pub models: Vec<DeviceDeclaration>,
     pub calls: Vec<CallDeclaration>,
-    pub tables: Vec<RuntimeTable>,
-    pub services: Vec<FifoService>,
     pub observe_memory: Vec<MemorySelection>,
     pub observe_calls: Option<CallCapture>,
     pub observe_timeline: TimelineCapture,
@@ -121,10 +119,6 @@ pub struct ExecutionSymbol {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionGoal {
     Return,
-    ObserveDequeue {
-        service: String,
-        value: Option<u32>,
-    },
     ReachSymbol {
         target: ExecutionSymbol,
     },
@@ -139,15 +133,8 @@ pub enum ExecutionGoal {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResolvedExecutionGoal {
     Return,
-    /// Application validates the selected live service and signals its successful dequeue.
-    ObserveDequeue,
-    ReachSymbol {
-        address: u32,
-    },
-    ObserveCall {
-        address: u32,
-        include_tail: bool,
-    },
+    ReachSymbol { address: u32 },
+    ObserveCall { address: u32, include_tail: bool },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ExecutionStart {
@@ -199,37 +186,6 @@ pub enum ExecutionEvent {
         word: u16,
         value: ObservedWord,
     },
-    ServiceCall {
-        instance: u16,
-        binding: u16,
-        site: u32,
-        target: u32,
-        tail: bool,
-    },
-    ServiceArgument {
-        word: u16,
-        value: Option<u32>,
-    },
-    ServiceInput {
-        address: u32,
-        width: u8,
-        value: u32,
-    },
-    ServiceOutput {
-        address: u32,
-        width: u8,
-        value: u32,
-    },
-    ServiceResult {
-        instance: u16,
-        transition: FifoTransition,
-        depth: u32,
-        words: [Option<u32>; 2],
-    },
-    RuntimeTable {
-        instance: u16,
-        event: RuntimeTableEvent,
-    },
     ModeledCall {
         site: u32,
         target: u32,
@@ -277,10 +233,6 @@ pub enum ExecutionEvent {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionStop {
-    ObservedDequeue {
-        instance: u16,
-        value: u32,
-    },
     Returned {
         low: Option<u32>,
         high: Option<u32>,
@@ -309,36 +261,17 @@ impl ExecutionStop {
     pub fn completed(&self) -> bool {
         matches!(
             self,
-            Self::Returned { .. }
-                | Self::ReachedSymbol { .. }
-                | Self::ObservedCall { .. }
-                | Self::ObservedDequeue { .. }
+            Self::Returned { .. } | Self::ReachedSymbol { .. } | Self::ObservedCall { .. }
         )
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionGap {
-    FifoService {
-        instance: u16,
-        issue: FifoIssue,
-    },
-    RuntimeInterface {
-        instance: Option<u16>,
-        issue: RuntimeTableIssue,
-    },
-    CallModel {
-        target: u32,
-        issue: CallIssue,
-    },
+    CallModel { target: u32, issue: CallIssue },
     UnsupportedInstruction,
-    Memory {
-        address: u32,
-        access: MemoryAccess,
-    },
-    UnknownRegister {
-        register: u8,
-    },
+    Memory { address: u32, access: MemoryAccess },
+    UnknownRegister { register: u8 },
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -356,8 +289,6 @@ pub struct ExecutionObservation {
     pub events: Vec<ExecutionEvent>,
     pub models: Vec<ModelObservation>,
     pub calls: Vec<CallObservation>,
-    pub tables: Vec<RuntimeTableObservation>,
-    pub services: Vec<FifoObservation>,
     pub final_memory: Vec<FinalMemoryChunk>,
     /// Persistent bytes written, when the invocation selects
     /// [`TimelineCapture::written`].
@@ -369,19 +300,11 @@ impl ExecutionObservation {
     pub fn completed(&self) -> bool {
         self.stop.completed()
             && self
-                .services
-                .iter()
-                .all(|o| o.status != ModelStatus::Incomplete && o.status == o.expected_status())
-            && self
                 .models
                 .iter()
                 .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
             && self
                 .calls
-                .iter()
-                .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
-            && self
-                .tables
                 .iter()
                 .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
     }
@@ -405,9 +328,6 @@ pub struct CaseComparison {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionManifest {
-    pub effect_contracts: Vec<ResolvedEffectContract>,
-    pub projections: Vec<ResolvedProjection>,
-    pub call_pairs: Vec<ResolvedCallPair>,
     pub schema: u32,
     pub project: ProjectId,
     /// Identity of the retained canonical request payload.
@@ -629,9 +549,10 @@ impl ExecutionRequest {
                             case.vendor.goal,
                             ExecutionGoal::ObserveCall { .. } | ExecutionGoal::ReachSymbol { .. }
                         ) && other.goal == ExecutionGoal::Return
-                            && case.relation.as_ref().is_some_and(|r| {
-                                !r.returns.low && !r.returns.high && !r.observes_calls()
-                            })),
+                            && case
+                                .relation
+                                .as_ref()
+                                .is_some_and(|r| !r.returns.low && !r.returns.high && !r.calls)),
                     || format!("case `{name}` pairs goals that cannot be compared"),
                 )?;
             }
@@ -651,18 +572,6 @@ impl ExecutionRequest {
                 })?;
                 match &input.goal {
                     ExecutionGoal::Return => {}
-                    ExecutionGoal::ObserveDequeue { service, .. } => {
-                        require(
-                            !service.trim().is_empty()
-                                && service.len() <= 128
-                                && service.is_ascii(),
-                            || {
-                                format!(
-                                    "case `{name}` {side} dequeue service `{service}` is not a short ASCII name"
-                                )
-                            },
-                        )?;
-                    }
                     ExecutionGoal::ReachSymbol { target: point }
                     | ExecutionGoal::ObserveCall { target: point, .. } => {
                         require(
@@ -684,23 +593,6 @@ impl ExecutionRequest {
                 })?;
                 if let Some(capture) = &input.observe_calls {
                     capture.validate()?;
-                }
-                require(input.services.len() <= MAX_FIFO_SERVICES, || {
-                    format!("case `{name}` {side} has more than {MAX_FIFO_SERVICES} services")
-                })?;
-                for (index, service) in input.services.iter().enumerate() {
-                    service.validate()?;
-                    require(
-                        !input.services[..index]
-                            .iter()
-                            .any(|s| s.id == service.id || s.handle == service.handle),
-                        || {
-                            format!(
-                                "case `{name}` {side} repeats service `{}` or its handle",
-                                service.id
-                            )
-                        },
-                    )?;
                 }
                 require(input.memory.len() <= 128, || {
                     format!(
@@ -749,17 +641,6 @@ impl ExecutionRequest {
                             )
                         },
                     )?;
-                }
-                require(input.tables.len() <= MAX_RUNTIME_TABLES, || {
-                    format!(
-                        "case `{name}` {side} has more than {MAX_RUNTIME_TABLES} runtime tables"
-                    )
-                })?;
-                for (i, table) in input.tables.iter().enumerate() {
-                    table.validate()?;
-                    require(!input.tables[..i].iter().any(|t| t.id == table.id), || {
-                        format!("case `{name}` {side} repeats runtime table `{}`", table.id)
-                    })?;
                 }
                 require(input.calls.len() <= MAX_CALL_MODELS, || {
                     format!("case `{name}` {side} has more than {MAX_CALL_MODELS} call models")
@@ -846,16 +727,6 @@ pub enum ExecutionEvidence {
         case: u32,
         replacement: bool,
         chunk: FinalMemoryChunk,
-    },
-    FifoService {
-        case: u32,
-        replacement: bool,
-        observation: FifoObservation,
-    },
-    RuntimeTable {
-        case: u32,
-        replacement: bool,
-        observation: RuntimeTableObservation,
     },
     CallModel {
         case: u32,
@@ -1046,8 +917,6 @@ mod validation_tests {
             preload: vec![],
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
         }
     }
 
@@ -1077,7 +946,6 @@ mod validation_tests {
                     effects: None,
                     projection: None,
                     calls: false,
-                    reviewed_calls: None,
                     returns: ReturnWords {
                         low: true,
                         high: false,
@@ -1205,9 +1073,19 @@ mod validation_tests {
         assert!(rejected(r).contains("pairs `v` (4 bytes) with `p` (8 bytes)"));
 
         let mut r = request();
-        r.cases[0].vendor.goal = ExecutionGoal::ObserveDequeue {
-            service: "fifo".into(),
-            value: None,
+        r.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
+            target: ExecutionSymbol {
+                source: FunctionSource::Input { input: 0 },
+                symbol: SymbolId {
+                    object: ObjectId {
+                        artifact: ArtifactId::of_bytes(b"goal object"),
+                        location: ObjectLocation::Standalone,
+                    },
+                    table: SymbolTableKind::Static,
+                    table_section: 1,
+                    index: 1,
+                },
+            },
         };
         assert!(rejected(r).contains("compared returns need a return goal on both sides"));
     }

@@ -3,7 +3,6 @@ use crate::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RegionKind {
     Image,
-    Table(RegionLifetime),
     Stack,
     Ram(RegionLifetime),
     Allocation {
@@ -18,7 +17,6 @@ impl RegionKind {
             self,
             RegionKind::Stack
                 | RegionKind::Ram(RegionLifetime::Phase)
-                | RegionKind::Table(RegionLifetime::Phase)
                 | RegionKind::Allocation {
                     lifetime: RegionLifetime::Phase,
                     ..
@@ -45,10 +43,6 @@ pub(super) struct Session<'a> {
     _metadata: MemoryReservation<'a>,
     devices: crate::devices::Devices<'a>,
     calls: crate::external_calls::Calls<'a>,
-    tables: crate::runtime_tables::Tables<'a>,
-    services: crate::fifo_services::Services<'a>,
-    service_observations: Vec<FifoObservation>,
-    service_goal: Option<(u16, Option<u32>)>,
     capture: Option<(CallCapture, MemoryReservation<'a>)>,
     timeline: TimelineCapture,
     pc: Option<u32>,
@@ -57,7 +51,6 @@ pub(super) struct Session<'a> {
     /// Coalesced persistent writes of the phase, when the timeline selects them.
     written: Vec<WrittenRange>,
     written_capacity: Option<MemoryReservation<'a>>,
-    table_observations: Vec<RuntimeTableObservation>,
     call_observations: Vec<CallObservation>,
     model_observations: Vec<ModelObservation>,
     events: Vec<ExecutionEvent>,
@@ -85,10 +78,7 @@ impl<'a> Session<'a> {
         c: &mut dyn RunControl,
     ) -> Result<Self> {
         let metadata = memory.reserve(
-            1024 * 1024
-                + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512
-                + MAX_RUNTIME_TABLES as u64 * 1024
-                + MAX_FIFO_SERVICES as u64 * 512,
+            1024 * 1024 + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512,
             c.position(),
         )?;
         let mut regions = Vec::new();
@@ -113,35 +103,12 @@ impl<'a> Session<'a> {
                     "call observations allocation refused",
                 )
             })?;
-        let mut table_observations = Vec::new();
-        table_observations
-            .try_reserve_exact(MAX_RUNTIME_TABLES)
-            .map_err(|_| {
-                Error::new(
-                    ErrorCode::ResourceLimited,
-                    "table observation allocation refused",
-                )
-            })?;
-        let mut service_observations = Vec::new();
-        service_observations
-            .try_reserve_exact(MAX_FIFO_SERVICES)
-            .map_err(|_| {
-                Error::new(
-                    ErrorCode::ResourceLimited,
-                    "FIFO observation allocation refused",
-                )
-            })?;
         Ok(Self {
             regions,
             memory,
             _metadata: metadata,
             devices: crate::devices::Devices::new(memory),
             calls: crate::external_calls::Calls::new(memory),
-            tables: crate::runtime_tables::Tables::new(memory),
-            table_observations,
-            services: crate::fifo_services::Services::new(memory),
-            service_observations,
-            service_goal: None,
             capture: None,
             timeline: TimelineCapture::default(),
             pc: None,
@@ -400,11 +367,7 @@ impl<'a> Session<'a> {
                 format!("memory region {address:#x}+{length:#x} overlaps a live device model"),
             ));
         }
-        for binding in self
-            .calls
-            .bindings()
-            .chain(self.services.bindings().map(|(_, _, b)| b.call))
-        {
+        for binding in self.calls.bindings() {
             c.checkpoint(1)?;
             if u64::from(binding.address) < end
                 && u64::from(address) < u64::from(binding.address) + 2
@@ -502,9 +465,8 @@ impl<'a> Session<'a> {
         target: &ExecutionTarget,
         stack_fill: Option<u8>,
         input: &Invocation,
-        tables: &[crate::execution_interfaces::PreparedTable<'_>],
         c: &mut dyn RunControl,
-    ) -> Result<(u32, Option<(u16, RuntimeTableIssue)>)> {
+    ) -> Result<u32> {
         let stack = input.entry_stack(&target.stack)?;
         self.reservation = None;
         self.finish_phase();
@@ -644,15 +606,8 @@ impl<'a> Session<'a> {
                 Ok(())
             })?;
         self.calls.install(&input.calls, c)?;
-        self.services.install(&input.services, c)?;
-        self.service_goal = None;
-        self.validate_service_targets(input, c)?;
         // Validate live bindings after phase memory/devices are installed. No hidden symbol lookup.
-        for binding in self
-            .calls
-            .bindings()
-            .chain(self.services.bindings().map(|(_, _, b)| b.call))
-        {
+        for binding in self.calls.bindings() {
             c.checkpoint(self.regions.len() as u64 + 1)?;
             if self.devices.overlaps(binding.address, 2, c)? {
                 return Err(Error::new(
@@ -679,11 +634,7 @@ impl<'a> Session<'a> {
                 ));
             }
         }
-        let issue = self.install_tables(tables, input, c)?;
-        if issue.is_none() {
-            self.prepare_services(input, c)?;
-        }
-        Ok((stack, issue))
+        Ok(stack)
     }
     pub fn observation(
         &mut self,
@@ -696,18 +647,12 @@ impl<'a> Session<'a> {
             .finish(close_chain, &mut self.model_observations, c)?;
         self.calls
             .finish(close_chain, &mut self.call_observations, c)?;
-        self.tables
-            .finish(close_chain, &mut self.table_observations, c)?;
-        self.services
-            .finish(close_chain, &mut self.service_observations, c)?;
         Ok(ExecutionObservation {
             stop,
             steps,
             events: std::mem::take(&mut self.events),
             models: std::mem::take(&mut self.model_observations),
             calls: std::mem::take(&mut self.call_observations),
-            tables: std::mem::take(&mut self.table_observations),
-            services: std::mem::take(&mut self.service_observations),
             final_memory: std::mem::take(&mut self.final_memory),
             written: std::mem::take(&mut self.written),
         })
@@ -719,10 +664,6 @@ impl<'a> Session<'a> {
         self.model_observations = observation.models;
         observation.calls.clear();
         self.call_observations = observation.calls;
-        observation.tables.clear();
-        self.table_observations = observation.tables;
-        observation.services.clear();
-        self.service_observations = observation.services;
         drop(observation.final_memory);
         self.final_memory_capacity = None;
         drop(observation.written);
@@ -775,7 +716,7 @@ impl<'a> Session<'a> {
             RegionKind::Ram(lifetime) | RegionKind::Allocation { lifetime, .. } => {
                 lifetime == RegionLifetime::Session
             }
-            RegionKind::Stack | RegionKind::Table(_) => false,
+            RegionKind::Stack => false,
         };
         if !self.timeline.written || !persistent {
             return Ok(());
@@ -874,14 +815,6 @@ impl ExecutionMemory for Session<'_> {
             self.coverage
                 .transfer(input.site, input.target, self.memory, c)?;
         }
-        if input.indirect
-            && let Some(result) = self.interface_call(input, c)?
-        {
-            return Ok(result);
-        }
-        if let Some(result) = self.service_call(input, c)? {
-            return Ok(result);
-        }
         let dispatch = self.external_call(input, c)?;
         if matches!(dispatch, CallDispatch::Returned { .. }) {
             self.log(crate::execution_steps::StepEntry::CallReturn, c)?;
@@ -968,7 +901,6 @@ impl ExecutionMemory for Session<'_> {
             },
             c,
         )?;
-        self.table_write(address, width, value, self.pc, c)?;
         self.trace_memory(
             MemoryTransaction::Write {
                 address,
@@ -987,11 +919,8 @@ impl ExecutionMemory for Session<'_> {
         let Some((i, offset)) = self.region_index(address, width) else {
             return Ok(false);
         };
-        // A recorded write timeline or a runtime table would observe the value.
-        if self.regions[i].flags & 2 == 0
-            || self.timeline.writes
-            || matches!(self.regions[i].kind, RegionKind::Table(_))
-        {
+        // A recorded write timeline would observe the value.
+        if self.regions[i].flags & 2 == 0 || self.timeline.writes {
             return Ok(false);
         }
         self.invalidate_reservation(address, width);
@@ -1078,7 +1007,6 @@ impl ExecutionMemory for Session<'_> {
             },
             c,
         )?;
-        self.table_write(address, 4, value, self.pc, c)?;
         self.trace_memory(
             MemoryTransaction::StoreConditional {
                 address,
@@ -1124,7 +1052,6 @@ impl ExecutionMemory for Session<'_> {
         ] {
             self.log(entry, c)?;
         }
-        self.table_write(address, 4, value, self.pc, c)?;
         self.trace_memory(
             MemoryTransaction::ReadModifyWrite {
                 address,
@@ -1169,12 +1096,6 @@ mod tests;
 
 #[path = "execution_calls.rs"]
 mod execution_calls;
-
-#[path = "execution_tables.rs"]
-mod execution_tables;
-
-#[path = "execution_services.rs"]
-mod execution_services;
 
 #[path = "execution_observation.rs"]
 mod execution_observation;

@@ -155,10 +155,6 @@ impl Project {
                 }
             }
         }
-        self.validate_execution_interfaces(&request, memory, c)?;
-        self.validate_execution_call_pairs(&manifest, &request, memory, c)?;
-        self.validate_execution_projections(&manifest, &request, memory, c)?;
-        self.validate_execution_effects(&manifest, &request, memory, c)?;
         Ok(ExecutionLease {
             _capacity: capacity,
             records: self.open_payload(&manifest.records, c)?,
@@ -228,19 +224,10 @@ impl Writer {
         if *compare != request.replacement.is_some() {
             return Err(integrity("execution receipt differs from admission"));
         }
-        self.project
-            .validate_execution_interfaces(&request, memory, c)?;
-        self.project
-            .validate_execution_call_pairs(&manifest, &request, memory, c)?;
-        self.project
-            .validate_execution_projections(&manifest, &request, memory, c)?;
-        self.project
-            .validate_execution_effects(&manifest, &request, memory, c)?;
         validate_execution_records(
             &manifest,
             &request,
             &stage.open_payload(&manifest.records, c)?,
-            memory,
             c,
         )?;
         // A replay's request is already retained by the project.
@@ -298,10 +285,9 @@ pub fn validate_execution_records(
     manifest: &ExecutionManifest,
     request: &ExecutionRequest,
     source: &dyn ByteSource,
-    memory: &WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<()> {
-    validate_execution_records_with(manifest, request, source, memory, c, &mut |_, _| Ok(()))
+    validate_execution_records_with(manifest, request, source, c, &mut |_, _| Ok(()))
 }
 
 /// Validate every record and hand each one to `visit` in the same pass, so a
@@ -311,11 +297,19 @@ pub fn validate_execution_records_with(
     manifest: &ExecutionManifest,
     request: &ExecutionRequest,
     source: &dyn ByteSource,
-    memory: &WorkingMemory,
     c: &mut dyn RunControl,
     visit: &mut dyn FnMut(&ExecutionEvidence, &mut dyn RunControl) -> Result<()>,
 ) -> Result<()> {
     request.validate()?;
+    if request.cases.iter().any(|case| {
+        case.relation
+            .as_ref()
+            .is_some_and(|r| r.effects.is_some() || r.projection.is_some())
+    }) {
+        return Err(integrity(
+            "a retained execution selects an effect contract or layout projection",
+        ));
+    }
     let mut case = 0u32;
     let mut side = false;
     let mut events = 0u32;
@@ -331,22 +325,6 @@ pub fn validate_execution_records_with(
         crate::execution_calls::Calls::new(),
         crate::execution_calls::Calls::new(),
     ];
-    let mut tables = [
-        crate::execution_tables::Tables::new(),
-        crate::execution_tables::Tables::new(),
-    ];
-    let mut services = [
-        crate::execution_services::Services::new(memory),
-        crate::execution_services::Services::new(memory),
-    ];
-    let mut relation_index = [
-        CallRelationIndex::new(None, &manifest.call_pairs, false, c)?,
-        CallRelationIndex::new(None, &manifest.call_pairs, true, c)?,
-    ];
-    let mut effects: [Option<EffectTracker<'_>>; 2] = [None, None];
-    // A contract rule may depend on the side's next concrete effect, so each
-    // effect is classified once its successor, or the side's outcome, arrives.
-    let mut pending_effect: Option<(ExecutionEvent, u32)> = None;
     let mut prepared = None;
     let mut part = EvidencePart::Events;
     // End of the previous written range of the current side.
@@ -397,9 +375,6 @@ pub fn validate_execution_records_with(
             return Err(integrity("extra execution case"));
         }
         let phase = &request.cases[case as usize];
-        c.checkpoint(manifest.projections.len() as u64 + 1)?;
-        let projection = selected_projection(phase.relation.as_ref(), &manifest.projections)?
-            .map(|p| &p.projection);
         let must_block = phase.reset == SessionReset::Warm && blocked;
         let close_chain = request
             .cases
@@ -407,69 +382,17 @@ pub fn validate_execution_records_with(
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
             relation_complete = true;
-            c.checkpoint(manifest.effect_contracts.len() as u64 + 1)?;
-            effects = match selected_effect_contract(
-                phase.relation.as_ref(),
-                &manifest.effect_contracts,
-            )? {
-                Some(selected) => {
-                    c.checkpoint((selected.contract.rules.len() as u64 + 1).saturating_pow(2))?;
-                    selected.contract.validate_use(request, case as usize)?;
-                    [
-                        Some(EffectTracker::new(&selected.contract, false, c)?),
-                        Some(EffectTracker::new(&selected.contract, true, c)?),
-                    ]
-                }
-                None => [None, None],
-            };
-            relation_index = [
-                CallRelationIndex::new(phase.relation.as_ref(), &manifest.call_pairs, false, c)?,
-                CallRelationIndex::new(phase.relation.as_ref(), &manifest.call_pairs, true, c)?,
-            ];
             capture = [
                 crate::execution_capture::CaptureState::new(),
                 crate::execution_capture::CaptureState::new(),
             ];
             memory_state[0].begin(phase.relation.as_ref(), false);
             memory_state[1].begin(phase.relation.as_ref(), true);
-            if let Some(p) = projection {
-                c.checkpoint((p.fields.len() + p.branches.len() + 1).pow(2) as u64)?;
-                p.validate_use(request, case as usize)?;
-                memory_state[0].begin_projection(p, &phase.vendor, false, c)?;
-                memory_state[1].begin_projection(
-                    p,
-                    phase.replacement.as_ref().unwrap(),
-                    true,
-                    c,
-                )?;
-            }
-            services[0].begin(
-                &phase.vendor,
-                &request.vendor.stack,
-                phase.reset,
-                must_block,
-                c,
-            )?;
-            tables[0].begin(&phase.vendor.tables, phase.reset, must_block, c)?;
             calls[0].begin(&phase.vendor.calls, phase.reset, must_block, c)?;
             models[0].begin(&phase.vendor.models, phase.reset, must_block, c)?;
-            if !must_block {
-                services[0].validate_bindings(&phase.vendor, &tables[0], c)?;
-            }
             if let Some(replacement) = &phase.replacement {
-                services[1].begin(
-                    replacement,
-                    &request.replacement.as_ref().unwrap().stack,
-                    phase.reset,
-                    must_block,
-                    c,
-                )?;
-                tables[1].begin(&replacement.tables, phase.reset, must_block, c)?;
                 calls[1].begin(&replacement.calls, phase.reset, must_block, c)?;
                 models[1].begin(&replacement.models, phase.reset, must_block, c)?;
-                if !must_block {
-                    services[1].validate_bindings(replacement, &tables[1], c)?;
-                }
             }
             prepared = Some(case);
         }
@@ -493,7 +416,7 @@ pub fn validate_execution_records_with(
                 } else {
                     &phase.vendor
                 };
-                memory_state[usize::from(side)].chunk(input, &chunk, c)?;
+                memory_state[usize::from(side)].chunk(input, &chunk)?;
             }
             ExecutionEvidence::Written {
                 case: i,
@@ -522,30 +445,6 @@ pub fn validate_execution_records_with(
                 }
                 written_end = Some(range.end());
                 part = EvidencePart::Memory;
-            }
-            ExecutionEvidence::FifoService {
-                case: i,
-                replacement,
-                observation,
-            } => {
-                if i != case || replacement != side || outcome {
-                    return Err(integrity("FIFO evidence order differs"));
-                }
-                part = EvidencePart::Environment;
-                services[usize::from(side)].observe(&observation, close_chain, must_block)?;
-                environment_complete &= observation.status != ModelStatus::Incomplete;
-            }
-            ExecutionEvidence::RuntimeTable {
-                case: i,
-                replacement,
-                observation,
-            } => {
-                if i != case || replacement != side || outcome {
-                    return Err(integrity("runtime table evidence order differs"));
-                }
-                part = EvidencePart::Environment;
-                tables[usize::from(side)].observe(&observation, close_chain, must_block)?;
-                environment_complete &= observation.status != ModelStatus::Incomplete;
             }
             ExecutionEvidence::CallModel {
                 case: i,
@@ -592,32 +491,6 @@ pub fn validate_execution_records_with(
                         + 1,
                 )?;
                 crate::execution_timeline::validate(input, &event)?;
-                if let (
-                    Some(p),
-                    ExecutionEvent::Branch {
-                        site,
-                        target,
-                        fallthrough,
-                        ..
-                    },
-                ) = (projection, &event)
-                    && phase
-                        .relation
-                        .as_ref()
-                        .is_some_and(|r| r.events.timeline.branches)
-                {
-                    c.checkpoint(p.branches.len() as u64 + 1)?;
-                    relation_complete &= p
-                        .branch_location(
-                            BranchLocation {
-                                site: *site,
-                                target: *target,
-                                fallthrough: *fallthrough,
-                            },
-                            side,
-                        )
-                        .is_some();
-                }
                 if phase
                     .relation
                     .as_ref()
@@ -625,30 +498,14 @@ pub fn validate_execution_records_with(
                     && let Some(transaction) = event.normal_memory()
                 {
                     relation_complete &= transaction.known();
-                    if let Some(p) = projection {
-                        c.checkpoint(p.fields.len() as u64 + 1)?;
-                        relation_complete &= p.memory_location(transaction, side)?.is_some();
-                    }
                 }
                 capture[usize::from(side)].event(
                     input,
                     &event,
-                    Some(&relation_index[usize::from(side)]),
+                    phase.relation.as_ref().is_some_and(|r| r.calls),
                     c,
                 )?;
-                if let ExecutionEvent::RuntimeTable { instance, event } = &event {
-                    tables[usize::from(side)].event(*instance, event, c)?;
-                }
-                services[usize::from(side)].event(&event, &tables[usize::from(side)], c)?;
                 calls[usize::from(side)].event(&event, c)?;
-                if is_contract_effect(&event)
-                    && let Some(tracker) = &mut effects[usize::from(side)]
-                {
-                    if let Some((prior, ordinal)) = pending_effect.take() {
-                        tracker.observe(&prior, Some(&event), ordinal, c)?;
-                    }
-                    pending_effect = Some((event.clone(), events));
-                }
                 events += 1;
                 if events > request.max_events {
                     return Err(integrity("event capacity exceeded"));
@@ -660,11 +517,6 @@ pub fn validate_execution_records_with(
                 stop,
                 steps,
             } => {
-                if let Some((prior, ordinal)) = pending_effect.take()
-                    && let Some(tracker) = &mut effects[usize::from(side)]
-                {
-                    tracker.observe(&prior, None, ordinal, c)?;
-                }
                 if i != case || replacement != side || outcome {
                     return Err(integrity("execution outcome order differs"));
                 }
@@ -686,10 +538,6 @@ pub fn validate_execution_records_with(
                 let address_valid = |pc: u32| pc & 1 == 0 && pc < u32::MAX - 1;
                 let goal_valid = match (&stop, &input.goal) {
                     (ExecutionStop::Returned { .. }, ExecutionGoal::Return) => true,
-                    (
-                        ExecutionStop::ObservedDequeue { .. },
-                        ExecutionGoal::ObserveDequeue { .. },
-                    ) => true,
                     (ExecutionStop::ReachedSymbol { pc }, ExecutionGoal::ReachSymbol { .. }) => {
                         address_valid(*pc)
                     }
@@ -705,17 +553,13 @@ pub fn validate_execution_records_with(
                     }
                     _ => false,
                 };
-                if !goal_valid || !services[usize::from(side)].goal_valid(&stop) {
+                if !goal_valid {
                     return Err(integrity(
                         "execution outcome does not match its declared goal",
                     ));
                 }
                 capture[usize::from(side)].finish(input, &stop)?;
-                if phase
-                    .relation
-                    .as_ref()
-                    .is_some_and(ComparisonRelation::observes_calls)
-                {
+                if phase.relation.as_ref().is_some_and(|r| r.calls) {
                     relation_complete &= capture[usize::from(side)].known;
                 }
                 memory_state[usize::from(side)].finish(input, must_block)?;
@@ -735,8 +579,6 @@ pub fn validate_execution_records_with(
                 }
                 models[usize::from(side)].finish_side()?;
                 calls[usize::from(side)].finish_side()?;
-                tables[usize::from(side)].finish_side()?;
-                services[usize::from(side)].finish_side()?;
                 complete &= stop.completed() && environment_complete;
                 phase_complete &= stop.completed() && environment_complete;
                 part = EvidencePart::Events;
@@ -766,8 +608,9 @@ pub fn validate_execution_records_with(
                 if i != case || !outcome || verdict.is_none() {
                     return Err(integrity("comparison order differs"));
                 }
-                crate::execution_effects::validate_result(&result, &effects)?;
-                if !difference_valid(&result, phase, request.max_events, projection)
+                if result.effect_claim.is_some()
+                    || result.effect_gap.is_some()
+                    || !difference_valid(&result, phase, request.max_events)
                     || (result.verdict == ComparisonVerdict::Match
                         && (!phase_complete || !relation_complete))
                 {
@@ -801,10 +644,6 @@ pub fn validate_execution_records_with(
         || verdict != manifest.verdict
         || !models.iter().all(crate::execution_models::Models::closed)
         || !calls.iter().all(crate::execution_calls::Calls::closed)
-        || !tables.iter().all(crate::execution_tables::Tables::closed)
-        || !services
-            .iter()
-            .all(crate::execution_services::Services::closed)
     {
         return Err(integrity("execution evidence summary differs"));
     }
@@ -839,23 +678,12 @@ impl TestExecution {
             .unwrap_or_else(|_| ArtifactId::of_bytes(b"invalid test request"));
         Self { manifest, request }
     }
-    pub fn validate_records(
-        &self,
-        source: &dyn ByteSource,
-        memory: &WorkingMemory,
-        c: &mut dyn RunControl,
-    ) -> Result<()> {
+    pub fn validate_records(&self, source: &dyn ByteSource, c: &mut dyn RunControl) -> Result<()> {
         // Tests forge the logical JSONL stream; retain it as execution does.
         let mut jsonl = vec![0; source.len() as usize];
         source.read_at(0, &mut jsonl, c)?;
         let encoded = crate::execution_records::encode_records(&jsonl);
-        validate_execution_records(
-            &self.manifest,
-            &self.request,
-            &encoded.as_slice(),
-            memory,
-            c,
-        )
+        validate_execution_records(&self.manifest, &self.request, &encoded.as_slice(), c)
     }
 }
 #[cfg(test)]

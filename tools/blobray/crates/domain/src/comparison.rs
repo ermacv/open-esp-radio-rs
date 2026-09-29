@@ -58,12 +58,8 @@ pub struct ComparisonRelation {
     pub events: EventChannels,
     pub memory: Vec<MemoryPair>,
     pub calls: bool,
-    pub reviewed_calls: Option<ReviewedCalls>,
 }
 impl ComparisonRelation {
-    pub fn observes_calls(&self) -> bool {
-        self.calls || self.reviewed_calls.is_some()
-    }
     pub fn validate(&self, vendor: &Invocation, replacement: &Invocation) -> Result<()> {
         let require = |condition: bool, detail: &str| {
             if condition {
@@ -88,7 +84,7 @@ impl ComparisonRelation {
                 || self.events.delay
                 || self.events.timeline.any()
                 || !self.memory.is_empty()
-                || self.observes_calls()
+                || self.calls
                 || self.projection.is_some(),
             "it compares nothing: select returns, an event channel, memory, calls or a projection",
         )?;
@@ -117,29 +113,6 @@ impl ComparisonRelation {
                     && vendor.observe_calls == replacement.observe_calls),
             "compared calls need the same call capture on both sides",
         )?;
-        if let Some(r) = &self.reviewed_calls {
-            require(!self.calls, "reviewed call pairs exclude exact calls")?;
-            require(
-                vendor.observe_calls.is_some() && replacement.observe_calls.is_some(),
-                "reviewed call pairs need a call capture on both sides",
-            )?;
-            require(
-                !r.pairs.is_empty() && r.pairs.len() <= MAX_CALL_PAIRS,
-                &format!("reviewed call pairs must number 1..={MAX_CALL_PAIRS}"),
-            )?;
-            require(
-                !r.pairs
-                    .iter()
-                    .enumerate()
-                    .any(|(i, p)| r.pairs[..i].contains(p)),
-                "a reviewed call pair repeats",
-            )?;
-            require(
-                r.unlisted != UnlistedCalls::Exact
-                    || vendor.observe_calls == replacement.observe_calls,
-                "exact unlisted calls need the same call capture on both sides",
-            )?;
-        }
         for (i, pair) in self.memory.iter().enumerate() {
             let (Some(a), Some(b)) = (
                 vendor.observe_memory.get(pair.vendor as usize),

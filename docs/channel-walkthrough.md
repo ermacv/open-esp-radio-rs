@@ -47,11 +47,11 @@ corresponding `[[review]]` entry. The review points to
 and incomplete or unknown status; knowledge of one field does not resolve them.
 
 This is the durable hardware description used by the publisher. Blobray's
-accepted knowledge is scoped to a captured source revision. A reviewer must
-separately establish the model's geometry, semantics and applicability before
-changing publication inputs. The
-[synthetic exercise](first-contribution.md#read-the-observations-before-the-declaration)
-shows why an observed byte access does not imply a one-byte physical register.
+observations are scoped to a captured source revision and name no hardware
+register. A reviewer must separately establish the model's geometry, semantics
+and applicability before changing publication inputs. The
+[synthetic exercise](first-contribution.md#read-the-observations)
+shows why an observed access does not name a physical register.
 
 **Handoff:** a reviewed field can be selected by publication policy. Human
 interpretation is explicit at this boundary; no command infers the whole PAC.

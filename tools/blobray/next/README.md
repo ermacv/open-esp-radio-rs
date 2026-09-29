@@ -1,7 +1,7 @@
 # Blobray Next: captured inputs and bounded operations
 
 `blobray-next` imports immutable inputs, analyzes RV32 libraries and images, prepares synthetic images, executes explicit RV32 scenarios,
-compares compiled observations, retains reviewed knowledge and
+compares compiled observations and
 preserves projects through backup/restore. The API and CLI share supervised
 work, cancellation, publication and recovery; `cargo blobray` selects this host.
 The [architecture](../docs/design/architecture.md) owns module authority;
@@ -10,7 +10,7 @@ resource rules; [workflows](../docs/design/workflows.md) lists the supported
 scenarios. This page indexes the current command references.
 
 The current data model separates captured source revisions, selected analysis
-recipes, reviewed knowledge revisions and immutable result publications. A run
+recipes and immutable result publications. A run
 records termination independently of scoped result coverage, policy checks and
 comparison verdicts. `Completed` can legitimately describe partial research or a
 `DIFF`/`INCOMPLETE` comparison. See [result assessment](../docs/design/contracts.md#result-assessment).
@@ -37,11 +37,11 @@ tracked tree differs from the command line; run it with
 | --- | --- |
 | [Capture, selection and linked images](reference/capture-images/README.md) | Capture caller-owned artifacts, choose exact code/data scope and prepare linked images. |
 | [Function and library analysis](reference/analysis/README.md) | Analyze captured code and inspect coverage, symbolic values and explicit gaps. |
-| [Registers, tables and constants](reference/registers-data/README.md) | Inspect MMIO candidates and captured data. |
-| [Knowledge and review](reference/knowledge-review/README.md) | Retain explicit assertions, applicability and review decisions for a captured revision. |
+| [Registers and captured data](reference/registers-data/README.md) | Inspect MMIO candidates and captured data. |
+| [Preservation](reference/preservation/README.md) | Back up, restore and export retained projects and payloads. |
 | [Semantic IR and static traces](reference/ir-traces/README.md) | Package saved facts and extract or compare selected static observable paths. |
 | [Concrete execution and comparison](reference/execution/README.md) | Run explicit RV32 scenarios with selected inputs, device models and comparison observations. |
-| [Comparison relations](reference/comparison/README.md) | Choose physical or reviewed call, memory, branch, layout and effect relations. |
+| [Comparison relations](reference/comparison/README.md) | Choose call, memory, branch, layout and effect relations. |
 | [Resources, storage and recovery](reference/resources-storage/README.md) | Operate bounded jobs, inspect resource use and recover or preserve retained projects. |
 | [Interfaces, identities and formats](reference/interfaces-formats/README.md) | Reference application owners, durable identities, result assessment and native formats. |
 
@@ -154,9 +154,9 @@ See [Library workflow](reference/analysis/README.md#library-workflow).
 
 See [Library ownership and failure boundaries](reference/analysis/README.md#library-ownership-and-failure-boundaries).
 
-## Knowledge and preservation
+## Preservation
 
-See [Knowledge and preservation](reference/knowledge-review/README.md#knowledge-and-preservation).
+See [Preservation](reference/preservation/README.md#backup-and-restore).
 
 ## Concrete execution and comparison
 
@@ -194,17 +194,13 @@ See [Static observable traces](reference/ir-traces/README.md#static-observable-t
 
 See [Physical call capture and comparison](reference/comparison/README.md#physical-call-capture-and-comparison).
 
-## Reviewed call correspondence
-
-See [Reviewed call correspondence](reference/comparison/README.md#reviewed-call-correspondence).
-
 ## Internal physical timeline
 
 See [Internal physical timeline](reference/comparison/README.md#internal-physical-timeline).
 
-### Reviewed layout and ABI comparison
+### Reviewed layout comparison
 
-See [Reviewed layout and ABI comparison](reference/comparison/README.md#reviewed-layout-and-abi-comparison).
+See [Reviewed layout comparison](reference/comparison/README.md#reviewed-layout-comparison).
 
 ### Reviewed effect comparison
 

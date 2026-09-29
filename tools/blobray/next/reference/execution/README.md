@@ -38,7 +38,7 @@ with an exact captured occurrence):
     "name": "one-explicit-case",
     "reset": "cold",
     "relation": null,
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [], "observe_memory": [], "observe_calls": null, "observe_timeline": {"reads":false,"writes":false,"atomics":false,"branches":false} },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "observe_memory": [], "observe_calls": null, "observe_timeline": {"reads":false,"writes":false,"atomics":false,"branches":false} },
     "replacement": null
   }],
   "max_events": 4096
@@ -82,7 +82,7 @@ unknown values, as compiled code may copy uninitialized padding, and returned
 or compared unknown values leave the comparison `INCOMPLETE`. An unknown value
 that decides execution or leaves the guest (a branch condition, a jump target,
 a memory address, an atomic operand, a device write or a store a recorded
-write timeline or runtime table would observe), an inaccessible memory access
+write timeline would observe), an inaccessible memory access
 or an unsupported instruction ends that phase with a typed `incomplete`
 observation and its PC. The current integer executor supports RV32IMAC arithmetic, branches,
 loads/stores, direct/indirect jumps, word atomics and ordinary fence events. FP,
@@ -123,7 +123,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 selected final-RAM and normal-memory timeline relations can observe their updates.
 
-The `static-elf/boot-data-1/entry-registers-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
+The `static-elf/boot-data-1/entry-registers-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/final-memory-1/physical-calls-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. A root starts with
 `ra` at the return sentinel, `sp` at the stack top, the explicit ABI words in
 `a0`.. and on the stack, unknown `gp`/`tp` and every other integer register at
@@ -288,8 +288,8 @@ The binding selects one exact aligned target address in this captured address sp
 `unmapped` requires that no memory/device owns its first two bytes. `captured-code`
 requires a known executable ELF load mapping there and explicitly replaces execution
 of its body with the response. It never claims that the body ran. The operation
-validates bindings after phase memory/device installation; it does not guess names,
-reviewed service bindings or absent implementations. A root entry is executed as
+validates bindings after phase memory/device installation; it does not guess names
+or absent implementations. A root entry is executed as
 code, even if a model binds the same address: models intercept transfers only.
 Unselected targets execute captured code normally; missing bytes stop on fetch.
 Ordinary x1/x5 calls may use responses. Non-return x0 transfers require `allow_tail`;
@@ -338,91 +338,6 @@ consume nothing. Definition identities include applicability, binding, ABI width
 ordered responses and every effect. Store authenticates argument/effect/return order
 against the declared response as well as participation counts and closure. Query,
 backup and replay retain both modeled boundaries and actual code outcomes.
-
-Each invocation also supplies `tables` (an empty array when unused). A runtime
-instance selects an exact accepted interface assertion and knowledge revision:
-
-```json
-{
-  "id": "callbacks",
-  "review": {"knowledge":"KNOWLEDGE_SHA","assertion":"ASSERTION_SHA"},
-  "lifetime": "session",
-  "seed": {"address":12288,"length":16,"fill":null,"bytes":[1]},
-  "slots": [{"offset":4,"target":{"kind":"code","address":4116}}],
-  "pointer_cells": [16384]
-}
-```
-
-The table owns its whole seed range. Slots overwrite seed bytes; pointer cells
-must already be writable normal memory and receive the table base. The selected
-review determines exact layout, slots, ABI, root/path, index domains and guards.
-Address, captured section/symbol and entry-word roots are supported; entry words
-belong to the installing invocation. Unknown pointers, failed guards and ambiguous
-current targets produce explicit incomplete evidence. `null` slots use
-`{"kind":"null"}`. A `model` slot supplies an exact address of a live `calls`
-declaration and requires reviewed semantic/signature metadata; it never invents
-a response or resolves a name.
-
-`runtime-table` evidence records initialization, pointer installation, writes,
-condition checks, indirect target association and phase/session closure. Association
-means a unique current pointer value in a selected slot, not proof that a register
-was loaded from that slot. While tables are live, an eligible indirect call with
-no unique selected target is incomplete. Direct calls and canonical returns keep
-their ordinary behavior. An ordinary captured call encoded as `auipc/jalr` is
-also indirect: after a selected callback, a subsequent captured `jalr` target
-without a selected slot ends the phase as incomplete. Captured-code membership
-alone does not bypass table dispatch. Conditions are checked at installation, warm-phase entry
-and before associated indirect use; this does not assert their truth at every
-instruction or after the last use. [The runtime interface contract](../../../docs/design/contracts.md#runtime-interface-instances)
-defines ownership, binding and claim scope. `execute`/`compare`, retained reads and
-source-free `replay` use the same application path.
-
-Each invocation supplies `services` (empty when unused). A FIFO service declares
-its id/applicability, phase/session lifetime, nonzero handle, item width (1/2/4),
-capacity, initial ordered items and explicit reviewed table bindings. For example:
-
-```json
-{
-  "id":"queue", "applicability":"Selected reviewed callback contract",
-  "lifetime":"session", "handle":85, "item_width":4, "capacity":16,
-  "items":[],
-  "bindings":[{
-    "table":"callbacks", "slot":4,
-    "call":{"address":8192,"boundary":"unmapped","allow_tail":false},
-    "argument_words":3, "handle_word":0,
-    "operation":{
-      "kind":"enqueue", "input":{"kind":"argument","word":1,"width":4},
-      "success":1, "full":0, "wake":{"word":2,"width":4}
-    }
-  }]
-}
-```
-
-The selected table slot uses `{"kind":"service","address":8192}` and must
-have reviewed semantic/signature metadata. `enqueue` reads an explicit ABI word
-or `private-stack` pointer word, checks item width, and appends if capacity permits.
-Its optional wake output points into private stack and receives one only when the
-queue changes from empty to nonempty; full/nonempty enqueue writes zero.
-`dequeue` declares `output` (pointer word/width), `success` and `empty` returns;
-a successful dequeue writes/removes the oldest item. Empty dequeue leaves output
-untouched. `{"kind":"length"}` returns current depth. All returns set a0,
-leave a1 unknown and apply the same caller-saved clobbers as explicit call models.
-
-Services own isolated bounded rings for each implementation. Failed handle,
-input or output checks leave the queue unchanged. Bindings require eligible
-indirect transfers through their exact selected table/slot; direct calls cannot
-activate a service. A missing or differently reviewed binding never falls back to
-an external model. Private-stack inputs/outputs do not fall back to RAM or MMIO.
-Service lifecycle/input/output/transition evidence is retained; a nonempty queue
-may close successfully because there is no implicit obligation to drain it.
-
-`{"kind":"observe-dequeue","service":"queue","value":42}` completes
-only after a successful dequeue of that value from that service, including its
-output write. `value:null` accepts any successfully dequeued value. It requires
-both relation return selectors disabled; empty dequeue, another queue or another value does not
-satisfy it. Returning first produces `goal-not-reached`. This observes a modeled
-service event, not real task scheduling. [FIFO service contracts](../../../docs/design/contracts.md#stateful-fifo-services)
-define exact bounds, lifecycle and retained validation.
 
 Every case is an explicit phase with a shared `reset` for both implementations
 and an `entry` in each invocation. Setup and action phases can select different
@@ -501,8 +416,7 @@ For example, compare low return, ordered MMIO/fence/delay and one exact memory p
   "returns":{"low":true,"high":false},
   "events":{"timeline":{"reads":false,"writes":false,"atomics":false,"branches":false},"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},
   "memory":[{"vendor":0,"replacement":0}],
-  "calls":false,
-  "reviewed_calls":null
+  "calls":false
 }
 ```
 
@@ -560,9 +474,9 @@ resource failure with no publication; events are never silently truncated.
 `max_events` is a bound, not a reservation: each session admits event capacity
 into working memory as events occur, doubling up to that bound, and keeps it for
 later phases.
-Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons/coverage into quota-owned
+Traces stream as bounded JSONL events/final-memory/device-models/call-models/outcomes/comparisons/coverage into quota-owned
 staging. The retained record payload is that JSONL stream as one raw deflate
-stream (execution schema 22): guest events repeat heavily, so large evidence
+stream (execution schema 23): guest events repeat heavily, so large evidence
 sets retain a small fraction of their logical size. Readers decode it under the
 same per-record bound and work budget and see exactly the logical records;
 a truncated, trailing or non-deflate payload is an integrity failure.
@@ -597,12 +511,12 @@ contracts and layout projections its relations select. Those are reviewed
 outside Blobray: `effect_contract_ref` and `projection_ref` select them by the
 SHA-256 of their canonical JSON encoding, and `verify` rejects a selection whose
 content it was not given. Records, the aggregate verdict and completeness are
-returned in memory: no project, content store, journal, run record or knowledge
-review participates, and nothing is retained. A symbol goal resolves in the
-given executable whose content is its object, to a defined code symbol of its
-static symbol table. Runtime tables and reviewed call pairs need a project and
-are rejected. The records equal those a
-project execution of the same request retains. `in_process::coverage` reports the
+returned in memory: no project, content store, journal or run record
+participates, and nothing is retained. A symbol goal resolves in the given
+executable whose content is its object, to a defined code symbol of its static
+symbol table. Without a selected contract or projection, the records equal those
+a project execution of the same request retains; a project execution rejects a
+relation that selects either. `in_process::coverage` reports the
 vendor coverage of such results, as `code-coverage` does for retained executions,
 under identities the caller assigns.
 
@@ -701,8 +615,8 @@ explores executable captured code by recursive descent: conditional branches,
 direct jumps and calls, `auipc`/`lui` + `jalr` pairs whose target the
 immediately preceding upper immediate defines, and the observed targets of any
 other executed indirect transfer. A plain jump to another defined
-code symbol's start is a tail call. The closure does not enter call-model and
-FIFO-service binding addresses or goal symbols; those transfer sites are
+code symbol's start is a tail call. The closure does not enter call-model
+binding addresses or goal symbols; those transfer sites are
 `modeled`. Indirect transfers with neither kind of target, typically ones that
 never executed, and direct transfers leaving executable captured code, are
 `unresolved`; a `jalr x0, 0(ra)` return is neither. Indirect transfers the

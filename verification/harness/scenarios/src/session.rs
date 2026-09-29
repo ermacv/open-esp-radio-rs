@@ -5,9 +5,9 @@ use blobray_application::QuerySummary;
 use blobray_domain::{
     ArtifactId, CallAbi, CallEndpoint, CompanionProposal, EffectContract, EffectContractRef,
     EntrySelection, ErrorCode, ExecutionEvidence, ExecutionRequest, ExecutionTarget,
-    FunctionSource, ImageManifest, ImageMapping, KnowledgeOccurrence, LayoutProjection,
-    LinkRequest, ObjectId, PreparedImageId, ProjectionRef, ReviewedCallBoundary, Revision,
-    RevisionId, SymbolId, SymbolTableKind,
+    FunctionSource, ImageManifest, ImageMapping, LayoutProjection, LinkRequest, ObjectId,
+    Occurrence, PreparedImageId, ProjectionRef, ReviewedCallBoundary, Revision, RevisionId,
+    SymbolId, SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
 use evidence_index::LocationKind;
@@ -294,7 +294,7 @@ impl Session {
     ) -> Result<CallEndpoint> {
         let symbol = image_symbol_id(&self.run.join("image/image.elf"), object, name)?;
         Ok(CallEndpoint {
-            occurrence: KnowledgeOccurrence {
+            occurrence: Occurrence {
                 revision: self.revision.clone(),
                 source: target.source.clone(),
                 object: object.clone(),
@@ -308,7 +308,7 @@ impl Session {
     pub fn input_endpoint(&self, input: u64, name: &str) -> Result<CallEndpoint> {
         let record = crate::harness::symbol(&self.inventory, input as usize, name)?;
         Ok(CallEndpoint {
-            occurrence: KnowledgeOccurrence {
+            occurrence: Occurrence {
                 revision: self.revision.clone(),
                 source: FunctionSource::Input { input },
                 object: record.id.object.clone(),
@@ -354,10 +354,7 @@ impl Session {
     fn review_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
         for contract in &self.effects {
             let EffectContractRef::Content { contract: id } =
-                blobray_application::in_process::effect_contract_ref(contract)?
-            else {
-                continue;
-            };
+                blobray_application::in_process::effect_contract_ref(contract)?;
             if &id == selected {
                 let reviewed = serde_json::json!({
                     "rules": contract.rules,
@@ -381,10 +378,7 @@ impl Session {
     fn projection_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
         for projection in &self.projections {
             let ProjectionRef::Content { projection: id } =
-                blobray_application::in_process::projection_ref(projection)?
-            else {
-                continue;
-            };
+                blobray_application::in_process::projection_ref(projection)?;
             if &id == selected {
                 let reviewed = serde_json::json!({
                     "fields": projection.fields,

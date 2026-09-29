@@ -1,7 +1,6 @@
-//! Saved MMIO catalogue. Knowledge applicability and scope acquisition stay here.
+//! Saved MMIO catalogue over the selected analyses.
 use crate::*;
 use std::cell::RefCell;
-mod index;
 
 fn invalid(s: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, s)
@@ -12,42 +11,6 @@ struct Sample {
     width: u8,
     mask: bool,
     access: bool,
-}
-fn range(claim: &KnowledgeClaim) -> Option<(u64, u64)> {
-    match claim {
-        KnowledgeClaim::MmioRegister { register } => Some((
-            register.address.into(),
-            u64::from(register.address) + u64::from(register.width),
-        )),
-        KnowledgeClaim::MmioRegion { region } => {
-            Some((region.range.start.into(), region.range.end()?))
-        }
-        _ => None,
-    }
-}
-fn declaration_bytes(entry: &KnowledgeEntry) -> u64 {
-    let p = &entry.proposal;
-    let claim = match &p.claim {
-        KnowledgeClaim::MmioRegion { region } => region.name.capacity() as u64,
-        KnowledgeClaim::MmioRegister { register } => {
-            register.name.capacity() as u64
-                + (register.fields.capacity() * std::mem::size_of::<MmioField>()) as u64
-                + register
-                    .fields
-                    .iter()
-                    .map(|f| f.name.capacity() as u64)
-                    .sum::<u64>()
-        }
-        _ => 0,
-    };
-    std::mem::size_of::<KnowledgeEntry>() as u64
-        + claim
-        + p.subject.allocated_bytes()
-        + p.occurrence.source.allocated_bytes()
-        + p.occurrence.object.artifact.allocated_bytes()
-        + 5 * 64
-        + p.evidence.capacity() as u64 * (std::mem::size_of::<EvidenceRef>() as u64 + 64)
-        + p.note.as_ref().map_or(0, |s| s.capacity() as u64)
 }
 pub(crate) fn query(
     project: &Project,
@@ -66,61 +29,24 @@ pub(crate) fn query(
             "register query requires at most 256 valid address intervals",
         ));
     }
-    // One cloned bounded knowledge/analysis row during serialization. The snapshot
-    // and retained sample array have separate reservations.
+    // One cloned bounded analysis row during serialization. The retained
+    // sample array has its own reservation.
     let _envelope = memory.reserve(4 * 1024 * 1024, c.position())?;
-    let snapshot = project.knowledge_snapshot(request.scope.knowledge.as_ref(), memory, c)?;
-    let mut declarations = AdmittedVec::new(memory);
     let mut summary = RegisterSummary {
-        schema: 1,
+        schema: 2,
         request: request.clone(),
         selected_analyses: 0,
         partial_analyses: 0,
         unavailable_entries: 0,
-        declarations: 0,
-        conflicts: 0,
         observations: 0,
         unresolved_addresses: 0,
         alternative_observations: 0,
         candidate_addresses: 0,
-        matched_accepted: 0,
     };
-    for entry in snapshot.entries() {
-        c.checkpoint(1)?;
-        if entry.proposal.occurrence.revision == request.scope.revision
-            && range(&entry.proposal.claim).is_some()
-        {
-            blobray_knowledge::validate_proposal(&entry.proposal)?;
-            let _clone = memory.reserve(declaration_bytes(entry), c.position())?;
-            emit(
-                &RegisterRecord::Declaration {
-                    entry: Box::new(entry.clone()),
-                },
-                c,
-            )?;
-            declarations.push(entry, c.position())?;
-            summary.declarations += 1;
-        }
-    }
-    let index = index::Index::new(&declarations, memory, c)?;
-    drop(declarations);
-    index.conflicts(memory, c, &mut |left, right, c| {
-        summary.conflicts += 1;
-        emit(
-            &RegisterRecord::Conflict {
-                left: left.id.clone(),
-                right: right.id.clone(),
-            },
-            c,
-        )
-    })?;
     let mut samples = AdmittedVec::new(memory);
     let output = RefCell::new(emit);
     let navigation = NavigationQuery {
-        scope: NavigationScope {
-            knowledge: None,
-            ..request.scope.clone()
-        },
+        scope: request.scope.clone(),
         filter: NavigationFilter::Functions { function: None },
     };
     let nav = crate::navigation::query_inspected(
@@ -129,7 +55,7 @@ pub(crate) fn query(
         memory,
         c,
         &mut |_, _, _, _| Ok(()),
-        &mut |function, manifest, records, facts, c| {
+        &mut |function, _, records, facts, c| {
             c.phase(RunPhase::AnalyzeValues)?;
             let mut observe = |record: u64,
                                width: u8,
@@ -172,40 +98,6 @@ pub(crate) fn query(
                                     access: matches!(fact, FunctionRecord::MemoryAccess { .. }),
                                 },
                                 c.position(),
-                            )?;
-                            index.bindings(
-                                &manifest.recipe.source,
-                                manifest.recipe.selector.object(),
-                                u64::from(address),
-                                u64::from(address) + u64::from(width),
-                                c,
-                                &mut |entry, start, end, c| {
-                                    let relation = if matches!(
-                                        entry.proposal.claim,
-                                        KnowledgeClaim::MmioRegion { .. }
-                                    ) {
-                                        RegisterMatchKind::Region
-                                    } else if u64::from(address) >= start
-                                        && u64::from(address) + u64::from(width) <= end
-                                    {
-                                        RegisterMatchKind::ContainedAccess
-                                    } else {
-                                        RegisterMatchKind::CrossingAccess
-                                    };
-                                    summary.matched_accepted +=
-                                        u64::from(entry.state == AssertionState::Accepted);
-                                    output.borrow_mut()(
-                                        &RegisterRecord::Binding {
-                                            function: function.clone(),
-                                            record,
-                                            address,
-                                            assertion: entry.id.clone(),
-                                            state: entry.state,
-                                            relation,
-                                        },
-                                        c,
-                                    )
-                                },
                             )?;
                         }
                         Ok(())

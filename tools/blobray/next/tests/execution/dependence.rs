@@ -66,8 +66,6 @@ fn invocation(arguments: [u32; 8]) -> Invocation {
         preload: vec![],
         models: vec![],
         calls: vec![],
-        tables: vec![],
-        services: vec![],
     }
 }
 
@@ -76,7 +74,6 @@ fn relation() -> ComparisonRelation {
         effects: None,
         projection: None,
         calls: false,
-        reviewed_calls: None,
         returns: ReturnWords {
             low: false,
             high: false,
@@ -392,7 +389,7 @@ fn projected_final_state_depends_on_its_last_writers() {
     let (executable, entry) = super::goals::symbol_elf(&FLOW, 0x1000, 0x1000);
     let endpoint = LayoutEndpoint {
         entry: CallEndpoint {
-            occurrence: KnowledgeOccurrence {
+            occurrence: Occurrence {
                 revision: target(&executable).revision,
                 source: FunctionSource::Input { input: 0 },
                 object: entry.symbol.object.clone(),

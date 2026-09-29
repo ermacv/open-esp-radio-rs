@@ -22,8 +22,6 @@ impl Session<'_> {
         }
         let target_kind = if self.calls.find(input.target, c)?.is_some() {
             ObservedCallTarget::CallModel
-        } else if self.services.find(input.target, c)?.is_some() {
-            ObservedCallTarget::FifoService
         } else {
             c.checkpoint(self.regions.len() as u64 + 1)?;
             if self.region_index(input.target, 2).is_some_and(|(i, o)| {

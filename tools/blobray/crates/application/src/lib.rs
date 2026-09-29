@@ -14,12 +14,10 @@ mod temporary;
 pub use temporary::{TemporaryStoragePolicy, TemporaryStorageStatus};
 mod investigations;
 pub use investigations::{InvestigationWork, prepare_investigation_worker};
-mod knowledge;
 mod navigation;
 mod registers;
 mod semantic_ir;
 mod trace;
-pub use knowledge::{KnowledgeWork, prepare_knowledge_worker};
 pub use semantic_ir::{IrWork, prepare_ir_worker};
 mod code_coverage;
 mod command_bank;
@@ -49,7 +47,7 @@ mod selection;
 pub use blobray_store::{
     ExternalOutput, OwnerIdentity, PreparedExecutionReceipt, PreparedFunctionReceipt,
     PreparedImageReceipt, PreparedImport, PreparedInvestigationReceipt, PreparedIrReceipt,
-    PreparedKnowledgeReceipt, RunOperation, RunRecord, TemporaryFile,
+    RunOperation, RunRecord, TemporaryFile,
 };
 pub use blobray_store::{JOURNAL_SCHEMA, encode_execution_request};
 pub use protocol::*;
@@ -390,14 +388,3 @@ mod coverage;
 mod devices;
 
 mod external_calls;
-
-mod execution_interfaces;
-
-mod runtime_tables;
-
-mod fifo_services;
-
-mod call_pairs;
-
-mod effect_contracts;
-mod layout_projections;

@@ -138,24 +138,18 @@ closures; it does not open original inputs or recompute analysis. The JSONL read
 holds at most one 64 KiB record at a time, inside caller-admitted metadata capacity.
 See the [library contract](../../next/reference/analysis/README.md#library-investigations).
 
-## Review and preservation storage
+## Preservation storage
 
-`knowledge_revisions` indexes immutable event manifests in publication order.
-`KnowledgeRevisionId` is separate from source revisions. Expected-base checks,
-the inserted decision and the completed durable run share an immediate SQLite
-transaction. Retention verifies evidence roots before publication.
 Doctor verifies the retained closure; no cache deletion or GC is implemented.
-
 Backup pins a database read snapshot and streams CAS bytes. Restore builds a
 private project and verifies its complete retained closure before application
-exposes it. No parsing of ELF/AR or claim acceptance belongs to this store. See
-the [wire formats and application ownership](../../next/reference/knowledge-review/README.md#knowledge-and-preservation).
+exposes it. No parsing of ELF/AR belongs to this store. See the
+[preservation reference](../../next/reference/preservation/README.md#backup-and-restore).
 
-Research recipes retain the selected source/companion publications, ABI assumption
-and knowledge revision. Function reads validate their immediate CAS roots without
+Research recipes retain the selected source/companion publications and ABI
+assumption. Function reads validate their immediate CAS roots without
 recursively traversing publication/analysis links; doctor separately verifies
-registered publications and knowledge history. Knowledge event schema 2 uses the
-same input/image source identity. Earlier derived schemas are not converted.
+registered publications.
 
 
 Concrete execution manifests and JSONL evidence use CAS payloads. Schema-10
@@ -166,10 +160,6 @@ verify the reference, immutable manifest and payload digests; doctor also checks
 stream ordering and summaries. Store does not execute or compute comparison
 verdicts. See [concrete execution](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
-`knowledge_snapshot` verifies a selected immutable event history and evidence
-roots once. Its admitted owned entries preserve proposal, review and supersession
-states for repeated lookups within one operation; it is not a persistent cache.
-
 `storage_usage` walks logical CAS/metadata/staging sizes under read-only authority.
 It includes unreachable objects, does not follow symlinks or run recovery, and
 provides no reclaimability estimate or atomic filesystem snapshot guarantee.
@@ -177,7 +167,7 @@ provides no reclaimability estimate or atomic filesystem snapshot guarantee.
 Semantic IR builds publish an immutable manifest/index and a `semantic_ir` table
 entry in the same transaction as the completed run. Reads use that index to obtain
 an admitted journal cell and verify the admitted request, original function streams,
-profile counts, frozen knowledge and transitive analysis dependencies. The index
+profile counts and analysis dependencies. The index
 contains no copied function facts; query/export expands original CAS streams.
 Doctor checks indexes and completed-run references, and backup/restore retains
 both. Blobray does not collect garbage; any retention root must include these
@@ -189,31 +179,12 @@ Execution validation checks model definition identity, cumulative participation,
 
 External-call trace validation checks binding/response identity, ordered ABI arguments, outputs/allocation/delay/return, consumption counts and lifetime closure. It does not execute code or grant hardware validity to modeled effects.
 
-`execution_tables` groups admitted declarations by frozen knowledge snapshot with
-O(n log n) charged sorting and one history load per snapshot per validation call.
-It preserves declaration order within each group, validates every selected contract
-and target independently, and releases each snapshot before loading the next.
-Retention and reopening both use these checks without a persistent cache.
-It also validates bounded table
-lifecycle evidence: placement identity, initialization/pointer writes, current target
-association, counters, conditions and phase/session closure. Reading never resolves
-live paths or re-executes callbacks; captured reviews and objects remain project roots.
-
-`execution_services` validates FIFO transitions using working-capacity-admitted
-rings, including exact oldest values, full/empty/wake responses, private-stack
-ranges, reviewed associations, closure and selected dequeue goals.
-`validate_execution_records` requires the caller's `WorkingMemory`; reading never
-allocates queue capacity outside the shared budget or executes a guest instruction.
-
 `execution_observation` checks canonical final-memory chunks, complete selected
 range coverage, phase ordering, blocked absence and whether selected bytes are
 known. Missing chunks or MATCH with selected unknown data is rejected. Difference
 descriptors must belong to the explicit per-case relation; comparison algorithms
 remain in verification.
 
-`execution_projections` admits immutable accepted layout contracts per operation and
-validates selected entry/source applicability. The manifest carries exact resolved
-policies; reopening rejects changed/missing review content. A bounded sorted final
-field index checks selected-byte knownness without requiring padding to be known.
-Unmapped selected timeline records cannot admit MATCH. No projection mutates raw
-evidence or resolves current knowledge implicitly.
+A retained execution selects no effect contract or layout projection: those are
+supplied by content to an in-process comparison, whose records are not retained
+by a project. Validation rejects a retained request that selects either.

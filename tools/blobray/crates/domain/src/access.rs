@@ -1,4 +1,4 @@
-//! Physical roots and bounded access paths shared by interfaces and navigation.
+//! Physical roots and bounded access paths of navigation.
 use crate::*;
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -7,12 +7,6 @@ pub enum AccessRoot {
     Section { section: u32, offset: u64 },
     /// Physical symbol address; dereferencing stored pointer bytes is a path step.
     Symbol { symbol: SymbolId, addend: i64 },
-    /// Physical incoming ABI word of this exact function: 0..7=a0..a7, then stack words.
-    /// This is not a logical signature argument ordinal.
-    EntryWord {
-        function: FunctionSelector,
-        word: u8,
-    },
     /// Literal RV32 address scoped by the occurrence; not a file/section offset or host pointer.
     Address { address: u32 },
 }
@@ -21,7 +15,6 @@ pub enum AccessRoot {
 pub enum AccessStep {
     Offset { bytes: i32 },
     LoadPointer { offset: i32 },
-    Index { word: u8, stride: u32 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -31,8 +24,8 @@ pub enum AccessIssue {
     UnknownValue,
     UnsupportedExpression,
     UnmodeledCallResult,
-    AbiRequired,
-    UnsupportedArgument,
+    /// The address derives from an incoming argument register or stack word.
+    EntryArgument,
     NonPointerLoad,
     PathLimit,
     OffsetOutOfRange,

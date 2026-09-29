@@ -11,11 +11,10 @@ Reference application owners, durable identities, result assessment and native f
 | [domain](../../../crates/domain/README.md) | Identities, revision records, budgets and portable control/stream ports | None |
 | [artifacts](../../../crates/artifacts/README.md) | ELF/AR inventory over borrowed captured bytes | Domain |
 | [store](../../../crates/store/README.md) | Capture, integrity, persisted run records, publication and owned staging | Domain |
-| [knowledge](../../../crates/knowledge/README.md) | Claim validation and review transitions | Domain |
 | [verification](../../../crates/verification/README.md) | Concrete observation comparison and verdicts | Domain |
 | [analysis](../../../crates/analysis/README.md) | Local CFG, values and memory effects | Domain |
 | [riscv](../../../crates/riscv/README.md) | RV32 decoding, lifting and relocation interpretation | Domain |
-| [application](../../../crates/application/README.md) | Common supervisor, execution protocol, ordering, thin-member resolution and recovery | Domain, artifacts, store, analysis, knowledge, verification |
+| [application](../../../crates/application/README.md) | Common supervisor, execution protocol, ordering, thin-member resolution and recovery | Domain, artifacts, store, analysis, verification |
 | [next](../../src/main.rs) | Rendering, signals, Linux process/cgroup adapter and host composition | Domain, application, backend-riscv |
 
 `Application::new` receives an `OperationHost`; libraries do not discover executables,
@@ -148,7 +147,7 @@ published by each run, and each revision input's captured payload, so reads and
 executions never scan the journal or walk the inventory to find them. Import
 also records, from one full validated walk, each revision's header, input
 records and the manifest span of every object. A read scoped to one input or
-object, such as validating a knowledge occurrence, decodes only those spans and
+object, such as resolving a data occurrence, decodes only those spans and
 verifies the selected capture; every decoded object must carry the requested
 identity, so a damaged span fails as an integrity error. A revision without that
 index is read by the full walk. Earlier journals are rejected by single-run,
@@ -158,7 +157,7 @@ comparison are independent of `state`. Empty assessment means the operation has
 no research coverage or verdict to assert. A non-completed run has no assessment.
 
 The private import/read-query requests use schema 2; image, function,
-investigation, knowledge, execution and concrete scenario requests use schema 1.
+investigation, execution and concrete scenario requests use schema 1.
 Worker reports use schema 6 with tagged receipts and fixed progress counters.
 These private protocols require the matching worker binary. Request/control
 messages have a 64 KiB encoded limit before allocation can expand the message.
@@ -169,8 +168,8 @@ invented while reading unsupported old records.
 inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
-Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-38 run; an envelope version is not a journal
+Command run envelopes (import 3, function/research 4, investigation 5,
+execution 7) wrap the same schema-39 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker

@@ -261,7 +261,7 @@ pub(crate) mod tests {
     use super::*;
     use blobray_domain::{
         ArtifactId, CallEndpoint, EffectClaimCeiling, EffectDisposition, EffectPattern, EffectRule,
-        EffectSelector, EffectValue, FunctionSource, KnowledgeOccurrence, ObjectId, ObjectLocation,
+        EffectSelector, EffectValue, FunctionSource, ObjectId, ObjectLocation, Occurrence,
         ReviewedCallBoundary, SymbolId, SymbolTableKind, UnclassifiedEffects,
     };
 
@@ -290,7 +290,7 @@ pub(crate) mod tests {
             location: ObjectLocation::Standalone,
         };
         let endpoint = CallEndpoint {
-            occurrence: KnowledgeOccurrence {
+            occurrence: Occurrence {
                 revision: id.as_str().parse().unwrap(),
                 source: FunctionSource::Input { input: 0 },
                 object: object.clone(),

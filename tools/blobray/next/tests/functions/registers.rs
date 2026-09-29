@@ -1,4 +1,4 @@
-use super::review::{cli, propose, review};
+use super::cli;
 use super::*;
 #[derive(Default)]
 struct Sink(Vec<RegisterRecord>);
@@ -31,7 +31,6 @@ fn finite_addresses_filters_partial_scope_and_bad_requests_stay_explicit() {
             revision: f.revision.clone(),
             publications: vec![],
             analyses: vec![run.analysis.unwrap()],
-            knowledge: None,
         },
         ranges: vec![],
     };
@@ -116,7 +115,7 @@ fn query(f: &Fixture, q: &RegisterQuery) -> (RegisterSummary, Vec<RegisterRecord
 }
 
 #[test]
-fn register_discovery_review_conflicts_and_source_free_export_share_scope() {
+fn register_discovery_and_source_free_export_share_scope() {
     // lui t0,0x20; lw t1,0(t0); andi t2,t1,0xf; andi t1,t1,-16;
     // ori t1,t1,3; sw t1,0(t0); lb t2,1(t0); lw t2,0(a0); ret.
     let words: [u32; 9] = [
@@ -128,18 +127,16 @@ fn register_discovery_review_conflicts_and_source_free_export_share_scope() {
     let run = analyze(&f);
     assert_eq!(run.state, RunState::Completed, "{run:?}");
     let analysis = run.analysis.unwrap();
-    let mut q = RegisterQuery {
+    let q = RegisterQuery {
         scope: NavigationScope {
             revision: f.revision.clone(),
             publications: vec![],
-            analyses: vec![analysis.clone()],
-            knowledge: None,
+            analyses: vec![analysis],
         },
         ranges: vec![],
     };
     let (summary, rows) = query(&f, &q);
     assert_eq!(summary.selected_analyses, 1);
-    assert_eq!(summary.declarations, 0);
     assert!(summary.unresolved_addresses > 0);
     assert!(
         rows.iter()
@@ -166,102 +163,6 @@ fn register_discovery_review_conflicts_and_source_free_export_share_scope() {
             ..
         }
     )));
-    let declaration = KnowledgeProposal {
-        subject: "fixture.register".to_owned().try_into().unwrap(),
-        occurrence: KnowledgeOccurrence {
-            revision: f.revision.clone(),
-            source: f.request.source.clone(),
-            object: f.request.selector.object().clone(),
-            symbol: f.request.selector.symbol().cloned(),
-        },
-        claim: KnowledgeClaim::MmioRegister {
-            register: MmioRegister {
-                name: "CONTROL".into(),
-                address: 0x20000,
-                width: 4,
-                fields: vec![MmioField {
-                    name: "MODE".into(),
-                    lsb: 0,
-                    width: 4,
-                }],
-            },
-        },
-        evidence: vec![EvidenceRef::Analysis {
-            analysis: analysis.clone(),
-            record: None,
-        }],
-        note: None,
-    };
-    let proposed = propose(&f, declaration.clone(), None);
-    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
-    q.scope.knowledge = proposed.knowledge.clone();
-    let assertion = query(&f, &q)
-        .1
-        .iter()
-        .find_map(|r| match r {
-            RegisterRecord::Declaration { entry } => Some(entry.id.clone()),
-            _ => None,
-        })
-        .unwrap();
-    let accepted = review(
-        &f,
-        proposed.knowledge.unwrap(),
-        assertion,
-        ReviewDecision::Accept,
-    );
-    assert_eq!(accepted.state, RunState::Completed, "{accepted:?}");
-    q.scope.knowledge = accepted.knowledge.clone();
-    let (summary, rows) = query(&f, &q);
-    assert_eq!(summary.declarations, 1);
-    assert!(summary.matched_accepted >= 3);
-    // The byte access at +1 is contained by an explicitly reviewed four-byte register.
-    assert!(rows.iter().any(|r| matches!(
-        r,
-        RegisterRecord::Binding {
-            address: 0x20001,
-            relation: RegisterMatchKind::ContainedAccess,
-            state: AssertionState::Accepted,
-            ..
-        }
-    )));
-    let mut conflicting = declaration;
-    if let KnowledgeClaim::MmioRegister { register } = &mut conflicting.claim {
-        register.width = 2;
-    }
-    let proposed = propose(&f, conflicting, q.scope.knowledge.clone());
-    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
-    q.scope.knowledge = proposed.knowledge.clone();
-    let (summary, _) = query(&f, &q);
-    assert_eq!(summary.conflicts, 1);
-    let assertion = query(&f, &q)
-        .1
-        .iter()
-        .find_map(|r| match r {
-            RegisterRecord::Declaration { entry } if entry.state == AssertionState::Proposed => {
-                Some(entry.id.clone())
-            }
-            _ => None,
-        })
-        .unwrap();
-    let failed = review(
-        &f,
-        proposed.knowledge.unwrap(),
-        assertion,
-        ReviewDecision::Accept,
-    );
-    assert_eq!(failed.state, RunState::Failed);
-    let empty = RegisterQuery {
-        scope: NavigationScope {
-            knowledge: None,
-            ..q.scope.clone()
-        },
-        ranges: vec![],
-    };
-    assert_eq!(
-        query(&f, &empty).0.declarations,
-        0,
-        "no implicit head selection"
-    );
     fs::remove_file(f.dir.path().join("entry.a")).unwrap();
     fs::remove_file(f.dir.path().join("entry.o")).unwrap();
     let file = f.dir.path().join("register-query.json");

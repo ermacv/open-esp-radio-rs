@@ -1,4 +1,4 @@
-use super::interfaces::run;
+use super::run;
 use super::*;
 
 /// `beq a0, zero, +8`, `li a0, 1`, `ret`, then an unreachable `li a0, 2`.
@@ -216,7 +216,7 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
     let taken = f.run(closure_request(&f, 0, 0x1028), budget());
     assert_eq!(taken.state, RunState::Completed, "{taken:?}");
     let taken = taken.execution.unwrap();
-    let (_, rows) = super::interfaces::run(&f, closure_request(&f, 0, 0x1028));
+    let (_, rows) = super::run(&f, closure_request(&f, 0, 0x1028));
     assert_eq!(
         coverage(&rows, false).transfers,
         vec![IndirectTransfer {

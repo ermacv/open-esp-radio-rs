@@ -17,8 +17,7 @@ ports and private worker messages belong to [application](../application/README.
 
 A `Snapshot` owns selected revision data, with no writer authority or live source
 handles. The [implemented contract](../../next/README.md) describes schemas and
-authority. Knowledge values are implemented; verification remains outside this
-crate's implemented scope.
+authority. Verification remains outside this crate's implemented scope.
 
 [Resource ports](src/resources.rs) define `RunControl`, injected `RunEnvironment`,
 physical progress and bounded diagnostic records. Work policy 1 and its default
@@ -93,11 +92,10 @@ are injected ports; domain selects neither an ISA nor an environment. Request
 validation bounds control cardinalities. Host admission also bounds serialization
 before copying requests. See the [execution contract](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
-`ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines five concrete application actions. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
+`ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines two concrete application actions: investigation and replay. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
 
-Data contracts identify exact captured ranges, integer table encodings and constants
-selected from retained analysis operands. Observations, review state and function
-coverage remain separate; file offsets and executable VMAs are distinct values.
+Data contracts identify exact captured ranges and pointer-table profiles.
+Observations and function coverage remain separate; file offsets and executable VMAs are distinct values.
 
 `CoverageScope` makes the completeness universe explicit. `RecordBuffer` owns
 retained function records and their admitted variable capacities. Phase memory
@@ -137,17 +135,6 @@ Device declarations bind caller applicability, phase/session lifetime and every 
 
 `CallDeclaration` and `CallObservation` retain exact modeled ABI boundaries, response/effect identities and phase/session obligations. The required call-dispatch port distinguishes captured code from explicit modeled returns and issues; argument words and output ownership are never inferred.
 
-`runtime_interface` defines selected review identities, runtime placements, physical
-slot targets, condition gaps and lifecycle observations. Invocation `tables` is
-explicit, including an empty array. Code-goal completion and table/call/device
-obligations remain separate. Indirect target association records current value,
-not inferred pointer provenance.
-
-`fifo_service` defines explicit bounded queue owners, reviewed slot bindings,
-physical input/output contracts, transitions and closure observations. A selected
-`observe-dequeue` goal observes a successful modeled event and output write;
-code return, queue status and comparison verdict remain separate claims.
-
 `comparison` defines explicit per-case return/event/memory selections and bounded
 final-memory chunks with separate availability/knownness masks. Pair indices bind
 same-sized physical selections, not inferred layouts. Execution coverage remains
@@ -156,7 +143,6 @@ MATCH without converting a successful code phase into a failed session transitio
 
 `LayoutProjection` declares finite source-bound code entries, explicit memory
 domains, same-width byte fields and conditional branch correspondence. Selection
-uses an immutable accepted `ProjectionReview`; unknown/unmapped observations never
-become equal by omission. `CallArguments::Projected` pairs distinct physical ABI
-word positions with exact 32-bit comparison. These are reviewed comparison
+names the projection by the digest of its canonical encoding; unknown/unmapped
+observations never become equal by omission. These are reviewed comparison
 assumptions, without implicit pointer/type normalization.

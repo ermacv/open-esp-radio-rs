@@ -125,8 +125,6 @@ fn run(elf: &[u8]) -> std::result::Result<Vec<u32>, String> {
                 preload: vec![],
                 models: vec![],
                 calls: vec![],
-                tables: vec![],
-                services: vec![],
                 observe_memory: vec![MemorySelection {
                     name: "signature".into(),
                     address: begin,

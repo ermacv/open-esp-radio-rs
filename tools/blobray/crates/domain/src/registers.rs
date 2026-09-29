@@ -24,27 +24,11 @@ pub struct RegisterMask {
     pub kind: RegisterMaskKind,
     pub bits: u32,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RegisterMatchKind {
-    ContainedAccess,
-    CrossingAccess,
-    Region,
-}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum RegisterRecord {
     Scope {
         record: Box<NavigationRecord>,
-    },
-    /// Includes exact applicability, state and evidence. Rejected declarations
-    /// remain visible; they never classify an observation as accepted.
-    Declaration {
-        entry: Box<KnowledgeEntry>,
-    },
-    Conflict {
-        left: AssertionId,
-        right: AssertionId,
     },
     Observation {
         function: NavigationFunction,
@@ -54,14 +38,6 @@ pub enum RegisterRecord {
         address: Option<u32>,
         alternative: Option<u8>,
         mask: Option<RegisterMask>,
-    },
-    Binding {
-        function: NavigationFunction,
-        record: u64,
-        address: u32,
-        assertion: AssertionId,
-        state: AssertionState,
-        relation: RegisterMatchKind,
     },
     /// Aggregated candidates. Access widths are instruction widths in bytes;
     /// no physical register width is synthesized from them.
@@ -80,11 +56,8 @@ pub struct RegisterSummary {
     pub selected_analyses: u64,
     pub partial_analyses: u64,
     pub unavailable_entries: u64,
-    pub declarations: u64,
-    pub conflicts: u64,
     pub observations: u64,
     pub unresolved_addresses: u64,
     pub alternative_observations: u64,
     pub candidate_addresses: u64,
-    pub matched_accepted: u64,
 }

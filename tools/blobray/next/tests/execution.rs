@@ -20,6 +20,8 @@ struct Fixture {
     project: PathBuf,
     app: app::Application,
     target: ExecutionTarget,
+    /// Imported executables, whose bytes an in-process comparison receives.
+    inputs: Vec<Vec<u8>>,
 }
 impl Fixture {
     fn new(code: &[u32]) -> Self {
@@ -83,6 +85,7 @@ impl Fixture {
             project,
             app,
             target,
+            inputs,
         }
     }
     fn request(&self) -> ExecutionRequest {
@@ -97,8 +100,6 @@ impl Fixture {
             preload: vec![],
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
         };
         ExecutionRequest {
             schema: EXECUTION_SCHEMA,
@@ -674,18 +675,11 @@ mod devices;
 #[path = "execution/calls.rs"]
 mod calls;
 
-#[path = "execution/interfaces.rs"]
-mod interfaces;
-
-#[path = "execution/services.rs"]
-mod services;
-
 fn fixture_relation(low: bool) -> ComparisonRelation {
     ComparisonRelation {
         effects: None,
         projection: None,
         calls: false,
-        reviewed_calls: None,
         returns: ReturnWords { low, high: false },
         events: EventChannels {
             timeline: TimelineCapture::default(),
@@ -703,9 +697,6 @@ mod comparison;
 
 #[path = "execution/capture.rs"]
 mod capture;
-
-#[path = "execution/call_pairs.rs"]
-mod call_pairs;
 
 #[path = "execution/coverage.rs"]
 mod coverage;
@@ -726,3 +717,69 @@ mod command_bank;
 
 #[path = "execution/unaligned.rs"]
 mod unaligned;
+
+fn run(f: &Fixture, r: ExecutionRequest) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
+    let record = f.run(r, budget());
+    assert_eq!(record.state, RunState::Completed, "{record:?}");
+    let data = f.read(&record.execution.unwrap());
+    (
+        serde_json::from_value(data["summary"]["manifest"].clone()).unwrap(),
+        data["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
+            .collect(),
+    )
+}
+
+/// Outcome of an in-process comparison.
+struct Verified {
+    verdict: Option<ComparisonVerdict>,
+    complete: bool,
+}
+/// Compare `r` in process with the effect contracts and layout projections
+/// its relations select by content.
+fn verify(
+    f: &Fixture,
+    r: &ExecutionRequest,
+    effects: &[EffectContract],
+    projections: &[LayoutProjection],
+) -> Result<(Verified, Vec<ExecutionEvidence>)> {
+    let sources = |target: &ExecutionTarget| -> Vec<&[u8]> {
+        let FunctionSource::Input { input } = target.source else {
+            panic!("fixture targets name imported inputs");
+        };
+        std::iter::once(input)
+            .chain(target.companions.iter().copied())
+            .map(|input| f.inputs[input as usize].as_slice())
+            .collect()
+    };
+    let vendor = sources(&r.vendor);
+    let replacement = r.replacement.as_ref().map(sources);
+    let memory = WorkingMemory::new(64 * 1024 * 1024).unwrap();
+    let result = app::in_process::verify(
+        &app::in_process::InProcessComparison {
+            request: r,
+            vendor: &vendor,
+            replacement: replacement.as_deref(),
+            vendor_identities: None,
+            replacement_identities: None,
+            effects,
+            projections,
+            vendor_results: None,
+            dependence: None,
+            patches: &[],
+        },
+        &blobray_backend_riscv::RiscvExecutor,
+        &memory,
+        &mut || Ok(()),
+    )?;
+    Ok((
+        Verified {
+            verdict: result.verdict,
+            complete: result.complete,
+        },
+        result.records,
+    ))
+}

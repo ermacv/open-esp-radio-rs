@@ -1,4 +1,3 @@
-use super::interfaces::run;
 use super::*;
 fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
     let vendor = [0x00b52023, 0x00000513, 0x00008067];
@@ -12,7 +11,7 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
     pb.source = FunctionSource::Input { input: 1 };
     let f = Fixture::from_inputs(vec![a, b]);
     let endpoint = |point: ExecutionSymbol| CallEndpoint {
-        occurrence: KnowledgeOccurrence {
+        occurrence: Occurrence {
             revision: f.target.revision.clone(),
             source: point.source,
             object: point.symbol.object.clone(),
@@ -64,196 +63,68 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
     r.cases[0].replacement = Some(v.clone());
     (f, r, p)
 }
-fn proposal(p: &EffectContract) -> KnowledgeProposal {
-    KnowledgeProposal {
-        subject: "fixture.effects".to_owned().try_into().unwrap(),
-        occurrence: p.vendor.occurrence.clone(),
-        claim: KnowledgeClaim::EffectContract {
-            contract: Box::new(p.clone()),
-        },
-        evidence: vec![EvidenceRef::Source {
-            payload: p.vendor.occurrence.object.artifact.clone(),
-            range: CodeRange {
-                start: 0,
-                length: 4,
-            },
-        }],
-        note: None,
-    }
+fn select(r: &mut ExecutionRequest, p: &EffectContract) {
+    r.cases[0].relation.as_mut().unwrap().effects =
+        Some(app::in_process::effect_contract_ref(p).unwrap());
 }
-fn propose(
+fn verify(
     f: &Fixture,
+    r: &ExecutionRequest,
     p: &EffectContract,
-    base: Option<KnowledgeRevisionId>,
-    specialized: bool,
-) -> EffectReview {
-    let h = if specialized {
-        f.app.start_propose_effect_contract(
-            &f.project,
-            EffectProposalRequest {
-                subject: proposal(p).subject,
-                contract: p.clone(),
-                expected_base: base,
-                actor: "fixture".into(),
-                reason: "proposal".into(),
-            },
-            budget(),
-        )
-    } else {
-        f.app.start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: base,
-                actor: "fixture".into(),
-                reason: "proposal".into(),
-                action: KnowledgeAction::Propose {
-                    proposal: proposal(p),
-                },
-            },
-            budget(),
-        )
-    }
-    .unwrap();
-    let id = super::call_pairs::proposed_id(f, h.wait());
-    EffectReview {
-        knowledge: id.knowledge,
-        assertion: id.assertion,
-    }
-}
-fn review(f: &Fixture, p: EffectReview, decision: ReviewDecision) -> EffectReview {
-    let run = f
-        .app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: Some(p.knowledge),
-                actor: "fixture".into(),
-                reason: "synthetic review".into(),
-                action: KnowledgeAction::Review {
-                    assertion: p.assertion.clone(),
-                    decision,
-                    supersedes: None,
-                },
-            },
-            budget(),
-        )
-        .unwrap()
-        .wait();
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    EffectReview {
-        knowledge: run.knowledge.unwrap(),
-        assertion: p.assertion,
-    }
-}
-fn select(r: &mut ExecutionRequest, p: EffectReview) {
-    r.cases[0].relation.as_mut().unwrap().effects = Some(EffectContractRef::Reviewed(p));
+) -> Result<(Verified, Vec<ExecutionEvidence>)> {
+    super::verify(f, r, std::slice::from_ref(p), &[])
 }
 #[test]
-fn effect_review_api_preserves_raw_omissions_and_source_free_replay() {
-    for specialized in [false, true] {
-        let (f, mut r, p) = setup(true);
-        assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Diff));
-        let pending = propose(&f, &p, None, specialized);
-        select(&mut r, pending.clone());
-        let failed = f.run(r.clone(), budget());
-        assert_eq!(failed.state, RunState::Failed);
-        assert!(failed.execution.is_none());
-        let accepted = review(&f, pending, ReviewDecision::Accept);
-        select(&mut r, accepted.clone());
-        let (manifest, rows) = run(&f, r.clone());
-        assert_eq!(manifest.verdict, Some(ComparisonVerdict::Match));
-        assert_eq!(
-            manifest.effect_contracts,
-            vec![ResolvedEffectContract {
-                review: EffectContractRef::Reviewed(accepted),
-                contract: p
-            }]
-        );
-        assert!(rows.iter().any(|r| matches!(
-            r,
-            ExecutionEvidence::Event {
-                replacement: false,
-                event: ExecutionEvent::Write {
-                    address: 0x3000,
-                    value: 7,
-                    ..
-                },
+fn content_effect_contract_preserves_raw_omissions_and_project_executions_reject_it() {
+    let (f, mut r, p) = setup(true);
+    assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Diff));
+    select(&mut r, &p);
+    let failed = f.run(r.clone(), budget());
+    assert_eq!(failed.state, RunState::Failed);
+    assert!(failed.execution.is_none());
+    assert!(super::verify(&f, &r, &[], &[]).is_err());
+    let (m, rows) = verify(&f, &r, &p).unwrap();
+    assert_eq!(m.verdict, Some(ComparisonVerdict::Match));
+    assert!(rows.iter().any(|r| matches!(
+        r,
+        ExecutionEvidence::Event {
+            replacement: false,
+            event: ExecutionEvent::Write {
+                address: 0x3000,
+                value: 7,
                 ..
-            }
-        )));
-        assert!(rows.iter().any(|r| matches!(
-            r,
-            ExecutionEvidence::Comparison {
-                result: CaseComparison {
-                    effect_claim: Some(EffectClaimCeiling::ReviewedEffectRefinement),
-                    effect_gap: None,
-                    verdict: ComparisonVerdict::Match,
-                    ..
-                },
+            },
+            ..
+        }
+    )));
+    assert!(rows.iter().any(|r| matches!(
+        r,
+        ExecutionEvidence::Comparison {
+            result: CaseComparison {
+                effect_claim: Some(EffectClaimCeiling::ReviewedEffectRefinement),
+                effect_gap: None,
+                verdict: ComparisonVerdict::Match,
                 ..
-            }
-        )));
-        if specialized {
-            super::comparison::check_preservation(&f, r);
+            },
+            ..
         }
-    }
+    )));
 }
 #[test]
-fn generic_effect_proposal_rejects_invalid_physical_endpoints_without_publishing() {
-    let (f, _, p) = setup(true);
-    for side in [false, true] {
-        for variant in 0..5 {
-            let mut bad = p.clone();
-            let e = if side {
-                &mut bad.replacement
-            } else {
-                &mut bad.vendor
-            };
-            match variant {
-                0 => e.occurrence.symbol.as_mut().unwrap().index = 9999,
-                1 => e.boundary = ReviewedCallBoundary::Code { address: 0x1002 },
-                2 => e.occurrence.symbol.as_mut().unwrap().table = SymbolTableKind::Dynamic,
-                3 => e.occurrence.symbol.as_mut().unwrap().table_section = 99,
-                _ => e.occurrence.source = FunctionSource::Input { input: 9 },
-            }
-            let result = f.app.start_knowledge(
-                &f.project,
-                &KnowledgeChange {
-                    expected_base: None,
-                    actor: "fixture".into(),
-                    reason: "invalid physical effect endpoint".into(),
-                    action: KnowledgeAction::Propose {
-                        proposal: proposal(&bad),
-                    },
-                },
-                budget(),
-            );
-            if let Ok(h) = result {
-                let run = h.wait();
-                assert_eq!(
-                    run.state,
-                    RunState::Failed,
-                    "side {side} variant {variant}: {run:?}"
-                );
-                assert!(run.knowledge.is_none());
-            }
-        }
-    }
-    propose(&f, &p, None, false);
-}
-#[test]
-fn reviewed_effect_replacement_requires_exact_values_and_case_applicability() {
+fn effect_replacement_requires_exact_values_and_case_applicability() {
     let (f, mut r, mut p) = setup(false);
     r.cases[0].replacement.as_mut().unwrap().arguments[1] = Some(9);
     p.rules[0].disposition = EffectDisposition::Replaced;
     p.rules[0].vendor.as_mut().unwrap().value = EffectValue::Exact { value: 7 };
     p.rules[0].replacement.as_mut().unwrap().value = EffectValue::Exact { value: 9 };
-    let accepted = review(&f, propose(&f, &p, None, true), ReviewDecision::Accept);
-    select(&mut r, accepted);
-    assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Match));
+    select(&mut r, &p);
+    assert_eq!(
+        verify(&f, &r, &p).unwrap().0.verdict,
+        Some(ComparisonVerdict::Match)
+    );
     let mut wrong = r.clone();
     wrong.cases[0].replacement.as_mut().unwrap().arguments[1] = Some(8);
-    let (m, rows) = run(&f, wrong);
+    let (m, rows) = verify(&f, &wrong, &p).unwrap();
     assert_eq!(m.verdict, Some(ComparisonVerdict::Diff));
     assert!(rows.iter().any(|r| matches!(
         r,
@@ -277,106 +148,18 @@ fn reviewed_effect_replacement_requires_exact_values_and_case_applicability() {
             0 => wrong.cases[0].replacement.as_mut().unwrap().entry = 0x1004,
             1 => wrong.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 0 },
             2 => {
-                wrong.cases[0]
-                    .relation
-                    .as_mut()
-                    .unwrap()
-                    .effects
-                    .as_mut()
-                    .and_then(EffectContractRef::review_mut)
-                    .unwrap()
-                    .assertion = ArtifactId::of_bytes(b"missing").as_str().parse().unwrap()
+                let mut other = p.clone();
+                other.reason = "a contract the comparison does not receive".into();
+                select(&mut wrong, &other)
             }
             _ => wrong.cases[0].relation.as_mut().unwrap().events.delay = false,
         }
-        if let Ok(h) = f.app.start_execution(
-            &f.project,
-            wrong,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        ) {
-            let failed = h.wait();
-            assert_eq!(failed.state, RunState::Failed, "{failed:?}");
-            assert!(failed.execution.is_none());
-        }
+        assert!(verify(&f, &wrong, &p).is_err(), "variant {variant}");
     }
-    assert_eq!(run(&f, r).0.verdict, Some(ComparisonVerdict::Match));
-}
-#[test]
-fn effect_cli_review_freezes_policy_and_rejects_conflicting_acceptance() {
-    let (f, mut r, p) = setup(true);
-    let request = EffectProposalRequest {
-        subject: proposal(&p).subject,
-        contract: p.clone(),
-        expected_base: None,
-        actor: "fixture".into(),
-        reason: "CLI proposal".into(),
-    };
-    let path = f._dir.path().join("effect.json");
-    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "knowledge", "--project"])
-        .arg(&f.project)
-        .args([
-            "--limit-mode",
-            "watchdog",
-            "propose-effect-contract",
-            "--request",
-        ])
-        .arg(path)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let record: app::RunRecord = serde_json::from_value(value["run"].clone()).unwrap();
-    let id = super::call_pairs::proposed_id(&f, record);
-    let accepted = review(
-        &f,
-        EffectReview {
-            knowledge: id.knowledge,
-            assertion: id.assertion,
-        },
-        ReviewDecision::Accept,
-    );
-    select(&mut r, accepted.clone());
-    let original = run(&f, r.clone());
-    let mut conflict = p.clone();
-    conflict.rules[0].disposition = EffectDisposition::Required;
-    let pending = propose(&f, &conflict, Some(accepted.knowledge.clone()), false);
-    let failed = f
-        .app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: Some(pending.knowledge.clone()),
-                actor: "fixture".into(),
-                reason: "conflict".into(),
-                action: KnowledgeAction::Review {
-                    assertion: pending.assertion.clone(),
-                    decision: ReviewDecision::Accept,
-                    supersedes: None,
-                },
-            },
-            budget(),
-        )
-        .unwrap()
-        .wait();
-    assert_eq!(failed.state, RunState::Failed);
-    assert!(failed.knowledge.is_none());
-    let rejected = review(&f, pending, ReviewDecision::Reject);
-    let mut wrong = r.clone();
-    select(&mut wrong, rejected);
-    assert_eq!(f.run(wrong, budget()).state, RunState::Failed);
-    assert_eq!(run(&f, r.clone()), original);
-    super::comparison::check_preservation(&f, r);
 }
 
 #[test]
-fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ram() {
+fn effect_policy_composes_with_layout_timeline_returns_and_final_ram() {
     // RAM write/read, conditional branch, omittable MMIO, captured call and explicit root return.
     let code = [
         0x00008413, 0x00b52023, 0x00052283, 0x00060463, 0x00158593, 0x00e6a023, 0x018000ef,
@@ -390,7 +173,7 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
     pb.source = FunctionSource::Input { input: 1 };
     let f = Fixture::from_inputs(vec![a, b]);
     let endpoint = |point: ExecutionSymbol, address| CallEndpoint {
-        occurrence: KnowledgeOccurrence {
+        occurrence: Occurrence {
             revision: f.target.revision.clone(),
             source: point.source,
             object: point.symbol.object.clone(),
@@ -451,73 +234,6 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         applicability: "synthetic root entries".into(),
         reason: "same counter and branch".into(),
     };
-    let pair = CallCorrespondence {
-        vendor: callee_a,
-        replacement: callee_b,
-        arguments: CallArguments::Projected {
-            words: vec![CallWordPair {
-                vendor: 1,
-                replacement: 4,
-            }],
-        },
-        applicability: "synthetic captured callee".into(),
-        reason: "explicit corresponding input word".into(),
-    };
-    let accept = |subject: &str, occurrence: KnowledgeOccurrence, claim, base| {
-        let proposed = f
-            .app
-            .start_knowledge(
-                &f.project,
-                &KnowledgeChange {
-                    expected_base: base,
-                    actor: "fixture".into(),
-                    reason: "composed policy".into(),
-                    action: KnowledgeAction::Propose {
-                        proposal: KnowledgeProposal {
-                            subject: subject.to_owned().try_into().unwrap(),
-                            evidence: vec![EvidenceRef::Source {
-                                payload: occurrence.object.artifact.clone(),
-                                range: CodeRange {
-                                    start: 0,
-                                    length: 4,
-                                },
-                            }],
-                            occurrence,
-                            claim,
-                            note: None,
-                        },
-                    },
-                },
-                budget(),
-            )
-            .unwrap()
-            .wait();
-        let id = super::call_pairs::proposed_id(&f, proposed);
-        review(
-            &f,
-            EffectReview {
-                knowledge: id.knowledge,
-                assertion: id.assertion,
-            },
-            ReviewDecision::Accept,
-        )
-    };
-    let projection = accept(
-        "fixture.layout",
-        root_a.occurrence.clone(),
-        KnowledgeClaim::LayoutProjection {
-            projection: Box::new(layout),
-        },
-        None,
-    );
-    let calls = accept(
-        "fixture.call",
-        pair.vendor.occurrence.clone(),
-        KnowledgeClaim::CallPair {
-            correspondence: Box::new(pair),
-        },
-        Some(projection.knowledge.clone()),
-    );
     let pattern = EffectPattern {
         preceded_by: None,
         occurrence: None,
@@ -545,11 +261,6 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         applicability: "exact synthetic entries".into(),
         reason: "composition regression".into(),
     };
-    let effects = review(
-        &f,
-        propose(&f, &contract, Some(calls.knowledge.clone()), true),
-        ReviewDecision::Accept,
-    );
     let mut r = f.request();
     r.max_events = 128;
     r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
@@ -629,28 +340,19 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         replacement: 1,
     }];
     relation.events.timeline = capture;
-    relation.projection = Some(ProjectionRef::Reviewed(ProjectionReview {
-        knowledge: projection.knowledge,
-        assertion: projection.assertion,
-    }));
-    relation.reviewed_calls = Some(ReviewedCalls {
-        pairs: vec![CallPairReview {
-            knowledge: calls.knowledge,
-            assertion: calls.assertion,
-        }],
-        unlisted: UnlistedCalls::Exact,
-    });
-    relation.effects = Some(EffectContractRef::Reviewed(effects));
-    let (m, rows) = run(&f, r.clone());
+    relation.projection = Some(app::in_process::projection_ref(&layout).unwrap());
+    relation.effects = Some(app::in_process::effect_contract_ref(&contract).unwrap());
+    let compare = |r: &ExecutionRequest| {
+        super::verify(
+            &f,
+            r,
+            std::slice::from_ref(&contract),
+            std::slice::from_ref(&layout),
+        )
+        .unwrap()
+    };
+    let (m, rows) = compare(&r);
     assert_eq!(m.verdict, Some(ComparisonVerdict::Match));
-    assert_eq!(
-        (
-            m.projections.len(),
-            m.call_pairs.len(),
-            m.effect_contracts.len()
-        ),
-        (1, 1, 1)
-    );
     assert!(rows.iter().any(|r| matches!(
         r,
         ExecutionEvidence::Event {
@@ -658,25 +360,23 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
             ..
         }
     )));
-    for variant in 0..5 {
+    for variant in 0..4 {
         let mut changed = r.clone();
         match variant {
             0 => changed.cases[0].relation.as_mut().unwrap().effects = None,
             1 => changed.cases[0].relation.as_mut().unwrap().projection = None,
-            2 => changed.cases[0].replacement.as_mut().unwrap().arguments[4] = Some(8),
-            3 => changed.cases[0].replacement.as_mut().unwrap().arguments[2] = Some(1),
+            2 => changed.cases[0].replacement.as_mut().unwrap().arguments[2] = Some(1),
             _ => {
                 changed.cases[0].replacement.as_mut().unwrap().memory[1]
                     .seed
                     .fill = Some(8)
             }
         }
-        let (manifest, rows) = run(&f, changed);
+        let (manifest, rows) = compare(&changed);
         assert_eq!(
             manifest.verdict,
             Some(ComparisonVerdict::Diff),
             "variant {variant}: {rows:?}"
         );
     }
-    super::comparison::check_preservation(&f, r);
 }

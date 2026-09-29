@@ -50,9 +50,6 @@ pub enum QuerySummary {
         restored: bool,
         summary: PreservationSummary,
     },
-    Knowledge {
-        status: KnowledgeStatus,
-    },
     InvestigationPlan {
         plan: Box<InvestigationPlan>,
     },
@@ -203,12 +200,6 @@ pub trait QuerySink: InventorySink + DoctorSink {
             "consumer does not support audit findings",
         ))
     }
-    fn knowledge_entry(&mut self, _: &KnowledgeEntry, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support knowledge entries",
-        ))
-    }
     fn investigation_entry(&mut self, _: &PlanEntry, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -289,7 +280,6 @@ enum RecordRef<'a> {
     Data(&'a DataRecord),
     TargetAudit(&'a TargetAuditRecord),
     Execution(&'a ExecutionEvidence),
-    KnowledgeEntry(&'a KnowledgeEntry),
     InvestigationEntry(&'a PlanEntry),
     InvestigationMember(&'a InvestigationMember),
     Publication(&'a PublicationId),
@@ -318,7 +308,6 @@ enum Record {
     Data(DataRecord),
     TargetAudit(TargetAuditRecord),
     Execution(ExecutionEvidence),
-    KnowledgeEntry(KnowledgeEntry),
     InvestigationEntry(PlanEntry),
     InvestigationMember(InvestigationMember),
     Publication(PublicationId),
@@ -542,7 +531,6 @@ pub fn prepare_query_with_tools(
                     stage,
                     &project,
                     request,
-                    None,
                     decoder,
                     &memory,
                     &disk,
@@ -629,15 +617,6 @@ pub fn prepare_query_with_tools(
                         control,
                     )?,
                 }
-            }
-            ReadQuery::Knowledge { revision } => {
-                let _envelope = memory.reserve(2 * 1024 * 1024, control.position())?;
-                let project = Project::open(&work.project.to_path()?)?;
-                let status =
-                    project.knowledge_entries(revision.as_ref(), control, &mut |entry, c| {
-                        spool.push(RecordRef::KnowledgeEntry(entry), c)
-                    })?;
-                QuerySummary::Knowledge { status }
             }
             ReadQuery::PlanInvestigation { request, producer } => {
                 let project = Project::open(&work.project.to_path()?)?;
@@ -772,7 +751,6 @@ pub fn prepare_query_with_tools(
                     &result.manifest,
                     &result.request,
                     &result.records,
-                    &memory,
                     control,
                     &mut |r, c| {
                         if *omit_events && matches!(r, ExecutionEvidence::Event { .. }) {
@@ -1117,7 +1095,6 @@ pub(crate) fn visit(
             Record::Trace(r) => sink.trace(&r, control)?,
             Record::Register(r) => sink.register(&r, control)?,
             Record::TargetAudit(r) => sink.target_audit(&r, control)?,
-            Record::KnowledgeEntry(r) => sink.knowledge_entry(&r, control)?,
             Record::InvestigationEntry(r) => sink.investigation_entry(&r, control)?,
             Record::InvestigationMember(r) => sink.investigation_member(&r, control)?,
             Record::Publication(r) => sink.publication(&r, control)?,

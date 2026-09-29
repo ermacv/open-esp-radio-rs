@@ -52,19 +52,18 @@ channel tuning, DMA or RF hardware. Follow the
 [runtime-to-PHY explanation](binary-to-station.md#production-layers-during-a-scan)
 to locate those responsibilities.
 
-## Try synthetic binary discovery, review and export
+## Try synthetic binary discovery and export
 
 ```console
-cargo test --manifest-path tools/blobray/Cargo.toml -p blobray-next --test functions register_discovery_review_conflicts_and_source_free_export_share_scope --locked --offline
+cargo test --manifest-path tools/blobray/Cargo.toml -p blobray-next --test functions register_discovery_and_source_free_export_share_scope --locked --offline
 ```
 
 This selector runs one test in the
 [existing register research fixture](../tools/blobray/next/tests/functions/registers.rs).
-It constructs a small RV32 ELF in temporary storage, discovers MMIO observations,
-proposes and reviews a physical declaration, checks conflicts and exports saved
-results after the original source is removed. Read the assertions to distinguish
-observed access widths from reviewed physical widths. Temporary inputs and
-outputs are owned and cleaned up by the test.
+It constructs a small RV32 ELF in temporary storage, discovers MMIO observations
+and exports saved results after the original source is removed. Read the
+assertions to distinguish what instructions reveal from what a register model
+declares. Temporary inputs and outputs are owned and cleaned up by the test.
 
 This is an application regression scenario, not a CLI session and not real
 ESP32-S31 evidence. Its test harness does not require a delegated cgroup.
@@ -72,54 +71,48 @@ For later CLI investigations choose a resource backend explicitly; where cgroup
 delegation is unavailable use `--limit-mode watchdog`. See the
 [Blobray task map](../tools/blobray/README.md#choose-a-task).
 
-### Read the observations before the declaration
+### Read the observations
 
 Keep the test source open while following these checkpoints. The assertions
 are the expected results; the normal test output reports pass/fail rather than
-printing a research report. The fixture is synthetic, so its names and values
-describe this exercise only.
+printing a research report. The fixture is synthetic, so its values describe
+this exercise only.
 
 | Checkpoint in the test | Expected observation | What you have learned |
 | --- | --- | --- |
-| `analyze(&f)` and the first register query | One selected analysis, no declarations, and at least one unresolved address | Analysis can finish while selected facts remain unknown |
+| `analyze(&f)` and the first register query | One selected analysis and at least one unresolved address | Analysis can finish while selected facts remain unknown |
 | `RegisterRecord::Address` and `Observation` assertions | Word accesses at `0x20000`, read-selection and write-replacement masks | Instructions reveal accesses and manipulated bits; they do not name a physical register |
-| `KnowledgeClaim::MmioRegister` | A proposed four-byte `CONTROL` register with a `MODE` field | The test author supplies an interpretation explicitly |
-| Review with `ReviewDecision::Accept` | Accepted bindings, including a byte access at `0x20001` contained in the wider register | Instruction width and physical register width are different facts |
-| Propose a two-byte declaration for the same subject | A visible conflict; accepting it fails | Review cannot silently overwrite conflicting meaning |
-| Query with `knowledge: None` | No declarations | A query does not implicitly select the current knowledge head |
-| Remove original files, export, backup and restore | Identical saved query and exported bytes | Retained capture and review support source-free reading |
+| Remove original files, export, backup and restore | Identical saved query and exported bytes | Retained capture supports source-free reading |
 
 The fixture also loads through an unknown input pointer. Do not interpret
 that unresolved address as absence of another register access. The masks
 describe this synthetic instruction sequence, not reviewed ESP32-S31 fields.
 
-Before reading each assertion, predict whether it concerns an observation,
-an interpretation or preservation. Then check your answer against the table.
-In particular, explain why accepting `CONTROL` does **not** generate a PAC:
+Before reading each assertion, predict whether it concerns an observation or
+preservation. Then check your answer against the table. In particular, explain
+why the observed word access at `0x20000` does **not** generate a PAC:
 production publication consumes a separately reviewed hardware model and API
 policy. Continue with the [real channel example](channel-walkthrough.md#2-find-the-accepted-hardware-meaning)
 to see that boundary in the repository.
 
 ### Match the exercise to operator commands
 
-The fixture invokes the application API for analysis and review, and CLI helpers
-for export and backup/restore. In an operator session, the corresponding command
-families are:
+The fixture invokes the application API for analysis and queries, and CLI
+helpers for export and backup/restore. In an operator session, the
+corresponding command families are:
 
 | Exercise step | Operator entry point | Detailed input contract |
 | --- | --- | --- |
 | Capture and select code | `init`, `import`, `inventory`, `select` | [Capture and selection](../tools/blobray/next/reference/capture-images/README.md) |
 | Analyze functions | `analyze-project`, `functions`, `analysis` | [Function analysis](../tools/blobray/next/reference/analysis/README.md#function-analysis-contract) |
 | Inspect candidates | `registers` | [Saved register research](../tools/blobray/next/reference/registers-data/README.md#saved-register-research) |
-| Review | `knowledge show`, `knowledge accept` | [Knowledge and review](../tools/blobray/next/reference/knowledge-review/README.md) |
-| Preserve the investigation | `backup`, `restore` | [Preservation](../tools/blobray/next/reference/knowledge-review/README.md#knowledge-and-preservation) |
+| Preserve the investigation | `backup`, `restore` | [Preservation](../tools/blobray/next/reference/preservation/README.md#backup-and-restore) |
 
 For command discovery without changing a project, run from the repository root:
 
 ```console
 cargo blobray --help
 cargo blobray registers --help
-cargo blobray knowledge --help
 ```
 
 For an actual investigation, supply the exact selectors and requests documented

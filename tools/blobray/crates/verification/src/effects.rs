@@ -109,7 +109,7 @@ mod tests {
             location: ObjectLocation::Standalone,
         };
         CallEndpoint {
-            occurrence: KnowledgeOccurrence {
+            occurrence: Occurrence {
                 revision: id.as_str().parse().unwrap(),
                 source: FunctionSource::Input { input: 0 },
                 object: object.clone(),
@@ -188,7 +188,6 @@ mod tests {
             },
             memory: vec![],
             calls: false,
-            reviewed_calls: None,
         }
     }
     fn observed(events: Vec<ExecutionEvent>) -> ExecutionObservation {
@@ -201,8 +200,6 @@ mod tests {
             events,
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
             final_memory: vec![],
             written: vec![],
         }
@@ -216,7 +213,6 @@ mod tests {
             &observed(a),
             &observed(b),
             &relation(p),
-            &[],
             None,
             Some(p),
             &mut || Ok(()),
@@ -502,8 +498,7 @@ mod tests {
         let a = observed(vec![unknown.clone(), write(1)]);
         let mut b = observed(vec![write(2)]);
         let compare = |b: &ExecutionObservation| {
-            super::super::compare(&a, b, &relation(&p), &[], None, Some(&p), &mut || Ok(()))
-                .unwrap()
+            super::super::compare(&a, b, &relation(&p), None, Some(&p), &mut || Ok(())).unwrap()
         };
         assert_eq!(compare(&b).verdict, ComparisonVerdict::Incomplete);
         assert_eq!(
@@ -529,7 +524,7 @@ mod tests {
         let mut b = a.clone();
         b.stop = ExecutionStop::BlockedByPriorPhase;
         assert_eq!(
-            super::super::compare(&a, &b, &relation(&p), &[], None, Some(&p), &mut || Ok(()))
+            super::super::compare(&a, &b, &relation(&p), None, Some(&p), &mut || Ok(()))
                 .unwrap()
                 .verdict,
             ComparisonVerdict::Incomplete
@@ -607,7 +602,7 @@ mod tests {
         }
         let a = observed(vec![write(1)]);
         assert_eq!(
-            super::super::compare(&a, &a, &relation(&p), &[], None, None, &mut || Ok(()))
+            super::super::compare(&a, &a, &relation(&p), None, None, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity
@@ -615,13 +610,13 @@ mod tests {
         let mut r = relation(&p);
         r.events.delay = false;
         assert_eq!(
-            super::super::compare(&a, &a, &r, &[], None, Some(&p), &mut || Ok(()))
+            super::super::compare(&a, &a, &r, None, Some(&p), &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::InvalidRequest
         );
         assert!(
-            super::super::compare(&a, &a, &relation(&p), &[], None, Some(&p), &mut || Err(
+            super::super::compare(&a, &a, &relation(&p), None, Some(&p), &mut || Err(
                 Error::new(ErrorCode::Cancelled, "cancel")
             ))
             .is_err()
@@ -653,7 +648,7 @@ mod tests {
         ] {
             let a = observed(vec![event]);
             assert_eq!(
-                super::super::compare(&a, &a, &relation(&p), &[], None, Some(&p), &mut || Ok(()))
+                super::super::compare(&a, &a, &relation(&p), None, Some(&p), &mut || Ok(()))
                     .unwrap_err()
                     .code,
                 ErrorCode::Integrity
@@ -690,7 +685,7 @@ mod tests {
         ] {
             let b = observed(events);
             assert_eq!(
-                super::super::compare(&a, &b, &r, &[], None, Some(&p), &mut || Ok(()))
+                super::super::compare(&a, &b, &r, None, Some(&p), &mut || Ok(()))
                     .unwrap()
                     .verdict,
                 ComparisonVerdict::Match
@@ -702,7 +697,7 @@ mod tests {
         ] {
             let b = observed(events);
             assert_eq!(
-                super::super::compare(&a, &b, &r, &[], None, Some(&p), &mut || Ok(()))
+                super::super::compare(&a, &b, &r, None, Some(&p), &mut || Ok(()))
                     .unwrap()
                     .verdict,
                 ComparisonVerdict::Diff

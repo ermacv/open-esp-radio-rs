@@ -13,7 +13,6 @@ fn core_obeys_crate_boundaries() {
         ("blobray-store", ["blobray-domain"].as_slice()),
         ("blobray-analysis", ["blobray-domain"].as_slice()),
         ("blobray-verification", ["blobray-domain"].as_slice()),
-        ("blobray-knowledge", ["blobray-domain"].as_slice()),
         ("blobray-backend-riscv", ["blobray-domain"].as_slice()),
         (
             "blobray-application",
@@ -22,7 +21,6 @@ fn core_obeys_crate_boundaries() {
                 "blobray-artifacts",
                 "blobray-store",
                 "blobray-analysis",
-                "blobray-knowledge",
                 "blobray-verification",
             ]
             .as_slice(),

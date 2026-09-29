@@ -45,8 +45,6 @@ mod tests {
             preload: vec![],
             models: vec![],
             calls: vec![],
-            tables: vec![],
-            services: vec![],
             observe_memory: vec![],
             observe_calls: None,
             observe_timeline: TimelineCapture {
@@ -182,16 +180,12 @@ mod tests {
                     },
                     memory: vec![],
                     calls: false,
-                    reviewed_calls: None,
                 }),
             }],
         };
         let manifest = ExecutionManifest {
-            effect_contracts: vec![],
-            projections: vec![],
             schema: EXECUTION_SCHEMA,
             project: id.as_str().parse().unwrap(),
-            call_pairs: vec![],
             records: id,
             producer: ExecutionProducer {
                 executor: "test".into(),
@@ -244,11 +238,7 @@ mod tests {
             serde_json::to_writer(&mut bytes, row).unwrap();
             bytes.push(b'\n');
         }
-        manifest.validate_records(
-            &bytes.as_slice(),
-            &WorkingMemory::new(1024 * 1024).unwrap(),
-            &mut || Ok(()),
-        )
+        manifest.validate_records(&bytes.as_slice(), &mut || Ok(()))
     }
     fn check(manifest: &TestExecution, rows: &[ExecutionEvidence]) -> Result<()> {
         let mut rows = rows.to_vec();

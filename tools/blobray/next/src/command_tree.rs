@@ -85,15 +85,15 @@ mod tests {
                 .unwrap()
                 .contains(&serde_json::json!("--format"))
         );
-        let accept = nodes
+        let build = nodes
             .iter()
-            .find(|node| node["path"] == serde_json::json!(["blobray", "knowledge", "accept"]))
+            .find(|node| node["path"] == serde_json::json!(["blobray", "ir", "build"]))
             .unwrap();
         assert!(
-            accept["flags"]
+            build["flags"]
                 .as_array()
                 .unwrap()
-                .contains(&serde_json::json!("--assertion"))
+                .contains(&serde_json::json!("--request"))
         );
         assert!(nodes.iter().all(|node| node["forwards"] == false));
     }

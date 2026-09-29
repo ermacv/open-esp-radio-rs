@@ -74,56 +74,9 @@ fn captured_range(thin: bool) -> (Fixture, u32, u64) {
         file_start,
     )
 }
-fn propose(
-    f: &Fixture,
-    section: u32,
-    extent: CodeRange,
-    file_start: u64,
-) -> Result<app::RunRecord> {
-    let inventory = app::inventory(&f.project, None).unwrap();
-    let payload = inventory.revision.inputs[0]
-        .inventory
-        .as_ref()
-        .unwrap()
-        .objects[0]
-        .content
-        .clone()
-        .unwrap();
-    f.app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: None,
-                actor: "reviewer".into(),
-                reason: "exact fixture bytes".into(),
-                action: KnowledgeAction::Propose {
-                    proposal: KnowledgeProposal {
-                        note: Some("known fixture instruction boundary".into()),
-                        subject: "entry-boundary".to_owned().try_into().unwrap(),
-                        occurrence: KnowledgeOccurrence {
-                            revision: f.revision.clone(),
-                            source: f.request.source.clone(),
-                            object: f.request.selector.object().clone(),
-                            symbol: None,
-                        },
-                        claim: KnowledgeClaim::ExecutableRange { section, extent },
-                        evidence: vec![EvidenceRef::Source {
-                            payload,
-                            range: CodeRange {
-                                start: file_start,
-                                length: 8,
-                            },
-                        }],
-                    },
-                },
-            },
-            budget(),
-        )
-        .map(|run| run.wait())
-}
 #[test]
-fn invalid_explicit_code_ranges_fail_before_analysis_or_knowledge_publication() {
-    let (f, section, file_start) = captured_range(false);
+fn invalid_explicit_code_ranges_fail_before_analysis() {
+    let (f, section, _) = captured_range(false);
     for (selected_section, extent, override_extent) in [
         (
             section,
@@ -191,15 +144,6 @@ fn invalid_explicit_code_ranges_fail_before_analysis_or_knowledge_publication() 
             .wait();
         assert_eq!(run.state, RunState::Failed, "{run:?}");
         assert!(run.analysis.is_none());
-        if override_extent.is_none() {
-            match propose(&f, selected_section, extent, file_start) {
-                Ok(result) => {
-                    assert_eq!(result.state, RunState::Failed, "{result:?}");
-                    assert!(result.knowledge.is_none());
-                }
-                Err(error) => assert_eq!(error.code, ErrorCode::InvalidRequest),
-            }
-        }
     }
     assert_eq!(
         app::inventory(&f.project, None).unwrap().revision_id,

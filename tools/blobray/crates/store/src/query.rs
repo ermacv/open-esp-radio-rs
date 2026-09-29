@@ -817,20 +817,6 @@ impl Project {
                 Ok(())
             })?;
         }
-        if schema >= 6 {
-            let head = self.current_knowledge()?;
-            if head.is_some() {
-                let _metadata = memory.reserve(2 * 1024 * 1024, control.position())?;
-                let mut parent = None;
-                self.knowledge_history(head.as_ref(), control, &mut |id, event, _| {
-                    if event.change.expected_base != parent {
-                        return Err(integrity("knowledge chain is not contiguous"));
-                    }
-                    parent = Some(id.clone());
-                    Ok(())
-                })?;
-            }
-        }
         // Validate indexed IR even if its run row was removed or changed.
         let mut statement = connection
             .prepare("SELECT id FROM semantic_ir ORDER BY id")
@@ -903,7 +889,6 @@ impl Project {
                             &lease.manifest,
                             &lease.request,
                             &lease.records,
-                            memory,
                             control,
                         )
                     })();

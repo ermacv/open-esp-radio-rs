@@ -291,55 +291,12 @@ pub(crate) fn enumerate(
     sink: &mut EntrySink<'_>,
 ) -> Result<InvestigationPlan> {
     write_control_message(std::io::sink(), request)?;
-    let original_request = request;
     if request.image.is_some() && request.inputs.is_some() {
         return Err(Error::new(
             ErrorCode::InvalidRequest,
-            "image selection cannot include object inputs or source-object reviewed extents",
+            "image selection cannot include object inputs",
         ));
     }
-    let _review_memory = memory.reserve(2 * 1024 * 1024, control.position())?;
-    let mut resolved = request.clone();
-    for reference in &request.reviewed_extents {
-        let entry = project.knowledge_entry(&reference.revision, &reference.assertion, control)?;
-        if entry.state != AssertionState::Accepted
-            || request.revision.as_ref() != Some(&entry.proposal.occurrence.revision)
-        {
-            return Err(Error::new(
-                ErrorCode::InvalidRequest,
-                "reviewed extent must be accepted at the selected knowledge revision and match the source revision",
-            ));
-        }
-        let occurrence = entry.proposal.occurrence;
-        match entry.proposal.claim {
-            KnowledgeClaim::FunctionExtent { extent } => {
-                let symbol = occurrence.symbol.ok_or_else(|| {
-                    Error::new(ErrorCode::Integrity, "reviewed extent has no symbol")
-                })?;
-                resolved.extents.push(FunctionExtent {
-                    source: occurrence.source,
-                    symbol,
-                    extent,
-                });
-            }
-            KnowledgeClaim::ExecutableRange { section, extent } => {
-                resolved.ranges.push(FunctionRange {
-                    source: occurrence.source,
-                    object: occurrence.object,
-                    section,
-                    extent,
-                });
-            }
-            _ => {
-                return Err(Error::new(
-                    ErrorCode::InvalidRequest,
-                    "review reference is not a code boundary",
-                ));
-            }
-        }
-    }
-    write_control_message(std::io::sink(), &resolved)?;
-    let request = &resolved;
     let revision = request.revision.as_ref().ok_or_else(|| {
         Error::new(
             ErrorCode::InvalidRequest,
@@ -449,7 +406,7 @@ pub(crate) fn enumerate(
         schema: 3,
         policy: 4,
         project: project.id().clone(),
-        request: original_request.clone(),
+        request: request.clone(),
         producer: producer.clone(),
         entries,
         entry_count: count,

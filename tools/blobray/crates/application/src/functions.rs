@@ -58,7 +58,7 @@ pub(crate) fn prepare_function_worker_in(
             work.request.revision.as_ref().ok_or_else(|| {
                 Error::new(ErrorCode::InvalidRequest, "function revision not frozen")
             })?;
-        let occurrence = KnowledgeOccurrence {
+        let occurrence = Occurrence {
             revision: revision.clone(),
             source: work.request.source.clone(),
             object: work.request.selector.object().clone(),

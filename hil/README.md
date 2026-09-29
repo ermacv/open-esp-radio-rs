@@ -38,8 +38,8 @@ qualification hil-evidence --hil-target <chip> --run ID...`, with the current
 observer receipt), bound to the firmware and observer sources rather than to
 the commit. `cargo hil evidence pending` lists the pending runs, `cargo hil
 evidence dismiss --run ID` drops runs that will not be recorded, such as runs
-whose inputs changed since, and `cargo xtask check changed` reminds of pending runs of scenarios a qualification
-catalog names. A run from a dirty tree or with untracked sources is recorded
+whose inputs changed since. Recording is optional: stale evidence is
+information, and qualification runs on a baseline the user chooses. A run from a dirty tree or with untracked sources is recorded
 only when named with `--run ID`. Commit the shards with the change
 they qualify; see
 [qualification](../qualification/README.md#evidence-ownership).

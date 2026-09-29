@@ -5,9 +5,8 @@
 //! usual breakage first: formatting of every workspace a changed file belongs
 //! to, Clippy and API documentation of the root workspace, the tests of the
 //! changed root packages, the Markdown/catalog check when prose changed, and
-//! the metadata check when a manifest or lockfile changed. It reminds, without
-//! failing, of clean HIL runs of qualification scenarios whose evidence this
-//! checkout has not recorded. It is not full
+//! the metadata check when a manifest or lockfile changed. It prints any CI
+//! workflow whose newest run on `main` failed. It is not full
 //! repository coverage; the CI jobs remain the source checkpoint.
 
 use std::{
@@ -351,9 +350,8 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
         }
     }
     if plan.firmware {
-        // Type-check the images the change can alter. Building and auditing
-        // them (stack, placement) runs after the push, off the pushing
-        // session's path: see `verify_main`.
+        // Type-check the images the change can alter. CI builds and audits
+        // the images (stack, placement) after the push: see `ci_status`.
         if changed.iter().any(|path| path == Path::new("Cargo.lock")) {
             oer_hil_runner_core::image::ensure_vendor_dependencies_absent(&ctx.root)?;
         }
@@ -404,18 +402,8 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             workspace.display()
         );
     }
-    if let Some(report) = crate::verify_main::status()
-        .ok()
-        .and_then(|status| status.report())
-    {
-        println!("check changed: {report}");
-    }
-    // A reminder only: runs never write tracked files, so evidence is an
-    // explicit step that is easy to forget.
-    match crate::hil_evidence::reminder(&ctx.root) {
-        Ok(Some(reminder)) => println!("check changed: {reminder}"),
-        Ok(None) => {}
-        Err(error) => println!("check changed: pending HIL evidence unreadable: {error}"),
+    for failure in crate::ci_status::report(ctx) {
+        println!("check changed: {failure}");
     }
     println!("check changed passed; the CI jobs remain the full checkpoint");
     Ok(())

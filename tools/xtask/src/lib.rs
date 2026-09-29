@@ -10,6 +10,7 @@ pub mod blobray;
 pub mod cargo;
 pub mod checks;
 pub mod chips;
+pub mod ci_status;
 pub mod compare_images;
 pub mod doc;
 pub mod evidence;
@@ -44,7 +45,6 @@ pub mod vendor_fingerprint;
 pub mod vendor_firmware;
 pub mod vendor_provenance;
 pub mod vendor_scenario;
-pub mod verify_main;
 pub mod worktree;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

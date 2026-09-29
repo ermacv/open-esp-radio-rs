@@ -145,13 +145,6 @@ enum Task {
         #[command(subcommand)]
         worktree: Worktree,
     },
-    /// Build and audit the image classes the newest origin/main reached since
-    /// the last verified one, in the host's own worktree; `cargo xtask push`
-    /// starts it in the background. With --status, print the last outcome.
-    VerifyMain {
-        #[arg(long)]
-        status: bool,
-    },
     /// Build the xtask of origin/main once and install `oer-stand`, which
     /// runs the operational HIL stand commands without building this tree.
     StandInstall,
@@ -436,16 +429,6 @@ fn run() -> Result<std::process::ExitCode> {
             Worktree::Prepare => oer_xtask::worktree::prepare(&ctx),
         },
         Task::StandInstall => oer_xtask::stand_install::run(&ctx),
-        Task::VerifyMain { status: true } => {
-            let status = oer_xtask::verify_main::status()?;
-            match (status.report(), &status.verified) {
-                (Some(report), _) => println!("{report}"),
-                (None, Some(verified)) => println!("main verified at {verified}"),
-                (None, None) => println!("main has not been verified yet"),
-            }
-            Ok(())
-        }
-        Task::VerifyMain { status: false } => oer_xtask::verify_main::run(&ctx),
         Task::Sweep {
             automatic: true, ..
         } => oer_xtask::sweep::automatically(&ctx.root),

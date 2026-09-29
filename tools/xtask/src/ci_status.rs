@@ -1,0 +1,185 @@
+//! The state of GitHub CI on `main`, as `check changed` and `push` report it.
+//!
+//! CI verifies `main` after every push: the source checks, both final HIL
+//! images with their audits, and every image class once a night. A failure
+//! there does not block a push; it is printed on every `check changed` and
+//! `push` until a later run of the same workflow passes, so whoever pushed the
+//! failing commit, or anyone who sees it first, fixes it before other work.
+
+use crate::{Context, process};
+use serde::Deserialize;
+
+/// A workflow run as `gh run list --json` reports it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Run {
+    pub workflow_name: String,
+    pub head_sha: String,
+    pub status: RunStatus,
+    #[serde(deserialize_with = "conclusion")]
+    pub conclusion: Option<Conclusion>,
+    pub url: String,
+    pub database_id: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    Completed,
+    InProgress,
+    Queued,
+    Pending,
+    Requested,
+    Waiting,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Conclusion {
+    Success,
+    Failure,
+    Cancelled,
+    Skipped,
+    TimedOut,
+    ActionRequired,
+    Neutral,
+    Stale,
+    StartupFailure,
+    #[serde(other)]
+    Other,
+}
+
+impl Conclusion {
+    fn failed(self) -> bool {
+        matches!(self, Self::Failure | Self::TimedOut | Self::StartupFailure)
+    }
+}
+
+/// `gh` reports an unfinished run's conclusion as an empty string.
+fn conclusion<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<Conclusion>, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    if text.is_empty() {
+        return Ok(None);
+    }
+    serde_json::from_value(serde_json::Value::String(text))
+        .map(Some)
+        .map_err(serde::de::Error::custom)
+}
+
+/// The newest finished run of each workflow in `runs` (newest first, as
+/// `gh run list` orders them) that failed.
+pub fn failures(runs: &[Run]) -> Vec<&Run> {
+    let mut seen = std::collections::BTreeSet::new();
+    runs.iter()
+        .filter(|run| run.status == RunStatus::Completed && run.conclusion.is_some())
+        .filter(|run| seen.insert(run.workflow_name.as_str()))
+        .filter(|run| run.conclusion.is_some_and(Conclusion::failed))
+        .collect()
+}
+
+#[derive(Deserialize)]
+struct Jobs {
+    jobs: Vec<Job>,
+}
+
+#[derive(Deserialize)]
+struct Job {
+    name: String,
+    #[serde(deserialize_with = "conclusion")]
+    conclusion: Option<Conclusion>,
+}
+
+/// One line per workflow whose newest finished run on `main` failed, naming
+/// the failed jobs; empty when CI is green or `gh` cannot tell.
+pub fn report(ctx: &Context) -> Vec<String> {
+    let Ok(output) = process::capture(ctx.command("gh").args([
+        "run",
+        "list",
+        "--branch",
+        "main",
+        "--limit",
+        "30",
+        "--json",
+        "workflowName,headSha,status,conclusion,url,databaseId",
+    ])) else {
+        return Vec::new();
+    };
+    let Ok(runs) = serde_json::from_slice::<Vec<Run>>(&output.stdout) else {
+        return Vec::new();
+    };
+    failures(&runs)
+        .into_iter()
+        .map(|run| {
+            let jobs = process::capture(ctx.command("gh").args([
+                "run",
+                "view",
+                &run.database_id.to_string(),
+                "--json",
+                "jobs",
+            ]))
+            .ok()
+            .and_then(|output| serde_json::from_slice::<Jobs>(&output.stdout).ok())
+            .map(|jobs| {
+                jobs.jobs
+                    .into_iter()
+                    .filter(|job| job.conclusion.is_some_and(Conclusion::failed))
+                    .map(|job| job.name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+            format!(
+                "CI on main is red: {} failed at {}{}; fix it before other work: {}",
+                run.workflow_name,
+                &run.head_sha[..run.head_sha.len().min(12)],
+                if jobs.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({jobs})")
+                },
+                run.url
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn runs(json: &str) -> Vec<Run> {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn only_the_newest_finished_run_of_each_workflow_counts() {
+        let runs = runs(
+            r#"[
+            {"workflowName":"CI","headSha":"c3","status":"in_progress","conclusion":"","url":"u3","databaseId":3},
+            {"workflowName":"CI","headSha":"c2","status":"completed","conclusion":"failure","url":"u2","databaseId":2},
+            {"workflowName":"CI","headSha":"c1","status":"completed","conclusion":"success","url":"u1","databaseId":1},
+            {"workflowName":"Documentation","headSha":"c2","status":"completed","conclusion":"success","url":"d2","databaseId":5},
+            {"workflowName":"Documentation","headSha":"c1","status":"completed","conclusion":"failure","url":"d1","databaseId":4},
+            {"workflowName":"Firmware matrix","headSha":"c0","status":"completed","conclusion":"cancelled","url":"f","databaseId":6}
+        ]"#,
+        );
+        let failed = failures(&runs);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].workflow_name, "CI");
+        assert_eq!(failed[0].head_sha, "c2");
+    }
+
+    #[test]
+    fn an_unknown_status_or_conclusion_still_parses() {
+        let runs = runs(
+            r#"[{"workflowName":"CI","headSha":"c","status":"brand_new","conclusion":"surprise","url":"u","databaseId":1}]"#,
+        );
+        assert_eq!(runs[0].status, RunStatus::Other);
+        assert_eq!(runs[0].conclusion, Some(Conclusion::Other));
+        assert!(failures(&runs).is_empty());
+    }
+}

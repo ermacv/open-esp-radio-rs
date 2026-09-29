@@ -184,12 +184,8 @@ pub fn run(ctx: &Context) -> Result<()> {
                 Ok(_) => {
                     println!("push: pushed {} to main", &checked.head[..12]);
                     // `main` is final; the next push need not wait for the
-                    // reinstall or the verification.
+                    // reinstall.
                     drop(queue);
-                    crate::verify_main::in_background(&ctx.root)?;
-                    println!(
-                        "push: building and auditing the image classes main reaches in the background; `cargo xtask verify-main --status` shows the outcome"
-                    );
                     let changed =
                         text(git(ctx).args(["diff", "--name-only", &base, &checked.head]))?;
                     if touches_stand_tooling(&changed.lines().collect::<Vec<_>>()) {

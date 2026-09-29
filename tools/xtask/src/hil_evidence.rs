@@ -7,11 +7,7 @@
 //! pending list and reminds of runs of qualification scenarios that are not
 //! recorded yet.
 
-use std::{
-    collections::BTreeSet,
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::{ffi::OsString, path::Path};
 
 use oer_hil_schema::run::Outcome;
 use serde::{Deserialize, Serialize};
@@ -213,106 +209,6 @@ fn live(pending: &[Pending]) -> Result<Vec<Pending>> {
         .collect())
 }
 
-/// Every scenario a qualification catalog requires evidence from.
-fn qualification_scenarios(root: &Path) -> Result<BTreeSet<String>> {
-    fn collect(value: &toml::Value, into: &mut BTreeSet<String>) {
-        match value {
-            toml::Value::Table(table) => {
-                for (key, value) in table {
-                    if key == "scenario"
-                        && let Some(name) = value.as_str()
-                    {
-                        into.insert(name.to_owned());
-                    }
-                    collect(value, into);
-                }
-            }
-            toml::Value::Array(values) => values.iter().for_each(|value| collect(value, into)),
-            _ => {}
-        }
-    }
-    let mut scenarios = BTreeSet::new();
-    let mut directories = vec![root.join("qualification/catalog")];
-    while let Some(directory) = directories.pop() {
-        for entry in std::fs::read_dir(&directory)? {
-            let path: PathBuf = entry?.path();
-            if path.is_dir() {
-                directories.push(path);
-            } else if path
-                .extension()
-                .is_some_and(|extension| extension == "toml")
-            {
-                collect(
-                    &toml::from_str(&std::fs::read_to_string(&path)?)?,
-                    &mut scenarios,
-                );
-            }
-        }
-    }
-    Ok(scenarios)
-}
-
-/// The reminder `check changed` prints, when this checkout has pending runs
-/// of qualification scenarios.
-/// With `OER_HIL_OWNER` set, only that owner's runs are named.
-pub fn reminder(root: &Path) -> Result<Option<String>> {
-    let pending = load(root)?;
-    if pending.is_empty() {
-        return Ok(None);
-    }
-    let owner = std::env::var(oer_hil_arbiter::OWNER_ENV)
-        .ok()
-        .filter(|owner| !owner.is_empty());
-    Ok(reminder_for(
-        &of_owner(live(&pending)?, owner.as_deref()),
-        &qualification_scenarios(root)?,
-    ))
-}
-
-/// The pending runs of `owner`, or all of them without one.
-fn of_owner(pending: Vec<Pending>, owner: Option<&str>) -> Vec<Pending> {
-    pending
-        .into_iter()
-        .filter(|entry| owner.is_none_or(|owner| entry.owner.as_deref() == Some(owner)))
-        .collect()
-}
-
-fn reminder_for(pending: &[Pending], qualifying: &BTreeSet<String>) -> Option<String> {
-    let mut runs = Vec::new();
-    let mut scenarios = BTreeSet::new();
-    for entry in pending {
-        let qualified = entry
-            .scenarios
-            .iter()
-            .filter(|scenario| qualifying.contains(*scenario))
-            .collect::<Vec<_>>();
-        if !qualified.is_empty() {
-            runs.push(entry);
-            scenarios.extend(qualified);
-        }
-    }
-    (!runs.is_empty()).then(|| {
-        let owners = runs
-            .iter()
-            .map(|entry| entry.owner.as_deref().unwrap_or("unknown owner"))
-            .collect::<BTreeSet<_>>();
-        format!(
-            "{} clean run(s) of qualification scenarios by {} have no recorded evidence ({}); \
-             record it with the change it qualifies: cargo hil evidence record{}",
-            runs.len(),
-            owners.into_iter().collect::<Vec<_>>().join(", "),
-            scenarios
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
-            runs.iter()
-                .map(|entry| format!(" --run {}", entry.run))
-                .collect::<String>()
-        )
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,41 +219,6 @@ mod tests {
             scenarios: scenarios.iter().map(|s| s.to_string()).collect(),
             owner: Some(String::from("wifi")),
         }
-    }
-
-    #[test]
-    fn an_owner_sees_only_its_own_pending_runs() {
-        let mine = pending("r1", &["a"]);
-        let theirs = Pending {
-            owner: Some(String::from("802154")),
-            ..pending("r2", &["a"])
-        };
-        let both = vec![mine.clone(), theirs];
-        assert_eq!(of_owner(both.clone(), Some("wifi")), [mine]);
-        assert_eq!(of_owner(both, None).len(), 2);
-    }
-
-    #[test]
-    fn the_reminder_names_only_runs_of_qualification_scenarios() {
-        let qualifying = BTreeSet::from([String::from("station-reconnect")]);
-        assert_eq!(
-            reminder_for(&[pending("r1", &["diagnostic-x"])], &qualifying),
-            None
-        );
-        let reminder = reminder_for(
-            &[
-                pending("r1", &["diagnostic-x"]),
-                pending("r2", &["station-reconnect", "diagnostic-x"]),
-            ],
-            &qualifying,
-        )
-        .unwrap();
-        assert!(reminder.starts_with("1 clean run(s)"), "{reminder}");
-        assert!(reminder.contains("(station-reconnect)"), "{reminder}");
-        assert!(
-            reminder.ends_with("cargo hil evidence record --run r2"),
-            "{reminder}"
-        );
     }
 
     #[test]
@@ -411,15 +272,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(passed_scenarios(run.path()), ["a"]);
-    }
-
-    #[test]
-    fn the_catalogs_name_their_scenarios() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        assert!(
-            qualification_scenarios(&root)
-                .unwrap()
-                .contains("station-reconnect")
-        );
     }
 }

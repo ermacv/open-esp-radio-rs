@@ -14,11 +14,10 @@ use crate::layout::*;
 use crate::phy::image_layout;
 use crate::session::{Artifact, Session, image_symbol, request};
 use blobray_domain::{
-    CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
-    EffectContractRef, EffectRule, EntrySelection, ExecutionCase, ExecutionEvent,
-    ExecutionEvidence, ExecutionGap, ExecutionStop, ExecutionTarget, FunctionSource, LinkRequest,
-    MemoryAccess, ModelStatus, ObjectId, ObjectLocation, RegionLifetime, RegisterCell,
-    SessionReset,
+    ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
+    EffectRule, EntrySelection, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
+    ExecutionStop, ExecutionTarget, FunctionSource, LinkRequest, MemoryAccess, ModelStatus,
+    ObjectId, ObjectLocation, RegionLifetime, RegisterCell, SessionReset,
 };
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
@@ -330,7 +329,7 @@ impl I2c {
         replacement: CallEndpoint,
         rules: Vec<EffectRule>,
         applicability: &str,
-    ) -> Result<EffectContractRef> {
+    ) -> Result<ArtifactId> {
         let contract = crate::contracts::phy_contract(vendor, replacement, rules, applicability);
         self.session.review_effects(
             name,

@@ -100,7 +100,7 @@ fn setup_code(left: &[u32], right: &[u32]) -> (Fixture, ExecutionRequest, Layout
 }
 fn select(r: &mut ExecutionRequest, p: &LayoutProjection) {
     r.cases[0].relation.as_mut().unwrap().projection =
-        Some(app::in_process::projection_ref(p).unwrap());
+        Some(app::in_process::projection_id(p).unwrap());
 }
 fn verify(
     f: &Fixture,

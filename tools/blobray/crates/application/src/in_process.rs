@@ -54,18 +54,16 @@ fn digest(value: &impl serde::Serialize) -> Result<ArtifactId> {
     Ok(ArtifactId::of_bytes(&bytes))
 }
 
-/// The selection of an effect contract reviewed outside Blobray.
-pub fn effect_contract_ref(contract: &EffectContract) -> Result<EffectContractRef> {
-    Ok(EffectContractRef::Content {
-        contract: digest(contract)?,
-    })
+/// The identity a relation selects an effect contract reviewed outside
+/// Blobray by: the digest of its canonical encoding.
+pub fn effect_contract_id(contract: &EffectContract) -> Result<ArtifactId> {
+    digest(contract)
 }
 
-/// The selection of a layout projection reviewed outside Blobray.
-pub fn projection_ref(projection: &LayoutProjection) -> Result<ProjectionRef> {
-    Ok(ProjectionRef::Content {
-        projection: digest(projection)?,
-    })
+/// The identity a relation selects a layout projection reviewed outside
+/// Blobray by: the digest of its canonical encoding.
+pub fn projection_id(projection: &LayoutProjection) -> Result<ArtifactId> {
+    digest(projection)
 }
 
 /// Vendor observations of one request's cases and the vendor coverage over
@@ -200,7 +198,7 @@ fn run(
         .map(|contract| {
             contract.validate()?;
             Ok(ResolvedEffectContract {
-                review: effect_contract_ref(contract)?,
+                id: effect_contract_id(contract)?,
                 contract: contract.clone(),
             })
         })
@@ -211,7 +209,7 @@ fn run(
         .map(|projection| {
             projection.validate()?;
             Ok(ResolvedProjection {
-                review: projection_ref(projection)?,
+                id: projection_id(projection)?,
                 projection: projection.clone(),
             })
         })

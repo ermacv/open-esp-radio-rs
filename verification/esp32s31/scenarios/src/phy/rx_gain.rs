@@ -19,9 +19,8 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectContractRef, EffectRule,
-    ExecutionCase, ExecutionEvidence, Invocation, LinkRequest, ProjectionRef, ReadRun,
-    SessionReset,
+    ArtifactId, CommandCell, ComparisonVerdict, DeviceDeclaration, EffectRule, ExecutionCase,
+    ExecutionEvidence, Invocation, LinkRequest, ReadRun, SessionReset,
 };
 use std::path::Path;
 
@@ -579,10 +578,10 @@ pub struct RxGain {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
-    effects: EffectContractRef,
+    effects: ArtifactId,
     /// The same rules for activity roots, within their event capacity.
-    long_effects: EffectContractRef,
-    committed: ProjectionRef,
+    long_effects: ArtifactId,
+    committed: ArtifactId,
 }
 
 impl std::ops::Deref for RxGain {

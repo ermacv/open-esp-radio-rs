@@ -170,7 +170,7 @@ fn compared(
         let projection = projections
             .iter()
             .find(|p| {
-                blobray_application::in_process::projection_ref(p)
+                blobray_application::in_process::projection_id(p)
                     .ok()
                     .as_ref()
                     == Some(selected)

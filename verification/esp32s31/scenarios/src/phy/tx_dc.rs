@@ -18,9 +18,9 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectContractRef, EffectRule,
-    ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest,
-    ProjectionRef, RegionLifetime, SessionReset,
+    ArtifactId, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectRule, ExecutionCase,
+    ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, RegionLifetime,
+    SessionReset,
 };
 use std::path::Path;
 
@@ -282,8 +282,8 @@ pub struct TxDc {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
-    effects: EffectContractRef,
-    committed: ProjectionRef,
+    effects: ArtifactId,
+    committed: ArtifactId,
 }
 
 impl std::ops::Deref for TxDc {

@@ -72,8 +72,8 @@ observations remain available after source removal and project restore. See
 
 A layout projection is reviewed outside Blobray and supplied with an
 [in-process comparison](../execution/README.md#in-process-verification). The
-execution case's `relation.projection` selects it by the digest of its canonical
-encoding: `{"kind":"content","projection":"<digest>"}`.
+execution case's `relation.projection` selects it by the SHA-256 of its canonical
+encoding, `in_process::projection_id`.
 
 A projection specifies `vendor` and `replacement` endpoints, `fields`, `branches`,
 `applicability` and `reason`. Each endpoint has an `entry`, plus `domains` such as
@@ -107,8 +107,8 @@ it does not establish general equivalence. See [projection contracts](../../../d
 ### Reviewed effect comparison
 
 An effect contract is reviewed outside Blobray and supplied with an in-process
-comparison. A comparison case's `relation.effects` selects it by digest as
-`{kind: "content", contract}`; all four MMIO read/write, fence and delay event channels must be enabled.
+comparison. A comparison case's `relation.effects` selects it by the SHA-256 of
+its canonical encoding, `in_process::effect_contract_id`; all four MMIO read/write, fence and delay event channels must be enabled.
 
 A contract contains exact `vendor`/`replacement` code endpoints, `rules`, `claim_ceiling`,
 `applicability` and `reason`. Each rule contains `name`, per-side patterns,

@@ -98,18 +98,12 @@ pub struct EffectContract {
     pub applicability: String,
     pub reason: String,
 }
-/// How a comparison selects its effect contract.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum EffectContractRef {
-    /// A contract reviewed outside Blobray and supplied with the comparison,
-    /// identified by the digest of its canonical encoding.
-    Content { contract: ArtifactId },
-}
+/// A contract supplied with a comparison, with the digest of its canonical
+/// encoding a relation selects it by.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedEffectContract {
-    pub review: EffectContractRef,
+    pub id: ArtifactId,
     pub contract: EffectContract,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -685,10 +679,10 @@ pub fn selected_effect_contract<'a>(
     relation: Option<&ComparisonRelation>,
     contracts: &'a [ResolvedEffectContract],
 ) -> Result<Option<&'a ResolvedEffectContract>> {
-    let Some(review) = relation.and_then(|r| r.effects.as_ref()) else {
+    let Some(id) = relation.and_then(|r| r.effects.as_ref()) else {
         return Ok(None);
     };
-    let mut matches = contracts.iter().filter(|p| &p.review == review);
+    let mut matches = contracts.iter().filter(|p| &p.id == id);
     let selected = matches.next().ok_or_else(|| {
         Error::new(
             ErrorCode::Integrity,

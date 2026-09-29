@@ -52,8 +52,11 @@ pub struct MemoryPair {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComparisonRelation {
-    pub effects: Option<EffectContractRef>,
-    pub projection: Option<ProjectionRef>,
+    /// The digest of the canonical encoding of the selected effect contract,
+    /// reviewed outside Blobray and supplied with the comparison.
+    pub effects: Option<ArtifactId>,
+    /// The digest of the canonical encoding of the selected layout projection.
+    pub projection: Option<ArtifactId>,
     pub returns: ReturnWords,
     pub events: EventChannels,
     pub memory: Vec<MemoryPair>,

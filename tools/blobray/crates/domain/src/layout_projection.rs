@@ -54,18 +54,12 @@ pub struct LayoutProjection {
     pub applicability: String,
     pub reason: String,
 }
-/// How a comparison selects its layout projection.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum ProjectionRef {
-    /// A projection reviewed outside Blobray and supplied with the comparison,
-    /// identified by the digest of its canonical encoding.
-    Content { projection: ArtifactId },
-}
+/// A projection supplied with a comparison, with the digest of its canonical
+/// encoding a relation selects it by.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedProjection {
-    pub review: ProjectionRef,
+    pub id: ArtifactId,
     pub projection: LayoutProjection,
 }
 fn invalid() -> Error {
@@ -313,10 +307,10 @@ pub fn selected_projection<'a>(
     relation: Option<&ComparisonRelation>,
     projections: &'a [ResolvedProjection],
 ) -> Result<Option<&'a ResolvedProjection>> {
-    let Some(review) = relation.and_then(|r| r.projection.as_ref()) else {
+    let Some(id) = relation.and_then(|r| r.projection.as_ref()) else {
         return Ok(None);
     };
-    let mut found = projections.iter().filter(|p| &p.review == review);
+    let mut found = projections.iter().filter(|p| &p.id == id);
     let p = found
         .next()
         .ok_or_else(|| Error::new(ErrorCode::Integrity, "selected resolved projection missing"))?;

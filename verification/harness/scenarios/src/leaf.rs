@@ -13,10 +13,10 @@ use crate::phy::layout::{layout, radio_aperture};
 use crate::phy::{image_layout, select};
 use crate::session::{Session, image_symbol_id, request};
 use blobray_domain::{
-    CallBinding, CallBoundary, CallCapture, CallDeclaration, CallRepetition, CallResponse,
-    ComparisonVerdict, EffectContractRef, EffectDisposition, EffectPattern, EffectRule,
-    EffectSelector, EffectValue, ExecutionCase, ExecutionEvidence, ExecutionGoal, ExecutionTarget,
-    LinkRequest, MemoryPair, ModelStatus, ObjectId, ObjectLocation, RegionLifetime, SessionReset,
+    ArtifactId, CallBinding, CallBoundary, CallCapture, CallDeclaration, CallRepetition,
+    CallResponse, ComparisonVerdict, EffectDisposition, EffectPattern, EffectRule, EffectSelector,
+    EffectValue, ExecutionCase, ExecutionEvidence, ExecutionGoal, ExecutionTarget, LinkRequest,
+    MemoryPair, ModelStatus, ObjectId, ObjectLocation, RegionLifetime, SessionReset,
 };
 use std::any::Any;
 use std::collections::BTreeMap;
@@ -717,7 +717,7 @@ impl LeafRun {
     /// The reviewed contract of a leaf whose production adds ordering
     /// fences: exactly that many full fences, every other effect compared
     /// exactly.
-    fn ordering_contract(&mut self, leaf: &Leaf) -> Result<EffectContractRef> {
+    fn ordering_contract(&mut self, leaf: &Leaf) -> Result<ArtifactId> {
         let vendor = self.vendor_endpoint(leaf)?;
         let production = self.session.input_endpoint(2, leaf.probe)?;
         let write = |(address, value): (u32, u32)| EffectPattern {
@@ -830,7 +830,7 @@ impl LeafRun {
         vendor: blobray_domain::CallEndpoint,
         production: blobray_domain::CallEndpoint,
         rules: Vec<EffectRule>,
-    ) -> Result<EffectContractRef> {
+    ) -> Result<ArtifactId> {
         let applicability = "one register transaction over retained radio registers";
         self.session.review_effects(
             &format!("{}-effects", leaf.probe),

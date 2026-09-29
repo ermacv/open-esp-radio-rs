@@ -14,7 +14,7 @@ pub(super) fn inspect(
     selected: Option<&ResolvedEffectContract>,
     c: &mut dyn RunControl,
 ) -> Result<Report> {
-    if relation.effects.as_ref() != selected.map(|s| &s.review) {
+    if relation.effects.as_ref() != selected.map(|s| &s.id) {
         return Err(Error::new(
             ErrorCode::Integrity,
             "selected effect review differs from comparison input",
@@ -153,9 +153,7 @@ mod tests {
     fn policy(rules: Vec<EffectRule>) -> ResolvedEffectContract {
         let id = ArtifactId::of_bytes(b"effect fixture");
         ResolvedEffectContract {
-            review: EffectContractRef::Content {
-                contract: id.clone(),
-            },
+            id: id.clone(),
             contract: EffectContract {
                 unclassified: UnclassifiedEffects::Incomplete,
                 vendor: endpoint(),
@@ -169,7 +167,7 @@ mod tests {
     }
     fn relation(p: &ResolvedEffectContract) -> ComparisonRelation {
         ComparisonRelation {
-            effects: Some(p.review.clone()),
+            effects: Some(p.id.clone()),
             projection: None,
             returns: ReturnWords {
                 low: true,

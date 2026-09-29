@@ -4,10 +4,10 @@ use crate::harness::{Budget, Input, ProbeCatalog, Result, Runner, args, invalid,
 use blobray_application::QuerySummary;
 use blobray_application::in_process::Executable;
 use blobray_domain::{
-    ArtifactId, CallAbi, CallEndpoint, CompanionProposal, EffectContract, EffectContractRef,
-    EntrySelection, ErrorCode, ExecutionEvidence, ExecutionRequest, ExecutionTarget, ImageManifest,
-    ImageMapping, LayoutProjection, LinkRequest, ObjectId, PreparedImageId, ProjectionRef,
-    ReviewedCallBoundary, Revision, RevisionId, SymbolId, SymbolTableKind,
+    ArtifactId, CallAbi, CallEndpoint, CompanionProposal, EffectContract, EntrySelection,
+    ErrorCode, ExecutionEvidence, ExecutionRequest, ExecutionTarget, ImageManifest, ImageMapping,
+    LayoutProjection, LinkRequest, ObjectId, PreparedImageId, ReviewedCallBoundary, Revision,
+    RevisionId, SymbolId, SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
 use evidence_index::LocationKind;
@@ -316,12 +316,12 @@ impl Session {
         subject: &str,
         contract: EffectContract,
         reason: &str,
-    ) -> Result<EffectContractRef> {
+    ) -> Result<ArtifactId> {
         self.runner.doc(
             name,
             &serde_json::json!({"subject": subject, "reason": reason, "contract": &contract}),
         )?;
-        let selection = blobray_application::in_process::effect_contract_ref(&contract)?;
+        let selection = blobray_application::in_process::effect_contract_id(&contract)?;
         if !self.effects.contains(&contract) {
             self.reviewed.push(crate::rule_use::Reviewed::new(
                 name,
@@ -340,8 +340,7 @@ impl Session {
     /// sources.
     fn review_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
         for contract in &self.effects {
-            let EffectContractRef::Content { contract: id } =
-                blobray_application::in_process::effect_contract_ref(contract)?;
+            let id = blobray_application::in_process::effect_contract_id(contract)?;
             if &id == selected {
                 let reviewed = serde_json::json!({
                     "rules": contract.rules,
@@ -364,8 +363,7 @@ impl Session {
     /// endpoints.
     fn projection_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
         for projection in &self.projections {
-            let ProjectionRef::Content { projection: id } =
-                blobray_application::in_process::projection_ref(projection)?;
+            let id = blobray_application::in_process::projection_id(projection)?;
             if &id == selected {
                 let reviewed = serde_json::json!({
                     "fields": projection.fields,
@@ -389,12 +387,12 @@ impl Session {
         subject: &str,
         projection: LayoutProjection,
         reason: &str,
-    ) -> Result<ProjectionRef> {
+    ) -> Result<ArtifactId> {
         self.runner.doc(
             name,
             &serde_json::json!({"subject": subject, "reason": reason, "projection": &projection}),
         )?;
-        let selection = blobray_application::in_process::projection_ref(&projection)?;
+        let selection = blobray_application::in_process::projection_id(&projection)?;
         if !self.projections.contains(&projection) {
             self.projections.push(projection);
         }
@@ -698,7 +696,7 @@ impl Session {
                 contracts
                     .iter()
                     .find(|contract| {
-                        blobray_application::in_process::effect_contract_ref(contract)
+                        blobray_application::in_process::effect_contract_id(contract)
                             .is_ok_and(|reference| &reference == selected)
                     })
                     .cloned()
@@ -851,10 +849,10 @@ impl Session {
                 {
                     continue;
                 }
-                if let Some(EffectContractRef::Content { contract }) = &relation.effects {
+                if let Some(contract) = &relation.effects {
                     reviews.insert(self.review_digest(contract)?);
                 }
-                if let Some(ProjectionRef::Content { projection }) = &relation.projection {
+                if let Some(projection) = &relation.projection {
                     reviews.insert(self.projection_digest(projection)?);
                 }
             }

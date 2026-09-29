@@ -22,7 +22,7 @@ pub fn compare(
         verdict: ComparisonVerdict::Diff,
         difference: Some(difference),
     };
-    if relation.projection.as_ref() != projection.map(|p| &p.resolved.review) {
+    if relation.projection.as_ref() != projection.map(|p| &p.resolved.id) {
         return Err(Error::new(
             ErrorCode::Integrity,
             "selected projection differs from comparison input",

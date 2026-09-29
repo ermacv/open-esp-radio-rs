@@ -777,11 +777,9 @@ pub(super) mod tests {
             domain: 0,
             offset: 0,
         };
-        let review = ProjectionRef::Content {
-            projection: ArtifactId::of_bytes(b"projection"),
-        };
+        let review = ArtifactId::of_bytes(b"projection");
         let projections = [ResolvedProjection {
-            review: review.clone(),
+            id: review.clone(),
             projection: LayoutProjection {
                 vendor: endpoint.clone(),
                 replacement: endpoint,

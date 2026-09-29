@@ -61,7 +61,7 @@ mod tests {
         }
     }
 
-    fn request(review: &EffectContractRef) -> ExecutionRequest {
+    fn request(review: &ArtifactId) -> ExecutionRequest {
         let input = Invocation {
             entry: 0x1000,
             goal: ExecutionGoal::Return,
@@ -135,11 +135,9 @@ mod tests {
 
     #[test]
     fn effect_accounting_must_follow_the_recorded_events() {
-        let review = EffectContractRef::Content {
-            contract: ArtifactId::of_bytes(b"contract"),
-        };
+        let review = ArtifactId::of_bytes(b"contract");
         let effects = vec![ResolvedEffectContract {
-            review: review.clone(),
+            id: review.clone(),
             contract: contract(),
         }];
         let request = request(&review);

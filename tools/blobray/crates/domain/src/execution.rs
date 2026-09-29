@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request format.
-pub const EXECUTION_SCHEMA: u32 = 24;
+pub const EXECUTION_SCHEMA: u32 = 25;
 /// Maximum phases in one request; a whole finite matrix fits in one request.
 pub const MAX_EXECUTION_CASES: usize = 4096;
 /// Maximum recorded events of one execution phase. A bounded poll loop that

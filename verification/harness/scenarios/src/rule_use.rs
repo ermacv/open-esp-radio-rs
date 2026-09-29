@@ -8,7 +8,7 @@
 //! so the contract claims more than the evidence shows.
 use crate::harness::{Result, invalid};
 use blobray_domain::{
-    EffectContract, EffectContractRef, EffectSelection, ExecutionEvent, ExecutionEvidence,
+    ArtifactId, EffectContract, EffectSelection, ExecutionEvent, ExecutionEvidence,
     ExecutionRequest, Result as DomainResult, RunControl,
 };
 use std::collections::BTreeMap;
@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// One contract selected by content, and its rules' selections so far.
 pub struct Reviewed {
     pub name: String,
-    pub reference: EffectContractRef,
+    pub reference: ArtifactId,
     pub contract: EffectContract,
     /// Whether a case selected the contract; per rule, its selections.
     pub used: bool,
@@ -25,7 +25,7 @@ pub struct Reviewed {
 }
 
 impl Reviewed {
-    pub fn new(name: &str, reference: EffectContractRef, contract: EffectContract) -> Self {
+    pub fn new(name: &str, reference: ArtifactId, contract: EffectContract) -> Self {
         Self {
             name: name.into(),
             reference,
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn a_rule_without_a_selection_is_dead_only_in_a_used_contract() {
         let contract = crate::failure::tests::contract();
-        let reference = blobray_application::in_process::effect_contract_ref(&contract).unwrap();
+        let reference = blobray_application::in_process::effect_contract_id(&contract).unwrap();
         let mut reviewed = [Reviewed::new("fixture", reference, contract)];
         assert!(dead(&reviewed).is_empty());
         reviewed[0].used = true;
@@ -185,7 +185,7 @@ mod tests {
         let mut port = contract.rules[0].clone();
         port.name = "settled-check-other-port".into();
         contract.rules.push(port);
-        let reference = blobray_application::in_process::effect_contract_ref(&contract).unwrap();
+        let reference = blobray_application::in_process::effect_contract_id(&contract).unwrap();
         let mut reviewed = [Reviewed::new("fixture", reference, contract)];
         reviewed[0].used = true;
         assert_eq!(

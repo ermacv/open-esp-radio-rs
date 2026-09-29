@@ -23,9 +23,8 @@ use crate::phy::{
 };
 use crate::tx_dc::{self, DETECTOR_READY, PBUS_IDLE, SAR_UNUSED, Samples};
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectContractRef, EffectRule,
-    ExecutionCase, ExecutionEvidence, Invocation, LinkRequest, ProjectionRef, ReadRun,
-    SessionReset,
+    ArtifactId, CommandCell, ComparisonVerdict, DeviceDeclaration, EffectRule, ExecutionCase,
+    ExecutionEvidence, Invocation, LinkRequest, ReadRun, SessionReset,
 };
 use std::path::Path;
 
@@ -368,7 +367,7 @@ pub struct Tracking {
     production_delay: u32,
     /// Register-preserving short-delay event of the production probes.
     short_delay: u32,
-    reviews: Vec<(Root, EffectContractRef, ProjectionRef)>,
+    reviews: Vec<(Root, ArtifactId, ArtifactId)>,
 }
 
 impl std::ops::Deref for Tracking {

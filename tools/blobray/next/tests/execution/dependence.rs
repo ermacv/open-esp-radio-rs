@@ -421,7 +421,7 @@ fn projected_final_state_depends_on_its_last_writers() {
     input.observe_memory[0].address = RAM;
     input.observe_memory[0].length = 8;
     let mut projected = relation();
-    projected.projection = Some(app::in_process::projection_ref(&projection).unwrap());
+    projected.projection = Some(app::in_process::projection_id(&projection).unwrap());
     let sources: &[app::in_process::Executable] =
         &[app::in_process::Executable::new(executable.clone())];
     let request = ExecutionRequest {

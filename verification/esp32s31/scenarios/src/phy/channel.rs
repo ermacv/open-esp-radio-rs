@@ -17,9 +17,8 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectContractRef, ExecutionCase,
-    ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, ProjectionRef,
-    SessionReset,
+    ArtifactId, CommandCell, ComparisonVerdict, DeviceDeclaration, ExecutionCase, ExecutionEvent,
+    ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, SessionReset,
 };
 
 /// Offsets of the committed channel, temperature, bandwidth, 802.11p
@@ -263,10 +262,10 @@ pub struct Channel {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
-    effects: EffectContractRef,
-    committed: ProjectionRef,
-    sensor_effects: EffectContractRef,
-    sensor_committed: ProjectionRef,
+    effects: ArtifactId,
+    committed: ArtifactId,
+    sensor_effects: ArtifactId,
+    sensor_committed: ArtifactId,
 }
 
 impl std::ops::Deref for Channel {

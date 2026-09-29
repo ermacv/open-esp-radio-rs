@@ -127,9 +127,7 @@ mod tests {
             boundary: ReviewedCallBoundary::Code { address: 0x1000 },
         };
         let p = ResolvedProjection {
-            review: ProjectionRef::Content {
-                projection: id.clone(),
-            },
+            id: id.clone(),
             projection: LayoutProjection {
                 vendor: LayoutEndpoint {
                     entry: entry.clone(),
@@ -211,7 +209,7 @@ mod tests {
         };
         let relation = ComparisonRelation {
             effects: None,
-            projection: Some(p.review.clone()),
+            projection: Some(p.id.clone()),
             calls: false,
             returns: ReturnWords {
                 low: false,

@@ -60,7 +60,7 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
 }
 fn select(r: &mut ExecutionRequest, p: &EffectContract) {
     r.cases[0].relation.as_mut().unwrap().effects =
-        Some(app::in_process::effect_contract_ref(p).unwrap());
+        Some(app::in_process::effect_contract_id(p).unwrap());
 }
 fn verify(
     f: &Fixture,
@@ -331,8 +331,8 @@ fn effect_policy_composes_with_layout_timeline_returns_and_final_ram() {
         replacement: 1,
     }];
     relation.events.timeline = capture;
-    relation.projection = Some(app::in_process::projection_ref(&layout).unwrap());
-    relation.effects = Some(app::in_process::effect_contract_ref(&contract).unwrap());
+    relation.projection = Some(app::in_process::projection_id(&layout).unwrap());
+    relation.effects = Some(app::in_process::effect_contract_id(&contract).unwrap());
     let compare = |r: &ExecutionRequest| {
         super::verify(
             &f,

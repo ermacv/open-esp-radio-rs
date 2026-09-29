@@ -19,7 +19,7 @@ supplies both and an explicit binding class. A request has the following shape
 
 ```json
 {
-  "schema": 24,
+  "schema": 25,
   "vendor": {
     "executables": ["ELF_SHA"],
     "abi": "riscv-integer",
@@ -499,7 +499,7 @@ authority.
 targets name, as `Executable` values that hash their bytes once when made and
 can be reused across calls, and the effect
 contracts and layout projections its relations select. Those are reviewed
-outside Blobray: `effect_contract_ref` and `projection_ref` select them by the
+outside Blobray: `effect_contract_id` and `projection_id` give the identity a relation selects them by, the
 SHA-256 of their canonical JSON encoding, and `verify` rejects a selection whose
 content it was not given. Records, the aggregate verdict and completeness are
 returned in memory: no project, content store, journal or run record

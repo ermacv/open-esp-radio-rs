@@ -449,7 +449,7 @@ fn release_proof(name: &str, address: u32) -> EffectRule {
 /// Effects the two sides reach differently: the vendor completes LAST with
 /// its high-address window, which production's DMA window makes constant,
 /// and production orders its cursor samples with device fences.
-fn contract(ctx: &mut Mac) -> Result<blobray_domain::EffectContractRef> {
+fn contract(ctx: &mut Mac) -> Result<blobray_domain::ArtifactId> {
     let image = ctx.image_symbols()?;
     let vendor = ctx.session.image_endpoint(
         &ctx.image_object,
@@ -585,7 +585,7 @@ fn case_rows(
     unit: usize,
     cursor: Cursor,
     fill: u8,
-    effects: &blobray_domain::EffectContractRef,
+    effects: &blobray_domain::ArtifactId,
 ) -> Result<Vec<ExecutionCase>> {
     let image = ctx.image_symbols()?;
     let symbol = |name: &str| ctx.symbol_address(&image, name);

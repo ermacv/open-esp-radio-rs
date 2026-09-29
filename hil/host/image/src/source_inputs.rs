@@ -27,11 +27,6 @@ use crate::Result;
 /// build read; schema 1 listed only the compiled sources.
 pub const SCHEMA: u32 = 2;
 
-/// This package's directory in the repository.
-const BUILDER_PACKAGE: &str = "hil/host/runner-core";
-/// This module's directory: the code that builds every image.
-const BUILDER_MODULE: &str = "hil/host/runner-core/src/image";
-
 /// Repository-relative files the binaries below each `(release directory,
 /// binary name)` were built from, plus the manifest and build script of each
 /// repository package they compiled.
@@ -151,13 +146,13 @@ pub fn configuration(
 }
 
 /// The sources of the code that builds, packs and audits every image: this
-/// module, the image classifier, the source snapshot, the firmware packer
+/// package, the image classifier, the source snapshot, the firmware packer
 /// and the memory auditor, without their tests and prose.
 fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
     let mut files = BTreeSet::new();
-    let mut pending = vec![PathBuf::from(BUILDER_MODULE)];
+    let mut pending = Vec::new();
     for package in [
-        BUILDER_PACKAGE,
+        crate::REPOSITORY_DIRECTORY,
         oer_hil_image_class::REPOSITORY_DIRECTORY,
         oer_hil_source_snapshot::REPOSITORY_DIRECTORY,
         oer_esp32s31_firmware::REPOSITORY_DIRECTORY,
@@ -169,9 +164,7 @@ fn builder(repository: &Path) -> Result<BTreeSet<PathBuf>> {
                 files.insert(package.join(name));
             }
         }
-        if package != Path::new(BUILDER_PACKAGE) {
-            pending.push(package.join("src"));
-        }
+        pending.push(package.join("src"));
     }
     while let Some(directory) = pending.pop() {
         let Ok(entries) = fs::read_dir(repository.join(&directory)) else {
@@ -283,8 +276,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_builder_package_is_this_crate() {
-        assert!(env!("CARGO_MANIFEST_DIR").ends_with(BUILDER_PACKAGE));
+    fn the_repository_directory_is_this_package() {
+        assert!(env!("CARGO_MANIFEST_DIR").ends_with(crate::REPOSITORY_DIRECTORY));
     }
 
     #[test]
@@ -304,9 +297,10 @@ mod tests {
             ("hil/targets/chip/Cargo.toml", "[workspace]\nmembers = []\n"),
             ("hil/targets/chip/Cargo.lock", ""),
             ("hil/targets/chip/stack.toml", ""),
+            ("hil/host/image/Cargo.toml", ""),
+            ("hil/host/image/src/lib.rs", ""),
+            ("hil/host/image/src/tests.rs", ""),
             ("hil/host/runner-core/Cargo.toml", ""),
-            ("hil/host/runner-core/src/image/mod.rs", ""),
-            ("hil/host/runner-core/src/image/tests.rs", ""),
             ("hil/host/runner-core/src/session.rs", ""),
             ("tools/firmware/Cargo.toml", ""),
             ("tools/firmware/src/lib.rs", ""),
@@ -331,8 +325,8 @@ mod tests {
         let expected = [
             ".cargo/config.toml",
             "Cargo.toml",
-            "hil/host/runner-core/Cargo.toml",
-            "hil/host/runner-core/src/image/mod.rs",
+            "hil/host/image/Cargo.toml",
+            "hil/host/image/src/lib.rs",
             "hil/targets/chip/Cargo.lock",
             "hil/targets/chip/Cargo.toml",
             "hil/targets/chip/stack.toml",

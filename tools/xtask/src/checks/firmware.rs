@@ -7,8 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use oer_hil_image::Integration;
 use oer_hil_image_class::ImageClass;
-use oer_hil_runner_core::image::Integration;
 use oer_hil_source_snapshot::FrozenSources;
 
 use crate::{Context, Result};
@@ -73,7 +73,7 @@ fn seed_of(class: ImageClass) -> ImageClass {
 /// image builder itself), and every class that has no complete record yet.
 pub fn affected(changed: &[PathBuf]) -> Result<Vec<ImageClass>> {
     Ok(affected_in(
-        &oer_hil_runner_core::image::chip_build_root("esp32s31")?,
+        &oer_hil_image::chip_build_root("esp32s31")?,
         changed,
     ))
 }
@@ -108,7 +108,7 @@ fn last_inputs(
         .filter_map(|path| Some((std::fs::metadata(&path).ok()?.modified().ok()?, path)))
         .max()?;
     let inputs: SourceInputs = serde_json::from_slice(&std::fs::read(newest.1).ok()?).ok()?;
-    (inputs.schema == oer_hil_runner_core::image::source_inputs::SCHEMA)
+    (inputs.schema == oer_hil_image::source_inputs::SCHEMA)
         .then(|| inputs.files.into_iter().collect())
 }
 
@@ -137,11 +137,11 @@ pub fn run(ctx: &Context, selected: &[ImageClass], depth: Depth, jobs: usize) ->
                 &ctx.root,
                 &[],
                 true,
-                &oer_hil_runner_core::image::source_snapshot_store()?,
+                &oer_hil_image::source_snapshot_store()?,
             )?;
             Some(FrozenSources::open_in_free_workspace(
                 snapshot.directory(),
-                &oer_hil_runner_core::image::frozen::build_slots("esp32s31")?,
+                &oer_hil_image::frozen::build_slots("esp32s31")?,
             )?)
         }
         Depth::TypeCheck => None,
@@ -242,8 +242,8 @@ fn share_units(
     class: ImageClass,
     network: Integration,
 ) -> Result<()> {
-    let from = oer_hil_runner_core::image::frozen::compile_cache(frozen, seed, network);
-    let to = oer_hil_runner_core::image::frozen::compile_cache(frozen, class, network);
+    let from = oer_hil_image::frozen::compile_cache(frozen, seed, network);
+    let to = oer_hil_image::frozen::compile_cache(frozen, class, network);
     for build in ["runtime", "bootstrap"] {
         let Ok(entries) = std::fs::read_dir(from.join(build)) else {
             continue;
@@ -304,18 +304,14 @@ fn build_one(
     let started = Instant::now();
     let result = match depth {
         Depth::Build => match frozen {
-            Some(frozen) => oer_hil_runner_core::image::frozen::build(
-                frozen,
-                class,
-                network,
-                None,
-                &Default::default(),
-            )
-            .map(|_| ()),
+            Some(frozen) => {
+                oer_hil_image::frozen::build(frozen, class, network, None, &Default::default())
+                    .map(|_| ())
+            }
             None => Err("a full build needs the frozen sources".into()),
         },
 
-        Depth::TypeCheck => oer_hil_runner_core::image::check(&ctx.root, class, network),
+        Depth::TypeCheck => oer_hil_image::check(&ctx.root, class, network),
     };
     let outcome = Outcome {
         class,
@@ -401,7 +397,7 @@ mod tests {
             std::fs::write(
                 directory.join("source-inputs.json"),
                 serde_json::json!({
-                    "schema": oer_hil_runner_core::image::source_inputs::SCHEMA,
+                    "schema": oer_hil_image::source_inputs::SCHEMA,
                     "files": files,
                 })
                 .to_string(),

@@ -1,6 +1,5 @@
-//! Shared HIL runner core: scenarios, laboratory configuration and locks, the
-//! UART session and target protocol, workload context, image build and flash,
-//! and sealed run evidence.
+//! Shared HIL runner core: laboratory configuration and locks, the UART
+//! session and target protocol, workload context and measurements.
 //!
 //! Radio-family workloads and their fixtures live in the domain packages that
 //! depend on this crate; the `oer-hil-runner` binary composes them.
@@ -10,7 +9,6 @@ pub mod context;
 pub mod error;
 pub mod failure;
 pub mod fixture;
-pub mod image;
 pub mod lab;
 pub mod measurements;
 pub mod output;

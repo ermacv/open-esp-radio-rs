@@ -3052,6 +3052,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-hil-image"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "object 0.39.1",
+ "oer-chip-profile",
+ "oer-esp32s31-firmware",
+ "oer-esp32s31-platform-layout",
+ "oer-hil-durable",
+ "oer-hil-evidence",
+ "oer-hil-image-class",
+ "oer-hil-source-snapshot",
+ "oer-memory-report",
+ "oer-process",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "oer-hil-image-class"
 version = "0.1.0"
 dependencies = [
@@ -3097,6 +3119,7 @@ dependencies = [
  "oer-hil-durable",
  "oer-hil-evidence",
  "oer-hil-fixture-install",
+ "oer-hil-image",
  "oer-hil-image-class",
  "oer-hil-protocol",
  "oer-hil-runner-bluetooth",
@@ -3146,14 +3169,11 @@ name = "oer-hil-runner-core"
 version = "0.1.0"
 dependencies = [
  "addr2line",
- "clap",
  "fs2",
  "libc",
  "mio",
- "object 0.39.1",
  "oer-chip-profile",
  "oer-esp32s31-firmware",
- "oer-esp32s31-platform-layout",
  "oer-hil-arbiter",
  "oer-hil-board",
  "oer-hil-durable",
@@ -3169,7 +3189,6 @@ dependencies = [
  "oer-hil-trace",
  "oer-ieee80211-trace",
  "oer-ieee802154-trace",
- "oer-memory-report",
  "oer-phy-trace",
  "oer-process",
  "oer-trace",
@@ -3180,7 +3199,6 @@ dependencies = [
  "serde_json",
  "serialport",
  "sha2 0.10.9",
- "tar",
  "tempfile",
  "toml",
  "zeroize",
@@ -3644,6 +3662,7 @@ dependencies = [
  "oer-hil-arbiter",
  "oer-hil-board",
  "oer-hil-evidence",
+ "oer-hil-image",
  "oer-hil-image-class",
  "oer-hil-runner-core",
  "oer-hil-schema",

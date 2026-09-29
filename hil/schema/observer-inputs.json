@@ -12,6 +12,7 @@
       "oer-hil-source-snapshot",
       "oer-hil-scenario",
       "oer-hil-evidence",
+      "oer-hil-image",
       "oer-esp32s31-hil-board",
       "rustix",
       "oer-process",

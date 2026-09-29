@@ -14,8 +14,9 @@ hil/
 ├── evidence/          recorded evidence shards per chip
 ├── host/
 │   ├── runner/        CLI, run orchestration and workload dispatch
-│   ├── runner-core/   lab, UART session, measurements and images
+│   ├── runner-core/   lab, UART session, context and measurements
 │   ├── evidence/      run writer, seal, verification and reports
+│   ├── image/         image builder, audits and firmware records
 │   ├── scenario/      scenario envelope, catalog, campaign plan and requirements
 │   ├── image-class/   image classes and the keys each serves
 │   ├── source-snapshot/ source snapshots builds and runs are made from

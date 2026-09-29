@@ -205,10 +205,8 @@ fn the_bootstrap_takes_only_the_esp_hal_override() {
 
 #[test]
 fn the_classes_that_sample_the_program_counter_are_those_whose_features_enable_it() {
-    let manifest: toml::Table = toml::from_str(include_str!(
-        "../../../../targets/esp32s31/runtime/Cargo.toml"
-    ))
-    .unwrap();
+    let manifest: toml::Table =
+        toml::from_str(include_str!("../../../targets/esp32s31/runtime/Cargo.toml")).unwrap();
     let features = manifest["features"].as_table().unwrap();
     let enables = |class: ImageClass| {
         let mut pending = class

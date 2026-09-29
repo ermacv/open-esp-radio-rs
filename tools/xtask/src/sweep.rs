@@ -335,7 +335,7 @@ fn idle_for(root: &Path, now: SystemTime) -> Option<Duration> {
 /// The host build root's snapshot builds that no build used for longer than
 /// `policy` allows.
 pub fn host_candidates(policy: Policy, now: SystemTime) -> Vec<Candidate> {
-    let Ok(root) = oer_hil_runner_core::image::host_build_root() else {
+    let Ok(root) = oer_hil_image::host_build_root() else {
         return Vec::new();
     };
     let mut found = Vec::new();

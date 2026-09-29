@@ -7,11 +7,8 @@ use oer_hil_image_class::{FeatureDelta, ImageClass};
 use oer_hil_source_snapshot::FrozenSources;
 
 use crate::{
-    Result,
-    image::{
-        Artifacts, BuildPlacement, Integration, LayoutSeed, LocalOverrides, build_resolved,
-        chip_build_root, chip_profile, esp_idf, seed_suffix,
-    },
+    Artifacts, BuildPlacement, Integration, LayoutSeed, LocalOverrides, Result, build_resolved,
+    chip_build_root, chip_profile, esp_idf, seed_suffix,
 };
 
 /// The base of the host's build slots for `chip` images (`<base>-<n>`).
@@ -118,7 +115,7 @@ fn finish(frozen: &FrozenSources, output: &Path) -> Result<()> {
 pub fn build_for_run(
     session: &oer_hil_evidence::run::RunSession,
     class: ImageClass,
-    build: crate::image::CurrentBuild,
+    build: crate::CurrentBuild,
 ) -> Result<Artifacts> {
     let frozen = session
         .frozen_sources()

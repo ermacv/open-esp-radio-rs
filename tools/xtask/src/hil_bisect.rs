@@ -398,7 +398,7 @@ impl Bisection<'_> {
             &self.worktree,
             &[],
             false,
-            &oer_hil_runner_core::image::source_snapshot_store()?,
+            &oer_hil_image::source_snapshot_store()?,
         )?;
         let receipt = tempfile::NamedTempFile::new()?;
         let status = self

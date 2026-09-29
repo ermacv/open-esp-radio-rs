@@ -190,10 +190,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     }
     // An ESP-IDF application is flashed with its chip's catalog bootloader,
     // which only this wrapper builds; the runner asks it back.
-    command.env(
-        oer_hil_runner_core::image::XTASK_ENV,
-        std::env::current_exe()?,
-    );
+    command.env(oer_hil_image::XTASK_ENV, std::env::current_exe()?);
     let mut child = oer_process::owned::Child::spawn_with_shutdown_grace(
         &mut command,
         std::time::Duration::from_secs(300),

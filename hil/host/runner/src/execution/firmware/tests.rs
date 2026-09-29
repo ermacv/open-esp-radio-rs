@@ -1,7 +1,7 @@
 use std::{cell::RefCell, ffi::OsString, fs, path::PathBuf};
 
 use super::*;
-use hil_core::image::Integration;
+use oer_hil_image::Integration;
 
 fn write(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -36,13 +36,13 @@ fn build_inputs(root: &Path) -> Artifacts {
         runtime_elf: root.join("build/runtime.elf"),
 
         effective_embedded_lock: root.join("hil/targets/esp32s31/Cargo.lock"),
-        boot: hil_core::image::BootArtifacts::Staged {
+        boot: oer_hil_image::BootArtifacts::Staged {
             runtime_bin: root.join("build/runtime.bin"),
             bootstrap_elf: root.join("build/bootstrap.elf"),
             effective_bootstrap_lock: root.join("platform/esp32s31/Cargo.lock"),
         },
         chip: String::from("esp32s31"),
-        rust_target: String::from(hil_core::image::TARGET),
+        rust_target: String::from(oer_hil_image::TARGET),
         application_image: root.join("build/application.bin"),
         source_inputs: None,
         environment: oer_hil_evidence::build::BuildEnvironment::synthetic(),
@@ -64,7 +64,7 @@ fn session(root: &Path) -> RunSession {
     session
         .bind_source_snapshot(
             snapshot.directory(),
-            &hil_core::image::frozen::build_slots("esp32s31").unwrap(),
+            &oer_hil_image::frozen::build_slots("esp32s31").unwrap(),
         )
         .unwrap();
     session
@@ -126,7 +126,7 @@ fn flash_failure_is_typed_after_archival() {
 #[test]
 fn current_build_has_the_canonical_firmware_plan_identity() {
     assert!(matches!(
-        RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
+        RunFirmware::BuildCurrent(oer_hil_image::CurrentBuild {
             features: oer_hil_image_class::FeatureDelta::default(),
             network: Integration::OwnedXarxa,
             layout_seed: None,
@@ -150,7 +150,7 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
         "esp32s31",
         &source_id,
         ImageClass::Correctness,
-        &hil_core::image::record::Recipe,
+        &oer_hil_image::record::Recipe,
     )
     .unwrap();
     let mut replay = session(root.path());
@@ -184,7 +184,7 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
         "esp32s31",
         &source_id,
         ImageClass::Correctness,
-        &hil_core::image::record::Recipe,
+        &oer_hil_image::record::Recipe,
     )
     .unwrap();
     #[cfg(unix)]

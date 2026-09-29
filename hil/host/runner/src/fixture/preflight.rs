@@ -51,7 +51,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
             )
             .into());
         }
-        hil_core::image::require_program(std::ffi::OsStr::new("tshark"))?;
+        oer_hil_image::require_program(std::ffi::OsStr::new("tshark"))?;
     }
     if required.station_network {
         hil_core::fixture::cleanup::require_healthy()?;
@@ -84,7 +84,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                 )
                 .map_err(hil_core::fixture::Error::context)?;
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
-                    hil_core::image::require_program(std::ffi::OsStr::new("dumpcap"))?;
+                    oer_hil_image::require_program(std::ffi::OsStr::new("dumpcap"))?;
                 }
             }
             StationFixtureConfig::External(_) if required.station_control => {

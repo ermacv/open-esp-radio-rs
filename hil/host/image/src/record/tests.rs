@@ -10,7 +10,7 @@ use oer_hil_evidence::run::{
 use oer_hil_image_class::ImageClass;
 
 use super::{Recipe, firmware};
-use crate::image::{Artifacts, BootArtifacts, Integration, TARGET};
+use crate::{Artifacts, BootArtifacts, Integration, TARGET};
 
 /// Owned-Xarxa correctness artifacts over the given files, with one lock
 /// standing in for both effective locks and a host-independent environment.

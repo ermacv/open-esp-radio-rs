@@ -4,14 +4,12 @@ use oer_hil_evidence::run::RunEventKind;
 use std::path::Path;
 
 use crate::Result;
-use hil_core::{
-    image::{Artifacts, CurrentBuild},
-    lab::config::LabConfig,
-};
+use hil_core::lab::config::LabConfig;
 use oer_hil_evidence::{
     run::{Failure, FailureKind, Outcome, PlannedFirmware, RunSession},
     verify::ArchivedFirmware,
 };
+use oer_hil_image::{Artifacts, CurrentBuild};
 use oer_hil_image_class::ImageClass;
 
 pub(crate) enum RunFirmware {
@@ -71,7 +69,7 @@ pub(crate) fn build_image(
     session: &mut RunSession,
 ) -> Result<Built> {
     session.record_event(RunEventKind::ImageBuildStarted, None, Some(class), None)?;
-    let artifacts = match hil_core::image::frozen::build_for_run(session, class, build) {
+    let artifacts = match oer_hil_image::frozen::build_for_run(session, class, build) {
         Ok(artifacts) => artifacts,
         Err(error) => {
             oer_process::check_cancelled()?;
@@ -207,7 +205,7 @@ fn archive_built(
     session: &mut RunSession,
 ) -> Result<Artifacts> {
     artifacts.application_image =
-        hil_core::image::record::firmware::record(session, class, &artifacts)?;
+        oer_hil_image::record::firmware::record(session, class, &artifacts)?;
     session.record_event(
         RunEventKind::ImageBuildFinished,
         None,
@@ -349,7 +347,7 @@ fn archive_build_log(
     let mut cause = Some(error);
     let failed = loop {
         let current = cause?;
-        if let Some(failed) = current.downcast_ref::<hil_core::image::BuildStepFailed>() {
+        if let Some(failed) = current.downcast_ref::<oer_hil_image::BuildStepFailed>() {
             break failed;
         }
         cause = current.source();

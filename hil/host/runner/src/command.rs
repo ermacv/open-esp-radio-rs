@@ -10,8 +10,9 @@ use crate::{
     emit_json, execution::firmware::RunFirmware, execution::orchestration, fixture,
     repository_root,
 };
+use hil_core::lab;
 use hil_core::output;
-use hil_core::{image, lab};
+use oer_hil_image as image;
 use oer_hil_scenario::SCENARIO_SCHEMA;
 
 pub(crate) fn run() -> Result<()> {
@@ -149,9 +150,8 @@ pub(crate) fn run() -> Result<()> {
                                 layout_seed,
                                 &oer_hil_image_class::FeatureDelta::default(),
                             )?;
-                            let record = hil_core::image::record::publish(
-                                &root, snapshot, class, &artifacts,
-                            )?;
+                            let record =
+                                oer_hil_image::record::publish(&root, snapshot, class, &artifacts)?;
                             eprintln!("build_record={}", record.display());
                             artifacts
                         }
@@ -163,7 +163,7 @@ pub(crate) fn run() -> Result<()> {
                             &oer_hil_image_class::FeatureDelta::default(),
                         )?,
                     };
-                    image::print_artifacts(class, &artifacts, false)?;
+                    emit_json(&image::artifact_report(class, &artifacts, false)?, true)?;
                 }
                 Ok(())
             }
@@ -183,7 +183,7 @@ pub(crate) fn run() -> Result<()> {
                         &root,
                         &chip,
                         run_id.as_deref(),
-                        &hil_core::image::record::Recipe,
+                        &oer_hil_image::record::Recipe,
                     )?,
                     false,
                 )?;
@@ -268,7 +268,7 @@ pub(crate) fn run() -> Result<()> {
                         layout_seed,
                         &features.clone().unwrap_or_default(),
                     )?;
-                    image::print_artifacts(class, &artifacts, false)?;
+                    emit_json(&image::artifact_report(class, &artifacts, false)?, true)?;
                 }
                 return Ok(());
             }
@@ -280,10 +280,10 @@ pub(crate) fn run() -> Result<()> {
                         &chip,
                         &run_id,
                         class,
-                        &hil_core::image::record::Recipe,
+                        &oer_hil_image::record::Recipe,
                     )?))
                 }
-                None => RunFirmware::BuildCurrent(hil_core::image::CurrentBuild {
+                None => RunFirmware::BuildCurrent(oer_hil_image::CurrentBuild {
                     network: image::Integration::default(),
                     layout_seed,
                     features: features.clone().unwrap_or_default(),
@@ -344,7 +344,7 @@ pub(crate) fn run() -> Result<()> {
                 &catalog,
                 &selected,
                 orchestration::selection_description(&tag),
-                hil_core::image::CurrentBuild {
+                oer_hil_image::CurrentBuild {
                     network: image::Integration::default(),
                     layout_seed,
                     features: oer_hil_image_class::FeatureDelta::default(),

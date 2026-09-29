@@ -1,9 +1,6 @@
 //! Shared firmware publication for observations and build-only records.
 use super::Recipe;
-use crate::{
-    Result,
-    image::{Artifacts, BootArtifacts, Integration, LayoutSeed},
-};
+use crate::{Artifacts, BootArtifacts, Integration, LayoutSeed, Result};
 use oer_hil_durable::atomic_json;
 use oer_hil_evidence::{
     build::{self, BuildSubject, BuildSubjectRole},

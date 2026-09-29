@@ -1,4 +1,6 @@
-//! Reproducible HIL firmware construction and image auditing.
+//! Reproducible HIL firmware construction and image auditing: builds from
+//! the live tree or a frozen source snapshot, the placement and stack audits,
+//! and the firmware and build records the builder hands to run evidence.
 
 use std::num::NonZeroU32;
 use std::{
@@ -10,7 +12,6 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::Result;
 use oer_process::CommandExt as _;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -25,6 +26,11 @@ pub mod record;
 pub mod source_inputs;
 pub mod stack;
 
+/// This package's directory in the repository.
+pub const REPOSITORY_DIRECTORY: &str = "hil/host/image";
+
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "oer-hil-esp32s31-runtime";
 use oer_esp32s31_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
@@ -33,7 +39,7 @@ use oer_esp32s31_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime
 const ARTIFACT_REPORT_SCHEMA: u16 = 2;
 
 #[derive(Serialize)]
-struct ArtifactReport<'a> {
+pub struct ArtifactReport<'a> {
     schema: u16,
     image_class: &'a str,
     target: &'a str,
@@ -65,11 +71,13 @@ struct ArtifactReport<'a> {
     flashed: bool,
 }
 
-pub fn print_artifacts(
+/// The report of `class` built as `artifacts`, as `image build` and
+/// `image flash` publish it.
+pub fn artifact_report(
     class: oer_hil_image_class::ImageClass,
     artifacts: &Artifacts,
     flashed: bool,
-) -> Result<()> {
+) -> Result<ArtifactReport<'_>> {
     let staged = artifacts.staged();
     let esp_idf = match &artifacts.boot {
         BootArtifacts::EspIdf(boot) => Some(boot),
@@ -110,7 +118,7 @@ pub fn print_artifacts(
         autonomous_source_graph: "PASS",
         flashed,
     };
-    crate::emit_json(&report, true)
+    Ok(report)
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
@@ -327,7 +335,7 @@ pub fn check(
         .env("CARGO_TARGET_DIR", cache.join("runtime"));
     lock.configure(&mut command);
     network.configure(&mut command, root);
-    crate::image::stack::configure_image_compiler(&mut command, &stack_budget);
+    crate::stack::configure_image_compiler(&mut command, &stack_budget);
     ensure_fetched(
         root,
         &root.join("hil/targets/esp32s31/Cargo.toml"),
@@ -589,7 +597,7 @@ fn build_resolved(
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
     add_local_xarxa_patches(&mut runtime, local_xarxa);
-    crate::image::stack::configure_image_compiler(&mut runtime, &stack_budget);
+    crate::stack::configure_image_compiler(&mut runtime, &stack_budget);
     if !overridden {
         ensure_fetched(root, &manifest, |command| runtime_lock.configure(command))?;
     }
@@ -604,7 +612,7 @@ fn build_resolved(
         runtime_lock.validate(root, network)?;
     }
 
-    let stack_report = crate::image::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
+    let stack_report = crate::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
     let stack_report_path = output.join("runtime-stack.txt");
     fs::write(
         &stack_report_path,
@@ -644,7 +652,7 @@ fn build_resolved(
     }
     bootstrap_lock.configure(&mut bootstrap);
     add_bootstrap_patches(&mut bootstrap, local_esp_hal);
-    crate::image::stack::configure_image_compiler(&mut bootstrap, &stack_budget);
+    crate::stack::configure_image_compiler(&mut bootstrap, &stack_budget);
     if local_esp_hal.is_none() {
         ensure_fetched(
             root,
@@ -655,8 +663,7 @@ fn build_resolved(
     log.run(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&compiled_bootstrap_elf, "bootstrap ELF")?;
     fs::copy(&compiled_bootstrap_elf, &bootstrap_elf)?;
-    let bootstrap_stack_report =
-        crate::image::stack::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
+    let bootstrap_stack_report = crate::stack::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
     let bootstrap_stack_report_path = output.join("bootstrap-stack.txt");
     fs::write(
         &bootstrap_stack_report_path,

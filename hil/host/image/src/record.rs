@@ -3,10 +3,7 @@
 //!
 //! Build-only records are immutable build subjects without fabricated
 //! hardware observations.
-use crate::{
-    Result,
-    image::{Artifacts, Integration, chip_profile, frozen::build_slots},
-};
+use crate::{Artifacts, Integration, Result, chip_profile, frozen::build_slots};
 use oer_hil_durable::{atomic_json, sha256_file};
 use oer_hil_evidence::{
     build,

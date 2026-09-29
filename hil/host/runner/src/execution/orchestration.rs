@@ -43,7 +43,7 @@ pub(crate) fn run_all(
     catalog: &Catalog,
     selected: &[&Scenario],
     description: String,
-    build: hil_core::image::CurrentBuild,
+    build: oer_hil_image::CurrentBuild,
     invocation: Invocation,
 ) -> Result<()> {
     let mut session = start_run(
@@ -212,7 +212,7 @@ fn prebuild(
     session: &mut RunSession,
     lab: &LabConfig,
     selected: &[&Scenario],
-    build: hil_core::image::CurrentBuild,
+    build: oer_hil_image::CurrentBuild,
 ) -> Result<Vec<(ImageClass, firmware::Built)>> {
     let mut built = Vec::new();
     for (class, scenarios) in group_selected_scenarios(selected) {
@@ -248,7 +248,7 @@ pub(crate) fn select_chip(
     selected: &[&Scenario],
     requested: Option<&str>,
 ) -> Result<String> {
-    let chips = hil_core::image::chips_building(root, &image_classes(selected))?;
+    let chips = oer_hil_image::chips_building(root, &image_classes(selected))?;
     match (requested, chips.as_slice()) {
         (Some(chip), _) if chips.iter().any(|known| known == chip) => Ok(chip.to_owned()),
         (Some(chip), []) => Err(format!(
@@ -351,7 +351,7 @@ fn lease_stand(
 }
 
 enum FirmwarePreparation<'a> {
-    BuildCurrent(hil_core::image::CurrentBuild),
+    BuildCurrent(oer_hil_image::CurrentBuild),
     Selected(&'a RunFirmware),
 }
 
@@ -363,7 +363,7 @@ struct LiveSuite<'a> {
     prebuilt: Vec<(ImageClass, firmware::Built)>,
     lease: Option<hil_core::lab::lock::FixtureLock>,
     /// The class on the device and, when built by this run, its archive.
-    flashed: Option<(ImageClass, Option<Box<hil_core::image::Artifacts>>)>,
+    flashed: Option<(ImageClass, Option<Box<oer_hil_image::Artifacts>>)>,
     /// The peer image this run brought up to its current catalog build.
     peer_image: Option<&'static str>,
     /// What the board journal recorded for that image's flash.
@@ -743,7 +743,7 @@ fn start_run(
     if let Some(snapshot) = invocation.snapshot {
         session.bind_source_snapshot(
             snapshot.directory(),
-            &hil_core::image::frozen::build_slots(lab.chip())?,
+            &oer_hil_image::frozen::build_slots(lab.chip())?,
         )?;
     } else if matches!(firmware, Some(PlannedFirmware::BuildCurrent)) {
         return Err("current-source HIL run requires a source snapshot".into());

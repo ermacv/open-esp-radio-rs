@@ -15,7 +15,8 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 | Package | Binaries | Role |
 | --- | --- | --- |
 | `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, UART session, workload context, measurements and images, including the image builder's firmware and build records |
+| `runner-core/` (`oer-hil-runner-core`) | none | Laboratory, UART session, workload context and measurements |
+| `image/` (`oer-hil-image`) | none | The image builder: firmware construction from the live tree or a frozen source snapshot, placement and stack audits, and the firmware and build records it hands to evidence |
 | `evidence/` (`oer-hil-evidence`) | none | Sealed run evidence: the run writer and its seal, build provenance and the content-addressed object store, verification of a recorded run against the image builder's recipe, reports, and the experiment and laboratory records a run keeps |
 | `scenario/` (`oer-hil-scenario`) | none | The family-independent scenario envelope, catalog and campaign plan, with the laboratory requirements, Wi-Fi link vocabulary and target settings a scenario declares |
 | `image-class/` (`oer-hil-image-class`) | none | Image classes, their build features and the image keys each class serves, and the check of a device's reported keys against them |
@@ -484,10 +485,12 @@ The host packages follow the roles of the
   publishes. `oer-hil-source-snapshot` captures and verifies the sources
   builds and runs are made from, and `oer-hil-durable` provides atomic files,
   digests and timestamps to every producer.
-- `runner-core`'s `image` owns build/rebuild and placement/stack auditing,
-  builds from a frozen snapshot (`image::frozen`) and the records it hands to
-  evidence (`image::record`); the reusable ELF analyzer remains
-  `tools/memory-report`.
+- `oer-hil-image` owns build/rebuild and placement/stack auditing, builds
+  from a frozen snapshot (`frozen`) and the records it hands to evidence
+  (`record`, which also implements the recipe verification checks them
+  against); the reusable ELF analyzer remains `tools/memory-report`. The
+  builder does not print: `artifact_report` returns the report the CLI
+  publishes.
 - `lab` owns local configuration, the pre-run observation of the cell, the
   exclusive fixture guard and the laboratory error type. Each family
   package's `fixture` implements its controlled host and peer capabilities:
@@ -512,9 +515,10 @@ The host packages follow the roles of the
   classifies errors as scenario or infrastructure failures.
 
 Dependencies form a directed acyclic graph that Cargo enforces: the binary
-depends on the family packages, each family on `runner-core`, and
-`runner-core` on the scenario, evidence and image-class packages, never the
-reverse. Inside `runner-core`, the context depends on session and laboratory
+depends on the family packages and the image builder, each family on
+`runner-core`, and `runner-core` on the scenario, evidence and image-class
+packages, never the reverse. The image builder depends on evidence, never the
+reverse, and nothing but the binary and `xtask` depends on the builder. Inside `runner-core`, the context depends on session and laboratory
 owners, never the reverse. The `test-support` features of `runner-core`,
 `oer-hil-scenario`, `oer-hil-evidence` and `oer-hil-source-snapshot` expose
 their test doubles and fixtures to the other packages' tests.

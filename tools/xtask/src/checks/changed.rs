@@ -360,7 +360,7 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
         // Type-check the images the change can alter. CI builds and audits
         // the images (stack, placement) after the push: see `ci_status`.
         if changed.iter().any(|path| path == Path::new("Cargo.lock")) {
-            oer_hil_runner_core::image::ensure_vendor_dependencies_absent(&ctx.root)?;
+            oer_hil_image::ensure_vendor_dependencies_absent(&ctx.root)?;
         }
         let affected = super::firmware::affected(&changed)?;
         if !affected.is_empty() {

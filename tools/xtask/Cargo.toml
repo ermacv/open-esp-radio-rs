@@ -8,6 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+oer-hil-image = { path = "../../hil/host/image" }
 oer-hil-evidence = { path = "../../hil/host/evidence" }
 oer-hil-source-snapshot = { path = "../../hil/host/source-snapshot" }
 oer-hil-image-class = { path = "../../hil/host/image-class" }

@@ -6,8 +6,8 @@ use serde::Serialize;
 
 use crate::scenario::{Scenario, requirements};
 use crate::{Result, fixture};
-use hil_core::image;
 use hil_core::lab::config::LabConfig;
+use oer_hil_image as image;
 
 #[derive(Default, Serialize)]
 struct Checks {

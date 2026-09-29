@@ -3,16 +3,16 @@
 
 use std::path::Path;
 
-use hil_core::image::{Artifacts, BootArtifacts};
 use oer_hil_board::{Board, Companions, EspIdf, FlashImage};
 use oer_hil_evidence::run::Boot;
+use oer_hil_image::{Artifacts, BootArtifacts};
 use oer_hil_image_class::ImageClass;
 
 use crate::Result;
 
 /// The boot flow of `chip`'s boards.
 pub(crate) fn for_chip(root: &Path, chip: &str) -> Result<Box<dyn Board>> {
-    let profile = hil_core::image::chip_profile(chip)?;
+    let profile = oer_hil_image::chip_profile(chip)?;
     Ok(match profile.boot {
         Boot::Staged => Box::new(oer_esp32s31_hil_board::Staged {
             root: root.to_owned(),
@@ -49,7 +49,7 @@ pub(crate) fn archived(
     run_id: &str,
     image: ImageClass,
 ) -> Result<FlashImage> {
-    let companions = match hil_core::image::chip_profile(chip)?.boot {
+    let companions = match oer_hil_image::chip_profile(chip)?.boot {
         Boot::Staged => {
             let bootstrap = application.with_file_name("bootstrap.elf");
             Companions::Staged {

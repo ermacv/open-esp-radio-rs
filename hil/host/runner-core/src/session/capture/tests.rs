@@ -1410,20 +1410,40 @@ fn queued_commands_make_progress_without_inbound_bytes_or_read_timeouts() {
 }
 
 /// A target that answers the host's capability request of boot `boot` with
-/// its Hello at target message `sequence`.
+/// its Hello at target message `sequence`. The thread hands its end of the
+/// link back, so the link stays open until the test joins it.
 fn answer_capabilities(
     input: Input,
     writes: std::sync::mpsc::Receiver<Vec<u8>>,
     boot: u64,
     sequence: u32,
-) -> std::thread::JoinHandle<()> {
+) -> std::thread::JoinHandle<Input> {
     std::thread::spawn(move || {
         let command = receive_command(&writes);
         assert_eq!(command.body, Command::GetCapabilities);
         let mut answer = hello(boot, sequence);
         answer.request_id = command.request_id;
         input.send(Ok(frame(answer))).unwrap();
+        input
     })
+}
+
+/// Wait until the capture has taken in `bytes`, however loaded the host.
+fn wait_for_console(capture: &SerialCapture, bytes: &[u8]) {
+    let started = std::time::Instant::now();
+    while !capture
+        .bytes
+        .lock()
+        .unwrap()
+        .windows(bytes.len())
+        .any(|window| window == bytes)
+    {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "console bytes never arrived"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 /// A Hello whose first bytes the link dropped, as the USB Serial/JTAG does.
@@ -1435,15 +1455,14 @@ fn truncated_hello(boot: u64) -> Vec<u8> {
 fn a_boot_whose_hello_the_link_lost_begins_with_its_capability_answer() {
     let output = Output::new();
     let (capture, input, writes) = capture_with_commands(&output);
-    input
-        .send(Ok(
-            b"I (236) boot: Loaded app from partition at offset 0x10000\r\n".to_vec(),
-        ))
-        .unwrap();
+    let boot_line = b"I (236) boot: Loaded app from partition at offset 0x10000\r\n";
+    input.send(Ok(boot_line.to_vec())).unwrap();
+    // The capture must have read the boot's line before it looks for it.
+    wait_for_console(&capture, boot_line);
     input.send(Ok(truncated_hello(9))).unwrap();
     let target = answer_capabilities(input, writes, 9, 1);
     let capabilities = capture
-        .request_capabilities(Duration::from_millis(300))
+        .request_capabilities(Duration::from_secs(1))
         .unwrap();
     target.join().unwrap();
     assert!(capabilities.features.structured_evidence);
@@ -1480,10 +1499,11 @@ fn an_answer_late_in_a_boot_begins_no_boot() {
     let output = Output::new();
     let (capture, input, writes) = capture_with_commands(&output);
     input.send(Ok(b"ESP-ROM:esp32s31\r\n".to_vec())).unwrap();
+    wait_for_console(&capture, b"ESP-ROM:");
     let target = answer_capabilities(input, writes, 9, 40);
     assert!(
         capture
-            .request_capabilities(Duration::from_millis(300))
+            .request_capabilities(Duration::from_secs(1))
             .is_err()
     );
     target.join().unwrap();

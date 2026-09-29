@@ -586,10 +586,15 @@ pub fn check(ctx: &Context, chip: &str) -> Result<()> {
 }
 
 fn survey_count(ctx: &Context, chip: &str) -> Result<usize> {
-    Ok(parse_registry(&std::fs::read_to_string(
+    Ok(registered(ctx, chip)?.len())
+}
+
+/// The registered functions of `chip`: every vendor function production,
+/// the register model or a verification decision cites.
+pub fn registered(ctx: &Context, chip: &str) -> Result<Vec<Entry>> {
+    parse_registry(&std::fs::read_to_string(
         ctx.root.join(registry_path(&ctx.root, chip)?),
-    )?)?
-    .len())
+    )?)
 }
 
 /// Record reviewed fingerprints. `accept` names the functions whose pinned

@@ -3487,6 +3487,7 @@ dependencies = [
  "oer-memory-report",
  "oer-probe-codegen",
  "oer-process",
+ "oer-register-model",
  "pulldown-cmark",
  "rustc-demangle",
  "rustix",

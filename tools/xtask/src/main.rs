@@ -113,6 +113,14 @@ enum Task {
         #[arg(long, requires = "accept")]
         show: bool,
     },
+    /// Inventory the vendor's radio MMIO accesses against the register model.
+    RegisterInventory {
+        #[arg(long)]
+        chip: String,
+        /// Report directory; `target/register-inventory/<chip>` by default.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Build API documentation from each package's `[package.metadata.docs.rs]`
     /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
     Doc,
@@ -348,6 +356,9 @@ fn run() -> Result<std::process::ExitCode> {
             baseline,
             show,
         } => oer_xtask::vendor_provenance::update(&ctx, &chip, &accept, rebuild, baseline, show),
+        Task::RegisterInventory { chip, output } => {
+            oer_xtask::register_inventory::run(&ctx, &chip, output)
+        }
         Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Compare { compare } => {
             let review = |aliases: Vec<String>,

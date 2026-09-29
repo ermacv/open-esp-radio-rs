@@ -33,6 +33,7 @@ pub mod hil_store;
 pub mod paths;
 pub mod process;
 pub mod push;
+pub mod register_inventory;
 pub mod source_citation;
 pub mod stand_install;
 pub mod sweep;

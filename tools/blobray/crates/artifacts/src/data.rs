@@ -9,27 +9,6 @@ pub struct DataView<'a> {
     pub max_relocation_width: u8,
 }
 impl PreparedObject<'_, '_> {
-    /// Exact verified object bytes, borrowed until this prepared owner is released.
-    pub fn captured_bytes(&self) -> &[u8] {
-        let object::File::Elf32(elf) = &self.file else {
-            unreachable!()
-        };
-        elf.data()
-    }
-    /// Validate a structural section coordinate without inventing initialization bytes.
-    pub fn validate_section_root(&self, section: u32, offset: u64) -> Result<()> {
-        if section == 0 {
-            return Err(invalid("interface section root is null"));
-        }
-        let section = self
-            .file
-            .section_by_index(object::SectionIndex(section as usize))
-            .map_err(parse)?;
-        if offset >= section.size() {
-            return Err(invalid("interface root is outside its physical section"));
-        }
-        Ok(())
-    }
     pub fn validate_data_symbol(&self, occurrence: &ObjectId, symbol: &SymbolId) -> Result<()> {
         self.selected_symbol(occurrence, symbol)?;
         Ok(())

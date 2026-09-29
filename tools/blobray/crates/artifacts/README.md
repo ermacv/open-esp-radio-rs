@@ -96,11 +96,6 @@ Data views expose their relocation coordinate space beside the borrowed
 records, from which data export counts the relocations overlapping a range;
 artifacts neither applies RISC-V relocations nor chooses targets.
 
-`PreparedObject::code_symbol_address` validates an exact physical FUNC/NOTYPE
-entry in ET_EXEC executable file-backed bytes and their load mapping. It permits
-zero-sized symbols as addresses, without inferring an extent or decoding a body.
-Application alone decides whether that source belongs to an execution scenario.
-
 `PreparedObject::executable_bytes` lends a bounded 2/4-byte prefix from an executable
 file-backed load mapping. ISA consumers validate instruction meaning through their
 decoder; artifact acquisition never supplies branch semantics.

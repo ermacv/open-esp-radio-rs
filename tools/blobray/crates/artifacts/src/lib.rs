@@ -14,7 +14,6 @@ use object::endian::Endian;
 use object::read::elf::{FileHeader, Rel, Rela, SectionHeader, Sym};
 use object::{Endianness, FileKind, elf};
 pub use stream::{inspect_payload, inspect_source};
-pub const INVENTORY_PRODUCER: &str = "blobray-artifacts/2;object/0.39.1";
 
 fn diagnostic(
     code: DiagnosticCode,
@@ -31,7 +30,7 @@ fn diagnostic(
 mod function;
 mod mapping;
 mod program;
-pub use function::{DataView, FunctionView, PreparedObject, with_function, with_prepared_object};
+pub use function::{DataView, FunctionView, PreparedObject, with_prepared_object};
 
 pub use program::executable_sections;
 pub use program::{code_symbol_at, code_symbols, execution_segments};

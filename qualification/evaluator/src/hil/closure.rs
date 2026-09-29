@@ -80,6 +80,54 @@ pub(super) struct Closure {
     directories: BTreeSet<PathBuf>,
     /// Single files, besides the directories read whole.
     files: BTreeSet<PathBuf>,
+    /// Directories inside those that cannot shape this closure's
+    /// observation: the HIL protocol modules a run exchanged no message of.
+    excluded: BTreeSet<PathBuf>,
+}
+
+/// The HIL protocol package and its wire lock.
+const PROTOCOL: &str = "hil/protocol";
+const PROTOCOL_LOCK: &str = "hil/protocol/messages.lock";
+
+/// The module directories of the HIL protocol a run cannot depend on: every
+/// module but those whose messages it exchanged (`used`, message paths whose
+/// first segment names the module), `base` and their dependencies as the
+/// checkout's lock lists them. The framework outside the module directories
+/// and the lock itself stay bound.
+fn unused_protocol_modules(lock: &str, used: &[String]) -> Result<BTreeSet<PathBuf>> {
+    let mut dependencies = BTreeMap::<&str, Vec<&str>>::new();
+    let mut section = "";
+    for line in lock.lines().map(str::trim) {
+        if line.starts_with('[') {
+            section = line;
+        } else if section == "[modules]" && !line.is_empty() && !line.starts_with('#') {
+            let mut words = line.split_whitespace();
+            let module = words.next().ok_or("empty module line")?;
+            dependencies.insert(module, words.collect());
+        }
+    }
+    if dependencies.is_empty() {
+        return Err(format!("{PROTOCOL_LOCK} lists no modules").into());
+    }
+    let mut needed = BTreeSet::new();
+    let mut pending = vec!["base"];
+    for path in used {
+        let module = path.split('/').next().unwrap_or_default();
+        if !dependencies.contains_key(module) {
+            return Err(format!("message {path} names no module of {PROTOCOL_LOCK}").into());
+        }
+        pending.push(module);
+    }
+    while let Some(module) = pending.pop() {
+        if needed.insert(module) {
+            pending.extend(dependencies.get(module).into_iter().flatten().copied());
+        }
+    }
+    Ok(dependencies
+        .keys()
+        .filter(|module| !needed.contains(*module))
+        .map(|module| Path::new(PROTOCOL).join("src").join(module))
+        .collect())
 }
 
 impl Closure {
@@ -104,6 +152,7 @@ impl Closure {
         Ok(Self {
             directories,
             files: BTreeSet::new(),
+            excluded: BTreeSet::new(),
         })
     }
 
@@ -148,14 +197,38 @@ impl Closure {
             }
         }
         files.extend(scenario_files(root, &scenarios)?);
+        // A run that lists the messages it exchanged binds only the protocol
+        // modules they belong to; without that list it binds all of them.
+        let manifest = match fs::read(run.join("manifest.json")) {
+            Ok(bytes) => serde_json::from_slice::<Value>(&bytes)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
+            Err(error) => return Err(error.into()),
+        };
+        let excluded = match manifest["messages_used"].as_array() {
+            Some(used) => {
+                let used = used
+                    .iter()
+                    .map(|path| path.as_str().map(str::to_owned))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or("messages_used holds a non-string path")?;
+                unused_protocol_modules(&fs::read_to_string(root.join(PROTOCOL_LOCK))?, &used)?
+            }
+            None => BTreeSet::new(),
+        };
         Ok(Some(Self {
             directories: runner.clone(),
             files,
+            excluded,
         }))
     }
 
     pub(super) fn contains(&self, path: &Path) -> bool {
-        if is_stand_operation(path) {
+        if is_stand_operation(path)
+            || self
+                .excluded
+                .iter()
+                .any(|directory| path.starts_with(directory))
+        {
             return false;
         }
         FILES.iter().any(|file| path == Path::new(file))
@@ -171,6 +244,7 @@ impl Closure {
         Self {
             directories: directories.iter().map(PathBuf::from).collect(),
             files: BTreeSet::new(),
+            excluded: BTreeSet::new(),
         }
     }
 }
@@ -336,6 +410,49 @@ mod tests {
         ] {
             assert!(closure.contains(Path::new(observing)), "{observing}");
         }
+    }
+
+    #[test]
+    fn a_run_binds_the_protocol_modules_of_its_messages_and_their_dependencies() {
+        let lock = "framing 2\n[modules]\nbase\nbluetooth base system\nnetwork base system wifi\nphy base\nsystem\ntelemetry\nwifi base\n[messages]\nbase/hello 00 topic\n";
+        let unused =
+            unused_protocol_modules(lock, &["base/hello".into(), "network/session/ready".into()])
+                .unwrap();
+        assert_eq!(
+            unused,
+            ["bluetooth", "phy", "telemetry"]
+                .iter()
+                .map(|module| Path::new(PROTOCOL).join("src").join(module))
+                .collect()
+        );
+        let mut closure = Closure::from_directories(&["hil/protocol"]);
+        closure.excluded = unused;
+        assert!(
+            closure.contains(Path::new("hil/protocol/src/wifi/rx.rs")),
+            "a dependency"
+        );
+        assert!(
+            closure.contains(Path::new("hil/protocol/src/framing.rs")),
+            "the framework"
+        );
+        assert!(closure.contains(Path::new("hil/protocol/messages.lock")));
+        assert!(!closure.contains(Path::new("hil/protocol/src/phy/fault.rs")));
+        assert!(unused_protocol_modules(lock, &["radar/ping".into()]).is_err());
+    }
+
+    #[test]
+    fn the_protocol_lock_of_this_checkout_parses() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let lock = fs::read_to_string(root.join(PROTOCOL_LOCK)).unwrap();
+        let unused = unused_protocol_modules(&lock, &["base/hello".into()]).unwrap();
+        for module in &unused {
+            assert!(
+                root.join(module).is_dir(),
+                "{} is no module directory",
+                module.display()
+            );
+        }
+        assert!(!unused.contains(&Path::new(PROTOCOL).join("src/base")));
     }
 
     #[test]

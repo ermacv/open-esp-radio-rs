@@ -509,7 +509,10 @@ bound, or relative performance non-regression. Default applicability is
 replay. Currency is judged on the run's closure, the files that can change its
 observation: every file each of its image builds read (the
 `source-inputs.json` the build recorded), the files of the scenarios it ran,
-the workspace manifest, lockfile and toolchain, and the HIL runner's packages
+the workspace manifest, lockfile and toolchain, and the HIL runner's packages,
+of the HIL protocol only the framework, `base`, the modules of the messages the
+run exchanged (its manifest's `messages_used`) and their dependencies as
+`hil/protocol/messages.lock` lists them,
 except the code that only operates the stand (the arbiter's leases and queue,
 flash transactions, and the post-mortem, recovery and profile reports of
 failed repetitions) and their tests and prose. A

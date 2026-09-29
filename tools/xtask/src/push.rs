@@ -168,7 +168,7 @@ pub fn run(ctx: &Context) -> Result<()> {
     let Some(mut checked) = rebase_and_check(ctx, &branch)? else {
         return Ok(());
     };
-    let _queue = PushQueue::enter(
+    let queue = PushQueue::enter(
         &queue_path()?,
         &format!(
             "{} ({branch} {}), pid {}",
@@ -183,6 +183,9 @@ pub fn run(ctx: &Context) -> Result<()> {
             match process::capture(git(ctx).args(["push", "--quiet", "origin", "HEAD:main"])) {
                 Ok(_) => {
                     println!("push: pushed {} to main", &checked.head[..12]);
+                    // `main` is final; the next push need not wait for the
+                    // reinstall.
+                    drop(queue);
                     let changed =
                         text(git(ctx).args(["diff", "--name-only", &base, &checked.head]))?;
                     if touches_stand_tooling(&changed.lines().collect::<Vec<_>>()) {

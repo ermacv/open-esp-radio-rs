@@ -172,8 +172,9 @@ Snapshot capture is offline and does not load fixture secrets, build firmware or
 access a device. Tracked regular files are captured automatically. Every
 nonignored untracked file must be explicitly named with a repeated
 `--source-include`, or, with `--include-untracked`, lie inside a path package
-of the firmware workspaces (`hil/targets/esp32s31` and
-`platform/esp32s31/bootstrap`, as Cargo's locked metadata lists them), the
+of the firmware workspaces (`hil/targets/esp32s31`,
+`platform/esp32s31/bootstrap` and `hil/targets/esp32c5`, as Cargo's locked
+metadata lists them), the
 packages an image build reads, or inside the HIL host packages and scenarios
 (`hil/host`, `hil/schema` and `hil/scenarios`), which the run reads;
 unresolved files block capture with their names and the `--source-include`

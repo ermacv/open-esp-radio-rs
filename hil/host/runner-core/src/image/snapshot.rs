@@ -25,9 +25,10 @@ use oer_hil_schema::snapshot::{
 };
 
 /// The firmware workspaces whose path packages an image build reads.
-const FIRMWARE_WORKSPACES: [&str; 2] = [
+const FIRMWARE_WORKSPACES: [&str; 3] = [
     "hil/targets/esp32s31/Cargo.toml",
     "platform/esp32s31/bootstrap/Cargo.toml",
+    "hil/targets/esp32c5/Cargo.toml",
 ];
 
 /// Repository directories of the HIL host packages and scenarios, whose

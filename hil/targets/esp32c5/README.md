@@ -7,7 +7,7 @@ which loads an esp-hal application linked with `linkall.x`
 ([chip profile](../../../platform/esp32c5/chip.toml)). The runtime runs
 Embassy on the esp-rtos scheduler and time driver.
 
-The only image so far is `boot-smoke`: it reports `OPEN_RADIO_HIL hal=INIT`
+`boot-smoke` reports `OPEN_RADIO_HIL hal=INIT`
 after esp-hal initialization, `OPEN_RADIO_HIL embassy=START` once the
 scheduler runs, and `OPEN_RADIO_HIL boot-smoke=PASS timer=PASS` after one
 timer wake, on the USB Serial/JTAG console. It does not speak the HIL wire
@@ -19,5 +19,18 @@ profile's `[flash]` table, and archives all three with the runtime ELF:
 cargo hil run esp32c5-boot-smoke
 ```
 
-A run of it replaces the board's peer firmware; a run that needs the peer
+`system-watchdog` serves the HIL wire protocol on the USB Serial/JTAG
+console with the `system_watchdog` and `structured_evidence` capabilities,
+and nothing radio. Its SoC deadline watchdog is the production service of
+[`oer-esp32c5-soc-esp-hal`](../../../crates/adapters/esp-hal/esp32c5/soc/)
+on TIMG1's main watchdog; its boot evidence maps the chip's reset reasons
+(`CoreMwdt1` is `MainWatchdog1`) and reads the reset-retained post-mortem in
+RTC fast memory. The runner classifies a flashed esp32c5 image from those
+capabilities, and `esp32c5-system-watchdog` drives every watchdog mode on it:
+
+```console
+cargo hil run esp32c5-system-watchdog
+```
+
+A run of either replaces the board's peer firmware; a run that needs the peer
 reflashes its catalog image first.

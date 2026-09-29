@@ -29,7 +29,9 @@ pub(crate) fn validate_flashed_image(
     }
     let preflight = output.join("image-preflight");
     let error = match capabilities_of(lab, &preflight) {
-        Ok(capabilities) => return check_flashed_capabilities(selected, &capabilities.features),
+        Ok(capabilities) => {
+            return check_flashed_capabilities(lab.target(), selected, &capabilities.features);
+        }
         Err(error) => error,
     };
     // A bootloader that resets in a loop keeps state an RTS reset and a
@@ -69,7 +71,7 @@ pub(crate) fn validate_flashed_image(
                 "hil: {:?} cleared the boot loop",
                 escalation.steps.last().map(|step| step.step)
             );
-            check_flashed_capabilities(selected, &capabilities.features)
+            check_flashed_capabilities(lab.target(), selected, &capabilities.features)
         }
         None => Err(format!(
             "{error}; the bootloader reset in a loop ({}) and {} did not clear it: the board is \
@@ -97,10 +99,20 @@ fn capabilities_of(lab: &LabConfig, directory: &Path) -> Result<oer_hil_protocol
 
 /// Accept a flashed image only when it is the scenario's class and declares
 /// every role the scenario drives.
-fn check_flashed_capabilities(selected: &Scenario, features: &FeatureCapabilities) -> Result<()> {
+fn check_flashed_capabilities(
+    chip: &str,
+    selected: &Scenario,
+    features: &FeatureCapabilities,
+) -> Result<()> {
     let expected = selected.image();
-    let observed = image::classify_flashed_capabilities(features)
-        .ok_or("flashed image advertises mutually exclusive diagnostic capabilities")?;
+    // An ESP-IDF application's classes differ from the staged images'.
+    let observed = match image::chip_profile(chip)?.boot {
+        hil_core::evidence::run::Boot::EspIdfBootloader => {
+            image::esp_idf::classify_flashed_capabilities(features)
+        }
+        hil_core::evidence::run::Boot::Staged => image::classify_flashed_capabilities(features),
+    }
+    .ok_or("flashed image advertises mutually exclusive diagnostic capabilities")?;
     if observed != expected {
         return Err(format!(
             "scenario requires `{}` image but flashed target advertises `{}` capabilities",

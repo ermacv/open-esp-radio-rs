@@ -19,6 +19,13 @@ debug_assert_with_mut_call = "deny"
 disallowed_methods = "deny"
 
 [workspace.dependencies]
+critical-section = "1.2.0"
+embedded-io-async = "0.7.0"
+heapless = "0.9.3"
+oer-esp32c5-soc-esp-hal = { path = "../../../crates/adapters/esp-hal/esp32c5/soc", features = ["esp32c5"] }
+oer-hil-protocol = { path = "../../protocol", default-features = false, features = ["async-io"] }
+oer-hil-target-core = { path = "../../target-core", default-features = false }
+static_cell = "2.1.1"
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-time = "0.5.1"
 esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "e78b26691cc17ab8ed66e7b57626a6fc393a906c", default-features = false, features = ["esp32c5"] }

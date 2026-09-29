@@ -26,13 +26,35 @@ fn boot_smoke_preflight_never_opens_a_serial_capture() {
 fn a_flashed_image_must_declare_the_role_its_scenario_drives() {
     let catalog = catalog();
     let dtm = ImageClass::BluetoothDtm.console_capabilities().unwrap();
-    check_flashed_capabilities(catalog.get("bluetooth-dtm-bidirectional").unwrap(), &dtm).unwrap();
+    check_flashed_capabilities(
+        "esp32s31",
+        catalog.get("bluetooth-dtm-bidirectional").unwrap(),
+        &dtm,
+    )
+    .unwrap();
     let scannable = catalog.get("bluetooth-scannable-advertising").unwrap();
-    check_flashed_capabilities(scannable, &dtm).unwrap();
+    check_flashed_capabilities("esp32s31", scannable, &dtm).unwrap();
     // The advertising workloads drive the Controller over raw HCI.
     let without_hci = FeatureCapabilities {
         bluetooth_hci: false,
         ..dtm
     };
-    assert!(check_flashed_capabilities(scannable, &without_hci).is_err());
+    assert!(check_flashed_capabilities("esp32s31", scannable, &without_hci).is_err());
+}
+
+#[test]
+fn an_esp32c5_system_image_is_classified_by_its_chip() {
+    let catalog = catalog();
+    let scenario = catalog.get("esp32c5-system-watchdog").unwrap();
+    let esp32c5 = FeatureCapabilities {
+        system_watchdog: true,
+        structured_evidence: true,
+        ..FeatureCapabilities::default()
+    };
+    check_flashed_capabilities("esp32c5", scenario, &esp32c5).unwrap();
+    // The staged image's capabilities name no esp32c5 image, and the
+    // esp32c5's name no staged one.
+    let staged = ImageClass::SystemWatchdog.console_capabilities().unwrap();
+    assert!(check_flashed_capabilities("esp32c5", scenario, &staged).is_err());
+    assert!(check_flashed_capabilities("esp32s31", scenario, &esp32c5).is_err());
 }

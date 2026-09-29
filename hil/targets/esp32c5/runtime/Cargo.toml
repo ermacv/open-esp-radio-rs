@@ -11,6 +11,19 @@ publish.workspace = true
 # bootloader loads the application, which starts Embassy and wakes once on
 # its timer.
 boot-smoke = []
+# The radio-free SoC image: the HIL protocol console, the SoC deadline
+# watchdog and the reset-retained post-mortem, for the `system-watchdog`
+# scenarios.
+system-watchdog = [
+    "dep:critical-section",
+    "dep:embedded-io-async",
+    "dep:heapless",
+    "dep:oer-esp32c5-soc-esp-hal",
+    "dep:oer-hil-protocol",
+    "oer-hil-protocol?/system",
+    "dep:oer-hil-target-core",
+    "dep:static_cell",
+]
 
 [dependencies]
 embassy-executor.workspace = true
@@ -18,6 +31,13 @@ embassy-time.workspace = true
 esp-bootloader-esp-idf.workspace = true
 esp-hal.workspace = true
 esp-rtos.workspace = true
+critical-section = { workspace = true, optional = true }
+embedded-io-async = { workspace = true, optional = true }
+heapless = { workspace = true, optional = true }
+oer-esp32c5-soc-esp-hal = { workspace = true, optional = true }
+oer-hil-protocol = { workspace = true, optional = true }
+oer-hil-target-core = { workspace = true, optional = true }
+static_cell = { workspace = true, optional = true }
 
 [lints]
 workspace = true
@@ -30,4 +50,5 @@ chip = "esp32c5"
 default-configuration = false
 supported-feature-profiles = [
     "boot-smoke",
+    "system-watchdog",
 ]

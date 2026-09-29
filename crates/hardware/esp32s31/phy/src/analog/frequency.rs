@@ -58,6 +58,9 @@ pub(crate) const fn diag_rf_record_word_address(entry_index: u8, word_index: u8)
     )
 }
 
+/// DIAGNOSTIC #38 (not for merge): the table publisher's write mode.
+pub(crate) const DIAG_RF_RECORD_WRITE_MODE: u8 = PHY_FREQUENCY_MEMORY_MODE;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyFrequencyTableParameters {
     /// Explicit replacement for `phy_param[0x4f]`.

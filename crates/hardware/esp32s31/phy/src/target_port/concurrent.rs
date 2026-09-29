@@ -852,6 +852,45 @@ pub fn diag_frequency_report(
     }
 }
 
+/// DIAGNOSTIC #38 (not for merge): write `value` into the crystal-duty seed
+/// and candidate bytes (PHY-I2C block 0x61, registers 0x09 and 0x0a).
+/// Returns whether both writes completed.
+pub fn diag_set_xtal_duty(lease: &mut SharedRadioLease<'_, ConcurrentPhy>, value: u8) -> bool {
+    use oer_esp32s31_hal::phy::i2c::analog_registers;
+    let (mut registers, _) = lease.phy_hal_with_attachment();
+    [
+        analog_registers::XTAL_DUTY_SEED,
+        analog_registers::XTAL_DUTY_CANDIDATE,
+    ]
+    .into_iter()
+    .all(|address| crate::target_executor::write_i2c_direct(&mut registers, address, value).is_ok())
+}
+
+/// DIAGNOSTIC #38 (not for merge): rewrite word 2 (crystal duty) of every
+/// RF frequency-memory record: `middle` for 2421..=2459 MHz (records
+/// 21..=59), `outer` for the rest, as `phy_wr_rf_freq_mem` publishes them.
+pub fn diag_set_xtal_duty_table(
+    lease: &mut SharedRadioLease<'_, ConcurrentPhy>,
+    middle: u8,
+    outer: u8,
+) {
+    let (mut registers, _) = lease.phy_hal_with_attachment();
+    for entry in 0..crate::analog::frequency::PHY_FREQUENCY_TABLE_ENTRY_COUNT {
+        let duty = crate::analog::frequency::phy_frequency_xtal_duty(
+            crate::analog::frequency::PHY_FREQUENCY_TABLE_FIRST_CODE + u16::from(entry),
+            middle,
+            outer,
+        );
+        let (address, _) = crate::analog::frequency::diag_rf_record_word_address(entry, 2);
+        oer_esp32s31_hal::phy::frequency::write_memory(
+            &mut registers,
+            address,
+            u32::from(duty),
+            crate::analog::frequency::DIAG_RF_RECORD_WRITE_MODE,
+        );
+    }
+}
+
 /// DIAGNOSTIC #38 (not for merge): write the tracking and BT/15.4 gain
 /// inputs of the registered state.
 pub fn diag_tracking_report(

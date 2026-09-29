@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "3ac418c2ed68834033162bbe32351e83dc39d237b1039d19e3e847688e74fbfb",
+    "input-2": "928a8b2d58019eea5e321a3520820e280974f0485ca389a718bd6097faa6d70d",
     "input-3": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a"
   },
   "sources": [
@@ -72,7 +72,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "8945f3cc7697b716b0361fe1fd2c9ccc8055a109ad471141d502cbb87f9ea8a5"
+      "sha256": "2cd5e480da83939616e79084e27130a8c1760f8236a5ea7065ebced6b8586806"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
@@ -1032,7 +1032,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/observation.rs",
-      "sha256": "ecede41af70f936cb438592c0204ec075b3f2b37b74e29e141aa58e01ff07693"
+      "sha256": "0a329f0ada15f5d20435279d8a2d26b1d04562274a2336472787ca97a88f7e50"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/state.rs",
@@ -1120,7 +1120,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
-      "sha256": "6ac42376dac7c5329fa47e74845c0be79339ebbfd110170662d005a8e00a7b33"
+      "sha256": "9643bae17485563362331097408183dd1e323bf9fb564bcab12d2cba7ceb60c4"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/low_power_clock.rs",
@@ -1268,7 +1268,7 @@
     }
   ],
   "dependence": {
-    "read-data": "7dc3f8014147d77da4d7d5b314a2b18d9d62bcc6da22a3142b9062fc535bc585",
+    "read-data": "3ae56a2b6ca8bab5263672d051565cfe9a482a5442cb565affe2b2843914607b",
     "fallback": null,
     "coverage-decisions": {
       "path": "verification/esp32s31/decisions/coverage.toml",

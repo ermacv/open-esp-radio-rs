@@ -6,7 +6,7 @@
   "inputs": {
     "input-0": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
     "input-1": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
-    "input-2": "3ac418c2ed68834033162bbe32351e83dc39d237b1039d19e3e847688e74fbfb",
+    "input-2": "928a8b2d58019eea5e321a3520820e280974f0485ca389a718bd6097faa6d70d",
     "input-3": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195",
     "input-4": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
   },
@@ -72,12 +72,16 @@
       "sha256": "15a5052527de99ba8482d00580ddd694b6919ce111647c273fde6da415800f70"
     },
     {
+      "path": "crates/hardware/esp32s31/hal/src/power/clock/executor.rs",
+      "sha256": "036ffa246331f4b4b3e3ec4d66ae695520b0d9628834f5854afa1c3cf123e654"
+    },
+    {
       "path": "crates/hardware/esp32s31/hal/src/root.rs",
       "sha256": "2467b026164873f8ac6678a4c5863a366ef45b70154eee1e4e12d1a0247b3128"
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "sha256": "f26ec5ec782adb96c425e8722df202515e4d96b438c0a869a5e2c9b56ebe5df6"
+      "sha256": "30c5e0901d1734ed51ac0d5522c804d5426b9a55a5e216322ced9c174026ad65"
     },
     {
       "path": "crates/hardware/esp32s31/pac/Cargo.toml",
@@ -89,7 +93,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
-      "sha256": "8945f3cc7697b716b0361fe1fd2c9ccc8055a109ad471141d502cbb87f9ea8a5"
+      "sha256": "2cd5e480da83939616e79084e27130a8c1760f8236a5ea7065ebced6b8586806"
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/generated.rs",
@@ -166,6 +170,10 @@
     {
       "path": "crates/hardware/esp32s31/phy/src/executor/wait/poll.rs",
       "sha256": "c9e10ace7b5aaafc9e5ab3d2a77050471a7d2ff645c02985a768c637de061bbe"
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/lib.rs",
+      "sha256": "23b79326c22fae7ddb0762367d2fdca72a8d3068d447a8abbb7f7a0cb504edee"
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_executor.rs",
@@ -1137,7 +1145,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/observation.rs",
-      "sha256": "ecede41af70f936cb438592c0204ec075b3f2b37b74e29e141aa58e01ff07693"
+      "sha256": "0a329f0ada15f5d20435279d8a2d26b1d04562274a2336472787ca97a88f7e50"
     },
     {
       "path": "verification/esp32s31/scenarios/src/decisions/state.rs",
@@ -1225,7 +1233,7 @@
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/ampdu_resort.rs",
-      "sha256": "6ac42376dac7c5329fa47e74845c0be79339ebbfd110170662d005a8e00a7b33"
+      "sha256": "9643bae17485563362331097408183dd1e323bf9fb564bcab12d2cba7ceb60c4"
     },
     {
       "path": "verification/esp32s31/scenarios/src/wifi/low_power_clock.rs",
@@ -1373,7 +1381,7 @@
     }
   ],
   "dependence": {
-    "read-data": "9a5f272ee390d582c422d5c49ce7ed49a61c4805b8324964039ff12cd32b5443",
+    "read-data": "b6a78bad618534484f9af10b5653e3e64e16870e17be677322be10bae4610a52",
     "fallback": null,
     "coverage-decisions": {
       "path": "verification/esp32s31/decisions/coverage.toml",
@@ -2032,9 +2040,9 @@
       },
       "observation": {
         "executed": 324,
-        "observed": 310,
-        "reviewed": 8,
-        "untriaged": 6
+        "observed": 315,
+        "reviewed": 7,
+        "untriaged": 2
       },
       "state": {
         "written": 5,
@@ -2104,9 +2112,9 @@
         "untriaged": 10
       },
       "observation": {
-        "executed": 233,
+        "executed": 232,
         "observed": 211,
-        "reviewed": 3,
+        "reviewed": 2,
         "untriaged": 19
       },
       "state": {
@@ -2379,11 +2387,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 276
+      "line": 284
     },
     {
       "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
-      "line": 721
+      "line": 739
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw/src/lib.rs",
@@ -3236,10 +3244,6 @@
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/frequency.rs",
       "line": 399
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/analog/frequency.rs",
-      "line": 400
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/analog/frequency.rs",
@@ -4519,10 +4523,6 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port/rfpll.rs",
-      "line": 303
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/target_port/rfpll.rs",
       "line": 304
     },
     {
@@ -4556,6 +4556,10 @@
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
       "line": 396
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
+      "line": 400
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port.rs",
@@ -4944,6 +4948,10 @@
     {
       "path": "crates/hardware/esp32s31/phy/src/tracking/rfpll.rs",
       "line": 128
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy/src/tracking/rfpll.rs",
+      "line": 129
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/validation.rs",

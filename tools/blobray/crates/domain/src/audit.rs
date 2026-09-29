@@ -70,3 +70,12 @@ pub struct ExecutableSectionView<'a> {
     pub bytes: &'a [u8],
     pub data_ranges: &'a [CodeRange],
 }
+
+/// Outcome of a check over its declared scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CheckVerdict {
+    Pass,
+    Fail,
+    Inconclusive,
+}

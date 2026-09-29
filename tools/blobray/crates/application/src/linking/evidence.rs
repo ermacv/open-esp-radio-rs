@@ -1,104 +1,60 @@
 //! Validate adapter claims against captured occurrences; no tool text is interpreted.
 use super::*;
-use std::io::{BufRead, BufReader, Seek};
 
+/// The roots and placed sections the linker's claims establish, checked in
+/// the canonical order extraction, placement, exit, independent of pipe
+/// polling.
 pub(super) fn roots(
-    outputs: &mut Outputs,
+    outputs: &Outputs,
     found: &Collected,
     invocation: &LinkInvocation<'_>,
     control: &mut dyn RunControl,
-) -> Result<(Vec<ResolvedRoot>, TemporaryFile)> {
-    // Canonical order is extraction, placement, exit, independent of pipe polling.
-    outputs.placements.rewind().map_err(storage_io)?;
-    let mut block = [0; WORK_BLOCK];
-    loop {
-        control.checkpoint(1)?;
-        let count = outputs.placements.read(&mut block).map_err(storage_io)?;
-        if count == 0 {
-            break;
-        }
-        outputs
-            .observations
-            .write_all(&block[..count])
-            .map_err(storage_io)?;
-    }
-    outputs.placements = invocation.workspace.temporary()?;
+) -> Result<(Vec<ResolvedRoot>, Vec<ImageMapping>)> {
     if outputs.exit_observations != 1 {
         return Err(Error::new(
             ErrorCode::LinkBlocked,
             "missing linker exit evidence",
         ));
     }
-    write_control_message(
-        &mut outputs.observations,
-        &LinkObservationRecord {
-            schema: 1,
-            observation: LinkObservation::ToolExit {
-                code: outputs.exit_code,
-                signal: outputs.signal,
-            },
-        },
-    )?;
-    outputs.observations.write_all(b"\n").map_err(storage_io)?;
-    outputs.observations.rewind().map_err(storage_io)?;
-    let mut reader = BufReader::new(&mut outputs.observations);
-    let mut proof = invocation.workspace.temporary()?;
+    let exit = LinkObservation::ToolExit {
+        code: outputs.exit_code,
+        signal: outputs.signal,
+    };
     let mut addresses = vec![None; found.roots.len()];
     let mut placed = vec![false; found.members.len()];
     let mut extracted = vec![false; found.members.len()];
-    let mut exit = false;
-    let mut line = Vec::new();
-    loop {
+    let mut mappings = Vec::new();
+    let mut exited = false;
+    let member = |object: &ObjectId| {
+        found
+            .members
+            .iter()
+            .position(|m| &m.object == object)
+            .ok_or_else(|| invalid("linker observation names an unknown occurrence"))
+    };
+    let span = |evidence: &LinkEvidenceSpan| -> Result<()> {
+        let length = match evidence.source {
+            LinkEvidenceSource::Map => outputs.map.len(),
+            LinkEvidenceSource::Extraction => outputs.extraction.len(),
+        } as u64;
+        if evidence.length == 0
+            || evidence
+                .offset
+                .checked_add(evidence.length)
+                .is_none_or(|end| end > length)
+        {
+            return Err(invalid("link evidence lies outside retained raw output"));
+        }
+        Ok(())
+    };
+    for observation in outputs
+        .extractions
+        .iter()
+        .chain(&outputs.placements)
+        .chain(std::iter::once(&exit))
+    {
         control.checkpoint(1)?;
-        line.clear();
-        reader
-            .by_ref()
-            .take(65537)
-            .read_until(b'\n', &mut line)
-            .map_err(storage_io)?;
-        if line.is_empty() {
-            break;
-        }
-        if line.len() > 65536 {
-            return Err(Error::new(
-                ErrorCode::ResourceLimited,
-                "link observation exceeds 64 KiB",
-            ));
-        }
-        control.bytes(line.len())?;
-        let record: LinkObservationRecord =
-            serde_json::from_slice(&line).map_err(|e| invalid(e.to_string()))?;
-        if record.schema != 1 {
-            return Err(Error::new(
-                ErrorCode::Incompatible,
-                "unsupported linker observation",
-            ));
-        }
-        let member = |object: &LinkObject| {
-            found
-                .members
-                .iter()
-                .position(|m| m.input == object.input && m.object == object.object)
-                .ok_or_else(|| invalid("linker observation names an unknown occurrence"))
-        };
-        let span = |evidence: &LinkEvidenceSpan| -> Result<()> {
-            let length = match evidence.source {
-                LinkEvidenceSource::Map => outputs.map.metadata(),
-                LinkEvidenceSource::Extraction => outputs.extraction.metadata(),
-            }
-            .map_err(storage_io)?
-            .len();
-            if evidence.length == 0
-                || evidence
-                    .offset
-                    .checked_add(evidence.length)
-                    .is_none_or(|end| end > length)
-            {
-                return Err(invalid("link evidence lies outside retained raw output"));
-            }
-            Ok(())
-        };
-        match record.observation {
+        match observation {
             LinkObservation::SectionPlacement {
                 object,
                 section,
@@ -106,20 +62,20 @@ pub(super) fn roots(
                 size,
                 evidence,
             } => {
-                span(&evidence)?;
-                if address.checked_add(size).is_none_or(|end| end > 1u64 << 32) {
+                span(evidence)?;
+                if address
+                    .checked_add(*size)
+                    .is_none_or(|end| end > 1u64 << 32)
+                {
                     return Err(invalid("link placement exceeds RV32"));
                 }
-                let index = member(&object)?;
-                placed[index] |= size != 0;
+                let index = member(object)?;
+                placed[index] |= *size != 0;
                 let m = &found.members[index];
                 let mut exact = false;
                 for (index, root) in found.roots.iter().enumerate() {
-                    if root.selection.input == m.input
-                        && root.selection.symbol.object == m.object
-                        && root.section == section
-                    {
-                        if root.section_size != size || addresses[index].is_some() {
+                    if root.symbol.object == m.object && &root.section == section {
+                        if root.section_size != *size || addresses[index].is_some() {
                             return Err(Error::new(
                                 ErrorCode::LinkBlocked,
                                 "root section placement is transformed or ambiguous",
@@ -133,19 +89,17 @@ pub(super) fn roots(
                         exact = true;
                     }
                 }
-                write_control_message(
-                    &mut proof,
-                    &ImageMapping {
-                        input: m.input,
-                        object: m.object.clone(),
-                        payload: m.payload.clone().unwrap(),
-                        section,
-                        address,
-                        size,
-                        exact,
-                    },
-                )?;
-                proof.write_all(b"\n").map_err(storage_io)?;
+                mappings.push(ImageMapping {
+                    object: m.object.clone(),
+                    payload: m
+                        .payload
+                        .clone()
+                        .ok_or_else(|| invalid("placed member without captured bytes"))?,
+                    section: section.clone(),
+                    address: *address,
+                    size: *size,
+                    exact,
+                });
             }
             LinkObservation::ArchiveExtraction {
                 object,
@@ -153,8 +107,8 @@ pub(super) fn roots(
                 referring,
                 evidence,
             } => {
-                span(&evidence)?;
-                let index = member(&object)?;
+                span(evidence)?;
+                let index = member(object)?;
                 let alias = &found.members[index].alias;
                 if !invocation
                     .inputs
@@ -171,28 +125,22 @@ pub(super) fn roots(
                     return Err(invalid("missing archive extraction cause"));
                 }
                 if let Some(referring) = referring {
-                    member(&referring)?;
+                    member(referring)?;
                 }
                 extracted[index] = true;
             }
             LinkObservation::ToolExit { code, signal } => {
-                if exit
-                    || code != Some(0)
+                if exited
+                    || *code != Some(0)
                     || signal.is_some()
-                    || code != outputs.exit_code
-                    || signal != outputs.signal
+                    || *code != outputs.exit_code
+                    || *signal != outputs.signal
                 {
                     return Err(invalid("invalid linker exit observation"));
                 }
-                exit = true;
+                exited = true;
             }
         }
-    }
-    if !exit {
-        return Err(Error::new(
-            ErrorCode::LinkBlocked,
-            "missing linker exit evidence",
-        ));
     }
     for (index, m) in found.members.iter().enumerate() {
         let lazy = invocation
@@ -206,13 +154,13 @@ pub(super) fn roots(
             ));
         }
     }
-    let result = found
+    let roots = found
         .roots
         .iter()
         .zip(addresses)
         .map(|(root, address)| {
             Ok(ResolvedRoot {
-                selection: root.selection.clone(),
+                symbol: root.symbol.clone(),
                 name: root.name.clone(),
                 size: root.size,
                 address: address.ok_or_else(|| {
@@ -224,7 +172,7 @@ pub(super) fn roots(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok((result, proof))
+    Ok((roots, mappings))
 }
 
 #[cfg(test)]
@@ -232,44 +180,29 @@ mod tests {
     use super::*;
     fn validate(mut change: impl FnMut(&mut Vec<LinkObservation>)) -> Result<Vec<ResolvedRoot>> {
         let dir = tempfile::tempdir().unwrap();
-        let disk = TemporaryBudget::new(4 * 1024 * 1024, None).unwrap();
-        let workspace = LinkWorkspace {
-            directory: dir.path(),
-            disk: &disk,
-            elf_limit: 65536,
-        };
+        let workspace = LinkWorkspace::within(dir.path(), 65536).unwrap();
         let id = ArtifactId::of_bytes(b"captured source");
         let object = ObjectId {
             artifact: id.clone(),
             location: ObjectLocation::Standalone,
         };
-        let occurrence = LinkObject {
-            input: 7,
+        let selected = SymbolId {
             object: object.clone(),
-        };
-        let selected = EntrySelection {
-            input: 7,
-            symbol: SymbolId {
-                object: object.clone(),
-                table: SymbolTableKind::Static,
-                table_section: 1,
-                index: 1,
-            },
+            table: SymbolTableKind::Static,
+            table_section: 1,
+            index: 1,
         };
         let found = Collected {
-            project: id.as_str().parse().unwrap(),
             blockers: vec![],
             definitions: vec![],
             members: vec![Member {
-                input: 7,
-                object,
+                input: 0,
+                object: object.clone(),
                 payload: Some(id.clone()),
-                source: id.clone(),
                 alias: "root.o".into(),
-                elf: true,
             }],
             roots: vec![blobray_artifacts::LinkRootFacts {
-                selection: selected,
+                symbol: selected,
                 name: b"root".to_vec(),
                 section: b"code".to_vec(),
                 section_size: 16,
@@ -294,7 +227,7 @@ mod tests {
             inputs: vec![],
             members: vec![LinkMember {
                 alias: "root.o".into(),
-                occurrence: occurrence.clone(),
+                object: object.clone(),
             }],
             layout: ImageLayout {
                 code: ImageRegion {
@@ -308,14 +241,17 @@ mod tests {
             },
             definitions: vec![],
         };
-        let mut outputs = Outputs::new(&workspace)?;
+        let mut outputs = Outputs::default();
         outputs
-            .map
-            .write_all(b"opaque tool dialect; application cannot parse this")
+            .write(
+                LinkOutput::Map,
+                b"opaque tool dialect; application cannot parse this",
+                &mut || Ok(()),
+            )
             .unwrap();
         let mut records = vec![
             LinkObservation::SectionPlacement {
-                object: occurrence,
+                object,
                 section: b"code".to_vec(),
                 address: 0x1000,
                 size: 16,
@@ -335,13 +271,13 @@ mod tests {
         for record in records {
             outputs.observe(record, &mut || Ok(()))?;
         }
-        roots(&mut outputs, &found, &invocation, &mut || Ok(())).map(|(r, _)| r)
+        roots(&outputs, &found, &invocation, &mut || Ok(())).map(|(r, _)| r)
     }
     #[test]
     fn roots_use_typed_claims_and_captured_offsets_not_a_tool_dialect() {
         let roots = validate(|_| {}).unwrap();
         assert_eq!(roots[0].address, 0x1004);
-        assert_eq!(roots[0].selection.input, 7);
+        assert_eq!(roots[0].symbol.index, 1);
     }
     #[test]
     fn missing_ambiguous_transformed_foreign_or_unbacked_claims_fail_closed() {
@@ -368,7 +304,7 @@ mod tests {
         assert!(
             validate(|r| {
                 if let LinkObservation::SectionPlacement { object, .. } = &mut r[0] {
-                    object.input = 8;
+                    object.location = ObjectLocation::ArchiveMember { ordinal: 1 };
                 }
             })
             .is_err()

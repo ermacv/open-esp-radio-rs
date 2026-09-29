@@ -78,7 +78,6 @@ impl<'a> PreparedReferences<'a> {
         result.raw.extend_from_slice(raw);
         for r in raw {
             c.checkpoint(1)?;
-            c.measure(WorkMetric::RelocationLookups, 1);
             let normalized = decoder.reference(r, raw, section, c)?;
             let at = symbols.partition_point(|&i| raw[i].target.symbol < normalized.target.symbol);
             result.symbols.push(

@@ -1522,8 +1522,6 @@ fn vendor_section(session: &Session, object: &str, section: &str) -> Result<Vec<
     let object = crate::harness::named_object(&session.inventory, 0, object)?;
     let record = crate::harness::named_section(object, section)?;
     let request = crate::harness::data_request(
-        &session.revision,
-        blobray_domain::FunctionSource::Input { input: 0 },
         object,
         blobray_domain::DataSelector::Section {
             section: record.index,
@@ -1532,7 +1530,7 @@ fn vendor_section(session: &Session, object: &str, section: &str) -> Result<Vec<
         },
     );
     let name = format!("section{}", section.replace('.', "-"));
-    session.data(&name, &request, &session.run.join(&name))
+    Ok(session.data(&name, &request)?.bytes)
 }
 
 /// `wifi_set_rx_policy` policies the production role-receive HAL admits:

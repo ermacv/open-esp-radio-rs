@@ -1,4 +1,4 @@
-//! Portable synthetic image recipes and retained evidence. No tool discovery or I/O.
+//! Portable synthetic image requests and linker evidence. No tool discovery or I/O.
 use crate::*;
 
 /// ELF-declared floating-point calling convention, separate from instruction
@@ -11,12 +11,6 @@ pub enum RiscvAbi {
     Ilp32d,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EntrySelection {
-    pub input: u64,
-    pub symbol: SymbolId,
-}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageRegion {
@@ -64,17 +58,20 @@ impl ImageLayout {
         Ok(())
     }
 }
+/// One synthetic image of captured objects, every executable named by content.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkRequest {
+    /// Exact definitions in captured static ELF executables, bound to their
+    /// names at their addresses. No implicit definitions.
     #[serde(default)]
-    pub companions: Vec<EntrySelection>,
-    pub revision: Option<RevisionId>,
-    /// Zero-based captured input occurrences, in linker order. No implicit inputs.
-    pub inputs: Vec<u64>,
-    pub entry: EntrySelection,
+    pub companions: Vec<SymbolId>,
+    /// Captured archives and objects, in linker order. No implicit inputs.
+    pub inputs: Vec<ArtifactId>,
+    /// The entry symbol; its object is in one of `inputs`.
+    pub entry: SymbolId,
     #[serde(default)]
-    pub roots: Vec<EntrySelection>,
+    pub roots: Vec<SymbolId>,
     pub layout: ImageLayout,
     /// Undefined names no captured input defines, deliberately bound to
     /// `ABSENT_SYMBOL_ADDRESS`: executing or reading one stops with an
@@ -84,34 +81,21 @@ pub struct LinkRequest {
 }
 /// Companions proposed for a link request by a trial link. Every name the
 /// selected closure leaves unresolved is either resolved to exactly one defined
-/// function or data object of the first candidate input that defines it, or
-/// reported unresolved. A proposal grants nothing: the client copies the exact
-/// selections into its retained link request.
+/// function or data object of the first candidate executable that defines it,
+/// or reported unresolved. A proposal grants nothing: the client copies the
+/// exact symbols into its link request.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompanionProposal {
     pub resolved: Vec<ProposedCompanion>,
-    /// Linker-visible names without a definition in any candidate input.
+    /// Linker-visible names without a definition in any candidate.
     pub unresolved: Vec<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProposedCompanion {
     pub name: String,
-    pub selection: EntrySelection,
-}
-/// Native convenience selection. Only one defined entry in the explicit input
-/// qualifies; ambiguity returns candidates, never a preferred definition.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NamedLinkRequest {
-    #[serde(default)]
-    pub companions: Vec<NamedCompanion>,
-    pub revision: Option<RevisionId>,
-    pub inputs: Vec<u64>,
-    pub entry_input: u64,
-    pub entry_name: Vec<u8>,
-    pub layout: ImageLayout,
+    pub symbol: SymbolId,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -128,43 +112,6 @@ pub const ABSENT_SYMBOL_ADDRESS: u32 = 0xffff_fff0;
 pub const MAX_ABSENT_SYMBOLS: usize = 64;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LinkRecipe {
-    pub linker_contract: LinkerContract,
-    pub companions: Vec<EntrySelection>,
-    pub schema: u32,
-    pub policy: u32,
-    pub project: ProjectId,
-    pub revision: RevisionId,
-    pub inputs: Vec<u64>,
-    pub entry: EntrySelection,
-    pub roots: Vec<EntrySelection>,
-    pub layout: ImageLayout,
-    pub linker: LinkerIdentity,
-    /// Names bound to `ABSENT_SYMBOL_ADDRESS`; see `LinkRequest::absent`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub absent: Vec<String>,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LinkBlocker {
-    pub input: Option<u64>,
-    pub code: ErrorCode,
-    pub message: String,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LinkPlanDescription {
-    pub id: LinkPlanId,
-    pub recipe: LinkRecipe,
-    pub blockers: Vec<LinkBlocker>,
-}
-impl LinkPlanDescription {
-    pub fn ready(&self) -> bool {
-        self.blockers.is_empty()
-    }
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ImageSegment {
     pub address: u64,
     pub file_offset: u64,
@@ -175,33 +122,34 @@ pub struct ImageSegment {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedRoot {
-    pub selection: EntrySelection,
+    pub symbol: SymbolId,
     pub address: u64,
     pub size: u64,
     pub name: Vec<u8>,
 }
+/// One linked image: what was linked, by which linker, and where every
+/// root and placed input section lies.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageManifest {
-    pub abi: RiscvAbi,
-    /// Bounded observations from the successful linker process.
-    pub linker_diagnostics: LinkerDiagnostics,
     pub schema: u32,
-    pub synthetic: bool,
-    pub plan: LinkPlanDescription,
+    pub request: LinkRequest,
+    pub contract: LinkerContract,
+    pub linker: LinkerIdentity,
+    pub abi: RiscvAbi,
+    /// Content identity of the linked ELF.
     pub elf: ArtifactId,
-    pub map: ArtifactId,
-    pub extraction: ArtifactId,
-    pub provenance: ArtifactId,
-    pub observations: ArtifactId,
     pub entry: u64,
     pub roots: Vec<ResolvedRoot>,
     pub segments: Vec<ImageSegment>,
+    pub mappings: Vec<ImageMapping>,
+    /// Bounded observations from the successful linker process.
+    pub linker_diagnostics: LinkerDiagnostics,
 }
+/// One input section the linker placed.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageMapping {
-    pub input: u64,
     pub object: ObjectId,
     pub payload: ArtifactId,
     pub section: Vec<u8>,
@@ -221,27 +169,12 @@ pub struct LinkerDiagnostics {
     pub stderr_truncated: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NamedCompanion {
-    pub input: u64,
-    pub name: String,
-}
-
 /// Semantic analysis profile; tool version is independently retained in identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LinkerContract {
     #[serde(rename = "static-analysis-elf-link-v1")]
     ElfAnalysisLinkV1,
-}
-
-/// Physical imported occurrence, including repeated bindings of identical bytes.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LinkObject {
-    pub input: u64,
-    pub object: ObjectId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -265,46 +198,20 @@ pub struct LinkEvidenceSpan {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum LinkObservation {
     SectionPlacement {
-        object: LinkObject,
+        object: ObjectId,
         section: Vec<u8>,
         address: u64,
         size: u64,
         evidence: LinkEvidenceSpan,
     },
     ArchiveExtraction {
-        object: LinkObject,
+        object: ObjectId,
         cause: Option<Vec<u8>>,
-        referring: Option<LinkObject>,
+        referring: Option<ObjectId>,
         evidence: LinkEvidenceSpan,
     },
     ToolExit {
         code: Option<i32>,
         signal: Option<i32>,
     },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LinkObservationRecord {
-    pub schema: u32,
-    pub observation: LinkObservation,
-}
-
-impl LinkRecipe {
-    /// Shared portable compatibility check; adapters own executable capabilities.
-    pub fn validate_contract(&self) -> Result<()> {
-        if self.schema != 2
-            || self.policy != 5
-            || self.linker_contract != LinkerContract::ElfAnalysisLinkV1
-        {
-            return Err(Error::new(
-                ErrorCode::Incompatible,
-                "unsupported link recipe",
-            ));
-        }
-        if self.linker.implementation.is_empty() || self.linker.version.is_empty() {
-            return Err(Error::new(ErrorCode::Integrity, "missing linker identity"));
-        }
-        Ok(())
-    }
 }

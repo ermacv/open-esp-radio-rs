@@ -1,50 +1,17 @@
-//! Trial links propose ROM companions; they never select or publish an image.
+//! Trial links propose companions; they never select or keep an image.
 use super::*;
 
-/// A captured linked image read through its temporary file.
-struct TrialImage(std::fs::File);
-impl ByteSource for TrialImage {
-    fn len(&self) -> u64 {
-        self.0.metadata().map_or(0, |m| m.len())
-    }
-    fn read_at(&self, offset: u64, bytes: &mut [u8], c: &mut dyn RunControl) -> Result<()> {
-        use std::os::unix::fs::FileExt;
-        c.bytes(bytes.len())?;
-        self.0.read_exact_at(bytes, offset).map_err(storage_io)
-    }
-}
-
-/// Defined functions and data objects of the candidate inputs, by name.
+/// Defined functions and data objects of one candidate executable, by name:
+/// (name index, local binding, symbol).
 struct Definitions<'a> {
-    candidates: &'a [u64],
     names: &'a [String],
-    input: u64,
-    executable: bool,
-    /// (candidate position, name index, local binding, selection)
-    found: Vec<(usize, usize, bool, EntrySelection)>,
-}
-impl InventorySink for Definitions<'_> {
-    fn input(&mut self, i: u64, _: &InputRecord, _: &mut dyn RunControl) -> Result<()> {
-        self.input = i;
-        Ok(())
-    }
-    fn object(&mut self, o: &ObjectInventory, _: &mut dyn RunControl) -> Result<()> {
-        self.executable = o.id.location == ObjectLocation::Standalone
-            && o.elf.as_ref().is_some_and(|e| {
-                e.object_type == 2 && e.bits == 32 && e.machine == 243 && e.little_endian
-            });
-        Ok(())
-    }
+    found: Vec<(usize, bool, SymbolId)>,
 }
 impl ElfSink for Definitions<'_> {
     fn symbol(&mut self, r: &SymbolRecord, c: &mut dyn RunControl) -> Result<()> {
         c.checkpoint(1)?;
-        let Some(position) = self.candidates.iter().position(|i| *i == self.input) else {
-            return Ok(());
-        };
         // STT_OBJECT or STT_FUNC in a static table.
-        if !self.executable
-            || !matches!(r.symbol_type, 1 | 2)
+        if !matches!(r.symbol_type, 1 | 2)
             || r.raw_section == 0
             || r.id.table != SymbolTableKind::Static
         {
@@ -54,15 +21,7 @@ impl ElfSink for Definitions<'_> {
             return Ok(());
         };
         if let Some(index) = self.names.iter().position(|n| n.as_bytes() == name) {
-            self.found.push((
-                position,
-                index,
-                r.binding == 0,
-                EntrySelection {
-                    input: self.input,
-                    symbol: r.id.clone(),
-                },
-            ));
+            self.found.push((index, r.binding == 0, r.id.clone()));
         }
         Ok(())
     }
@@ -78,19 +37,19 @@ impl ElfSink for Definitions<'_> {
 }
 
 /// Link `request` with unresolved names permitted, then resolve each name the
-/// closure leaves undefined against `candidates` in their explicit order.
-/// A name resolves to the first candidate input that defines it. Within that
-/// input a single global or weak definition is taken; a local one only when no
-/// global or weak one exists. Several definitions of the chosen binding, or
-/// none in any input, leave the name unresolved.
+/// closure leaves undefined against the static executables `candidates` in
+/// their explicit order. A name resolves to the first candidate that defines
+/// it. Within that candidate a single global or weak definition is taken; a
+/// local one only when no global or weak one exists. Several definitions of
+/// the chosen binding, or none in any candidate, leave the name unresolved.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn propose_companions(
-    project: &Path,
+pub fn propose_companions(
     request: &LinkRequest,
-    candidates: &[u64],
-    executable: &Path,
+    candidates: &[ArtifactId],
+    executables: &[Executable],
+    linker: &Path,
     host: &dyn LinkerHost,
-    workspace: &LinkWorkspace<'_>,
+    directory: &Path,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<CompanionProposal> {
@@ -103,129 +62,60 @@ pub(crate) fn propose_companions(
             .any(|(i, c)| candidates[..i].contains(c))
     {
         return Err(invalid(
-            "companion candidates must be 1-16 distinct inputs outside the link inputs",
+            "companion candidates must be 1-16 distinct executables outside the link inputs",
         ));
     }
     let _fixed = memory.reserve(LINK_METADATA_BYTES, control.position())?;
-    let identity = host.identify(executable, workspace, control)?;
-    let project = Project::open(project)?;
-    let directory = workspace.directory().to_path_buf();
-    control.phase(RunPhase::Materialize)?;
-    let found = collect(
-        &project,
+    let workspace = LinkWorkspace::new(directory, memory)?;
+    let identity = host.identify(linker, &workspace, control)?;
+    let found = materialize(request, executables, &workspace, memory, control)?;
+    let invocation = invocation(
         request,
-        memory,
-        control,
-        |member, source, _, control| {
-            let mut file = workspace.disk.create(&directory.join(&member.alias))?;
-            crate::query_stream::copy_source(source, &mut file, control)?;
-            file.sync_all().map_err(storage_io)
-        },
-    )?;
-    if !found.blockers.is_empty() {
-        return Err(Error::new(
-            ErrorCode::LinkBlocked,
-            found.blockers[0].message.clone(),
-        ));
-    }
-    let mut forced = Vec::new();
-    for root in &found.roots {
-        let member = found
-            .members
-            .iter()
-            .find(|m| m.input == root.selection.input && m.object == root.selection.symbol.object)
-            .unwrap();
-        if !forced.contains(&member.alias) {
-            forced.push(member.alias.clone());
-        }
-    }
-    let mut inputs = Vec::new();
-    for input in &request.inputs {
-        let members: Vec<_> = found
-            .members
-            .iter()
-            .filter(|m| m.input == *input && !forced.contains(&m.alias))
-            .collect();
-        if members.is_empty() {
-            continue;
-        }
-        if members[0].object.location == ObjectLocation::Standalone {
-            inputs.push(LinkInput::Object(members[0].alias.clone()));
-        } else {
-            inputs.push(LinkInput::Archive(
-                members.iter().map(|m| m.alias.clone()).collect(),
-            ));
-        }
-    }
-    let definitions = found.definitions.clone();
-    let mut outputs = Outputs::new(workspace)?;
-    control.phase(RunPhase::Link)?;
-    let invocation = LinkInvocation {
-        executable,
-        identity: &identity,
-        workspace,
-        contract: LinkerContract::ElfAnalysisLinkV1,
-        entry: &found.roots[0].name,
-        roots: found.roots.iter().skip(1).map(|r| r.name.clone()).collect(),
-        forced,
-        inputs,
-        members: found
-            .members
-            .iter()
-            .map(|m| LinkMember {
-                alias: m.alias.clone(),
-                occurrence: LinkObject {
-                    input: m.input,
-                    object: m.object.clone(),
-                },
-            })
-            .collect(),
-        layout: request.layout,
-        definitions,
-        unresolved: UnresolvedSymbols::Report,
-    };
-    if let Err(mut error) = host.link(&invocation, &mut outputs, control) {
-        if error.code == ErrorCode::LinkFailed {
-            error.message = format!(
-                "{}: {}",
-                error.message,
-                String::from_utf8_lossy(&outputs.stderr)
+        &found,
+        linker,
+        &identity,
+        &workspace,
+        UnresolvedSymbols::Report,
+    );
+    let mut outputs = Outputs::default();
+    run(host, &invocation, &mut outputs, control)?;
+    let names = blobray_artifacts::undefined_names(&outputs.elf.as_slice(), memory, control)?;
+    // (candidate position, name index, local binding, symbol)
+    let mut found = Vec::new();
+    for (position, candidate) in candidates.iter().enumerate() {
+        let executable = find(executables, candidate)?;
+        let object = ObjectId {
+            artifact: executable.id().clone(),
+            location: ObjectLocation::Standalone,
+        };
+        let mut scan = Definitions {
+            names: &names,
+            found: Vec::new(),
+        };
+        let bytes: &[u8] = executable.bytes();
+        let (_, header) = inspect_source(&bytes, &object, memory, control, &mut scan)?;
+        if header.is_some_and(|e| {
+            e.object_type == 2 && e.bits == 32 && e.machine == 243 && e.little_endian
+        }) {
+            found.extend(
+                scan.found
+                    .into_iter()
+                    .map(|(index, local, symbol)| (position, index, local, symbol)),
             );
-            truncate_message(&mut error.message);
         }
-        return Err(error);
     }
-    let image = TrialImage(std::fs::File::open(outputs.elf.path()).map_err(storage_io)?);
-    let names = blobray_artifacts::undefined_names(&image, memory, control)?;
-    let mut scan = Definitions {
-        candidates,
-        names: &names,
-        input: 0,
-        executable: false,
-        found: Vec::new(),
-    };
-    crate::linking::read_inputs(
-        &project,
-        request.revision.as_ref(),
-        candidates.iter().copied(),
-        memory,
-        control,
-        &mut scan,
-    )?;
     let mut proposal = CompanionProposal {
         resolved: Vec::new(),
         unresolved: Vec::new(),
     };
     for (index, name) in names.iter().enumerate() {
         control.checkpoint(1)?;
-        let first = scan
-            .found
+        let first = found
             .iter()
             .filter(|(_, i, _, _)| *i == index)
             .map(|(position, _, _, _)| *position)
             .min();
-        let in_first: Vec<_> = scan
-            .found
+        let in_first: Vec<_> = found
             .iter()
             .filter(|(position, i, _, _)| *i == index && Some(*position) == first)
             .collect();
@@ -235,9 +125,9 @@ pub(crate) fn propose_companions(
             .filter(|(_, _, is_local, _)| *is_local == local)
             .collect();
         match selected.as_slice() {
-            [(_, _, _, selection)] => proposal.resolved.push(ProposedCompanion {
+            [(_, _, _, symbol)] => proposal.resolved.push(ProposedCompanion {
                 name: name.clone(),
-                selection: selection.clone(),
+                symbol: symbol.clone(),
             }),
             _ => proposal.unresolved.push(name.clone()),
         }

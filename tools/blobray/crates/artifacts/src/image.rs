@@ -4,7 +4,7 @@ use object::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
 
 #[derive(Clone, Debug)]
 pub struct LinkRootFacts {
-    pub selection: EntrySelection,
+    pub symbol: SymbolId,
     pub name: Vec<u8>,
     pub section: Vec<u8>,
     pub section_size: u64,
@@ -56,7 +56,7 @@ fn check(file: &object::File<'_>, kind: object::ObjectKind) -> Result<()> {
 pub fn inspect_link_input(
     source: &dyn ByteSource,
     expected: &ArtifactId,
-    roots: &[EntrySelection],
+    roots: &[SymbolId],
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<Vec<LinkRootFacts>> {
@@ -102,11 +102,11 @@ pub fn inspect_link_input(
     let mut result = Vec::new();
     for selected in roots {
         control.checkpoint(1)?;
-        if selected.symbol.table != SymbolTableKind::Static {
+        if selected.table != SymbolTableKind::Static {
             return Err(bad("root must reference the static symbol table"));
         }
         let table = file
-            .section_by_index(object::SectionIndex(selected.symbol.table_section as usize))
+            .section_by_index(object::SectionIndex(selected.table_section as usize))
             .map_err(|e| bad(e.to_string()))?;
         // Object's index API uses the regular static table; reject alternative tables.
         let mut tables = 0;
@@ -121,7 +121,7 @@ pub fn inspect_link_input(
         }
         let symbol = file
             .symbol_by_index(object::SymbolIndex(
-                usize::try_from(selected.symbol.index).map_err(|_| bad("symbol index overflow"))?,
+                usize::try_from(selected.index).map_err(|_| bad("symbol index overflow"))?,
             ))
             .map_err(|e| bad(e.to_string()))?;
         let name = symbol.name_bytes().map_err(|e| bad(e.to_string()))?;
@@ -170,7 +170,7 @@ pub fn inspect_link_input(
             ));
         }
         result.push(LinkRootFacts {
-            selection: selected.clone(),
+            symbol: selected.clone(),
             name: name.into(),
             section: section_name.into(),
             section_size: section.size(),

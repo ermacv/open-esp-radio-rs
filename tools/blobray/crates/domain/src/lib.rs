@@ -1,8 +1,8 @@
-//! Shared identities and schema-1 import records. No filesystem or database access.
+//! Shared identities, captured inventory and request records. No filesystem access.
 //!
-//! Physical identities retain archive ordinals and ELF table section/index pairs.
-//! Names and origin paths are lossless metadata, never identity keys. Revisions
-//! retain complete inventory outcomes, including unsupported and missing inputs.
+//! Executables are identified by the SHA-256 of their content. Physical
+//! identities retain archive ordinals and ELF table section/index pairs; names
+//! are lossless metadata, never identity keys.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -12,8 +12,6 @@ mod data;
 pub use data::*;
 mod registers;
 pub use registers::*;
-mod semantic_ir;
-pub use semantic_ir::*;
 mod execution;
 pub use execution::*;
 mod code_coverage;
@@ -24,19 +22,12 @@ mod function;
 pub use function::*;
 mod image;
 pub use image::*;
-mod temporary;
-pub use temporary::*;
-mod selection;
-pub use selection::*;
-mod jobs;
 mod resources;
 pub use resources::*;
 mod memory;
 mod stream;
 pub use memory::*;
 pub use stream::*;
-mod validation;
-pub use jobs::*;
 
 /// Codes shared by API errors and JSON diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -74,8 +65,6 @@ pub struct Error {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryFailure>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub storage: Option<Box<StorageFailure>>,
 }
 
 impl Error {
@@ -84,7 +73,6 @@ impl Error {
             code,
             message: message.into(),
             memory: None,
-            storage: None,
         }
     }
 }
@@ -144,15 +132,6 @@ macro_rules! identity {
 }
 
 identity!(ArtifactId);
-identity!(LinkPlanId);
-identity!(PreparedImageId);
-identity!(FunctionAnalysisId);
-identity!(PublicationId);
-identity!(InvestigationPlanId);
-identity!(ProjectId);
-identity!(RevisionId);
-identity!(RunId);
-identity!(PlanId);
 
 impl ArtifactId {
     pub fn of_bytes_controlled(bytes: &[u8], control: &mut dyn RunControl) -> Result<Self> {
@@ -165,13 +144,6 @@ impl ArtifactId {
         format!("{:x}", digest.finalize()).parse()
     }
     pub fn of_bytes(bytes: &[u8]) -> Self {
-        Self(format!("{:x}", Sha256::digest(bytes)))
-    }
-}
-
-impl RevisionId {
-    /// Content identity of the exact serialized revision manifest.
-    pub fn of_manifest(bytes: &[u8]) -> Self {
         Self(format!("{:x}", Sha256::digest(bytes)))
     }
 }
@@ -206,14 +178,6 @@ pub struct SymbolId {
     pub index: u64,
 }
 
-/// Lossless native origin path. Neither variant is used to reopen snapshot data.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "encoding", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum OriginPath {
-    UnixBytes { bytes: Vec<u8> },
-    WindowsWide { units: Vec<u16> },
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiagnosticCode {
@@ -232,31 +196,6 @@ pub struct Diagnostic {
     pub code: DiagnosticCode,
     pub context: String,
     pub message: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "state", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum Capture {
-    Captured { artifact: ArtifactId, length: u64 },
-    Unavailable { diagnostic: Diagnostic },
-}
-
-impl Capture {
-    pub fn artifact(&self) -> Option<&ArtifactId> {
-        match self {
-            Self::Captured { artifact, .. } => Some(artifact),
-            Self::Unavailable { .. } => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExternalMember {
-    pub ordinal: u64,
-    pub name: Vec<u8>,
-    pub origin: Option<OriginPath>,
-    pub capture: Capture,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -355,90 +294,14 @@ pub struct RelocationRecord {
     pub addend: Option<i64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InputRecord {
-    pub role: String,
-    pub origin: OriginPath,
-    pub expected: Option<ArtifactId>,
-    pub capture: Capture,
-    pub external_members: Vec<ExternalMember>,
-    pub inventory: Option<ArtifactInventory>,
-}
-
-/// Selected integer-analysis profile; inventory itself remains format/ISA neutral.
-/// ELF floating-point calling convention is recorded separately as `RiscvAbi`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Target {
-    Riscv32Ilp32,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Revision {
-    pub schema: u32,
-    pub project: ProjectId,
-    pub parent: Option<RevisionId>,
-    pub target: Target,
-    pub inventory_producer: String,
-    pub inputs: Vec<InputRecord>,
-}
-
-impl Revision {
-    pub fn complete(&self) -> bool {
-        self.inputs.iter().all(|i| {
-            i.inventory
-                .as_ref()
-                .is_some_and(ArtifactInventory::complete)
-        })
-    }
-
-    /// Every separately retained input payload, including captured thin members.
-    pub fn captures(&self) -> impl Iterator<Item = &Capture> {
-        self.inputs.iter().flat_map(|i| {
-            std::iter::once(&i.capture).chain(i.external_members.iter().map(|m| &m.capture))
-        })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Snapshot {
-    pub revision_id: RevisionId,
-    pub revision: Revision,
-}
-
 mod semantics;
 pub use semantics::*;
-
-mod investigation;
-pub use investigation::*;
-
-mod navigation;
-pub use navigation::*;
-mod access;
-pub use access::*;
-mod occurrence;
-pub use occurrence::*;
 
 mod audit;
 pub use audit::*;
 
-mod assessment;
-pub use assessment::*;
-
-mod measurements;
-pub use measurements::*;
-
 mod record_memory;
 pub use record_memory::*;
-
-mod reports;
-pub use reports::*;
-
-mod trace;
-pub use trace::*;
 
 mod device;
 pub use device::*;

@@ -10,10 +10,10 @@ use crate::harness::{Budget, Input, with_stack_fill};
 use crate::harness::{Result, invalid, known, region, selection, symbol, words};
 use crate::session::{Session, image_symbol, request};
 use blobray_domain::{
-    ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, EntrySelection,
-    ExecutionCase, ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop,
-    ExecutionTarget, FunctionSource, ImageLayout, ImageRegion, Invocation, LinkRequest,
-    MemorySelection, ObjectId, ObjectLocation, PreparedImageId, RegionLifetime,
+    ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, ExecutionCase,
+    ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop, ExecutionTarget,
+    ImageLayout, ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId, ObjectLocation,
+    RegionLifetime, SymbolId,
 };
 use layout::{FILLS, MAX_EVENTS};
 pub use layout::{PhyLayout, layout};
@@ -51,8 +51,8 @@ pub struct PhyImage {
     pub session: Session,
     pub roots: BTreeMap<String, u32>,
     pub parameter: u32,
-    /// The prepared image the vendor target maps.
-    pub image: PreparedImageId,
+    /// The linked image the vendor target maps.
+    pub image: ArtifactId,
     pub image_object: ObjectId,
     pub vendor: ExecutionTarget,
     pub production: ExecutionTarget,
@@ -73,7 +73,6 @@ impl std::ops::DerefMut for PhyImage {
 /// Private inputs and budget of a scenario over the pinned archive, ROM and
 /// compiled production.
 pub struct PhyOptions {
-    pub binary: PathBuf,
     pub library: PathBuf,
     pub rom: PathBuf,
     pub production: PathBuf,
@@ -106,7 +105,6 @@ pub fn start_session(options: &PhyOptions, extra: &[Input<'_>], purpose: &str) -
     ];
     inputs.extend_from_slice(extra);
     Session::start(
-        &options.binary,
         &options.output,
         options.budget,
         &inputs,
@@ -171,11 +169,8 @@ pub fn image_layout() -> ImageLayout {
 }
 
 /// Exact captured symbol of one input as a link selection.
-pub fn select(session: &Session, input: usize, name: &str) -> Result<EntrySelection> {
-    Ok(EntrySelection {
-        input: input as u64,
-        symbol: symbol(&session.inventory, input, name)?.id.clone(),
-    })
+pub fn select(session: &Session, input: usize, name: &str) -> Result<SymbolId> {
+    Ok(symbol(&session.inventory, input, name)?.id.clone())
 }
 
 impl PhyImage {
@@ -199,9 +194,9 @@ impl PhyImage {
                 layout().phy_param_bytes
             )));
         }
-        let (vendor, production) = session.targets(&linked.image)?;
+        let (vendor, production) = session.targets(&linked.manifest.elf)?;
         Ok(Self {
-            image: linked.image.clone(),
+            image: linked.manifest.elf.clone(),
             image_object: ObjectId {
                 artifact: linked.manifest.elf.clone(),
                 location: ObjectLocation::Standalone,
@@ -514,22 +509,14 @@ impl PhyImage {
     /// Exact image bytes at a linked address, checked against the source identity.
     pub fn image_data(&self, name: &str, address: u32, length: u64) -> Result<Vec<u8>> {
         let request = blobray_domain::DataRequest {
-            occurrence: blobray_domain::Occurrence {
-                revision: self.revision.clone(),
-                source: FunctionSource::Image {
-                    image: self.image.clone(),
-                },
-                object: self.image_object.clone(),
-                symbol: None,
-            },
+            object: self.image_object.clone(),
+            symbol: None,
             ranges: vec![DataSelector::Image {
                 address: u64::from(address),
                 length,
             }],
-            analyses: vec![],
-            pointer_table: None,
         };
-        self.session.data(name, &request, &self.run.join(name))
+        Ok(self.session.data(name, &request)?.bytes)
     }
 
     /// Run the real ROM callback installer with the captured ROM table pointer.

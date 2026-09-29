@@ -1,5 +1,5 @@
 use super::*;
-use blobray_application::LinkMember;
+use blobray_application::linking::LinkMember;
 use records::Parser;
 #[derive(Default)]
 struct Sink(Vec<LinkObservation>);
@@ -11,23 +11,22 @@ impl LinkOutputSink for Sink {
         self.0.push(r);
         Ok(())
     }
-    fn elf_file(&mut self, _: TemporaryFile) -> Result<()> {
+    fn elf(&mut self, _: Vec<u8>) -> Result<()> {
         Ok(())
+    }
+}
+fn object(alias: &str) -> ObjectId {
+    ObjectId {
+        artifact: ArtifactId::of_bytes(alias.as_bytes()),
+        location: ObjectLocation::Standalone,
     }
 }
 fn members() -> Vec<LinkMember> {
     ["root.o", "helper.o"]
         .into_iter()
-        .enumerate()
-        .map(|(i, alias)| LinkMember {
+        .map(|alias| LinkMember {
             alias: alias.into(),
-            occurrence: LinkObject {
-                input: i as u64,
-                object: ObjectId {
-                    artifact: ArtifactId::of_bytes(alias.as_bytes()),
-                    location: ObjectLocation::Standalone,
-                },
-            },
+            object: object(alias),
         })
         .collect()
 }
@@ -78,10 +77,10 @@ fn lld_symbols_cannot_impersonate_input_sections_and_extraction_is_typed() {
     assert!(matches!(
         &sink.0[1],
         LinkObservation::ArchiveExtraction {
-            referring: Some(LinkObject { input: 0, .. }),
-            object: LinkObject { input: 1, .. },
+            referring: Some(referring),
+            object: extracted,
             ..
-        }
+        } if referring == &object("root.o") && extracted == &object("helper.o")
     ));
     assert!(lines(&mut parser, LinkOutput::Extraction, b"broken\n", &mut sink).is_err());
     assert!(

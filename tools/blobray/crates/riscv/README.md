@@ -2,7 +2,7 @@
 
 Owns the `FunctionDecoder` and `FunctionSemantics` implementations over pinned rv-asm 0.2.1 and RISC-V
 relocation interpretation. It receives bytes and structural facts, never a
-project, archive path or publication capability. Unsupported encodings remain
+archive path or loader capability. Unsupported encodings remain
 explicit gaps.
 
 ESP-IDF builds the ESP32-S31 for `rv32imafc_zba_zbb_zbs_zcb_zcmp_zcmt`. The
@@ -42,13 +42,8 @@ for any address and for code that later changes. The backend cannot select image
 memory regions, choose models or publish a verdict. See the
 [concrete profile](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
-`PointerDecoder` provides the `rv32-absolute-rela/1` profile: NONE writes nothing;
-R_RISCV_32 RELA supplies absolute 32-bit symbol-plus-addend semantics. Other
-relocations remain unsupported for pointer interpretation. This port grants no
-loader, project, artifact or allocator authority.
-
 The semantic identity includes typed fence mode/predecessor/successor
-sets. Static trace extraction consumes the saved fence record; it never parses
+sets. Analysis consumes the typed fence record; it never parses
 instruction display strings. Concrete execution retains its own supported fence-mode
 check and reports unsupported modes explicitly.
 

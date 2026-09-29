@@ -44,10 +44,8 @@ pub fn run(context: &Context) -> Result<()> {
         "next",
         "crates/domain",
         "crates/artifacts",
-        "crates/store",
         "crates/application",
         "crates/analysis",
-        "crates/knowledge",
         "crates/verification",
         "crates/riscv",
     ];

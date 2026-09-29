@@ -332,7 +332,7 @@ fn in_process_verification_needs_symbol_executables_and_one_executable_per_sourc
     symbolic.cases[0].relation = Some(fixture_relation(false));
     for (request, executables, reason) in [
         (&symbolic, sources, "goal symbol"),
-        (&request, &[][..], "a target executable that was not given"),
+        (&request, &[][..], "an executable that was not given"),
     ] {
         let error = app::in_process::verify(
             &app::in_process::InProcessComparison {

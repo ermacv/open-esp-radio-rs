@@ -10,8 +10,8 @@ Execution runs inside the calling process through
 [`blobray_application::in_process`](#in-process-verification): the caller
 supplies a request, the ELF bytes of its targets' sources and the effect
 contracts and layout projections its relations select, and receives the
-records, the aggregate verdict and completeness in memory. No project, content
-store, journal or CLI command participates, and nothing is retained.
+records, the aggregate verdict and completeness in memory. No CLI command
+participates, and nothing is retained.
 
 A request without a replacement executes one implementation; a comparison
 supplies both and an explicit binding class. A request has the following shape
@@ -502,8 +502,7 @@ contracts and layout projections its relations select. Those are reviewed
 outside Blobray: `effect_contract_id` and `projection_id` give the identity a relation selects them by, the
 SHA-256 of their canonical JSON encoding, and `verify` rejects a selection whose
 content it was not given. Records, the aggregate verdict and completeness are
-returned in memory: no project, content store, journal or run record
-participates, and nothing is retained. A symbol goal resolves in the given
+returned in memory, and nothing is retained. A symbol goal resolves in the given
 executable whose content is its object, to a defined code symbol of its static
 symbol table. `in_process::coverage` reports the
 [vendor coverage](#code-coverage-of-root-closures) of such results under

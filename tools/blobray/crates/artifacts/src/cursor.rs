@@ -347,7 +347,6 @@ impl<'a> MemberIndex<'a> {
             if member.ordinal != ranges.len() as u64 {
                 return Err(malformed("archive ordinal discontinuity"));
             }
-            c.measure(WorkMetric::ArchiveEntries, 1);
             ranges.push(member.payload, c.position())?;
         }
         Ok(Self {

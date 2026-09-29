@@ -40,15 +40,19 @@ impl Executable {
     }
 }
 
-/// Checkpoints between wall-clock deadline checks.
-const DEADLINE_INTERVAL: u32 = 4096;
+/// Checkpoints between wall-clock deadline checks: rare enough to stay off
+/// the interpreter's cost, frequent enough that waiting on an external tool,
+/// one checkpoint per bounded poll, notices the deadline within seconds.
+const DEADLINE_INTERVAL: u32 = 256;
 
-/// Work-unit and wall-clock limits of one in-process operation.
+/// Work-unit and wall-clock limits of one in-process operation, and the
+/// position it reached, which a working-memory failure reports.
 pub struct Limits {
     units: u64,
     limit: u64,
     deadline: std::time::Instant,
     checks: u32,
+    position: RunPosition,
 }
 impl Limits {
     pub fn new(max_work_units: u64, timeout: std::time::Duration) -> Self {
@@ -57,10 +61,17 @@ impl Limits {
             limit: max_work_units,
             deadline: std::time::Instant::now() + timeout,
             checks: 0,
+            position: RunPosition::default(),
         }
     }
 }
 impl RunControl for Limits {
+    fn position(&self) -> RunPosition {
+        self.position
+    }
+    fn set_position(&mut self, position: RunPosition) {
+        self.position = position;
+    }
     fn checkpoint(&mut self, units: u64) -> Result<()> {
         self.units = self.units.saturating_add(units);
         if self.units > self.limit {
@@ -82,10 +93,12 @@ impl RunControl for Limits {
 
 /// The executable among `executables` whose content is `id`.
 pub(crate) fn find<'e>(executables: &'e [Executable], id: &ArtifactId) -> Result<&'e Executable> {
-    executables
-        .iter()
-        .find(|e| e.id == *id)
-        .ok_or_else(|| unsupported("a target executable that was not given"))
+    executables.iter().find(|e| e.id == *id).ok_or_else(|| {
+        Error::new(
+            ErrorCode::InvalidRequest,
+            "the request names an executable that was not given",
+        )
+    })
 }
 
 fn digest(value: &impl serde::Serialize) -> Result<ArtifactId> {

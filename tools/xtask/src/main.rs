@@ -68,9 +68,6 @@ enum Task {
         /// Linker the scenarios prepare images with.
         #[arg(long, default_value = "ld.lld")]
         linker: std::path::PathBuf,
-        /// Resource-limit mode of the scenario runs.
-        #[arg(long, default_value = "watchdog")]
-        limit_mode: String,
         /// Ignored output root of the scenario runs.
         #[arg(long, default_value = "target/blobray-research/evidence")]
         output: std::path::PathBuf,
@@ -336,7 +333,6 @@ fn run() -> Result<std::process::ExitCode> {
         Task::Evidence {
             chip,
             linker,
-            limit_mode,
             output,
             check,
             changed_since,
@@ -353,11 +349,10 @@ fn run() -> Result<std::process::ExitCode> {
                     scenarios,
                     changed_since,
                     linker,
-                    limit_mode,
                     output,
                 );
             }
-            return oer_xtask::evidence::run(&ctx, &chip, scenarios, linker, limit_mode, output);
+            return oer_xtask::evidence::run(&ctx, &chip, scenarios, linker, output);
         }
         Task::VendorProvenance {
             chip,

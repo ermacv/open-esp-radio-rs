@@ -1,140 +1,83 @@
 # Investigation workflows
 
 The following profiles define current support; a use case missing here is not
-provided. Blobray has no general equivalence proof, TUI, cache, pruning,
-provider registry, or cross-revision correspondence or rebase. The
+provided. Blobray has no general equivalence proof, TUI, project repository,
+cache, provider registry, or correspondence between library versions. The
 [command reference](../../next/README.md) owns syntax and format versions.
 
 | Scenario | Status and boundary |
 | --- | --- |
-| Import → inventory → reopen without originals | Implemented, partial inventory remains explicit |
-| Automatic whole-library or saved-plan investigation | Implemented, one application run and atomic publication |
-| Link PHY entry with explicit ROM companions → analysis | Limited RV32 integer static profile, unsupported semantics remain gaps |
-| Saved MMIO/mask discovery → physical catalogue → review → source-model publication | Implemented; Next evidence and source-owned hardware acceptance remain separate |
+| Inventory of an archive or ELF | Implemented in process; partial inventory remains explicit |
+| Whole-library function analysis | Implemented in process; blocked functions and gaps are outcomes |
+| Library register accesses → review → source-model publication | Implemented; Blobray observations and source-owned hardware acceptance remain separate |
+| Link a PHY entry with explicit ROM companions → analysis | Limited RV32 integer static profile, unsupported semantics remain gaps |
+| Final-image target audit | Implemented for resolved static transfers |
 | Execute / compare implementations in process | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
 | Captured PHY I2C → compiled-production comparison | [Native real scenario](../../../../verification/esp32s31/README.md#captured-i2c-command-memory-comparison); 45 command-memory writes, descriptor/no-op leaves and both-host byte/field/reset transport under explicit bounded peripheral responses; independent MATCH/DIFF/INCOMPLETE expectations, no physical timing or RF claim |
 | Current PHY calibration leaves → compiled-production comparison | [Finite native matrix](../../../../verification/esp32s31/README.md#current-calibration-leaves); TX-gain restore, forced gain, temperature conversion and post-init AGC with explicit domains and independent writes/returns; enclosing calibration remains outside this profile |
-| Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
-| Exact data ranges → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
-
-Automatic investigation belongs to application. Planning and execution share one
-original deadline and work/memory/disk budget. Failure before
-publication leaves prior results and current selections intact.
+| Exact data ranges → bytes with provenance | Implemented for captured RV32 ELF bytes; relocations are counted, never applied |
 
 ### Contract verification links
 
 | Contract | Implementation | Regression coverage |
 | --- | --- | --- |
 | Failed record growth releases the incoming payload without losing old records | [record memory](../../crates/domain/src/record_memory.rs) | `failed_record_growth_rolls_back_payload_and_allows_reuse` in the same module |
-| Captured data observations survive source removal | [data operations](../../crates/application/src/data.rs) | [data regression tests](../../next/tests/functions/data.rs) |
-| Partial inventory is partial in summary and handle | [query](../../crates/application/src/query.rs) | `partial_inventory_has_the_same_assessment_in_handle_and_output` in [memory tests](../../next/tests/memory.rs) |
-| One object preparation for multiple functions; linear archive indexing | [investigations](../../crates/application/src/investigations.rs) | `automatic_investigation_prepares_each_object_once_and_publishes_one_run`, `archive_lookup_work_grows_with_members_without_restarting_the_cursor` in [investigation tests](../../next/tests/functions/investigations.rs) |
-| Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [function tests](../../next/tests/functions.rs) |
-| Original budget and atomic publication span automatic planning | [automatic investigation](../../crates/application/src/automatic.rs), [supervisor](../../crates/application/src/jobs.rs) | `automatic_planning_and_execution_share_exhaustion_and_publication_boundary` in [investigation tests](../../next/tests/functions/investigations.rs) |
-| Unsupported journal and project formats remain untouched | [store](../../crates/store/src/jobs.rs) | `incompatible_journals_are_rejected_by_all_readers_without_mutation`, `older_project_formats_are_rejected_without_mutation` in [store tests](../../crates/store/src/tests.rs) |
-| Phase/counter accounting continues through retention | [resources](../../crates/application/src/resources.rs) | `fixed_measurements_and_phase_costs_survive_worker_handoff` in the same module |
+| Inventory keeps repeated members distinct and broken framing visible | [captured executables](../../crates/application/src/captured.rs) | [inventory tests](../../next/tests/inventory.rs) |
+| Exact data ranges keep their provenance and reject unmapped ranges | [data export](../../crates/application/src/data.rs) | [data tests](../../next/tests/data.rs) |
+| Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [analysis tests](../../next/tests/analysis.rs) |
+| A memory failure names the phase it happened in | [in-process limits](../../crates/application/src/in_process.rs) | `value_state_capacity_failure_names_its_phase` in [analysis tests](../../next/tests/analysis.rs) |
+| Links validate every linker claim and report blockers | [linking](../../crates/application/src/linking.rs) | [linking tests](../../next/tests/linking.rs) |
 
 ## Workflow contract map
 
-These routes define Blobray's user-facing responsibilities.
-An arrow transfers a typed request/result or resource lease, not a database
-connection. Existing CLI commands are not the authority for these boundaries.
+These routes define Blobray's user-facing responsibilities. An arrow transfers
+a typed request or result, never a path the operation reopens.
 
-| User question or action | Operation route and retained result | Governing contract | Acceptance scenarios |
+| User question or action | Operation route | Governing contract | Acceptance scenarios |
 | --- | --- | --- | --- |
-| What is in these inputs, including missing/unsupported parts? | import → store capture → artifacts inventory → revision → read query | [Import](contracts.md#import-and-revision-capture), [identity](contracts.md#identity-and-provenance) | A1, A3, A4, A6, A8, R5, R7 |
-| What does this occurrence do? | snapshot → plan → analysis with ISA ports → validated publication → query | [Handles](contracts.md#handles-and-capability-boundaries), [analysis ports](contracts.md#analysis-and-verification-ports) | A7, I1, I3, R1, R8, R9 |
-| Can this archive entry be executed under this environment? | snapshot → link plan → host tool → prepared image → execution session | [Image preparation](contracts.md#artifact-inspection-and-image-preparation) | A2, A5, A7, J1 |
-| Does the compiled Rust implementation satisfy the declared comparison? | identified pair → prepared images → sessions → verifier → retained evidence | [Comparison](contracts.md#analysis-and-verification-ports) | V1, V2, V3, A5 |
-| Can I cancel, recover or move the project? | supervisor or explicit recovery/backup → retained records and leased closure → validated outcome | [Jobs](contracts.md#jobs-cancellation-and-failures), [retention](contracts.md#durable-repository) | J1–J5, P1, P4–P6, M2 |
+| What is in these inputs, including missing/unsupported parts? | executable → artifacts inventory | [Artifact inspection](contracts.md#artifact-inspection), [identity](contracts.md#identity) | A1, A3, A4 |
+| What does this library's code do? | executables → library analysis with ISA ports → outcomes | [Analysis ports](contracts.md#analysis-and-verification-ports) | A7, I1, R1, R9 |
+| Can this archive entry be executed under this environment? | executables → link request → host linker → linked image → execution session | [Image linking](contracts.md#image-linking) | A2, A5, A7, J1 |
+| Does the compiled Rust implementation satisfy the declared comparison? | identified pair → linked images → sessions → verifier → records | [Comparison](contracts.md#analysis-and-verification-ports) | V1, V2, V3, A5 |
 
 A workflow requires all its relevant authority, resource and coverage contracts,
 not just its successful path. Resource containment does not make a wrong symbol
-association correct; an atomic publication does not validate its scientific claim.
+association correct.
 
-## Start an investigation
+## Inspect inputs
 
-The researcher supplies ordered vendor libraries or linked images, the target
-and ABI, optional companion images, and selected chip/ecosystem interpretation
-inputs. A generic investigation can begin without reviewed function/interface
-packs or a configured Rust replacement.
+The caller supplies vendor libraries or linked images as bytes. Inventory
+reports every object, member ordinal, symbol, section, relocation, unsupported
+content and missing thin member. A malformed member is an inventory outcome; it
+cannot disappear from archive-wide coverage. A thin archive's members are given
+as executables of their own.
 
-1. Import copies the inputs into private repository storage and reports their
-   identities, roles and capture diagnostics. Original paths remain provenance.
-2. The researcher inspects the physical inventory: all objects, member ordinals,
-   symbols, sections, relocations, unsupported content and missing thin members.
-3. The application records an immutable revision of the selected input set and
-   configuration. Missing declarations remain visible research obligations.
-4. The researcher selects a question and scope: an occurrence, entry closure,
-   interface, register interaction or comparison scenario.
-5. Planning reports required operations, exact inputs, reusable computations,
-   missing prerequisites and resource budget before execution.
+## Analyze a library
 
-Success means that the revision can still be inspected after the original files
-are moved or removed. A missing required artifact blocks the dependent operation
-while inspection of available inputs remains possible. A malformed member is an
-inventory outcome; it cannot disappear from archive-wide coverage counts.
+Library analysis visits every function symbol of an executable section of
+every given object and reports, per function, its records, control-flow
+coverage and value-semantics summary, or why it is blocked. Code no function
+covers is reported as a gap. Register accesses are the memory addresses these
+functions access, filtered by optional ranges. A repeated request recomputes
+its result; no computation is reused.
 
-The initial review documents can be created from observations when useful, but
-their existence is not a prerequisite for structural inspection. Reviewed chip
-facts and executable models remain optional, explicit interpretation inputs.
+## Link and execute an archive entry
 
-## Analyze and inspect results
-
-Starting a plan returns a run handle. The client receives bounded progress and
-can inspect the selected revision concurrently. Results are attached to the
-revision that the plan captured, even when newer working files exist.
-
-The result identifies analyzed scope, observations, hypotheses, blockers,
-coverage and provenance. An investigator can navigate from a semantic subject
-to its exact physical occurrences and from a finding to the bytes and producer
-that support it. Queries use a retained snapshot and do not trigger analysis,
-repair or publication as a hidden side effect.
-
-Publication makes the completed result bundle visible in one metadata commit.
-Switching to it is an explicit frontend action or completion handling for the
-same selected revision. An older snapshot remains readable. A failed run leaves
-the previous completed publication available and explains which operation failed.
-
-A repeated request recomputes its result; no computation is reused.
-
-## Build and execute an archive entry
-
-The caller selects the exact entry occurrence or resolves an ambiguous name from
-the physical candidates. Inventory and candidate relationships remain available
-before a link plan exists. Supplying several libraries does not itself prove
-their order or selection in an original firmware build.
-
-The caller chooses an existing linked image or an explicit synthetic link recipe.
-The recipe records library order, roots, companion definitions, target/ABI,
-linker identity and options. The application prepares an image once and passes
-the resulting image/mapping to execution or comparison.
-
-Companion data and call definitions participate in image preparation. Indirect
-callback roots are explicit inputs. Unresolved relocations, conflicting layouts
-and unknown source mappings remain visible and block claims that require them.
-There is no path where a late companion attachment silently changes the meaning
-of an already-prepared image.
-
-Success means the image and executed recipe are retained with the result, the
-selected source occurrences can be traced where known, and all execution entry
-points apply the same preparation rules. Synthetic placement is labeled in every
-export that exposes addresses.
+The caller selects the exact entry symbol by `SymbolId`. Supplying several
+libraries does not prove their order or selection in an original firmware
+build. The link request records inputs, roots, companions, layout and the
+names left absent; the linker identity and contract are recorded in the image
+manifest. Companion data and call definitions participate in the link.
+Indirect callback roots are explicit inputs. Unresolved relocations, conflicting
+layouts and unknown source mappings are blockers. Synthetic placement is
+labeled in the manifest.
 
 ## Recover a table or coefficient
 
-The researcher selects an exact occurrence and sized symbol or explicit section/
-image range. Application borrows all ranges from one artifacts-owned prepared
-object and streams captured bytes, relocations and supporting analysis records.
-The selected analyses retain their original scope and gaps. No hidden analysis
-or preferred resolution of duplicate names occurs.
-
-A pointer-table request adds an explicit count and stride; relocations stay
-retained and are never applied. Writable bytes describe initialization, not
-runtime state. The observation is evidence, not an accepted interpretation.
-
-Success means an export preserves the exact object, data ranges, supporting
-analysis records and provenance after source deletion, move and restore.
+The caller selects an exact object and sized symbol or explicit section/image
+range. Export returns the captured bytes and, per span, the relocation counts
+that constrain their interpretation. Writable bytes describe initialization,
+not runtime state. The observation is evidence, not an accepted interpretation.
 Required recovered hardware tables and calibration coefficients retain source
 identity, purpose, representation and applicability under the
 [source policy](../../../../docs/source-policy.md). Their binary origin does not
@@ -142,228 +85,91 @@ justify dropping them or substituting another profile.
 
 ## Compare a Rust replacement
 
-The caller selects identified compiled vendor and Rust artifacts, their entry
-occurrences, explicit environment/scenario inputs, a comparison relation and the
+The caller selects identified compiled vendor and Rust executables, their entry
+symbols, explicit environment/scenario inputs, a comparison relation and the
 requested claim scope. A generated reference, shared production core and exact
 production entry remain different evidence classes.
 
-The application prepares both images through the common image operation and
-creates the declared execution sessions. Cold phases start fresh; warm successors
-retain only session-owned state. Each invocation declares its own entry. Executable models
-record their selected implementation and applicability in the evidence.
+The comparison creates the declared execution sessions. Cold phases start
+fresh; warm successors retain only session-owned state. Each invocation
+declares its own entry. Executable models record their selected implementation
+and applicability in the records.
 
 Verification compares observations and coverage. `MATCH` answers the declared
 relation over its stated scope; `DIFF` retains the counterexample; `INCOMPLETE`
 retains missing obligations. None of these outcomes is silently relabeled a
-product readiness result. Clients can inspect valid incomplete research and
-choose the next question without editing a status file to make it load.
-
-Success means the retained evidence names both compiled implementations, scenario,
-models, producer, comparison policy, verdict and claim ceiling. The independent
-qualification evaluator decides whether that evidence is sufficient for its own
-requirements.
+product readiness result. The records name both compiled implementations,
+scenario, models, producer, comparison policy, verdict and claim ceiling; the
+independent qualification evaluator decides whether that evidence is
+sufficient for its own requirements.
 
 ## Update a vendor library or interpretation input
 
-Importing changed libraries creates a new revision with its own physical
-identities. Reviewed contracts and register models change through Git review.
-ABI/model selections belong to analysis or execution recipes; changing them does
-not manufacture a new source revision when captured inputs are unchanged.
-No correspondence, lineage or automatic transfer of research between
-revisions exists: each revision's research stands on its own, and an old
-result can still be opened explicitly without being shown as current proof.
-
-## Cancel, close and recover
-
-Cancellation is a request to the application supervisor, independent of whether
-it comes from CLI signals or an embedded client. The supervisor stops new
-work, cooperatively cancels workers, terminates owned child processes where
-necessary, reaps them and releases staging within its shutdown contract.
-
-An operation cancelled before commit does not advance publication. An operation
-that already committed reports completion. Closing the application's frontend
-does not detach a worker whose resource lifetime has no remaining owner.
-
-After a crash, opening the repository reconciles abandoned operations before
-admitting a new writer. Read-only inspection never performs that reconciliation
-implicitly; it either reads a committed snapshot or returns an explicit recovery
-requirement.
-
-Next query/Plan admission reconciles its private runtime root independently of
-project recovery: dead owner, inactive lease and empty containment are all
-required before deleting an identified workspace. Live or unverifiable entries
-remain with bounded diagnostics. This path cannot delete saved Plans, exports or
-project revisions. The [temporary storage contract](../../next/reference/resources-storage/README.md#temporary-storage-and-crash-cleanup)
-also governs aggregate admission and retained-result lifetime.
-
-Disk exhaustion reports protected data and the failed operation. Corrupt retained
-evidence reports an integrity failure and supports restoration from a known backup;
-it is not silently regenerated under today's analyzer.
-
-Success means a previous coherent publication remains accessible, no interrupted
-run appears complete, and recovery does not require deleting unknown database,
-lock or pack files by hand.
-
-## Export, back up and move an investigation
-
-Research export and private backup have separate purposes. A research export
-contains selected evidence and provenance; it does not include private
-binary bytes unless the caller explicitly selects a private bundle. A complete
-backup includes retained revisions, their source/evidence closure and a manifest
-of object identities. Neither operation uploads data implicitly.
-
-Backup reads a fixed snapshot and retains its objects while streaming them. The
-completed bundle is verified before it becomes the backup destination. Restore
-imports into a separate destination, validates every referenced object and only
-then exposes the restored project. A failed restore leaves the source and any
-existing destination project intact.
-
-Project and occurrence identities survive moving the repository. Origin paths
-remain descriptive provenance and need not exist on the destination machine.
-Reading results requires a supported record schema. Re-execution additionally
-requires the recorded tool/model implementations and reports missing dependencies.
-
-The [register tool](../../../registers/README.md) publishes SVD/PAC from reviewed
-hardware models, not from an investigation; Blobray generates no code.
+A changed library is different content with its own identities. Reviewed
+contracts and register models change through Git review. No correspondence or
+automatic transfer of research between library versions exists.
 
 ## Acceptance scenarios
 
 Each scenario states observable behavior Blobray guarantees; the table is not a
-record of tests already run. Synthetic ELF/AR fixtures exercise contracts without vendor
-inputs. Real vendor reproductions remain private and use the resource-limited
-host. Tests assert observable behavior and ownership rather than internal file
-layout or generated register constants.
+record of tests already run. Synthetic ELF/AR fixtures exercise contracts
+without vendor inputs. Tests assert observable behavior and ownership rather
+than internal layout or generated register constants.
 
 | ID | Scenario | Required observable result | Responsible boundary |
 | --- | --- | --- | --- |
-| A1 | Two archive members have equal names and bytes; symbols repeat across tables | Every occurrence remains selectable; unqualified selection reports ambiguity | artifacts, domain |
-| A2 | Weak/common definitions, duplicate exports, library reordering and cyclic archive references | Inventory remains unchanged; selected image and recipe reflect the actual chosen linker semantics | image preparation |
-| A3 | Thin archive with an external member; then delete its original directory | Imported member remains usable; an uncaptured member is an explicit gap | import, artifacts |
+| A1 | Two archive members have equal names and bytes; symbols repeat across tables | Every occurrence remains selectable by its ordinal | artifacts, domain |
+| A2 | Weak/common definitions, duplicate exports, library reordering and cyclic archive references | Inventory remains unchanged; the linked image and manifest reflect the actual linker semantics | linking |
+| A3 | Thin archive with external members | Every member is reported with a missing-member diagnostic; the caller gives the members themselves | artifacts |
 | A4 | Mixed or malformed archive members | Every payload occurrence has an outcome; supported subsets cannot claim complete archive coverage | artifacts, analysis |
-| A5 | Companion supplies data relocation and callback definitions | Every consumer prepares equivalent images for the same recipe | application, backend |
-| A6 | Source changes during import or after revision creation | Detectable capture change/expected-digest mismatch rejects capture; committed revision always uses its imported bytes | import, store |
+| A5 | Companion supplies data relocation and callback definitions | Every consumer links equivalent images for the same request | application, backend |
 | A7 | Required source mapping or relocation is unknown | Affected claim is incomplete, never inferred from an equal label or placeholder value | artifacts, verification |
-| A8 | Import unchanged thin-container bytes with a changed external member | Old and new snapshots retain their own payload bindings; equal occurrence selectors do not reuse stale analysis or transfer evidence | domain, planning, store |
-| P1 | Inject failure before payload sync, before metadata commit and after commit | Readers see the previous or new complete publication; no mixed result bundle | store |
-| P4 | Exhaust disk quota with protected content | Write fails without evicting accepted evidence or replacing current publication | store |
-| P5 | Export files are deleted or changed | Snapshot queries still read retained content; export can be recreated | application, store |
-| P6 | Exhaust temporary-output quota or disk while spooling a query, manifest or image | Typed failure, prior publication intact, owned residue identified, no eviction of retained evidence | application, store, host |
-| J1 | Cancel CPU analysis, a blocked external tool and a comparison | Bounded cleanup, descendant reaping, no unmanaged worker or false publication | supervisor, host |
-| J2 | Race cancellation or project revision change with commit | One explicit terminal outcome; stale run cannot replace a newer revision's current result | application, store |
-| J3 | Kill a writer and restart | Interrupted attempt is abandoned; committed evidence survives | recovery |
-| J4 | Drop all client handles or close the frontend during import, query or execution | Supervisor retains ownership through terminal cleanup; shutdown rejects new work and does not detach workers | application, host |
-| J5 | Query succeeds but destination fails; cancellation races with commit admission | Delivery failure remains distinct from computation; accepted cancellation prevents commit and rejected cancellation reports actual commit outcome | application, store, host |
-| R1 | Exhaust work in an ELF table, member iteration or long name | Typed resource failure retains exact last context; current is unchanged | application, artifacts |
-| R2 | Cancel or expire deadline inside a heavy operation | Cooperative stop, with forced cleanup for uncooperative code; budget never restarts between phases | application, host |
-| R3 | Worker aborts, receives a signal, hits cgroup OOM or floods stderr | Bounded diagnostics distinguish observations from inferred causes | host |
-| R4 | Cleanup fails after an earlier failure or completed commit | Primary cause and committed success survive; cleanup is secondary | application, store |
-| R5 | Reopen large inventory or run doctor under a small working-memory budget | Bounded read-only processing without hidden writes or partial success | store, application |
+| J1 | A linker blocks or exceeds its deadline | The operation fails; the linker process is killed and reaped and the workspace removed | linking, host |
+| R1 | Exhaust work in an ELF table, member iteration or long name | Typed resource failure retains the last position | application, artifacts |
 | R6 | Exhaust scoped scratch, unwind a phase, then start another | Typed capacity failure; no escaped reference or stale ID; temporary capacity is reusable | computing module |
-| R7 | Process many thin members and a large result | Input leases and temporary memory end when no longer needed; staged output avoids aggregate RAM growth | application, store, artifacts |
 | R8 | Repeat with the same work policy and budget; overflow a counter | Deterministic accounting and checked arithmetic; no budget reset or wraparound | application |
 | R9 | Cyclic CFG/call graph or nonconvergent dataflow | Program traversal is iterative and bounded with declared completeness | analysis |
-| R10 | A sink retains records, a phase grows a buffer, or a child worker starts | Simultaneous allocations and result lifetimes remain charged; capacity/work cannot be duplicated or reset | consumer, application |
-| R11 | Exhaust computation capacity while emitting diagnostics; request a claimed allocation-controlled path | Fixed-size failure remains available; only independently checked paths claim absence of hidden allocation | computing module, host |
+| R10 | A sink retains records or a phase grows a buffer | Simultaneous allocations and result lifetimes remain charged | consumer, application |
 | V1 | Missing behavior, known difference and fully discharged comparison | Typed INCOMPLETE, DIFF and MATCH with their coverage and claim scopes | verification |
 | V2 | Generated reference or model stands in for production behavior | Evidence keeps its limited class; exact production equivalence is not asserted | verification |
 | V3 | Stateful phase is incomplete, or independent cases run in a different order | Dependent phases cannot consume unknown state; independent cases have fresh session state and no cross-case leakage | executor, verification |
-| I1 | Issue equivalent requests through API and CLI/JSON | Same selection, revision, results and diagnostics; only presentation differs | application, frontends |
-| I3 | Query an existing snapshot | No hidden analysis, repair, migration or writer acquisition | query interface |
-| M2 | Backup, move and restore; original input paths are unavailable | Retained closure verifies and remains readable | store, application |
+| I1 | Issue equivalent requests through API and CLI/JSON | Same selection, results and diagnostics; only presentation differs | application, frontends |
 | B1 | Build generic Blobray without open-radio-specific code | No generic dependency on production code, chip hosts or qualification policy | crate dependency checks |
-| B2 | Attempt a forbidden dependency or mutation through a read handle | Dependency checks or type boundary reject it | architecture and API checks |
-| B3 | Pass a snapshot/analysis port to code attempting writer acquisition or tool discovery | Public capabilities do not expose those operations; compile-fail API checks reject authority escalation | application, domain, store |
-| B4 | Start a planned operation after inputs, implementations or the current selection change | It uses retained inputs and identified implementations or returns explicit unavailability; no implicit replanning or fallback | application, host |
-
-## Current inspection reports
-
-**Implemented:** `coverage --id PUBLICATION` joins the immutable membership stream
-with captured inventory, retaining only one object's ranges at a time. Aliases and
-overlapping extents count once. The publication's selected-function completeness
-and executable intervals outside that selection are separate observations.
-`storage-usage` reports accumulated logical storage without changing the project.
-
-**Implemented within the current format:** backup/restore, project move, reopening
-without source files, and recreating data exports. Other database or
-journal versions are rejected unchanged. No old-reader packaging, upgrade or
-compatibility reader is provided. Exports retain bytes and provenance; they do not
-promise automatic import into another format.
+| B2 | Attempt a forbidden crate dependency | Dependency checks reject it | architecture checks |
 
 ## Contract enforcement
 
 Crate-graph checks enforce dependency direction and standalone composition. They
-cannot establish module authority, lifetime safety or recovery behavior. Compile-
-fail API tests cover forbidden capabilities and escaping scratch/image borrows;
-behavioral tests cover publication, cancellation, retention and claim semantics.
-Failure injection targets capture, output staging, payload durability, commit
-admission, metadata commit and terminal cleanup separately.
+cannot establish module authority or lifetime safety; behavioral tests cover
+resource failures and claim semantics.
 
 Capability tests establish what the supplied API permits, not an OS security
 sandbox: code linked with `std` can still attempt ambient filesystem or process
 access. Source/dependency review must reject such hidden access in computation
-modules; host containment covers resource failures, not arbitrary hostile plugins.
+modules.
 
-Tests use synthetic AR/ELF inputs for structural and lifecycle contracts. A large
-unsupported payload tests streaming inspection, not an ELF allocation limit;
-memory-limit checks need a supported object that exercises the actual workspace.
-Nested/compressed formats not supported by a parser test explicit coverage gaps,
-not nonexistent decompression behavior. Real vendor cases supplement these tests
-without replacing them or entering tracked fixtures.
-
-An operation is conforming only when its public API, every frontend adapter and
-embedded entry point meet the same semantic contract. Lower-level streaming APIs
-publish their caller obligations explicitly. A completed import/inventory path
-does not establish readiness of linking, review, retention or comparison.
-
-The design is complete only when each operation above maps to a component and a
-resource owner in the linked contracts. Implementation acceptance additionally
-requires these behavioral tests, published API/schema documentation, standalone
-composition checks and relevant repository architecture checks. Documentation
-validation alone establishes neither those runtime guarantees nor hardware
-qualification.
-
+Tests use synthetic AR/ELF inputs for structural contracts. Nested/compressed
+formats not supported by a parser test explicit coverage gaps, not nonexistent
+decompression behavior. Real vendor cases supplement these tests without
+replacing them or entering tracked fixtures. Documentation validation alone
+establishes neither runtime guarantees nor hardware qualification.
 
 ## Register discovery and source publication
 
-Select saved analyses/publications. `registers` reports the selected coverage,
-unknown/alternative addresses, local observations and expression masks. The same API
-exports its complete typed result without reacquiring original binaries. An
+Run `register-accesses` over the libraries. It reports each function's
+observations, unknown/alternative addresses, blocked functions and gaps. An
 instruction access width never becomes physical geometry or hardware behavior.
 
 To publish source, the independent register tool initializes explicit empty
-peripherals or imports retained CMSIS-SVD into an unreviewed native model. A source
+peripherals or imports CMSIS-SVD into an unreviewed native model. A source
 review supplies canonical physical identities, evidence, applicability and hardware
 semantics in reviewed packs. Validation composes those with the selected model,
 memory/ownership and PAC policies, then generates all four outputs. There is no
-automatic Next-to-hardware acceptance or binary-derived write-semantics fallback.
+automatic Blobray-to-hardware acceptance or binary-derived write-semantics fallback.
 See the [source-authoring commands](../../../registers/README.md) and
-[saved register reference](../../next/reference/registers-data/README.md#saved-register-research).
+[library register accesses](../../next/reference/registers-data/README.md#library-register-accesses).
 
-Regression owners are Next `functions/registers.rs` (address filters, partial scope
-and invalid requests), analysis `registers` (mask bounds) and register tool `drafts`
-(initialization/import, explicit review and four-output publication).
-
-## Saved semantic IR build (implemented)
-
-Select frozen publications/analyses, then configure named
-all/prefix/exact-analysis roots and resolved call closure. One application build
-publishes an immutable IR identity that retains the original facts with profile
-membership, partial coverage and unresolved links.
-Deleting origins, moving the project and restoring a backup preserve that identity.
-A successful build means the configured bundle was retained; static-trace exactness
-and concrete execution are separate consumer claims. Details and commands:
-[IR profiles](../../next/reference/ir-traces/README.md#saved-semantic-ir-profiles).
-
-## Static trace comparison (implemented, bounded profile)
-
-Build an IR profile from original local publications, select exact function entries,
-supply explicit register inputs and physical observation ranges, then query `trace`.
-Read the path blockers and exactness independently from operation completion. Compare
-ordered MMIO/fence events only; return/RAM/call relations belong to other profiles.
-Export the result and retain its project backup to reproduce the same trace without
-source binaries. [Static trace scope and assumptions](../../next/reference/ir-traces/README.md#static-observable-traces)
-define MATCH/DIFF/INCOMPLETE and the distinction from concrete execution.
-
+## Concrete execution profiles
 
 The implemented device workflow declares exact ports and applicability in the shared
 execution request, executes cold/warm phases and reads code and model outcomes.

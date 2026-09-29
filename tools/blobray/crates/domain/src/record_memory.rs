@@ -7,19 +7,8 @@ impl AbstractValue {
     pub fn allocated_bytes(&self) -> u64 {
         match self {
             Self::Alternatives { values } => values.allocated_bytes(),
-            Self::ScopedAddress { source, object, .. } => {
-                source.allocated_bytes() + object.artifact.allocated_bytes()
-            }
             Self::Symbol { symbol, .. } => symbol.object.artifact.allocated_bytes(),
             _ => 0,
-        }
-    }
-}
-impl FunctionSource {
-    pub fn allocated_bytes(&self) -> u64 {
-        match self {
-            Self::Image { image } => image.allocated_bytes(),
-            Self::Input { .. } => 0,
         }
     }
 }
@@ -30,17 +19,6 @@ impl Expression {
             Self::Load { address, .. } => address.allocated_bytes(),
             _ => 0,
         }
-    }
-}
-impl FunctionRecipe {
-    pub fn allocated_bytes(&self) -> u64 {
-        self.decoder.capacity() as u64
-            + self.semantics.as_ref().map_or(0, |s| s.capacity() as u64)
-            + self.project.allocated_bytes()
-            + self.revision.allocated_bytes()
-            + self.source.allocated_bytes()
-            + self.selector.object().artifact.allocated_bytes()
-            + self.payload.allocated_bytes()
     }
 }
 impl ReferenceTarget {

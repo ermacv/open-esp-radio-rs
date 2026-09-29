@@ -1,17 +1,22 @@
-//! Captured-input linking. The host supplies tools, never selection or publication policy.
+//! Captured-object linking in process. The host supplies the linker; the
+//! application selects every input, checks every linker claim and keeps the
+//! linked image in memory.
+use crate::captured::visit_members;
+use crate::in_process::{Executable, find};
 use crate::*;
-use blobray_store::{TemporaryBudget, TemporaryFile};
-use std::{
-    io::{Read, Write},
-    sync::{Arc, Mutex},
-};
+use std::path::PathBuf;
 
 pub const LINK_METADATA_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_MEMBERS: usize = 4096;
+/// Blockers one link reports before it stops.
+const MAX_BLOCKERS: usize = 32;
+/// Schema of `ImageManifest`.
+const IMAGE_SCHEMA: u32 = 4;
+mod companions;
 mod evidence;
 mod probe;
 mod proposal;
-pub(crate) use proposal::propose_companions;
+pub use proposal::propose_companions;
 
 #[derive(Clone, Debug)]
 pub enum LinkInput {
@@ -23,7 +28,7 @@ pub enum LinkInput {
 #[derive(Clone, Debug)]
 pub struct LinkMember {
     pub alias: String,
-    pub occurrence: LinkObject,
+    pub object: ObjectId,
 }
 
 /// Treatment of names the selected closure leaves undefined.
@@ -40,7 +45,7 @@ pub struct LinkInvocation<'a> {
     pub executable: &'a Path,
     pub identity: &'a LinkerIdentity,
     pub contract: LinkerContract,
-    pub workspace: &'a LinkWorkspace<'a>,
+    pub workspace: &'a LinkWorkspace,
     pub entry: &'a [u8],
     pub roots: Vec<Vec<u8>>,
     pub forced: Vec<String>,
@@ -51,50 +56,69 @@ pub struct LinkInvocation<'a> {
     pub unresolved: UnresolvedSymbols,
 }
 
-/// Application-owned capacity; Linux adapters cannot allocate unaccounted outputs.
-pub struct LinkWorkspace<'a> {
-    directory: &'a Path,
-    disk: &'a TemporaryBudget,
+/// The private directory of one link and the ELF extent its linker may
+/// write. A workspace made by `new` removes its directory when dropped; a
+/// nested one lives inside it.
+pub struct LinkWorkspace {
+    directory: PathBuf,
+    _owned: Option<tempfile::TempDir>,
     elf_limit: u64,
 }
-impl LinkWorkspace<'_> {
-    pub(crate) fn for_query<'a>(
-        directory: &'a Path,
-        disk: &'a TemporaryBudget,
-        memory: &WorkingMemory,
-    ) -> LinkWorkspace<'a> {
+impl LinkWorkspace {
+    /// A new workspace below `parent`; the ELF may use the working capacity
+    /// `memory` has left beyond the link's metadata.
+    pub fn new(parent: &Path, memory: &WorkingMemory) -> Result<Self> {
         let capacity = memory.observation();
-        LinkWorkspace {
-            directory,
-            disk,
-            elf_limit: capacity
+        Self::within(
+            parent,
+            capacity
                 .limit_bytes
                 .saturating_sub(capacity.reserved_bytes + LINK_METADATA_BYTES),
-        }
+        )
+    }
+    fn within(parent: &Path, elf_limit: u64) -> Result<Self> {
+        let owned = tempfile::Builder::new()
+            .prefix(".link-")
+            .tempdir_in(parent)
+            .map_err(storage_io)?;
+        Ok(Self {
+            directory: owned.path().to_path_buf(),
+            _owned: Some(owned),
+            elf_limit,
+        })
+    }
+    /// A new empty workspace at `path` below this one, with at most
+    /// `elf_limit` bytes of ELF.
+    fn nested(&self, path: &Path, elf_limit: u64) -> Result<Self> {
+        let directory = self.directory().join(path);
+        std::fs::create_dir_all(&directory).map_err(storage_io)?;
+        Ok(Self {
+            directory,
+            _owned: None,
+            elf_limit: elf_limit.min(self.elf_limit),
+        })
     }
     pub fn directory(&self) -> &Path {
-        self.directory
+        &self.directory
     }
-    pub fn temporary(&self) -> Result<TemporaryFile> {
-        self.disk.temporary(self.directory)
-    }
-    pub fn external_elf(&self) -> Result<blobray_store::ExternalOutput> {
+    /// The file a linker writes its ELF into, and the most bytes it may hold.
+    pub fn elf_output(&self) -> Result<ElfOutput> {
         if self.elf_limit == 0 {
             return Err(Error::new(
                 ErrorCode::ResourceLimited,
                 "no working capacity remains for ELF validation",
             ));
         }
-        self.disk
-            .external(&self.directory.join("image.elf"), self.elf_limit)
+        Ok(ElfOutput {
+            path: self.directory().join("image.elf"),
+            maximum: self.elf_limit,
+        })
     }
-    pub fn materialize(&self, name: &str, bytes: &[u8]) -> Result<TemporaryFile> {
+    pub fn materialize(&self, name: &str, bytes: &[u8]) -> Result<()> {
         if name.is_empty() || name.contains('/') || name == "." || name == ".." {
             return Err(invalid("link workspace name must be a single component"));
         }
-        let mut file = self.disk.create(&self.directory.join(name))?;
-        file.write_all(bytes).map_err(storage_io)?;
-        Ok(file)
+        std::fs::write(self.directory().join(name), bytes).map_err(storage_io)
     }
     /// Exercises the actual adapter, then independently validates RV32 output/evidence.
     pub fn probe(
@@ -107,6 +131,32 @@ impl LinkWorkspace<'_> {
         probe::check(self, host, executable, identity, control)
     }
 }
+
+/// The file a linker writes its ELF into.
+pub struct ElfOutput {
+    path: PathBuf,
+    maximum: u64,
+}
+impl ElfOutput {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn maximum(&self) -> u64 {
+        self.maximum
+    }
+    /// The ELF the linker wrote, within the maximum.
+    pub fn finish(self) -> Result<Vec<u8>> {
+        let length = std::fs::metadata(&self.path).map_err(storage_io)?.len();
+        if length > self.maximum {
+            return Err(Error::new(
+                ErrorCode::ResourceLimited,
+                "linker ELF exceeds its admitted extent",
+            ));
+        }
+        std::fs::read(&self.path).map_err(storage_io)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LinkOutput {
     Elf,
@@ -124,14 +174,14 @@ pub trait LinkOutputSink {
     ) -> Result<()>;
     fn observe(&mut self, observation: LinkObservation, control: &mut dyn RunControl)
     -> Result<()>;
-    /// Takes ownership of a reaped, quota-accounted seekable output without copying.
-    fn elf_file(&mut self, file: TemporaryFile) -> Result<()>;
+    /// Takes the ELF a linker wrote to its output file.
+    fn elf(&mut self, bytes: Vec<u8>) -> Result<()>;
 }
 pub trait LinkerHost {
     fn identify(
         &self,
         executable: &Path,
-        workspace: &LinkWorkspace<'_>,
+        workspace: &LinkWorkspace,
         control: &mut dyn RunControl,
     ) -> Result<LinkerIdentity>;
     fn link(
@@ -141,114 +191,7 @@ pub trait LinkerHost {
         control: &mut dyn RunControl,
     ) -> Result<()>;
 }
-pub(crate) struct NoLinker;
-impl LinkerHost for NoLinker {
-    fn identify(
-        &self,
-        _: &Path,
-        _: &LinkWorkspace<'_>,
-        _: &mut dyn RunControl,
-    ) -> Result<LinkerIdentity> {
-        Err(Error::new(
-            ErrorCode::Unavailable,
-            "linker capability was not supplied",
-        ))
-    }
-    fn link(
-        &self,
-        _: &LinkInvocation<'_>,
-        _: &mut dyn LinkOutputSink,
-        _: &mut dyn RunControl,
-    ) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::Unavailable,
-            "linker capability was not supplied",
-        ))
-    }
-}
-#[derive(Clone)]
-pub struct LinkPlan {
-    inner: Arc<LinkPlanInner>,
-}
-struct LinkPlanInner {
-    description: LinkPlanDescription,
-    _output: Mutex<QueryOutput>,
-}
-impl LinkPlan {
-    pub fn from_output(output: QueryOutput) -> Result<Self> {
-        let QuerySummary::LinkPlan { description } = output.summary() else {
-            return Err(invalid("operation did not produce a link plan"));
-        };
-        validate_link_plan(description)?;
-        Ok(Self {
-            inner: Arc::new(LinkPlanInner {
-                description: (**description).clone(),
-                _output: Mutex::new(output),
-            }),
-        })
-    }
-    pub fn description(&self) -> &LinkPlanDescription {
-        &self.inner.description
-    }
-    pub fn write(&self, output: &mut dyn Write, cancelled: &dyn Fn() -> bool) -> Result<()> {
-        self.inner
-            ._output
-            .lock()
-            .unwrap()
-            .deliver(cancelled, |_, _, control| {
-                let mut bytes = Vec::new();
-                write_control_message(&mut bytes, self.description())?;
-                for part in bytes.chunks(WORK_BLOCK) {
-                    control.bytes(part.len())?;
-                    output.write_all(part).map_err(storage_io)?;
-                }
-                output.flush().map_err(storage_io)
-            })
-    }
-}
-pub fn read_link_plan(reader: impl Read) -> Result<LinkPlanDescription> {
-    let mut bytes = Vec::new();
-    reader
-        .take(CONTROL_MESSAGE_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(storage_io)?;
-    if bytes.len() > CONTROL_MESSAGE_BYTES {
-        return Err(invalid("link plan exceeds 64 KiB"));
-    }
-    let plan = serde_json::from_slice(&bytes).map_err(|e| invalid(e.to_string()))?;
-    validate_link_plan(&plan)?;
-    Ok(plan)
-}
-pub fn validate_link_plan(plan: &LinkPlanDescription) -> Result<()> {
-    let recipe = &plan.recipe;
-    recipe.validate_contract()?;
-    validate_request(&LinkRequest {
-        companions: recipe.companions.clone(),
-        revision: Some(recipe.revision.clone()),
-        inputs: recipe.inputs.clone(),
-        entry: recipe.entry.clone(),
-        roots: recipe.roots.clone(),
-        layout: recipe.layout,
-        absent: recipe.absent.clone(),
-    })?;
-    let mut bytes = Vec::new();
-    write_control_message(&mut bytes, recipe)?;
-    if ArtifactId::of_bytes(&bytes).as_str() != plan.id.as_str() {
-        return Err(Error::new(
-            ErrorCode::Integrity,
-            "link plan identity mismatch",
-        ));
-    }
-    let mut encoded = Vec::new();
-    write_control_message(&mut encoded, plan)?;
-    if encoded.len() > 60 * 1024 {
-        return Err(Error::new(
-            ErrorCode::ResourceLimited,
-            "link plan exceeds 60 KiB metadata capacity",
-        ));
-    }
-    Ok(())
-}
+
 fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)
 }
@@ -259,19 +202,17 @@ fn validate_request(request: &LinkRequest) -> Result<()> {
         || request.roots.len() >= MAX_IMAGE_ROOTS
     {
         return Err(invalid(format!(
-            "link request needs 1..512 input occurrences and at most {} additional roots",
+            "link request needs 1..512 inputs and at most {} additional roots",
             MAX_IMAGE_ROOTS - 1
         )));
     }
     for (index, input) in request.inputs.iter().enumerate() {
         if request.inputs[..index].contains(input) {
-            return Err(invalid(
-                "repeat an imported occurrence through a separate import binding, not a duplicate selector",
-            ));
+            return Err(invalid("a link input is selected twice"));
         }
     }
     for root in std::iter::once(&request.entry).chain(&request.roots) {
-        if !request.inputs.contains(&root.input) {
+        if !request.inputs.contains(&root.object.artifact) {
             return Err(invalid("root input is absent from ordered link inputs"));
         }
     }
@@ -294,536 +235,233 @@ fn validate_request(request: &LinkRequest) -> Result<()> {
     }
     Ok(())
 }
+
+/// One object of a link input.
 #[derive(Clone)]
 struct Member {
-    input: u64,
+    /// Position of the object's input in the request.
+    input: usize,
     object: ObjectId,
     payload: Option<ArtifactId>,
-    source: ArtifactId,
     alias: String,
-    elf: bool,
 }
-struct Inventory<'a> {
-    request: &'a LinkRequest,
-    /// Companion definitions no selected input may define again.
-    companions: &'a [(String, u32)],
-    input: u64,
-    selected: bool,
-    source: Option<ArtifactId>,
-    members: Vec<Member>,
-    seen: Vec<u64>,
-    blockers: Vec<LinkBlocker>,
-}
-impl Inventory<'_> {
-    fn block(&mut self, message: impl Into<String>) -> Result<()> {
-        if self.blockers.len() == 32 {
-            return Err(Error::new(
-                ErrorCode::ResourceLimited,
-                "link blocker capacity exhausted (32)",
-            ));
-        }
-        let mut message = message.into();
-        truncate_message(&mut message);
-        self.blockers.push(LinkBlocker {
-            input: Some(self.input),
-            code: ErrorCode::LinkBlocked,
-            message,
-        });
-        Ok(())
-    }
-}
-impl ElfSink for Inventory<'_> {
-    fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-    fn symbol(&mut self, r: &SymbolRecord, _: &mut dyn RunControl) -> Result<()> {
-        if self.selected {
-            crate::companions::check_link_symbol(self.companions, r)?;
-        }
-        Ok(())
-    }
-    fn relocation(&mut self, _: &RelocationRecord, _: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-    fn diagnostic(&mut self, d: &Diagnostic, _: &mut dyn RunControl) -> Result<()> {
-        if self.selected {
-            self.block(d.message.clone())?;
-        }
-        Ok(())
-    }
-}
-impl InventorySink for Inventory<'_> {
-    fn input(&mut self, index: u64, input: &InputRecord, _: &mut dyn RunControl) -> Result<()> {
-        self.input = index;
-        self.selected = self.request.inputs.contains(&index);
-        self.source = input.capture.artifact().cloned();
-        if self.selected {
-            self.seen.push(index);
-            if self.source.is_none() {
-                self.block("selected input was not captured")?;
-            }
-        }
-        Ok(())
-    }
-    fn object(&mut self, object: &ObjectInventory, _: &mut dyn RunControl) -> Result<()> {
-        if !self.selected {
-            return Ok(());
-        }
-        if self.members.len() == MAX_MEMBERS {
-            return Err(Error::new(
-                ErrorCode::ResourceLimited,
-                "link member capacity exhausted (4096)",
-            ));
-        }
-        let elf = object.elf.as_ref().is_some_and(|e| {
-            e.bits == 32 && e.little_endian && e.machine == 243 && e.object_type == 1
-        });
-        if !elf || object.content.is_none() {
-            self.block("selected member is not a captured relocatable RV32 ELF")?;
-        }
-        let member = match object.id.location {
-            ObjectLocation::Standalone => 0,
-            ObjectLocation::ArchiveMember { ordinal } => ordinal,
-        };
-        self.members.push(Member {
-            input: self.input,
-            object: object.id.clone(),
-            payload: object.content.clone(),
-            source: self
-                .source
-                .clone()
-                .ok_or_else(|| invalid("object without capture"))?,
-            alias: format!("i{}-m{}.o", self.input, member),
-            elf,
-        });
-        Ok(())
-    }
-}
-/// Present the records of `inputs` of `revision` (current when absent) to
-/// `sink` in input order, verifying only their captures. A link operation
-/// reads nothing else of its revision, so the other inputs' payloads are
-/// neither read nor hashed.
-pub(crate) fn read_inputs(
-    project: &Project,
-    revision: Option<&RevisionId>,
-    inputs: impl IntoIterator<Item = u64>,
-    memory: &WorkingMemory,
-    control: &mut dyn RunControl,
-    sink: &mut dyn InventorySink,
-) -> Result<()> {
-    let revision = match revision {
-        Some(revision) => revision.clone(),
-        None => project
-            .current()?
-            .ok_or_else(|| Error::new(ErrorCode::NotFound, "project has no imported revision"))?,
-    };
-    let mut selected: Vec<u64> = inputs.into_iter().collect();
-    selected.sort_unstable();
-    selected.dedup();
-    for input in selected {
-        project.read_scoped(&revision, input, None, memory, control, sink)?;
-    }
-    Ok(())
-}
+
+/// Every object of the link inputs, the definitions bound to names and the
+/// resolved roots, with the reasons the link cannot proceed.
 struct Collected {
     members: Vec<Member>,
     /// Companion then absent-name definitions of the request.
     definitions: Vec<(String, u32)>,
     roots: Vec<blobray_artifacts::LinkRootFacts>,
-    blockers: Vec<LinkBlocker>,
-    project: ProjectId,
+    blockers: Vec<String>,
 }
+
+fn block(blockers: &mut Vec<String>, message: impl Into<String>) -> Result<()> {
+    if blockers.len() == MAX_BLOCKERS {
+        return Err(Error::new(
+            ErrorCode::ResourceLimited,
+            format!("link blocker capacity exhausted ({MAX_BLOCKERS})"),
+        ));
+    }
+    let mut message = message.into();
+    truncate_message(&mut message);
+    blockers.push(message);
+    Ok(())
+}
+
+/// ELF records of one link member: companion names it must not define and
+/// its diagnostics.
+struct Scan<'a> {
+    companions: &'a [(String, u32)],
+    diagnostics: Vec<String>,
+}
+impl ElfSink for Scan<'_> {
+    fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {
+        Ok(())
+    }
+    fn symbol(&mut self, r: &SymbolRecord, _: &mut dyn RunControl) -> Result<()> {
+        companions::check_link_symbol(self.companions, r)
+    }
+    fn relocation(&mut self, _: &RelocationRecord, _: &mut dyn RunControl) -> Result<()> {
+        Ok(())
+    }
+    fn diagnostic(&mut self, d: &Diagnostic, _: &mut dyn RunControl) -> Result<()> {
+        self.diagnostics.push(d.message.clone());
+        Ok(())
+    }
+}
+
+/// Every member of the request's inputs, in input order, presenting each
+/// linkable member's bytes to `consume`.
 fn collect(
-    project: &Project,
     request: &LinkRequest,
+    executables: &[Executable],
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
-    mut consume: impl FnMut(
-        &Member,
-        &dyn ByteSource,
-        &[blobray_artifacts::LinkRootFacts],
-        &mut dyn RunControl,
-    ) -> Result<()>,
+    mut consume: impl FnMut(&Member, &dyn ByteSource, &mut dyn RunControl) -> Result<()>,
 ) -> Result<Collected> {
     validate_request(request)?;
-    let definitions = crate::companions::resolve(project, request, memory, control)?;
-    let revision = request
-        .revision
-        .as_ref()
-        .ok_or_else(|| invalid("link admission must freeze revision"))?;
-    let mut inventory = Inventory {
-        request,
-        companions: &definitions[..request.companions.len()],
-        input: 0,
-        selected: false,
-        source: None,
-        members: Vec::new(),
-        seen: Vec::new(),
-        blockers: Vec::new(),
-    };
-    read_inputs(
-        project,
-        Some(revision),
-        request.inputs.iter().copied(),
-        memory,
-        control,
-        &mut inventory,
-    )?;
-    for input in &request.inputs {
-        if !inventory.seen.contains(input) {
-            inventory.input = *input;
-            inventory.block("input occurrence does not exist")?;
-        }
-    }
+    let definitions = companions::resolve(request, executables, memory, control)?;
+    let companions = &definitions[..request.companions.len()];
     let selectors: Vec<_> = std::iter::once(&request.entry)
         .chain(&request.roots)
         .cloned()
         .collect();
+    let mut members = Vec::new();
+    let mut blockers = Vec::new();
     let mut root_facts = Vec::new();
-    for input in &request.inputs {
-        let selected: Vec<_> = inventory
-            .members
-            .iter()
-            .filter(|m| m.input == *input)
-            .cloned()
-            .collect();
-        if selected.is_empty() {
+    for (input, artifact) in request.inputs.iter().enumerate() {
+        let Ok(executable) = find(executables, artifact) else {
+            block(&mut blockers, "a link input was not given")?;
             continue;
-        }
-        let source = project.open_payload(&selected[0].source, control)?;
-        let mut cursor = MemberCursor::new(&source, control)?;
-        for member in &selected {
-            control.checkpoint(1)?;
-            let selected_roots: Vec<_> = selectors
-                .iter()
-                .filter(|r| r.input == member.input && r.symbol.object == member.object)
-                .cloned()
-                .collect();
-            let external;
-            let range;
-            let bytes: &dyn ByteSource = match member.object.location {
-                ObjectLocation::Standalone => &source,
-                ObjectLocation::ArchiveMember { ordinal } => {
-                    let current = cursor
-                        .next(memory, control)?
-                        .ok_or_else(|| invalid("captured membership differs from inventory"))?;
-                    if current.ordinal != ordinal {
-                        return Err(Error::new(
-                            ErrorCode::Integrity,
-                            "archive ordinal differs from captured inventory",
-                        ));
-                    }
-                    if let Some((offset, length)) = current.payload {
-                        range = SourceRange::new(&source, offset, length)?;
-                        &range
-                    } else {
-                        let Some(payload) = &member.payload else {
-                            continue;
-                        };
-                        external = project.open_payload(payload, control)?;
-                        &external
-                    }
+        };
+        let container = visit_members(executable, memory, control, &mut |m, c| {
+            if members.len() == MAX_MEMBERS {
+                return Err(Error::new(
+                    ErrorCode::ResourceLimited,
+                    format!("link member capacity exhausted ({MAX_MEMBERS})"),
+                ));
+            }
+            let mut scan = Scan {
+                companions,
+                diagnostics: Vec::new(),
+            };
+            let bytes = match &m.bytes {
+                Ok(bytes) => Some(*bytes),
+                Err(diagnostic) => {
+                    scan.diagnostics.push(diagnostic.message.clone());
+                    None
                 }
             };
-            if !member.elf {
-                continue;
-            }
-            match blobray_artifacts::inspect_link_input(
-                bytes,
-                member.payload.as_ref().unwrap(),
-                &selected_roots,
-                memory,
-                control,
-            ) {
-                Ok(facts) => {
-                    consume(member, bytes, &facts, control)?;
-                    root_facts.extend(facts);
+            let (payload, header) = match bytes {
+                Some(bytes) => {
+                    let (payload, header) = inspect_source(bytes, &m.id, memory, c, &mut scan)?;
+                    (Some(payload), header)
                 }
-                Err(e) if e.code == ErrorCode::LinkBlocked => {
-                    inventory.input = *input;
-                    inventory.block(e.message)?;
-                }
-                Err(e) => return Err(e),
+                None => (None, None),
+            };
+            for message in scan.diagnostics {
+                block(&mut blockers, message)?;
             }
+            let elf = header.is_some_and(|e| {
+                e.bits == 32 && e.little_endian && e.machine == 243 && e.object_type == 1
+            });
+            if !elf || payload.is_none() {
+                block(
+                    &mut blockers,
+                    "selected member is not a captured relocatable RV32 ELF",
+                )?;
+            }
+            let ordinal = match m.id.location {
+                ObjectLocation::Standalone => 0,
+                ObjectLocation::ArchiveMember { ordinal } => ordinal,
+            };
+            let member = Member {
+                input,
+                object: m.id.clone(),
+                payload,
+                alias: format!("i{input}-m{ordinal}.o"),
+            };
+            if let (true, Some(bytes), Some(payload)) = (elf, bytes, &member.payload) {
+                let selected: Vec<_> = selectors
+                    .iter()
+                    .filter(|s| s.object == m.id)
+                    .cloned()
+                    .collect();
+                match blobray_artifacts::inspect_link_input(bytes, payload, &selected, memory, c) {
+                    Ok(facts) => {
+                        consume(&member, bytes, c)?;
+                        root_facts.extend(facts);
+                    }
+                    Err(e) if e.code == ErrorCode::LinkBlocked => block(&mut blockers, e.message)?,
+                    Err(e) => return Err(e),
+                }
+            }
+            members.push(member);
+            Ok(())
+        })?;
+        if let Some(framing) = container.framing {
+            block(&mut blockers, framing.message)?;
         }
     }
     for root in &selectors {
-        if !root_facts.iter().any(|r| &r.selection == root) {
-            inventory.input = root.input;
-            inventory
-                .block("selected root cannot be resolved to a supported executable occurrence")?;
+        if !root_facts.iter().any(|r| &r.symbol == root) {
+            block(
+                &mut blockers,
+                "selected root cannot be resolved to a supported executable occurrence",
+            )?;
         }
     }
     for (i, root) in root_facts.iter().enumerate() {
         if root_facts[..i].iter().any(|r| r.name == root.name) {
-            inventory.input = root.selection.input;
-            inventory.block("distinct roots have the same linker-visible name")?;
+            block(
+                &mut blockers,
+                "distinct roots have the same linker-visible name",
+            )?;
         }
     }
-    root_facts.sort_by_key(|r| selectors.iter().position(|s| s == &r.selection).unwrap());
-    let Inventory {
-        members, blockers, ..
-    } = inventory;
+    root_facts.sort_by_key(|r| selectors.iter().position(|s| s == &r.symbol).unwrap());
     Ok(Collected {
         members,
         definitions,
         roots: root_facts,
         blockers,
-        project: project.id().clone(),
     })
 }
-pub(crate) fn make_link_plan(
-    project: &Path,
-    request: &LinkRequest,
-    executable: &Path,
-    host: &dyn LinkerHost,
-    workspace: &LinkWorkspace<'_>,
-    memory: &WorkingMemory,
-    control: &mut dyn RunControl,
-) -> Result<LinkPlanDescription> {
-    let _fixed = memory.reserve(LINK_METADATA_BYTES, control.position())?;
-    let tool = host.identify(executable, workspace, control)?;
-    let project = Project::open(project)?;
-    let found = collect(&project, request, memory, control, |_, _, _, _| Ok(()))?;
-    let recipe = LinkRecipe {
-        companions: request.companions.clone(),
-        linker_contract: LinkerContract::ElfAnalysisLinkV1,
-        schema: 2,
-        policy: 5,
-        project: found.project,
-        revision: request.revision.clone().unwrap(),
-        inputs: request.inputs.clone(),
-        entry: request.entry.clone(),
-        roots: request.roots.clone(),
-        layout: request.layout,
-        linker: tool,
-        absent: request.absent.clone(),
-    };
-    let mut bytes = Vec::new();
-    write_control_message(&mut bytes, &recipe)?;
-    let description = LinkPlanDescription {
-        id: ArtifactId::of_bytes_controlled(&bytes, control)?
-            .as_str()
-            .parse()?,
-        recipe,
-        blockers: found.blockers,
-    };
-    validate_link_plan(&description)?;
-    Ok(description)
-}
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ImageWork {
-    pub schema: u32,
-    pub run: RunId,
-    pub project: OriginPath,
-    pub plan: LinkPlanDescription,
-    pub linker: OriginPath,
-    pub budget: ResourceBudget,
-    pub started_ms: u64,
-    pub deadline_ms: u64,
-}
-fn request_from(plan: &LinkPlanDescription) -> LinkRequest {
-    let p = &plan.recipe;
-    LinkRequest {
-        companions: p.companions.clone(),
-        revision: Some(p.revision.clone()),
-        inputs: p.inputs.clone(),
-        entry: p.entry.clone(),
-        roots: p.roots.clone(),
-        layout: p.layout,
-        absent: p.absent.clone(),
-    }
-}
-struct Outputs {
-    exit_code: Option<i32>,
-    signal: Option<i32>,
-    elf: TemporaryFile,
-    map: TemporaryFile,
-    extraction: TemporaryFile,
-    observations: TemporaryFile,
-    placements: TemporaryFile,
-    exit_observations: u32,
-    stderr: Vec<u8>,
-    truncated: bool,
-}
-impl Outputs {
-    fn new(workspace: &LinkWorkspace<'_>) -> Result<Self> {
-        Ok(Self {
-            exit_code: None,
-            signal: None,
-            elf: workspace.temporary()?,
-            map: workspace.temporary()?,
-            extraction: workspace.temporary()?,
-            observations: workspace.temporary()?,
-            placements: workspace.temporary()?,
-            exit_observations: 0,
-            stderr: Vec::new(),
-            truncated: false,
-        })
-    }
-}
-impl LinkOutputSink for Outputs {
-    fn elf_file(&mut self, file: TemporaryFile) -> Result<()> {
-        self.elf = file;
-        Ok(())
-    }
-    fn observe(
-        &mut self,
-        observation: LinkObservation,
-        control: &mut dyn RunControl,
-    ) -> Result<()> {
-        control.checkpoint(1)?;
-        let destination = match &observation {
-            LinkObservation::SectionPlacement { .. } => &mut self.placements,
-            LinkObservation::ArchiveExtraction { .. } => &mut self.observations,
-            LinkObservation::ToolExit { code, signal } => {
-                if *code != self.exit_code || *signal != self.signal || self.exit_observations != 0
-                {
-                    return Err(invalid("duplicate or inconsistent tool exit"));
-                }
-                self.exit_observations += 1;
-                return Ok(());
-            }
-        };
-        write_control_message(
-            &mut *destination,
-            &LinkObservationRecord {
-                schema: 1,
-                observation,
-            },
-        )?;
-        destination.write_all(b"\n").map_err(storage_io)
-    }
 
-    fn exited(&mut self, code: Option<i32>, signal: Option<i32>) {
-        self.exit_code = code;
-        self.signal = signal;
-    }
-    fn write(
-        &mut self,
-        channel: LinkOutput,
-        bytes: &[u8],
-        control: &mut dyn RunControl,
-    ) -> Result<()> {
-        control.bytes(bytes.len())?;
-        match channel {
-            LinkOutput::Elf => self.elf.write_all(bytes).map_err(storage_io),
-            LinkOutput::Map => self.map.write_all(bytes).map_err(storage_io),
-            LinkOutput::Extraction => self.extraction.write_all(bytes).map_err(storage_io),
-            LinkOutput::Stderr => {
-                if self.stderr.len() + bytes.len() > 8192 {
-                    self.truncated = true;
-                    let remove = (self.stderr.len() + bytes.len() - 8192).min(self.stderr.len());
-                    self.stderr.drain(..remove);
-                }
-                self.stderr
-                    .extend_from_slice(&bytes[bytes.len().saturating_sub(8192)..]);
-                Ok(())
-            }
-        }
-    }
-}
-pub fn prepare_image_worker(
-    stage: &Path,
-    work: &ImageWork,
-    host: &dyn LinkerHost,
-    control: &mut dyn RunControl,
-    diagnostics: &mut Option<LinkerDiagnostics>,
-) -> Result<blobray_store::PreparedImageReceipt> {
-    if work.schema != 1 {
-        return Err(invalid("unsupported image worker request"));
-    }
-    validate_link_plan(&work.plan)?;
-    if !work.plan.ready() {
-        return Err(Error::new(
-            ErrorCode::LinkBlocked,
-            "link plan has unresolved blockers",
-        ));
-    }
-    let memory = WorkingMemory::new(
-        work.budget
-            .working_memory_bytes
-            .ok_or_else(|| invalid("image working capacity missing"))?,
-    )?;
-    let disk = TemporaryBudget::open(stage)?;
-    let mut temporary_control = blobray_store::TemporaryControl::new(control, &disk);
-    let result = prepare_image_inner(
-        stage,
-        work,
-        host,
-        &memory,
-        &disk,
-        &mut temporary_control,
-        diagnostics,
-    );
-    temporary_control.memory_phases(&memory.phase_observations());
-    temporary_control.working_memory(memory.observation());
-    result
-}
-fn prepare_image_inner(
-    stage: &Path,
-    work: &ImageWork,
-    host: &dyn LinkerHost,
+/// Collect the request's members into `workspace`, failing with every
+/// blocker when one exists.
+fn materialize(
+    request: &LinkRequest,
+    executables: &[Executable],
+    workspace: &LinkWorkspace,
     memory: &WorkingMemory,
-    disk: &TemporaryBudget,
     control: &mut dyn RunControl,
-    diagnostics: &mut Option<LinkerDiagnostics>,
-) -> Result<blobray_store::PreparedImageReceipt> {
-    let _fixed = memory.reserve(LINK_METADATA_BYTES, control.position())?;
-    let executable = work.linker.to_path()?;
-    let directory = stage.join("staging");
-    let capacity = memory.observation();
-    let workspace = LinkWorkspace {
-        directory: &directory,
-        disk,
-        elf_limit: capacity.limit_bytes - capacity.reserved_bytes,
-    };
-    if host.identify(&executable, &workspace, control)? != work.plan.recipe.linker {
-        return Err(Error::new(
-            ErrorCode::SourceChanged,
-            "linker identity changed since planning",
-        ));
-    }
-    let project = Project::open(&work.project.to_path()?)?;
-    if project.id() != &work.plan.recipe.project {
-        return Err(invalid("link plan belongs to another project"));
-    }
+) -> Result<Collected> {
     control.phase(RunPhase::Materialize)?;
     let found = collect(
-        &project,
-        &request_from(&work.plan),
+        request,
+        executables,
         memory,
         control,
-        |member, source, _, control| {
-            let mut file = disk.create(&directory.join(&member.alias))?;
-            crate::query_stream::copy_source(source, &mut file, control)?;
-            file.sync_all().map_err(storage_io)
-        },
+        |member, source, c| workspace.materialize(&member.alias, &read_scratch(source, memory, c)?),
     )?;
     if !found.blockers.is_empty() {
         return Err(Error::new(
             ErrorCode::LinkBlocked,
-            found.blockers[0].message.clone(),
+            found.blockers.join("; "),
         ));
     }
+    Ok(found)
+}
+
+/// The linker invocation of the collected members: roots' members are
+/// forced, every other member of an archive is a lazy archive member.
+fn invocation<'a>(
+    request: &LinkRequest,
+    found: &'a Collected,
+    executable: &'a Path,
+    identity: &'a LinkerIdentity,
+    workspace: &'a LinkWorkspace,
+    unresolved: UnresolvedSymbols,
+) -> LinkInvocation<'a> {
     let mut forced = Vec::new();
     for root in &found.roots {
         let member = found
             .members
             .iter()
-            .find(|m| m.input == root.selection.input && m.object == root.selection.symbol.object)
+            .find(|m| m.object == root.symbol.object)
             .unwrap();
         if !forced.contains(&member.alias) {
             forced.push(member.alias.clone());
         }
     }
     let mut inputs = Vec::new();
-    for input in &work.plan.recipe.inputs {
+    for input in 0..request.inputs.len() {
         let members: Vec<_> = found
             .members
             .iter()
-            .filter(|m| m.input == *input && !forced.contains(&m.alias))
+            .filter(|m| m.input == input && !forced.contains(&m.alias))
             .collect();
         if members.is_empty() {
             continue;
@@ -836,14 +474,11 @@ fn prepare_image_inner(
             ));
         }
     }
-    let definitions = found.definitions.clone();
-    let mut outputs = Outputs::new(&workspace)?;
-    control.phase(RunPhase::Link)?;
-    let invocation = LinkInvocation {
-        executable: &executable,
-        identity: &work.plan.recipe.linker,
-        workspace: &workspace,
-        contract: work.plan.recipe.linker_contract,
+    LinkInvocation {
+        executable,
+        identity,
+        workspace,
+        contract: LinkerContract::ElfAnalysisLinkV1,
         entry: &found.roots[0].name,
         roots: found.roots.iter().skip(1).map(|r| r.name.clone()).collect(),
         forced,
@@ -853,24 +488,101 @@ fn prepare_image_inner(
             .iter()
             .map(|m| LinkMember {
                 alias: m.alias.clone(),
-                occurrence: LinkObject {
-                    input: m.input,
-                    object: m.object.clone(),
-                },
+                object: m.object.clone(),
             })
             .collect(),
-        layout: work.plan.recipe.layout,
-        definitions,
-        unresolved: UnresolvedSymbols::Error,
-    };
-    let linked = host.link(&invocation, &mut outputs, control);
-    *diagnostics = Some(LinkerDiagnostics {
-        exit_code: outputs.exit_code,
-        signal: outputs.signal,
-        stderr_tail: outputs.stderr.clone(),
-        stderr_truncated: outputs.truncated,
-    });
-    if let Err(mut error) = linked {
+        layout: request.layout,
+        definitions: found.definitions.clone(),
+        unresolved,
+    }
+}
+
+/// Everything one linker process wrote and claimed.
+#[derive(Default)]
+struct Outputs {
+    exit_code: Option<i32>,
+    signal: Option<i32>,
+    elf: Vec<u8>,
+    map: Vec<u8>,
+    extraction: Vec<u8>,
+    extractions: Vec<LinkObservation>,
+    placements: Vec<LinkObservation>,
+    exit_observations: u32,
+    stderr: Vec<u8>,
+    truncated: bool,
+}
+impl Outputs {
+    fn diagnostics(&self) -> LinkerDiagnostics {
+        LinkerDiagnostics {
+            exit_code: self.exit_code,
+            signal: self.signal,
+            stderr_tail: self.stderr.clone(),
+            stderr_truncated: self.truncated,
+        }
+    }
+}
+impl LinkOutputSink for Outputs {
+    fn elf(&mut self, bytes: Vec<u8>) -> Result<()> {
+        self.elf = bytes;
+        Ok(())
+    }
+    fn observe(
+        &mut self,
+        observation: LinkObservation,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        control.checkpoint(1)?;
+        match &observation {
+            LinkObservation::SectionPlacement { .. } => self.placements.push(observation),
+            LinkObservation::ArchiveExtraction { .. } => self.extractions.push(observation),
+            LinkObservation::ToolExit { code, signal } => {
+                if *code != self.exit_code || *signal != self.signal || self.exit_observations != 0
+                {
+                    return Err(invalid("duplicate or inconsistent tool exit"));
+                }
+                self.exit_observations += 1;
+            }
+        }
+        Ok(())
+    }
+    fn exited(&mut self, code: Option<i32>, signal: Option<i32>) {
+        self.exit_code = code;
+        self.signal = signal;
+    }
+    fn write(
+        &mut self,
+        channel: LinkOutput,
+        bytes: &[u8],
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        control.bytes(bytes.len())?;
+        match channel {
+            LinkOutput::Elf => self.elf.extend_from_slice(bytes),
+            LinkOutput::Map => self.map.extend_from_slice(bytes),
+            LinkOutput::Extraction => self.extraction.extend_from_slice(bytes),
+            LinkOutput::Stderr => {
+                if self.stderr.len() + bytes.len() > 8192 {
+                    self.truncated = true;
+                    let remove = (self.stderr.len() + bytes.len() - 8192).min(self.stderr.len());
+                    self.stderr.drain(..remove);
+                }
+                self.stderr
+                    .extend_from_slice(&bytes[bytes.len().saturating_sub(8192)..]);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Run the linker, naming its diagnostics when it fails.
+fn run(
+    host: &dyn LinkerHost,
+    invocation: &LinkInvocation<'_>,
+    outputs: &mut Outputs,
+    control: &mut dyn RunControl,
+) -> Result<()> {
+    control.phase(RunPhase::Link)?;
+    if let Err(mut error) = host.link(invocation, outputs, control) {
         if error.code == ErrorCode::LinkFailed {
             error.message = format!(
                 "{}: {}{}",
@@ -886,77 +598,94 @@ fn prepare_image_inner(
         }
         return Err(error);
     }
-    let roots = evidence::roots(&mut outputs, &found, &invocation, control)?;
-    let provenance = roots.1;
-    let roots = roots.0;
-    let storage = Staging::with_temporary_budget(stage, disk.clone())?;
-    let elf = storage.retain_temporary(outputs.elf, control)?;
+    Ok(())
+}
+
+/// One linked image: its manifest, its ELF and the linker's map.
+pub struct LinkedImage {
+    pub manifest: ImageManifest,
+    pub elf: Executable,
+    pub map: Vec<u8>,
+}
+
+/// Link the image `request` describes with the linker at `linker`, in a
+/// temporary directory below `directory`. Every executable the request names
+/// is among `executables`.
+#[allow(clippy::too_many_arguments)]
+pub fn link(
+    request: &LinkRequest,
+    executables: &[Executable],
+    linker: &Path,
+    host: &dyn LinkerHost,
+    directory: &Path,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<LinkedImage> {
+    let _fixed = memory.reserve(LINK_METADATA_BYTES, control.position())?;
+    let workspace = LinkWorkspace::new(directory, memory)?;
+    let identity = host.identify(linker, &workspace, control)?;
+    let found = materialize(request, executables, &workspace, memory, control)?;
+    let invocation = invocation(
+        request,
+        &found,
+        linker,
+        &identity,
+        &workspace,
+        UnresolvedSymbols::Error,
+    );
+    let mut outputs = Outputs::default();
+    run(host, &invocation, &mut outputs, control)?;
+    let (roots, mappings) = evidence::roots(&outputs, &found, &invocation, control)?;
     let validated = blobray_artifacts::validate_image(
-        &storage.open_payload(&elf, control)?,
-        &work.plan.recipe.layout,
+        &outputs.elf.as_slice(),
+        &request.layout,
         &roots,
         memory,
         control,
     )?;
-    let manifest = ImageManifest {
-        abi: validated.abi,
-        linker_diagnostics: LinkerDiagnostics {
-            exit_code: outputs.exit_code,
-            signal: outputs.signal,
-            stderr_tail: outputs.stderr,
-            stderr_truncated: outputs.truncated,
+    let linker_diagnostics = outputs.diagnostics();
+    let elf = Executable::new(std::mem::take(&mut outputs.elf));
+    Ok(LinkedImage {
+        manifest: ImageManifest {
+            schema: IMAGE_SCHEMA,
+            request: request.clone(),
+            contract: invocation.contract,
+            linker: identity.clone(),
+            abi: validated.abi,
+            elf: elf.id().clone(),
+            entry: roots[0].address,
+            roots,
+            segments: validated.segments,
+            mappings,
+            linker_diagnostics,
         },
-        schema: 3,
-        synthetic: true,
-        plan: work.plan.clone(),
         elf,
-        map: storage.retain_temporary(outputs.map, control)?,
-        extraction: storage.retain_temporary(outputs.extraction, control)?,
-        provenance: storage.retain_temporary(provenance, control)?,
-        observations: storage.retain_temporary(outputs.observations, control)?,
-        entry: roots[0].address,
-        roots,
-        segments: validated.segments,
-    };
-    let mut encoded = Vec::new();
-    write_control_message(&mut encoded, &manifest)?;
-    if encoded.len() > 56 * 1024 {
-        return Err(Error::new(
-            ErrorCode::ResourceLimited,
-            "image manifest exceeds 56 KiB metadata capacity",
-        ));
-    }
-    let mut file = disk.temporary(&directory)?;
-    file.write_all(&encoded).map_err(storage_io)?;
-    storage.image_receipt(file, control)
+        map: outputs.map,
+    })
 }
 
 #[cfg(test)]
 mod root_limit_tests {
     use super::*;
 
-    fn selection(index: u64) -> EntrySelection {
-        EntrySelection {
-            input: 0,
-            symbol: SymbolId {
-                object: ObjectId {
-                    artifact: ArtifactId::of_bytes(b"object"),
-                    location: ObjectLocation::Standalone,
-                },
-                table: SymbolTableKind::Static,
-                table_section: 0,
-                index,
+    fn symbol(index: u64) -> SymbolId {
+        SymbolId {
+            object: ObjectId {
+                artifact: ArtifactId::of_bytes(b"object"),
+                location: ObjectLocation::Standalone,
             },
+            table: SymbolTableKind::Static,
+            table_section: 0,
+            index,
         }
     }
 
     fn request(roots: u64) -> LinkRequest {
         LinkRequest {
             companions: vec![],
-            revision: None,
-            inputs: vec![0],
-            entry: selection(0),
-            roots: (1..=roots).map(selection).collect(),
+            inputs: vec![ArtifactId::of_bytes(b"object")],
+            entry: symbol(0),
+            roots: (1..=roots).map(symbol).collect(),
             layout: ImageLayout {
                 code: ImageRegion {
                     start: 0x1000_0000,
@@ -996,6 +725,22 @@ mod root_limit_tests {
         validate_request(&request(additional)).unwrap();
         assert_eq!(
             validate_request(&request(additional + 1)).unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn inputs_are_distinct_and_hold_every_root() {
+        let mut twice = request(0);
+        twice.inputs.push(twice.inputs[0].clone());
+        assert_eq!(
+            validate_request(&twice).unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+        let mut foreign = request(0);
+        foreign.entry.object.artifact = ArtifactId::of_bytes(b"another object");
+        assert_eq!(
+            validate_request(&foreign).unwrap_err().code,
             ErrorCode::InvalidRequest
         );
     }

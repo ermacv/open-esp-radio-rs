@@ -22,6 +22,6 @@ readiness domain. [HIL](../hil/README.md) owns hardware execution and fixtures;
 Neither producer decides product readiness. Register model/publication inputs
 have a separate [source map](../registers/esp32s31/README.md).
 
-Blobray uses its built-in Linux supervisor for analysis. `cargo xtask check
+Blobray analyzes inside its own process under cooperative limits. `cargo xtask check
 blobray-standalone` extracts and tests the shipping crate graph independently.
 Register publication uses the [register tool](registers/README.md).

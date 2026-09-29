@@ -80,7 +80,6 @@ pub type Prepare = fn(&mut LeafRun) -> Result<Box<dyn Any>>;
 
 /// Private inputs and budget of a leaf suite.
 pub struct LeafOptions {
-    pub binary: PathBuf,
     pub suite: &'static Suite,
     /// One path per suite archive, in the suite's order.
     pub archives: Vec<PathBuf>,
@@ -598,7 +597,6 @@ impl LeafRun {
             .map(|index| suite.archive_input(index))
             .collect();
         let session = Session::start(
-            &options.binary,
             &options.output,
             options.budget,
             &inputs,
@@ -629,8 +627,10 @@ impl LeafRun {
             .collect::<Result<Vec<_>>>()?;
         let link = LinkRequest {
             companions: vec![],
-            revision: Some(session.revision.clone()),
-            inputs: archive_inputs,
+            inputs: archive_inputs
+                .iter()
+                .map(|input| session.input_id(*input as usize))
+                .collect::<Result<_>>()?,
             entry: select(&session, leaves[0].archive as usize, leaves[0].vendor)?,
             roots,
             layout: image_layout(),
@@ -641,7 +641,7 @@ impl LeafRun {
             candidates.push(FIRMWARE_INPUT);
         }
         let linked = session.link(&link, &options.linker, leaves[0].vendor, &candidates)?;
-        let (vendor, production) = session.targets(&linked.image)?;
+        let (vendor, production) = session.targets(&linked.manifest.elf)?;
         let mut run = Self {
             suite,
             context: Box::new(()),

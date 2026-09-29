@@ -15,10 +15,10 @@ use crate::phy::{PhyImage, Right, image_layout};
 use crate::session::Session;
 use blobray_domain::{
     CallCapture, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
-    EntrySelection, ExecutionEvent, ExecutionRequest, ExecutionStop, FunctionSource, Invocation,
-    LinkRequest, ObservedCallTarget, RegionLifetime, RegisterCell, SessionReset,
+    ExecutionEvent, ExecutionRequest, ExecutionStop, Invocation, LinkRequest, ObservedCallTarget,
+    RegionLifetime, RegisterCell, SessionReset,
 };
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 pub const OBJECT_SHA: &str = "86f09f42ad559b84e36906060b7e2b82f739d68873f8c780df96acda1d195e5a";
 /// Independently extracted with llvm-ar/llvm-objcopy from the pinned archive;
@@ -235,7 +235,6 @@ pub fn publication(
 }
 
 pub struct Options {
-    pub binary: PathBuf,
     pub library: PathBuf,
     pub rom: PathBuf,
     pub production: PathBuf,
@@ -296,19 +295,16 @@ impl Gain {
             });
         }
         let session = Session::start(
-            &options.binary,
             &options.output,
             options.budget,
             &inputs,
             "captured Wi-Fi/BT gain, calibration storage and RF-test policy; no RF qualification",
             &options.patches,
         )?;
-        let (run, revision, inventory) = (&session.run, &session.revision, &session.inventory);
+        let inventory = &session.inventory;
         let object = named_object(inventory, 0, "phy_tx_gain.o")?;
         let section = named_section(object, ".rodata")?;
         let request = data_request(
-            revision,
-            FunctionSource::Input { input: 0 },
             object,
             DataSelector::Section {
                 section: section.index,
@@ -316,10 +312,9 @@ impl Gain {
                 length: 216,
             },
         );
-        let coefficients = session.data("coefficients", &request, &run.join("coefficients"))?;
-        if sha256(&fs::read(run.join("coefficients/object.elf"))?) != OBJECT_SHA
-            || sha256(&coefficients) != COEFFICIENT_SHA
-        {
+        let exported = session.data("coefficients", &request)?;
+        let coefficients = exported.bytes;
+        if exported.payload.as_str() != OBJECT_SHA || sha256(&coefficients) != COEFFICIENT_SHA {
             return Err(invalid("gain object or coefficient identity mismatch"));
         }
         let mut roots: Vec<&str> = vec![
@@ -336,16 +331,12 @@ impl Gain {
             "register_chipv7_phy_init_param",
             "phy_wifi_set_tx_gain_new",
         ]);
-        let root = |input: usize, name: &str| -> Result<EntrySelection> {
-            Ok(EntrySelection {
-                input: input as u64,
-                symbol: symbol(inventory, input, name)?.id.clone(),
-            })
+        let root = |input: usize, name: &str| -> Result<blobray_domain::SymbolId> {
+            Ok(symbol(inventory, input, name)?.id.clone())
         };
         let mut link = LinkRequest {
             companions: vec![],
-            revision: Some(revision.clone()),
-            inputs: vec![0],
+            inputs: vec![session.input_id(0)?],
             entry: root(0, roots[0])?,
             roots: roots[1..]
                 .iter()
@@ -355,7 +346,7 @@ impl Gain {
             absent: vec![],
         };
         if options.rftest.is_some() {
-            link.inputs.push(3);
+            link.inputs.push(session.input_id(3)?);
             for name in ["set_rate_power_index", "mac_power_set"] {
                 link.roots.push(root(3, name)?);
             }

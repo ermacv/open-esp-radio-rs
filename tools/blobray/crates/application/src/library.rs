@@ -8,8 +8,14 @@ use blobray_analysis::navigation::Facts;
 pub struct AnalyzedFunction<'a> {
     pub function: &'a LibraryFunction,
     pub records: &'a [FunctionRecord],
+    pub coverage: FunctionCoverage,
+    pub semantics: SemanticSummary,
+}
+impl AnalyzedFunction<'_> {
     /// Coverage and value semantics are complete.
-    pub complete: bool,
+    pub fn complete(&self) -> bool {
+        self.coverage.complete() && self.semantics.complete
+    }
 }
 
 /// One outcome of a library analysis, in input, object and symbol order.
@@ -123,6 +129,68 @@ impl ElfSink for Selection {
     }
 }
 
+/// Research the function `request` selects in the prepared `object` into
+/// `sink`. `references` keeps each section's prepared relocations for the
+/// object's other functions.
+#[allow(clippy::too_many_arguments)]
+fn research_function<'m>(
+    object: &mut blobray_artifacts::PreparedObject<'_, '_>,
+    references: &mut AdmittedVec<'m, (u32, blobray_analysis::PreparedReferences<'m>)>,
+    request: &FunctionRequest,
+    input: u64,
+    payload: &ArtifactId,
+    decoder: &dyn FunctionSemantics,
+    memory: &'m WorkingMemory,
+    control: &mut dyn RunControl,
+    sink: &mut dyn FunctionSink,
+) -> Result<blobray_analysis::AnalysisSummary> {
+    let mut position = RunPosition {
+        phase: RunPhase::AnalyzeFunction,
+        input: Some(input),
+        member: match request.selector.object().location {
+            ObjectLocation::Standalone => None,
+            ObjectLocation::ArchiveMember { ordinal } => Some(ordinal),
+        },
+        ..Default::default()
+    };
+    position.artifact(payload);
+    control.set_position(position);
+    control.checkpoint(0)?;
+    object.with_function(request, control, |view, control| {
+        let index = if let Some(index) = references
+            .iter()
+            .position(|(section, _)| *section == view.section)
+        {
+            index
+        } else {
+            let prepared = blobray_analysis::PreparedReferences::new(
+                view.relocations,
+                view.section,
+                decoder,
+                memory,
+                control,
+            )?;
+            references.push((view.section, prepared), control.position())?;
+            references.len() - 1
+        };
+        blobray_analysis::research(
+            blobray_analysis::FunctionInput {
+                image: view.image,
+                section: view.section,
+                extent: view.extent,
+                bytes: view.code,
+                relocations: &references[index].1,
+                data_ranges: view.data_ranges,
+            },
+            decoder,
+            memory,
+            control,
+            sink,
+            None,
+        )
+    })
+}
+
 /// Collects one function's records into admitted memory.
 struct Records<'a, 'm>(&'a mut RecordBuffer<'m>);
 impl FunctionSink for Records<'_, '_> {
@@ -209,18 +277,17 @@ fn analyze_object(
             let mut references = AdmittedVec::new(memory);
             for function in &functions {
                 let request = FunctionRequest {
-                    revision: None,
-                    source: FunctionSource::Input { input },
                     selector: FunctionSelector::Symbol {
                         symbol: function.symbol.clone(),
                     },
                     extent: None,
                 };
                 let mut records = RecordBuffer::new(memory);
-                let researched = crate::functions::research_function(
+                let researched = research_function(
                     prepared,
                     &mut references,
                     &request,
+                    input,
                     &payload,
                     decoder,
                     memory,
@@ -228,11 +295,12 @@ fn analyze_object(
                     &mut Records(&mut records),
                 );
                 match researched {
-                    Ok((_, summary)) => visit(
+                    Ok(summary) => visit(
                         LibraryOutcome::Analyzed(AnalyzedFunction {
                             function,
                             records: &records,
-                            complete: summary.coverage.complete() && summary.semantics.complete,
+                            coverage: summary.coverage,
+                            semantics: summary.semantics,
                         }),
                         c,
                     )?,
@@ -294,7 +362,7 @@ pub fn register_accesses(
         &mut |outcome, c| match outcome {
             LibraryOutcome::Analyzed(analyzed) => {
                 summary.functions += 1;
-                summary.partial_functions += u64::from(!analyzed.complete);
+                summary.partial_functions += u64::from(!analyzed.complete());
                 c.phase(RunPhase::AnalyzeValues)?;
                 let facts = Facts::new(analyzed.records, memory, c)?;
                 crate::registers::observe(analyzed.records, &facts, ranges, c, &mut |o, c| {

@@ -10,7 +10,6 @@ fn core_obeys_crate_boundaries() {
     let allowed: BTreeMap<&str, &[&str]> = BTreeMap::from([
         ("blobray-domain", [].as_slice()),
         ("blobray-artifacts", ["blobray-domain"].as_slice()),
-        ("blobray-store", ["blobray-domain"].as_slice()),
         ("blobray-analysis", ["blobray-domain"].as_slice()),
         ("blobray-verification", ["blobray-domain"].as_slice()),
         ("blobray-backend-riscv", ["blobray-domain"].as_slice()),
@@ -19,7 +18,6 @@ fn core_obeys_crate_boundaries() {
             [
                 "blobray-domain",
                 "blobray-artifacts",
-                "blobray-store",
                 "blobray-analysis",
                 "blobray-verification",
             ]

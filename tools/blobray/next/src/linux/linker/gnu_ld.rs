@@ -6,7 +6,7 @@ pub(super) fn link(
     sink: &mut dyn LinkOutputSink,
     control: &mut dyn RunControl,
 ) -> Result<()> {
-    let output = request.workspace.external_elf()?;
+    let output = request.workspace.elf_output()?;
     let mut command = command(request.executable);
     semantic_arguments(request, &mut command)?;
     command.args(["-o", "image.elf", "-M"]);
@@ -39,7 +39,7 @@ pub(super) fn link(
     }
     result?;
     observed.finish(control)?;
-    observed.elf_file(output.finish()?)
+    observed.elf(output.finish()?)
 }
 #[derive(Default)]
 pub(super) struct Parser {
@@ -61,7 +61,7 @@ impl records::Parser for Parser {
         _: LinkOutput,
         line: &[u8],
         mut evidence: LinkEvidenceSpan,
-        members: &[blobray_application::LinkMember],
+        members: &[blobray_application::linking::LinkMember],
         sink: &mut dyn LinkOutputSink,
         control: &mut dyn RunControl,
     ) -> Result<()> {

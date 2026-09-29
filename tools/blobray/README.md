@@ -1,14 +1,14 @@
 # Blobray
 
-Blobray investigates captured RV32 ELF/archive inputs and retains analysis
-and concrete comparison evidence. `cargo blobray` runs the
-application directly; its Linux supervisor owns memory/time limits and child
-process cleanup. No external limiter is required.
+Blobray investigates captured RV32 ELF/archive inputs inside the calling
+process and returns analysis and concrete comparison results. `cargo blobray`
+runs the CLI; the typed vendor scenarios call the same operations as a
+library. Inputs are given as bytes and identified by their SHA-256 content;
+nothing is imported, stored or published.
 
 Use Blobray when the missing information is in a captured binary: where a
 register is accessed, which calls reach it, what data a function consumes, or
-how selected observations compare with compiled Rust. It produces retained
-research and conditional comparison results. Implementing the hardware
+how selected observations compare with compiled Rust. Implementing the hardware
 operation belongs to PAC/HAL/PHY and the driver; choosing protocol behavior
 belongs to the portable protocol layer. The
 [architecture route](../../docs/binary-to-station.md) explains those handoffs.
@@ -17,77 +17,41 @@ belongs to the portable protocol layer. The
 
 Start with [the host tutorial](../../docs/first-contribution.md) for a synthetic
 exercise, or [the hardware route](../../docs/station-hardware.md) for real input
-and board prerequisites. Commands below name current families; follow each
-reference for required selectors, request files and supported subcommands.
+and board prerequisites.
 
-| Task | Current command families | Reference |
+| Task | Interface | Reference |
 | --- | --- | --- |
-| Capture and inspect inputs | `init`, `import`, `inventory`, `select`, `doctor` | [Capture](next/reference/capture-images/README.md#use), [selection](next/reference/capture-images/README.md#selection-and-inspection-plans), [diagnosis](next/reference/resources-storage/README.md#diagnosis-and-recovery) |
-| Investigate code | `analyze-project`, `functions`, `analysis` | [Function analysis](next/reference/analysis/README.md#function-analysis-contract), [library investigations](next/reference/analysis/README.md#library-investigations) |
-| Investigate registers and data | `register-accesses`, `registers`, `data` | [Library register accesses](next/reference/registers-data/README.md#library-register-accesses), [register research](next/reference/registers-data/README.md#saved-register-research), [tables and coefficients](next/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
-| Prepare a linked image | `link-plan`, `prepare-image`, `images` | [Prepared images](next/reference/capture-images/README.md#synthetic-prepared-images) |
-| Inspect static representations | `ir`, `trace` | [Semantic IR](next/reference/ir-traces/README.md#saved-semantic-ir-profiles), [static traces](next/reference/ir-traces/README.md#static-observable-traces) |
-| Execute and compare | `blobray_application::in_process` (library) | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
-| Preserve research | `backup`, `restore`, `export-payload` | [Preservation](next/reference/preservation/README.md#backup-and-restore) |
-
-### Choose a research method
-
-```mermaid
-flowchart TD
-    Q["Your question"] --> S["Accesses / data"]
-    Q --> P["Static path"]
-    Q --> E["Concrete run"]
-    S --> A["Analyze capture"]
-    A --> Saved["Query results"]
-    P --> IR["IR, then trace"]
-    E --> Run["Image, then execute"]
-    Run --> Compare["Compare"]
-    Saved --> Review["Review facts"]
-    IR --> Limits["Inspect limits"]
-    Compare --> Limits
-```
-
-Arrows show an operator's choice of method and next step. Querying saved facts
-does not execute a device. A static trace follows decidable saved paths;
-concrete execution supplies machine state and explicit device/call models.
-Both can leave selected behavior unresolved.
+| Inspect inputs | `blobray_application::captured::inventory` | [Inventory](next/reference/capture-images/README.md#inventory) |
+| Investigate code | `blobray_application::library::analyze_library` | [Function analysis](next/reference/analysis/README.md#function-analysis-contract) |
+| Investigate registers | `blobray register-accesses` | [Library register accesses](next/reference/registers-data/README.md#library-register-accesses) |
+| Recover tables and coefficients | `blobray_application::data::export` | [Tables and coefficients](next/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
+| Link an image | `blobray_application::linking::{link, propose_companions}` | [Linked images](next/reference/capture-images/README.md#synthetic-linked-images), [ROM companions](next/reference/analysis/README.md#explicit-rom-companions) |
+| Audit a final image | `blobray audit-targets` | [Target audit](next/reference/analysis/README.md#final-image-target-audit) |
+| Execute and compare | `blobray_application::in_process::verify` | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
 
 | Question | Required input | Inspect in the result | Next action |
 | --- | --- | --- | --- |
-| What is in this archive or ELF? | Caller-owned input and source identity | Captured revision, inventory and diagnostics | Select exact symbols or ranges |
-| Which code accesses this MMIO range? | Analyzed scope and explicit address range | Observations, masks, provenance and unresolved addresses | Review physical meaning; do not infer register width from access width |
-| What values or coefficients does this code use? | Captured data range or retained instruction evidence | Exact bytes, representation and applicability | Review and export required data with provenance |
-| Which paths and memory definitions reach an operation? | Saved analyses and explicit query scope | Structural relationships, ambiguity and blockers | Refine the scope or investigate a missing dependency |
-| Do two selected static paths have the same observations? | Saved IR, roots, entry inputs and observation ranges | Ordered effects, exactness and `MATCH`/`DIFF`/`INCOMPLETE` | Resolve blockers or choose concrete execution |
-| Does this compiled Rust operation agree with the vendor case? | Both captured implementations, concrete scenarios, models and a relation | Execution completeness, selected differences and model assumptions | Fix the implementation or review the intended relation |
-| Can another investigation reopen these results? | Retained project | Backup/restore integrity and source-free reads | Preserve the whole project; an individual export is not a complete backup |
+| What is in this archive or ELF? | The executable's bytes | Inventory and diagnostics | Select exact symbols or ranges |
+| Which code accesses this MMIO range? | Libraries and an explicit address range | Observations, masks and unresolved addresses | Review physical meaning; do not infer register width from access width |
+| What values or coefficients does this code use? | An exact object and data range | Exact bytes, provenance and relocation counts | Review and record required data with provenance |
+| Does this compiled Rust operation agree with the vendor case? | Both compiled implementations, concrete scenarios, models and a relation | Execution completeness, selected differences and model assumptions | Fix the implementation or review the intended relation |
 
-## Three different choices
+## Two different choices
 
 - **Research method:** static analysis, concrete scenario execution or comparison.
-  A static trace is not an executed trace or an equivalence proof.
+  Analysis is not an executed trace or an equivalence proof.
 - **Output format:** `--format human` or `--format json`; this changes presentation,
   not the research method or verdict.
-- **Resource enforcement:** `--limit-mode kernel` requires delegated cgroups;
-  `--limit-mode watchdog` explicitly chooses sampled process-tree enforcement.
-  There is no automatic fallback.
 
 Related tools have different owners: `cargo registers` publishes reviewed
 hardware interfaces; `cargo xtask` checks and builds repository compositions;
 `cargo hil` obtains device observations; `cargo qualification` evaluates a
 selected set of requirements. Blobray does not decide product readiness.
 
-### Know which interface you are reading
-
 `cargo blobray` invokes `blobray-next`; the
 [operator index](next/README.md#reference-navigation) describes that interface.
 CLI and JSON use the same application operations. `--help` is available on the
-top-level command and subcommands. JSON format is useful for automation; it is
-not a separate analysis engine. `Completed` describes run termination and may
-coexist with partial coverage or an `INCOMPLETE` comparison.
-
-Blobray has no TUI, code generation, garbage collection or cross-revision
-rebase. Use the references to select commands and their supported scope.
+top-level command and subcommands. Blobray has no TUI or code generation.
 
 ## Start an investigation
 
@@ -98,25 +62,14 @@ root, `cargo blobray` and `--manifest-path tools/blobray/Cargo.toml` select it.
 
 ```console
 cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray
-cargo blobray init --project /path/to/research
-cargo blobray import --project /path/to/research --input vendor=/path/to/lib.a --limit-mode watchdog
-cargo blobray analyze-project --project /path/to/research --limit-mode watchdog
-cargo blobray status --project /path/to/research --limit-mode watchdog
+cargo blobray --format json register-accesses --input vendor=/path/to/lib.a --range 0x60000000:0x100000
+cargo blobray --format json audit-targets --artifact firmware.elf --forbid rom=0x40000000..0x40100000
 ```
 
-Kernel enforcement requires a delegated cgroup. `--limit-mode watchdog` explicitly
-selects sampled process-tree RSS enforcement when that is the desired policy;
-there is no automatic fallback. See the [operator reference](next/README.md) for
-linking, research, execution/comparison and preservation.
-Explicit executable ranges and physical static/dynamic symbols support retained
-code research without inferred boundaries. Exact data ranges can be exported
-with captured bytes and provenance; see the operator reference.
-CLI/JSON share the [application](crates/application/README.md) operations.
-The register catalogue reports
-MMIO candidates and masks separately from reviewed physical declarations.
-Configured semantic IR profiles retain original facts and provenance. Static trace
-queries compare explicitly selected physical MMIO/fence observations with visible
-path blockers and assumptions; they are distinct from concrete execution.
+`--working-memory-mib`, `--timeout-secs` and `--max-work-units` bound each
+command cooperatively inside its process. CLI/JSON share the
+[application](crates/application/README.md) operations. Register accesses are
+observations, separate from reviewed physical declarations.
 
 Register source publication belongs to the independent
 [register tool](../registers/README.md). It consumes reviewed hardware models and
@@ -140,8 +93,7 @@ remain conditional on the selected cases and explicit modeling assumptions.
 implemented and retain their conditional claim ceiling. Unsupported execution
 remains `INCOMPLETE`. The typed vendor scenarios run the same execution and
 comparison inside their own process through
-[in-process verification](next/reference/execution/README.md#in-process-verification),
-without a project.
+[in-process verification](next/reference/execution/README.md#in-process-verification).
 
 The [architecture](docs/design/architecture.md), [contracts](docs/design/contracts.md)
 and [workflows](docs/design/workflows.md) describe the implemented scope. Qualifying production behavior remains an external responsibility.

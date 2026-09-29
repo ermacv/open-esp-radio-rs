@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tree_names_nested_commands_and_global_flags() {
+    fn the_tree_names_commands_and_global_flags() {
         let nodes: Vec<serde_json::Value> = serde_json::from_str(&super::json()).unwrap();
         assert_eq!(nodes[0]["path"], serde_json::json!(["blobray"]));
         assert!(
@@ -85,15 +85,15 @@ mod tests {
                 .unwrap()
                 .contains(&serde_json::json!("--format"))
         );
-        let build = nodes
+        let audit = nodes
             .iter()
-            .find(|node| node["path"] == serde_json::json!(["blobray", "ir", "build"]))
+            .find(|node| node["path"] == serde_json::json!(["blobray", "audit-targets"]))
             .unwrap();
         assert!(
-            build["flags"]
+            audit["flags"]
                 .as_array()
                 .unwrap()
-                .contains(&serde_json::json!("--request"))
+                .contains(&serde_json::json!("--forbid"))
         );
         assert!(nodes.iter().all(|node| node["forwards"] == false));
     }

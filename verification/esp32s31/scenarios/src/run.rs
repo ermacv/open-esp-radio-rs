@@ -153,9 +153,6 @@ pub enum Scenario {
 
 #[derive(Clone, clap::Args)]
 pub struct Common {
-    /// `blobray` executable.
-    #[arg(long)]
-    binary: PathBuf,
     /// Pinned `libphy.a`.
     #[arg(long, default_value_os_t = crate::artifacts::default_path("libphy"))]
     library: PathBuf,
@@ -413,7 +410,6 @@ fn finish(unmet: &[Unmet], message: &str, run: &std::path::Path) -> ExitCode {
 
 fn gain(common: Common, rftest: Option<PathBuf>, report: &dyn RunReport) -> Result<Outcome> {
     let options = Options {
-        binary: common.binary,
         library: common.library,
         rom: common.rom,
         production: common.production,
@@ -425,7 +421,7 @@ fn gain(common: Common, rftest: Option<PathBuf>, report: &dyn RunReport) -> Resu
     };
     let mut g = Gain::new(&options)?;
     let unmet = gain_state::exercise(&mut g, options.rftest.is_some())?;
-    g.runner.doc("unmet-obligations", &unmet)?;
+    g.doc("unmet-obligations", &unmet)?;
     g.coefficient_boundaries()?;
     g.characterize()?;
     g.wifi()?;
@@ -457,7 +453,6 @@ fn i2c(
     report: &dyn RunReport,
 ) -> Result<Outcome> {
     let options = i2c::Options {
-        binary: common.binary,
         library: common.library,
         rom: common.rom,
         production: common.production,
@@ -470,7 +465,7 @@ fn i2c(
     };
     let mut ctx = i2c::I2c::new(&options)?;
     let unmet = i2c::unmet(options.sdk.is_some(), options.phy_sdk.is_some());
-    ctx.runner.doc("unmet-obligations", &unmet)?;
+    ctx.doc("unmet-obligations", &unmet)?;
     if options.phy_sdk.is_some() {
         rfpll::exercise(&mut ctx)?;
     }
@@ -508,7 +503,6 @@ fn i2c(
 impl Common {
     fn phy(self) -> PhyOptions {
         PhyOptions {
-            binary: self.binary,
             library: self.library,
             rom: self.rom,
             production: self.production,
@@ -556,7 +550,6 @@ fn wifi_mac(
         .map(|id| crate::artifacts::default_path(id));
     let archives = named.into_iter().chain(pinned).collect();
     let options = mac::MacOptions {
-        binary: common.binary,
         suite: &mac::WIFI_MAC,
         archives,
         rom: common.rom,
@@ -593,7 +586,6 @@ fn bluetooth(
     report: &dyn RunReport,
 ) -> Result<Outcome> {
     let options = mac::MacOptions {
-        binary: common.binary,
         suite: &ble::BLUETOOTH,
         archives: ble::BLUETOOTH
             .archives
@@ -629,7 +621,6 @@ fn bluetooth(
 
 fn coex_hw(common: Common, phy_sdk: PathBuf, report: &dyn RunReport) -> Result<Outcome> {
     let options = mac::MacOptions {
-        binary: common.binary,
         suite: &coex_hw::COEX_HW,
         archives: coex_hw::COEX_HW
             .archives
@@ -665,7 +656,6 @@ fn coex_hw(common: Common, phy_sdk: PathBuf, report: &dyn RunReport) -> Result<O
 
 fn coex(common: Common, libcoexist: PathBuf, report: &dyn RunReport) -> Result<Outcome> {
     let options = coex::CoexOptions {
-        binary: common.binary,
         library: libcoexist,
         rom: common.rom,
         production: common.production,

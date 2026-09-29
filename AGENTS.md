@@ -121,8 +121,8 @@ its vendor providers form the separate `tools/blobray` workspace with its own
 lockfile and target directory; pass `--manifest-path tools/blobray/Cargo.toml`
 to Cargo for them. Build the Blobray host with `cargo build --manifest-path
 tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray`
-(or `cargo blobray`). Real analyses use its built-in supervisor; select `--limit-mode
-watchdog` explicitly when kernel cgroup delegation is unavailable. Register
+(or `cargo blobray`). Blobray runs every analysis inside its own process under
+cooperative work, time and working-memory limits. Register
 publication uses `cargo registers generate --manifest
 registers/esp32s31/publication/registers.toml --check`. HIL commands require attached hardware;
 follow `hil/targets/esp32s31/README.md`.

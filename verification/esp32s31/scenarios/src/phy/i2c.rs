@@ -15,11 +15,11 @@ use crate::phy::image_layout;
 use crate::session::{Artifact, Session, image_symbol, request};
 use blobray_domain::{
     ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
-    EffectRule, EntrySelection, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
-    ExecutionStop, ExecutionTarget, FunctionSource, LinkRequest, MemoryAccess, ModelStatus,
-    ObjectId, ObjectLocation, RegionLifetime, RegisterCell, SessionReset,
+    EffectRule, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionStop,
+    ExecutionTarget, LinkRequest, MemoryAccess, ModelStatus, ObjectId, ObjectLocation,
+    RegionLifetime, RegisterCell, SessionReset,
 };
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf};
 
 /// Production destination of the initialized 400-byte parameter prefix.
 const SETUP_DESTINATION: u32 = 0x3fff_2000;
@@ -91,7 +91,6 @@ pub fn command_words(dynamic: &[u32; 19]) -> Vec<u32> {
 }
 
 pub struct Options {
-    pub binary: PathBuf,
     pub library: PathBuf,
     pub rom: PathBuf,
     pub production: PathBuf,
@@ -204,19 +203,16 @@ impl I2c {
             });
         }
         let session = Session::start(
-            &options.binary,
             &options.output,
             options.budget,
             &inputs,
             "I2C software comparison",
             &options.patches,
         )?;
-        let (run, revision, inventory) = (&session.run, &session.revision, &session.inventory);
+        let (run, inventory) = (&session.run, &session.inventory);
         let object = named_object(inventory, 0, "phy_i2c.o")?;
         let section = named_section(object, ".rodata.CSWTCH.51")?;
         let request = data_request(
-            revision,
-            FunctionSource::Input { input: 0 },
             object,
             DataSelector::Section {
                 section: section.index,
@@ -224,10 +220,9 @@ impl I2c {
                 length: 200,
             },
         );
-        let table = session.data("table", &request, &run.join("table"))?;
-        if sha256(&fs::read(run.join("table/object.elf"))?) != OBJECT_SHA
-            || sha256(&table) != TABLE_SHA
-        {
+        let exported = session.data("table", &request)?;
+        let table = exported.bytes;
+        if exported.payload.as_str() != OBJECT_SHA || sha256(&table) != TABLE_SHA {
             return Err(invalid("I2C object or table identity mismatch"));
         }
         let leaves = options.sdk.is_some();
@@ -249,11 +244,8 @@ impl I2c {
                 "phy_set_rfpll_freq_new",
             ]);
         }
-        let select = |input: usize, name: &str| -> Result<EntrySelection> {
-            Ok(EntrySelection {
-                input: input as u64,
-                symbol: symbol(inventory, input, name)?.id.clone(),
-            })
+        let select = |input: usize, name: &str| -> Result<blobray_domain::SymbolId> {
+            Ok(symbol(inventory, input, name)?.id.clone())
         };
         // ROM first; the SDK firmware supplies the crystal-clock and
         // diagnostics symbols the ROM lacks.
@@ -266,8 +258,7 @@ impl I2c {
         }
         let link = LinkRequest {
             companions: vec![],
-            revision: Some(revision.clone()),
-            inputs: vec![0],
+            inputs: vec![session.input_id(0)?],
             entry: select(0, "phy_i2c_master_cmd_mem_init")?,
             roots: roots.iter().map(|n| select(0, n)).collect::<Result<_>>()?,
             layout: image_layout(),
@@ -289,11 +280,12 @@ impl I2c {
         assert_eq!(size, u64::from(PHY_PARAM_BYTES));
         assert!(
             linked
+                .manifest
                 .mappings
                 .iter()
                 .any(|m| m.address == u64::from(parameter) && m.size == u64::from(PHY_PARAM_BYTES))
         );
-        let (vendor, replacement) = session.targets(&linked.image)?;
+        let (vendor, replacement) = session.targets(&linked.manifest.elf)?;
         Ok(Self {
             image_object: ObjectId {
                 artifact: linked.manifest.elf.clone(),

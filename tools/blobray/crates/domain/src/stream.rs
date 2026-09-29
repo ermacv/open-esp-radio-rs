@@ -93,36 +93,6 @@ pub trait ElfSink {
     fn diagnostic(&mut self, record: &Diagnostic, control: &mut dyn RunControl) -> Result<()>;
 }
 
-/// Snapshot callbacks have read-only authority and preserve physical order.
-pub trait InventorySink: ElfSink {
-    /// Container framing coverage for the current input, before object callbacks.
-    fn container(
-        &mut self,
-        _kind: ContainerKind,
-        _members_complete: bool,
-        _control: &mut dyn RunControl,
-    ) -> Result<()> {
-        Ok(())
-    }
-
-    fn revision(&mut self, _header: &RevisionHeader, _control: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-    fn input(
-        &mut self,
-        _ordinal: u64,
-        _input: &InputRecord,
-        _control: &mut dyn RunControl,
-    ) -> Result<()> {
-        Ok(())
-    }
-    fn object(&mut self, _object: &ObjectInventory, _control: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-    fn external(&mut self, _member: &ExternalMember, _control: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-}
 impl ElfSink for () {
     fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {
         Ok(())
@@ -137,7 +107,6 @@ impl ElfSink for () {
         Ok(())
     }
 }
-impl InventorySink for () {}
 
 impl ByteSource for &[u8] {
     fn len(&self) -> u64 {

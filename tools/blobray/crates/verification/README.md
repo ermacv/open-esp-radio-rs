@@ -1,8 +1,8 @@
 # Blobray verification
 
 `blobray-verification` compares concrete observations through domain values and
-validates the records of a run. It has no filesystem, store, executor, selection
-or publication authority. Application
+validates the records of a run. It has no filesystem, executor or selection
+authority. Application
 supplies observations, the exact case relation and shared operation control.
 
 The verifier compares explicitly selected ordered

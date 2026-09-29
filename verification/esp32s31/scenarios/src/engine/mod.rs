@@ -6,5 +6,5 @@ pub mod harness_edges;
 pub mod layout;
 
 pub use oer_vendor_scenario_engine::{
-    artifacts, coverage, evidence, harness, observation, session, setup_cache, state,
+    artifacts, coverage, evidence, harness, observation, session, state,
 };

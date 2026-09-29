@@ -1,20 +1,19 @@
 //! Shared scenario lifecycle: run directory, linked image, execution
-//! submission, failure without publication and source-free preservation.
-use crate::harness::{Budget, Input, ProbeCatalog, Result, Runner, args, invalid, seed};
-use blobray_application::QuerySummary;
+//! submission and failure reports. Capture, linking, data and execution run
+//! in this process over the authenticated inputs, identified by content.
+use crate::harness::{Budget, Input, ProbeCatalog, Result, invalid, seed};
+use blobray_application::data::DataExport;
 use blobray_application::in_process::Executable;
 use blobray_domain::{
-    ArtifactId, CallAbi, CallEndpoint, CompanionProposal, EffectContract, EntrySelection,
-    ErrorCode, ExecutionEvidence, ExecutionRequest, ExecutionTarget, ImageManifest, ImageMapping,
-    LayoutProjection, LinkRequest, ObjectId, PreparedImageId, ReviewedCallBoundary, Revision,
-    RevisionId, SymbolId, SymbolTableKind,
+    ArtifactId, ArtifactInventory, CallAbi, CallEndpoint, EffectContract, ErrorCode,
+    ExecutionEvidence, ExecutionRequest, ExecutionTarget, ImageManifest, LayoutProjection,
+    LinkRequest, ObjectId, ReviewedCallBoundary, SymbolId, SymbolTableKind,
 };
-use blobray_next_host::wire::RecordDocument;
+use blobray_next_host::linux::ElfLinker;
 use evidence_index::LocationKind;
 use object::{Object, ObjectSection, ObjectSymbol};
 use std::{
     collections::BTreeMap,
-    ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
@@ -86,29 +85,19 @@ pub struct ComparedCase {
 #[path = "../../../schema/scenario-evidence.rs"]
 pub mod evidence_index;
 
-/// Authenticated inputs, their captured revision and the probe catalog.
+/// Authenticated inputs, their inventory and the probe catalog.
 pub struct Session {
-    pub runner: Runner,
     pub run: PathBuf,
-    pub revision: RevisionId,
-    pub inventory: Revision,
+    /// Budget of every Blobray operation of the session.
+    pub budget: Budget,
+    /// Inventory of every captured input, by input index.
+    pub inventory: Vec<ArtifactInventory>,
     pub probes: ProbeCatalog,
     pub artifacts: Vec<Artifact>,
     /// Authenticated captured inputs, by input index.
     inputs: Vec<Executable>,
-    /// Setup results memoized by Blobray, input and request content.
-    cache: crate::setup_cache::SetupCache,
-    /// Session setup entry holding the project snapshot.
-    setup: crate::setup_cache::Entry,
-    /// Whether this run's Blobray project exists; it is created only when a
-    /// setup operation misses the cache.
-    project: std::cell::Cell<bool>,
-    /// Exported executable of each prepared image.
-    images: std::cell::RefCell<BTreeMap<PreparedImageId, Executable>>,
-    /// Images this run took from the link cache without preparing them in a
-    /// project. A later operation on the project must prepare them first:
-    /// the restored session snapshot predates every link.
-    unprepared: std::cell::RefCell<Vec<CachedLink>>,
+    /// Every linked image, by content.
+    images: std::cell::RefCell<BTreeMap<ArtifactId, Executable>>,
     /// Effect contracts and projections the scenario's relations select,
     /// reviewed through git and identified by content.
     effects: Vec<EffectContract>,
@@ -121,106 +110,47 @@ pub struct Session {
     patches: Vec<blobray_application::in_process::ImagePatch>,
 }
 
-/// A prepared image and its resolved roots, including the entry.
-#[derive(serde::Serialize, serde::Deserialize)]
+/// A linked image and its resolved roots, including the entry.
 pub struct LinkedImage {
-    pub image: PreparedImageId,
     pub manifest: ImageManifest,
-    pub mappings: Vec<ImageMapping>,
     pub roots: BTreeMap<String, u32>,
-}
-
-/// Arguments of one link served from the cache, and its cached image.
-struct CachedLink {
-    request: LinkRequest,
-    linker: PathBuf,
-    entry: String,
-    candidates: Vec<u64>,
-    image: PreparedImageId,
-}
-
-pub fn path_arg(path: &Path) -> OsString {
-    path.as_os_str().to_owned()
 }
 
 /// The linked image file of a run's `image` directory.
 const IMAGE_ELF: &str = "image.elf";
 
-/// Name of the project snapshot stored with the session setup entry.
-const PROJECT_SNAPSHOT: &str = "project";
-
 /// Input index of the compiled production probe ELF.
 const PROBE_INPUT: usize = 2;
 
 impl Session {
-    /// Create the run's Blobray project from the authenticated inputs, once,
-    /// when a setup operation misses the cache.
-    fn ensure_project(&self) -> Result<()> {
-        if !self.project.get() {
-            self.setup
-                .restore(PROJECT_SNAPSHOT, &self.run.join("project"))?;
-            if self.runner.inventory()? != self.inventory {
-                return Err(invalid("restored project differs from the cached setup"));
-            }
-            self.project.set(true);
-        }
-        // Prepare every image this run took from the link cache, so project
-        // operations that select it find it. Linking is deterministic: the
-        // prepared image must be the cached one.
-        let unprepared = std::mem::take(&mut *self.unprepared.borrow_mut());
-        for link in unprepared {
-            // The export directory holds the cached copy of an earlier image;
-            // replay in link order leaves it with the same final image.
-            let exported = self.run.join("image");
-            if exported.exists() {
-                fs::remove_dir_all(&exported)?;
-            }
-            let linked =
-                self.link_uncached(&link.request, &link.linker, &link.entry, &link.candidates)?;
-            if linked.image != link.image {
-                return Err(invalid("re-prepared image differs from the cached link"));
-            }
-        }
-        Ok(())
+    /// Retain `value` as the request document `name` next to the evidence.
+    pub fn doc<T: serde::Serialize>(&self, name: &str, value: &T) -> Result<PathBuf> {
+        write_doc(&self.run, name, value)
     }
 
-    /// Export the captured bytes `request` selects into `output`, from the
-    /// setup cache when present. Returns the selected data bytes.
-    pub fn data(
-        &self,
-        name: &str,
-        request: &blobray_domain::DataRequest,
-        output: &Path,
-    ) -> Result<Vec<u8>> {
-        const FILES: [&str; 2] = ["data.bin", "object.elf"];
-        let entry = self.cache.entry("data", request)?;
-        if entry.load::<()>()?.is_none() {
-            self.ensure_project()?;
-            self.runner.data(name, request, output)?;
-            let files: Vec<(&str, PathBuf)> = FILES
-                .iter()
-                .map(|f| (*f, output.join(f)))
-                .filter(|(_, p)| p.exists())
-                .collect();
-            let files: Vec<(&str, &Path)> = files.iter().map(|(n, p)| (*n, p.as_path())).collect();
-            entry.store(&(), &files)?;
-        } else {
-            fs::create_dir_all(output)?;
-            for file in FILES {
-                let cached = entry.file(file);
-                if cached.exists() {
-                    fs::copy(cached, output.join(file))?;
-                }
-            }
-        }
-        Ok(fs::read(output.join("data.bin"))?)
+    /// Content identity of the captured input `index`.
+    pub fn input_id(&self, index: usize) -> Result<ArtifactId> {
+        self.inputs
+            .get(index)
+            .map(|e| e.id().clone())
+            .ok_or_else(|| invalid(format!("input {index} is not captured")))
     }
 
-    /// Create a fresh `run-*` directory, authenticate the inputs and read their
-    /// inventory and the probe catalog of the compiled production input, from
-    /// the setup cache when present.
+    /// The captured bytes `request` selects, retaining the request as `name`.
+    pub fn data(&self, name: &str, request: &blobray_domain::DataRequest) -> Result<DataExport> {
+        self.doc(name, request)?;
+        let executables = self.executables();
+        Ok(blobray_application::data::export(
+            request,
+            &executables,
+            &self.budget.memory()?,
+            &mut self.budget.control(),
+        )?)
+    }
+
+    /// Create a fresh `run-*` directory, authenticate the inputs and read
+    /// their inventory and the probe catalog of the compiled production input.
     pub fn start(
-        binary: &Path,
         output: &Path,
         budget: Budget,
         inputs: &[Input<'_>],
@@ -228,49 +158,36 @@ impl Session {
         patches: &[blobray_application::in_process::ImagePatch],
     ) -> Result<Self> {
         let run = start_run(output)?;
-        let runner = Runner::new(binary, &run, run.join("project"), budget)?;
         let (identities, contents) = crate::harness::authenticate(inputs)?;
         let roles: Vec<_> = inputs.iter().map(|i| i.role).collect();
-        runner.doc(
+        write_doc(
+            &run,
             "identities",
             &serde_json::json!({"sha256": identities, "roles": roles, "scope": scope}),
         )?;
-        let cache = crate::setup_cache::SetupCache::new(output, binary, &roles, &identities)?;
-        let entry = cache.entry("session", &serde_json::json!({"probes": PROBE_INPUT}))?;
-        let (revision, inventory, probes, project) =
-            match entry.load::<(RevisionId, Revision, ProbeCatalog)>()? {
-                Some((revision, inventory, probes)) => (revision, inventory, probes, false),
-                None => {
-                    let revision = runner.import(&roles, &contents)?;
-                    let inventory = runner.inventory()?;
-                    let probes =
-                        ProbeCatalog::capture(&runner, &revision, &inventory, PROBE_INPUT)?;
-                    // The project snapshot lets a later run that misses
-                    // another setup entry restore this exact revision: a
-                    // fresh import creates a new project identity.
-                    entry.store(
-                        &(&revision, &inventory, &probes),
-                        &[(PROJECT_SNAPSHOT, &run.join("project"))],
-                    )?;
-                    (revision, inventory, probes, true)
-                }
-            };
-        if let Some(rom) = inputs.iter().position(|i| i.role == "rom") {
+        let inputs: Vec<Executable> = contents.into_iter().map(Executable::new).collect();
+        let inventory = inputs
+            .iter()
+            .map(|input| {
+                blobray_application::captured::inventory(
+                    input,
+                    &budget.memory()?,
+                    &mut budget.control(),
+                )
+            })
+            .collect::<blobray_domain::Result<Vec<_>>>()?;
+        let probes = ProbeCatalog::capture(&inventory, &inputs, PROBE_INPUT, &budget)?;
+        if let Some(rom) = roles.iter().position(|role| *role == "rom") {
             verify_rom_symbols(&inventory, rom)?;
         }
         Ok(Self {
-            runner,
             run,
-            revision,
+            budget,
             inventory,
             probes,
             artifacts: vec![],
-            inputs: contents.into_iter().map(Executable::new).collect(),
-            cache,
-            setup: entry,
-            project: std::cell::Cell::new(project),
+            inputs,
             images: Default::default(),
-            unprepared: Default::default(),
             effects: vec![],
             reviewed: vec![],
             projections: vec![],
@@ -287,7 +204,7 @@ impl Session {
         name: &str,
         address: u32,
     ) -> Result<CallEndpoint> {
-        let symbol = image_symbol_id(&self.run.join("image/image.elf"), object, name)?;
+        let symbol = image_symbol_id(&self.run.join("image").join(IMAGE_ELF), object, name)?;
         Ok(CallEndpoint {
             object: object.clone(),
             symbol: Some(symbol),
@@ -317,7 +234,7 @@ impl Session {
         contract: EffectContract,
         reason: &str,
     ) -> Result<ArtifactId> {
-        self.runner.doc(
+        self.doc(
             name,
             &serde_json::json!({"subject": subject, "reason": reason, "contract": &contract}),
         )?;
@@ -335,9 +252,9 @@ impl Session {
 
     /// Digest of the reviewed content of the selected contract: its rules,
     /// classification, claim ceiling, applicability and reason. The call
-    /// endpoints name this run's imported revision and prepared image, so
-    /// they stay out and the digest is the same for every run of unchanged
-    /// sources.
+    /// endpoints name the linked images by content, which changes with any
+    /// linked input, so they stay out and the digest changes only with the
+    /// reviewed content.
     fn review_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
         for contract in &self.effects {
             let id = blobray_application::in_process::effect_contract_id(contract)?;
@@ -359,8 +276,8 @@ impl Session {
     }
 
     /// Digest of the reviewed content of the selected projection: its fields,
-    /// branches, applicability and reason, without the run-specific
-    /// endpoints.
+    /// branches, applicability and reason, without the endpoints that name
+    /// the linked images by content.
     fn projection_digest(&self, selected: &blobray_domain::ArtifactId) -> Result<String> {
         for projection in &self.projections {
             let id = blobray_application::in_process::projection_id(projection)?;
@@ -388,7 +305,7 @@ impl Session {
         projection: LayoutProjection,
         reason: &str,
     ) -> Result<ArtifactId> {
-        self.runner.doc(
+        self.doc(
             name,
             &serde_json::json!({"subject": subject, "reason": reason, "projection": &projection}),
         )?;
@@ -425,8 +342,7 @@ impl Session {
         request: &ExecutionRequest,
     ) -> blobray_domain::Result<blobray_application::in_process::InProcessResult> {
         let executables = self.executables();
-        let budget = self.runner.budget;
-        let memory = blobray_domain::WorkingMemory::new(budget.working_memory_mib << 20)?;
+        let memory = self.budget.memory()?;
         blobray_application::in_process::verify(
             &blobray_application::in_process::InProcessComparison {
                 request,
@@ -439,98 +355,54 @@ impl Session {
             },
             crate::chip().isa.executor(),
             &memory,
-            &mut crate::harness::InProcessControl::new(&budget),
+            &mut self.budget.control(),
         )
     }
 
     /// Every companion the request's closure needs, proposed by a trial link
-    /// against `candidates` in priority order. An unresolved name fails.
+    /// against the inputs `candidates` in priority order. An unresolved name
+    /// fails.
     pub fn propose(
         &self,
         request: &LinkRequest,
         linker: &Path,
         candidates: &[u64],
-    ) -> Result<Vec<EntrySelection>> {
-        let runner = &self.runner;
-        let mut command = args(["propose-companions", "--request"]);
-        command.extend([
-            path_arg(&runner.doc("propose", request)?),
-            "--linker".into(),
-            path_arg(&std::path::absolute(linker)?),
-        ]);
-        for candidate in candidates {
-            command.extend(["--candidate".into(), candidate.to_string().into()]);
-        }
-        let called = runner.call("propose", &command, 0);
-        // The proposal document is retained even when names stay unresolved.
-        let document: serde_json::Value =
-            serde_json::from_slice(&fs::read(self.run.join("propose.json"))?).unwrap_or_default();
-        let proposal: Option<CompanionProposal> =
-            serde_json::from_value(document["summary"]["proposal"].clone()).ok();
-        match (called, proposal) {
-            (Ok(_), Some(proposal)) if proposal.unresolved.is_empty() => {
-                Ok(proposal.resolved.into_iter().map(|c| c.selection).collect())
-            }
-            (_, Some(proposal)) => Err(invalid(format!(
+    ) -> Result<Vec<SymbolId>> {
+        self.doc("propose", request)?;
+        let candidates = candidates
+            .iter()
+            .map(|index| self.input_id(*index as usize))
+            .collect::<Result<Vec<_>>>()?;
+        let proposal = blobray_application::linking::propose_companions(
+            request,
+            &candidates,
+            &self.inputs,
+            &std::path::absolute(linker)?,
+            &ElfLinker,
+            &self.run,
+            &self.budget.memory()?,
+            &mut self.budget.control(),
+        )?;
+        // The proposal is retained even when names stay unresolved.
+        fs::write(
+            self.run.join("propose.json"),
+            serde_json::to_vec(&proposal)?,
+        )?;
+        if !proposal.unresolved.is_empty() {
+            return Err(invalid(format!(
                 "unresolved link names: {}",
                 proposal.unresolved.join(", ")
-            ))),
-            (Err(error), None) => Err(error),
-            (Ok(_), None) => Err(invalid("propose-companions returned no proposal")),
+            )));
         }
+        Ok(proposal.resolved.into_iter().map(|c| c.symbol).collect())
     }
 
-    /// Complete `request` with proposed companions from `candidates`, then plan,
-    /// prepare, inspect and export one linked image. `entry` names the
-    /// request's entry so it resolves like the other roots. The retained plan
-    /// request lists every exact companion.
+    /// Complete `request` with proposed companions from the inputs
+    /// `candidates`, then link one image into the run's `image` directory with
+    /// its link map. `entry` names the request's entry so it resolves like
+    /// the other roots. The retained plan request lists every exact
+    /// companion.
     pub fn link(
-        &self,
-        request: &LinkRequest,
-        linker: &Path,
-        entry: &str,
-        candidates: &[u64],
-    ) -> Result<LinkedImage> {
-        let key = self.cache.entry(
-            "link",
-            &serde_json::json!({
-                "request": request,
-                "linker": crate::harness::sha256(&fs::read(linker)?),
-                "entry": entry,
-                "candidates": candidates,
-                // The entry holds the image and its link map, which names
-                // the input sections of section-local objects.
-                "files": [IMAGE_ELF, crate::state::LINK_MAP],
-            }),
-        )?;
-        let exported = self.run.join("image").join(IMAGE_ELF);
-        let map = self.run.join("image").join(crate::state::LINK_MAP);
-        if let Some(linked) = key.load::<LinkedImage>()? {
-            fs::create_dir_all(self.run.join("image"))?;
-            fs::copy(key.file(IMAGE_ELF), &exported)?;
-            fs::copy(key.file(crate::state::LINK_MAP), &map)?;
-            self.images
-                .borrow_mut()
-                .insert(linked.image.clone(), Executable::new(fs::read(&exported)?));
-            self.unprepared.borrow_mut().push(CachedLink {
-                request: request.clone(),
-                linker: linker.to_path_buf(),
-                entry: entry.to_owned(),
-                candidates: candidates.to_vec(),
-                image: linked.image.clone(),
-            });
-            return Ok(linked);
-        }
-        self.ensure_project()?;
-        let linked = self.link_uncached(request, linker, entry, candidates)?;
-        key.store(
-            &linked,
-            &[(IMAGE_ELF, &exported), (crate::state::LINK_MAP, &map)],
-        )?;
-        Ok(linked)
-    }
-
-    fn link_uncached(
         &self,
         request: &LinkRequest,
         linker: &Path,
@@ -541,68 +413,37 @@ impl Session {
         request
             .companions
             .extend(self.propose(&request, linker, candidates)?);
-        let request = &request;
-        let runner = &self.runner;
-        let plan = self.run.join("link-plan.json");
-        let linker = path_arg(&std::path::absolute(linker)?);
-        let mut command = args(["link-plan", "--request"]);
-        command.extend([
-            path_arg(&runner.doc("plan", request)?),
-            "--linker".into(),
-            linker.clone(),
-            "--output".into(),
-            path_arg(&plan),
-        ]);
-        runner.call("plan", &command, 0)?;
-        let description: blobray_domain::LinkPlanDescription =
-            serde_json::from_slice(&fs::read(&plan)?)?;
-        if !description.ready() {
-            let blockers: Vec<_> = description
-                .blockers
-                .iter()
-                .map(|b| b.message.as_str())
-                .collect();
-            return Err(invalid(format!(
-                "link plan blocked: {}",
-                blockers.join("; ")
-            )));
-        }
-        let mut command = args(["prepare-image", "--plan"]);
-        command.extend([path_arg(&plan), "--linker".into(), linker]);
-        let image = runner
-            .run_record("prepare", &command, 0)?
-            .image
-            .ok_or_else(|| invalid("prepare-image published no image"))?;
-        let view: RecordDocument<serde_json::Value> =
-            runner.json("image", &args(["image", "--id", image.as_str()]))?;
-        let mut mappings = vec![];
-        for record in &view.records {
-            if record.kind == "mapping" {
-                mappings.push(serde_json::from_value(record.value.clone())?);
-            }
-        }
-        let QuerySummary::Image { manifest, .. } = view.summary else {
-            return Err(invalid("image query returned another summary"));
-        };
+        self.doc("plan", &request)?;
+        let linked = blobray_application::linking::link(
+            &request,
+            &self.inputs,
+            &std::path::absolute(linker)?,
+            &ElfLinker,
+            &self.run,
+            &self.budget.memory()?,
+            &mut self.budget.control(),
+        )?;
+        let directory = self.run.join("image");
+        fs::create_dir_all(&directory)?;
+        fs::write(directory.join(IMAGE_ELF), linked.elf.bytes())?;
+        fs::write(directory.join(crate::state::LINK_MAP), &linked.map)?;
+        fs::write(
+            directory.join("manifest.json"),
+            serde_json::to_vec_pretty(&linked.manifest)?,
+        )?;
         let mut roots = BTreeMap::new();
-        for root in &manifest.roots {
+        for root in &linked.manifest.roots {
             roots.insert(
                 String::from_utf8(root.name.clone())?,
                 u32::try_from(root.address)?,
             );
         }
-        roots.insert(entry.to_owned(), u32::try_from(manifest.entry)?);
-        let mut command = args(["export-image", "--id", image.as_str(), "--output"]);
-        command.push(path_arg(&self.run.join("image")));
-        runner.call("export-image", &command, 0)?;
-        self.images.borrow_mut().insert(
-            image.clone(),
-            Executable::new(fs::read(self.run.join("image/image.elf"))?),
-        );
+        roots.insert(entry.to_owned(), u32::try_from(linked.manifest.entry)?);
+        self.images
+            .borrow_mut()
+            .insert(linked.manifest.elf.clone(), linked.elf);
         Ok(LinkedImage {
-            image,
-            manifest: *manifest,
-            mappings,
+            manifest: linked.manifest,
             roots,
         })
     }
@@ -610,20 +451,13 @@ impl Session {
     /// The linked vendor image with ROM and production companions, and the
     /// compiled production input with the ROM companion. Stack bytes stay
     /// unknown until a request selects a fill.
-    pub fn targets(&self, image: &PreparedImageId) -> Result<(ExecutionTarget, ExecutionTarget)> {
+    pub fn targets(&self, image: &ArtifactId) -> Result<(ExecutionTarget, ExecutionTarget)> {
         let stack = seed(crate::chip().stack.0, crate::chip().stack.1, &[], None)?;
-        let image = self
-            .images
-            .borrow()
-            .get(image)
-            .map(|e| e.id().clone())
-            .ok_or_else(|| invalid("image is not exported"))?;
-        let input = |index: usize| -> Result<ArtifactId> {
-            self.inputs
-                .get(index)
-                .map(|e| e.id().clone())
-                .ok_or_else(|| invalid(format!("input {index} is not captured")))
-        };
+        if !self.images.borrow().contains_key(image) {
+            return Err(invalid("image is not linked"));
+        }
+        let image = image.clone();
+        let input = |index: usize| self.input_id(index);
         Ok((
             ExecutionTarget {
                 executables: vec![image, input(1)?, input(2)?],
@@ -704,13 +538,7 @@ impl Session {
             .and_then(|cases| {
                 // Every undeclared access, not only the first one per side.
                 let missing = self.discover(request, &result.records)?;
-                crate::failure::write(
-                    self.runner.run_directory(),
-                    label,
-                    verdict,
-                    &cases,
-                    &missing,
-                )
+                crate::failure::write(&self.run, label, verdict, &cases, &missing)
             })
             .map_or_else(
                 |e| format!("no failure report: {e}"),
@@ -879,14 +707,13 @@ impl Session {
             .map(|a| (a.identity.clone(), &a.request, a.records.as_slice()))
             .collect();
         let executables = self.target_executables(&selected[0].request.vendor);
-        let memory =
-            blobray_domain::WorkingMemory::new(self.runner.budget.working_memory_mib << 20)?;
+        let memory = self.budget.memory()?;
         let report = blobray_application::in_process::coverage(
             &pairs,
             &executables,
             &blobray_backend_riscv::RiscvDecoder,
             &memory,
-            &mut crate::harness::InProcessControl::new(&self.runner.budget),
+            &mut self.budget.control(),
         )
         .map_err(|e| invalid(format!("{suite} {symbol} coverage: {e:?}")))?;
         let root = report
@@ -1106,7 +933,7 @@ impl Session {
     /// Addresses of each defined function symbol of the linked image, by
     /// name: several for a name that static functions share.
     fn image_functions(&self) -> Result<BTreeMap<String, Vec<u32>>> {
-        let elf = fs::read(self.run.join("image/image.elf"))?;
+        let elf = fs::read(self.run.join("image").join(IMAGE_ELF))?;
         let file = object::File::parse(&*elf)?;
         let mut functions = BTreeMap::<String, Vec<u32>>::new();
         for symbol in file.symbols() {
@@ -1271,12 +1098,12 @@ impl Session {
         };
         report.report(&crate::findings::Findings {
             suite,
-            directory: self.runner.run_directory(),
+            directory: &self.run,
             unclaimed: &unclaimed,
             gateways: &observed.gateways,
             untriaged: untriaged_findings,
         })?;
-        let rules = crate::rule_use::check(self.runner.run_directory(), suite, &self.reviewed)?;
+        let rules = crate::rule_use::check(&self.run, suite, &self.reviewed)?;
         println!("{suite} effect rule selections: {}", rules.display());
         Ok(Claims {
             entries,
@@ -1340,7 +1167,7 @@ impl Session {
 }
 
 /// The named ROM storage constants are the pinned ROM's own symbols.
-pub fn verify_rom_symbols(inventory: &Revision, rom: usize) -> Result<()> {
+pub fn verify_rom_symbols(inventory: &[ArtifactInventory], rom: usize) -> Result<()> {
     for &(name, address, size) in crate::chip().rom_symbols {
         let symbol = crate::harness::symbol(inventory, rom, name)?;
         if symbol.value != u64::from(address) || symbol.size != size {
@@ -1350,6 +1177,13 @@ pub fn verify_rom_symbols(inventory: &Revision, rom: usize) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Write `value` as the request document `name` in `run`.
+fn write_doc<T: serde::Serialize>(run: &Path, name: &str, value: &T) -> Result<PathBuf> {
+    let path = run.join(format!("{name}.request.json"));
+    fs::write(&path, serde_json::to_vec(value)?)?;
+    Ok(path)
 }
 
 /// Create a fresh `run-*` directory below `output` and record it as `latest`.

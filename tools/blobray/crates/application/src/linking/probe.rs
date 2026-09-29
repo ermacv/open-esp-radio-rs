@@ -1,11 +1,10 @@
 //! Bounded adapter conformance scenario; the output uses the production validators.
 use super::*;
-use std::io::Seek;
 #[path = "probe_bytes.rs"]
 mod bytes;
 
 pub(super) fn check(
-    workspace: &LinkWorkspace<'_>,
+    workspace: &LinkWorkspace,
     host: &dyn LinkerHost,
     executable: &Path,
     identity: &LinkerIdentity,
@@ -13,13 +12,10 @@ pub(super) fn check(
 ) -> Result<()> {
     let mut previous = None;
     for attempt in 0..2 {
-        let directory = workspace.directory.join(format!("capability-{attempt}"));
-        std::fs::create_dir(&directory).map_err(storage_io)?;
-        let probe = LinkWorkspace {
-            directory: &directory,
-            disk: workspace.disk,
-            elf_limit: workspace.elf_limit,
-        };
+        let probe = workspace.nested(
+            &Path::new(&format!("capability-{attempt}")).join("probe"),
+            65536,
+        )?;
         let fingerprint = check_once(&probe, host, executable, identity, control)?;
         if previous.as_ref().is_some_and(|p| p != &fingerprint) {
             return Err(Error::new(
@@ -32,19 +28,12 @@ pub(super) fn check(
     Ok(())
 }
 fn check_once(
-    workspace: &LinkWorkspace<'_>,
+    probe: &LinkWorkspace,
     host: &dyn LinkerHost,
     executable: &Path,
     identity: &LinkerIdentity,
     control: &mut dyn RunControl,
 ) -> Result<Vec<ArtifactId>> {
-    let directory = workspace.directory.join("probe");
-    std::fs::create_dir(&directory).map_err(storage_io)?;
-    let probe = LinkWorkspace {
-        directory: &directory,
-        disk: workspace.disk,
-        elf_limit: 65536.min(workspace.elf_limit),
-    };
     let memory = WorkingMemory::new(1024 * 1024)?; // Covered by the caller's fixed 8 MiB metadata reservation.
     let members: Vec<_> = [("entry.o", bytes::ENTRY), ("helper.o", bytes::HELPER)]
         .into_iter()
@@ -53,26 +42,21 @@ fn check_once(
             probe.materialize(alias, bytes)?;
             let payload = ArtifactId::of_bytes(bytes);
             Ok(Member {
-                input: i as u64,
+                input: i,
                 object: ObjectId {
                     artifact: payload.clone(),
                     location: ObjectLocation::Standalone,
                 },
-                payload: Some(payload.clone()),
-                source: payload,
+                payload: Some(payload),
                 alias: alias.into(),
-                elf: true,
             })
         })
         .collect::<Result<_>>()?;
-    let selection = EntrySelection {
-        input: 0,
-        symbol: SymbolId {
-            object: members[0].object.clone(),
-            table: SymbolTableKind::Static,
-            table_section: 6,
-            index: 4,
-        },
+    let selection = SymbolId {
+        object: members[0].object.clone(),
+        table: SymbolTableKind::Static,
+        table_section: 6,
+        index: 4,
     };
     let roots = blobray_artifacts::inspect_link_input(
         &bytes::ENTRY,
@@ -86,7 +70,6 @@ fn check_once(
         definitions: Vec::new(),
         roots,
         blockers: Vec::new(),
-        project: ArtifactId::of_bytes(b"link-probe").as_str().parse()?,
     };
     let layout = ImageLayout {
         code: ImageRegion {
@@ -103,7 +86,7 @@ fn check_once(
         executable,
         identity,
         contract: LinkerContract::ElfAnalysisLinkV1,
-        workspace: &probe,
+        workspace: probe,
         entry: b"entry",
         roots: Vec::new(),
         forced: vec!["entry.o".into()],
@@ -113,16 +96,13 @@ fn check_once(
             .iter()
             .map(|m| LinkMember {
                 alias: m.alias.clone(),
-                occurrence: LinkObject {
-                    input: m.input,
-                    object: m.object.clone(),
-                },
+                object: m.object.clone(),
             })
             .collect(),
         layout,
         definitions: Vec::new(),
     };
-    let mut output = Outputs::new(&probe)?;
+    let mut output = Outputs::default();
     let checked = (|| {
         host.link(
             &request,
@@ -133,17 +113,15 @@ fn check_once(
             },
             control,
         )?;
-        let (roots, _) = evidence::roots(&mut output, &found, &request, control)?;
-        if output.elf.metadata().map_err(storage_io)?.len() > 65536 {
+        let (roots, _) = evidence::roots(&output, &found, &request, control)?;
+        if output.elf.len() > 65536 {
             return Err(invalid("probe output exceeds 64 KiB"));
         }
-        output.elf.rewind().map_err(storage_io)?;
-        let mut bytes = Vec::new();
-        output.elf.read_to_end(&mut bytes).map_err(storage_io)?;
+        let bytes = &output.elf;
         blobray_artifacts::validate_image(&bytes.as_slice(), &layout, &roots, &memory, control)?;
         let mut facts = Facts::default();
         blobray_artifacts::inspect_payload(
-            &bytes,
+            bytes,
             &found.members[0].object,
             &memory,
             control,
@@ -154,26 +132,17 @@ fn check_once(
                 "linker probe did not retain relocations, preserve code extent and collect unused sections",
             ));
         }
+        let observations = serde_json::to_vec(&(&output.extractions, &output.placements))
+            .map_err(|e| invalid(e.to_string()))?;
         let mut fingerprint = Vec::new();
-        for file in [
-            &mut output.elf,
-            &mut output.map,
-            &mut output.extraction,
-            &mut output.observations,
-        ] {
-            file.rewind().map_err(storage_io)?;
-            let mut bytes = Vec::new();
-            Read::by_ref(file)
-                .take(65537)
-                .read_to_end(&mut bytes)
-                .map_err(storage_io)?;
+        for bytes in [&output.elf, &output.map, &output.extraction, &observations] {
             if bytes.len() > 65536 {
                 return Err(Error::new(
                     ErrorCode::ResourceLimited,
                     "probe artifact exceeds 64 KiB",
                 ));
             }
-            fingerprint.push(ArtifactId::of_bytes_controlled(&bytes, control)?);
+            fingerprint.push(ArtifactId::of_bytes_controlled(bytes, control)?);
         }
         fingerprint.push(ArtifactId::of_bytes(&output.stderr));
         Ok(fingerprint)
@@ -258,13 +227,13 @@ impl LinkOutputSink for ProbeSink<'_> {
         self.records += 1;
         self.output.observe(r, control)
     }
-    fn elf_file(&mut self, file: TemporaryFile) -> Result<()> {
-        if file.metadata().map_err(storage_io)?.len() > 65536 {
+    fn elf(&mut self, bytes: Vec<u8>) -> Result<()> {
+        if bytes.len() > 65536 {
             return Err(Error::new(
                 ErrorCode::ResourceLimited,
                 "capability probe ELF exceeds 64 KiB",
             ));
         }
-        self.output.elf_file(file)
+        self.output.elf(bytes)
     }
 }

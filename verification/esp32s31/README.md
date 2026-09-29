@@ -39,7 +39,7 @@ those shards as stale. See
 cargo xtask vendor-scenario --chip esp32s31 all \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --bluetooth-production target/verification/esp32s31-bluetooth-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-bluetooth-elf \
-  --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog \
+  --linker /usr/bin/ld.lld --output target/blobray-research/all \
   --index verification/esp32s31/evidence/scenarios
 ```
 
@@ -58,8 +58,7 @@ packed-command responses; neither model claims physical timing or RF behavior.
 cargo xtask build vendor-probes --chip esp32s31
 cargo xtask vendor-scenario --chip esp32s31 i2c \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --linker /usr/bin/ld.lld --limit-mode watchdog \
-  --output target/blobray-phy-i2c
+  --linker /usr/bin/ld.lld --output target/blobray-phy-i2c
 ```
 
 Besides the command-memory, transport and call-boundary comparisons, the SDK
@@ -249,26 +248,23 @@ The `gain` scenario of the [typed scenario package](scenarios/src/phy/gain.rs)
 executes captured archive callbacks and ROM children against the compiled
 production arithmetic and publishers. Build and validate the probe catalog
 with `cargo xtask build vendor-probes --chip esp32s31`. Then run from the
-repository root; `xtask` builds `blobray` and the scenarios and supplies
-`--binary`:
+repository root; `xtask` builds the scenarios:
 
 ```console
 cargo xtask vendor-scenario --chip esp32s31 gain \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
   --linker /usr/bin/ld.lld \
-  --output target/blobray-research/gain --limit-mode watchdog
+  --output target/blobray-research/gain
 ```
 
-Requests and evidence are Blobray's own serde types, and CLI documents decode
-through `blobray_next_host::wire`. `cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios`
+Requests and evidence are Blobray's own serde types. `cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios`
 checks the harness, the evidence interpretation and the oracles. Those tests
 need no private inputs.
 
-Each scenario passes its Blobray budget explicitly. `--limit-mode` is required;
-`--timeout-secs` (600), `--working-memory-mib` (256) and `--max-work-units`
-(2,000,000,000) set each operation's deadline and capacities. Every finite matrix
-is one execution request, because Blobray retains requests by identity rather
-than inside 64 KiB control records. Shared guest addresses and analog command
+Each scenario passes its Blobray budget explicitly: `--timeout-secs` (600),
+`--working-memory-mib` (256) and `--max-work-units` (2,000,000,000) set each
+operation's deadline and capacities. Every finite matrix is one execution
+request. Shared guest addresses and analog command
 encodings are named in [`layout.rs`](scenarios/src/engine/layout.rs).
 
 Scenarios hold vendor knowledge, peripheral inputs and independent
@@ -408,7 +404,7 @@ name them too.
 ```console
 cargo xtask vendor-scenario --chip esp32s31 coex \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-esp32s31-probe-radio-elf \
-  --linker /usr/bin/ld.lld --output target/blobray-research/coex --limit-mode watchdog
+  --linker /usr/bin/ld.lld --output target/blobray-research/coex
 ```
 
 ## BLE PHY register initialization
@@ -755,12 +751,12 @@ current. For CLI concepts, see [Blobray](../../tools/blobray/README.md).
 ## Shared Next scenario preparation
 
 [`harness.rs`](../harness/scenarios/src/harness.rs) and [`session.rs`](../harness/scenarios/src/session.rs)
-own supervised setup operations, authenticated input capture, in-process comparison,
+own authenticated input capture, in-process inventory, linking, data export and comparison,
 exact symbol selection and the shared memory/phase/comparison builders. The I2C, transport and calibration scenarios keep their independent
 expected values and explicit peripheral assumptions.
 
 The comparison runner exports `.blobray.probes` from the captured production ELF
-through native `inventory` and `data` operations. Every declared entry must resolve;
+through in-process inventory and data export. Every declared entry must resolve;
 selected production calls must be catalog members. Named scalar arguments are
 lowered with signed range checks. Reference parameters are explicit guest
 addresses, not host pointers or inferred private layouts. Unsupported argument
@@ -770,16 +766,12 @@ Addresses, byte seeds, lifetime, reset, models and observation relations remain
 scenario choices. Opaque owner/layout types require explicit adapters. Word padding requires
 both an explicit count and fill value; unknown memory stays unknown.
 
-Setup results (the imported revision, its inventory, the probe catalog, linked
-images and data exports) are memoized in [`setup-cache`](../harness/scenarios/src/setup_cache.rs)
-below the scenario output, keyed by the Blobray executable, the authenticated input
-bytes and the operation's request. A warm run creates no Blobray project; a miss
-creates it once and checks that its revision equals the cached one.
-
-The generated requests use the Next execution format and run through Blobray's
-in-process verification over the authenticated input bytes and the exported
-linked image: no project, content store or journal participates, and records stay
-in memory. A run keeps only its results: claim verdicts, case counts, coverage
+Every operation runs in the scenario's process over the authenticated input
+bytes, identified by content: inventory, the probe catalog, linked images and
+data exports are recomputed on each run and nothing is cached. Each linked
+image's ELF, map and manifest are written below the scenario output for
+inspection. The generated requests use the Next execution format and run
+through Blobray's in-process verification; records stay in memory. A run keeps only its results: claim verdicts, case counts, coverage
 and input/source digests. The combined I2C route also checks
 [compiled call boundaries](scenarios/src/engine/harness_edges.rs) alongside positive and
 negative PHY comparisons.

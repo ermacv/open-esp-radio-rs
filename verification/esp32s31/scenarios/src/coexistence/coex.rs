@@ -170,7 +170,6 @@ struct State {
 }
 
 pub struct CoexOptions {
-    pub binary: PathBuf,
     pub library: PathBuf,
     pub rom: PathBuf,
     pub production: PathBuf,
@@ -216,7 +215,6 @@ impl Coex {
             },
         ];
         let session = Session::start(
-            &options.binary,
             &options.output,
             options.budget,
             &inputs,
@@ -225,8 +223,7 @@ impl Coex {
         )?;
         let link = LinkRequest {
             companions: vec![],
-            revision: Some(session.revision.clone()),
-            inputs: vec![0],
+            inputs: vec![session.input_id(0)?],
             entry: select(&session, 0, ROOTS[0])?,
             roots: ROOTS[1..]
                 .iter()
@@ -242,7 +239,7 @@ impl Coex {
             ROOTS[0],
             &[crate::layout::ROM_INPUT],
         )?;
-        let (vendor, production) = session.targets(&linked.image)?;
+        let (vendor, production) = session.targets(&linked.manifest.elf)?;
         let elf = std::fs::read(session.run.join("image/image.elf"))?;
         let (symbols, _) = image_data(&elf)?;
         let symbol = |name: &str| {

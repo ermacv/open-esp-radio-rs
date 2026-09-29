@@ -87,7 +87,7 @@ The host owns temporary files and the `rustfmt` process group. Formatting has a
 60-second timeout and cancellation reaps the child group. Generated Rust is limited
 to 128 MiB before reading it back. These trusted source-generation inputs and
 third-party SVD rendering do not claim allocation-controlled binary analysis.
-Blobray's separate supervisor remains the owner of untrusted binary investigations.
+Blobray remains the owner of binary investigations.
 
 Publication checks reference validity, selected applicability, reviewed semantics,
 memory ranges, API safety and generated source consistency. They do not qualify

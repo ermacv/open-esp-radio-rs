@@ -2,11 +2,8 @@
 use blobray_domain::*;
 pub mod closure;
 pub mod navigation;
-mod paths;
-pub mod pointers;
 mod references;
 pub mod registers;
-pub mod trace;
 mod value_sets;
 mod values;
 pub use references::PreparedReferences;
@@ -246,7 +243,6 @@ fn analyze_with(
             ..input.relocations.first_at(offset.saturating_add(1))
         {
             let r = &input.relocations[site];
-            control.measure(WorkMetric::RelocationLookups, 1);
             control.checkpoint(1)?;
             if input.image.is_some() {
                 break;
@@ -499,5 +495,3 @@ fn emit(
     sink.record(&record, control)
 }
 pub mod audit;
-
-pub mod flow;

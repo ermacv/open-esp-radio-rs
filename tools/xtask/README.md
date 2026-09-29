@@ -137,8 +137,8 @@ inputs and build outputs. It owns its temporary target directory, preserves a
 caller-selected Rust toolchain, and otherwise uses the repository's pinned
 channel. Extracted Blobray has no dependency on this xtask package.
 
-The built-in analysis supervisor remains owned by Blobray. Linux/OpenWrt
-fixture logic and privileged installation remain owned by HIL; xtask does not
-install fixtures or change network state. Linux process ownership uses explicit
-process groups; Blobray provides cgroup containment or an explicitly selected process-tree watchdog. Unsupported hosts
-return an error when the required ownership backend is unavailable.
+Blobray owns its analysis limits. Linux/OpenWrt fixture logic and privileged
+installation remain owned by HIL; xtask does not install fixtures or change
+network state. Linux process ownership uses explicit process groups.
+Unsupported hosts return an error when the required ownership backend is
+unavailable.

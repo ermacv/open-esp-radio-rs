@@ -1,24 +1,6 @@
-//! Function analysis values and ISA port, with explicit source/address identity.
+//! Function analysis values and ISA port, with explicit object/address identity.
 use crate::*;
 
-/// Native function facts and interpretation contract; no compatibility reader.
-pub const FUNCTION_SCHEMA: u32 = 7;
-pub const FUNCTION_POLICY: u32 = 8;
-
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum FunctionSource {
-    Input { input: u64 },
-    Image { image: PreparedImageId },
-}
-impl FunctionSource {
-    pub fn input(&self) -> Option<u64> {
-        match self {
-            Self::Input { input } => Some(*input),
-            Self::Image { .. } => None,
-        }
-    }
-}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CodeAddressSpace {
@@ -79,39 +61,10 @@ impl From<SymbolId> for FunctionSelector {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FunctionRequest {
-    pub revision: Option<RevisionId>,
-    pub source: FunctionSource,
     pub selector: FunctionSelector,
     /// Optional size override for a symbol. A Range selector rejects this field.
     #[serde(default)]
     pub extent: Option<CodeRange>,
-}
-impl FunctionRequest {
-    pub fn explicit_extent(&self) -> Option<CodeRange> {
-        match self.selector {
-            FunctionSelector::Range { extent, .. } => Some(extent),
-            _ => self.extent,
-        }
-    }
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FunctionRecipe {
-    pub abi: RiscvAbi,
-    pub schema: u32,
-    pub policy: u32,
-    pub decoder: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub semantics: Option<String>,
-    pub project: ProjectId,
-    pub revision: RevisionId,
-    pub source: FunctionSource,
-    pub address_space: CodeAddressSpace,
-    pub selector: FunctionSelector,
-    pub payload: ArtifactId,
-    pub section: u32,
-    pub extent: CodeRange,
-    pub user_extent: bool,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FunctionCoverage {
@@ -132,21 +85,6 @@ impl FunctionCoverage {
     pub fn complete(self) -> bool {
         self.decoding && self.control_flow && self.references
     }
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FunctionManifest {
-    pub schema: u32,
-    pub recipe: FunctionRecipe,
-    pub records: ArtifactId,
-    pub coverage: FunctionCoverage,
-    pub instructions: u64,
-    pub blocks: u64,
-    pub edges: u64,
-    pub references: u64,
-    pub gaps: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub semantics: Option<SemanticSummary>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -210,7 +148,7 @@ pub enum UnsupportedFlow {
     Unknown,
 }
 /// Receives captured bytes/structural records only. No project, filesystem or discovery authority.
-pub trait FunctionDecoder: PointerDecoder {
+pub trait FunctionDecoder {
     fn identity(&self) -> &'static str;
     /// Unknown is mandatory unless the ISA proves the encoding's control class.
     fn unsupported_flow(&self, _bytes: &[u8]) -> UnsupportedFlow {

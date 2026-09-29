@@ -64,7 +64,7 @@ snapshots do not invent guest transactions. All selected memory/control observat
 remain ordered relative to selected call/MMIO/fence/delay events. Different
 intermediate states or read order can DIFF even when final memory matches.
 Unknown/inaccessible reads or incomplete execution cannot MATCH. Raw excluded
-observations remain available after source removal and project restore. See
+observations remain available in the records. See
 [internal timeline contracts](../../../docs/design/contracts.md#internal-timeline).
 
 

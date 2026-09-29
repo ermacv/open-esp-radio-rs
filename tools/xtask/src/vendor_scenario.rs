@@ -1,7 +1,7 @@
-//! Build the Blobray host and the typed vendor scenarios, then run one scenario.
+//! Build the typed vendor scenarios, then run one scenario. Blobray runs
+//! inside the scenario process.
 //!
-//! Private inputs stay explicit arguments of the scenario; this task only
-//! selects the freshly built `blobray` executable.
+//! Private inputs stay explicit arguments of the scenario.
 use crate::{Context, Result, process};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -32,16 +32,6 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
     let Some((scenario, rest)) = args.split_first() else {
         return Err("select a scenario, for example `gain`".into());
     };
-    crate::phase::timed("build blobray", || {
-        process::run(crate::blobray::cargo(ctx, "build").args([
-            "--profile",
-            "blobray",
-            "-p",
-            "blobray-next",
-            "--bin",
-            "blobray",
-        ]))
-    })?;
     // Cargo keeps a `.d` only beside a root unit's output, so the verdict
     // libraries are built as roots first; the binary links the same units.
     let verdict = crate::phase::timed("build vendor scenarios", || -> Result<Vec<PathBuf>> {
@@ -73,11 +63,7 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
         Ok(verdict)
     })?;
     let mut command = ctx.command(crate::blobray::binary(ctx, binary));
-    command
-        .arg(scenario)
-        .arg("--binary")
-        .arg(crate::blobray::binary(ctx, "blobray"))
-        .args(rest);
+    command.arg(scenario).args(rest);
     for file in verdict {
         command.arg(VERDICT_DEP_INFO).arg(file);
     }

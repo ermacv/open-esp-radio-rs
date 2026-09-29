@@ -4,14 +4,17 @@ use blobray_domain::*;
 use std::time::{Duration, Instant};
 mod support;
 use support::{executable as elf, executable_with_symbols as elf_with_symbols};
-fn budget() -> ResourceBudget {
-    ResourceBudget {
-        mode: LimitMode::Watchdog,
-        poll_ms: 5,
-        grace_ms: 100,
-        timeout_ms: 30000,
+/// Work, working-memory and time limits of one execution.
+struct Budget {
+    max_work_units: Option<u64>,
+    working_memory_bytes: Option<u64>,
+    timeout_ms: u64,
+}
+fn budget() -> Budget {
+    Budget {
+        max_work_units: None,
         working_memory_bytes: Some(32 * 1024 * 1024),
-        ..Default::default()
+        timeout_ms: 30000,
     }
 }
 struct Fixture {
@@ -77,7 +80,7 @@ impl Fixture {
     }
     /// Execute and compare `r` in process under the work, working-memory
     /// and time limits of `b`.
-    fn run(&self, r: ExecutionRequest, b: ResourceBudget) -> Result<Executed> {
+    fn run(&self, r: ExecutionRequest, b: Budget) -> Result<Executed> {
         self.run_with(&r, &[], &[], b)
     }
     fn run_with(
@@ -85,7 +88,7 @@ impl Fixture {
         r: &ExecutionRequest,
         effects: &[EffectContract],
         projections: &[LayoutProjection],
-        b: ResourceBudget,
+        b: Budget,
     ) -> Result<Executed> {
         let memory = WorkingMemory::new(b.working_memory_bytes.unwrap())?;
         let result = app::in_process::verify(
@@ -527,8 +530,6 @@ mod timeline;
 mod effects;
 #[path = "execution/projections.rs"]
 mod projections;
-#[path = "execution/static_trace.rs"]
-mod static_trace;
 
 #[path = "execution/command_bank.rs"]
 mod command_bank;

@@ -58,14 +58,7 @@ fn run(bytes: &[u8], extra: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["--format", "json", "audit-targets", "--artifact"])
         .arg(path)
-        .args([
-            "--forbid",
-            "rom=0x3000..0x3010",
-            "--limit-mode",
-            "watchdog",
-            "--temporary-root",
-        ])
-        .arg(dir.path().join("runtime"))
+        .args(["--forbid", "rom=0x3000..0x3010"])
         .args(extra)
         .output()
         .unwrap()
@@ -79,17 +72,14 @@ fn scans_symbol_less_code_and_resolves_local_jalr() {
         String::from_utf8_lossy(&clean.stderr)
     );
     let result: serde_json::Value = serde_json::from_slice(&clean.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["unresolved_indirect"], 1);
-    assert_eq!(
-        result["assessment"]["coverage"]["scope"],
-        "static-resolved-transfers"
-    );
-    assert_eq!(result["assessment"]["check"], "pass");
+    assert_eq!(result["summary"]["unresolved_indirect"], 1);
+    assert_eq!(result["verdict"], "pass");
     let bad = run(&elf(&[0x000032b7, 0x00028067]), &[]);
     assert!(!bad.status.success());
     let result: serde_json::Value = serde_json::from_slice(&bad.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["forbidden_targets"], 1);
-    assert_eq!(result["records"][0]["kind"], "target-audit");
+    assert_eq!(result["summary"]["forbidden_targets"], 1);
+    assert_eq!(result["records"][0]["kind"], "forbidden");
+    assert_eq!(result["verdict"], "fail");
 }
 #[test]
 fn direct_jump_and_unknown_clobber_have_distinct_coverage() {
@@ -97,7 +87,7 @@ fn direct_jump_and_unknown_clobber_have_distinct_coverage() {
     let bad = run(&elf(&[0x0000206f]), &[]);
     assert!(!bad.status.success());
     let result: serde_json::Value = serde_json::from_slice(&bad.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["forbidden_targets"], 1);
+    assert_eq!(result["summary"]["forbidden_targets"], 1);
     // FP arithmetic cannot be an integer transfer but must erase constants.
     let unknown = run(&elf(&[0x000032b7, 0x00000053, 0x00028067]), &[]);
     assert!(
@@ -106,8 +96,8 @@ fn direct_jump_and_unknown_clobber_have_distinct_coverage() {
         String::from_utf8_lossy(&unknown.stderr)
     );
     let result: serde_json::Value = serde_json::from_slice(&unknown.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["unsupported_non_control"], 1);
-    assert_eq!(result["summary"]["summary"]["unresolved_indirect"], 1);
+    assert_eq!(result["summary"]["unsupported_non_control"], 1);
+    assert_eq!(result["summary"]["unresolved_indirect"], 1);
     let gap = run(&elf(&[0x0000001f]), &[]);
     assert!(!gap.status.success());
 }
@@ -136,13 +126,13 @@ fn csr_clobber_and_trap_return_do_not_claim_static_targets() {
         String::from_utf8_lossy(&result.stderr)
     );
     let result: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["unresolved_indirect"], 2);
-    assert_eq!(result["summary"]["summary"]["forbidden_targets"], 0);
+    assert_eq!(result["summary"]["unresolved_indirect"], 2);
+    assert_eq!(result["summary"]["forbidden_targets"], 0);
     // Reserved SYSTEM function is not silently treated as an ordinary CSR access.
     let result = run(&elf(&[0x00004073]), &[]);
     assert!(!result.status.success());
     let result: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["coverage_gaps"], 1);
+    assert_eq!(result["summary"]["coverage_gaps"], 1);
 }
 
 fn with_mappings(mut bytes: Vec<u8>, mappings: &[(&str, u32)]) -> Vec<u8> {
@@ -202,9 +192,9 @@ fn mapping_symbols_skip_data_and_reset_local_facts() {
         String::from_utf8_lossy(&output.stderr)
     );
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["embedded_data_bytes"], 4);
-    assert_eq!(result["summary"]["summary"]["unresolved_indirect"], 1);
-    assert_eq!(result["summary"]["summary"]["instructions"], 2);
+    assert_eq!(result["summary"]["embedded_data_bytes"], 4);
+    assert_eq!(result["summary"]["unresolved_indirect"], 1);
+    assert_eq!(result["summary"]["instructions"], 2);
     // Scanning resumes after data, even without any function symbols.
     let output = run(
         &with_mappings(
@@ -215,7 +205,7 @@ fn mapping_symbols_skip_data_and_reset_local_facts() {
     );
     assert!(!output.status.success());
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["summary"]["summary"]["forbidden_targets"], 1);
+    assert_eq!(result["summary"]["forbidden_targets"], 1);
 }
 #[test]
 fn invalid_mapping_symbols_fail_closed() {

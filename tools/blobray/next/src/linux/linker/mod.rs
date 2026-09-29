@@ -1,8 +1,8 @@
 //! External ELF capability dispatcher. Application owns selection and publication.
 use super::*;
-use blobray_application::{
+use blobray_application::linking::{
     LinkInput, LinkInvocation, LinkOutput, LinkOutputSink, LinkWorkspace, LinkerHost,
-    TemporaryFile, UnresolvedSymbols,
+    UnresolvedSymbols,
 };
 use std::{
     ffi::OsString,
@@ -29,7 +29,7 @@ impl LinkerHost for ElfLinker {
     fn identify(
         &self,
         path: &Path,
-        workspace: &LinkWorkspace<'_>,
+        workspace: &LinkWorkspace,
         control: &mut dyn RunControl,
     ) -> Result<LinkerIdentity> {
         let path = path.canonicalize().map_err(io)?;
@@ -135,7 +135,7 @@ impl LinkOutputSink for Version {
     fn observe(&mut self, _: LinkObservation, _: &mut dyn RunControl) -> Result<()> {
         Ok(())
     }
-    fn elf_file(&mut self, _: TemporaryFile) -> Result<()> {
+    fn elf(&mut self, _: Vec<u8>) -> Result<()> {
         Err(blocked("unexpected file during identification"))
     }
 }

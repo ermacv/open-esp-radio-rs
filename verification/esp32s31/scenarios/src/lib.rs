@@ -17,7 +17,7 @@ pub use bluetooth::ble;
 pub use coexistence::{coex, coex_hw};
 pub use engine::{
     artifacts, contracts, coverage, evidence, harness, harness_edges, layout, observation, session,
-    setup_cache, state,
+    state,
 };
 pub use phy::{
     calibration_leaves, calibration_prefix, channel, gain, gain_state, i2c, i2c_transport, rfpll,

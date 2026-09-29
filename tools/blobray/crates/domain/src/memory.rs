@@ -32,7 +32,6 @@ pub struct WorkingMemory {
     limit: u64,
     used: Cell<u64>,
     peak: Cell<u64>,
-    phases: Cell<PhaseMeasurements>,
     phase: Cell<RunPhase>,
 }
 impl WorkingMemory {
@@ -47,18 +46,11 @@ impl WorkingMemory {
             limit,
             used: Cell::new(0),
             peak: Cell::new(0),
-            phases: Cell::new(PhaseMeasurements::default()),
             phase: Cell::new(RunPhase::Starting),
         })
     }
-    pub fn phase_observations(&self) -> PhaseMeasurements {
-        self.phases.get()
-    }
     fn observe_phase(&self, phase: RunPhase) {
         self.phase.set(phase);
-        let mut phases = self.phases.get();
-        phases.observe_memory(phase, self.used());
-        self.phases.set(phases);
     }
     pub fn used(&self) -> u64 {
         self.used.get()

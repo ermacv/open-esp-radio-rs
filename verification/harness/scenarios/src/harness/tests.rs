@@ -187,24 +187,10 @@ fn authentication_precedes_capture() {
     let root = directory.path();
     let source = root.join("source");
     fs::write(&source, b"changed input").unwrap();
-    let runner = Runner::new(
-        &root.join("absent-binary"),
-        root,
-        root.join("project"),
-        Budget {
-            limit_mode: LimitMode::Watchdog,
-            timeout_secs: 1,
-            working_memory_mib: 1,
-            max_work_units: 1,
-        },
-    )
-    .unwrap();
     let inputs = [Input {
         role: "phy",
         path: &source,
         sha256: Some("wrong-hash"),
     }];
-    assert!(runner.capture(&inputs).is_err());
-    assert!(!root.join("input-0").exists());
-    assert!(!root.join("project").exists());
+    assert!(authenticate(&inputs).is_err());
 }

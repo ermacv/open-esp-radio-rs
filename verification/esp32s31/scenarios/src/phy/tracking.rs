@@ -391,8 +391,7 @@ impl Tracking {
         )?;
         let link = LinkRequest {
             companions: vec![],
-            revision: Some(session.revision.clone()),
-            inputs: vec![0],
+            inputs: vec![session.input_id(0)?],
             entry: select(&session, 0, "phy_param_track_tot")?,
             roots: vec![
                 select(&session, 0, "phy_get_romfunc_addr")?,

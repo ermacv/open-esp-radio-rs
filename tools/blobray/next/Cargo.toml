@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Blobray bounded binary research and retained evidence CLI"
+description = "Blobray command line and host adapters of its in-process operations"
 
 [[bin]]
 name = "blobray"
@@ -25,11 +25,9 @@ serde = { version = "=1.0.229", features = ["derive"] }
 
 sha2 = "=0.10.9"
 libc = "=0.2.189"
-signal-hook = "=0.3.18"
-
-tempfile = "=3.27.0"
 
 [dev-dependencies]
+tempfile = "=3.27.0"
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std", "write"] }
 cargo_metadata = "=0.23.1"
 

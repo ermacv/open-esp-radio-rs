@@ -58,9 +58,7 @@ pub fn with_prepared_object<T>(
         usize::try_from(source.len()).map_err(|_| invalid("object exceeds host address space"))?;
     let mut bytes = memory.bytes(size, control.position())?;
     source.read_at(0, &mut bytes, control)?;
-    control.measure(WorkMetric::ObjectReadBytes, size as u64);
     let actual = ArtifactId::of_bytes_controlled(&bytes, control)?;
-    control.measure(WorkMetric::ObjectHashBytes, size as u64);
     if actual != *payload {
         return Err(Error::new(
             ErrorCode::Integrity,
@@ -136,7 +134,6 @@ pub fn with_prepared_object<T>(
             .checked_mul(2)
             .ok_or_else(|| invalid("symbol capacity overflow"))?,
     )?;
-    control.measure(WorkMetric::ObjectsPrepared, 1);
     let mut object = PreparedObject {
         file,
         occurrence: None,
@@ -450,7 +447,6 @@ impl<'data> PreparedObject<'data, '_> {
                 mappings,
                 _capacity: _metadata,
             });
-            control.measure(WorkMetric::SectionsPrepared, 1);
         }
         Ok(())
     }

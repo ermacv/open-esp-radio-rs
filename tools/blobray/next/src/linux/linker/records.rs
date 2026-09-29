@@ -9,7 +9,7 @@ pub(super) trait Parser {
         channel: LinkOutput,
         line: &[u8],
         span: LinkEvidenceSpan,
-        members: &[blobray_application::LinkMember],
+        members: &[blobray_application::linking::LinkMember],
         sink: &mut dyn LinkOutputSink,
         control: &mut dyn RunControl,
     ) -> Result<()>;
@@ -74,8 +74,8 @@ impl<P: Parser> LinkOutputSink for Observed<'_, '_, P> {
     fn observe(&mut self, observation: LinkObservation, c: &mut dyn RunControl) -> Result<()> {
         self.sink.observe(observation, c)
     }
-    fn elf_file(&mut self, file: TemporaryFile) -> Result<()> {
-        self.sink.elf_file(file)
+    fn elf(&mut self, bytes: Vec<u8>) -> Result<()> {
+        self.sink.elf(bytes)
     }
     fn write(
         &mut self,
@@ -106,13 +106,13 @@ impl<P: Parser> LinkOutputSink for Observed<'_, '_, P> {
     }
 }
 pub(super) fn occurrence(
-    members: &[blobray_application::LinkMember],
+    members: &[blobray_application::linking::LinkMember],
     alias: &[u8],
-) -> Result<LinkObject> {
+) -> Result<ObjectId> {
     members
         .iter()
         .find(|m| m.alias.as_bytes() == alias)
-        .map(|m| m.occurrence.clone())
+        .map(|m| m.object.clone())
         .ok_or_else(|| blocked("unknown object in linker evidence"))
 }
 pub(super) fn hex(bytes: &[u8]) -> Result<u64> {

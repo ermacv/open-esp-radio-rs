@@ -306,8 +306,7 @@ impl Channel {
         )?;
         let link = LinkRequest {
             companions: vec![],
-            revision: Some(session.revision.clone()),
-            inputs: vec![0],
+            inputs: vec![session.input_id(0)?],
             entry: select(&session, 0, "phy_chip_set_chan")?,
             roots: vec![select(&session, 0, "phy_get_romfunc_addr")?],
             layout: image_layout(),

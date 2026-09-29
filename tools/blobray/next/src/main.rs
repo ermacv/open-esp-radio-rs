@@ -1,17 +1,14 @@
-//! Command-line adapter for the shared Blobray application API.
+//! Command-line adapter for Blobray operations that run in this process.
 
-use blobray_application::{ImportWork, OperationHost, QueryWork, ReadQuery, WorkerReport};
-
-use blobray_application::{self as app, ImportInput};
+use blobray_application as app;
 use blobray_domain::{
-    ArtifactId, DEFAULT_WORKING_BYTES, Error, ErrorCode, LimitMode, ResourceBudget, Result,
-    RevisionId, RunState, Target,
+    CheckVerdict, DEFAULT_WORKING_BYTES, Error, ErrorCode, FunctionDecoder, FunctionSemantics,
+    Result,
 };
 use clap::{Parser, Subcommand, ValueEnum};
+use std::io::Write;
 use std::{ffi::OsString, path::PathBuf, process::ExitCode};
 mod command_tree;
-mod function_display;
-mod queries;
 
 #[derive(Clone, Copy, Default, ValueEnum)]
 enum Format {
@@ -23,7 +20,7 @@ enum Format {
 #[derive(Parser)]
 #[command(
     name = "blobray",
-    about = "Captured binary investigations, synthetic images and retained function analysis"
+    about = "Captured binary research inside this process: final-image target audits and library register accesses"
 )]
 struct Cli {
     #[arg(long, global = true, value_enum, default_value = "human")]
@@ -33,74 +30,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
-enum IrCommand {
-    Build {
-        #[arg(long)]
-        request: PathBuf,
-    },
-}
-
-#[derive(Subcommand)]
 enum Command {
-    /// Extract or compare exact static observable traces from saved IR profiles.
-    Trace {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Build and read immutable profiles over saved semantic facts.
-    Ir {
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-        #[command(subcommand)]
-        command: IrCommand,
-    },
-    /// Discover saved MMIO candidates, field masks and applicable reviewed declarations.
-    Registers {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-
-    /// Report executable intervals inside and outside selected function extents.
-    Coverage {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PublicationId,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Observe project logical file sizes without recovery or pruning.
-    StorageUsage {
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Inspect exact data ranges and supporting analyses; optionally export captured observations.
-    Data {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
     /// Audit all executable ELF sections for statically resolved forbidden transfers.
     AuditTargets {
         #[arg(long)]
@@ -109,7 +39,7 @@ enum Command {
         #[arg(long, required=true, value_parser=parse_forbidden)]
         forbid: Vec<blobray_domain::ForbiddenTargetRange>,
         #[command(flatten)]
-        limits: ResourceOptions,
+        limits: InProcessOptions,
     },
     /// Analyze every function of captured libraries in this process and report
     /// the memory addresses they access, with blocked functions and gaps.
@@ -123,294 +53,9 @@ enum Command {
         #[command(flatten)]
         limits: InProcessOptions,
     },
-    /// Export exact preserved bytes using a digest from the evidence catalog.
-    ExportPayload {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: ArtifactId,
-        #[arg(long)]
-        output: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Save a consistent private project snapshot, including evidence bytes.
-    Backup {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Verify a snapshot and restore it into a new project directory.
-    Restore {
-        #[arg(long)]
-        backup: PathBuf,
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Execute a frozen library plan and atomically publish its results.
-    AnalyzeProject {
-        #[arg(long)]
-        project: PathBuf,
-        /// Analyze this prepared image; without it, analyze the current inputs.
-        #[arg(long)]
-        image: Option<blobray_domain::PreparedImageId>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// List functions in a publication. Duplicate names remain separate candidates.
-    Functions {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PublicationId,
-        #[arg(long)]
-        name: Option<String>,
-        #[arg(long, value_parser=parse_address)]
-        address: Option<u32>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Show publication coverage and whether it describes the current revision.
-    Status {
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Read saved function instructions, graph, references and coverage.
-    Analysis {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::FunctionAnalysisId,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-
-    /// Plan a synthetic RV32 image from captured archive/object occurrences.
-    LinkPlan {
-        /// Exact ROM input and symbol name, for example 1:ets_delay_us.
-        #[arg(long)]
-        companion: Vec<String>,
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long, conflicts_with_all=["entry", "inputs", "entry_input", "code_start", "data_start"])]
-        request: Option<PathBuf>,
-        #[arg(long, required_unless_present = "request")]
-        entry: Option<String>,
-        /// Captured input ordinals in link order.
-        #[arg(long, value_delimiter = ',', required_unless_present = "request")]
-        inputs: Vec<u64>,
-        #[arg(long, required_unless_present = "request")]
-        entry_input: Option<u64>,
-        /// Synthetic placement, not an assertion about original firmware addresses.
-        #[arg(long, value_parser=parse_address, required_unless_present="request")]
-        code_start: Option<u32>,
-        #[arg(long, value_parser=parse_address, required_unless_present="request")]
-        data_start: Option<u32>,
-        #[arg(long, default_value_t = 16777216)]
-        region_bytes: u64,
-        #[arg(long)]
-        linker: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Link, validate and durably publish an image without changing current revision.
-    PrepareImage {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        plan: PathBuf,
-        #[arg(long)]
-        linker: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Propose ROM companions for a link request by a trial link. Every name
-    /// left undefined resolves to exactly one definition in the first
-    /// candidate input that defines it, or is reported unresolved.
-    ProposeCompanions {
-        #[arg(long)]
-        project: PathBuf,
-        /// Link request whose explicit companions are already applied.
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        linker: PathBuf,
-        /// Captured input ordinal searched for definitions, in priority order.
-        #[arg(long = "candidate", required = true)]
-        candidates: Vec<u64>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// List retained prepared images.
-    Images {
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Verify and inspect an existing image, without requiring a linker.
-    Image {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PreparedImageId,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Export verified ELF, recipe and provenance into a new directory.
-    ExportImage {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: blobray_domain::PreparedImageId,
-        #[arg(long)]
-        output: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Enumerate exact-name candidates without choosing an occurrence.
-    Select {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        revision: Option<RevisionId>,
-        #[arg(long, value_enum)]
-        kind: SelectKind,
-        #[arg(
-            long,
-            required_unless_present = "name_hex",
-            conflicts_with = "name_hex"
-        )]
-        name: Option<String>,
-        #[arg(long)]
-        name_hex: Option<String>,
-        #[arg(long)]
-        input: Option<u64>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Create an immutable inspection recipe. --output saves its portable JSON.
-    Plan {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Validate/reopen a saved plan, then execute its recorded inspection.
-    Run {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        plan: PathBuf,
-        /// Reopen/validation limits; execution uses the saved plan budget.
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Create a project; never reset existing storage.
-    Init {
-        #[arg(long)]
-        project: PathBuf,
-    },
-    /// Capture ordered input occurrences and publish their inventory.
-    Import {
-        #[arg(long)]
-        project: PathBuf,
-        /// Repeat ROLE=PATH in the required input order. Duplicate roles are allowed.
-        #[arg(long = "input", required = true, value_name = "ROLE=PATH")]
-        inputs: Vec<OsString>,
-        /// Expected digest for a zero-based input occurrence: INDEX=SHA256.
-        #[arg(long = "expect", value_name = "INDEX=SHA256")]
-        expected: Vec<String>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Verify retained revisions without writes or repairs.
-    Doctor {
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Recover abandoned import metadata and temporary data.
-    Recover {
-        #[arg(long)]
-        project: PathBuf,
-    },
-    /// List durable import outcomes, including interrupted attempts.
-    Runs {
-        #[arg(long)]
-        project: PathBuf,
-    },
-    /// Read persisted inventory and verify all retained payloads.
-    Inventory {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        revision: Option<RevisionId>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// List committed revisions in publication order.
-    Revisions {
-        #[arg(long)]
-        project: PathBuf,
-    },
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-enum SelectKind {
-    Object,
-    Symbol,
 }
 
 const MIB: u64 = 1024 * 1024;
-/// How often a waiting CLI forwards a pending signal as cancellation.
-const CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(20);
-
-#[derive(clap::Args)]
-struct ResourceOptions {
-    /// Private runtime directory; defaults to a host-selected per-user directory.
-    #[arg(long)]
-    temporary_root: Option<PathBuf>,
-    /// Per-operation logical temporary storage, including a 1 MiB control reserve.
-    #[arg(long, default_value_t = 8192)]
-    temporary_mib: u64,
-    /// Aggregate reservations in this Application, including retained query/Plan results.
-    #[arg(long, default_value_t = 32768)]
-    temporary_total_mib: u64,
-    #[arg(long, value_parser = ["kernel", "watchdog"], default_value = "kernel")]
-    limit_mode: String,
-    #[arg(long, default_value_t = blobray_domain::DEFAULT_MEMORY_BYTES / MIB)]
-    memory_mib: u64,
-    #[arg(long, default_value_t = DEFAULT_WORKING_BYTES / MIB)]
-    working_memory_mib: u64,
-    #[arg(long, default_value_t = blobray_domain::DEFAULT_TIMEOUT_MS / 1000)]
-    timeout_secs: u64,
-    #[arg(long, default_value_t = blobray_domain::DEFAULT_WORK_UNITS)]
-    max_work_units: u64,
-    /// Resource sampling period; process exit is observed immediately.
-    #[arg(long, default_value_t = blobray_domain::DEFAULT_POLL_MS)]
-    poll_ms: u64,
-    /// Time between cooperative cancellation and forced termination.
-    #[arg(long, default_value_t = blobray_domain::DEFAULT_GRACE_MS)]
-    grace_ms: u64,
-    /// Delegated cgroup v2 parent; defaults to the current cgroup.
-    #[arg(long)]
-    cgroup_root: Option<PathBuf>,
-}
 
 /// Cooperative limits of an operation that runs in this process.
 #[derive(clap::Args)]
@@ -439,67 +84,10 @@ impl InProcessOptions {
     }
 }
 
-impl ResourceOptions {
-    fn application(&self) -> Result<app::Application> {
-        app::Application::with_temporary_storage(
-            host(self.cgroup_root.clone())?,
-            app::ApplicationLimits::default(),
-            app::TemporaryStoragePolicy {
-                root: self.temporary_root.clone(),
-                operation_bytes: self
-                    .temporary_mib
-                    .checked_mul(MIB)
-                    .ok_or_else(|| invalid("temporary limit overflow"))?,
-                total_bytes: self
-                    .temporary_total_mib
-                    .checked_mul(MIB)
-                    .ok_or_else(|| invalid("temporary total limit overflow"))?,
-            },
-        )
-    }
-    fn budget(&self) -> Result<ResourceBudget> {
-        Ok(ResourceBudget {
-            mode: if self.limit_mode == "kernel" {
-                LimitMode::Kernel
-            } else {
-                LimitMode::Watchdog
-            },
-            working_memory_bytes: Some(
-                self.working_memory_mib
-                    .checked_mul(MIB)
-                    .ok_or_else(|| invalid("working memory limit overflow"))?,
-            ),
-            memory_bytes: self
-                .memory_mib
-                .checked_mul(MIB)
-                .ok_or_else(|| invalid("memory limit overflow"))?,
-            timeout_ms: self
-                .timeout_secs
-                .checked_mul(1000)
-                .ok_or_else(|| invalid("timeout overflow"))?,
-            max_work_units: Some(self.max_work_units),
-            poll_ms: self.poll_ms,
-            grace_ms: self.grace_ms,
-            ..Default::default()
-        })
-    }
-}
-
 fn main() -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
     if args.len() == 2 && args[1] == command_tree::REQUEST {
         print!("{}", command_tree::json());
-        return ExitCode::SUCCESS;
-    }
-    if args
-        .get(1)
-        .is_some_and(|s| s == "__guard" || s == "__worker")
-    {
-        let result = internal(&args);
-        if let Err(error) = result {
-            eprintln!("{error}");
-            return ExitCode::FAILURE;
-        }
         return ExitCode::SUCCESS;
     }
     let cli = match Cli::try_parse_from(&args) {
@@ -534,1272 +122,158 @@ fn main() -> ExitCode {
 
 fn run(command: Command, format: Format) -> Result<ExitCode> {
     match command {
-        Command::Data {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            let query = ReadQuery::Data {
-                request: read_json_file(&request)?,
-            };
-            if let Some(output) = output {
-                return export_data_query(project, query, output, limits, format);
-            }
-            return read_query(project, query, limits, format);
-        }
         Command::AuditTargets {
             artifact,
             forbid,
             limits,
-        } => {
-            let artifact = std::path::absolute(artifact).map_err(io_error)?;
-            return read_query(
-                PathBuf::from("."),
-                ReadQuery::AuditTargets {
-                    artifact: blobray_domain::OriginPath::from_path(&artifact),
-                    ranges: forbid,
-                },
-                limits,
-                format,
-            );
-        }
+        } => audit_targets(artifact, forbid, limits, format),
         Command::RegisterAccesses {
             inputs,
             ranges,
             limits,
-        } => {
-            return register_accesses(inputs, ranges, limits, format);
-        }
-        Command::ExportPayload {
-            project,
-            id,
-            output,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_query(
-                &project,
-                ReadQuery::RetainedPayload { id },
-                limits.budget()?,
-            )?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            handle
-                .take_output()?
-                .export_payload(&output, &|| signals.cancelled())?;
-        }
-        Command::Backup {
-            project,
-            output,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_query(&project, ReadQuery::Backup, limits.budget()?)?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            handle
-                .take_output()?
-                .export_backup(&output, &|| signals.cancelled())?;
-        }
-        Command::Restore {
-            backup,
-            project,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let backup = std::path::absolute(backup).map_err(io_error)?;
-            let handle = application.start_query(
-                &project,
-                ReadQuery::Restore {
-                    bundle: blobray_domain::OriginPath::from_path(&backup),
-                },
-                limits.budget()?,
-            )?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let mut output = handle.take_output()?;
-            output.publish_restore(&project, &|| signals.cancelled())?;
-            match format {
-                Format::Json => println!(
-                    "{}",
-                    serde_json::to_string(output.summary()).map_err(|e| invalid(&e.to_string()))?
-                ),
-                Format::Human => println!("Project preserved at {}", project.display()),
-            }
-        }
-        Command::Trace {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            return read_query_output(
-                project,
-                ReadQuery::Trace {
-                    request: read_json_file(&request)?,
-                },
-                limits,
-                format,
-                output,
-            );
-        }
-        Command::Ir {
-            project,
-            limits,
-            command,
-        } => match command {
-            IrCommand::Build { request } => {
-                let application = limits.application()?;
-                let _diagnostics = TemporaryDiagnostics(&application, format);
-                let signals = Signals::new()?;
-                let handle = application.start_build_ir(
-                    &project,
-                    read_json_file(&request)?,
-                    limits.budget()?,
-                )?;
-                let success = wait_handle(&handle, &signals, format);
-                let record = handle.wait();
-                match format {
-                    Format::Json => println!(
-                        "{}",
-                        serde_json::json!(blobray_next_host::wire::RunDocument {
-                            schema: 1,
-                            run: &record
-                        })
-                    ),
-                    Format::Human => println!(
-                        "IR {:?}: {}",
-                        record.state,
-                        record
-                            .semantic_ir
-                            .as_ref()
-                            .map_or("unpublished", |id| id.as_str())
-                    ),
-                }
-                return Ok(if success {
-                    ExitCode::SUCCESS
-                } else {
-                    ExitCode::FAILURE
-                });
-            }
-        },
-        Command::Registers {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            return read_query_output(
-                project,
-                ReadQuery::Registers {
-                    request: read_json_file(&request)?,
-                },
-                limits,
-                format,
-                output,
-            );
-        }
-        Command::AnalyzeProject {
-            project,
-            image,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            use blobray_domain::{FunctionDecoder, FunctionSemantics};
-            let decoder = blobray_backend_riscv::RiscvDecoder;
-            let input = blobray_domain::InvestigationInput::Automatic {
-                request: blobray_domain::InvestigationRequest {
-                    image,
-                    ..Default::default()
-                },
-                producer: blobray_domain::FunctionProducer {
-                    decoder: decoder.identity().into(),
-                    semantics: decoder.semantic_identity().into(),
-                },
-            };
-            let handle = application.start_analyze_project(&project, input, limits.budget()?)?;
-            while !handle.wait_timeout(CANCEL_POLL) {
-                if signals.cancelled() {
-                    handle.cancel();
-                }
-            }
-            let record = handle.wait();
-            let success = record.state == RunState::Completed;
-            let text = match format {
-                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
-                    schema: 5,
-                    run: &record
-                })
-                .to_string(),
-                Format::Human => format!(
-                    "{}\nPublication: {} ({})",
-                    render_run(&record),
-                    record.publication.as_ref().map_or("none", |p| p.as_str()),
-                    if record.assessment.as_ref().is_some_and(|a| a.is_complete()) {
-                        "complete"
-                    } else {
-                        "partial"
-                    }
-                ),
-            };
-            if success {
-                println!("{text}");
-            } else {
-                eprintln!("{text}");
-            }
-            return Ok(if success {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            });
-        }
-        Command::Functions {
-            project,
-            id,
-            name,
-            address,
-            limits,
-        } => {
-            return read_query(
-                project,
-                ReadQuery::Publication {
-                    id,
-                    filter: blobray_domain::InvestigationFilter::Functions { name, address },
-                },
-                limits,
-                format,
-            );
-        }
-        Command::Status { project, limits } => {
-            return read_query(project, ReadQuery::InvestigationStatus, limits, format);
-        }
-        Command::Analysis {
-            project,
-            id,
-            limits,
-        } => {
-            return read_query(
-                project,
-                ReadQuery::Analysis { id, export: false },
-                limits,
-                format,
-            );
-        }
-
-        Command::LinkPlan {
-            companion,
-            project,
-            request,
-            entry,
-            inputs,
-            entry_input,
-            code_start,
-            data_start,
-            region_bytes,
-            linker,
-            output,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let query = if let Some(path) = request {
-                ReadQuery::LinkPlan {
-                    request: read_json_file(&path)?,
-                    linker: blobray_domain::OriginPath::from_path(&linker),
-                }
-            } else {
-                ReadQuery::NamedLinkPlan {
-                    request: blobray_domain::NamedLinkRequest {
-                        companions: companion
-                            .iter()
-                            .map(|v| {
-                                let (input, name) = v
-                                    .split_once(':')
-                                    .ok_or_else(|| invalid("companion must be INPUT:NAME"))?;
-                                Ok(blobray_domain::NamedCompanion {
-                                    input: input
-                                        .parse()
-                                        .map_err(|_| invalid("invalid companion input"))?,
-                                    name: name.into(),
-                                })
-                            })
-                            .collect::<Result<_>>()?,
-                        revision: None,
-                        inputs,
-                        entry_input: entry_input.ok_or_else(|| invalid("entry input required"))?,
-                        entry_name: entry.ok_or_else(|| invalid("entry required"))?.into_bytes(),
-                        layout: blobray_domain::ImageLayout {
-                            code: blobray_domain::ImageRegion {
-                                start: code_start.ok_or_else(|| invalid("code start required"))?,
-                                length: region_bytes,
-                            },
-                            data: blobray_domain::ImageRegion {
-                                start: data_start.ok_or_else(|| invalid("data start required"))?,
-                                length: region_bytes,
-                            },
-                        },
-                    },
-                    linker: blobray_domain::OriginPath::from_path(&linker),
-                }
-            };
-            let handle = application.start_query(&project, query, limits.budget()?)?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let mut result = handle.take_output()?;
-            if matches!(result.summary(), app::QuerySummary::Selection { .. }) {
-                queries::render(&mut result, format, &mut std::io::stdout().lock(), &|| {
-                    signals.cancelled()
-                })?;
-                return Ok(ExitCode::FAILURE);
-            }
-            let plan = app::LinkPlan::from_output(result)?;
-            if let Some(path) = output {
-                let parent = path
-                    .parent()
-                    .filter(|p| !p.as_os_str().is_empty())
-                    .unwrap_or(std::path::Path::new("."));
-                let mut file = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
-                plan.write(file.as_file_mut(), &|| signals.cancelled())?;
-                file.as_file().sync_all().map_err(io_error)?;
-                file.persist_noclobber(&path)
-                    .map_err(|e| io_error(e.error))?;
-            } else if matches!(format, Format::Json) {
-                plan.write(&mut std::io::stdout().lock(), &|| signals.cancelled())?;
-            } else {
-                println!(
-                    "LinkPlan {}: {}",
-                    plan.description().id,
-                    if plan.description().ready() {
-                        "ready"
-                    } else {
-                        "blocked"
-                    }
-                );
-                for blocker in &plan.description().blockers {
-                    println!("Input {:?}: {}", blocker.input, blocker.message);
-                }
-            }
-            return Ok(if plan.description().ready() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            });
-        }
-        Command::PrepareImage {
-            project,
-            plan,
-            linker,
-            limits,
-        } => {
-            let description = app::read_link_plan(std::fs::File::open(plan).map_err(io_error)?)?;
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_prepare_image(
-                &project,
-                &description,
-                &linker,
-                limits.budget()?,
-            )?;
-            while !handle.wait_timeout(CANCEL_POLL) {
-                if signals.cancelled() {
-                    handle.cancel();
-                }
-            }
-            let record = handle.wait();
-            let success = record.state == RunState::Completed;
-            let text = match format {
-                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
-                    schema: 3,
-                    run: &record
-                })
-                .to_string(),
-                Format::Human => format!(
-                    "{}\nImage: {}",
-                    render_run(&record),
-                    record
-                        .image
-                        .as_ref()
-                        .map(ToString::to_string)
-                        .unwrap_or_else(|| "none".into())
-                ),
-            };
-            if success {
-                println!("{text}");
-            } else {
-                eprintln!("{text}");
-            }
-            return Ok(if success {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            });
-        }
-        Command::ProposeCompanions {
-            project,
-            request,
-            linker,
-            candidates,
-            limits,
-        } => {
-            return read_query(
-                project,
-                ReadQuery::ProposeCompanions {
-                    request: read_json_file(&request)?,
-                    linker: blobray_domain::OriginPath::from_path(&linker),
-                    candidates,
-                },
-                limits,
-                format,
-            );
-        }
-        Command::Images { project, limits } => {
-            return read_query(project, ReadQuery::Images, limits, format);
-        }
-        Command::Image {
-            project,
-            id,
-            limits,
-        } => {
-            return read_query(
-                project,
-                ReadQuery::Image { id, export: false },
-                limits,
-                format,
-            );
-        }
-        Command::ExportImage {
-            project,
-            id,
-            output,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_query(
-                &project,
-                ReadQuery::Image { id, export: true },
-                limits.budget()?,
-            )?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            handle
-                .take_output()?
-                .export_image(&output, &|| signals.cancelled())?;
-        }
-        Command::Select {
-            project,
-            revision,
-            kind,
-            name,
-            name_hex,
-            input,
-            limits,
-        } => {
-            let name = if let Some(hex) = name_hex {
-                if hex.len() % 2 != 0 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    return Err(invalid("name-hex requires pairs of hexadecimal digits"));
-                }
-                hex.as_bytes()
-                    .chunks_exact(2)
-                    .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-                    .collect()
-            } else {
-                name.unwrap().into_bytes()
-            };
-            let kind = match kind {
-                SelectKind::Object => blobray_domain::SelectionKind::Object,
-                SelectKind::Symbol => blobray_domain::SelectionKind::Symbol,
-            };
-            return read_query(
-                project,
-                ReadQuery::Select {
-                    revision,
-                    request: blobray_domain::SelectionRequest { kind, name, input },
-                },
-                limits,
-                format,
-            );
-        }
-        Command::Plan {
-            project,
-            request,
-            output,
-            limits,
-        } => {
-            let request: app::PlanRequest = read_json_file(&request)?;
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_plan(&project, request, limits.budget()?)?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let plan = handle.take_plan()?;
-            if let Some(path) = output {
-                // Stage and publish without overwriting an existing user file.
-                let parent = path
-                    .parent()
-                    .filter(|p| !p.as_os_str().is_empty())
-                    .unwrap_or(std::path::Path::new("."));
-                let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
-                plan.write(temporary.as_file_mut(), &|| signals.cancelled())?;
-                temporary.as_file().sync_all().map_err(io_error)?;
-                temporary
-                    .persist_noclobber(&path)
-                    .map_err(|e| io_error(e.error))?;
-                eprintln!("Saved plan {} to {}", plan.description().id, path.display());
-            } else if matches!(format, Format::Json) {
-                plan.write(&mut std::io::stdout().lock(), &|| signals.cancelled())?;
-            } else {
-                let d = plan.description();
-                println!(
-                    "Plan {}\nRevision {}\nScope {:?}\nInventory {}\nUse --format json or --output to save this plan.",
-                    d.id,
-                    d.recipe.revision,
-                    d.recipe.scope,
-                    if d.recipe.revision_complete {
-                        "complete"
-                    } else {
-                        "incomplete; inspection retains coverage gaps"
-                    }
-                );
-            }
-        }
-        Command::Run {
-            project,
-            plan,
-            limits,
-        } => {
-            let description =
-                app::PlanDescription::read(std::fs::File::open(plan).map_err(io_error)?)?;
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let reopened =
-                application.start_reopen_plan(&project, description, limits.budget()?)?;
-            if !wait_handle(&reopened, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let plan = reopened.take_plan()?;
-            drop(reopened);
-            let handle = application.start_run(&plan)?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let mut result = handle.take_output()?;
-            queries::render(&mut result, format, &mut std::io::stdout().lock(), &|| {
-                signals.cancelled()
-            })?;
-        }
-        Command::Init { project } => {
-            let id = app::create_project(&project)?;
-            match format {
-                Format::Human => println!("Project {id}"),
-                Format::Json => println!("{}", serde_json::json!({"schema": 1, "project": id})),
-            }
-        }
-        Command::Import {
-            project,
-            inputs,
-            expected,
-            limits,
-        } => {
-            let mut inputs = inputs
-                .into_iter()
-                .map(parse_input)
-                .collect::<Result<Vec<_>>>()?;
-            for binding in expected {
-                let (index, digest) = binding
-                    .split_once('=')
-                    .ok_or_else(|| invalid("expected INDEX=SHA256"))?;
-                let index = index
-                    .parse::<usize>()
-                    .map_err(|_| invalid("expected input index must be a nonnegative integer"))?;
-                let input = inputs
-                    .get_mut(index)
-                    .ok_or_else(|| invalid("expected digest references an absent input index"))?;
-                if input.expected.is_some() {
-                    return Err(invalid("duplicate expected digest for an input index"));
-                }
-                input.expected = Some(digest.parse::<ArtifactId>()?);
-            }
-            let budget = limits.budget()?;
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle =
-                application.start_import(&project, inputs, Target::Riscv32Ilp32, budget)?;
-            while !handle.wait_timeout(CANCEL_POLL) {
-                if signals.cancelled() {
-                    handle.cancel();
-                }
-            }
-            let record = handle.wait();
-            let success = record.state == RunState::Completed;
-            let text = match format {
-                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
-                    schema: 3,
-                    run: &record
-                })
-                .to_string(),
-                Format::Human => render_run(&record),
-            };
-            if success {
-                println!("{text}");
-            } else {
-                eprintln!("{text}");
-            }
-            return Ok(if success {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            });
-        }
-        Command::Inventory {
-            project,
-            revision,
-            limits,
-        } => {
-            return read_query(project, ReadQuery::Inventory { revision }, limits, format);
-        }
-        Command::Coverage {
-            project,
-            id,
-            limits,
-        } => {
-            return read_query(project, ReadQuery::Coverage { id }, limits, format);
-        }
-        Command::StorageUsage { project, limits } => {
-            return read_query(project, ReadQuery::StorageUsage, limits, format);
-        }
-        Command::Doctor { project, limits } => {
-            return read_query(project, ReadQuery::Doctor, limits, format);
-        }
-        Command::Recover { project } => {
-            let recovered = application(None)?.recover(&project)?;
-            match format {
-                Format::Json => println!(
-                    "{}",
-                    serde_json::json!({"schema": 2, "recovered": recovered})
-                ),
-                Format::Human => {
-                    println!("Recovery complete; abandoned runs: {}", recovered.len());
-                    for run in recovered {
-                        println!("{}", render_run(&run));
-                    }
-                }
-            }
-        }
-        Command::Runs { project } => {
-            let runs = app::runs(&project)?;
-            match format {
-                Format::Json => println!("{}", serde_json::json!({"schema": 2, "runs": runs})),
-                Format::Human => {
-                    for run in runs {
-                        println!("{}", render_run(&run));
-                    }
-                }
-            }
-        }
-        Command::Revisions { project } => {
-            let revisions = app::revisions(&project)?;
-            match format {
-                Format::Human => {
-                    for revision in revisions {
-                        println!("{revision}");
-                    }
-                }
-                Format::Json => println!(
-                    "{}",
-                    serde_json::json!({"schema": 1, "revisions": revisions})
-                ),
-            }
-        }
+        } => register_accesses(inputs, ranges, limits, format),
     }
-    Ok(ExitCode::SUCCESS)
 }
 
 fn io_error(e: std::io::Error) -> Error {
     blobray_domain::storage_io(e)
-}
-fn read_json_file<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T> {
-    read_bounded_json(
-        path,
-        blobray_domain::CONTROL_MESSAGE_BYTES,
-        "request exceeds 64 KiB",
-    )
-}
-fn read_bounded_json<T: serde::de::DeserializeOwned>(
-    path: &std::path::Path,
-    limit: usize,
-    message: &str,
-) -> Result<T> {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    std::fs::File::open(path)
-        .map_err(io_error)?
-        .take(limit as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(io_error)?;
-    if bytes.len() > limit {
-        return Err(invalid(message));
-    }
-    serde_json::from_slice(&bytes).map_err(|e| invalid(&e.to_string()))
-}
-struct TemporaryDiagnostics<'a>(&'a app::Application, Format);
-impl Drop for TemporaryDiagnostics<'_> {
-    fn drop(&mut self) {
-        self.0.shutdown();
-        temporary_warnings(self.0, self.1);
-    }
-}
-fn temporary_warnings(application: &app::Application, format: Format) {
-    let temporary = application.temporary_storage_status();
-    for error in &temporary.diagnostics {
-        match format {
-            Format::Json => eprintln!(
-                "{}",
-                serde_json::json!({"schema":1,"temporary_storage_warning":error})
-            ),
-            Format::Human => eprintln!("Temporary storage: {}", error.message),
-        }
-    }
-    if temporary.diagnostics_truncated {
-        match format {
-            Format::Json => eprintln!(
-                "{}",
-                serde_json::json!({"schema":1,"temporary_storage_warnings_truncated":true})
-            ),
-            Format::Human => {
-                eprintln!("Temporary storage: additional residue diagnostics omitted (limit 4)")
-            }
-        }
-    }
-}
-fn wait_handle(handle: &app::RunHandle, signals: &Signals, format: Format) -> bool {
-    while !handle.wait_timeout(CANCEL_POLL) {
-        if signals.cancelled() {
-            handle.cancel();
-        }
-    }
-    let record = handle.wait();
-    if record.state == RunState::Completed {
-        return true;
-    }
-    let report = handle.report();
-    match format {
-        Format::Json => eprintln!("{}", serde_json::json!({"schema":1,"query":report})),
-        Format::Human => {
-            eprintln!(
-                "Query {:?}: {}",
-                report.state,
-                report
-                    .error
-                    .as_ref()
-                    .map(|e| e.message.as_str())
-                    .unwrap_or("worker failure")
-            );
-            let mut diagnostics = String::new();
-            render_diagnostics(
-                &mut diagnostics,
-                &report.diagnostics,
-                record.budget.max_work_units,
-            );
-            eprintln!("{diagnostics}");
-        }
-    }
-    false
 }
 
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)
 }
 
-fn parse_input(value: OsString) -> Result<ImportInput> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::{OsStrExt, OsStringExt};
-        let bytes = value.as_os_str().as_bytes();
-        let split = bytes
-            .iter()
-            .position(|b| *b == b'=')
-            .ok_or_else(|| invalid("expected ROLE=PATH"))?;
-        let role = std::str::from_utf8(&bytes[..split])
-            .map_err(|_| invalid("role must be UTF-8"))?
-            .to_owned();
-        if split + 1 == bytes.len() {
-            return Err(invalid("input path is empty"));
-        }
-        Ok(ImportInput {
-            role,
-            path: OsString::from_vec(bytes[split + 1..].to_vec()).into(),
-            expected: None,
-        })
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::{OsStrExt, OsStringExt};
-        let units: Vec<u16> = value.encode_wide().collect();
-        let split = units
-            .iter()
-            .position(|c| *c == u16::from(b'='))
-            .ok_or_else(|| invalid("expected ROLE=PATH"))?;
-        let role =
-            String::from_utf16(&units[..split]).map_err(|_| invalid("role must be Unicode"))?;
-        if split + 1 == units.len() {
-            return Err(invalid("input path is empty"));
-        }
-        Ok(ImportInput {
-            role,
-            path: OsString::from_wide(&units[split + 1..]).into(),
-            expected: None,
-        })
-    }
+/// One `ROLE=PATH` input binding.
+struct Input {
+    role: String,
+    path: PathBuf,
 }
 
-fn host(cgroup: Option<PathBuf>) -> Result<std::sync::Arc<dyn OperationHost>> {
-    #[cfg(target_os = "linux")]
-    {
-        Ok(std::sync::Arc::new(
-            blobray_next_host::linux::LinuxHost::new(
-                std::env::current_exe().map_err(blobray_domain::storage_io)?,
-                cgroup,
-            ),
-        ))
+fn parse_input(value: OsString) -> Result<Input> {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    let bytes = value.as_os_str().as_bytes();
+    let split = bytes
+        .iter()
+        .position(|b| *b == b'=')
+        .ok_or_else(|| invalid("expected ROLE=PATH"))?;
+    let role = std::str::from_utf8(&bytes[..split])
+        .map_err(|_| invalid("role must be UTF-8"))?
+        .to_owned();
+    if split + 1 == bytes.len() {
+        return Err(invalid("input path is empty"));
     }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = cgroup;
-        Err(Error::new(
-            ErrorCode::Unavailable,
-            "supervised operations require Linux",
-        ))
+    Ok(Input {
+        role,
+        path: OsString::from_vec(bytes[split + 1..].to_vec()).into(),
+    })
+}
+
+fn parse_number(v: &str) -> std::result::Result<u64, String> {
+    if let Some(hex) = v.strip_prefix("0x") {
+        u64::from_str_radix(hex, 16)
+    } else {
+        v.parse::<u64>()
     }
+    .map_err(|e| e.to_string())
 }
-fn application(cgroup: Option<PathBuf>) -> Result<app::Application> {
-    Ok(app::Application::new(host(cgroup)?))
-}
-struct Signals {
-    flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    ids: Vec<signal_hook::SigId>,
-}
-impl Signals {
-    fn new() -> Result<Self> {
-        let mut result = Self {
-            flag: Default::default(),
-            ids: Vec::new(),
-        };
-        for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-            result.ids.push(
-                signal_hook::flag::register(signal, result.flag.clone())
-                    .map_err(blobray_domain::storage_io)?,
-            );
-        }
-        Ok(result)
-    }
-    fn cancelled(&self) -> bool {
-        self.flag.load(std::sync::atomic::Ordering::Relaxed)
-    }
-}
-impl Drop for Signals {
-    fn drop(&mut self) {
-        for id in self.ids.drain(..) {
-            signal_hook::low_level::unregister(id);
-        }
-    }
-}
+
 fn parse_forbidden(
     value: &str,
 ) -> std::result::Result<blobray_domain::ForbiddenTargetRange, String> {
     let (name, bounds) = value.split_once('=').ok_or("expected NAME=START..END")?;
     let (start, end) = bounds.split_once("..").ok_or("expected START..END")?;
-    let parse = |v: &str| {
-        if let Some(hex) = v.strip_prefix("0x") {
-            u64::from_str_radix(hex, 16)
-        } else {
-            v.parse::<u64>()
-        }
-        .map_err(|e| e.to_string())
-    };
     let range = blobray_domain::ForbiddenTargetRange {
         name: name.into(),
-        start: u32::try_from(parse(start)?).map_err(|e| e.to_string())?,
-        end: parse(end)?,
+        start: u32::try_from(parse_number(start)?).map_err(|e| e.to_string())?,
+        end: parse_number(end)?,
     };
     range.validate().map_err(|e| e.message)?;
     Ok(range)
 }
 
-fn read_query(
-    project: PathBuf,
-    query: ReadQuery,
-    limits: ResourceOptions,
-    format: Format,
-) -> Result<ExitCode> {
-    read_query_output(project, query, limits, format, None)
-}
-fn read_query_output(
-    project: PathBuf,
-    query: ReadQuery,
-    limits: ResourceOptions,
-    format: Format,
-    output: Option<PathBuf>,
-) -> Result<ExitCode> {
-    let budget = limits.budget()?;
-    let signals = Signals::new()?;
-    let application = limits.application()?;
-    let _diagnostics = TemporaryDiagnostics(&application, format);
-    let handle = application.start_query(&project, query, budget)?;
-    if !wait_handle(&handle, &signals, format) {
-        return Ok(ExitCode::FAILURE);
-    }
-    let mut result = handle.take_output()?;
-    if let Some(path) = output {
-        let parent = path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(std::path::Path::new("."));
-        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
-        queries::render(&mut result, Format::Json, file.as_file_mut(), &|| {
-            signals.cancelled()
-        })?;
-        file.as_file().sync_all().map_err(io_error)?;
-        file.persist_noclobber(path)
-            .map_err(|e| io_error(e.error))?;
-    } else {
-        queries::render(&mut result, format, &mut std::io::stdout().lock(), &|| {
-            signals.cancelled()
-        })?;
-    }
-    Ok(if result.assessment().check_passed() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
+fn parse_range(text: &str) -> std::result::Result<blobray_domain::ImageRegion, String> {
+    let (start, length) = text.split_once(':').ok_or("expected START:LENGTH")?;
+    Ok(blobray_domain::ImageRegion {
+        start: u32::try_from(parse_number(start)?).map_err(|e| e.to_string())?,
+        length: parse_number(length)?,
     })
 }
 
-fn render_run(run: &blobray_application::RunRecord) -> String {
-    use std::fmt::Write;
-    let mut output = format!(
-        "Run {}: {:?}; mode={:?}; revision={}",
-        run.id,
-        run.state,
-        run.budget.mode,
-        run.revision
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "none".into())
-    );
-    if let Some(error) = &run.error {
-        let _ = write!(output, "\n{:?}: {}", error.code, error.message);
-    }
-    if let Some(diagnostics) = &run.diagnostics {
-        render_diagnostics(&mut output, diagnostics, run.budget.max_work_units);
-    }
-    output
+fn json_error(e: serde_json::Error) -> Error {
+    invalid(&e.to_string())
 }
 
-fn render_diagnostics(
-    output: &mut String,
-    diagnostics: &blobray_domain::RunDiagnostics,
-    work_limit: Option<u64>,
-) {
-    use std::fmt::Write;
-    if let Some(progress) = diagnostics.progress {
-        let _ = write!(
-            output,
-            "\nLast checkpoint: {:?}; input={:?} member={:?} table={:?} entry={:?}; work={}/{}; elapsed={} ms",
-            progress.position.phase,
-            progress.position.input,
-            progress.position.member,
-            progress.position.table,
-            progress.position.entry,
-            progress.work_used,
-            work_limit
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "unknown".into()),
-            progress.elapsed_ms
-        );
-        if let Some(memory) = progress.working_memory {
-            let _ = write!(
-                output,
-                "\nWorking memory: peak reserved {} / {} bytes; live {} bytes",
-                memory.peak_reserved_bytes, memory.limit_bytes, memory.reserved_bytes
-            );
-        }
-        if let Some(disk) = progress.temporary_storage {
-            let _ = write!(
-                output,
-                "\nTemporary storage: peak {} / {} bytes; current {}; control reserve {}",
-                disk.peak_bytes, disk.limit_bytes, disk.current_bytes, disk.control_reserved_bytes
-            );
-        }
-        if let Some(stop) = progress.stop {
-            let _ = write!(
-                output,
-                "; stop={:?}; requested={:?}",
-                stop.reason, stop.requested_units
-            );
-        }
-    }
-    if let Some(memory) = diagnostics.memory {
-        let _ = write!(
-            output,
-            "\nMemory peak: {} bytes ({:?})",
-            memory.peak_bytes, memory.source
-        );
-    }
-    if let Some(exit) = diagnostics.exit {
-        let _ = write!(
-            output,
-            "\nWorker exit: code={:?} signal={:?} cgroup_oom={}",
-            exit.code, exit.signal, exit.cgroup_oom
-        );
-    }
-    for error in &diagnostics.secondary {
-        let _ = write!(output, "\nSecondary {:?}: {}", error.code, error.message);
-    }
-    if diagnostics.secondary_truncated {
-        output.push_str("\nAdditional secondary diagnostics truncated");
-    }
-    if !diagnostics.stderr_tail.is_empty() {
-        let _ = write!(
-            output,
-            "\nWorker stderr tail (truncated={}):\n{}",
-            diagnostics.stderr_truncated,
-            String::from_utf8_lossy(&diagnostics.stderr_tail).escape_debug()
-        );
-    }
-}
-
-fn internal(args: &[OsString]) -> Result<()> {
-    let stage = args
-        .get(2)
-        .map(PathBuf::from)
-        .ok_or_else(|| invalid("missing worker staging path"))?;
-    if args[1] == "__guard" {
-        #[cfg(target_os = "linux")]
-        return blobray_next_host::linux::run_guard(&stage);
-        #[cfg(not(target_os = "linux"))]
-        return Err(Error::new(
-            ErrorCode::Unavailable,
-            "Linux guard unavailable",
-        ));
-    }
-    let lease = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(stage.join("lease.lock"))
-        .map_err(blobray_domain::storage_io)?;
-    lease.lock_shared().map_err(blobray_domain::storage_io)?;
-    fn request<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T> {
-        use std::io::Read;
-        let mut bytes = Vec::new();
-        std::fs::File::open(path)
-            .map_err(blobray_domain::storage_io)?
-            .take(blobray_domain::CONTROL_MESSAGE_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(blobray_domain::storage_io)?;
-        if bytes.len() > blobray_domain::CONTROL_MESSAGE_BYTES {
-            return Err(invalid("worker request exceeds 64 KiB"));
-        }
-        serde_json::from_slice(&bytes).map_err(|e| invalid(&e.to_string()))
-    }
-    let ir: Option<app::IrWork> = if stage.join("ir.json").exists() {
-        Some(request(&stage.join("ir.json"))?)
-    } else {
-        None
-    };
-    let automatic: Option<app::AutomaticInvestigationWork> =
-        if stage.join("automatic-investigation.json").exists() {
-            Some(request(&stage.join("automatic-investigation.json"))?)
-        } else {
-            None
-        };
-    let query: Option<QueryWork> = if stage.join("query.json").exists() {
-        Some(request(&stage.join("query.json"))?)
-    } else {
-        None
-    };
-    let image: Option<app::ImageWork> = if stage.join("image.json").exists() {
-        Some(request(&stage.join("image.json"))?)
-    } else {
-        None
-    };
-    let function: Option<app::FunctionWork> = if stage.join("function.json").exists() {
-        Some(request(&stage.join("function.json"))?)
-    } else {
-        None
-    };
-    let investigation: Option<app::InvestigationWork> = if stage.join("investigation.json").exists()
-    {
-        Some(request(&stage.join("investigation.json"))?)
-    } else {
-        None
-    };
-    let import: Option<ImportWork> = if ir.is_none()
-        && query.is_none()
-        && image.is_none()
-        && function.is_none()
-        && investigation.is_none()
-        && automatic.is_none()
-    {
-        Some(request(&stage.join("request.json"))?)
-    } else {
-        None
-    };
-    let (run, started, deadline, budget) = if let Some(w) = &ir {
-        (&w.run, w.started_ms, w.deadline_ms, &w.budget)
-    } else if let Some(w) = &automatic {
-        (&w.run, w.started_ms, w.deadline_ms, &w.budget)
-    } else {
-        match (&query, &import, &image, &function, &investigation) {
-            (Some(work), _, _, _, _) => {
-                (&work.run, work.started_ms, work.deadline_ms, &work.budget)
-            }
-            (_, Some(work), _, _, _) if work.schema == 2 => {
-                (&work.run, work.started_ms, work.deadline_ms, &work.budget)
-            }
-            (_, _, Some(work), _, _) if work.schema == 1 => {
-                (&work.run, work.started_ms, work.deadline_ms, &work.budget)
-            }
-            (_, _, _, Some(work), _) if work.schema == 1 => {
-                (&work.run, work.started_ms, work.deadline_ms, &work.budget)
-            }
-            (_, _, _, _, Some(work)) if work.schema == 1 => {
-                (&work.run, work.started_ms, work.deadline_ms, &work.budget)
-            }
-            _ => return Err(invalid("unsupported worker protocol")),
-        }
-    };
-    let environment = blobray_next_host::linux::WorkerEnvironment::new(&stage, run.clone())?;
-    let mut context = app::RunContext::new(&environment, started, deadline, budget, None)?;
-    let mut linker_diagnostics = None;
-    let result = if let Some(work) = ir {
-        app::prepare_ir_worker(&stage, &work, &mut context)
-            .map(|p| Some(app::PreparedReceipt::Ir(p)))
-    } else if let Some(work) = automatic {
-        app::prepare_automatic_investigation_worker(
-            &stage,
-            &work,
-            &blobray_backend_riscv::RiscvDecoder,
-            &mut context,
-        )
-        .map(Some)
-    } else {
-        match (query, import, image, function, investigation) {
-            (Some(work), _, _, _, _) => app::prepare_query_with_tools(
-                &stage,
-                &work,
-                &mut context,
-                &blobray_next_host::linux::ElfLinker,
-                Some(&blobray_backend_riscv::RiscvDecoder),
-            )
-            .map(|_| None),
-            (_, Some(work), _, _, _) => app::prepare_import(&stage, work, &mut context)
-                .map(|p| Some(app::PreparedReceipt::Import(p))),
-            (_, _, Some(work), _, _) => app::prepare_image_worker(
-                &stage,
-                &work,
-                &blobray_next_host::linux::ElfLinker,
-                &mut context,
-                &mut linker_diagnostics,
-            )
-            .map(|p| Some(app::PreparedReceipt::Image(p))),
-            (_, _, _, Some(work), _) => app::prepare_function_worker(
-                &stage,
-                &work,
-                &blobray_backend_riscv::RiscvDecoder,
-                &mut context,
-            )
-            .map(|p| Some(app::PreparedReceipt::Function(p))),
-            (_, _, _, _, Some(work)) => app::prepare_investigation_worker(
-                &stage,
-                &work,
-                &blobray_backend_riscv::RiscvDecoder,
-                &mut context,
-            )
-            .map(|p| Some(app::PreparedReceipt::Investigation(p))),
-            _ => unreachable!(),
-        }
-    };
-    let mut diagnostics = blobray_domain::RunDiagnostics {
-        linker: linker_diagnostics,
-        progress: Some(context.snapshot()),
-        ..Default::default()
-    };
-    let observed = context
-        .flush()
-        .and_then(|()| environment.finish(&context.snapshot()));
-    diagnostics.progress = Some(context.snapshot());
-    let result = match (result, observed) {
-        (Err(error), Err(secondary)) => {
-            diagnostics.secondary(secondary);
-            Err(error)
-        }
-        (result, Ok(())) => result,
-        (Ok(_), Err(error)) => Err(error),
-    };
-    let report = match result {
-        Ok(prepared) => WorkerReport {
-            schema: 6,
-            diagnostics,
-            state: RunState::Completed,
-            prepared,
-            error: None,
+/// Audit the final image at `artifact` in this process. Only a clean audit,
+/// with no forbidden target and no coverage gap, succeeds.
+fn audit_targets(
+    artifact: PathBuf,
+    ranges: Vec<blobray_domain::ForbiddenTargetRange>,
+    limits: InProcessOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let executable = app::in_process::Executable::new(std::fs::read(&artifact).map_err(io_error)?);
+    let memory = limits.memory()?;
+    let mut control = limits.control();
+    let decoder = blobray_backend_riscv::RiscvDecoder;
+    let mut records = Vec::new();
+    let summary = app::audit::audit_targets(
+        &executable,
+        &ranges,
+        &decoder,
+        &memory,
+        &mut control,
+        &mut |record, _| {
+            records.push(record.clone());
+            Ok(())
         },
-        Err(mut error) => {
-            blobray_domain::truncate_message(&mut error.message);
-            let state = match error.code {
-                ErrorCode::ResourceLimited => RunState::ResourceLimited,
-                ErrorCode::TimedOut => RunState::TimedOut,
-                ErrorCode::Cancelled => RunState::Cancelled,
-                _ => RunState::Failed,
-            };
-            WorkerReport {
-                schema: 6,
-                diagnostics,
-                state,
-                prepared: None,
-                error: Some(error),
+    )?;
+    let verdict = if summary.forbidden_targets != 0 {
+        CheckVerdict::Fail
+    } else if summary.coverage_gaps != 0 {
+        CheckVerdict::Inconclusive
+    } else {
+        CheckVerdict::Pass
+    };
+    let mut out = std::io::stdout().lock();
+    match format {
+        Format::Json => {
+            serde_json::to_writer(
+                &mut out,
+                &blobray_next_host::wire::TargetAuditDocument {
+                    schema: blobray_next_host::wire::TARGET_AUDIT_SCHEMA,
+                    artifact: executable.id().clone(),
+                    decoder: decoder.identity().into(),
+                    semantics: decoder.semantic_identity().into(),
+                    ranges,
+                    records,
+                    summary,
+                    verdict,
+                },
+            )
+            .map_err(json_error)?;
+            writeln!(out).map_err(io_error)?;
+        }
+        Format::Human => {
+            writeln!(
+                out,
+                "Target audit of {}: {verdict:?}\n  {} sections, {} instructions, {} forbidden targets, {} coverage gaps, {} unresolved indirect transfers",
+                executable.id(),
+                summary.sections,
+                summary.instructions,
+                summary.forbidden_targets,
+                summary.coverage_gaps,
+                summary.unresolved_indirect
+            )
+            .map_err(io_error)?;
+            for record in &records {
+                writeln!(out, "  {record:?}").map_err(io_error)?;
             }
         }
-    };
-    let file = std::fs::File::create(stage.join("worker-report.json"))
-        .map_err(blobray_domain::storage_io)?;
-    app::write_control_message(file, &report)
-}
-
-fn parse_range(text: &str) -> std::result::Result<blobray_domain::ImageRegion, String> {
-    let (start, length) = text.split_once(':').ok_or("expected START:LENGTH")?;
-    let parse = |v: &str| {
-        if let Some(hex) = v.strip_prefix("0x") {
-            u64::from_str_radix(hex, 16)
-        } else {
-            v.parse::<u64>()
-        }
-        .map_err(|e| e.to_string())
-    };
-    Ok(blobray_domain::ImageRegion {
-        start: u32::try_from(parse(start)?).map_err(|e| e.to_string())?,
-        length: parse(length)?,
+    }
+    Ok(if verdict == CheckVerdict::Pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     })
 }
 
@@ -1811,7 +285,6 @@ fn register_accesses(
     limits: InProcessOptions,
     format: Format,
 ) -> Result<ExitCode> {
-    use std::io::Write;
     let inputs = inputs
         .into_iter()
         .map(parse_input)
@@ -1843,7 +316,7 @@ fn register_accesses(
             out,
             "{{\"schema\":{},\"inputs\":{},\"records\":[",
             blobray_next_host::wire::REGISTER_ACCESSES_SCHEMA,
-            serde_json::to_string(&described).map_err(|e| invalid(&e.to_string()))?
+            serde_json::to_string(&described).map_err(json_error)?
         )
         .map_err(io_error)?;
     }
@@ -1860,7 +333,7 @@ fn register_accesses(
                     out.write_all(b",").map_err(io_error)?;
                 }
                 first = false;
-                serde_json::to_writer(&mut out, record).map_err(|e| invalid(&e.to_string()))?;
+                serde_json::to_writer(&mut out, record).map_err(json_error)?;
             }
             Ok(())
         },
@@ -1869,7 +342,7 @@ fn register_accesses(
         write!(
             out,
             "],\"summary\":{}}}",
-            serde_json::to_string(&summary).map_err(|e| invalid(&e.to_string()))?
+            serde_json::to_string(&summary).map_err(json_error)?
         )
         .map_err(io_error)?;
         writeln!(out).map_err(io_error)?;
@@ -1887,44 +360,5 @@ fn register_accesses(
         .map_err(io_error)?;
     }
     out.flush().map_err(io_error)?;
-    Ok(ExitCode::SUCCESS)
-}
-
-fn parse_address(text: &str) -> std::result::Result<u32, String> {
-    if let Some(hex) = text.strip_prefix("0x") {
-        u32::from_str_radix(hex, 16)
-    } else {
-        text.parse()
-    }
-    .map_err(|e| e.to_string())
-}
-
-fn export_data_query(
-    project: PathBuf,
-    query: ReadQuery,
-    output: PathBuf,
-    limits: ResourceOptions,
-    format: Format,
-) -> Result<ExitCode> {
-    let application = limits.application()?;
-    let _diagnostics = TemporaryDiagnostics(&application, format);
-    let signals = Signals::new()?;
-    let handle = application.start_query(&project, query, limits.budget()?)?;
-    if !wait_handle(&handle, &signals, format) {
-        return Ok(ExitCode::FAILURE);
-    }
-    let mut result = handle.take_output()?;
-    result.export_data(&output, &|| signals.cancelled())?;
-    match format {
-        Format::Json => println!(
-            "{}",
-            serde_json::json!(blobray_next_host::wire::ExportDocument {
-                schema: 1,
-                summary: result.summary(),
-                output: &output,
-            })
-        ),
-        Format::Human => println!("Data exported to {}", output.display()),
-    }
     Ok(ExitCode::SUCCESS)
 }

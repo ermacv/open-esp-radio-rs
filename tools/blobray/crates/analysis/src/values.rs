@@ -80,7 +80,6 @@ fn prepare(
         ..input.relocations.first_at(node.offset.saturating_add(1))
     {
         let raw = &input.relocations[site];
-        control.measure(WorkMetric::RelocationLookups, 1);
         control.checkpoint(1)?;
         if raw.offset.checked_add(4) == Some(node.offset)
             && raw.offset >= input.extent.start
@@ -1176,7 +1175,6 @@ mod tests {
         assert_eq!(offset(Value::Stack(i64::MAX), 1), Value::Unknown);
     }
     struct Isa(Vec<SemanticOp>);
-    impl PointerDecoder for Isa {}
     impl FunctionDecoder for Isa {
         fn identity(&self) -> &'static str {
             "test"

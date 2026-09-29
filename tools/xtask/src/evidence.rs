@@ -135,7 +135,6 @@ pub fn run(
     chip: &str,
     scenarios: Vec<String>,
     linker: PathBuf,
-    limit_mode: String,
     output: PathBuf,
 ) -> Result<ExitCode> {
     let directory = directory(&ctx.root, chip)?;
@@ -161,7 +160,6 @@ pub fn run(
         selected,
         &ctx.root.join(directory),
         &resolve(&linker)?,
-        &limit_mode,
         &output,
     )?;
     if code == ExitCode::SUCCESS {
@@ -336,7 +334,6 @@ pub fn check(
     scenarios: Vec<String>,
     changed_since: Option<String>,
     linker: PathBuf,
-    limit_mode: String,
     output: PathBuf,
 ) -> Result<ExitCode> {
     let directory = ctx.root.join(directory(&ctx.root, chip)?);
@@ -396,7 +393,6 @@ pub fn check(
         committed.clone(),
         &rerun,
         &resolve(&linker)?,
-        &limit_mode,
         &output,
     )?;
     if code != ExitCode::SUCCESS {
@@ -437,7 +433,6 @@ fn regenerate(
     selected: Vec<String>,
     index: &Path,
     linker: &Path,
-    limit_mode: &str,
     output: &Path,
 ) -> Result<ExitCode> {
     let directory = index;
@@ -476,8 +471,6 @@ fn regenerate(
             linker.as_os_str().to_owned(),
             "--output".into(),
             output.join(&scenario).into(),
-            "--limit-mode".into(),
-            limit_mode.into(),
             "--index".into(),
             ctx.root.join(directory).into(),
         ];

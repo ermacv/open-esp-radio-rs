@@ -121,8 +121,8 @@ file. Each shard records:
   (`archive` or `rom`), root symbol, compiled production entry, the number of
   compared cases and the digests of the reviewed content of the effect
   contracts and output projections those comparisons selected, which leave out
-  the endpoints naming one run's imported revision so that unchanged sources
-  reproduce every shard byte for byte. Contracts and projections are typed
+  the endpoints naming the linked images by content so that a digest changes
+  only with the reviewed content. Contracts and projections are typed
   values in the scenario code, reviewed through git. A claim exists only when
   every case of the run comparing that exact root/entry pair is MATCH; an
   unsupported claim fails the run instead of being written. The run keeps only

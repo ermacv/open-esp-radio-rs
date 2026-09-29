@@ -105,8 +105,6 @@ fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
             .args(["audit-targets", "--artifact"])
             .arg(runtime)
             .args([
-                "--limit-mode",
-                "watchdog",
                 "--forbid",
                 "esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc",
                 "--forbid",

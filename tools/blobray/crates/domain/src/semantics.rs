@@ -200,34 +200,13 @@ pub trait FunctionSemantics: FunctionDecoder {
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum AbstractValue {
     Unknown,
-    Alternatives {
-        values: ValueAlternatives,
-    },
-    Expression {
-        id: u32,
-    },
-    Constant {
-        value: u32,
-    },
-    ImageAddress {
-        address: u32,
-    },
-    ScopedAddress {
-        source: FunctionSource,
-        object: ObjectId,
-        address: u32,
-    },
-    Section {
-        section: u32,
-        offset: i64,
-    },
-    Symbol {
-        symbol: SymbolId,
-        addend: i64,
-    },
-    EntryStack {
-        offset: i64,
-    },
+    Alternatives { values: ValueAlternatives },
+    Expression { id: u32 },
+    Constant { value: u32 },
+    ImageAddress { address: u32 },
+    Section { section: u32, offset: i64 },
+    Symbol { symbol: SymbolId, addend: i64 },
+    EntryStack { offset: i64 },
 }
 /// Maximum exact alternatives retained by the finite-value profile.
 pub const MAX_VALUE_ALTERNATIVES: usize = 8;
@@ -235,43 +214,17 @@ pub const MAX_VALUE_ALTERNATIVES: usize = 8;
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ValueAlternative {
-    Constant {
-        value: u32,
-    },
-    ImageAddress {
-        address: u32,
-    },
-    ScopedAddress {
-        source: FunctionSource,
-        object: ObjectId,
-        address: u32,
-    },
-    Section {
-        section: u32,
-        offset: i64,
-    },
-    Symbol {
-        symbol: SymbolId,
-        addend: i64,
-    },
-    EntryStack {
-        offset: i64,
-    },
+    Constant { value: u32 },
+    ImageAddress { address: u32 },
+    Section { section: u32, offset: i64 },
+    Symbol { symbol: SymbolId, addend: i64 },
+    EntryStack { offset: i64 },
 }
 impl ValueAlternative {
     pub fn as_value(&self) -> AbstractValue {
         match self {
             Self::Constant { value } => AbstractValue::Constant { value: *value },
             Self::ImageAddress { address } => AbstractValue::ImageAddress { address: *address },
-            Self::ScopedAddress {
-                source,
-                object,
-                address,
-            } => AbstractValue::ScopedAddress {
-                source: source.clone(),
-                object: object.clone(),
-                address: *address,
-            },
             Self::Section { section, offset } => AbstractValue::Section {
                 section: *section,
                 offset: *offset,
@@ -287,15 +240,6 @@ impl ValueAlternative {
         Some(match value {
             AbstractValue::Constant { value } => Self::Constant { value: *value },
             AbstractValue::ImageAddress { address } => Self::ImageAddress { address: *address },
-            AbstractValue::ScopedAddress {
-                source,
-                object,
-                address,
-            } => Self::ScopedAddress {
-                source: source.clone(),
-                object: object.clone(),
-                address: *address,
-            },
             AbstractValue::Section { section, offset } => Self::Section {
                 section: *section,
                 offset: *offset,
@@ -340,9 +284,6 @@ impl ValueAlternatives {
                 .0
                 .iter()
                 .map(|v| match v {
-                    ValueAlternative::ScopedAddress { source, object, .. } => {
-                        source.allocated_bytes() + object.artifact.allocated_bytes()
-                    }
                     ValueAlternative::Symbol { symbol, .. } => {
                         symbol.object.artifact.allocated_bytes()
                     }
@@ -383,25 +324,6 @@ impl<'de> Deserialize<'de> for ValueAlternatives {
             }
         }
         deserializer.deserialize_seq(Visitor)
-    }
-}
-impl AbstractValue {
-    /// Membership is a may-match, never a proof that this address is selected at runtime.
-    pub fn contains_address(&self, expected: u32) -> bool {
-        match self {
-            Self::Constant { value } | Self::ImageAddress { address: value } => *value == expected,
-            Self::Alternatives { values } => values.values().iter().any(|v| matches!(v, ValueAlternative::Constant { value } | ValueAlternative::ImageAddress { address: value } if *value == expected)),
-            _ => false,
-        }
-    }
-    pub fn contains_symbol(&self, expected: &SymbolId) -> bool {
-        match self {
-            Self::Symbol { symbol, .. } => symbol == expected,
-            Self::Alternatives { values } => values.values().iter().any(
-                |v| matches!(v, ValueAlternative::Symbol { symbol, .. } if symbol == expected),
-            ),
-            _ => false,
-        }
     }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -459,22 +381,6 @@ pub enum Expression {
         register: u8,
     },
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MmioField {
-    pub name: String,
-    pub lsb: u8,
-    pub width: u8,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MmioRegister {
-    pub name: String,
-    pub address: u32,
-    pub width: u8,
-    pub fields: Vec<MmioField>,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BranchTest {
@@ -484,12 +390,4 @@ pub enum BranchTest {
     Ge,
     Ltu,
     Geu,
-}
-
-/// Reviewed classification of a physical MMIO interval; never supplies load values.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MmioRegion {
-    pub name: String,
-    pub range: ImageRegion,
 }

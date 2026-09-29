@@ -3,10 +3,10 @@
 Owns a bounded, iterative local CFG, typed output and independent coverage
 for section-relative objects and image-addressed functions. It
 receives borrowed captured code, structural relocation records, an injected ISA
-port, working capacity, control and a result sink. It has no store or filesystem
+port, working capacity, control and a result sink. It has no filesystem
 authority. Edges to callees never schedule analysis of another function.
 
-`registers` recognizes bounded saved load/mask/store expression shapes using
+`registers` recognizes bounded load/mask/store expression shapes using
 the shared borrowed fact index. It reports bit-selection observations with their
 original physical load width; application owns address scope.
 It never infers register geometry, hardware field meaning or safe RMW semantics.
@@ -48,34 +48,12 @@ control; the function count is bounded.
 
 `PreparedReferences` retains one normalized reference table per prepared section. Sorted offset, symbol and physical-pair indexes replace repeated whole-table scans while preserving nonadjacent HI/LO ambiguity and exact physical identities.
 
-`pointers` streams explicitly selected captured pointer slots using structural
-write bounds and the injected `PointerDecoder`. It performs no name lookup,
-relocation application, project I/O or table-sized result allocation. Physical
-symbol references, numeric addresses, null and unresolved transformations remain
-distinct; the caller owns the prepared bytes and output stream.
-
 `value_sets` interns canonical sets of at most eight exact leaves in admitted
 operation-local vectors and a bounded-load lookup index. It does not enlarge each
 register state with an inline array. Joins and Cartesian arithmetic widen explicitly
 on a ninth result; stored `alternative-limit` gaps distinguish this loss from a
 resolved singleton. Public alternatives are nonrecursive and validated on decode.
 
-Saved navigation indexes one flat function record stream and interprets calls and
-physical access paths without storage, linking or binding authority. Cycles are
-reported as structural edges; unknown addresses remain explicit.
-
-The flow module computes bounded iterative reachability over caller-selected
-unambiguous arcs. It returns predecessor indexes and depths; storage and path
-authority stay with application.
-
-`trace` consumes supplied original local IR and physical call links. Borrowed
-per-function indexes are reused across invocations; admitted expression memoization,
-path visitation and call frames are iterative. Canonical symbolic equality can prove
-a selected observable relation; unsupported paths and undecided inequality remain
-incomplete unless an observed prefix already proves a difference. A length difference
-is proven only when the shorter side is exact. It neither schedules analysis nor models RAM/peripheral state. Typed
-fences come from the semantic producer, not parsed disassembly text.
-
-Trace policy 3 distinguishes pre-transfer `CallInputs` from callee entry, applying
-the saved typed `Value` link effect first. Physical return addresses become exact
-values; section-relative links stay unresolved without an address mapping.
+`navigation::Facts` indexes one function's flat record stream and interprets
+its memory accesses without storage, linking or binding authority; unknown
+addresses remain explicit.

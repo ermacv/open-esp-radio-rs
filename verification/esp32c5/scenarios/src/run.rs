@@ -37,9 +37,6 @@ pub enum Scenario {
 
 #[derive(clap::Args)]
 pub struct Common {
-    /// `blobray` executable.
-    #[arg(long)]
-    binary: PathBuf,
     /// Pinned `libphy.a`.
     #[arg(long, default_value_os_t = artifacts::default_path(LIBRARY))]
     library: PathBuf,
@@ -69,7 +66,6 @@ pub struct Common {
 /// The transport suite: every leaf must MATCH and meet its expectation.
 fn phy_i2c(common: &Common, report: &dyn RunReport) -> Result<session::Claims> {
     let options = LeafOptions {
-        binary: common.binary.clone(),
         suite: &phy_i2c::PHY_I2C,
         archives: vec![common.library.clone()],
         rom: common.rom.clone(),

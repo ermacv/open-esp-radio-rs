@@ -2597,7 +2597,8 @@ pub struct LegacyTxConfig {
     pub scheduler_priority: u8,
     pub pti: u8,
     pub pti_count: u16,
-    /// Whether address one is a group address.
+    /// Response the MAC awaits: none for a group address, an ACK for an
+    /// individual frame, a BlockAck for a BlockAckReq.
     ///
     /// SOURCE: `libpp.a[pp.o]::ppTxProtoProc` copies the low bit of
     /// address one into descriptor flag `0x0000_0002`.
@@ -2606,8 +2607,9 @@ pub struct LegacyTxConfig {
     /// represented here, an ordinary individual address follows the recovered
     /// zero-flags branch and selects format one. This distinction is qualified
     /// by the vendor authentication capture and by repeated open STA
-    /// authentication/association/WPA2/DHCP runs.
-    pub group_receiver: bool,
+    /// authentication/association/WPA2/DHCP runs. A BlockAckReq selects
+    /// format two ([`MacLegacyTxResponse::BlockAck`]).
+    pub response: MacLegacyTxResponse,
     /// Six-bit key-entry index. Zero is plaintext; protected traffic uses its
     /// owned hardware key slot. The formatter combines this with
     /// [`Self::interface`] in the recovered PLCP1 descriptor-control byte.
@@ -3224,7 +3226,7 @@ impl LegacyTxConfig {
             scheduler_priority: 1,
             pti: 1,
             pti_count: 1,
-            group_receiver: false,
+            response: MacLegacyTxResponse::Ack,
             hardware_key_selector: 0,
         }
     }
@@ -3404,7 +3406,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
                 rate: config.rate.pac_rate(),
                 signal: config.signal,
                 data_power: config.data_power,
-                group_receiver: config.group_receiver,
+                response: config.response,
                 hardware_key_selector: config.hardware_key_selector,
                 interface: config.interface,
                 aifsn: config.aifsn,

@@ -14,6 +14,7 @@ use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::GenericAtomicWaker;
+use embassy_time::Instant;
 use owned_embassy_net_driver::{
     Capabilities, ChecksumCapabilities, Driver, HardwareAddress, LinkState as DriverLinkState,
 };
@@ -109,6 +110,8 @@ impl<M: RawMutex> OwnedLinkState<M> {
 
 struct QueuedPacket {
     epoch: u32,
+    /// When the owner entered its queue, in `embassy_time` microseconds.
+    queued_at_micros: u64,
     packet: PacketBuf,
 }
 
@@ -278,6 +281,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize>
         let snapshot = self.link.snapshot();
         match self.tx.push(QueuedPacket {
             epoch: snapshot.epoch,
+            queued_at_micros: Instant::now().as_micros(),
             packet,
         }) {
             Ok(()) => {
@@ -334,6 +338,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH: usize> Driv
 /// Borrowing the endpoint prevents either resource from outliving its storage.
 pub struct OwnedNetworkTxFrame<'resources, M: RawMutex> {
     interface: NetworkInterfaceId,
+    queued_at_micros: u64,
     packet: PacketBuf,
     // Field order is intentional: return the packet to its pool before waking
     // a producer which can immediately spend this software admission credit.
@@ -432,6 +437,7 @@ impl<M: RawMutex, const RX_QUEUE_DEPTH: usize> OwnedRxPublisher<'_, M, RX_QUEUE_
         }
         match self.rx.try_send(QueuedPacket {
             epoch: snapshot.epoch,
+            queued_at_micros: Instant::now().as_micros(),
             packet,
         }) {
             Ok(()) => {
@@ -451,6 +457,15 @@ impl<M: RawMutex> OwnedNetworkTxFrame<'_, M> {
 
     pub const fn tag(&self) -> &NetworkInterfaceId {
         &self.interface
+    }
+
+    /// When the stack handed this owner to the radio's TX queue, in
+    /// `embassy_time` microseconds.
+    ///
+    /// This is the origin of the frame's radio lifetime: time spent waiting
+    /// for aggregation, SRAM admission or retransmission counts against it.
+    pub const fn queued_at_micros(&self) -> u64 {
+        self.queued_at_micros
     }
 
     /// Complete Ethernet-II bytes.
@@ -574,6 +589,7 @@ impl<'resources, M: RawMutex, const RX_QUEUE_DEPTH: usize, const TX_QUEUE_DEPTH:
             if current.up && current.epoch == queued.epoch {
                 return Some(OwnedNetworkTxFrame {
                     interface: self.interface,
+                    queued_at_micros: queued.queued_at_micros,
                     packet: queued.packet,
                     _credit: credit,
                 });

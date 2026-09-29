@@ -53,6 +53,10 @@ pub struct Job {
     pub pid_started_unix_millis: Option<u64>,
     /// Where a detached job's output goes; a run in the foreground has none.
     pub log: Option<PathBuf>,
+    /// The files the job was fixed with when it was enqueued; a sweep keeps
+    /// them while the job has not ended.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixed: Vec<PathBuf>,
     #[serde(flatten)]
     pub state: JobState,
 }
@@ -452,6 +456,15 @@ impl Frozen {
         }))
     }
 
+    /// Every file or directory the job needs to stay.
+    pub fn paths(&self) -> Vec<PathBuf> {
+        [&self.xtask, &self.runner, &self.receipt]
+            .into_iter()
+            .cloned()
+            .chain(self.snapshot.clone())
+            .collect()
+    }
+
     /// A command running this frozen xtask's `hil` in `ctx`'s checkout, with
     /// the frozen parts in its environment.
     pub fn hil_command(&self, ctx: &Context) -> std::process::Command {
@@ -546,6 +559,7 @@ pub fn enqueue(
         pid: None,
         pid_started_unix_millis: None,
         log: Some(log.clone()),
+        fixed: frozen.paths(),
         state: JobState::Pending,
     };
     jobs.write(&job)?;
@@ -616,6 +630,7 @@ impl Running {
                     pid: Some(pid),
                     pid_started_unix_millis: oer_hil_arbiter::process_started_unix_millis(pid),
                     log: None,
+                    fixed: Vec::new(),
                     state: JobState::Pending,
                 };
                 jobs.write(&job)?;

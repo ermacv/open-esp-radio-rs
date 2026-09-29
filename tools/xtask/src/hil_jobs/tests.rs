@@ -16,8 +16,33 @@ fn job(id: &str, state: JobState) -> Job {
         pid: Some(std::process::id()),
         pid_started_unix_millis: oer_hil_arbiter::process_started_unix_millis(std::process::id()),
         log: Some(PathBuf::from("/checkout/target/hil/jobs/x.log")),
+        fixed: Vec::new(),
         state,
     }
+}
+
+#[test]
+fn a_job_names_what_it_was_fixed_with_and_older_records_still_read() {
+    let frozen = Frozen {
+        xtask: PathBuf::from("/c/target/hil/jobs/xtask/1/oer-xtask"),
+        runner: PathBuf::from("/c/target/hil/observers/2/runner"),
+        receipt: PathBuf::from("/c/target/hil/observers/2/receipt-3.json"),
+        snapshot: Some(PathBuf::from("/c/target/hil/esp32s31/source-snapshots/4")),
+    };
+    let mut fixed = job("1-a", JobState::Pending);
+    fixed.fixed = frozen.paths();
+    let text = serde_json::to_string(&fixed).unwrap();
+    let read: Job = serde_json::from_str(&text).unwrap();
+    assert_eq!(read.fixed.len(), 4);
+    assert!(
+        read.fixed
+            .contains(&PathBuf::from("/c/target/hil/esp32s31/source-snapshots/4"))
+    );
+    // A record written before jobs were fixed has no such list.
+    let mut older: serde_json::Value = serde_json::from_str(&text).unwrap();
+    older.as_object_mut().unwrap().remove("fixed");
+    let older: Job = serde_json::from_value(older).unwrap();
+    assert!(older.fixed.is_empty());
 }
 
 #[test]

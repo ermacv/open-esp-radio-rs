@@ -110,6 +110,9 @@ pub(crate) struct Entry {
     /// The inventory domain or owning catalog, so owners can find theirs.
     pub(crate) owner: String,
     pub(crate) expectation: Expectation,
+    /// The packages an inventory item declares; every anchor of the item
+    /// must sit in one of them. Empty when none are declared.
+    pub(crate) packages: Vec<String>,
 }
 
 impl fmt::Display for Entry {
@@ -153,6 +156,7 @@ impl Ledger {
                     kind: EntryKind::Item,
                     owner,
                     expectation: expectation(item.status),
+                    packages: item.packages.clone(),
                 }),
             }
         }
@@ -165,6 +169,7 @@ impl Ledger {
                     .cloned()
                     .unwrap_or_else(|| "source-facts".into()),
                 expectation: expectation(fact.status),
+                packages: Vec::new(),
             });
         }
         for (id, capability) in &view.capabilities {
@@ -181,6 +186,7 @@ impl Ledger {
                     },
                     ImplementationProof::Incomplete => Expectation::Unconstrained,
                 },
+                packages: Vec::new(),
             });
         }
         ledger
@@ -238,6 +244,12 @@ pub(crate) enum Problem {
     Unbacked {
         entry: Entry,
     },
+    /// The item lists its packages, and this anchor sits in none of them.
+    OutsidePackages {
+        entry: Entry,
+        location: Location,
+        package: String,
+    },
 }
 
 impl fmt::Display for Problem {
@@ -281,6 +293,14 @@ impl fmt::Display for Problem {
             Self::Anchored { entry, location } => {
                 write!(f, "{entry}: absent but anchored at {location}")
             }
+            Self::OutsidePackages {
+                entry,
+                location,
+                package,
+            } => write!(
+                f,
+                "{entry}: anchored at {location} in `{package}`, which its `packages` does not list"
+            ),
             Self::Unbacked { entry } => write!(
                 f,
                 "{entry}: implementation complete without a production anchor on the capability \
@@ -567,6 +587,17 @@ pub(crate) fn check(ledger: &Ledger, anchors: &[Anchor]) -> Vec<Problem> {
         .collect::<BTreeMap<_, _>>();
     for entry in &ledger.entries {
         let own = anchored(entry.kind, &entry.id);
+        if !entry.packages.is_empty() {
+            for anchor in &own {
+                if !entry.packages.contains(&anchor.package.name) {
+                    problems.push(Problem::OutsidePackages {
+                        entry: entry.clone(),
+                        location: anchor.location.clone(),
+                        package: anchor.package.name.clone(),
+                    });
+                }
+            }
+        }
         let locations = || own.iter().map(|a| a.location.clone()).collect::<Vec<_>>();
         match &entry.expectation {
             Expectation::Production if own.is_empty() => {

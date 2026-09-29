@@ -54,6 +54,7 @@ fn entry(id: &str, kind: EntryKind, expectation: Expectation) -> Entry {
         kind,
         owner: "wifi".into(),
         expectation,
+        packages: Vec::new(),
     }
 }
 
@@ -246,4 +247,27 @@ fn an_edit_lists_the_entries_anchored_in_its_files() {
     let changed = BTreeSet::from([PathBuf::from("crates/edited.rs")]);
     let touched = touched(&anchors, &changed);
     assert_eq!(touched.keys().copied().collect::<Vec<_>>(), ["edited"]);
+}
+
+#[test]
+fn an_anchor_must_sit_in_a_package_its_item_lists() {
+    let mut listed = entry("rx-filter", EntryKind::Item, Expectation::Production);
+    listed.packages = vec!["owner".into(), "hal".into()];
+    let ledger = Ledger {
+        entries: vec![listed.clone()],
+        projections: BTreeMap::new(),
+    };
+    assert!(check(&ledger, &[anchor("rx-filter", Scope::Production)]).is_empty());
+
+    listed.packages = vec!["hal".into()];
+    let ledger = Ledger {
+        entries: vec![listed],
+        projections: BTreeMap::new(),
+    };
+    assert_eq!(
+        messages(&check(&ledger, &[anchor("rx-filter", Scope::Production)])),
+        [
+            "wifi item `rx-filter`: anchored at crates/rx-filter.rs:1 in `owner`, which its `packages` does not list"
+        ]
+    );
 }

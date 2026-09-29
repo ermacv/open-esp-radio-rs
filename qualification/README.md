@@ -432,7 +432,9 @@ entry of any catalog. The rules follow the declared source status:
 | Capability with `implementation = "incomplete"` | Optional |
 
 Every anchor must name an existing entry. An inventory item that projects a
-source fact is anchored through that fact. With `--changed FILE`, the command
+source fact is anchored through that fact. An item that lists its `packages`
+must be anchored only in those packages, so the listed owners cannot drift
+from the code. With `--changed FILE`, the command
 also lists each entry anchored in an edited file (`CAPABILITY-CHANGED`), so
 the author can confirm that its declared status and limits still hold; that
 list never fails the check.

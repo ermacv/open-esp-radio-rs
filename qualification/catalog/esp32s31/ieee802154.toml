@@ -325,7 +325,7 @@ title = "Channels 11-26"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Channel validation](../../hal/src/ieee802154/lifecycle.rs) and frequency-code publication exist, and the portable contract retunes the running radio. The HIL cell `ieee802154-channel-energy` retunes from channel 15 to 25 and back on air; the shared-PLL retune composition remains incomplete in qualification."
-packages = ["oer-esp32s31-hal"]
+packages = ["oer-esp32s31-hal", "oer-ieee802154-engine"]
 
 [[items]]
 id = "ieee802154-phy-and-rf-rssi"
@@ -647,7 +647,7 @@ title = "Wi-Fi/Bluetooth coexistence"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Coexistence infrastructure](../coex/src/lib.rs) and MAC PTI access exist. The composed client publishes the software-coexistence PTIs of the pinned driver: the ACK and TX/RX scene priorities read from the arbiter's shared table ([scene priorities](../../hal/src/ieee802154/coex.rs)). The static foundation and MAC policy still prove both PTIs disabled before operation. The HIL cell `ieee802154-peer-exchange-coex` runs the acknowledged peer exchange with the device in coexistence with Wi-Fi and the coexistence schedule running. Complete multi-radio request/grant/release operation under Wi-Fi load is not composed, and PTI arbitration is not measured on air. External coexistence is absent: its TX and RX stages do nothing on the pinned ESP32-S31 libcoexist, and the force-RX and arbitration-delay writes its builds make at MAC init and deinit wait for an external-coexistence owner in the coexistence driver."
-packages = ["oer-esp32s31-coex"]
+packages = ["oer-esp32s31-coex", "oer-esp32s31-hal"]
 
 [[items]]
 id = "ieee802154-product-stacks-thread"

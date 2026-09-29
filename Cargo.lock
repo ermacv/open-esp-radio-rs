@@ -2920,6 +2920,7 @@ dependencies = [
  "atomic-waker",
  "critical-section",
  "esp-hal",
+ "oer-soc-deadline",
 ]
 
 [[package]]
@@ -3444,6 +3445,10 @@ dependencies = [
  "tempfile",
  "toml_edit",
 ]
+
+[[package]]
+name = "oer-soc-deadline"
+version = "0.1.0"
 
 [[package]]
 name = "oer-symbol-lineage"

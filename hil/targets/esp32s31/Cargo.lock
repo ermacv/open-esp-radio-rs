@@ -2136,6 +2136,7 @@ dependencies = [
  "atomic-waker",
  "critical-section",
  "esp-hal",
+ "oer-soc-deadline",
 ]
 
 [[package]]
@@ -2400,6 +2401,10 @@ dependencies = [
  "oer-ieee80211-runtime",
  "oer-radio",
 ]
+
+[[package]]
+name = "oer-soc-deadline"
+version = "0.1.0"
 
 [[package]]
 name = "oer-trace"

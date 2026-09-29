@@ -8,6 +8,7 @@
 - [Follow a channel change from evidence to STA](channel-walkthrough.md)
 - [Repository ownership](architecture.md)
 - [Radio protocol terminology](protocol-naming.md)
+- [HIL terminology and roles](hil-terminology.md)
 - [Public source policy](source-policy.md)
 
 # Contribute

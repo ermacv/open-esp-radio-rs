@@ -3390,6 +3390,7 @@ dependencies = [
 name = "oer-qualification"
 version = "0.1.0"
 dependencies = [
+ "oer-chip-profile",
  "oer-command-tree",
  "oer-hil-schema",
  "serde",

@@ -14,23 +14,12 @@ use super::*;
 use serde_json::Value;
 use std::process::Command;
 
-/// Workspaces whose path packages a firmware image builds.
-const FIRMWARE_WORKSPACES: [&str; 2] = [
-    "hil/targets/esp32s31/Cargo.toml",
-    "platform/esp32s31/bootstrap/Cargo.toml",
-];
-
 /// The host package that executes scenarios and records the observation.
 const RUNNER: &str = "oer-hil-runner";
 
-/// Directories read whole: the firmware workspace, the platform's linker and
-/// stack inputs, the scenario catalog and Cargo's configuration.
-const DIRECTORIES: [&str; 4] = [
-    "hil/targets/esp32s31",
-    "platform/esp32s31",
-    "hil/scenarios",
-    ".cargo",
-];
+/// Directories read whole besides each chip's HIL agent and platform
+/// directories: the scenario catalog and Cargo's configuration.
+const DIRECTORIES: [&str; 2] = ["hil/scenarios", ".cargo"];
 
 /// Workspace files that configure every build.
 const FILES: [&str; 4] = [
@@ -138,7 +127,13 @@ impl Closure {
             .map(PathBuf::from)
             .into_iter()
             .collect::<BTreeSet<_>>();
-        for workspace in FIRMWARE_WORKSPACES {
+        let chips = super::chips::all(&root)?;
+        directories.extend(
+            chips
+                .iter()
+                .flat_map(|chip| chip.directories.iter().cloned()),
+        );
+        for (workspace, _) in chips.iter().flat_map(|chip| &chip.packages) {
             let metadata = metadata(&root, &root.join(workspace))?;
             for package in metadata["packages"].as_array().into_iter().flatten() {
                 if package["source"].is_null()

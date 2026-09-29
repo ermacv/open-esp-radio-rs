@@ -19,21 +19,6 @@ const SCHEMA: u16 = 2;
 /// Extension of a shard file; its stem is the scenario identifier.
 const EXTENSION: &str = "json";
 
-/// Files, beyond the package directories, that the firmware and observer
-/// builds read: lockfiles, the stack policy, the partition table and the
-/// observer's input registry.
-const BUILD_FILES: &[&str] = &[
-    "Cargo.lock",
-    "hil/targets/esp32s31/Cargo.lock",
-    "hil/targets/esp32s31/stack.toml",
-    "platform/esp32s31/Cargo.lock",
-    "platform/esp32s31/partitions/applications.csv",
-    "hil/schema/observer-inputs.json",
-    "rust-toolchain.toml",
-    // Workspace manifests hold the release profile and `[patch]` sections.
-    "hil/targets/esp32s31/Cargo.toml",
-    "platform/esp32s31/Cargo.toml",
-];
 /// Files the observer's own build reads beside its manifest directories: the
 /// root lock and toolchain it is built with and the inputs it validates.
 const OBSERVER_FILES: &[&str] = &[
@@ -41,15 +26,6 @@ const OBSERVER_FILES: &[&str] = &[
     "rust-toolchain.toml",
     "hil/schema/observer-inputs.json",
 ];
-/// The packages the runner builds in each firmware workspace.
-const RUNTIME_PACKAGE: &str = "oer-hil-esp32s31-runtime";
-const BOOTSTRAP_PACKAGE: &str = "oer-esp32s31-platform-bootstrap";
-/// Workspaces whose path packages compose the firmware image.
-const FIRMWARE_WORKSPACES: &[&str] = &[
-    "hil/targets/esp32s31/Cargo.toml",
-    "platform/esp32s31/Cargo.toml",
-];
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) struct Shard {
@@ -243,11 +219,17 @@ pub(super) fn load(root: &Path, directory: &Path, target: &str) -> Result<Vec<(S
 /// workspaces, the observer's manifest directories and the build files.
 pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<PathBuf>> {
     let mut paths = BTreeSet::new();
-    for workspace in FIRMWARE_WORKSPACES {
+    let chips = super::chips::all(root)?;
+    let workspaces = chips
+        .iter()
+        .flat_map(|chip| chip.packages.iter().map(|(workspace, _)| workspace))
+        .collect::<BTreeSet<_>>();
+    for workspace in workspaces {
         let output = Command::new("cargo")
             .current_dir(root)
             .args(["metadata", "--format-version", "1", "--offline", "--locked"])
-            .args(["--manifest-path", workspace])
+            .arg("--manifest-path")
+            .arg(workspace)
             .output()?;
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
@@ -270,7 +252,8 @@ pub(crate) fn tracked_sources(root: &Path, observers: &[&Value]) -> Result<Vec<P
         }
     }
     paths.extend(observer_directories(observers)?);
-    paths.extend(BUILD_FILES.iter().map(PathBuf::from));
+    paths.extend(OBSERVER_FILES.iter().map(PathBuf::from));
+    paths.extend(chips.into_iter().flat_map(|chip| chip.build_files));
     paths.remove(Path::new(""));
     Ok(paths.into_iter().collect())
 }
@@ -363,23 +346,23 @@ fn image_packages(root: &Path, provenance: &Value) -> Result<Option<BTreeSet<Pat
         return Ok(None);
     };
     let root = root.canonicalize()?;
+    // The image's chip is the one whose firmware compiles for its target.
+    let Some(chip) = super::chips::all(&root)?
+        .into_iter()
+        .find(|chip| chip.rust_target == target)
+    else {
+        return Ok(None);
+    };
     let mut packages = BTreeSet::new();
-    for (workspace, package, features) in [
-        (FIRMWARE_WORKSPACES[0], RUNTIME_PACKAGE, Some(features)),
-        (FIRMWARE_WORKSPACES[1], BOOTSTRAP_PACKAGE, None),
-    ] {
+    for (index, (workspace, package)) in chip.packages.iter().enumerate() {
+        // The runtime features apply to the HIL agent, listed first.
+        let features = (index == 0).then_some(features);
         let mut command = Command::new("cargo");
         command
             .current_dir(&root)
-            .args([
-                "tree",
-                "--offline",
-                "--locked",
-                "--manifest-path",
-                workspace,
-                "-p",
-                package,
-            ])
+            .args(["tree", "--offline", "--locked", "--manifest-path"])
+            .arg(workspace)
+            .args(["-p", package])
             .args(["--target", target, "-e", "normal,build", "--prefix", "none"])
             .args(["--format", "{p}"]);
         if let Some(features) = features {

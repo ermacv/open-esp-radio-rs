@@ -120,6 +120,28 @@ impl Profile {
     pub fn hil_agent_package(&self) -> String {
         format!("oer-hil-{}-runtime", self.id)
     }
+
+    /// The Cargo workspace of the chip's platform, which holds the
+    /// bootstrap of a staged boot.
+    pub fn platform_workspace(&self, root: &Path) -> PathBuf {
+        self.directory(root, PLATFORM)
+    }
+
+    /// The bootstrap package a staged boot builds into the image beside the
+    /// HIL agent; `None` when the chip's bootloader loads the agent itself.
+    pub fn bootstrap_package(&self) -> Option<String> {
+        (self.boot == Boot::Staged).then(|| format!("oer-{}-platform-bootstrap", self.id))
+    }
+
+    /// Every `(workspace, package)` a HIL image of the chip is built from:
+    /// the HIL agent and, for a staged boot, the platform's bootstrap.
+    pub fn hil_image_packages(&self, root: &Path) -> Vec<(PathBuf, String)> {
+        let mut packages = vec![(self.hil_agent_workspace(root), self.hil_agent_package())];
+        if let Some(bootstrap) = self.bootstrap_package() {
+            packages.push((self.platform_workspace(root), bootstrap));
+        }
+        packages
+    }
 }
 
 /// Ids of the chips with a profile, sorted.
@@ -167,6 +189,29 @@ mod tests {
                 "{} declares no package {package}",
                 workspace.display()
             );
+        }
+    }
+
+    #[test]
+    fn every_image_package_is_declared_in_its_workspace() {
+        let root = repository();
+        for chip in Profile::all(&root).unwrap() {
+            for (workspace, package) in chip.hil_image_packages(&root) {
+                let text = std::fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
+                let members: toml::Table = toml::from_str(&text).unwrap();
+                let listed = members["workspace"]["members"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|member| {
+                        let manifest = workspace.join(member.as_str()?).join("Cargo.toml");
+                        let manifest: toml::Table =
+                            toml::from_str(&std::fs::read_to_string(manifest).ok()?).ok()?;
+                        Some(manifest.get("package")?.get("name")?.as_str()?.to_owned())
+                    })
+                    .any(|name| name == package);
+                assert!(listed, "{} has no member {package}", workspace.display());
+            }
         }
     }
 

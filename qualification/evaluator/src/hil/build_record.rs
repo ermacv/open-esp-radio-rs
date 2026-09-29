@@ -35,7 +35,9 @@ impl BuildEvidence {
         let record: Record = read_json(&directory.join("build.json"))?;
         if record.schema != 1
             || record.kind != "open-esp-radio-build"
-            || record.target != "esp32s31"
+            || !oer_chip_profile::supported(root)
+                .map_err(|error| error.to_string())?
+                .contains(&record.target)
             || record.firmware.len() != 1
             || !valid_sha256(&record.repository.workspace_sha256)
         {

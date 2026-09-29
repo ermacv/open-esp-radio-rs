@@ -323,6 +323,14 @@ fn wifi_review_survives_ble_only_build_and_requires_reassessment_after_phy_chang
 #[test]
 fn build_only_destination_admits_existing_observation_without_creating_a_pass() {
     let fixture = setup();
+    // A build record names a chip the checkout's profiles support.
+    let platform = fixture.0.join("platform/esp32s31");
+    fs::create_dir_all(&platform).unwrap();
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../platform/esp32s31/chip.toml"),
+        platform.join("chip.toml"),
+    )
+    .unwrap();
     let catalog = ScenarioCatalog::default();
     let index = fixture.load().unwrap();
     let mut review = record(&fixture, &index, &catalog);

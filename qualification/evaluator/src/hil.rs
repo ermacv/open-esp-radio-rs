@@ -3,6 +3,7 @@
 mod attempt;
 mod build_record;
 mod checks;
+mod chips;
 mod closure;
 mod decision;
 mod measurement;

@@ -18,20 +18,17 @@ fn root_callee_saved_registers_start_known_and_arguments_stay_explicit() {
     unknown.vendor.entry = 0x100c;
     unknown.replacement.as_mut().unwrap().entry = 0x100c;
     request.cases.push(unknown);
-    let run = f.run(request, budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    let facts = f.read(&run.execution.unwrap());
+    let run = f.run(request, budget()).unwrap();
+    let facts = run.facts();
     let records = facts["records"].as_array().unwrap();
     for replacement in [false, true] {
         let stop = |case| {
             &records
                 .iter()
                 .find(|r| {
-                    r["value"]["kind"] == "outcome"
-                        && r["value"]["case"] == case
-                        && r["value"]["replacement"] == replacement
+                    r["kind"] == "outcome" && r["case"] == case && r["replacement"] == replacement
                 })
-                .unwrap()["value"]["stop"]
+                .unwrap()["stop"]
         };
         for case in [0, 1] {
             assert_eq!(stop(case)["kind"], "returned");
@@ -40,8 +37,8 @@ fn root_callee_saved_registers_start_known_and_arguments_stay_explicit() {
     }
     let verdicts: Vec<_> = records
         .iter()
-        .filter(|r| r["value"]["kind"] == "comparison")
-        .map(|r| r["value"]["result"]["verdict"].as_str().unwrap())
+        .filter(|r| r["kind"] == "comparison")
+        .map(|r| r["result"]["verdict"].as_str().unwrap())
         .collect();
     assert_eq!(verdicts, ["MATCH", "MATCH"]);
     // An argument register that is not supplied stays unknown: `mv a0, a1`.
@@ -49,14 +46,14 @@ fn root_callee_saved_registers_start_known_and_arguments_stay_explicit() {
     let mut request = f.request();
     request.cases[0].vendor.arguments = vec![Some(0)];
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-    let run = f.run(request, budget());
-    let facts = f.read(&run.execution.unwrap());
+    let run = f.run(request, budget()).unwrap();
+    let facts = run.facts();
     let stop = &facts["records"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|r| r["value"]["kind"] == "outcome")
-        .unwrap()["value"]["stop"];
+        .find(|r| r["kind"] == "outcome")
+        .unwrap()["stop"];
     assert_eq!(stop["kind"], "returned");
     assert!(stop["low"].is_null(), "{stop}");
 }
@@ -87,7 +84,7 @@ fn phases(f: &Fixture, lifetime: RegionLifetime) -> ExecutionRequest {
 }
 
 #[test]
-fn multi_entry_setup_warm_cold_and_blocking_have_one_replayable_publication() {
+fn multi_entry_setup_warm_cold_and_blocking_run_as_one_request() {
     // Separate setup and read entries over the same captured address space.
     let f = Fixture::new(&[0x00b52023, 0x00008067, 0x00052503, 0x00008067]);
     let mut request = phases(&f, RegionLifetime::Session);
@@ -107,91 +104,41 @@ fn multi_entry_setup_warm_cold_and_blocking_have_one_replayable_publication() {
     let mut last = request.cases[1].clone();
     last.name = "new-chain-read".into();
     request.cases.push(last);
-    let run = f.run(request.clone(), budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    let id = run.execution.unwrap();
-    let result = f.read(&id);
-    let manifest = &result["summary"]["manifest"];
-    assert_eq!(manifest["complete"], false);
-    assert_eq!(manifest["verdict"], "INCOMPLETE");
-    // The manifest names the retained canonical request by identity.
-    assert_eq!(
-        manifest["request"],
-        blobray_application::encode_execution_request(&request)
-            .unwrap()
-            .0
-            .as_str()
-    );
+    let run = f.run(request.clone(), budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["complete"], false);
+    assert_eq!(result["verdict"], "INCOMPLETE");
     let records = result["records"].as_array().unwrap();
     // Six phases of outcome/outcome/comparison, then one coverage record per side.
     assert_eq!(records.len(), 20);
-    assert_eq!(records[3]["value"]["stop"]["low"], 41);
-    assert_eq!(records[6]["value"]["stop"]["reason"]["address"], 0x3000);
-    assert_eq!(
-        records[9]["value"]["stop"]["kind"],
-        "blocked-by-prior-phase"
-    );
-    assert_eq!(records[9]["value"]["steps"], 0);
-    assert_eq!(records[15]["value"]["stop"]["low"], 99);
-    let backup = f._dir.path().join("phases.blobray");
-    let restored = f._dir.path().join("restored");
-    for (command, project, flag, path) in [
-        ("backup", &f.project, "--output", &backup),
-        ("restore", &restored, "--backup", &backup),
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-            .args([command, "--project"])
-            .arg(project)
-            .arg(flag)
-            .arg(path)
-            .args(["--limit-mode", "watchdog"])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "replay", "--project"])
-        .arg(&restored)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
-    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(replay["run"]["execution"], id.as_str());
+    assert_eq!(records[3]["stop"]["low"], 41);
+    assert_eq!(records[6]["stop"]["reason"]["address"], 0x3000);
+    assert_eq!(records[9]["stop"]["kind"], "blocked-by-prior-phase");
+    assert_eq!(records[9]["steps"], 0);
+    assert_eq!(records[15]["stop"]["low"], 99);
 }
 
 #[test]
 fn phase_ram_expires_and_redeclaration_uses_new_seed_without_changing_session_owner() {
     let f = Fixture::new(&[0x00b52023, 0x00008067, 0x00052503, 0x00008067]);
     let mut request = phases(&f, RegionLifetime::Phase);
-    let run = f.run(request.clone(), budget());
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["records"][3]["value"]["stop"]["kind"], "incomplete");
+    let run = f.run(request.clone(), budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["records"][3]["stop"]["kind"], "incomplete");
     let mut region = request.cases[0].vendor.memory[0].clone();
     region.seed.bytes = 77u32.to_le_bytes().to_vec();
     request.cases[1].vendor.memory.push(region);
     request.cases[1].replacement = Some(request.cases[1].vendor.clone());
-    let run = f.run(request, budget());
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["records"][3]["value"]["stop"]["low"], 77);
-    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
-    let prior = phases(&f, RegionLifetime::Session);
-    let saved = f.run(prior.clone(), budget()).execution.unwrap();
-    let mut bad = prior;
+    let run = f.run(request, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["records"][3]["stop"]["low"], 77);
+    assert_eq!(result["verdict"], "MATCH");
+    let mut bad = phases(&f, RegionLifetime::Session);
     let mut region = bad.cases[0].vendor.memory[0].clone();
     region.lifetime = RegionLifetime::Phase;
     bad.cases[1].vendor.memory.push(region);
     bad.cases[1].replacement = Some(bad.cases[1].vendor.clone());
-    let failed = f.run(bad, budget());
-    let error = failed.error.unwrap();
+    let error = f.run(bad, budget()).unwrap_err();
     assert_eq!(error.code, ErrorCode::Conflict);
     // The conflict names both regions and the kind of the existing one.
     assert!(
@@ -201,12 +148,10 @@ fn phase_ram_expires_and_redeclaration_uses_new_seed_without_changing_session_ow
         "{}",
         error.message
     );
-    assert!(failed.execution.is_none());
-    assert_eq!(f.read(&saved)["summary"]["manifest"]["verdict"], "MATCH");
 }
 
 #[test]
-fn phase_entry_reset_validation_and_shared_budget_fail_without_publication() {
+fn phase_entry_reset_validation_and_shared_budget_fail() {
     let f = Fixture::new(&[0x00b52023, 0x00008067, 0x00052503, 0x00008067]);
     for which in 0..3 {
         let mut request = phases(&f, RegionLifetime::Session);
@@ -215,27 +160,21 @@ fn phase_entry_reset_validation_and_shared_budget_fail_without_publication() {
             1 => request.cases[1].vendor.entry = 0x1009,
             _ => request.cases[1].replacement.as_mut().unwrap().entry = u32::MAX - 1,
         }
-        let err = match f.app.start_execution(
-            &f.project,
-            request,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        ) {
+        let err = match f.run(request, budget()) {
             Ok(_) => panic!("invalid phase was admitted"),
             Err(err) => err,
         };
         assert_eq!(err.code, ErrorCode::InvalidRequest);
     }
     let mut request = phases(&f, RegionLifetime::Session);
-    // A later phase loops forever; completed setup must not publish partial evidence.
+    // A later phase loops forever; a completed setup does not end the request.
     let f = Fixture::new(&[0x00b52023, 0x00008067, 0x0000006f]);
     request.vendor = f.target.clone();
     request.replacement = Some(f.target.clone());
     let mut b = budget();
     b.max_work_units = Some(100000);
     let run = f.run(request, b);
-    assert_eq!(run.error.unwrap().code, ErrorCode::ResourceLimited);
-    assert!(run.execution.is_none());
+    assert_eq!(run.unwrap_err().code, ErrorCode::ResourceLimited);
 }
 
 #[test]
@@ -259,12 +198,8 @@ fn cold_reset_releases_both_sides_before_allocating_the_next_address_spaces() {
     request.cases.push(second);
     // Each phase fits the 32 MiB budget. Retaining the old replacement while
     // preparing the new vendor would overlap two 20 MiB byte/knownness pairs.
-    let run = f.run(request, budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    assert_eq!(
-        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-        "MATCH"
-    );
+    let run = f.run(request, budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "MATCH");
 }
 
 #[test]
@@ -277,24 +212,23 @@ fn a_setup_case_runs_both_sides_and_records_no_comparison() {
     request.cases[0].relation = None;
     request.cases[0].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
     request.cases[1].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
-    let run = f.run(request, budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let run = f.run(request, budget()).unwrap();
     // Reading the execution back re-verifies its record order.
-    let result = f.read(&run.execution.unwrap());
+    let result = run.facts();
     let comparisons: Vec<_> = result["records"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|r| r["value"]["kind"] == "comparison")
-        .map(|r| r["value"]["case"].as_u64().unwrap())
+        .filter(|r| r["kind"] == "comparison")
+        .map(|r| r["case"].as_u64().unwrap())
         .collect();
     assert_eq!(comparisons, [1]);
-    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+    assert_eq!(result["verdict"], "MATCH");
     // Compared, the same setup case is a difference.
     let mut compared = phases(&f, RegionLifetime::Session);
     compared.cases[0].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
     compared.cases[1].replacement.as_mut().unwrap().arguments[0] = Some(0x3004);
-    let run = f.run(compared, budget());
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["summary"]["manifest"]["verdict"], "DIFF");
+    let run = f.run(compared, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["verdict"], "DIFF");
 }

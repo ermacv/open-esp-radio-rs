@@ -75,13 +75,10 @@ fn verify(
     super::verify(f, r, std::slice::from_ref(p), &[])
 }
 #[test]
-fn content_effect_contract_preserves_raw_omissions_and_project_executions_reject_it() {
+fn content_effect_contract_preserves_raw_omissions() {
     let (f, mut r, p) = setup(true);
     assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Diff));
     select(&mut r, &p);
-    let failed = f.run(r.clone(), budget());
-    assert_eq!(failed.state, RunState::Failed);
-    assert!(failed.execution.is_none());
     assert!(super::verify(&f, &r, &[], &[]).is_err());
     let (m, rows) = verify(&f, &r, &p).unwrap();
     assert_eq!(m.verdict, Some(ComparisonVerdict::Match));

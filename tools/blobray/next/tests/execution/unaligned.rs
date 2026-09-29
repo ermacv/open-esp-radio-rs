@@ -25,13 +25,12 @@ fn ordinary_unaligned_loads_and_stores_preserve_bytes_and_width() {
             case.replacement = Some(case.vendor.clone());
             request.cases.push(case);
         }
-        let run = f.run(request, budget());
-        assert_eq!(run.state, RunState::Completed, "{run:?}");
-        let result = f.read(&run.execution.unwrap());
-        assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+        let run = f.run(request, budget()).unwrap();
+        let result = run.facts();
+        assert_eq!(result["verdict"], "MATCH");
         let mut writes = 0;
         for r in result["records"].as_array().unwrap() {
-            let v = &r["value"];
+            let v = &r;
             if v["kind"] == "event" {
                 let offset = v["case"].as_u64().unwrap() as u32 + 1;
                 let transaction = &v["event"]["transaction"];
@@ -88,11 +87,11 @@ fn ordinary_unaligned_access_keeps_unknown_boundaries_and_devices_unavailable() 
                 value: 9,
             }])];
             request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-            let run = f.run(request, budget());
-            let result = f.read(&run.execution.unwrap());
-            assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
+            let run = f.run(request, budget()).unwrap();
+            let result = run.facts();
+            assert_eq!(result["verdict"], "INCOMPLETE");
             for r in result["records"].as_array().unwrap() {
-                let v = &r["value"];
+                let v = &r;
                 if v["kind"] == "outcome" {
                     assert_eq!(v["stop"]["reason"]["address"], address);
                 }
@@ -118,11 +117,8 @@ fn ordinary_unaligned_access_keeps_unknown_boundaries_and_devices_unavailable() 
         bytes: vec![1, 2, 3, 4],
     })];
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-    let run = f.run(request, budget());
-    assert_eq!(
-        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-        "INCOMPLETE"
-    );
+    let run = f.run(request, budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "INCOMPLETE");
 }
 
 #[test]
@@ -138,8 +134,8 @@ fn unaligned_ordinary_store_invalidates_an_overlapping_atomic_reservation() {
     let mut request = atomics::scenario(&f, Some(9));
     request.cases[0].vendor.memory[0].seed.fill = Some(0);
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-    let run = f.run(request, budget());
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
-    assert_eq!(result["records"][0]["value"]["stop"]["low"], 1);
+    let run = f.run(request, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["verdict"], "MATCH");
+    assert_eq!(result["records"][0]["stop"]["low"], 1);
 }

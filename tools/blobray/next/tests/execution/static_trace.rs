@@ -1,5 +1,6 @@
 //! Both consumers start from the same captured ELF, never handcrafted call inputs.
 use super::*;
+use std::process::Command;
 
 fn jal(from: u32, to: u32, dest: u32) -> u32 {
     let d = to.wrapping_sub(from);
@@ -176,9 +177,8 @@ fn concrete(f: &Fixture, other: u32) -> serde_json::Value {
         ])];
     }
     request.cases[0].replacement.as_mut().unwrap().entry = other;
-    let run = f.run(request, budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    f.read(&run.execution.unwrap())
+    let run = f.run(request, budget()).unwrap();
+    run.facts()
 }
 #[test]
 fn elf_call_link_effects_agree_with_concrete_execution_and_restore() {
@@ -242,8 +242,8 @@ fn elf_call_link_effects_agree_with_concrete_execution_and_restore() {
             saved["summary"]["summary"]["verdict"], verdict,
             "variant {variant}: {saved}"
         );
-        assert_eq!(executed["summary"]["manifest"]["verdict"], verdict);
-        assert_eq!(executed["summary"]["manifest"]["complete"], true);
+        assert_eq!(executed["verdict"], verdict);
+        assert_eq!(executed["complete"], true);
         let values: Vec<u32> = saved["records"]
             .as_array()
             .unwrap()
@@ -256,16 +256,13 @@ fn elf_call_link_effects_agree_with_concrete_execution_and_restore() {
             .as_array()
             .unwrap()
             .iter()
-            .filter(|r| r["value"]["event"]["kind"] == "write")
-            .map(|r| r["value"]["event"]["value"].as_u64().unwrap() as u32)
+            .filter(|r| r["event"]["kind"] == "write")
+            .map(|r| r["event"]["value"].as_u64().unwrap() as u32)
             .collect();
         assert_eq!(values, expected);
         q.right = Some(q.left.clone());
         assert_eq!(trace(&f, &q)["summary"]["summary"]["verdict"], "MATCH");
-        assert_eq!(
-            concrete(&f, 0x1000)["summary"]["manifest"]["verdict"],
-            "MATCH"
-        );
+        assert_eq!(concrete(&f, 0x1000)["verdict"], "MATCH");
         if variant == 0 {
             q.right.as_mut().unwrap().entry = trace_request(&f).right.unwrap().entry;
             let backup = f._dir.path().join("links.backup");
@@ -330,8 +327,8 @@ fn repeated_nested_invocations_have_distinct_link_values() {
     let saved = trace(&f, &q);
     let executed = concrete(&f, 0x1100);
     assert_eq!(saved["summary"]["summary"]["verdict"], "DIFF", "{saved}");
-    assert_eq!(executed["summary"]["manifest"]["verdict"], "DIFF");
-    assert_eq!(executed["summary"]["manifest"]["complete"], true);
+    assert_eq!(executed["verdict"], "DIFF");
+    assert_eq!(executed["complete"], true);
     let expected = [
         0x100c, 0x130c, 0x1010, 0x130c, 0x110c, 0x130c, 0x1110, 0x130c,
     ];
@@ -347,8 +344,8 @@ fn repeated_nested_invocations_have_distinct_link_values() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|r| r["value"]["event"]["kind"] == "write")
-        .map(|r| r["value"]["event"]["value"].as_u64().unwrap() as u32)
+        .filter(|r| r["event"]["kind"] == "write")
+        .map(|r| r["event"]["value"].as_u64().unwrap() as u32)
         .collect();
     assert_eq!(values, expected);
 }

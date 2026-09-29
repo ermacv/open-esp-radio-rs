@@ -408,7 +408,6 @@ fn declared_model_and_service_memory_effects_enter_the_timeline_once() {
             ..
         }
     )));
-    super::comparison::check_preservation(&f, r);
 }
 #[test]
 fn timeline_capture_is_phase_owned_and_uncaptured_comparison_is_rejected() {
@@ -442,12 +441,7 @@ fn timeline_capture_is_phase_owned_and_uncaptured_comparison_is_rejected() {
     )));
     r.cases[1].relation.as_mut().unwrap().events.timeline.reads = true;
     assert!(matches!(
-        f.app.start_execution(
-            &f.project,
-            r,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget()
-        ),
+        f.run(r, budget()),
         Err(Error {
             code: ErrorCode::InvalidRequest,
             ..
@@ -455,7 +449,7 @@ fn timeline_capture_is_phase_owned_and_uncaptured_comparison_is_rejected() {
     ));
 }
 #[test]
-fn branch_loops_obey_event_capacity_and_preserve_retained_replay() {
+fn branch_loops_obey_event_capacity() {
     let f = Fixture::new(&[0xfff50513, 0xfe051ee3, 0x00008067]); // decrement; bnez -4; ret
     let mut r = f.request();
     r.cases[0].vendor.arguments[0] = Some(3);
@@ -481,11 +475,9 @@ fn branch_loops_obey_event_capacity_and_preserve_retained_replay() {
         })
         .collect();
     assert_eq!(branches, vec![true, true, false]);
-    super::comparison::check_preservation(&f, r.clone());
     r.max_events = 2;
     let failed = f.run(r, budget());
-    assert_eq!(failed.error.unwrap().code, ErrorCode::ResourceLimited);
-    assert!(failed.execution.is_none());
+    assert_eq!(failed.unwrap_err().code, ErrorCode::ResourceLimited);
 }
 
 #[test]
@@ -567,9 +559,6 @@ fn modeled_allocation_compares_the_initialized_prefix_once_not_backing_capacity(
         );
         r.cases[0].replacement.as_mut().unwrap().arguments[0] = Some(requested + 4);
         assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Diff));
-        if requested != 0 {
-            super::comparison::check_preservation(&f, r.clone());
-        }
         let relation = r.cases[0].relation.as_mut().unwrap();
         relation.events.timeline.writes = false;
         relation.returns.low = true;

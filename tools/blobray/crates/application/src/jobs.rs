@@ -482,90 +482,6 @@ impl Application {
             },
         )
     }
-    pub fn start_execution(
-        &self,
-        project: &Path,
-        request: ExecutionRequest,
-        executor: &dyn Executor,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        let mut jobs = self.jobs.lock().unwrap();
-        let permit = self.admit(&mut jobs)?;
-        budget.validate()?;
-        if budget.working_memory_bytes.is_none() {
-            return Err(Error::new(
-                ErrorCode::InvalidRequest,
-                "working capacity missing",
-            ));
-        }
-        let project = std::path::absolute(project).map_err(storage_io)?;
-        let started_ms = self.host.now_ms();
-        let deadline_ms = started_ms
-            .checked_add(budget.timeout_ms)
-            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "deadline overflow"))?;
-        self.temporary.root(&*self.host)?;
-        let mut reservation = self.temporary.reserve()?;
-        let mut writer = Writer::open(&project)?;
-        // The canonical request is retained by identity; only the identity
-        // travels in the journal, worker message and manifest.
-        let (request_id, request_bytes) = blobray_store::encode_execution_request(&request)?;
-        let compare = request.replacement.is_some();
-        drop(request);
-        let producer = ExecutionProducer {
-            executor: executor.identity().into(),
-            environment: EXECUTION_ENVIRONMENT.into(),
-            verifier: blobray_verification::VERIFIER.into(),
-        };
-        let mut work = ExecutionWork {
-            producer: producer.clone(),
-            schema: 1,
-            run: ArtifactId::of_bytes(b"admission").as_str().parse()?,
-            project: OriginPath::from_path(&project),
-            request: request_id.clone(),
-            budget: budget.clone(),
-            started_ms,
-            deadline_ms,
-        };
-        write_control_message(&mut std::io::sink(), &work)?;
-        let (record, stage) = writer.register_operation(
-            budget,
-            self.host.owner()?,
-            RunOperation::Execute {
-                request: request_id.clone(),
-                compare,
-                producer,
-            },
-            |stage| reservation.attach(stage),
-        )?;
-        let staged = Staging::open(&stage)
-            .and_then(|staging| staging.retain_bytes(&request_bytes, &mut || Ok(())))
-            .and_then(|actual| {
-                (actual == request_id).then_some(()).ok_or_else(|| {
-                    Error::new(ErrorCode::Integrity, "staged request identity differs")
-                })
-            });
-        if let Err(error) = staged {
-            let mut failed = record;
-            failed.state = RunState::Failed;
-            failed.error = Some(error.clone());
-            writer.update_run(&failed)?;
-            writer.cleanup_stage(&failed.id)?;
-            return Err(error);
-        }
-        work.run = record.id.clone();
-        self.launch_durable(
-            &mut jobs,
-            project,
-            DurableAdmission {
-                writer,
-                record,
-                stage,
-                work: DurableWork::Execution(Box::new(work)),
-                permit,
-                reservation,
-            },
-        )
-    }
     pub fn start_analyze_function(
         &self,
         project: &Path,
@@ -658,26 +574,6 @@ impl Application {
             ),
         }
     }
-    pub fn start_replay(
-        &self,
-        project: &Path,
-        execution: ArtifactId,
-        executor: &dyn Executor,
-        budget: ResourceBudget,
-    ) -> Result<RunHandle> {
-        self.start_scenario(
-            project,
-            ScenarioRequest::Replay {
-                execution,
-                producer: ExecutionProducer {
-                    executor: executor.identity().into(),
-                    environment: EXECUTION_ENVIRONMENT.into(),
-                    verifier: blobray_verification::VERIFIER.into(),
-                },
-            },
-            budget,
-        )
-    }
     fn start_scenario(
         &self,
         project: &Path,
@@ -701,23 +597,31 @@ impl Application {
         self.temporary.root(&*self.host)?;
         let mut reservation = self.temporary.reserve()?;
         let mut writer = Writer::open(&project)?;
-        if let ScenarioRequest::Investigate { request, .. } = &mut request {
-            if let Some(image) = &request.image {
-                let revision = writer.project().image_revision(image)?;
-                if request.revision.as_ref().is_some_and(|id| id != &revision) {
-                    return Err(Error::new(
-                        ErrorCode::InvalidRequest,
-                        "image belongs to another revision",
-                    ));
-                }
-                request.revision = Some(revision);
+        let ScenarioRequest::Investigate {
+            request: investigation,
+            ..
+        } = &mut request;
+        if let Some(image) = &investigation.image {
+            let revision = writer.project().image_revision(image)?;
+            if investigation
+                .revision
+                .as_ref()
+                .is_some_and(|id| id != &revision)
+            {
+                return Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    "image belongs to another revision",
+                ));
             }
-            if request.revision.is_none() {
-                request.revision =
-                    Some(writer.project().current()?.ok_or_else(|| {
-                        Error::new(ErrorCode::NotFound, "project has no revision")
-                    })?);
-            }
+            investigation.revision = Some(revision);
+        }
+        if investigation.revision.is_none() {
+            investigation.revision = Some(
+                writer
+                    .project()
+                    .current()?
+                    .ok_or_else(|| Error::new(ErrorCode::NotFound, "project has no revision"))?,
+            );
         }
         let mut work = ScenarioWork {
             schema: 1,
@@ -912,7 +816,6 @@ impl Application {
             image: None,
             analysis: None,
             publication: None,
-            execution: None,
             semantic_ir: None,
             assessment: None,
             id: run,
@@ -1100,7 +1003,6 @@ struct DurableAdmission {
 enum DurableWork {
     Ir(Box<IrWork>),
     Scenario(Box<ScenarioWork>),
-    Execution(Box<ExecutionWork>),
     Import(ImportWork),
     Image(Box<ImageWork>),
     Function(Box<FunctionWork>),
@@ -1111,7 +1013,6 @@ impl DurableWork {
         match self {
             Self::Ir(w) => w.started_ms,
             Self::Scenario(w) => w.started_ms,
-            Self::Execution(w) => w.started_ms,
             Self::Import(w) => w.started_ms,
             Self::Image(w) => w.started_ms,
             Self::Function(w) => w.started_ms,
@@ -1122,7 +1023,6 @@ impl DurableWork {
         match self {
             Self::Ir(w) => w.deadline_ms,
             Self::Scenario(w) => w.deadline_ms,
-            Self::Execution(w) => w.deadline_ms,
             Self::Import(w) => w.deadline_ms,
             Self::Image(w) => w.deadline_ms,
             Self::Function(w) => w.deadline_ms,
@@ -1132,7 +1032,6 @@ impl DurableWork {
 }
 enum Retained {
     Ir(blobray_store::RetainedIr),
-    Execution(blobray_store::RetainedExecution),
     Import(blobray_store::RetainedImport),
     Image(blobray_store::RetainedImage),
     Function(blobray_store::RetainedFunction),
@@ -1156,10 +1055,6 @@ fn supervise(
             )?,
             DurableWork::Scenario(work) => crate::protocol::write_request(
                 std::fs::File::create(stage.join("scenario.json")).map_err(storage_io)?,
-                work,
-            )?,
-            DurableWork::Execution(work) => crate::protocol::write_request(
-                std::fs::File::create(stage.join("execution.json")).map_err(storage_io)?,
                 work,
             )?,
             DurableWork::Investigation(work) => crate::protocol::write_request(
@@ -1222,10 +1117,7 @@ fn supervise(
         let publication_memory = WorkingMemory::new(record.budget.working_memory_bytes.unwrap())?;
         let publication_reservation = if matches!(
             work,
-            DurableWork::Ir(_)
-                | DurableWork::Investigation(_)
-                | DurableWork::Execution(_)
-                | DurableWork::Scenario(_)
+            DurableWork::Ir(_) | DurableWork::Investigation(_) | DurableWork::Scenario(_)
         ) {
             Some(publication_memory.reserve(2 * 1024 * 1024, context.position())?)
         } else {
@@ -1253,37 +1145,13 @@ fn supervise(
                 }
                 let resolved: crate::scenarios::Resolution = serde_json::from_slice(&bytes)
                     .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
-                crate::scenarios::validate_resolution(
-                    writer.project(),
-                    &work.request,
-                    &resolved,
-                    &publication_memory,
-                    &mut context,
-                )?;
+                crate::scenarios::validate_resolution(writer.project(), &work.request, &resolved)?;
                 record.resolved_operation = Some(Box::new(resolved.operation.clone()));
                 Some(resolved)
             } else {
                 None
             };
             let retained = match (&work, prepared) {
-                (DurableWork::Scenario(_), PreparedReceipt::Execution(p))
-                    if matches!(record.effective_operation(), RunOperation::Execute { .. }) =>
-                {
-                    Retained::Execution(writer.retain_execution(
-                        &record,
-                        &p,
-                        &publication_memory,
-                        &mut context,
-                    )?)
-                }
-                (DurableWork::Scenario(_), PreparedReceipt::Function(p))
-                    if matches!(
-                        record.effective_operation(),
-                        RunOperation::AnalyzeFunction { .. }
-                    ) =>
-                {
-                    Retained::Function(writer.retain_function(&record, &p, &mut context)?)
-                }
                 (DurableWork::Scenario(_), PreparedReceipt::Investigation(p))
                     if matches!(
                         record.effective_operation(),
@@ -1310,9 +1178,6 @@ fn supervise(
                     &publication_memory,
                     &mut context,
                 )?),
-                (DurableWork::Execution(_), PreparedReceipt::Execution(p)) => Retained::Execution(
-                    writer.retain_execution(&record, &p, &publication_memory, &mut context)?,
-                ),
                 (DurableWork::Investigation(work), PreparedReceipt::Investigation(prepared)) => {
                     Retained::Investigation(Box::new(writer.retain_investigation(
                         &record,
@@ -1372,7 +1237,6 @@ fn supervise(
         }
         match retained {
             Retained::Ir(retained) => writer.publish_ir(&mut record, retained),
-            Retained::Execution(retained) => writer.publish_execution(&mut record, retained),
             Retained::Investigation(retained) => {
                 let result = writer.publish_investigation(&mut record, *retained, &mut context);
                 record.diagnostics.as_mut().unwrap().progress = Some(context.snapshot());

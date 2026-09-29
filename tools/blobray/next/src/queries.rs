@@ -91,7 +91,6 @@ fn render_unbuffered(
             | app::QuerySummary::StorageUsage { .. }
             | app::QuerySummary::Data { .. }
             | app::QuerySummary::TargetAudit { .. }
-            | app::QuerySummary::CodeCoverage { .. }
             | app::QuerySummary::RetainedPayload { .. }
             | app::QuerySummary::Preservation { .. }
             | app::QuerySummary::Publications { .. }
@@ -100,7 +99,6 @@ fn render_unbuffered(
             | app::QuerySummary::Selection { .. }
             | app::QuerySummary::Inspection { .. }
             | app::QuerySummary::Analysis { .. }
-            | app::QuerySummary::Execution { .. }
             | app::QuerySummary::Images { .. }
             | app::QuerySummary::Image { .. }
             | app::QuerySummary::LinkPlan { .. }
@@ -591,13 +589,6 @@ impl app::QuerySink for Records<'_> {
             });
         }
         self.record("finding", r, c)
-    }
-    fn execution_evidence(
-        &mut self,
-        record: &ExecutionEvidence,
-        c: &mut dyn RunControl,
-    ) -> Result<()> {
-        self.record("execution", record, c)
     }
     fn function_record(&mut self, record: &FunctionRecord, c: &mut dyn RunControl) -> Result<()> {
         if matches!(self.format, super::Format::Human) {

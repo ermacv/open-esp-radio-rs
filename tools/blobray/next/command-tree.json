@@ -15,11 +15,6 @@
       "storage-usage",
       "data",
       "audit-targets",
-      "execute",
-      "compare",
-      "replay",
-      "code-coverage",
-      "execution",
       "export-payload",
       "backup",
       "restore",
@@ -218,123 +213,6 @@
     "path": [
       "blobray",
       "audit-targets"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "execute"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--request",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "compare"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--id",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "replay"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--execution",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "code-coverage"
-    ],
-    "subcommands": []
-  },
-  {
-    "flags": [
-      "--project",
-      "--id",
-      "--summary",
-      "--no-events",
-      "--temporary-root",
-      "--temporary-mib",
-      "--temporary-total-mib",
-      "--limit-mode",
-      "--memory-mib",
-      "--working-memory-mib",
-      "--timeout-secs",
-      "--max-work-units",
-      "--poll-ms",
-      "--grace-ms",
-      "--cgroup-root"
-    ],
-    "forwards": false,
-    "path": [
-      "blobray",
-      "execution"
     ],
     "subcommands": []
   },

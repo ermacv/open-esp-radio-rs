@@ -264,18 +264,16 @@ fn modeled_boundaries_have_generic_capture_before_their_effects() {
     assert_eq!(diff(&rows), Some(&ComparisonDifference::Event { index: 1 }));
 }
 #[test]
-fn physical_calls_restore_replay_and_failed_admission_preserve_previous_result() {
+fn physical_call_words_count_against_event_capacity() {
     let f = Fixture::new(&[0x00008413, 0x00c000ef, 0x00040067, 0x00000013, 0x00008067]);
     let mut r = f.request();
     select(&mut r, 8);
-    super::comparison::check_preservation(&f, r.clone());
     r.max_events = 8; // boundary plus eight words must be admitted together
     let failed = f.run(r, budget());
-    assert_eq!(failed.error.unwrap().code, ErrorCode::ResourceLimited);
-    assert!(failed.execution.is_none());
+    assert_eq!(failed.unwrap_err().code, ErrorCode::ResourceLimited);
 }
 #[test]
-fn invalid_capture_profiles_fail_before_publication_and_target_overrides_are_exact() {
+fn invalid_capture_profiles_are_rejected_and_target_overrides_are_exact() {
     let f = Fixture::new(&[0x00008413, 0x00c000ef, 0x00040067, 0x00000013, 0x00008067]);
     let mut r = f.request();
     select(&mut r, 0);
@@ -305,87 +303,11 @@ fn invalid_capture_profiles_fail_before_publication_and_target_overrides_are_exa
             _ => p.include_tail = true, // valid alone, mismatched exact profile
         }
         assert!(matches!(
-            f.app.start_execution(
-                &f.project,
-                bad,
-                &blobray_backend_riscv::RiscvExecutor,
-                budget()
-            ),
+            f.run(bad, budget()),
             Err(Error {
                 code: ErrorCode::InvalidRequest,
                 ..
             })
         ));
-    }
-}
-
-#[test]
-fn model_summary_and_production_changes_publish_new_execution_identities() {
-    let code = [0x00008413, 0x000022b7, 0x000280e7, 0x00040067];
-    // The production input differs from the vendor code by one final no-op.
-    let altered = [0x00008413, 0x000022b7, 0x000280e7, 0x00040067, 0x00000013];
-    let f = Fixture::from_inputs(vec![elf(&code), elf(&code), elf(&altered)]);
-    let mut r = f.request();
-    select(&mut r, 1);
-    r.cases[0].vendor.calls = vec![CallDeclaration {
-        repetition: blobray_domain::CallRepetition::Finite,
-        id: "delay".into(),
-        applicability: "reviewed delay summary".into(),
-        lifetime: RegionLifetime::Phase,
-        binding: CallBinding {
-            address: 0x2000,
-            boundary: CallBoundary::Unmapped,
-            allow_tail: false,
-        },
-        argument_words: 1,
-        responses: vec![CallResponse {
-            return_words: [Some(0), None],
-            outputs: vec![],
-            allocation: None,
-            delay_micros: Some(CallValue::Constant { value: 7 }),
-        }],
-    }];
-    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
-    r.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 1 };
-    let identity = |r: &ExecutionRequest| {
-        let run = f.run(r.clone(), budget());
-        assert_eq!(run.state, RunState::Completed, "{run:?}");
-        run.execution.unwrap()
-    };
-    let base = identity(&r);
-    assert_eq!(identity(&r), base, "the same request reuses its identity");
-    // A changed call summary on both sides.
-    let mut summary = r.clone();
-    summary.cases[0].vendor.calls[0].responses[0].delay_micros =
-        Some(CallValue::Constant { value: 8 });
-    summary.cases[0].replacement = Some(summary.cases[0].vendor.clone());
-    // An added peripheral model on both sides.
-    let mut model = r.clone();
-    {
-        model.cases[0].vendor.models.push(DeviceDeclaration {
-            id: "idle-register".into(),
-            applicability: "explicit untouched register".into(),
-            lifetime: RegionLifetime::Phase,
-            behavior: DeviceBehavior::ConstantRead {
-                address: 0x4000,
-                width: 4,
-                value: 0,
-            },
-        });
-        model.cases[0].replacement = Some(model.cases[0].vendor.clone());
-    }
-    // A different production input.
-    let mut production = r.clone();
-    production.replacement.as_mut().unwrap().source = FunctionSource::Input { input: 2 };
-    let identities = [
-        base.clone(),
-        identity(&summary),
-        identity(&model),
-        identity(&production),
-    ];
-    for (i, a) in identities.iter().enumerate() {
-        for b in &identities[i + 1..] {
-            assert_ne!(a, b);
-        }
     }
 }

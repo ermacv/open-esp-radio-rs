@@ -129,36 +129,40 @@ fn closure_request(f: &Fixture, a0: u32, a1: u32) -> ExecutionRequest {
     r
 }
 
-fn code_coverage(f: &Fixture, ids: &[&ArtifactId]) -> std::process::Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_blobray"));
-    command
-        .args(["--format", "json", "code-coverage", "--project"])
-        .arg(&f.project);
-    for id in ids {
-        command.args(["--execution", id.as_str()]);
-    }
-    command.args(["--limit-mode", "watchdog"]).output().unwrap()
-}
-
-fn report(f: &Fixture, ids: &[&ArtifactId]) -> CodeCoverageReport {
-    let output = code_coverage(f, ids);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    serde_json::from_value(value["summary"]["report"].clone()).unwrap()
+/// Vendor coverage of `requests`, each executed in process over the
+/// fixture's executables.
+fn report(f: &Fixture, requests: &[ExecutionRequest]) -> Result<CodeCoverageReport> {
+    let executed: Vec<_> = requests
+        .iter()
+        .map(|r| f.run(r.clone(), budget()).unwrap())
+        .collect();
+    let executions: Vec<_> = requests
+        .iter()
+        .zip(&executed)
+        .enumerate()
+        .map(|(i, (r, e))| {
+            (
+                ArtifactId::of_bytes(&i.to_le_bytes()),
+                r,
+                e.records.as_slice(),
+            )
+        })
+        .collect();
+    app::in_process::coverage(
+        &executions,
+        &f.sources(&requests[0].vendor),
+        &blobray_backend_riscv::RiscvDecoder,
+        &WorkingMemory::new(32 * 1024 * 1024).unwrap(),
+        &mut || Ok(()),
+    )
 }
 
 #[test]
 fn code_coverage_reports_root_closures_boundaries_and_unions() {
     let f = Fixture::new(&CLOSURE);
-    let fallthrough = f.run(closure_request(&f, 5, 0), budget());
-    assert_eq!(fallthrough.state, RunState::Completed, "{fallthrough:?}");
-    let fallthrough = fallthrough.execution.unwrap();
-    let one = report(&f, &[&fallthrough]);
-    assert_eq!(one.executions, vec![fallthrough.clone()]);
+    let fallthrough = closure_request(&f, 5, 0);
+    let one = report(&f, std::slice::from_ref(&fallthrough)).unwrap();
+    assert_eq!(one.executions.len(), 1);
     assert_eq!(one.outside, 0);
     let [root, helper] = &one.functions[..] else {
         panic!("{one:?}")
@@ -213,9 +217,7 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
 
     // The taken side calls the helper through `a1`; together both executions
     // reach every block and direction.
-    let taken = f.run(closure_request(&f, 0, 0x1028), budget());
-    assert_eq!(taken.state, RunState::Completed, "{taken:?}");
-    let taken = taken.execution.unwrap();
+    let taken = closure_request(&f, 0, 0x1028);
     let (_, rows) = super::run(&f, closure_request(&f, 0, 0x1028));
     assert_eq!(
         coverage(&rows, false).transfers,
@@ -224,7 +226,7 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
             target: 0x1028
         }]
     );
-    let both = report(&f, &[&fallthrough, &taken]);
+    let both = report(&f, &[fallthrough.clone(), taken]).unwrap();
     assert!(both.roots[0].blocks.complete() && both.roots[0].directions.complete());
     // The observed target is followed; the site stays visible, since other
     // targets no execution reached are outside the closure.
@@ -236,16 +238,10 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
             .all(|f| f.uncovered_blocks.is_empty() && f.uncovered_directions.is_empty())
     );
 
-    // Executions of different vendor targets and repeated executions do not combine.
+    // Executions of different vendor targets do not combine.
     let mut other = closure_request(&f, 5, 0);
     other.vendor.stack.fill = Some(0);
-    let other = f.run(other, budget()).execution.unwrap();
-    assert!(!code_coverage(&f, &[&fallthrough, &other]).status.success());
-    assert!(
-        !code_coverage(&f, &[&fallthrough, &fallthrough])
-            .status
-            .success()
-    );
+    assert!(report(&f, &[fallthrough, other]).is_err());
 }
 
 #[test]
@@ -259,8 +255,7 @@ fn a_jump_to_a_defined_function_start_is_a_named_tail_call() {
     r.cases[0].replacement = None;
     r.replacement = None;
     r.binding = None;
-    let id = named.run(r.clone(), budget()).execution.unwrap();
-    let named_report = report(&named, &[&id]);
+    let named_report = report(&named, &[r]).unwrap();
     let names: Vec<_> = named_report
         .functions
         .iter()
@@ -295,8 +290,7 @@ fn a_jump_to_a_defined_function_start_is_a_named_tail_call() {
     r.cases[0].replacement = None;
     r.replacement = None;
     r.binding = None;
-    let id = plain.run(r, budget()).execution.unwrap();
-    let plain_report = report(&plain, &[&id]);
+    let plain_report = report(&plain, &[r]).unwrap();
     assert_eq!(plain_report.functions.len(), 1);
     assert_eq!(
         plain_report.functions[0].blocks,
@@ -308,7 +302,7 @@ fn a_jump_to_a_defined_function_start_is_a_named_tail_call() {
 }
 
 #[test]
-fn in_process_verification_emits_the_records_of_a_project_execution() {
+fn in_process_verification_needs_symbol_executables_and_one_executable_per_source() {
     let f = Fixture::new(&CLOSURE);
     let mut request = closure_request(&f, 5, 0);
     // Compare the program with itself.
@@ -316,31 +310,9 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
     request.binding = Some(CompiledBinding::SharedCore);
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
     request.cases[0].relation = Some(fixture_relation(true));
-    let (manifest, rows) = run(&f, request.clone());
     let executable = elf(&CLOSURE);
     let sources: &[&[u8]] = &[&executable];
     let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
-    let result = app::in_process::verify(
-        &app::in_process::InProcessComparison {
-            request: &request,
-            vendor: sources,
-            replacement: Some(sources),
-            vendor_identities: None,
-            replacement_identities: None,
-            effects: &[],
-            projections: &[],
-            vendor_results: None,
-            dependence: None,
-            patches: &[],
-        },
-        &blobray_backend_riscv::RiscvExecutor,
-        &memory,
-        &mut || Ok(()),
-    )
-    .unwrap();
-    assert_eq!(result.records, rows);
-    assert_eq!(result.verdict, manifest.verdict);
-    assert_eq!(result.complete, manifest.complete);
     // A symbol goal names a code symbol of the side's executables; one
     // executable per target source is required.
     let mut symbolic = request.clone();
@@ -482,59 +454,4 @@ fn reused_vendor_results_yield_the_records_of_a_full_execution() {
     assert!(!blocked.vendor_reused);
     assert_eq!(blocked.records, blocked_full.records);
     assert_eq!(blocked.verdict, blocked_full.verdict);
-}
-
-#[test]
-fn in_process_coverage_matches_the_project_report() {
-    let f = Fixture::new(&CLOSURE);
-    let requests = [closure_request(&f, 5, 0), closure_request(&f, 0, 0x1028)];
-    let ids: Vec<_> = requests
-        .iter()
-        .map(|r| f.run(r.clone(), budget()).execution.unwrap())
-        .collect();
-    let project = report(&f, &ids.iter().collect::<Vec<_>>());
-    let executable = elf(&CLOSURE);
-    let sources: &[&[u8]] = &[&executable];
-    let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
-    let executions: Vec<_> = requests
-        .iter()
-        .map(|request| {
-            let result = app::in_process::verify(
-                &app::in_process::InProcessComparison {
-                    request,
-                    vendor: sources,
-                    replacement: None,
-                    vendor_identities: None,
-                    replacement_identities: None,
-                    effects: &[],
-                    projections: &[],
-                    vendor_results: None,
-                    dependence: None,
-                    patches: &[],
-                },
-                &blobray_backend_riscv::RiscvExecutor,
-                &memory,
-                &mut || Ok(()),
-            )
-            .unwrap();
-            (request, result.records)
-        })
-        .collect();
-    let borrowed: Vec<_> = executions
-        .iter()
-        .zip(&ids)
-        .map(|((request, records), id)| (id.clone(), *request, records.as_slice()))
-        .collect();
-    let in_process = app::in_process::coverage(
-        &borrowed,
-        sources,
-        &blobray_backend_riscv::RiscvDecoder,
-        &memory,
-        &mut || Ok(()),
-    )
-    .unwrap();
-    assert_eq!(in_process.roots, project.roots);
-    assert_eq!(in_process.functions, project.functions);
-    assert_eq!(in_process.outside, project.outside);
-    assert_eq!(in_process.executions.len(), 2);
 }

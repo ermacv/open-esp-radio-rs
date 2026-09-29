@@ -33,8 +33,7 @@ dispatch. Target classification identifies the selected boundary, not execution
 of its body. Each `call-transfer` plus its `transfer-argument` rows consumes
 `max_events`, with whole-group admission and shared run limits. See
 [physical call contracts](../../../docs/design/contracts.md#physical-call-observations)
-for lifetime and claim scope. Execute/compare/query/replay all use this same
-retained profile.
+for lifetime and claim scope.
 
 ## Internal physical timeline
 
@@ -47,7 +46,6 @@ Each invocation supplies `observe_timeline`:
 Use all false to disable guest timeline capture. In the comparison relation,
 `events.timeline` independently selects the same four channels; a selected channel
 must be captured by both invocations. `max_events` and common run budgets apply.
-Capture and comparison use execute/compare/query/replay through the shared API.
 
 Raw `memory` events retain instruction site and typed read/write/LR/SC/RMW data.
 Read values distinguish known, unknown and unavailable. Writes retain their exact
@@ -75,8 +73,7 @@ observations remain available after source removal and project restore. See
 A layout projection is reviewed outside Blobray and supplied with an
 [in-process comparison](../execution/README.md#in-process-verification). The
 execution case's `relation.projection` selects it by the digest of its canonical
-encoding: `{"kind":"content","projection":"<digest>"}`. A project execution
-rejects a relation that selects a projection.
+encoding: `{"kind":"content","projection":"<digest>"}`.
 
 A projection specifies `vendor` and `replacement` endpoints, `fields`, `branches`,
 `applicability` and `reason`. Each endpoint has an `entry`, plus `domains` such as
@@ -110,8 +107,7 @@ it does not establish general equivalence. See [projection contracts](../../../d
 
 An effect contract is reviewed outside Blobray and supplied with an in-process
 comparison. A comparison case's `relation.effects` selects it by digest as
-`{kind: "content", contract}`, and a project execution rejects that selection;
-all four MMIO read/write, fence and delay event channels must be enabled.
+`{kind: "content", contract}`; all four MMIO read/write, fence and delay event channels must be enabled.
 
 A contract contains exact `vendor`/`replacement` code endpoints, `rules`, `claim_ceiling`,
 `applicability` and `reason`. Each rule contains `name`, per-side patterns,

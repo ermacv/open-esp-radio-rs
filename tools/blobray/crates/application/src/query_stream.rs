@@ -33,15 +33,6 @@ pub enum QuerySummary {
         ranges: Vec<ForbiddenTargetRange>,
         summary: TargetAuditSummary,
     },
-    Execution {
-        id: ArtifactId,
-        manifest: Box<ExecutionManifest>,
-    },
-    CodeCoverage {
-        decoder: String,
-        semantics: String,
-        report: Box<CodeCoverageReport>,
-    },
     RetainedPayload {
         id: ArtifactId,
         length: u64,
@@ -136,9 +127,6 @@ impl QuerySummary {
                 CoverageSubject::Investigation(id.clone()),
                 manifest.coverage.complete(),
             ),
-            Self::Execution { id, manifest } => {
-                ResultAssessment::execution(id.clone(), manifest.complete, manifest.verdict)
-            }
             Self::TargetAudit {
                 artifact, summary, ..
             } => {
@@ -228,12 +216,6 @@ pub trait QuerySink: InventorySink + DoctorSink {
             "consumer does not support findings",
         ))
     }
-    fn execution_evidence(&mut self, _: &ExecutionEvidence, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support execution evidence",
-        ))
-    }
     fn function_record(&mut self, _: &FunctionRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -279,7 +261,6 @@ enum RecordRef<'a> {
     Coverage(&'a ExtentCoverageRecord),
     Data(&'a DataRecord),
     TargetAudit(&'a TargetAuditRecord),
-    Execution(&'a ExecutionEvidence),
     InvestigationEntry(&'a PlanEntry),
     InvestigationMember(&'a InvestigationMember),
     Publication(&'a PublicationId),
@@ -307,7 +288,6 @@ enum Record {
     Coverage(ExtentCoverageRecord),
     Data(DataRecord),
     TargetAudit(TargetAuditRecord),
-    Execution(ExecutionEvidence),
     InvestigationEntry(PlanEntry),
     InvestigationMember(InvestigationMember),
     Publication(PublicationId),
@@ -561,24 +541,6 @@ pub fn prepare_query_with_tools(
                     summary,
                 }
             }
-            ReadQuery::CodeCoverage { executions } => {
-                let decoder = decoder.ok_or_else(|| {
-                    Error::new(ErrorCode::Incompatible, "code coverage decoder unavailable")
-                })?;
-                let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
-                let report = crate::code_coverage::report(
-                    &Project::open(&work.project.to_path()?)?,
-                    executions,
-                    decoder,
-                    &memory,
-                    control,
-                )?;
-                QuerySummary::CodeCoverage {
-                    decoder: decoder.identity().into(),
-                    semantics: decoder.semantic_identity().into(),
-                    report: Box::new(report),
-                }
-            }
             ReadQuery::RetainedPayload { id } => {
                 let source = Project::open(&work.project.to_path()?)?.open_payload(id, control)?;
                 let mut output = disk.create(&stage.join("payload.bin"))?;
@@ -731,37 +693,6 @@ pub fn prepare_query_with_tools(
                 QuerySummary::Publication {
                     id: id.clone(),
                     manifest: Box::new(publication.manifest),
-                }
-            }
-            ReadQuery::ExecutionSummary { id } => {
-                let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
-                // Opening the execution verifies every retained payload digest.
-                let result =
-                    Project::open(&work.project.to_path()?)?.execution(id, &memory, control)?;
-                QuerySummary::Execution {
-                    id: id.clone(),
-                    manifest: Box::new(result.manifest),
-                }
-            }
-            ReadQuery::Execution { id, omit_events } => {
-                let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
-                let result =
-                    Project::open(&work.project.to_path()?)?.execution(id, &memory, control)?;
-                blobray_store::validate_execution_records_with(
-                    &result.manifest,
-                    &result.request,
-                    &result.records,
-                    control,
-                    &mut |r, c| {
-                        if *omit_events && matches!(r, ExecutionEvidence::Event { .. }) {
-                            return Ok(());
-                        }
-                        spool.push(RecordRef::Execution(r), c)
-                    },
-                )?;
-                QuerySummary::Execution {
-                    id: id.clone(),
-                    manifest: Box::new(result.manifest),
                 }
             }
             ReadQuery::Analysis { id, export } => {
@@ -1102,7 +1033,6 @@ pub(crate) fn visit(
             Record::Image(id) => sink.image(&id, control)?,
             Record::LinkObservation(r) => sink.link_observation(&r, control)?,
             Record::ImageMapping(mapping) => sink.image_mapping(&mapping, control)?,
-            Record::Execution(record) => sink.execution_evidence(&record, control)?,
             Record::Data(record) => sink.data(&record, control)?,
             Record::Coverage(record) => sink.coverage(&record, control)?,
             Record::Function(record) => sink.function_record(&record, control)?,
@@ -1169,14 +1099,11 @@ mod assessment_tests {
             ComparisonVerdict::Diff,
             ComparisonVerdict::Incomplete,
         ] {
-            let assessment = ResultAssessment::execution(
-                ArtifactId::of_bytes(b"evidence"),
-                false,
-                Some(verdict),
-            );
-            assert!(!assessment.is_complete());
+            let assessment = ResultAssessment {
+                comparison: Some(verdict),
+                ..ResultAssessment::default()
+            };
             assert!(assessment.check_passed());
-            assert_eq!(assessment.comparison, Some(verdict));
         }
         assert_eq!(
             QuerySummary::Publications { count: 1 }.assessment(),

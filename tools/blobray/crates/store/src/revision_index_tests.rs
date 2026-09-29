@@ -139,6 +139,17 @@ fn elf(object: &ObjectId, symbols: u64) -> ElfInventory {
 
 const MEMBERS: u64 = 40;
 
+/// Retain `bytes` in `staging` and return their identity.
+fn retain(staging: &Staging, bytes: &[u8]) -> ArtifactId {
+    use std::io::Write;
+    let mut file = staging
+        .disk
+        .temporary(&staging.root.join("staging"))
+        .unwrap();
+    file.write_all(bytes).unwrap();
+    staging.retain_temporary(file, &mut || Ok(())).unwrap()
+}
+
 /// A published revision with an archive of many members and a standalone ELF.
 fn fixture(temp: &Path) -> (Project, RevisionId, Vec<ArtifactId>) {
     let project = Project::create(temp).unwrap();
@@ -147,12 +158,8 @@ fn fixture(temp: &Path) -> (Project, RevisionId, Vec<ArtifactId>) {
     let mut staging = Staging::open(&stage).unwrap();
     let archive_bytes = b"!<arch>\nfixture archive".to_vec();
     let standalone_bytes = b"\x7fELF fixture".to_vec();
-    let archive = staging
-        .retain_bytes(&archive_bytes, &mut || Ok(()))
-        .unwrap();
-    let standalone = staging
-        .retain_bytes(&standalone_bytes, &mut || Ok(()))
-        .unwrap();
+    let archive = retain(&staging, &archive_bytes);
+    let standalone = retain(&staging, &standalone_bytes);
     let captured = |artifact: &ArtifactId, length: usize| Capture::Captured {
         artifact: artifact.clone(),
         length: length as u64,

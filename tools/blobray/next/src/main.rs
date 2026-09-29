@@ -111,60 +111,6 @@ enum Command {
         #[command(flatten)]
         limits: ResourceOptions,
     },
-    /// Execute a captured compiled entry with an explicit scenario.
-    Execute {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Compare concrete vendor and production observations.
-    Compare {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        request: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Repeat an exact retained execution recipe with the same implementations.
-    Replay {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: ArtifactId,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Read retained concrete observations without executing.
-    /// Report the vendor coverage of the root closures of retained executions
-    /// that share one vendor target.
-    CodeCoverage {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long = "execution", required = true)]
-        executions: Vec<ArtifactId>,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    Execution {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long)]
-        id: ArtifactId,
-        /// Return only the manifest after verifying the retained payload
-        /// digests, without decoding or returning records.
-        #[arg(long)]
-        summary: bool,
-        /// Validate every record but return no guest event records.
-        #[arg(long, conflicts_with = "summary")]
-        no_events: bool,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-
     /// Export exact preserved bytes using a digest from the evidence catalog.
     ExportPayload {
         #[arg(long)]
@@ -793,73 +739,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
         Command::Status { project, limits } => {
             return read_query(project, ReadQuery::InvestigationStatus, limits, format);
         }
-        Command::Execute {
-            project,
-            request,
-            limits,
-        } => {
-            let request = read_execution_request(&request)?;
-            if request.replacement.is_some() {
-                return Err(invalid("execute accepts one implementation; use compare"));
-            }
-            return execute_request(&project, request, &limits, format);
-        }
-        Command::Compare {
-            project,
-            request,
-            limits,
-        } => {
-            let request = read_execution_request(&request)?;
-            if request.replacement.is_none() {
-                return Err(invalid("compare requires a replacement and binding"));
-            }
-            return execute_request(&project, request, &limits, format);
-        }
-        Command::CodeCoverage {
-            project,
-            executions,
-            limits,
-        } => {
-            return read_query(
-                project,
-                ReadQuery::CodeCoverage { executions },
-                limits,
-                format,
-            );
-        }
-        Command::Execution {
-            project,
-            id,
-            summary,
-            no_events,
-            limits,
-        } => {
-            let query = if summary {
-                ReadQuery::ExecutionSummary { id }
-            } else {
-                ReadQuery::Execution {
-                    id,
-                    omit_events: no_events,
-                }
-            };
-            return read_query(project, query, limits, format);
-        }
-        Command::Replay {
-            project,
-            id,
-            limits,
-        } => {
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_replay(
-                &project,
-                id,
-                &blobray_backend_riscv::RiscvExecutor,
-                limits.budget()?,
-            )?;
-            return Ok(finish_execution(&handle, &signals, format));
-        }
         Command::Analysis {
             project,
             id,
@@ -1314,69 +1193,11 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
 fn io_error(e: std::io::Error) -> Error {
     blobray_domain::storage_io(e)
 }
-fn execute_request(
-    project: &std::path::Path,
-    request: blobray_domain::ExecutionRequest,
-    limits: &ResourceOptions,
-    format: Format,
-) -> Result<ExitCode> {
-    let application = limits.application()?;
-    let _diagnostics = TemporaryDiagnostics(&application, format);
-    let signals = Signals::new()?;
-    let handle = application.start_execution(
-        project,
-        request,
-        &blobray_backend_riscv::RiscvExecutor,
-        limits.budget()?,
-    )?;
-    Ok(finish_execution(&handle, &signals, format))
-}
-fn finish_execution(handle: &app::RunHandle, signals: &Signals, format: Format) -> ExitCode {
-    let success = wait_handle(handle, signals, format);
-    let record = handle.wait();
-    match format {
-        Format::Json => println!(
-            "{}",
-            serde_json::json!(blobray_next_host::wire::RunDocument {
-                schema: 1,
-                run: &record
-            })
-        ),
-        Format::Human => println!(
-            "Execution {:?}{}: {}",
-            record.state,
-            record
-                .assessment
-                .as_ref()
-                .and_then(|a| a.comparison)
-                .map(|v| format!(" / {v:?}"))
-                .unwrap_or_default(),
-            record
-                .execution
-                .as_ref()
-                .map_or("no publication", ArtifactId::as_str)
-        ),
-    }
-    if success {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    }
-}
 fn read_json_file<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T> {
     read_bounded_json(
         path,
         blobray_domain::CONTROL_MESSAGE_BYTES,
         "request exceeds 64 KiB",
-    )
-}
-/// Execution requests are retained by identity, so their bound is independent
-/// of the 64 KiB control-message limit.
-fn read_execution_request(path: &std::path::Path) -> Result<blobray_domain::ExecutionRequest> {
-    read_bounded_json(
-        path,
-        blobray_domain::MAX_EXECUTION_REQUEST_BYTES,
-        "execution request exceeds its size bound",
     )
 }
 fn read_bounded_json<T: serde::de::DeserializeOwned>(
@@ -1765,11 +1586,6 @@ fn internal(args: &[OsString]) -> Result<()> {
     } else {
         None
     };
-    let execution: Option<app::ExecutionWork> = if stage.join("execution.json").exists() {
-        Some(request(&stage.join("execution.json"))?)
-    } else {
-        None
-    };
     let query: Option<QueryWork> = if stage.join("query.json").exists() {
         Some(request(&stage.join("query.json"))?)
     } else {
@@ -1796,7 +1612,6 @@ fn internal(args: &[OsString]) -> Result<()> {
         && image.is_none()
         && function.is_none()
         && investigation.is_none()
-        && execution.is_none()
         && scenario.is_none()
     {
         Some(request(&stage.join("request.json"))?)
@@ -1806,8 +1621,6 @@ fn internal(args: &[OsString]) -> Result<()> {
     let (run, started, deadline, budget) = if let Some(w) = &ir {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
     } else if let Some(w) = &scenario {
-        (&w.run, w.started_ms, w.deadline_ms, &w.budget)
-    } else if let Some(w) = &execution {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
     } else {
         match (&query, &import, &image, &function, &investigation) {
@@ -1840,18 +1653,9 @@ fn internal(args: &[OsString]) -> Result<()> {
             &stage,
             &work,
             &blobray_backend_riscv::RiscvDecoder,
-            &blobray_backend_riscv::RiscvExecutor,
             &mut context,
         )
         .map(Some)
-    } else if let Some(work) = execution {
-        app::prepare_execution_worker(
-            &stage,
-            &work,
-            &blobray_backend_riscv::RiscvExecutor,
-            &mut context,
-        )
-        .map(|p| Some(app::PreparedReceipt::Execution(p)))
     } else {
         match (query, import, image, function, investigation) {
             (Some(work), _, _, _, _) => app::prepare_query_with_tools(

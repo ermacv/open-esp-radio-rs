@@ -11,9 +11,9 @@ provider registry, or cross-revision correspondence or rebase. The
 | Automatic whole-library or saved-plan investigation | Implemented, one application run and atomic publication |
 | Link PHY entry with explicit ROM companions → analysis | Limited RV32 integer static profile, unsupported semantics remain gaps |
 | Saved MMIO/mask discovery → physical catalogue → review → source-model publication | Implemented; Next evidence and source-owned hardware acceptance remain separate |
-| Execute / compare / replay captured implementations | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
-| Captured PHY I2C → compiled-production comparison → replay | [Native real scenario](../../../../verification/esp32s31/README.md#captured-i2c-command-memory-comparison); 45 command-memory writes, descriptor/no-op leaves and both-host byte/field/reset transport under explicit bounded peripheral responses; independent MATCH/DIFF/INCOMPLETE expectations, no physical timing or RF claim |
-| Current PHY calibration leaves → compiled-production comparison → replay | [Finite native matrix](../../../../verification/esp32s31/README.md#current-calibration-leaves); TX-gain restore, forced gain, temperature conversion and post-init AGC with explicit domains and independent writes/returns; enclosing calibration remains outside this profile |
+| Execute / compare implementations in process | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
+| Captured PHY I2C → compiled-production comparison | [Native real scenario](../../../../verification/esp32s31/README.md#captured-i2c-command-memory-comparison); 45 command-memory writes, descriptor/no-op leaves and both-host byte/field/reset transport under explicit bounded peripheral responses; independent MATCH/DIFF/INCOMPLETE expectations, no physical timing or RF claim |
+| Current PHY calibration leaves → compiled-production comparison | [Finite native matrix](../../../../verification/esp32s31/README.md#current-calibration-leaves); TX-gain restore, forced gain, temperature conversion and post-init AGC with explicit domains and independent writes/returns; enclosing calibration remains outside this profile |
 | Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
 | Exact data ranges → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
 
@@ -108,7 +108,7 @@ their order or selection in an original firmware build.
 The caller chooses an existing linked image or an explicit synthetic link recipe.
 The recipe records library order, roots, companion definitions, target/ABI,
 linker identity and options. The application prepares an image once and passes
-the resulting image/mapping to execution, replay or comparison.
+the resulting image/mapping to execution or comparison.
 
 Companion data and call definitions participate in image preparation. Indirect
 callback roots are explicit inputs. Unresolved relocations, conflicting layouts
@@ -240,7 +240,7 @@ layout or generated register constants.
 | A2 | Weak/common definitions, duplicate exports, library reordering and cyclic archive references | Inventory remains unchanged; selected image and recipe reflect the actual chosen linker semantics | image preparation |
 | A3 | Thin archive with an external member; then delete its original directory | Imported member remains usable; an uncaptured member is an explicit gap | import, artifacts |
 | A4 | Mixed or malformed archive members | Every payload occurrence has an outcome; supported subsets cannot claim complete archive coverage | artifacts, analysis |
-| A5 | Companion supplies data relocation and callback definitions | Run, replay and comparison prepare equivalent images for the same recipe | application, backend |
+| A5 | Companion supplies data relocation and callback definitions | Every consumer prepares equivalent images for the same recipe | application, backend |
 | A6 | Source changes during import or after revision creation | Detectable capture change/expected-digest mismatch rejects capture; committed revision always uses its imported bytes | import, store |
 | A7 | Required source mapping or relocation is unknown | Affected claim is incomplete, never inferred from an equal label or placeholder value | artifacts, verification |
 | A8 | Import unchanged thin-container bytes with a changed external member | Old and new snapshots retain their own payload bindings; equal occurrence selectors do not reuse stale analysis or transfer evidence | domain, planning, store |
@@ -269,7 +269,7 @@ layout or generated register constants.
 | V3 | Stateful phase is incomplete, or independent cases run in a different order | Dependent phases cannot consume unknown state; independent cases have fresh session state and no cross-case leakage | executor, verification |
 | I1 | Issue equivalent requests through API and CLI/JSON | Same selection, revision, results and diagnostics; only presentation differs | application, frontends |
 | I3 | Query an existing snapshot | No hidden analysis, repair, migration or writer acquisition | query interface |
-| M2 | Backup, move and restore; original input paths are unavailable | Retained closure verifies and remains readable; missing replay tools are reported | store, application |
+| M2 | Backup, move and restore; original input paths are unavailable | Retained closure verifies and remains readable | store, application |
 | B1 | Build generic Blobray without open-radio-specific code | No generic dependency on production code, chip hosts or qualification policy | crate dependency checks |
 | B2 | Attempt a forbidden dependency or mutation through a read handle | Dependency checks or type boundary reject it | architecture and API checks |
 | B3 | Pass a snapshot/analysis port to code attempting writer acquisition or tool discovery | Public capabilities do not expose those operations; compile-fail API checks reject authority escalation | application, domain, store |
@@ -366,12 +366,13 @@ define MATCH/DIFF/INCOMPLETE and the distinction from concrete execution.
 
 
 The implemented device workflow declares exact ports and applicability in the shared
-execution request, executes cold/warm phases, reads code and model outcomes, then
-replays the retained request after source removal or backup/restore. Sequence/FIFO
+execution request, executes cold/warm phases and reads code and model outcomes.
+Sequence/FIFO
 obligations close at the declared lifetime; code return cannot turn missing model
 participation into MATCH. The [device regressions](../../next/tests/execution/devices.rs)
-cover all eight mechanisms, ownership conflicts, closure, forged records and restored
-replay. [Memory tests](../../crates/application/src/devices.rs) verify release of model
+cover all eight mechanisms, ownership conflicts and closure;
+[record validation](../../crates/verification/src/records/models.rs) rejects forged
+records. [Memory tests](../../crates/application/src/devices.rs) verify release of model
 payload/state and cancellation before response consumption.
 
 
@@ -379,8 +380,8 @@ The implemented external-call scenario composes admitted allocation, a warm-phas
 read, an explicit call response, a device sequence and modeled delays in one
 execution. [Call regressions](../../next/tests/execution/calls.rs) check the actual
 return and participation, all three verdicts, output ownership, stack words,
-unknown values, response exhaustion, early goals, resource failure and identical
-API/CLI replay after source removal and backup/restore. Model effects retain their
+unknown values, response exhaustion, early goals and resource failure. Model
+effects retain their
 conditional scope; hardware qualification is separate.
 
 
@@ -389,24 +390,22 @@ conditional scope; hardware qualification is separate.
 Declare `observe_memory` on each invocation, including exact named address ranges.
 Select per-case `relation` with return words, event channels and memory pair indices.
 Use different physical addresses only through an explicit equal-length pair; this
-scenario does not infer a layout mapping. Run the shared comparison operation and
-inspect its typed difference or selected unknown/unavailable bytes.
+scenario does not infer a layout mapping. Compare in process and inspect the
+typed difference or selected unknown/unavailable bytes.
 
-All selected bytes, including unchanged data, survive retained reads and replay.
-Excluded observations remain available. An incomplete code phase's RAM snapshot
-is intermediate evidence; successful execution coverage alone does not prove a
-comparison when required outputs are unknown. Preservation and reopening use the
-same project backup/restore lifecycle as other execution evidence.
+All selected bytes, including unchanged data, appear in the records. Excluded
+observations remain available. An incomplete code phase's RAM snapshot is
+intermediate evidence; successful execution coverage alone does not prove a
+comparison when required outputs are unknown.
 
 ### Compare physical call boundaries (implemented)
 
 Set each invocation's `observe_calls` to an explicit word/tail profile and select
 `relation.calls: true`. For exact comparison use the identical profile on both
-sides; target overrides select words only for that physical destination. Execute
-or compare through the shared application scenario, then read the retained
-`call-transfer`/`transfer-argument` groups and typed difference. A zero-word profile
-compares target order without claiming argument equivalence. Source-free project
-backup/restore and replay preserve the same evidence and producer identity.
+sides; target overrides select words only for that physical destination. Compare
+in process, then read the `call-transfer`/`transfer-argument` groups and typed
+difference. A zero-word profile compares target order without claiming argument
+equivalence.
 
 Compare call groups together with the required MMIO/fence/delay channels to retain
 their relative order. Unknown selected words yield INCOMPLETE. `observe-call`
@@ -418,8 +417,7 @@ semantic operations.
 
 Set invocation `observe_timeline` flags for required normal reads/writes, atomics
 and conditional branches. Select the corresponding `events.timeline` flags in the
-case relation; both sides must capture every selected channel. Use execute/compare
-and the ordinary execution/query/replay lifecycle. All existing call/MMIO/fence/
+case relation; both sides must capture every selected channel. All existing call/MMIO/fence/
 delay selections preserve their order relative to selected internal observations.
 
 A final-memory match can coexist with a timeline difference: an intermediate write,
@@ -437,7 +435,7 @@ projection reviewed outside Blobray → select it by content in an in-process
 comparison that receives it. Capture requested final ranges/timeline channels.
 Compare keeps raw physical observations and explicit unknowns; unmapped selected
 effects cannot MATCH. Different addresses can match only under the selected
-mapping. A project execution rejects a projection selection. Arbitrary type,
+mapping. Arbitrary type,
 pointer-value and dynamic-path conversions are not part of this profile.
 
 ### Reviewed effect refinement — implemented finite profile
@@ -452,5 +450,5 @@ All raw effects remain evidence. A policy may deliberately relax physical
 observations only under the reviewed refinement ceiling; it cannot discharge
 unknown classification, missing required exercise or unfinished execution.
 [Effect scenarios](../../next/tests/execution/effects.rs) exercise content
-selection, rejection by a project execution, exact-value replacement, case
+selection, a missing contract, exact-value replacement, case
 applicability and combined relations.

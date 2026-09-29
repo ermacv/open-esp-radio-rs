@@ -882,30 +882,6 @@ impl Project {
                 if id != run.id.as_str().as_bytes() {
                     return Err(integrity("run row identity mismatch"));
                 }
-                if run.execution.is_some() {
-                    let result = (|| {
-                        let lease = self.execution_from_run(&run, memory, control)?;
-                        validate_execution_records(
-                            &lease.manifest,
-                            &lease.request,
-                            &lease.records,
-                            control,
-                        )
-                    })();
-                    if let Err(error) = result {
-                        if matches!(
-                            error.code,
-                            ErrorCode::ResourceLimited
-                                | ErrorCode::Cancelled
-                                | ErrorCode::TimedOut
-                                | ErrorCode::DiagnosticChannel
-                        ) {
-                            return Err(error);
-                        }
-                        sink.error(&error, control)?;
-                        report.errors += 1;
-                    }
-                }
                 if let Some(id) = &run.semantic_ir {
                     let result = self.semantic_ir(id, memory, control).and_then(|ir| {
                         if matches!(run.effective_operation(), RunOperation::BuildIr { request } if *request == ir.manifest.request) {

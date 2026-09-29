@@ -314,8 +314,7 @@ The commands below produce and assess evidence for an explicitly selected
 checkpoint. They are not prerequisites for reading project status.
 
 ```console
-cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray
-cargo blobray compare --project /path/to/research --request /path/to/comparison.json --limit-mode watchdog
+cargo xtask evidence --chip esp32s31
 
 cargo qualification evaluate \
   --manifest qualification/targets/esp32s31/wifi-sta.toml \

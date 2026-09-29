@@ -34,20 +34,6 @@ fn request(f: &Fixture, responses: Vec<CallResponse>) -> ExecutionRequest {
     r.cases[0].replacement = Some(r.cases[0].vendor.clone());
     r
 }
-fn run(f: &Fixture, r: ExecutionRequest) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
-    let record = f.run(r, budget());
-    assert_eq!(record.state, RunState::Completed, "{record:?}");
-    let value = f.read(&record.execution.unwrap());
-    (
-        serde_json::from_value(value["summary"]["manifest"].clone()).unwrap(),
-        value["records"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
-            .collect(),
-    )
-}
 fn stop(rows: &[ExecutionEvidence], case: u32) -> &ExecutionStop {
     rows.iter()
         .find_map(|r| match r {
@@ -439,7 +425,7 @@ fn tail_alternate_link_and_physical_goal_precede_model_dispatch() {
     )));
 }
 #[test]
-fn composed_allocation_device_delay_and_warm_calls_replay_after_restore() {
+fn composed_allocation_device_delay_and_warm_calls() {
     let mut program = code(&[]);
     // Separate warm entry: read persistent allocation, then call model with that value.
     let entry = 0x1000 + program.len() as u32 * 4;
@@ -488,83 +474,15 @@ fn composed_allocation_device_delay_and_warm_calls_replay_after_restore() {
         ExecutionStop::Returned { low: Some(77), .. }
     ));
     assert_eq!(model(&rows, 1).calls, 2);
-    let record = f.run(r.clone(), budget());
-    let id = record.execution.unwrap();
-    let request_path = f._dir.path().join("calls.json");
-    fs::write(&request_path, serde_json::to_vec(&r).unwrap()).unwrap();
-    let compared = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "compare", "--project"])
-        .arg(&f.project)
-        .arg("--request")
-        .arg(&request_path)
-        .args(["--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        compared.status.success(),
-        "{}",
-        String::from_utf8_lossy(&compared.stderr)
-    );
-    let compared: serde_json::Value = serde_json::from_slice(&compared.stdout).unwrap();
-    assert_eq!(compared["run"]["execution"], id.as_str());
-    let backup = f._dir.path().join("calls.blobray");
-    let restored = f._dir.path().join("restored");
-    for (command, project, flag, path) in [
-        ("backup", &f.project, "--output", &backup),
-        ("restore", &restored, "--backup", &backup),
-    ] {
-        let o = Command::new(env!("CARGO_BIN_EXE_blobray"))
-            .args([command, "--project"])
-            .arg(project)
-            .arg(flag)
-            .arg(path)
-            .args(["--limit-mode", "watchdog"])
-            .output()
-            .unwrap();
-        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    }
-    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "replay", "--project"])
-        .arg(&restored)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
-    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(replay["run"]["execution"], id.as_str());
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "execution", "--project"])
-        .arg(&restored)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let saved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(
-        serde_json::from_value::<ExecutionManifest>(saved["summary"]["manifest"].clone()).unwrap(),
-        m
-    );
-    let saved_rows: Vec<ExecutionEvidence> = saved["records"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
-        .collect();
-    assert_eq!(saved_rows, rows);
     r.cases[0].replacement.as_mut().unwrap().calls[0].responses[0].delay_micros =
         Some(CallValue::Constant { value: 6 });
     assert_eq!(run(&f, r).0.verdict, Some(ComparisonVerdict::Diff));
 }
 
 #[test]
-fn invalid_bindings_stack_access_and_resource_failure_preserve_prior_result() {
+fn invalid_bindings_stack_access_and_resource_limits_fail() {
     let f = Fixture::new(&code(&[]));
     let base = request(&f, vec![response(Some(7))]);
-    let retained = f.run(base.clone(), budget()).execution.unwrap();
     for variant in 0..5 {
         let mut r = base.clone();
         let d = &mut r.cases[0].vendor.calls[0];
@@ -589,15 +507,7 @@ fn invalid_bindings_stack_access_and_resource_failure_preserve_prior_result() {
             4 => d.responses[0].delay_micros = Some(CallValue::Argument { word: 8 }),
             _ => unreachable!(),
         }
-        let error = match f.app.start_execution(
-            &f.project,
-            r,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        ) {
-            Ok(_) => panic!("invalid request accepted"),
-            Err(e) => e,
-        };
+        let error = f.run(r, budget()).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidRequest);
     }
     for (address, boundary) in [
@@ -611,8 +521,7 @@ fn invalid_bindings_stack_access_and_resource_failure_preserve_prior_result() {
             allow_tail: false,
         };
         let record = f.run(r, budget());
-        assert_eq!(record.error.unwrap().code, ErrorCode::InvalidRequest);
-        assert!(record.execution.is_none());
+        assert_eq!(record.unwrap_err().code, ErrorCode::InvalidRequest);
     }
     let mut r = base.clone();
     r.cases[0].vendor.calls[0].argument_words = 9;
@@ -625,27 +534,11 @@ fn invalid_bindings_stack_access_and_resource_failure_preserve_prior_result() {
     let mut r = base.clone();
     r.max_events = 9;
     let record = f.run(r, budget());
-    assert_eq!(record.error.unwrap().code, ErrorCode::ResourceLimited);
-    assert!(record.execution.is_none());
+    assert_eq!(record.unwrap_err().code, ErrorCode::ResourceLimited);
     let mut b = budget();
     b.working_memory_bytes = Some(1024 * 1024);
     let record = f.run(base.clone(), b);
-    assert_eq!(record.error.unwrap().code, ErrorCode::ResourceLimited);
-    assert!(record.execution.is_none());
-    let handle = f
-        .app
-        .start_execution(
-            &f.project,
-            base,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        )
-        .unwrap();
-    handle.cancel();
-    let record = handle.wait();
-    assert_eq!(record.state, RunState::Cancelled);
-    assert!(record.execution.is_none());
-    assert_eq!(f.read(&retained)["summary"]["manifest"]["complete"], true);
+    assert_eq!(record.unwrap_err().code, ErrorCode::ResourceLimited);
     let f = Fixture::new(&[0xffc10113, 0x000022b7, 0x000280e7, 0x00008067]);
     let (_, rows) = run(&f, request(&f, vec![response(Some(7))]));
     assert_eq!(model(&rows, 0).issue, Some(CallIssue::StackAlignment));

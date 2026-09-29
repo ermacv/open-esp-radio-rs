@@ -24,13 +24,6 @@ pub enum RunOperation {
         revision: RevisionId,
         plan: InvestigationPlanId,
     },
-    Execute {
-        /// Identity of the retained canonical request payload.
-        request: ArtifactId,
-        /// The request selects a replacement and yields a verdict.
-        compare: bool,
-        producer: ExecutionProducer,
-    },
     Query,
 }
 
@@ -56,8 +49,6 @@ pub struct RunRecord {
     pub analysis: Option<FunctionAnalysisId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publication: Option<PublicationId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub execution: Option<ArtifactId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub semantic_ir: Option<ArtifactId>,
     pub assessment: Option<ResultAssessment>,
@@ -120,14 +111,6 @@ pub struct PreparedInvestigationReceipt {
     pub revision: RevisionId,
     pub plan: InvestigationPlanId,
     pub publication: PublicationId,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PreparedExecutionReceipt {
-    pub schema: u32,
-    pub project: ProjectId,
-    pub execution: ArtifactId,
 }
 
 impl RunRecord {

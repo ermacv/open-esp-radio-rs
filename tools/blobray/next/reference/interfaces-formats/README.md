@@ -140,11 +140,11 @@ schema. The ESP32-S31 vendor scenarios are such a client.
 
 ### Current formats
 
-Run records use journal schema 38 for every durable and read operation. Storage metadata
-uses schema 39; revision manifests use schema 1 and execution manifests use schema
-22. These are independent formats. Storage indexes run state, the execution
-published by each run, and each revision input's captured payload, so reads and
-executions never scan the journal or walk the inventory to find them. Import
+Run records use journal schema 40 for every durable and read operation. Storage metadata
+uses schema 41; revision manifests use schema 1 and execution requests use schema
+23. These are independent formats. Storage indexes run state and each revision
+input's captured payload, so reads never scan the journal or walk the inventory
+to find them. Import
 also records, from one full validated walk, each revision's header, input
 records and the manifest span of every object. A read scoped to one input or
 object, such as resolving a data occurrence, decodes only those spans and
@@ -157,7 +157,7 @@ comparison are independent of `state`. Empty assessment means the operation has
 no research coverage or verdict to assert. A non-completed run has no assessment.
 
 The private import/read-query requests use schema 2; image, function,
-investigation, execution and concrete scenario requests use schema 1.
+investigation and concrete scenario requests use schema 1.
 Worker reports use schema 6 with tagged receipts and fixed progress counters.
 These private protocols require the matching worker binary. Request/control
 messages have a 64 KiB encoded limit before allocation can expand the message.

@@ -152,14 +152,6 @@ recursively traversing publication/analysis links; doctor separately verifies
 registered publications.
 
 
-Concrete execution manifests and JSONL evidence use CAS payloads. Schema-10
-execution manifests in the existing database carry their publication reference;
-`retain_execution` validates the admitted producer/request and evidence structure,
-then `publish_execution` commits the result and terminal run atomically. Reads
-verify the reference, immutable manifest and payload digests; doctor also checks
-stream ordering and summaries. Store does not execute or compute comparison
-verdicts. See [concrete execution](../../next/reference/execution/README.md#concrete-execution-and-comparison).
-
 `storage_usage` walks logical CAS/metadata/staging sizes under read-only authority.
 It includes unreachable objects, does not follow symlinks or run recovery, and
 provides no reclaimability estimate or atomic filesystem snapshot guarantee.
@@ -173,18 +165,3 @@ Doctor checks indexes and completed-run references, and backup/restore retains
 both. Blobray does not collect garbage; any retention root must include these
 transitive dependencies.
 
-
-Execution validation checks model definition identity, cumulative participation, transcript totals and phase/session closure. Missing or inconsistent observations and MATCH with unmet obligations are rejected. This structural validation never supplies device execution semantics.
-
-
-External-call trace validation checks binding/response identity, ordered ABI arguments, outputs/allocation/delay/return, consumption counts and lifetime closure. It does not execute code or grant hardware validity to modeled effects.
-
-`execution_observation` checks canonical final-memory chunks, complete selected
-range coverage, phase ordering, blocked absence and whether selected bytes are
-known. Missing chunks or MATCH with selected unknown data is rejected. Difference
-descriptors must belong to the explicit per-case relation; comparison algorithms
-remain in verification.
-
-A retained execution selects no effect contract or layout projection: those are
-supplied by content to an in-process comparison, whose records are not retained
-by a project. Validation rejects a retained request that selects either.

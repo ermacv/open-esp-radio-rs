@@ -92,7 +92,7 @@ are injected ports; domain selects neither an ISA nor an environment. Request
 validation bounds control cardinalities. Host admission also bounds serialization
 before copying requests. See the [execution contract](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
-`ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines two concrete application actions: investigation and replay. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
+`ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines the concrete application action: automatic investigation. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
 
 Data contracts identify exact captured ranges and pointer-table profiles.
 Observations and function coverage remain separate; file offsets and executable VMAs are distinct values.

@@ -7,12 +7,6 @@ mod preservation;
 pub use preservation::*;
 mod investigations;
 pub use investigations::*;
-mod executions;
-pub use executions::*;
-mod execution_records;
-pub use execution_records::ExecutionRecordWriter;
-mod execution_requests;
-pub use execution_requests::{decode_execution_request, encode_execution_request};
 mod semantic_ir;
 pub use semantic_ir::*;
 mod functions;
@@ -27,9 +21,7 @@ mod records;
 pub use records::{
     OwnerIdentity, PreparedImageReceipt, PreparedImport, PreparedIrReceipt, RunOperation, RunRecord,
 };
-pub use records::{
-    PreparedExecutionReceipt, PreparedFunctionReceipt, PreparedInvestigationReceipt,
-};
+pub use records::{PreparedFunctionReceipt, PreparedInvestigationReceipt};
 mod capture;
 mod jobs;
 pub use jobs::read_progress;
@@ -57,9 +49,9 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 40;
+const SCHEMA: i64 = 41;
 /// Run record format shared by every durable and read operation.
-pub const JOURNAL_SCHEMA: u32 = 39;
+pub const JOURNAL_SCHEMA: u32 = 40;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -144,10 +136,9 @@ impl Project {
             CREATE TABLE current_publication (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL);
             CREATE TABLE analyses (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL);
             CREATE TABLE images (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL, plan TEXT NOT NULL);
-            CREATE TABLE runs (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL, state TEXT, execution TEXT);
-            CREATE INDEX runs_execution ON runs(execution) WHERE execution IS NOT NULL;
-            CREATE TRIGGER runs_state_insert AFTER INSERT ON runs BEGIN UPDATE runs SET state=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.state') END, execution=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.execution') END WHERE sequence=NEW.sequence; END;
-            CREATE TRIGGER runs_state_update AFTER UPDATE OF record ON runs BEGIN UPDATE runs SET state=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.state') END, execution=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.execution') END WHERE sequence=NEW.sequence; END;
+            CREATE TABLE runs (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL, state TEXT);
+            CREATE TRIGGER runs_state_insert AFTER INSERT ON runs BEGIN UPDATE runs SET state=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.state') END WHERE sequence=NEW.sequence; END;
+            CREATE TRIGGER runs_state_update AFTER UPDATE OF record ON runs BEGIN UPDATE runs SET state=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.state') END WHERE sequence=NEW.sequence; END;
             CREATE INDEX runs_unfinished ON runs(state) WHERE state IN ('registered','running','validating');
             CREATE TABLE semantic_ir (id TEXT PRIMARY KEY, run TEXT NOT NULL);
             CREATE TABLE project (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL, current_revision TEXT);
@@ -413,13 +404,3 @@ fn writer_lock(root: &Path) -> Result<File> {
 }
 
 mod usage;
-
-mod execution_models;
-
-mod execution_calls;
-
-mod execution_observation;
-
-mod execution_capture;
-
-mod execution_timeline;

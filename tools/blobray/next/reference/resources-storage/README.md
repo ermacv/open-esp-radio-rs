@@ -71,7 +71,7 @@ not CPU instruction counts, and are not refunded after an I/O error. Accounting
 also includes closure-record/framing visits. Repeated execution with the same
 inputs, retained objects and policy has the same work cost; reusing an existing
 object requires verification and can change the cost compared with an empty store.
-JSON output, execution evidence and query record spools are buffered into
+JSON output and query record spools are buffered into
 bounded writes. ELF string scans, explicit table
 loops, capture, hashing and coordinator reads have cooperative checkpoints.
 Opaque third-party calls, allocator operations, filesystem calls and final sync

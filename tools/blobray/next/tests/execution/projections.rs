@@ -119,9 +119,7 @@ fn layout_projection_rebases_fields_and_branches_without_comparing_unknown_paddi
     let (f, mut r, p) = setup();
     assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Diff));
     select(&mut r, &p);
-    let failed = f.run(r.clone(), budget());
-    assert_eq!(failed.state, RunState::Failed);
-    assert!(failed.execution.is_none());
+    assert!(super::verify(&f, &r, &[], &[]).is_err());
     let (m, rows) = verify(&f, &r, &p).unwrap();
     assert_eq!(m.verdict, Some(ComparisonVerdict::Match));
     assert!(

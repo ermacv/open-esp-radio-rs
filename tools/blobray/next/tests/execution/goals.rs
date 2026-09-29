@@ -66,13 +66,12 @@ fn request(f: &Fixture, goal: ExecutionGoal) -> ExecutionRequest {
     request
 }
 #[test]
-fn exact_goal_boundaries_stop_before_callee_body_and_replay_after_restore() {
+fn exact_goal_boundaries_stop_before_callee_body() {
     // Save return link; call a NOTYPE, zero-sized physical boundary whose body is unsupported.
     let (f, point) = fixture(
         &[0x00008413, 0x00c000ef, 0x00040067, 0x00000013, 0x00000073],
         0x1010,
     );
-    let mut last = None;
     for (goal, kind, pc) in [
         (
             ExecutionGoal::ReachSymbol {
@@ -91,56 +90,16 @@ fn exact_goal_boundaries_stop_before_callee_body_and_replay_after_restore() {
         ),
     ] {
         let r = request(&f, goal);
-        let run = f.run(r, budget());
-        assert_eq!(run.state, RunState::Completed, "{run:?}");
-        let id = run.execution.unwrap();
-        let result = f.read(&id);
-        assert_eq!(result["summary"]["manifest"]["complete"], true);
-        assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
-        assert_eq!(result["records"][0]["value"]["stop"]["kind"], kind);
-        assert_eq!(result["records"][0]["value"]["stop"]["pc"], pc);
-        assert_eq!(result["records"][0]["value"]["steps"], 2);
-        last = Some(id);
+        let run = f.run(r, budget()).unwrap();
+        let result = run.facts();
+        assert_eq!(result["complete"], true);
+        assert_eq!(result["verdict"], "MATCH");
+        assert_eq!(result["records"][0]["stop"]["kind"], kind);
+        assert_eq!(result["records"][0]["stop"]["pc"], pc);
+        assert_eq!(result["records"][0]["steps"], 2);
     }
-    let run = f.run(f.request(), budget());
-    assert_eq!(
-        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-        "INCOMPLETE"
-    );
-    let id = last.unwrap();
-    let backup = f._dir.path().join("goals.blobray");
-    let restored = f._dir.path().join("restored");
-    for (command, project, flag, path) in [
-        ("backup", &f.project, "--output", &backup),
-        ("restore", &restored, "--backup", &backup),
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-            .args([command, "--project"])
-            .arg(project)
-            .arg(flag)
-            .arg(path)
-            .args(["--limit-mode", "watchdog"])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "replay", "--project"])
-        .arg(&restored)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
-    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(replay["run"]["execution"], id.as_str());
+    let run = f.run(f.request(), budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "INCOMPLETE");
 }
 #[test]
 fn known_indirect_calls_tail_policy_and_returns_are_distinct() {
@@ -159,37 +118,35 @@ fn known_indirect_calls_tail_policy_and_returns_are_distinct() {
         ),
     ] {
         let (f, point) = fixture(&code, 0x1010);
-        let run = f.run(
-            request(
-                &f,
-                ExecutionGoal::ObserveCall {
-                    target: point.clone(),
-                    include_tail: true,
-                },
-            ),
-            budget(),
-        );
-        let result = f.read(&run.execution.unwrap());
-        assert_eq!(
-            result["records"][0]["value"]["stop"]["kind"],
-            "observed-call"
-        );
-        assert_eq!(result["records"][0]["value"]["stop"]["tail"], tail);
-        if tail {
-            let run = f.run(
+        let run = f
+            .run(
                 request(
                     &f,
                     ExecutionGoal::ObserveCall {
-                        target: point,
-                        include_tail: false,
+                        target: point.clone(),
+                        include_tail: true,
                     },
                 ),
                 budget(),
-            );
-            assert_eq!(
-                f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-                "INCOMPLETE"
-            );
+            )
+            .unwrap();
+        let result = run.facts();
+        assert_eq!(result["records"][0]["stop"]["kind"], "observed-call");
+        assert_eq!(result["records"][0]["stop"]["tail"], tail);
+        if tail {
+            let run = f
+                .run(
+                    request(
+                        &f,
+                        ExecutionGoal::ObserveCall {
+                            target: point,
+                            include_tail: false,
+                        },
+                    ),
+                    budget(),
+                )
+                .unwrap();
+            assert_eq!(run.facts()["verdict"], "INCOMPLETE");
         }
     }
     // A canonical return to the boundary is not an observed call, even with tails enabled.
@@ -197,20 +154,19 @@ fn known_indirect_calls_tail_policy_and_returns_are_distinct() {
         &[0x000010b7, 0x01008093, 0x00008067, 0x00000013, 0x00000073],
         0x1010,
     );
-    let run = f.run(
-        request(
-            &f,
-            ExecutionGoal::ObserveCall {
-                target: point,
-                include_tail: true,
-            },
-        ),
-        budget(),
-    );
-    assert_eq!(
-        f.read(&run.execution.unwrap())["records"][0]["value"]["stop"]["kind"],
-        "incomplete"
-    );
+    let run = f
+        .run(
+            request(
+                &f,
+                ExecutionGoal::ObserveCall {
+                    target: point,
+                    include_tail: true,
+                },
+            ),
+            budget(),
+        )
+        .unwrap();
+    assert_eq!(run.facts()["records"][0]["stop"]["kind"], "incomplete");
     // `jalr a1`: an unsupplied argument register is an unknown target.
     let (f, point) = fixture(&[0x000580e7, 0x00000073], 0x1004);
     let mut unsupplied = request(
@@ -222,9 +178,9 @@ fn known_indirect_calls_tail_policy_and_returns_are_distinct() {
     );
     unsupplied.cases[0].vendor.arguments = vec![Some(0)];
     unsupplied.cases[0].replacement = Some(unsupplied.cases[0].vendor.clone());
-    let run = f.run(unsupplied, budget());
+    let run = f.run(unsupplied, budget()).unwrap();
     assert_eq!(
-        f.read(&run.execution.unwrap())["records"][0]["value"]["stop"]["reason"]["kind"],
+        run.facts()["records"][0]["stop"]["reason"]["kind"],
         "unknown-register"
     );
 }
@@ -236,20 +192,17 @@ fn premature_return_blocks_warm_phase_and_equal_prefixes_do_not_match() {
     warm.reset = SessionReset::Warm;
     warm.name = "dependent".into();
     r.cases.push(warm);
-    let run = f.run(r, budget());
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
+    let run = f.run(r, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["verdict"], "INCOMPLETE");
+    assert_eq!(result["records"][0]["stop"]["kind"], "goal-not-reached");
     assert_eq!(
-        result["records"][0]["value"]["stop"]["kind"],
-        "goal-not-reached"
-    );
-    assert_eq!(
-        result["records"][3]["value"]["stop"]["kind"],
+        result["records"][3]["stop"]["kind"],
         "blocked-by-prior-phase"
     );
 }
 #[test]
-fn invalid_physical_goals_and_relations_publish_nothing() {
+fn invalid_physical_goals_and_relations_are_rejected() {
     let (f, point) = fixture(&[0x00008067, 0x00008067], 0x1004);
     for which in 0..5 {
         let mut point = point.clone();
@@ -264,8 +217,7 @@ fn invalid_physical_goals_and_relations_publish_nothing() {
             request(&f, ExecutionGoal::ReachSymbol { target: point }),
             budget(),
         );
-        assert!(run.error.is_some(), "{run:?}");
-        assert!(run.execution.is_none());
+        assert!(run.is_err(), "{run:?}");
     }
     for which in 0..4 {
         let mut r = request(
@@ -293,12 +245,7 @@ fn invalid_physical_goals_and_relations_publish_nothing() {
                 }
             }
         }
-        match f.app.start_execution(
-            &f.project,
-            r,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        ) {
+        match f.run(r, budget()) {
             Ok(_) => panic!("invalid goal relation admitted"),
             Err(error) => assert_eq!(error.code, ErrorCode::InvalidRequest),
         }
@@ -327,18 +274,15 @@ fn comparison_of_observed_call_prefixes_keeps_known_differences() {
             value: 0,
         }]));
     r.cases[0].replacement = Some(r.cases[0].vendor.clone());
-    let saved = f.run(r.clone(), budget()).execution.unwrap();
-    assert_eq!(f.read(&saved)["summary"]["manifest"]["verdict"], "MATCH");
+    let run = f.run(r.clone(), budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "MATCH");
     r.cases[0].replacement.as_mut().unwrap().arguments[1] = Some(8);
-    let run = f.run(r, budget());
-    assert_eq!(
-        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-        "DIFF"
-    );
+    let run = f.run(r, budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "DIFF");
 }
 
 #[test]
-fn multiple_physical_goals_prepare_each_object_once_and_share_failure_budgets() {
+fn multiple_physical_goals_in_one_request_share_its_failure_budgets() {
     let (f, point) = fixture(
         &[0x00008413, 0x00c000ef, 0x00040067, 0x00000013, 0x00000073],
         0x1010,
@@ -366,47 +310,19 @@ fn multiple_physical_goals_prepare_each_object_once_and_share_failure_budgets() 
     third.vendor.entry = 0x1010;
     third.replacement = Some(third.vendor.clone());
     r.cases.push(third);
-    let run = f.run(r, budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    assert_eq!(
-        run.diagnostics
-            .as_ref()
-            .unwrap()
-            .progress
-            .as_ref()
-            .unwrap()
-            .measurements
-            .objects_prepared,
-        1
-    );
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
-    assert_eq!(result["records"][6]["value"]["steps"], 0);
+    let result = f.run(r, budget()).unwrap().facts();
+    assert_eq!(result["verdict"], "MATCH");
+    assert_eq!(result["records"][6]["steps"], 0);
     let (f, point) = fixture(&[0x0000006f, 0x00000073], 0x1004);
     let r = request(&f, ExecutionGoal::ReachSymbol { target: point });
     let mut b = budget();
     b.max_work_units = Some(10000);
     let run = f.run(r.clone(), b);
-    assert_eq!(run.error.unwrap().code, ErrorCode::ResourceLimited);
-    assert!(run.execution.is_none());
+    assert_eq!(run.unwrap_err().code, ErrorCode::ResourceLimited);
     let mut b = budget();
     b.working_memory_bytes = Some(1024 * 1024);
     let run = f.run(r.clone(), b);
-    assert_eq!(run.error.unwrap().code, ErrorCode::ResourceLimited);
-    assert!(run.execution.is_none());
-    let handle = f
-        .app
-        .start_execution(
-            &f.project,
-            r,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        )
-        .unwrap();
-    handle.cancel();
-    let run = handle.wait();
-    assert_eq!(run.state, RunState::Cancelled);
-    assert!(run.execution.is_none());
+    assert_eq!(run.unwrap_err().code, ErrorCode::ResourceLimited);
 }
 
 #[test]
@@ -418,11 +334,10 @@ fn symbol_goals_require_and_use_the_explicit_companion_mapping() {
     assert_eq!(r.validate().unwrap_err().code, ErrorCode::InvalidRequest);
     r.vendor.companions.push(1);
     r.replacement.as_mut().unwrap().companions.push(1);
-    let run = f.run(r, budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
-    assert_eq!(result["records"][0]["value"]["stop"]["pc"], 0x2000);
+    let run = f.run(r, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["verdict"], "MATCH");
+    assert_eq!(result["records"][0]["stop"]["pc"], 0x2000);
 }
 #[test]
 fn in_process_symbol_goals_resolve_in_the_executables_and_compare_vendor_prefixes() {
@@ -475,12 +390,8 @@ fn in_process_symbol_goals_resolve_in_the_executables_and_compare_vendor_prefixe
     // in process and through the project.
     let result = verify(&request).unwrap();
     assert_eq!(result.verdict, Some(ComparisonVerdict::Match));
-    let run = f.run(request.clone(), budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    assert_eq!(
-        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-        "MATCH"
-    );
+    let run = f.run(request.clone(), budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "MATCH");
     // A prefix compares no return word.
     let mut returns = request;
     returns.cases[0].relation = Some(fixture_relation(true));

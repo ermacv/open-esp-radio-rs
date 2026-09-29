@@ -371,7 +371,6 @@ impl Writer {
             image: None,
             analysis: None,
             publication: None,
-            execution: None,
             semantic_ir: None,
             assessment: None,
             id: raw.parse()?,
@@ -435,7 +434,6 @@ impl Writer {
             || previous.schema != record.schema
             || previous.revision != record.revision
             || previous.assessment != record.assessment
-            || previous.execution != record.execution
             || previous.semantic_ir != record.semantic_ir
             || previous.resolved_operation != record.resolved_operation
         {
@@ -841,12 +839,6 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                 ScenarioRequest::Investigate { request, .. },
                 RunOperation::Investigate { revision, .. },
             ) => request.revision.as_ref() == Some(revision),
-            (
-                ScenarioRequest::Replay { producer, .. },
-                RunOperation::Execute {
-                    producer: resolved, ..
-                },
-            ) => producer == resolved,
             _ => false,
         };
         if !valid {
@@ -860,7 +852,6 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
         record.image.is_some(),
         record.analysis.is_some(),
         record.publication.is_some(),
-        record.execution.is_some(),
         record.semantic_ir.is_some(),
     ]
     .into_iter()
@@ -879,15 +870,11 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                 .publication
                 .clone()
                 .map(CoverageSubject::Investigation),
-            RunOperation::Execute { .. } => {
-                record.execution.clone().map(CoverageSubject::Execution)
-            }
             _ => None,
         };
         if assessment.coverage.as_ref().map(|c| &c.subject) != subject.as_ref()
             || assessment.check.is_some()
-            || (!matches!(record.effective_operation(), RunOperation::Execute { .. })
-                && assessment.comparison.is_some())
+            || assessment.comparison.is_some()
         {
             return Err(integrity(
                 "assessment does not describe the published result",
@@ -904,26 +891,6 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
             request.validate()?;
             if (record.state == RunState::Completed) != record.semantic_ir.is_some() {
                 return Err(integrity("invalid semantic IR outcome"));
-            }
-        }
-        RunOperation::Execute {
-            compare, producer, ..
-        } => {
-            if producer.executor.is_empty()
-                || producer.environment.is_empty()
-                || producer.verifier.is_empty()
-                || record.revision.is_some()
-                || record.image.is_some()
-                || record.analysis.is_some()
-                || record.publication.is_some()
-                || (record.state == RunState::Completed) != record.execution.is_some()
-                || (record.state == RunState::Completed && *compare)
-                    != record
-                        .assessment
-                        .as_ref()
-                        .is_some_and(|a| a.comparison.is_some())
-            {
-                return Err(integrity("invalid execution outcome"));
             }
         }
         RunOperation::Investigate { .. }

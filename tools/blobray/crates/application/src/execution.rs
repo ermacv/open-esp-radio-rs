@@ -1,22 +1,8 @@
-//! Concrete execution orchestration through the ordinary durable operation lifecycle.
+//! Concrete execution of resolved requests over loaded executables.
 use crate::execution_memory::Session;
 use crate::*;
-use std::{collections::BTreeMap, io::Write};
+use std::collections::BTreeMap;
 pub const EXECUTION_ENVIRONMENT: &str = "static-elf/boot-data-1/entry-registers-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/final-memory-1/physical-calls-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1";
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExecutionWork {
-    pub schema: u32,
-    pub run: RunId,
-    pub project: OriginPath,
-    /// Identity of the canonical request staged at admission (or, for a replay,
-    /// retained by the project). Control messages never carry the request itself.
-    pub request: ArtifactId,
-    pub producer: ExecutionProducer,
-    pub budget: ResourceBudget,
-    pub started_ms: u64,
-    pub deadline_ms: u64,
-}
 /// One mapped executable source of an execution target.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum SourceKey {
@@ -49,54 +35,6 @@ pub(crate) struct Sources<'a> {
     loaded: BTreeMap<SourceKey, Vec<LoadedSegment<'a>>>,
 }
 impl<'a> Sources<'a> {
-    fn load(
-        project: &Project,
-        request: &ExecutionRequest,
-        memory: &'a WorkingMemory,
-        c: &mut dyn RunControl,
-    ) -> Result<Self> {
-        let targets: Vec<&ExecutionTarget> = std::iter::once(&request.vendor)
-            .chain(&request.replacement)
-            .collect();
-        Self::load_targets(project, &targets, memory, c)
-    }
-    pub(crate) fn load_targets(
-        project: &Project,
-        targets: &[&ExecutionTarget],
-        memory: &'a WorkingMemory,
-        c: &mut dyn RunControl,
-    ) -> Result<Self> {
-        let mut loaded = BTreeMap::new();
-        for target in targets {
-            if let FunctionSource::Image { image } = &target.source
-                && project.image_manifest(image, c)?.0.plan.recipe.revision != target.revision
-            {
-                return Err(Error::new(
-                    ErrorCode::InvalidRequest,
-                    "execution image revision differs",
-                ));
-            }
-            for key in source_keys(target) {
-                if loaded.contains_key(&key) {
-                    continue;
-                }
-                let segments = match &key {
-                    SourceKey::Image(image) => {
-                        segments(&project.image_executable(image, c)?.1, memory, c)?
-                    }
-                    SourceKey::Input(revision, index) => {
-                        let payload =
-                            project.revision_input(revision, *index)?.ok_or_else(|| {
-                                Error::new(ErrorCode::NotFound, "execution input is not captured")
-                            })?;
-                        segments(&project.open_payload(&payload, c)?, memory, c)?
-                    }
-                };
-                loaded.insert(key, segments);
-            }
-        }
-        Ok(Self { loaded })
-    }
     /// Segments of explicit executables: `executables[i]` holds the ELF bytes
     /// of each target's sources in `source_keys` order (its source, then its
     /// companions). No project participates.
@@ -133,26 +71,6 @@ impl<'a> Sources<'a> {
             .filter_map(|key| self.loaded.get(&key))
             .flatten()
     }
-}
-/// The retained executable of one source of `target`, in `source_keys` order.
-pub(crate) fn target_executables(
-    project: &Project,
-    target: &ExecutionTarget,
-    c: &mut dyn RunControl,
-    visit: &mut dyn FnMut(&dyn ByteSource, &mut dyn RunControl) -> Result<()>,
-) -> Result<()> {
-    for key in source_keys(target) {
-        match &key {
-            SourceKey::Image(image) => visit(&project.image_executable(image, c)?.1, c)?,
-            SourceKey::Input(revision, index) => {
-                let payload = project.revision_input(revision, *index)?.ok_or_else(|| {
-                    Error::new(ErrorCode::NotFound, "execution input is not captured")
-                })?;
-                visit(&project.open_payload(&payload, c)?, c)?;
-            }
-        }
-    }
-    Ok(())
 }
 fn segments<'a>(
     source: &dyn ByteSource,
@@ -280,113 +198,6 @@ fn evidence(
         c,
     )
 }
-pub fn prepare_execution_worker(
-    stage: &Path,
-    work: &ExecutionWork,
-    executor: &dyn Executor,
-    c: &mut dyn RunControl,
-) -> Result<blobray_store::PreparedExecutionReceipt> {
-    let memory = WorkingMemory::new(
-        work.budget
-            .working_memory_bytes
-            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "working memory missing"))?,
-    )?;
-    let disk = blobray_store::TemporaryBudget::open(stage)?;
-    prepare_execution_worker_in(stage, work, executor, &memory, &disk, c)
-}
-pub(crate) fn prepare_execution_worker_in(
-    stage: &Path,
-    work: &ExecutionWork,
-    executor: &dyn Executor,
-    memory: &WorkingMemory,
-    disk: &blobray_store::TemporaryBudget,
-    c: &mut dyn RunControl,
-) -> Result<blobray_store::PreparedExecutionReceipt> {
-    if work.schema != 1
-        || (work.producer.executor != executor.identity()
-            || work.producer.environment != EXECUTION_ENVIRONMENT
-            || work.producer.verifier != blobray_verification::VERIFIER)
-    {
-        return Err(Error::new(
-            ErrorCode::Incompatible,
-            "execution implementation differs from recipe",
-        ));
-    }
-    let mut control = blobray_store::TemporaryControl::new(c, disk);
-    let result = (|| {
-        let _control = memory.reserve(2 * 1024 * 1024, control.position())?;
-        let project = Project::open(&work.project.to_path()?)?;
-        let request = Staging::with_temporary_budget(stage, disk.clone())?.execution_request(
-            &project,
-            &work.request,
-            memory,
-            &mut control,
-        )?;
-        let request = &request;
-        if request.cases.iter().any(|case| {
-            case.relation
-                .as_ref()
-                .is_some_and(|r| r.effects.is_some() || r.projection.is_some())
-        }) {
-            return Err(Error::new(
-                ErrorCode::InvalidRequest,
-                "a project execution selects no effect contract or layout projection; \
-                 an in-process comparison receives them by content",
-            ));
-        }
-        let goals = crate::execution_goals::prepare(&project, request, memory, &mut control)?;
-        let sources = Sources::load(&project, request, memory, &mut control)?;
-        // Records are small; buffer them so each is not its own metered write.
-        let mut file = std::io::BufWriter::with_capacity(
-            STREAM_BLOCK,
-            blobray_store::ExecutionRecordWriter::new(disk.temporary(&stage.join("staging"))?),
-        );
-        let RunOutcome {
-            verdict, complete, ..
-        } = run_resolved(
-            &Resolved {
-                request,
-                goals: &goals,
-                projections: &[],
-                effects: &[],
-                sources: &sources,
-                patches: &[],
-            },
-            &mut VendorSide::Execute(None),
-            None,
-            executor,
-            memory,
-            &mut |record, _| {
-                write_control_message(&mut file, &record)?;
-                file.write_all(b"\n").map_err(storage_io)
-            },
-            &mut control,
-        )?;
-        let staging = Staging::with_temporary_budget(stage, disk.clone())?;
-        let file = file
-            .into_inner()
-            .map_err(|error| storage_io(error.into_error()))?
-            .finish()
-            .map_err(storage_io)?;
-        let records = staging.retain_temporary(file, &mut control)?;
-        staging.execution_receipt(
-            &ExecutionManifest {
-                schema: EXECUTION_SCHEMA,
-                project: project.id().clone(),
-                request: work.request.clone(),
-                producer: work.producer.clone(),
-                records,
-                verdict,
-                complete,
-            },
-            &mut control,
-        )
-    })();
-    control.memory_phases(&memory.phase_observations());
-    control.working_memory(memory.observation());
-    result
-}
-
 /// Resolved inputs of one execution request.
 pub(crate) struct Resolved<'r, 'm> {
     pub request: &'r ExecutionRequest,

@@ -40,12 +40,11 @@ fn every_word_amo_and_ordering_returns_old_value_and_updates_memory() {
             let mut request = scenario(&f, Some(old));
             request.cases[0].vendor.arguments[1] = Some(operand);
             request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-            let run = f.run(request, budget());
-            assert_eq!(run.state, RunState::Completed, "{run:?}");
-            let result = f.read(&run.execution.unwrap());
-            assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
-            assert_eq!(result["records"][0]["value"]["stop"]["low"], old);
-            assert_eq!(result["records"][0]["value"]["stop"]["high"], expected);
+            let run = f.run(request, budget()).unwrap();
+            let result = run.facts();
+            assert_eq!(result["verdict"], "MATCH");
+            assert_eq!(result["records"][0]["stop"]["low"], old);
+            assert_eq!(result["records"][0]["stop"]["high"], expected);
             // Outcome, outcome and comparison, then one coverage record per side.
             assert_eq!(
                 result["records"].as_array().unwrap().len(),
@@ -57,7 +56,7 @@ fn every_word_amo_and_ordering_returns_old_value_and_updates_memory() {
 }
 
 #[test]
-fn lr_sc_status_and_phase_reset_are_replayable() {
+fn lr_sc_status_follows_the_reservation_across_phases() {
     // a1 nonzero: reserve/return. a1 zero: SC returns its status, then read memory.
     let f = Fixture::new(&[
         0x00058663,
@@ -76,24 +75,10 @@ fn lr_sc_status_and_phase_reset_are_replayable() {
     second.vendor.memory.clear();
     second.replacement = Some(second.vendor.clone());
     request.cases.push(second);
-    let run = f.run(request, budget());
-    let id = run.execution.unwrap();
-    let result = f.read(&id);
-    assert_eq!(result["records"][3]["value"]["stop"]["low"], 1);
-    assert_eq!(result["records"][3]["value"]["stop"]["high"], 9);
-    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "replay", "--project"])
-        .arg(&f.project)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
-    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(replay["run"]["execution"], id.as_str());
+    let run = f.run(request, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["records"][3]["stop"]["low"], 1);
+    assert_eq!(result["records"][3]["stop"]["high"], 9);
 
     // Successful SC writes once and clears its reservation; the next SC fails.
     for twice in [false, true] {
@@ -103,13 +88,10 @@ fn lr_sc_status_and_phase_reset_are_replayable() {
         }
         code.extend([0x00052583, 0x00028513, 0x00008067]);
         let f = Fixture::new(&code);
-        let run = f.run(scenario(&f, Some(9)), budget());
-        let result = f.read(&run.execution.unwrap());
-        assert_eq!(
-            result["records"][0]["value"]["stop"]["low"],
-            u32::from(twice)
-        );
-        assert_eq!(result["records"][0]["value"]["stop"]["high"], 5);
+        let run = f.run(scenario(&f, Some(9)), budget()).unwrap();
+        let result = run.facts();
+        assert_eq!(result["records"][0]["stop"]["low"], u32::from(twice));
+        assert_eq!(result["records"][0]["stop"]["high"], 5);
     }
 }
 
@@ -129,83 +111,37 @@ fn atomic_unknowns_permissions_alignment_and_mmio_do_not_fallback() {
                     value: 9,
                 }]));
             request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-            let run = f.run(request, budget());
-            let result = f.read(&run.execution.unwrap());
-            assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
-            assert_eq!(
-                result["records"][1]["value"]["stop"]["reason"]["access"],
-                "atomic"
-            );
-            assert_eq!(
-                result["records"][1]["value"]["stop"]["reason"]["address"],
-                address
-            );
+            let run = f.run(request, budget()).unwrap();
+            let result = run.facts();
+            assert_eq!(result["verdict"], "INCOMPLETE");
+            assert_eq!(result["records"][1]["stop"]["reason"]["access"], "atomic");
+            assert_eq!(result["records"][1]["stop"]["reason"]["address"], address);
         }
     }
     for instruction in [op(2, 0, 5, 10, 0), op(0, 0, 5, 10, 11)] {
         let f = Fixture::new(&[instruction, 0x00008067]);
-        let run = f.run(scenario(&f, None), budget());
-        assert_eq!(
-            f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-            "INCOMPLETE"
-        );
+        let run = f.run(scenario(&f, None), budget()).unwrap();
+        assert_eq!(run.facts()["verdict"], "INCOMPLETE");
     }
     for instruction in [op(3, 0, 5, 10, 11), op(0, 0, 5, 10, 11)] {
         let f = Fixture::new(&[instruction, 0x00008067]);
         let mut request = scenario(&f, Some(9));
         request.cases[0].vendor.arguments[0] = Some(0x1000); // read-only executable mapping
         request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-        let run = f.run(request, budget());
-        assert_eq!(
-            f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-            "INCOMPLETE"
-        );
+        let run = f.run(request, budget()).unwrap();
+        assert_eq!(run.facts()["verdict"], "INCOMPLETE");
     }
 }
 
 #[test]
-fn atomic_effect_comparison_reopens_and_replays_after_backup_restore() {
+fn atomic_effect_comparison_reads_the_changed_word() {
     // AMOADD discards old value; read the changed word into the selected return.
     let f = Fixture::new(&[op(0, 3, 0, 10, 11), 0x00052503, 0x00008067]);
     let mut request = scenario(&f, Some(9));
     request.cases[0].replacement.as_mut().unwrap().arguments[1] = Some(6);
-    let run = f.run(request, budget());
-    let id = run.execution.unwrap();
-    let result = f.read(&id);
-    assert_eq!(result["summary"]["manifest"]["verdict"], "DIFF");
-    assert_eq!(result["records"][0]["value"]["stop"]["low"], 14);
-    assert_eq!(result["records"][1]["value"]["stop"]["low"], 15);
-    let backup = f._dir.path().join("atomic.blobray");
-    let restored = f._dir.path().join("restored");
-    for (command, project, flag, path) in [
-        ("backup", &f.project, "--output", &backup),
-        ("restore", &restored, "--backup", &backup),
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-            .args([command, "--project"])
-            .arg(project)
-            .arg(flag)
-            .arg(path)
-            .args(["--limit-mode", "watchdog"])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "replay", "--project"])
-        .arg(&restored)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
-    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(replay["run"]["execution"], id.as_str());
+    let run = f.run(request, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["verdict"], "DIFF");
+    assert_eq!(result["records"][0]["stop"]["low"], 14);
+    assert_eq!(result["records"][1]["stop"]["low"], 15);
 }

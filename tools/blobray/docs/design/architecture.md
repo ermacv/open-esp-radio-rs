@@ -162,8 +162,8 @@ LLD and GNU ld retain distinct identities and archive-selection semantics.
 GNU seekable output uses an application-admitted extent enforced by Linux
 RLIMIT_FSIZE; application independently validates roots and ELF before publication. The ISA backend
 consumes a prepared image; it does not discover tools through `PATH` or invoke
-`rustc` to choose a linker. All execute, replay and comparison operations use
-the same image-preparation contract.
+`rustc` to choose a linker. Every consumer of a prepared image uses the same
+image-preparation contract.
 
 The job supervisor owns cancellation, resource budgets, temporary directories
 and descendant processes. CLI is a client of this owner. The resource

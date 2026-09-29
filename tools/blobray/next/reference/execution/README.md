@@ -6,25 +6,20 @@ Run explicit RV32 scenarios with selected inputs, device models and comparison o
 
 ## Concrete execution and comparison
 
-`execute`, `compare`, `replay` and `execution` use the existing supervised
-operation/query paths. No external limiter participates.
-Execution requests, manifests and journal/storage versions follow [current formats](../interfaces-formats/README.md#current-formats). The completed journal record is the publication
-reference. No second result index or current-source change is needed.
+Execution runs inside the calling process through
+[`blobray_application::in_process`](#in-process-verification): the caller
+supplies a request, the ELF bytes of its targets' sources and the effect
+contracts and layout projections its relations select, and receives the
+records, the aggregate verdict and completeness in memory. No project, content
+store, journal or CLI command participates, and nothing is retained.
 
-```console
-blobray execute --project research --request execution.json --limit-mode watchdog
-blobray compare --project research --request comparison.json --limit-mode watchdog
-blobray execution --project research --id EXECUTION_SHA --limit-mode watchdog --format json
-blobray replay --project research --id EXECUTION_SHA --limit-mode watchdog
-```
-
-`execute` requires one implementation; `compare` requires both and an explicit
-binding class. A request has the following shape (replace the revision and entry
-with an exact captured occurrence):
+A request without a replacement executes one implementation; a comparison
+supplies both and an explicit binding class. A request has the following shape
+(replace the revision and entry with the caller's own identities):
 
 ```json
 {
-  "schema": 17,
+  "schema": 23,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -45,13 +40,12 @@ with an exact captured occurrence):
 }
 ```
 
-A target selects a captured standalone static RV32 ELF (`input`) or a retained
-prepared image (`{"kind":"image","image":"IMAGE_SHA"}`). ET_REL/archive
-entries must first use the shared image-preparation operation. `companions`
-explicitly selects additional captured standalone ELF input ordinals in that
-target's revision, including their code and data segments. Overlap is rejected;
-linker absolute definitions alone do not supply executable bytes. Reading and
-replay never rediscover origins or substitute another symbol implementation.
+A target names its source, a standalone static RV32 ELF (`input`) or a
+prepared image (`{"kind":"image","image":"IMAGE_SHA"}`), and in `companions`
+additional standalone ELF inputs whose code and data segments it maps. The
+caller supplies one executable per source, in that order. Overlap is rejected;
+linker absolute definitions alone do not supply executable bytes. Execution
+never rediscovers origins or substitutes another symbol implementation.
 
 For comparison, supply a second target in `replacement`, set `binding` to
 `production-entry` or `shared-core`, and supply each case's replacement invocation.
@@ -184,7 +178,7 @@ the logical total must fit `u32`. Adjacent equal runs are allowed, and their
 explicit representation participates in identity. Application retains a run
 cursor, offset and remaining logical count without expanding the input. One
 read performs bounded cursor work; cancellation precedes consumption. Warm
-phases retain the cursor, cold/phase closure releases it. Store validates
+phases retain the cursor, cold/phase closure releases it. Record validation checks
 `successful reads + remaining = logical total`, rather than the number of runs.
 A long finite busy script therefore stays compact without becoming an infinite
 response source. Model identity version 2 includes every repeat count.
@@ -206,7 +200,7 @@ Unused constant/register models can close complete; their zero participation is
 visible and does not prove that code touched them.
 
 Phase models close and release state after each phase. Session models retain state
-through warm phases and close before the next cold phase or operation end. Omit a
+through warm phases and close before the next cold phase or the end of the request. Omit a
 live declaration on warm continuation; redeclaring its id conflicts, even if identical.
 An expired phase model's id/ports can be assigned anew. Both implementations own
 separate instances. A blocked warm phase performs no model accesses but still emits
@@ -245,13 +239,12 @@ implicit reset opcode or hardware timing assumption.
 `model.commands` is present only for these banks. It records cumulative issued,
 completed, reset, aborted and scripted-read counts, plus currently pending
 commands. CPU `reads`/`writes` remain separate. `remaining_reads` counts unused
-samples; pending commands separately block closure. Store checks declaration
+samples; pending commands separately block closure. Record validation checks declaration
 identity, conservation (initial pending + issued = completed + aborted + pending),
 sample totals and monotonic progress backed by new port operations. These checks
 validate evidence structure; they do not re-execute guest code or qualify a
-peripheral model. Both hosts use the same native API/CLI lifecycle and retained
-definition. Unknown selectors/commands, widths, exhausted samples and pending
-overwrites remain explicit gaps; capacity/cancellation fails the operation.
+peripheral model. Unknown selectors/commands, widths, exhausted samples and pending
+overwrites remain explicit gaps; capacity/cancellation fails the request.
 
 ### External-call responses
 
@@ -287,7 +280,7 @@ evidence.
 The binding selects one exact aligned target address in this captured address space.
 `unmapped` requires that no memory/device owns its first two bytes. `captured-code`
 requires a known executable ELF load mapping there and explicitly replaces execution
-of its body with the response. It never claims that the body ran. The operation
+of its body with the response. It never claims that the body ran. Execution
 validates bindings after phase memory/device installation; it does not guess names
 or absent implementations. A root entry is executed as
 code, even if a model binds the same address: models intercept transfers only.
@@ -307,9 +300,9 @@ caller's responsibility. No absent word becomes zero.
 
 Each response may contain ordered outputs through a selected argument plus a checked
 byte offset. Widths are 1/2/4 bytes and values must fit. `private-stack` requires the
-operation's stack; `normal-memory` permits writable stack, ELF or declared RAM, never
+session's stack; `normal-memory` permits writable stack, ELF or declared RAM, never
 MMIO. All output addresses are checked before any response write. An invalid later
-output cannot leave earlier output writes in a published incomplete response.
+output cannot leave earlier output writes in an incomplete response.
 Outputs require existing memory; newly allocated memory becomes available to later
 calls/instructions. Modeled writes invalidate overlapping LR reservations.
 
@@ -320,7 +313,7 @@ size argument selects a leading accessible zero-initialized prefix, including an
 explicit zero-length allocation; exceeding capacity is a model issue. Unused capacity
 remains owned but inaccessible, even for writes. Allocation lifetime is independently
 `phase` or `session`; it cannot be reseeded as ordinary RAM while live. Working-memory
-admission failure is an operation error, not a simulated allocator response.
+admission failure is a request error, not a simulated allocator response.
 
 `delay_micros` is null, `{"kind":"constant","value":5}` or
 `{"kind":"argument","word":0}`. It emits an explicit observable value without
@@ -335,9 +328,9 @@ Each successful response consumes exactly one entry; exhaustion, unknown require
 words, bad ownership or unused responses retain explicit `call-model` issues and
 cannot MATCH. Open session responses permit warm continuation; blocked phases
 consume nothing. Definition identities include applicability, binding, ABI width,
-ordered responses and every effect. Store authenticates argument/effect/return order
-against the declared response as well as participation counts and closure. Query,
-backup and replay retain both modeled boundaries and actual code outcomes.
+ordered responses and every effect. [Record validation](#record-validation)
+authenticates argument/effect/return order against the declared response as
+well as participation counts and closure.
 
 Every case is an explicit phase with a shared `reset` for both implementations
 and an `entry` in each invocation. Setup and action phases can select different
@@ -349,15 +342,15 @@ Registers, stack and LR reservations reset each phase; models follow their decla
 stack buffers are released after observation serialization/comparison, before the
 next phase. Omitted phase RAM is inaccessible on the next warm phase; redeclaring
 it initializes a fresh region from its seed. Session RAM survives until a cold
-reset or the end of the operation. An optional case `stack_fill` byte replaces
+reset or the end of the request. An optional case `stack_fill` byte replaces
 both targets' stack `fill` for that case's phases, so one request can cover
 several stack fills; the targets' explicit stack `bytes` and argument words
 still take precedence. An incomplete phase blocks subsequent warm
 phases on both sides, with zero steps and explicit `blocked-by-prior-phase` evidence.
 A later cold phase starts an independent chain and executes normally. Earlier
 incompleteness remains in the aggregate result; a completed difference does not
-block later phases. All chains share one operation, work/deadline/disk budget and
-atomic publication. Resource failure publishes no successful prefix.
+block later phases. All chains share one request and its work budget; a resource
+failure returns an error and no records.
 
 Each invocation declares `goal`: `{"kind":"return"}`, `reach-symbol`, or
 `observe-call`. Symbol goals contain a `target` with the mapped `source` and exact
@@ -382,10 +375,9 @@ index). For example:
 target's primary image/input or an explicitly mapped companion. The physical symbol
 must be defined FUNC/NOTYPE in captured executable bytes with a matching load mapping;
 zero-sized symbols and aliases are valid address identities. Data, undefined,
-absolute, mismatched or unavailable symbols fail the operation before execution.
-No name lookup, extent inference or code analysis resolves these goals. Each distinct
-selected object is prepared once for all phase/side goals and released before mutable
-sessions are created.
+absolute, mismatched or unavailable symbols fail the request before execution.
+No name lookup, extent inference or code analysis resolves these goals. Each
+executable's content identity is computed at most once per request.
 
 `reached-symbol` stops at the selected PC before decoding/executing its instruction,
 after verifying fetchable bytes. `observed-call` stops after a matching direct or
@@ -405,8 +397,8 @@ compares every vendor effect before the boundary with the complete replacement.
 Non-return goals, and every such pair, require both relation return selectors and
 call capture disabled; the relation compares their observed event prefixes,
 not unexecuted bodies. Equal prefixes with unmet goals remain `INCOMPLETE`; known
-prefix differences remain `DIFF`. Store checks that outcome kind and dependency
-blocking match the declared goals before publication.
+prefix differences remain `DIFF`. Record validation checks that outcome kind and
+dependency blocking match the declared goals.
 
 Each comparison case supplies `relation`; a single-implementation case uses null.
 For example, compare low return, ordered MMIO/fence/delay and one exact memory pair:
@@ -442,13 +434,14 @@ differences remain valid independently of other unknowns or unmet model obligati
 `MATCH` covers only the selected observations in the enumerated scenarios, not every
 argument, path, callback or internal state. [Selected comparison contracts](../../../docs/design/contracts.md#selected-final-memory-and-comparison-relations)
 define the precise completion and ownership boundaries.
-`manifest.complete` means every phase reached its declared goal and all model
+`complete` means every phase reached its declared goal and all model
 obligations due at closure were met, independently of the verdict. Only a `returned` outcome proves the entry returned.
-A completed operation, including `DIFF` or `INCOMPLETE`, exits 0; admission,
-resource, integrity and execution infrastructure failures exit nonzero.
+A request that runs to its end returns its records, including `DIFF` or
+`INCOMPLETE`; admission, resource, integrity and execution infrastructure
+failures are errors.
 
-All instruction loops share the admitted work/deadline control. Execute progress
-uses `table` for the case ordinal and `entry` for the last PC. Each session
+All instruction loops share the caller's work/deadline control. Progress uses
+`table` for the case ordinal and `entry` for the last PC. Each session
 reserves metadata plus event/model observation capacity before allocation, and owns admitted byte
 and initialization buffers for every region. Input ELF buffers are admitted
 separately and released after loading. Event vectors remain charged through
@@ -458,28 +451,21 @@ closure releases them before the next phase. A sorted bounded exact-port index s
 accesses; capacity retained for index reuse is distinct from live model state.
 No host call-stack recursion follows the analyzed program.
 
-An execution request is retained once as a canonical content-addressed
-payload of at most 16 MiB (`MAX_EXECUTION_REQUEST_BYTES`). The run record,
-the worker message and the execution manifest carry only its identity, so the
-64 KiB control-record bound does not split a finite matrix; replay reopens the
-same payload. Requests have 1–4096 cases (`MAX_EXECUTION_CASES`), at most 64 companions per
+Requests have 1–4096 cases (`MAX_EXECUTION_CASES`), at most 64 companions per
 target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
 128 live models of each category, 4096 responses per call model, 256 outputs per response,
 4096 exact live ports, 4096 encoded values/runs per model list, 2048 regions per session,
 and 1–1,048,576 events per implementation per case (`MAX_EXECUTION_EVENTS`).
-Each distinct image or captured input is validated and loaded once per request,
-and every fresh session copies its segments, so cold phases do not reread
-retained sources. `max_events` exhaustion is a
-resource failure with no publication; events are never silently truncated.
+Each distinct executable is validated and loaded once per request, and every
+fresh session copies its segments, so cold phases do not reload them.
+`max_events` exhaustion is a resource failure with no records; events are never
+silently truncated.
 `max_events` is a bound, not a reservation: each session admits event capacity
 into working memory as events occur, doubling up to that bound, and keeps it for
 later phases.
-Traces stream as bounded JSONL events/final-memory/device-models/call-models/outcomes/comparisons/coverage into quota-owned
-staging. The retained record payload is that JSONL stream as one raw deflate
-stream (execution schema 23): guest events repeat heavily, so large evidence
-sets retain a small fraction of their logical size. Readers decode it under the
-same per-record bound and work budget and see exactly the logical records;
-a truncated, trailing or non-deflate payload is an integrity failure.
+Records arrive in stream order: per case and side, events, final memory, device
+and call models and the outcome, then the comparison; coverage follows the last
+case.
 
 After the last case, `coverage` records list the code each side reached over
 the whole execution, vendor records first: strictly ascending executed
@@ -491,19 +477,31 @@ records of ascending, disjoint address ranges of at most 1,536 instructions,
 transfers of its own instructions; empty coverage is a single empty record. Only executable captured segments count; code run
 from caller RAM does not. Coverage accumulates across cold resets and does not
 depend on the selected timeline. Each side keeps one mark byte per halfword of
-its executable segments in working memory. The validator requires each side's
-records in vendor-then-replacement order and rejects unordered or overlapping
-records, a branch with no direction or a branch direction of an instruction that
-never executed.
-The coordinator checks the admitted recipe and stream structure before
-atomically committing the result reference and completed run. Cancellation,
-limits or corruption cannot publish partial evidence. Process-level OOM and
-opaque dependency containment retain the existing host guarantees.
+its executable segments in working memory. Record validation requires each
+side's records in vendor-then-replacement order and rejects unordered or
+overlapping records, a branch with no direction or a branch direction of an
+instruction that never executed.
+
+### Record validation
+
+`blobray_verification::validate_records` checks the records of a run against
+its request, the effect contracts and layout projections the request selects and
+the reported verdict and completeness, independently of the execution and
+comparison code that produced them. `in_process::verify` and `in_process::vendor`
+apply it to every run before returning; an inconsistency is an `Integrity` error.
+It checks record order per case and side, event capacity, the physical timeline
+events the invocation requested, captured call arguments against their capture
+profile, final-memory chunk geometry, device and call model participation,
+obligations and closure, goal and blocking outcomes, effect-contract accounting
+and coverage order. It rejects a `MATCH` whose case left a selected observation
+unknown, an execution or model obligation unmet, a selected read or branch
+outside the selected projection, or an effect unclassified or violated. It does
+not re-execute instructions: physical execution remains the executor's
+authority.
 
 ### In-process verification
 
-`blobray_application::in_process::verify` executes and compares one request
-inside the calling process. The caller supplies the ELF bytes of every target
+`blobray_application::in_process::verify` executes and compares one request. The caller supplies the ELF bytes of every target
 source in source order (the source, then its companions), optionally with
 their content identities when it already authenticated those bytes (otherwise
 each is hashed once per call), and the effect
@@ -514,11 +512,9 @@ content it was not given. Records, the aggregate verdict and completeness are
 returned in memory: no project, content store, journal or run record
 participates, and nothing is retained. A symbol goal resolves in the given
 executable whose content is its object, to a defined code symbol of its static
-symbol table. Without a selected contract or projection, the records equal those
-a project execution of the same request retains; a project execution rejects a
-relation that selects either. `in_process::coverage` reports the
-vendor coverage of such results, as `code-coverage` does for retained executions,
-under identities the caller assigns.
+symbol table. `in_process::coverage` reports the
+[vendor coverage](#code-coverage-of-root-closures) of such results under
+identities the caller assigns.
 
 `in_process::vendor` executes only the vendor side of a request's cases and
 returns its observations and coverage. Passed as `vendor_results` to `verify`
@@ -604,12 +600,9 @@ contains the A suite, so atomic instructions are not covered here.
 
 ### Code coverage of root closures
 
-```console
-blobray code-coverage --project PROJECT --execution EXECUTION_SHA [--execution EXECUTION_SHA ...] --limit-mode watchdog
-```
-
-`code-coverage` reports the vendor coverage of executions that share one vendor
-target; executions of different targets, or a repeated execution, are rejected.
+`in_process::coverage` reports the vendor coverage of executions that share one
+vendor target, given their records and the vendor executables; executions of
+different targets are rejected.
 Every distinct vendor invocation entry is a root. From each root the closure
 explores executable captured code by recursive descent: conditional branches,
 direct jumps and calls, `auipc`/`lui` + `jalr` pairs whose target the
@@ -625,7 +618,6 @@ execution reached, such as the other arms of a jump table, are outside the
 closure, so the site itself remains a location to account for.
 Undecodable instructions are `gaps`.
 
-The summary names the decoder and semantic identities and carries the report.
 Each closure function lists its basic blocks reached out of all, both
 directions of each conditional branch, its uncovered block leaders and branch
 directions, and its modeled, unresolved, followed and gap sites; a defined code symbol at
@@ -635,15 +627,3 @@ that no closure decoded, such as code reached through an unresolved transfer.
 A block counts as reached when its leader executed. The closure is bounded by
 4,096 functions and 1,048,576 decoded instructions; exceeding either is a
 resource failure.
-
-`execution` only reads retained evidence. `execution --summary` returns only
-the manifest after verifying the request and record payload digests; it neither
-decodes nor returns records, so reopening a large evidence set costs one hash. `execution --no-events`
-validates every record like `execution` but returns no guest event records, for
-readers that need only outcomes, final memory, models and comparisons. `replay` checks the executor,
-environment and verifier identities, reuses the exact request, and charges
-selection and execution against one application run, original deadline and work budget. Missing implementations
-are reported, never replaced. Doctor validates execution references, record order
-and CAS integrity. Backup/restore includes the journal, evidence and captured
-inputs; reopening evidence does not require replay tools. There is no converter
-for an incompatible execution schema.

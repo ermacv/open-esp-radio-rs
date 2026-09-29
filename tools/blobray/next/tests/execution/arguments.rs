@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn register_and_stack_words_execute_compare_and_replay_through_both_frontends() {
+fn register_and_stack_words_execute_and_compare() {
     // lw t0,0(sp); lw t1,4(sp); add a0,a7,t0; add a0,a0,t1;
     // andi a1,sp,15; ret. Expected result derives from explicit input words.
     let f = Fixture::new(&[
@@ -14,37 +14,16 @@ fn register_and_stack_words_execute_compare_and_replay_through_both_frontends() 
         .arguments
         .extend([Some(9), Some(10), Some(11)]);
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-    let run = f.run(request.clone(), budget());
-    assert_eq!(run.state, RunState::Completed, "{run:?}");
-    let result = f.read(run.execution.as_ref().unwrap());
-    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+    let run = f.run(request.clone(), budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["verdict"], "MATCH");
     for record in result["records"].as_array().unwrap().iter().take(2) {
-        assert_eq!(record["value"]["stop"]["low"], 30);
-        assert_eq!(record["value"]["stop"]["high"], 0);
+        assert_eq!(record["stop"]["low"], 30);
+        assert_eq!(record["stop"]["high"], 0);
     }
-    let path = f._dir.path().join("request.json");
-    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "compare", "--project"])
-        .arg(&f.project)
-        .arg("--request")
-        .arg(&path)
-        .args(["--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let cli: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(cli["run"]["execution"], run.execution.unwrap().as_str());
     request.cases[0].replacement.as_mut().unwrap().arguments[9] = Some(12);
-    let run = f.run(request, budget());
-    assert_eq!(
-        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-        "DIFF"
-    );
+    let run = f.run(request, budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "DIFF");
 }
 
 #[test]
@@ -65,10 +44,10 @@ fn unknown_words_override_seeded_stack_and_omitted_registers_stay_unknown() {
         request.replacement = Some(request.vendor.clone());
         request.cases[0].vendor.arguments = words;
         request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-        let run = f.run(request, budget());
-        let result = f.read(&run.execution.unwrap());
-        assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
-        let stop = &result["records"][0]["value"]["stop"];
+        let run = f.run(request, budget()).unwrap();
+        let result = run.facts();
+        assert_eq!(result["verdict"], "INCOMPLETE");
+        let stop = &result["records"][0]["stop"];
         assert_eq!(stop["kind"], "returned");
         assert!(stop["low"].is_null(), "{stop}");
     }
@@ -77,11 +56,8 @@ fn unknown_words_override_seeded_stack_and_omitted_registers_stay_unknown() {
     let mut request = f.request();
     request.cases[0].vendor.arguments.clear();
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-    let run = f.run(request, budget());
-    assert_eq!(
-        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
-        "MATCH"
-    );
+    let run = f.run(request, budget()).unwrap();
+    assert_eq!(run.facts()["verdict"], "MATCH");
 }
 
 #[test]
@@ -98,25 +74,24 @@ fn stack_alignment_capacity_and_unknown_padding_are_explicit() {
         let mut request = f.request();
         request.cases[0].vendor.arguments = vec![None; count];
         request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-        let run = f.run(request, budget());
-        let result = f.read(&run.execution.unwrap());
-        assert_eq!(result["records"][0]["value"]["stop"]["low"], expected);
-        assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+        let run = f.run(request, budget()).unwrap();
+        let result = run.facts();
+        assert_eq!(result["records"][0]["stop"]["low"], expected);
+        assert_eq!(result["verdict"], "MATCH");
     }
     let f = Fixture::new(&[0x00412503, 0x00008067]); // Load unused padding after argument 9.
     let mut request = f.request();
     request.cases[0].vendor.arguments.push(Some(10));
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
-    let run = f.run(request, budget());
-    let result = f.read(&run.execution.unwrap());
-    assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
-    assert!(result["records"][0]["value"]["stop"]["low"].is_null());
+    let run = f.run(request, budget()).unwrap();
+    let result = run.facts();
+    assert_eq!(result["verdict"], "INCOMPLETE");
+    assert!(result["records"][0]["stop"]["low"].is_null());
 }
 
 #[test]
-fn invalid_argument_geometry_is_rejected_before_publication() {
+fn invalid_argument_geometry_is_rejected_before_execution() {
     let f = Fixture::new(&[0x00008067]);
-    let prior = f.run(f.request(), budget()).execution.unwrap();
     for variant in 0..5 {
         let mut request = f.request();
         match variant {
@@ -136,18 +111,9 @@ fn invalid_argument_geometry_is_rejected_before_publication() {
             3 => request.vendor.stack.length = u32::MAX,
             _ => request.schema = 1,
         }
-        let error = match f.app.start_execution(
-            &f.project,
-            request,
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        ) {
-            Ok(_) => panic!("invalid argument geometry admitted"),
-            Err(error) => error,
-        };
+        let error = f.run(request, budget()).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidRequest);
     }
-    assert_eq!(f.read(&prior)["summary"]["manifest"]["verdict"], "MATCH");
 }
 
 #[test]
@@ -178,15 +144,13 @@ fn compressed_andi_matches_independent_signed_masks_in_concrete_execution() {
             case.replacement = Some(replacement);
             request.cases.push(case);
         }
-        let run = f.run(request, budget());
-        assert_eq!(run.state, RunState::Completed, "{run:?}");
-        let result = f.read(&run.execution.unwrap());
-        assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+        let run = f.run(request, budget()).unwrap();
+        let result = run.facts();
+        assert_eq!(result["verdict"], "MATCH");
         let outcomes: Vec<_> = result["records"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|row| &row["value"])
             .filter(|row| row["kind"] == "outcome")
             .collect();
         assert_eq!(outcomes.len(), 128);
@@ -215,14 +179,14 @@ fn case_stack_fill_replaces_the_target_fill_for_both_sides() {
         })
         .to_vec();
     request.cases.push(unfilled);
-    let run = f.run(request, budget());
-    let result = f.read(&run.execution.unwrap());
+    let run = f.run(request, budget()).unwrap();
+    let result = run.facts();
     let returned: Vec<_> = result["records"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|r| r["value"]["kind"] == "outcome")
-        .map(|r| (r["value"]["case"].clone(), r["value"]["stop"].clone()))
+        .filter(|r| r["kind"] == "outcome")
+        .map(|r| (r["case"].clone(), r["stop"].clone()))
         .collect();
     for side in 0..2 {
         assert_eq!(returned[side].1["low"], 0x5a5a_5a5a_u32);
@@ -230,5 +194,5 @@ fn case_stack_fill_replaces_the_target_fill_for_both_sides() {
         // Without a case fill, the target's unknown stack stays unknown.
         assert!(returned[4 + side].1["low"].is_null());
     }
-    assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
+    assert_eq!(result["verdict"], "INCOMPLETE");
 }

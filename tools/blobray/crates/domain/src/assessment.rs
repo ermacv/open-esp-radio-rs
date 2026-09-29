@@ -27,7 +27,6 @@ pub enum CoverageSubject {
     Inventory(RevisionId),
     Function(FunctionAnalysisId),
     Investigation(PublicationId),
-    Execution(ArtifactId),
     StaticTargetAudit(ArtifactId),
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -44,7 +43,6 @@ pub enum CoverageScope {
     InventoryOccurrences,
     SelectedFunctionExtents,
     FunctionExtent,
-    ExecutionScenario,
     StaticResolvedTransfers,
 }
 impl CoverageSubject {
@@ -53,7 +51,6 @@ impl CoverageSubject {
             Self::Inventory(_) => CoverageScope::InventoryOccurrences,
             Self::Investigation(_) => CoverageScope::SelectedFunctionExtents,
             Self::Function(_) => CoverageScope::FunctionExtent,
-            Self::Execution(_) => CoverageScope::ExecutionScenario,
             Self::StaticTargetAudit(_) => CoverageScope::StaticResolvedTransfers,
         }
     }
@@ -91,16 +88,6 @@ impl ResultAssessment {
                 CheckVerdict::Fail
             }),
             ..Self::default()
-        }
-    }
-    pub fn execution(
-        id: ArtifactId,
-        complete: bool,
-        comparison: Option<ComparisonVerdict>,
-    ) -> Self {
-        Self {
-            comparison,
-            ..Self::covered(CoverageSubject::Execution(id), complete)
         }
     }
     pub fn function(id: FunctionAnalysisId, manifest: &FunctionManifest) -> Self {

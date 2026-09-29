@@ -27,7 +27,7 @@ reference for required selectors, request files and supported subcommands.
 | Investigate registers and data | `registers`, `data` | [Register research](next/reference/registers-data/README.md#saved-register-research), [tables and coefficients](next/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
 | Prepare a linked image | `link-plan`, `prepare-image`, `images` | [Prepared images](next/reference/capture-images/README.md#synthetic-prepared-images) |
 | Inspect static representations | `ir`, `trace` | [Semantic IR](next/reference/ir-traces/README.md#saved-semantic-ir-profiles), [static traces](next/reference/ir-traces/README.md#static-observable-traces) |
-| Execute and compare | `execute`, `compare`, `replay`, `code-coverage` | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
+| Execute and compare | `blobray_application::in_process` (library) | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
 | Preserve research | `backup`, `restore`, `export-payload` | [Preservation](next/reference/preservation/README.md#backup-and-restore) |
 
 ### Choose a research method
@@ -107,7 +107,7 @@ cargo blobray status --project /path/to/research --limit-mode watchdog
 Kernel enforcement requires a delegated cgroup. `--limit-mode watchdog` explicitly
 selects sampled process-tree RSS enforcement when that is the desired policy;
 there is no automatic fallback. See the [operator reference](next/README.md) for
-linking, research, execution/comparison, replay and preservation.
+linking, research, execution/comparison and preservation.
 Explicit executable ranges and physical static/dynamic symbols support retained
 code research without inferred boundaries. Exact data ranges can be exported
 with captured bytes and provenance; see the operator reference.

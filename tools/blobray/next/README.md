@@ -17,7 +17,7 @@ comparison verdicts. `Completed` can legitimately describe partial research or a
 
 Implemented profiles include archive/thin-archive inventory, RV32 ELF inspection,
 whole-library static analysis, linked images with explicit ROM companions,
-bounded integer execution/comparison/replay, target auditing and project
+bounded in-process integer execution/comparison, target auditing and project
 preservation. Unsupported ISA semantics remain explicit gaps. There is
 no general equivalence proof, TUI, CAS pruning or allocation-free core.
 

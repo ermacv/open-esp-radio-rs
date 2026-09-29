@@ -25,11 +25,10 @@ mod companions;
 mod dependence;
 mod execution;
 mod execution_coverage;
-mod execution_goals;
 mod execution_memory;
 mod execution_steps;
 pub mod in_process;
-pub use execution::{EXECUTION_ENVIRONMENT, ExecutionWork, prepare_execution_worker};
+pub use execution::EXECUTION_ENVIRONMENT;
 mod functions;
 mod link_selection;
 mod records;
@@ -44,12 +43,11 @@ mod planning;
 pub use planning::*;
 mod protocol;
 mod selection;
+pub use blobray_store::JOURNAL_SCHEMA;
 pub use blobray_store::{
-    ExternalOutput, OwnerIdentity, PreparedExecutionReceipt, PreparedFunctionReceipt,
-    PreparedImageReceipt, PreparedImport, PreparedInvestigationReceipt, PreparedIrReceipt,
-    RunOperation, RunRecord, TemporaryFile,
+    ExternalOutput, OwnerIdentity, PreparedFunctionReceipt, PreparedImageReceipt, PreparedImport,
+    PreparedInvestigationReceipt, PreparedIrReceipt, RunOperation, RunRecord, TemporaryFile,
 };
-pub use blobray_store::{JOURNAL_SCHEMA, encode_execution_request};
 pub use protocol::*;
 mod jobs;
 mod query;

@@ -318,6 +318,7 @@ fn run(
         Some(analyzer) => analyzer.session(log, memory, c),
         None => Ok(()),
     };
+    let reused = matches!(vendor, VendorSide::Reuse { .. });
     let mut records = Vec::new();
     let outcome = run_resolved(
         &Resolved {
@@ -338,6 +339,23 @@ fn run(
         },
         control,
     )?;
+    // An independent structural check of what execution and comparison
+    // recorded; a MATCH never rests on the comparison alone. A reuse that
+    // stopped where the vendor side came to depend on the replacement
+    // recorded only a prefix, which `verify` discards.
+    if !reused || outcome.vendor_independent {
+        blobray_verification::validate_records(
+            &blobray_verification::RecordedRun {
+                request,
+                effects: &effects,
+                projections: &projections,
+                records: &records,
+                verdict: outcome.verdict,
+                complete: outcome.complete,
+            },
+            control,
+        )?;
+    }
     let observed = analyzer.map(|a| a.result);
     Ok(Run {
         records,

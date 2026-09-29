@@ -44,7 +44,6 @@ pub struct WorkerReport {
 )]
 pub enum PreparedReceipt {
     Ir(PreparedIrReceipt),
-    Execution(PreparedExecutionReceipt),
     Import(PreparedImport),
     Image(PreparedImageReceipt),
     Function(PreparedFunctionReceipt),
@@ -108,22 +107,6 @@ pub enum ReadQuery {
     AuditTargets {
         artifact: OriginPath,
         ranges: Vec<ForbiddenTargetRange>,
-    },
-    Execution {
-        id: ArtifactId,
-        /// Validate every record but return no guest event records.
-        #[serde(default)]
-        omit_events: bool,
-    },
-    /// The retained manifest after verifying the request and record payload
-    /// digests; records are neither decoded nor returned.
-    ExecutionSummary {
-        id: ArtifactId,
-    },
-    /// Vendor coverage of the root closures of executions that share one
-    /// vendor target.
-    CodeCoverage {
-        executions: Vec<ArtifactId>,
     },
     RetainedPayload {
         id: ArtifactId,

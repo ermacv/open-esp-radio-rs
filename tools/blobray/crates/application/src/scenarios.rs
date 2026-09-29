@@ -29,56 +29,32 @@ fn resolve(
     mut entries: Option<&mut blobray_store::TemporaryFile>,
     c: &mut dyn RunControl,
 ) -> Result<Resolution> {
-    let operation = match action {
-        ScenarioRequest::Investigate { request, producer } => {
-            c.phase(RunPhase::PlanInvestigation)?;
-            let plan = crate::investigations::enumerate(
-                project,
-                request,
-                producer,
-                memory,
-                c,
-                &mut |entry, c| {
-                    c.checkpoint(1)?;
-                    if let Some(output) = &mut entries {
-                        write_control_message(&mut **output, entry)?;
-                        output.write_all(b"\n").map_err(storage_io)?;
-                    }
-                    Ok(())
-                },
-            )?;
-            return Ok(Resolution {
-                operation: RunOperation::Investigate {
-                    revision: request
-                        .revision
-                        .clone()
-                        .ok_or_else(|| invalid("unfrozen investigation"))?,
-                    plan: plan.id.clone(),
-                },
-                plan: Some(plan),
-            });
-        }
-        ScenarioRequest::Replay {
-            execution,
-            producer,
-        } => {
-            let previous = project.execution(execution, memory, c)?;
-            if previous.manifest.producer != *producer {
-                return Err(Error::new(
-                    ErrorCode::Incompatible,
-                    "replay implementation unavailable",
-                ));
+    let ScenarioRequest::Investigate { request, producer } = action;
+    c.phase(RunPhase::PlanInvestigation)?;
+    let plan = crate::investigations::enumerate(
+        project,
+        request,
+        producer,
+        memory,
+        c,
+        &mut |entry, c| {
+            c.checkpoint(1)?;
+            if let Some(output) = &mut entries {
+                write_control_message(&mut **output, entry)?;
+                output.write_all(b"\n").map_err(storage_io)?;
             }
-            RunOperation::Execute {
-                request: previous.manifest.request.clone(),
-                compare: previous.request.replacement.is_some(),
-                producer: producer.clone(),
-            }
-        }
-    };
+            Ok(())
+        },
+    )?;
     Ok(Resolution {
-        operation,
-        plan: None,
+        operation: RunOperation::Investigate {
+            revision: request
+                .revision
+                .clone()
+                .ok_or_else(|| invalid("unfrozen investigation"))?,
+            plan: plan.id.clone(),
+        },
+        plan: Some(plan),
     })
 }
 /// Validate resolved parameters against the immutable inputs selected at admission.
@@ -86,36 +62,28 @@ pub(crate) fn validate_resolution(
     project: &Project,
     action: &ScenarioRequest,
     resolution: &Resolution,
-    memory: &WorkingMemory,
-    c: &mut dyn RunControl,
 ) -> Result<()> {
-    if let ScenarioRequest::Investigate { request, producer } = action {
-        let plan = resolution
-            .plan
-            .as_ref()
-            .ok_or_else(|| invalid("automatic planning omitted plan"))?;
-        blobray_store::validate_investigation_plan(plan)?;
-        if plan.recipe.project != *project.id()
-            || &plan.recipe.request != request
-            || &plan.recipe.producer != producer
-            || resolution.operation
-                != (RunOperation::Investigate {
-                    revision: request
-                        .revision
-                        .clone()
-                        .ok_or_else(|| invalid("unfrozen investigation"))?,
-                    plan: plan.id.clone(),
-                })
-        {
-            return Err(Error::new(
-                ErrorCode::Integrity,
-                "resolved plan differs from admitted request",
-            ));
-        }
-    } else if resolve(project, action, memory, None, c)? != *resolution {
+    let ScenarioRequest::Investigate { request, producer } = action;
+    let plan = resolution
+        .plan
+        .as_ref()
+        .ok_or_else(|| invalid("automatic planning omitted plan"))?;
+    blobray_store::validate_investigation_plan(plan)?;
+    if plan.recipe.project != *project.id()
+        || &plan.recipe.request != request
+        || &plan.recipe.producer != producer
+        || resolution.operation
+            != (RunOperation::Investigate {
+                revision: request
+                    .revision
+                    .clone()
+                    .ok_or_else(|| invalid("unfrozen investigation"))?,
+                plan: plan.id.clone(),
+            })
+    {
         return Err(Error::new(
             ErrorCode::Integrity,
-            "resolved scenario differs from admitted inputs",
+            "resolved plan differs from admitted request",
         ));
     }
     Ok(())
@@ -124,7 +92,6 @@ pub fn prepare_scenario_worker(
     stage: &Path,
     work: &ScenarioWork,
     decoder: &dyn FunctionSemantics,
-    executor: &dyn Executor,
     c: &mut dyn RunControl,
 ) -> Result<PreparedReceipt> {
     if work.schema != 1 {
@@ -144,11 +111,7 @@ pub fn prepare_scenario_worker(
     let result = (|| {
         let _capacity = memory.reserve(1024 * 1024, c.position())?;
         let project = Project::open(&work.project.to_path()?)?;
-        let mut entries = if matches!(work.request, ScenarioRequest::Investigate { .. }) {
-            Some(disk.temporary(&stage.join("staging"))?)
-        } else {
-            None
-        };
+        let mut entries = Some(disk.temporary(&stage.join("staging"))?);
         let resolution = resolve(&project, &work.request, &memory, entries.as_mut(), c)?;
         c.checkpoint(0)?;
         let result = match &resolution.operation {
@@ -173,37 +136,6 @@ pub fn prepare_scenario_worker(
                         c,
                     )?,
                 )
-            }
-            RunOperation::AnalyzeFunction { request } => {
-                let request = FunctionWork {
-                    schema: 1,
-                    run: work.run.clone(),
-                    project: work.project.clone(),
-                    request: request.clone(),
-                    budget: work.budget.clone(),
-                    started_ms: work.started_ms,
-                    deadline_ms: work.deadline_ms,
-                };
-                PreparedReceipt::Function(crate::functions::prepare_function_worker_in(
-                    stage, &request, decoder, &memory, &disk, c,
-                )?)
-            }
-            RunOperation::Execute {
-                request, producer, ..
-            } => {
-                let request = ExecutionWork {
-                    schema: 1,
-                    run: work.run.clone(),
-                    project: work.project.clone(),
-                    request: request.clone(),
-                    producer: producer.clone(),
-                    budget: work.budget.clone(),
-                    started_ms: work.started_ms,
-                    deadline_ms: work.deadline_ms,
-                };
-                PreparedReceipt::Execution(crate::execution::prepare_execution_worker_in(
-                    stage, &request, executor, &memory, &disk, c,
-                )?)
             }
             _ => return Err(invalid("invalid scenario resolution")),
         };

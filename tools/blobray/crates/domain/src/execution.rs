@@ -325,26 +325,6 @@ pub struct CaseComparison {
     /// First established difference in a selected observation domain.
     pub difference: Option<ComparisonDifference>,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExecutionManifest {
-    pub schema: u32,
-    pub project: ProjectId,
-    /// Identity of the retained canonical request payload.
-    pub request: ArtifactId,
-    pub producer: ExecutionProducer,
-    pub records: ArtifactId,
-    pub verdict: Option<ComparisonVerdict>,
-    pub complete: bool,
-}
-/// Implementations pinned at admission, including environment and comparison policy.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExecutionProducer {
-    pub executor: String,
-    pub environment: String,
-    pub verifier: String,
-}
 /// Session-owned memory. None denotes unknown/inaccessible bytes, never zero.
 pub trait ExecutionMemory {
     /// Identify the current instruction independently of progress/reporting state.

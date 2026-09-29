@@ -1,10 +1,9 @@
-//! Vendor coverage of the root closures that retained executions exercise.
-use crate::execution::{LoadedSegment, Sources, target_executables};
+//! Vendor coverage of the root closures that in-process executions exercise.
+use crate::execution::{LoadedSegment, Sources};
 use crate::*;
 use blobray_analysis::closure::{ClosureInput, CodeMemory, code_closure};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Executable segments of one vendor target, ascending by address.
 /// Executable segments of one target, ascending by address.
 pub(crate) struct Code<'s, 'a> {
     pub segments: Vec<&'s LoadedSegment<'a>>,
@@ -127,39 +126,6 @@ fn same_target(target: &mut Option<ExecutionTarget>, request: &ExecutionRequest)
     Ok(())
 }
 
-fn collect(
-    project: &Project,
-    ids: &[ArtifactId],
-    memory: &WorkingMemory,
-    c: &mut dyn RunControl,
-) -> Result<(ExecutionTarget, Reached)> {
-    let mut target: Option<ExecutionTarget> = None;
-    let mut reached = Reached::default();
-    for id in ids {
-        let execution = project.execution(id, memory, c)?;
-        let request = &execution.request;
-        same_target(&mut target, request)?;
-        let mut records = Vec::new();
-        blobray_store::validate_execution_records_with(
-            &execution.manifest,
-            request,
-            &execution.records,
-            c,
-            &mut |record, _| {
-                if matches!(record, ExecutionEvidence::Coverage { .. }) {
-                    records.push(record.clone());
-                }
-                Ok(())
-            },
-        )?;
-        let goals = crate::execution_goals::prepare(project, request, memory, c)?;
-        reached.add(request, vendor_coverage(&records)?, &goals, c)?;
-    }
-    let target =
-        target.ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "no executions selected"))?;
-    Ok((target, reached))
-}
-
 fn function_coverage(
     function: &ClosureFunction,
     name: Option<String>,
@@ -202,43 +168,6 @@ fn function_coverage(
         followed: function.followed.clone(),
         gaps: function.gaps.clone(),
     })
-}
-
-/// Report the vendor coverage of every root closure of `ids`, which must share
-/// one vendor target.
-pub(crate) fn report(
-    project: &Project,
-    ids: &[ArtifactId],
-    semantics: &dyn FunctionSemantics,
-    memory: &WorkingMemory,
-    c: &mut dyn RunControl,
-) -> Result<CodeCoverageReport> {
-    if ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
-        return Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "code coverage needs distinct executions",
-        ));
-    }
-    let (target, reached) = collect(project, ids, memory, c)?;
-    let sources = Sources::load_targets(project, &[&target], memory, c)?;
-    let mut names: BTreeMap<u32, String> = BTreeMap::new();
-    target_executables(project, &target, c, &mut |source, c| {
-        for (address, name) in blobray_artifacts::code_symbols(source, memory, c)? {
-            // The first name in order identifies a start with several names.
-            names.entry(address).or_insert(name);
-        }
-        Ok(())
-    })?;
-    build(
-        ids.to_vec(),
-        &target,
-        reached,
-        &sources,
-        names,
-        semantics,
-        memory,
-        c,
-    )
 }
 
 /// The vendor coverage of in-memory executions (caller identity, request and

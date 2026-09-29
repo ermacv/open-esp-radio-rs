@@ -168,23 +168,21 @@ input/image identity with function analysis. See the
 
 ## Concrete execution
 
-`start_execution` pins the executor/environment/verifier identities and admits an
-`ExecutionRequest` before cloning worker state. `execution` resolves captured
-inputs and prepared images; `execution_memory` owns mutable session regions,
-initialization state and bounded events. `Executor` is injected from domain;
-application has no concrete ISA dependency. The pure verification crate owns
-comparison. All cases share the ordinary durable supervisor, budget, staging and
-publication boundary. Read/replay clients use `ReadQuery::Execution`.
-See [execution and comparison](../../next/reference/execution/README.md#concrete-execution-and-comparison)
+Concrete execution runs only inside the calling process, over caller-supplied
+executable bytes, with no project, store or journal. `in_process` exposes it:
+`verify` for a request, `vendor` for its vendor side alone, whose results a
+later `verify` of the same vendor side reuses, and `coverage` over the results.
+`execution` loads the executables and runs a resolved request;
+`execution_memory` owns mutable session regions, initialization state and
+bounded events. `Executor` is injected from domain; application has no concrete
+ISA dependency. The pure verification crate owns comparison and the
+independent record validation `verify` and `vendor` apply to every run. See
+[execution and comparison](../../next/reference/execution/README.md#concrete-execution-and-comparison)
 for stateful lifetimes, resource obligations and claim limits.
 
-`in_process` runs the same execution and comparison inside the calling
-process over caller-supplied executable bytes, with no project, store or
-journal: `verify` for a request, `vendor` for its vendor side alone, whose
-results a later `verify` of the same vendor side reuses, and `coverage` over
-the results. `execution_coverage` accumulates the code one side reaches over
-all its sessions; `code_coverage` compares that with the static closure of
-the vendor roots, for `code-coverage` and `in_process::coverage` alike. With
+`execution_coverage` accumulates the code one side reaches over all its
+sessions; `code_coverage` compares that with the static closure of the vendor
+roots for `in_process::coverage`. With
 dependence requested, `execution_steps` records each replacement session's
 step log and `dependence` derives which executed instructions the compared
 observations depend on. Image patches replace replacement bytes in every
@@ -196,8 +194,8 @@ the same ephemeral supervisor. `prepare_query_with_tools` injects its decoder an
 linker capabilities. The artifact owner validates executable sections; analysis
 owns target policy evaluation. Findings are streamed and no project is opened.
 
-Concrete compound operations (`start_analyze_project` with automatic/saved input,
-`start_replay`) belong to application.
+The concrete compound operation `start_analyze_project` with automatic or saved
+input belongs to application.
 They retain one supervisor, worker and original budget through resolution and
 publication. CLI does not carry budgets between separate operations.
 `QueryOutput::assessment` and `QuerySummary::assessment` use the same scoped
@@ -278,5 +276,4 @@ comparison case supplies its own relation to verification; no frontend composes 
 
 Effect contracts and layout projections are reviewed outside Blobray and reach
 a comparison by content through `in_process::verify`, which validates each
-selected contract against the request. A project execution rejects a relation
-that selects either; its retained evidence carries no contract.
+selected contract against the request.

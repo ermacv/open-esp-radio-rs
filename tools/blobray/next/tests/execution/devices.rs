@@ -14,22 +14,6 @@ fn request(f: &Fixture, behavior: DeviceBehavior) -> ExecutionRequest {
     r.cases[0].replacement = Some(r.cases[0].vendor.clone());
     r
 }
-fn read(f: &Fixture, id: &ArtifactId) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
-    let result = f.read(id);
-    let manifest = serde_json::from_value(result["summary"]["manifest"].clone()).unwrap();
-    let rows = result["records"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
-        .collect();
-    (manifest, rows)
-}
-fn run(f: &Fixture, r: ExecutionRequest) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
-    let record = f.run(r, budget());
-    assert_eq!(record.state, RunState::Completed, "{record:?}");
-    read(f, &record.execution.unwrap())
-}
 fn model(rows: &[ExecutionEvidence], phase: u32) -> &ModelObservation {
     rows.iter()
         .find_map(|r| match r {
@@ -512,7 +496,7 @@ fn indexed_ports_do_not_claim_the_gap_between_them() {
 }
 
 #[test]
-fn model_identity_and_session_evidence_survive_cli_backup_and_replay() {
+fn session_model_evidence_distinguishes_a_changed_read_run() {
     let f = Fixture::new(&[0x00052503, 0x00008067]);
     let mut r = request(
         &f,
@@ -530,75 +514,6 @@ fn model_identity_and_session_evidence_survive_cli_backup_and_replay() {
     second.vendor.models.clear();
     second.replacement = Some(second.vendor.clone());
     r.cases.push(second);
-    let id = f.run(r.clone(), budget()).execution.unwrap();
-    let original = read(&f, &id);
-    let request_path = f._dir.path().join("devices.json");
-    fs::write(&request_path, serde_json::to_vec(&r).unwrap()).unwrap();
-    let compared = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "compare", "--project"])
-        .arg(&f.project)
-        .arg("--request")
-        .arg(&request_path)
-        .args(["--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        compared.status.success(),
-        "{}",
-        String::from_utf8_lossy(&compared.stderr)
-    );
-    let compared: serde_json::Value = serde_json::from_slice(&compared.stdout).unwrap();
-    assert_eq!(compared["run"]["execution"], id.as_str());
-    let backup = f._dir.path().join("devices.blobray");
-    let restored = f._dir.path().join("restored");
-    for (command, project, flag, path) in [
-        ("backup", &f.project, "--output", &backup),
-        ("restore", &restored, "--backup", &backup),
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-            .args([command, "--project"])
-            .arg(project)
-            .arg(flag)
-            .arg(path)
-            .args(["--limit-mode", "watchdog"])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "replay", "--project"])
-        .arg(&restored)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
-    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(replay["run"]["execution"], id.as_str());
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
-        .args(["--format", "json", "execution", "--project"])
-        .arg(&restored)
-        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let saved: ExecutionManifest =
-        serde_json::from_value(output["summary"]["manifest"].clone()).unwrap();
-    let rows: Vec<ExecutionEvidence> = output["records"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
-        .collect();
-    assert_eq!((saved, rows), original);
     if let DeviceBehavior::SequenceRead { runs, .. } =
         &mut r.cases[0].replacement.as_mut().unwrap().models[0].behavior
     {
@@ -713,17 +628,13 @@ fn cold_closure_is_explicit_and_expired_ports_can_become_ram() {
     ));
 }
 #[test]
-fn invalid_declarations_and_live_ownership_conflicts_publish_nothing() {
+fn invalid_declarations_and_live_ownership_conflicts_are_rejected() {
     let f = Fixture::new(&[0x00008067]);
     let behavior = DeviceBehavior::ConstantRead {
         address: 0x3000,
         width: 4,
         value: 7,
     };
-    let prior = f
-        .run(request(&f, behavior.clone()), budget())
-        .execution
-        .unwrap();
     for bad in [
         DeviceBehavior::ConstantRead {
             address: 0x3000,
@@ -760,12 +671,7 @@ fn invalid_declarations_and_live_ownership_conflicts_publish_nothing() {
             values: vec![0; 257],
         },
     ] {
-        match f.app.start_execution(
-            &f.project,
-            request(&f, bad),
-            &blobray_backend_riscv::RiscvExecutor,
-            budget(),
-        ) {
+        match f.run(request(&f, bad), budget()) {
             Ok(_) => panic!("invalid model admitted"),
             Err(error) => assert_eq!(error.code, ErrorCode::InvalidRequest),
         }
@@ -805,8 +711,6 @@ fn invalid_declarations_and_live_ownership_conflicts_publish_nothing() {
             _ => unreachable!(),
         }
         let failed = f.run(r, budget());
-        assert_eq!(failed.error.unwrap().code, ErrorCode::Conflict);
-        assert!(failed.execution.is_none());
+        assert_eq!(failed.unwrap_err().code, ErrorCode::Conflict);
     }
-    assert_eq!(read(&f, &prior).0.verdict, Some(ComparisonVerdict::Match));
 }

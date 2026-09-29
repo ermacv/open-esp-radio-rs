@@ -15,9 +15,9 @@ comparison. `ResultAssessment` is shared by `QuerySummary::assessment`,
 
 | Field | Meaning | Applicable operations |
 | --- | --- | --- |
-| `coverage: {subject, status, scope}` | `complete`, `partial` or `unknown` for the identified result, never an unscoped boolean | Inventory revision, function analysis, investigation publication, execution evidence or static-target audit |
+| `coverage: {subject, status, scope}` | `complete`, `partial` or `unknown` for the identified result, never an unscoped boolean | Inventory revision, function analysis, investigation publication or static-target audit |
 | `check` | `pass`, `fail` or `inconclusive` policy decision | Doctor, link-plan and static-target audit |
-| `comparison` | `MATCH`, `DIFF` or `INCOMPLETE` under the retained relation | Concrete comparison only |
+| `comparison` | `MATCH`, `DIFF` or `INCOMPLETE` under the retained relation | Static trace comparison only |
 
 A failed/cancelled/limited attempt has no assessment. Successful listings,
 selection, inspection, image preparation and exports have an
@@ -55,10 +55,10 @@ snapshot. Durable operations never use this path to reopen missing source files.
 
 ## Concrete application scenarios
 
-`start_analyze_project(InvestigationInput)` and `start_replay` each own one
-admission, run, writer, worker, deadline, work counter, working-capacity authority
-and disk budget. Automatic investigation freezes the source revision at admission
-and retains its plan. Replay requires the original executor/environment/verifier identities and exact request.
+`start_analyze_project(InvestigationInput)` owns one admission, run, writer,
+worker, deadline, work counter, working-capacity authority and disk budget.
+Automatic investigation freezes the source revision at admission and retains its
+plan.
 CLI parses parameters and renders outcomes; it performs none of these resolutions.
 
 A `Scenario` journal operation retains original intent. `resolved_operation`
@@ -188,7 +188,7 @@ implementation. Human output is a renderer of those results.
 | `plan` | Snapshot, operation request and resource budget | Immutable plan, dependencies, obligations and missing prerequisites; no analysis publication |
 | `start_run` | Plan and application capabilities | `RunHandle`; executes the recorded plan rather than resolving new inputs |
 | `query` | Snapshot and typed selector | Observations/projections with provenance, completeness and diagnostics; no implicit analysis or repair |
-| `compare` | Snapshot, both compiled implementations, scenario and relation | A supervised execution run with explicit claim scope |
+| `in_process::verify` | Request, the executables of both implementations, selected contracts and projections | Records, verdict and completeness in memory, with explicit claim scope |
 | `export` | Snapshot, selected records, destination and overwrite policy | Verified bundle/manifest; never changes retained evidence |
 
 `RunHandle` exposes status, typed progress events, cancellation and completion
@@ -282,7 +282,7 @@ Image preparation accepts a `LinkPlan`: target/ABI, ordered inputs, entry and
 retained callback roots, companion mappings, tool identity, script/options and
 declared environment. It returns a `PreparedImage` with bytes, source mappings,
 selected definitions, relocations, unresolved boundaries and the executed recipe.
-Run, replay and comparison share this operation. Companion-provided data
+Every consumer of a prepared image shares this operation. Companion-provided data
 definitions participate before relocation validation, just as call definitions do.
 
 The implemented [synthetic image profile](../../next/reference/capture-images/README.md#synthetic-prepared-images)
@@ -623,18 +623,18 @@ memory environment is acquired implicitly.
 [Blobray Next preservation](../../next/reference/preservation/README.md#backup-and-restore)
 owns the implemented wire contracts. Storage metadata and journal format support
 follow the result-assessment contract above. Backup/restore preserve source,
-analysis, publication and execution identities. Register publication remains
+analysis and publication identities. Register publication remains
 with the independent register tool.
 
 ### Implemented concrete execution boundary
 
-Domain owns `ExecutionRequest`, `ExecutionProducer`, observations and the injected
+Domain owns `ExecutionRequest`, observations and the injected
 `Executor`/`ExecutionMemory` ports. Artifacts lends validated static ELF segments;
-application owns captured leases, mutable session buffers, explicit device
+application owns the loaded executables, mutable session buffers, explicit device
 state and all phase transitions. The RV32 backend owns concrete register/PC state;
-verification alone computes the ordered-observation verdict. Store validates
-receipt/record structure and atomically publishes the evidence with its run.
-None of those computation modules can select live paths or acquire publication.
+verification alone computes the ordered-observation verdict and, separately,
+validates the record structure of every run. None of those modules selects live
+paths or opens a project.
 
 The invocation owns a bounded vector of known/unknown physical RV32 ABI words.
 Domain validates stack geometry and computes entry SP; application initializes
@@ -648,13 +648,13 @@ The `byte-addressed-memory-1` environment admits ordinary unaligned 1/2/4-byte
 RAM or ELF-backed data accesses entirely inside one mapping. Reads require all
 bytes known/readable; stores validate the complete writable range before mutation.
 No access stitches adjacent mappings together or wraps RV32. Timeline records keep
-the original address and width; domain/store validation permits these ordinary
+the original address and width; domain and record validation permit these ordinary
 transactions while continuing to require aligned atomics. Misaligned MMIO never
 consumes a response or splits into smaller operations. Instruction fetch alignment
-is unchanged. This policy is part of `ExecutionProducer.environment`, so replay
-cannot silently use an aligned-only environment. It makes no hardware,
+is unchanged. This policy is part of `EXECUTION_ENVIRONMENT`, which keys reused
+vendor results, so none comes from an aligned-only environment. It makes no hardware,
 timing or concurrent-atomicity assertion. Regression ownership is
-`execution/unaligned.rs` and `store::execution_timeline`.
+`execution/unaligned.rs` and `verification::records::timeline`.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
 word updates. The backend supplies pure AMO arithmetic through a borrowed callback;
@@ -673,29 +673,24 @@ phase RAM, stack and reservations do not. Models retain their own phase/session 
 identity and cannot change while that mapping is live. Phase buffers release after
 comparison/staged serialization. A warm successor to incomplete execution is blocked;
 a cold case discards prior state/dependencies and starts a fresh chain without
-erasing earlier incompleteness. All chains share one control, memory/disk authority
-and publication, never separate CLI operations.
+erasing earlier incompleteness. All chains share one control and memory authority
+within one request.
 Physical execution goals belong to each invocation. Application validates that
-symbols belong to mapped sources in the target revision; artifacts resolves exact
-FUNC/NOTYPE table entries against executable file-backed mappings. Operation-local
-borrowed goal indexes group all requests by captured object, with one prepared owner
-per group released before sessions. Backend receives only a resolved goal and initial
+symbols belong to the side's executables; artifacts resolves exact FUNC/NOTYPE
+table entries against executable file-backed mappings. Goals resolve before any
+session exists, and each executable's content identity is computed at most once
+per request. Backend receives only a resolved goal and initial
 register/stack state; it never resolves symbols or retains ELF metadata.
 
 Returned, reached-symbol and observed-call are distinct completed outcomes. An early
 return before a non-return goal is incomplete; a completed early goal permits a warm
 successor but never promises the callee body ran. `complete` means all declared goals
 and model closure obligations were met; it does not require every phase to return. Verification compares only the declared
-observable prefixes; non-return goals cannot compare return registers. Store validates
+observable prefixes; non-return goals cannot compare return registers. Record validation checks
 outcome/goal kind and cold/warm dependency blocking without owning ISA interpretation.
 
-Reading execution evidence owns decoded-manifest capacity through its lease;
-SQLite journal cells are admitted before incremental loading. Querying does not
-execute or repair anything.
-
-Replay requires the original executor, environment and verifier identities. A
-known difference survives other incomplete cases; an emergency resource failure
-publishes no completed evidence. The implemented relation compares exact ordered
+A known difference survives other incomplete cases; a resource failure returns
+no records. The implemented relation compares exact ordered
 MMIO/fence/delay events and optionally one 32-bit return, with a caller-declared compiled
 binding ceiling. It cannot claim arbitrary-domain or hardware equivalence. See
 [concrete execution](../../next/reference/execution/README.md#concrete-execution-and-comparison) for
@@ -910,14 +905,14 @@ work shares the existing operation budget, with no global cache or new runtime.
 
 `ModelObservation` distinguishes open, complete and incomplete obligations. Required
 Sequence reads use bounded value/count runs with a checked logical total;
-application retains a cursor and remaining count without expansion. Store checks
+application retains a cursor and remaining count without expansion. Record validation checks
 logical consumption, and identity binds the encoded runs. Sequence/FIFO values
 must be consumed at closure; failed accesses preserve an issue.
 A returned goal cannot override incomplete environment evidence. Verification
-requires both code and due model obligations for MATCH. Store checks identity,
+requires both code and due model obligations for MATCH. Record validation checks identity,
 monotonic counts, declared transcript totals, exact closure and required observation
 presence; it rejects MATCH with unmet obligations without executing model semantics.
-Models and code observations are persisted and replayed together. Full current
+Models and code observations are recorded together. Full current
 mechanism syntax and claim limits belong to the [operator reference](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
 Packed-command banks follow the same owner. Domain defines bounded wire geometry,
@@ -928,12 +923,12 @@ a staged write. Reset can explicitly abort one port's pending command, preservin
 shared cells and script cursors. No chip encoding, polling loop or RF algorithm is
 inside the generic mechanism. A model with pending commands cannot close complete.
 
-Store validates command/sample conservation and phase deltas against retained
-declarations. Its accounting checks cannot claim the ISA or device responses were
-re-executed; replay uses the retained executor/environment and original inputs.
+Record validation checks command/sample conservation and phase deltas against
+the declarations. Its accounting checks cannot claim the ISA or device responses
+were re-executed.
 The [native command tests](../../next/tests/execution/command_bank.rs) cover
-warm completion, incomplete closure, source-free restore/replay, gaps and capacity;
-domain/application/store tests cover geometry, independent shared-bank values,
+warm completion, incomplete closure, gaps and capacity; domain, application and
+record-validation tests cover geometry, independent shared-bank values,
 reset, sample consumption, cancelled admission and forged evidence counters.
 
 
@@ -954,19 +949,19 @@ responses never constitute evidence that replaced code executed. All participati
 assumptions remain in the immutable request and model identities.
 
 Output geometry/ownership, allocation freshness and required argument values are
-validated before response mutation. Resource failure during admitted effects aborts
-the operation atomically. Allocation capacity is owned until its declared lifetime
+validated before response mutation. Resource failure during admitted effects fails
+the request. Allocation capacity is owned until its declared lifetime
 ends; only the requested zero-initialized prefix is accessible. Model responses and
 memory allocations have independently declared lifetimes. Warm continuation cannot
 redeclare a live model or reseed live allocation storage through ordinary RAM.
 
 Fixed-size streamed events retain modeled boundary, arguments, effects and returns.
-Event capacity is admitted for the full successful response before mutation. Store
-checks selected bindings, ordered arguments/effects/returns, exact response consumption
+Event capacity is admitted for the full successful response before mutation. Record
+validation checks selected bindings, ordered arguments/effects/returns, exact response consumption
 and closure; missing/forged evidence cannot complete the run. The explicit relation
 selects MMIO/fence/delay, return words, final memory, physical/reviewed calls and
 internal timeline channels; excluded model records remain available for inspection. Delay values are assumptions, never wall-time or
-hardware timing evidence. All clients use the existing execution/replay lifecycle.
+hardware timing evidence.
 
 ## Selected final memory and comparison relations
 
@@ -974,8 +969,8 @@ Every comparison case owns a `ComparisonRelation`; single-implementation cases
 use none. It selects independent low/high return words, ordered MMIO read/write,
 fence and delay channels, and physical `MemoryPair` indices. The relation must
 select at least one domain. Return words require Return goals on both sides. No
-other phase's relation or old request flag supplies a default. Full request and
-producer identities retain each selection; replay cannot substitute another policy.
+other phase's relation or old request flag supplies a default. The request retains
+each selection.
 
 `Invocation.observe_memory` names exact nonempty disjoint normal-memory ranges.
 A pair selects one range per side with equal byte length. Names and pair indices
@@ -998,12 +993,12 @@ through evidence serialization and comparison. Recycling drops the snapshot befo
 releasing capacity; a following phase cannot accumulate previous snapshots. These
 records are separate from guest events and do not consume `max_events`; their
 independent byte bound and shared memory/work/disk budgets still apply. Capture
-failure cancels the whole publication. No extra memory cache or lifecycle owner exists.
+failure fails the whole request. No extra memory cache or lifecycle owner exists.
 
-Store checks chunk order, exact range coverage, canonical masks/bytes, phase/side
+Record validation checks chunk order, exact range coverage, canonical masks/bytes, phase/side
 ordering, blocked absence and selected-knownness before accepting a comparison
 MATCH. Missing or forged chunks are integrity failures. A difference descriptor
-must name a selected event/return/memory domain. Store validates structural evidence;
+must name a selected event/return/memory domain. Record validation checks structure;
 verification remains the sole owner of comparison computation.
 
 Verification compares selected event prefixes and known returned words, then paired
@@ -1050,7 +1045,7 @@ alone does not stop code. Each group admits header plus all words against shared
 event capacity before emission. Application owns the admitted sorted override
 index for one phase and releases it at phase completion; retained event capacity
 remains charged through serialization/comparison. Work, memory, deadline or disk
-failure aborts publication of the entire operation.
+failure fails the entire request.
 
 `ComparisonRelation.calls` selects exact ordered physical targets and configured
 words, interleaved with the selected MMIO/fence/delay channels. Both invocations
@@ -1063,13 +1058,13 @@ differences; different call/effect order or completed stream lengths yields
 remain DIFF despite other unknowns. Completed code/model obligations remain
 required. Excluding calls does not erase their evidence.
 
-Store validates requested geometry, contiguous word groups, unavailable reasons,
+Record validation checks requested geometry, contiguous word groups, unavailable reasons,
 observe-call boundary presence and selected knownness before admitting MATCH.
 It does not replay ISA semantics to authenticate the physical trace. Verification
 borrows grouped slices without allocating or rescanning preceding calls. The
 [capture regressions](../../next/tests/execution/capture.rs) exercise application,
 CLI, persistence, word/effect differences and resource atomicity;
-[store validation](../../crates/store/src/execution_capture.rs) rejects malformed
+[record validation](../../crates/verification/src/records/capture.rs) rejects malformed
 groups. Layout projections require their explicit reviewed relation below; this
 physical profile infers none.
 
@@ -1092,7 +1087,7 @@ also retain their execution gap and cannot establish completed equality. Success
 stores, LR/SC/RMW and declared model effects are ordered with selected calls/MMIO/
 fence/delay. Setup/inspection cannot add extra guest effects. A known prefix
 difference can establish DIFF; equal final memory cannot erase a different selected
-timeline. Capture failure aborts the entire publication. Reviewed projections use
+timeline. Capture failure fails the entire request. Reviewed projections use
 the separate explicit contract below.
 
 `Invocation.observe_timeline` contains explicit `reads`, `writes`, `atomics` and
@@ -1110,7 +1105,7 @@ bytes a phase stores into writable image segments, session RAM and session
 allocations as ascending, coalesced `WrittenRange` records after the phase's
 final memory, without values or order. Stack and phase-lifetime memory are
 excluded. A phase holds at most `MAX_WRITTEN_RANGES` ranges; a store
-that would add one more stops the run as resource-limited. Store validation
+that would add one more stops the run as resource-limited. Record validation
 requires the capture flag, record order and ascending coalesced ranges. Clients
 use the ranges to find written state that no relation compares.
 
@@ -1128,8 +1123,8 @@ an explicit transaction, not implicitly coalesced with individual stores.
 
 Event storage remains admitted once per session and recycled per phase. Memory
 writes/atomics check event capacity before mutation; RMW admission precedes its
-pure update callback. Failures during subsequent evidence handling abort the run's
-publication. Store checks capture authorization, instruction/branch geometry,
+pure update callback. Failures during subsequent evidence handling fail the
+request. Record validation checks capture authorization, instruction/branch geometry,
 transaction widths/values and selected-knownness; it does not reconstruct ISA
 execution from the transcript. A claimed completed outcome plus an unknown selected
 read still cannot admit MATCH. Verification borrows transactions and compares
@@ -1140,8 +1135,8 @@ addresses require an explicitly selected reviewed projection.
 [Timeline regressions](../../next/tests/execution/timeline.rs) cover all widths,
 AMO/orderings and LR/SC, ordinary/compressed branches, intermediate differences
 with equal final RAM, call-model effects, phase capture, unknown/unreadable
-memory, capacity, cancellation and source-free restore/replay.
-[Store validation](../../crates/store/src/execution_timeline.rs) rejects malformed
+memory and capacity.
+[Record validation](../../crates/verification/src/records/timeline.rs) rejects malformed
 or unrequested transcripts and invented MATCH; application verifies capacity before
 atomic callback/mutation. No elapsed-time or real hardware equivalence is implied.
 
@@ -1178,8 +1173,7 @@ The case selects one projection in `ComparisonRelation.projection` by the digest
 of its canonical encoding. The projection is reviewed outside Blobray and supplied
 with an in-process comparison, which validates its applicability to the request.
 All field/branch scopes declared by that projection participate; a final-only
-profile is explicit. A project execution rejects a relation that selects a
-projection, so no retained evidence carries one.
+profile is explicit.
 
 Verification borrows the selected contract and observations. Final fields compare
 all selected known bytes at completed goals. Timeline memory is mapped to field and
@@ -1199,7 +1193,7 @@ algorithm or hardware equivalence. Arbitrary width conversion, pointer-value map
 and path normalization are outside this profile and are never approximated.
 
 [Projection scenarios](../../next/tests/execution/projections.rs) cover content
-selection, rejection by a project execution, invalid geometry, final fields,
+selection, a missing projection, invalid geometry, final fields,
 unknown padding/fields and missing capture. [Verifier tests](../../crates/verification/src/projection.rs)
 check ordered mapped memory/control and unknowns.
 
@@ -1212,7 +1206,7 @@ comparison. There is no policy-name lookup, implicit current revision or inferre
 replacement.
 
 Each case selects one contract in `ComparisonRelation.effects` by the digest of
-its canonical encoding; a project execution rejects that selection. Selection
+its canonical encoding. Selection
 requires all four concrete MMIO read/write, fence and modeled-delay channels. Internal
 memory/branch, call, return and final-memory selections remain independent and
 compose with the effect relation. A selected contract the comparison was not

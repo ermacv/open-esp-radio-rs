@@ -25,6 +25,11 @@ cargo hil lease --board esp32c5 -- idf.py -p <port> flash
 cargo hil --owner phy lease --board esp32s31 -- sh -c 'cargo hil run a --firmware-from R && cargo hil run a'
 ```
 
+A leased command that is itself a stand command (`cargo hil …` or
+`oer-stand …`) has its arguments parsed as that command will before the lease
+queues, so a mistyped option fails at once instead of after the wait; commands
+the runner parses (`run`, `run-all`, `image`) are checked when they run.
+
 `flash --board NAME|MAC ELF` is the manual cycle for images outside the
 runner and the ESP-IDF catalog, such as a new chip's first no_std images. It
 derives the application image with `espflash save-image` before queueing,

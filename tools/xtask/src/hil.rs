@@ -796,6 +796,50 @@ fn lease_claims(
     Ok(claims)
 }
 
+/// The `cargo hil` arguments of a leased command that is itself a stand
+/// command, through `cargo hil` or the installed `oer-stand`.
+fn nested_hil(program: &OsString, arguments: &[OsString]) -> Option<Vec<OsString>> {
+    let name = Path::new(program).file_name()?.to_str()?;
+    match (
+        name,
+        arguments.first().and_then(|argument| argument.to_str()),
+    ) {
+        ("cargo", Some("hil")) => Some(arguments[1..].to_vec()),
+        ("oer-stand", _) => Some(arguments.to_vec()),
+        _ => None,
+    }
+}
+
+/// Parse `cargo hil` arguments as the stand command they name will, without
+/// running it. Commands the runner parses itself pass unchecked here.
+fn check_hil_arguments(args: &[OsString]) -> Result<()> {
+    use clap::Parser as _;
+    let (_, args) = LeaseOptions::split(args)?;
+    let Some((command, rest)) = args.split_first() else {
+        return Ok(());
+    };
+    let parsed = match command.to_str().unwrap_or_default() {
+        "lease" => LeaseCli::try_parse_from(rest).map(drop),
+        "board" => BoardCli::try_parse_from(rest).map(drop),
+        "perf" => PerfCli::try_parse_from(rest).map(drop),
+        "runs" => RunsCli::try_parse_from(rest).map(drop),
+        "firmware" => FirmwareCli::try_parse_from(rest).map(drop),
+        "devices" => DevicesCli::try_parse_from(rest).map(drop),
+        "profile" => ProfileCli::try_parse_from(rest).map(drop),
+        "flash" => crate::hil_flash::FlashCli::try_parse_from(rest).map(drop),
+        "peer" => crate::hil_board::PeerCli::try_parse_from(rest).map(drop),
+        _ => return Ok(()),
+    };
+    parsed.map_err(|error| {
+        format!(
+            "`cargo hil {}`: {}",
+            command.to_string_lossy(),
+            error.render().to_string().trim()
+        )
+        .into()
+    })
+}
+
 fn parse_budget(text: &str) -> std::result::Result<std::time::Duration, String> {
     oer_hil_arbiter::parse_duration(text).map_err(|error| error.to_string())
 }
@@ -920,6 +964,10 @@ fn lease(ctx: &Context, outer: LeaseOptions, args: &[OsString]) -> Result<std::p
         .command
         .split_first()
         .ok_or("cargo hil lease needs a COMMAND after --")?;
+    // A mistake in a nested stand command fails now, not after the wait.
+    if let Some(nested) = nested_hil(program, arguments) {
+        check_hil_arguments(&nested).map_err(|error| format!("not leased: {error}"))?;
+    }
     let work = cli
         .command
         .iter()
@@ -2253,6 +2301,35 @@ mod tests {
             &[OsString::from("--source-includes")],
             "--source-include"
         ));
+    }
+
+    #[test]
+    fn a_nested_stand_command_is_checked_before_its_lease_waits() {
+        let words = |text: &str| text.split(' ').map(OsString::from).collect::<Vec<_>>();
+        let nested = super::nested_hil(
+            &OsString::from("cargo"),
+            &words("hil firmware flash esp32c5-hello --include-untracked"),
+        )
+        .unwrap();
+        assert_eq!(
+            nested,
+            words("firmware flash esp32c5-hello --include-untracked")
+        );
+        assert!(super::check_hil_arguments(&nested).is_err());
+        assert!(super::check_hil_arguments(&words("firmware list")).is_ok());
+        // The runner parses its own commands when they run.
+        assert!(super::check_hil_arguments(&words("run a --anything")).is_ok());
+        assert!(
+            super::nested_hil(&OsString::from("/usr/bin/openocd"), &words("-f board.cfg"))
+                .is_none()
+        );
+        assert!(
+            super::nested_hil(
+                &OsString::from("/home/u/.local/bin/oer-stand"),
+                &words("runs list")
+            )
+            .is_some()
+        );
     }
 
     #[test]

@@ -64,6 +64,72 @@ fn seed_of(class: ImageClass) -> ImageClass {
     }
 }
 
+/// Inputs outside the compiled sources that every image build or its audits
+/// read: Cargo's configuration and locks, the stack and memory policies, and
+/// the build and audit tooling. A change to one affects every class.
+const SHARED_INPUTS: [&str; 10] = [
+    ".cargo/",
+    "Cargo.lock",
+    "rust-toolchain",
+    "hil/targets/esp32s31/Cargo.lock",
+    "hil/targets/esp32s31/stack.toml",
+    "hil/targets/esp32s31/memory/",
+    "platform/esp32s31/",
+    "tools/memory-report/",
+    "tools/firmware/",
+    "hil/host/runner-core/src/image/",
+];
+
+/// The classes whose image a change of `changed` (repository-relative
+/// paths) can alter or whose audits it can change: those whose last build in
+/// the host build root compiled a changed file, every class when a shared
+/// input changed, and every class that has no recorded build yet.
+pub fn affected(changed: &[PathBuf]) -> Result<Vec<ImageClass>> {
+    Ok(affected_in(
+        &oer_hil_runner_core::image::chip_build_root("esp32s31")?,
+        changed,
+    ))
+}
+
+fn affected_in(builds: &std::path::Path, changed: &[PathBuf]) -> Vec<ImageClass> {
+    let shared = changed.iter().any(|path| {
+        SHARED_INPUTS
+            .iter()
+            .any(|input| path.starts_with(input) || path.to_string_lossy().starts_with(input))
+    });
+    ImageClass::ALL
+        .into_iter()
+        .filter(|class| {
+            shared
+                || match last_inputs(builds, *class) {
+                    Some(inputs) => changed.iter().any(|path| inputs.contains(path)),
+                    None => true,
+                }
+        })
+        .collect()
+}
+
+/// The source inputs the newest build of `class` in the host build root
+/// recorded, or `None` when it has none.
+fn last_inputs(
+    builds: &std::path::Path,
+    class: ImageClass,
+) -> Option<std::collections::BTreeSet<PathBuf>> {
+    #[derive(serde::Deserialize)]
+    struct SourceInputs {
+        files: Vec<PathBuf>,
+    }
+    let name = format!("{}-{}", class.id(), Integration::OwnedXarxa.id());
+    let newest = std::fs::read_dir(builds.join("snapshot-builds"))
+        .ok()?
+        .flatten()
+        .map(|snapshot| snapshot.path().join(&name).join("source-inputs.json"))
+        .filter_map(|path| Some((std::fs::metadata(&path).ok()?.modified().ok()?, path)))
+        .max()?;
+    let inputs: SourceInputs = serde_json::from_slice(&std::fs::read(newest.1).ok()?).ok()?;
+    Some(inputs.files.into_iter().collect())
+}
+
 /// Classes waiting to build, and the outcomes of those that did.
 #[derive(Default)]
 struct Queue {
@@ -328,6 +394,59 @@ mod tests {
             elapsed: Duration::from_secs(3),
             failure: failure.map(str::to_owned),
         }
+    }
+
+    #[test]
+    fn a_change_affects_the_classes_whose_last_build_compiled_it() {
+        let builds = tempfile::tempdir().unwrap();
+        let record = |class: ImageClass, files: &[&str]| {
+            let directory = builds.path().join("snapshot-builds/abc").join(format!(
+                "{}-{}",
+                class.id(),
+                Integration::OwnedXarxa.id()
+            ));
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(
+                directory.join("source-inputs.json"),
+                serde_json::json!({"schema": 1, "files": files}).to_string(),
+            )
+            .unwrap();
+        };
+        for class in ImageClass::ALL {
+            record(class, &["crates/common/src/lib.rs"]);
+        }
+        let [wifi, bluetooth] = [ImageClass::Performance, ImageClass::BluetoothGatt];
+        record(
+            wifi,
+            &["crates/common/src/lib.rs", "crates/wifi/src/lib.rs"],
+        );
+        let changed = |paths: &[&str]| -> Vec<ImageClass> {
+            affected_in(
+                builds.path(),
+                &paths.iter().map(PathBuf::from).collect::<Vec<_>>(),
+            )
+        };
+        assert_eq!(changed(&["crates/wifi/src/lib.rs"]), [wifi]);
+        assert!(changed(&["docs/guide.md"]).is_empty());
+        assert_eq!(
+            changed(&["crates/common/src/lib.rs"]).len(),
+            ImageClass::ALL.len()
+        );
+        assert_eq!(
+            changed(&["hil/targets/esp32s31/stack.toml"]).len(),
+            ImageClass::ALL.len()
+        );
+        assert!(!changed(&["crates/wifi/src/lib.rs"]).contains(&bluetooth));
+        std::fs::remove_dir_all(builds.path().join("snapshot-builds/abc").join(format!(
+            "{}-{}",
+            bluetooth.id(),
+            Integration::OwnedXarxa.id()
+        )))
+        .unwrap();
+        assert!(
+            changed(&["docs/guide.md"]).contains(&bluetooth),
+            "no record: build it"
+        );
     }
 
     #[test]

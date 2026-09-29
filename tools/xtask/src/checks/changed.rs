@@ -29,9 +29,9 @@ pub struct Plan {
     pub clippy: bool,
     /// Markdown, qualification catalogs or programs changed.
     pub docs: bool,
-    /// HIL target, protocol or target-core sources changed: the firmware
-    /// feature sets to type-check, by image class.
-    pub firmware: BTreeSet<FirmwareSet>,
+    /// A changed file other than prose could alter a HIL firmware image or
+    /// its audits; the firmware check selects the classes it reaches.
+    pub firmware: bool,
     /// Shared platform boot, runtime entry or linker placement changed:
     /// link one standalone example, since a type-check never runs the
     /// linker scripts' assertions.
@@ -102,11 +102,21 @@ pub fn plan(
         if path.starts_with("hil/targets") && name == "Cargo.toml" {
             plan.packages.insert(String::from("oer-qualification"));
         }
-        if ["hil/targets", "hil/protocol", "hil/target-core"]
-            .iter()
-            .any(|prefix| path.starts_with(prefix))
-        {
-            plan.firmware.extend(FirmwareSet::affected_by(path));
+        let image_input = [
+            "crates",
+            "hil",
+            "platform",
+            "tools/firmware",
+            "tools/memory-report",
+            ".cargo",
+            "Cargo.toml",
+            "Cargo.lock",
+            "rust-toolchain",
+        ]
+        .iter()
+        .any(|prefix| path.starts_with(prefix));
+        if image_input && path.extension().is_none_or(|extension| extension != "md") {
+            plan.firmware = true;
         }
         if path.starts_with("platform") {
             plan.platform_link = true;
@@ -336,8 +346,23 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
             }
         }
     }
-    if !plan.firmware.is_empty() {
-        check_firmware(ctx, &plan.firmware)?;
+    if plan.firmware {
+        // Build and audit the images the change can alter, in the host's
+        // build slots: a stack or placement regression fails here rather
+        // than on main.
+        let affected = super::firmware::affected(&changed)?;
+        if !affected.is_empty() {
+            println!(
+                "check changed: building and auditing {} HIL image classes the change reaches",
+                affected.len()
+            );
+            super::firmware::run(
+                ctx,
+                &affected,
+                super::firmware::Depth::Build,
+                super::firmware::default_jobs(),
+            )?;
+        }
     }
     if plan.phy_graph {
         super::phy::run(ctx, "esp32s31")?;
@@ -380,111 +405,6 @@ pub fn run(ctx: &Context, base: &str) -> Result<()> {
         Err(error) => println!("check changed: pending HIL evidence unreadable: {error}"),
     }
     println!("check changed passed; the CI jobs remain the full checkpoint");
-    Ok(())
-}
-
-/// A firmware feature set the firmware check type-checks, named by the
-/// image class that builds it.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum FirmwareSet {
-    /// Production-like Wi-Fi.
-    Performance,
-    /// Wi-Fi with driver observation.
-    Correctness,
-    /// Wi-Fi with only the Wi-Fi system's diagnostics.
-    DiagnosticStationExit,
-    BluetoothDtm,
-    BluetoothGatt,
-    BluetoothSecureGatt,
-    /// Wi-Fi and Bluetooth together.
-    WifiBleCoex,
-    /// The IEEE 802.15.4 client on the shared radio.
-    Ieee802154Radio,
-    /// OpenThread over that client.
-    Ieee802154Thread,
-}
-
-impl FirmwareSet {
-    const WIFI: [Self; 4] = [
-        Self::Performance,
-        Self::Correctness,
-        Self::DiagnosticStationExit,
-        Self::WifiBleCoex,
-    ];
-    const BLUETOOTH: [Self; 4] = [
-        Self::BluetoothDtm,
-        Self::BluetoothGatt,
-        Self::BluetoothSecureGatt,
-        Self::WifiBleCoex,
-    ];
-
-    const IEEE802154: [Self; 2] = [Self::Ieee802154Radio, Self::Ieee802154Thread];
-
-    fn class(self) -> oer_hil_runner_core::image::ImageClass {
-        use oer_hil_runner_core::image::ImageClass;
-        match self {
-            Self::Performance => ImageClass::Performance,
-            Self::Correctness => ImageClass::Correctness,
-            Self::DiagnosticStationExit => ImageClass::DiagnosticStationExit,
-            Self::BluetoothDtm => ImageClass::BluetoothDtm,
-            Self::BluetoothGatt => ImageClass::BluetoothGatt,
-            Self::BluetoothSecureGatt => ImageClass::BluetoothSecureGatt,
-            Self::WifiBleCoex => ImageClass::WifiBleCoex,
-            Self::Ieee802154Radio => ImageClass::DiagnosticIeee802154Radio,
-            Self::Ieee802154Thread => ImageClass::DiagnosticIeee802154Thread,
-        }
-    }
-
-    /// The sets a change of `path` can break: a Bluetooth file the
-    /// Bluetooth images and coexistence, an IEEE 802.15.4 file the IEEE
-    /// 802.15.4 images, a coexistence file coexistence, a Wi-Fi file the
-    /// Wi-Fi images and coexistence, and any other file of the product HIL
-    /// module, which the IEEE 802.15.4 images also compile, those too;
-    /// anything shared all.
-    fn affected_by(path: &Path) -> Vec<Self> {
-        let text = path.to_string_lossy();
-        let named = |words: &[&str]| words.iter().any(|word| text.contains(word));
-        if named(&["bluetooth"]) {
-            Self::BLUETOOTH.to_vec()
-        } else if named(&["ieee802154", "thread"]) {
-            Self::IEEE802154.to_vec()
-        } else if named(&["coex"]) {
-            vec![Self::WifiBleCoex]
-        } else if named(&["ieee80211", "wifi", "station", "access_point"]) {
-            Self::WIFI.to_vec()
-        } else if named(&["product_hil"]) {
-            Self::WIFI.into_iter().chain(Self::IEEE802154).collect()
-        } else {
-            Self::WIFI
-                .into_iter()
-                .chain(Self::BLUETOOTH)
-                .chain(Self::IEEE802154)
-                .collect()
-        }
-    }
-}
-
-/// Type-check the HIL firmware for each of `sets`, one after the other, in
-/// their shared compile caches.
-fn check_firmware(ctx: &Context, sets: &BTreeSet<FirmwareSet>) -> Result<()> {
-    let network = oer_hil_runner_core::image::Integration::OwnedXarxa;
-    for set in sets {
-        let class = set.class();
-        println!(
-            "check changed: type-checking the HIL firmware ({}: {})",
-            class.id(),
-            class.build_features(network)
-        );
-        oer_hil_runner_core::image::check(&ctx.root, class, network)?;
-    }
-    println!(
-        "check changed: HIL firmware type-checks for {}; monomorphization lints and the \
-         placement and stack audits need `cargo hil image build`",
-        sets.iter()
-            .map(|set| set.class().id())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
     Ok(())
 }
 
@@ -575,52 +495,15 @@ mod tests {
     }
 
     #[test]
-    fn hil_target_protocol_and_target_core_changes_select_the_firmware_check() {
+    fn source_changes_select_the_firmware_check_and_prose_does_not() {
         for path in [
             "hil/targets/esp32s31/runtime/src/console.rs",
             "hil/protocol/src/system.rs",
-            "hil/target-core/src/liveness.rs",
+            "crates/hardware/esp32s31/driver/ieee80211/mac/src/lib.rs",
         ] {
-            assert!(!run(&[path]).firmware.is_empty(), "{path}");
+            assert!(run(&[path]).firmware, "{path}");
         }
-        assert!(run(&["hil/host/runner/src/cli.rs"]).firmware.is_empty());
-    }
-
-    #[test]
-    fn a_firmware_change_checks_only_the_feature_sets_it_can_break() {
-        use FirmwareSet::*;
-        let sets = |path: &str| run(&[path]).firmware.into_iter().collect::<Vec<_>>();
-        assert_eq!(
-            sets("hil/targets/esp32s31/runtime/src/bluetooth/gatt.rs"),
-            [
-                BluetoothDtm,
-                BluetoothGatt,
-                BluetoothSecureGatt,
-                WifiBleCoex
-            ]
-        );
-        assert_eq!(
-            sets("hil/targets/esp32s31/runtime/src/product_hil/station/mod.rs"),
-            [Performance, Correctness, DiagnosticStationExit, WifiBleCoex]
-        );
-        assert_eq!(
-            sets("hil/targets/esp32s31/runtime/src/product_hil/ieee802154/client.rs"),
-            [Ieee802154Radio, Ieee802154Thread]
-        );
-        // The IEEE 802.15.4 images compile the product HIL module too.
-        assert_eq!(
-            sets("hil/targets/esp32s31/runtime/src/product_hil/phy_register_image.rs"),
-            [
-                Performance,
-                Correctness,
-                DiagnosticStationExit,
-                WifiBleCoex,
-                Ieee802154Radio,
-                Ieee802154Thread
-            ]
-        );
-        // A shared file can break every image.
-        assert_eq!(sets("hil/targets/esp32s31/runtime/src/console.rs").len(), 9);
+        assert!(!run(&["docs/guide.md"]).firmware);
     }
 
     #[test]

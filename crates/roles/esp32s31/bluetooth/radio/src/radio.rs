@@ -1,5 +1,8 @@
 //! Lowering of radio requests into the role pools and the executor.
 
+/// DIAGNOSTIC: the configured scanner is active.
+static ACTIVE_SCANNER: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
 use core::convert::Infallible;
 
 use crate::coexistence::{self, CoexistenceProfile};
@@ -1227,6 +1230,11 @@ impl<
             ScanType::Active => LegacyScanType::Active,
         };
         let config = LegacyScanResetConfig::le_1m_public_accept_all(tx_power, scan_type);
+        // DIAGNOSTIC: dump only the active scanner's graph.
+        ACTIVE_SCANNER.store(
+            scan_type == LegacyScanType::Active,
+            core::sync::atomic::Ordering::Relaxed,
+        );
         if pool
             .reset(&instance, &self.memory.scanning, config)
             .is_err()
@@ -1900,7 +1908,8 @@ impl<
                     core::sync::atomic::AtomicBool::new(false);
                 static COMPLETED: core::sync::atomic::AtomicU32 =
                     core::sync::atomic::AtomicU32::new(0);
-                if COMPLETED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 5
+                if ACTIVE_SCANNER.load(core::sync::atomic::Ordering::Relaxed)
+                    && COMPLETED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 5
                     && !DUMPED.swap(true, core::sync::atomic::Ordering::Relaxed)
                 {
                     let mut words = [0u32; 96];
